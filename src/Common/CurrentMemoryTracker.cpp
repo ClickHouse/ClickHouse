@@ -79,29 +79,29 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             current_thread->untracked_memory_blocker_level = blocker_level;
         }
 
-        auto added = DB::PerCPUUntrackedMemory::add(size);
-        if (added.new_local > current_thread->untracked_memory_limit)
+        /// `track` fuses the overflow check, drain, and add into one rseq CS.
+        /// `to_flush` is the bytes the caller must transfer to the parent
+        /// tracker; the slot keeps the new delta plus any peer adds that
+        /// arrived between our peek and the CS.
+        auto t = DB::PerCPUUntrackedMemory::track(size, current_thread->untracked_memory_limit);
+        if (t.to_flush > 0)
         {
-            /// `tryFlush` is itself a kernel-restartable rseq RMW, so it is
-            /// race-free against concurrent rseq adds on `added.cpu`. On
-            /// migration it returns false and leaves the slot untouched —
-            /// the bytes stay accounted in the slot and will be drained by
-            /// a future overflow on that cpu. Bounded by
-            /// `cpuCount() * untracked_memory_limit`.
-            if (DB::PerCPUUntrackedMemory::tryFlush(added.cpu, added.new_local))
+            try
             {
-                try
-                {
-                    return memory_tracker->allocImpl(added.new_local, throw_if_memory_exceeded);
-                }
-                catch (...)
-                {
-                    /// Re-stage what we just subtracted. May land on a
-                    /// different CPU after migration; bounded by limit.
-                    DB::PerCPUUntrackedMemory::add(added.new_local - size);
-                    throw;
-                }
+                return memory_tracker->allocImpl(t.to_flush, throw_if_memory_exceeded);
             }
+            catch (...)
+            {
+                /// Stage the failed flush back so the bytes are not lost.
+                /// The reverse `track(t.to_flush, ...)` may land on a
+                /// different CPU after migration; bounded by limit.
+                DB::PerCPUUntrackedMemory::track(t.to_flush, current_thread->untracked_memory_limit);
+                throw;
+            }
+        }
+        else if (t.to_flush < 0)
+        {
+            std::ignore = memory_tracker->free(-t.to_flush);
         }
         return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
     }
@@ -173,15 +173,11 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
             current_thread->untracked_memory_blocker_level = blocker_level;
         }
 
-        auto added = DB::PerCPUUntrackedMemory::add(-size);
-        if (added.new_local < -current_thread->untracked_memory_limit)
-        {
-            if (DB::PerCPUUntrackedMemory::tryFlush(added.cpu, added.new_local))
-            {
-                /// added.new_local is negative here; flush as a free.
-                return memory_tracker->free(-added.new_local);
-            }
-        }
+        auto t = DB::PerCPUUntrackedMemory::track(-size, current_thread->untracked_memory_limit);
+        if (t.to_flush < 0)
+            return memory_tracker->free(-t.to_flush);
+        if (t.to_flush > 0)
+            std::ignore = memory_tracker->allocImpl(t.to_flush, /*throw_if_memory_exceeded=*/false);
         return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
     }
 

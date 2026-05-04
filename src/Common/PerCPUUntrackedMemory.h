@@ -11,16 +11,13 @@
 /// Two backends, picked at build time:
 ///   1. librseq (preferred when USE_LIBRSEQ=1 is defined and rseq_init
 ///      succeeds at startup): non-atomic per-CPU RMW via restartable
-///      sequences. Both `add` and `tryFlush` use rseq, so they are
-///      race-free against each other on the same CPU — the kernel
-///      restarts whoever is preempted. Cross-CPU `tryFlush` calls abort
-///      cleanly without modifying the slot.
-///   2. Fallback: atomic ops on the slot. CPU index resolved via
-///      `sched_getcpu`. Both `add` and `tryFlush` are single instructions
-///      (`lock xadd` on x86_64, `ldadd`/`ldaddal` on aarch64 LSE) — the
-///      slot is L1-resident and uncontended.
+///      sequences. The `track` op fuses "check overflow → drain → add" into
+///      a single rseq CS by passing `delta - current` as the rseq increment.
+///   2. Fallback: atomic ops on the slot via a CAS loop with the same
+///      check-or-drain semantics. Single-CPU uncontended.
 ///
-/// All overflow/limit policy stays in the caller.
+/// All limit policy stays in the caller — `track(delta, limit)` is told the
+/// per-CPU threshold; the caller picks it (e.g. from `untracked_memory_limit`).
 namespace DB::PerCPUUntrackedMemory
 {
 
@@ -31,24 +28,26 @@ int  cpuCount();
 /// Useful for un-paired drain sites (e.g. `flushUntrackedMemory`).
 int currentCPU();
 
-struct AddResult
+struct TrackResult
 {
-    int   cpu;        /// the slot that was actually updated
-    Int64 new_local;  /// approximate value of slots[cpu] after the add
+    int   cpu;       /// the slot that was actually updated
+    Int64 to_flush;  /// signed bytes the caller must transfer to the parent
+                     /// tracker before returning to user code:
+                     ///   > 0 → memory_tracker->allocImpl(to_flush)
+                     ///   < 0 → memory_tracker->free(-to_flush)
+                     ///   = 0 → nothing further; the delta is just buffered
 };
 
-/// Resolve the current CPU, perform a per-CPU RMW on its slot, and return
-/// both the CPU used and the post-update value. Pair `tryFlush(result.cpu,
-/// result.new_local)` with this call to flush on overflow.
-AddResult add(Int64 delta);
-
-/// Paired with `add`: subtract `amount` from slots[cpu] via the same rseq
-/// primitive. Race-free against concurrent rseq adds on `cpu`. Returns
-/// `false` if the rseq sequence aborted because the caller migrated off
-/// `cpu`; the slot is unchanged in that case and the bytes stay accounted
-/// in the slot until a future overflow on that cpu drains them. Bounded
-/// by `cpuCount() * max_untracked_memory`.
-bool tryFlush(int cpu, Int64 amount);
+/// Add `delta` to the current CPU's slot. If the slot's prior value was over
+/// `limit` (in magnitude), drain it as part of the same rseq CS — the
+/// drained value comes back as `to_flush`. Otherwise the delta is just
+/// buffered and `to_flush == 0`.
+///
+/// Total accounting is invariant to peek staleness: the rseq increment is
+/// `delta - prior` (drain path) or `delta` (buffer path), so the slot ends
+/// holding exactly the bytes from peers that arrived between the peek and
+/// the CS. No bytes are lost or double-counted.
+TrackResult track(Int64 delta, Int64 limit);
 
 /// Un-paired drain: atomically swap slots[cpu] with 0 and return the prior
 /// value. Always succeeds. The caller is expected to be running on `cpu`

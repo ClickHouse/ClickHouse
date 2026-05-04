@@ -104,55 +104,46 @@ int currentCPU()
 #endif
 }
 
-AddResult add(Int64 delta)
+TrackResult track(Int64 delta, Int64 limit)
 {
 #if USE_LIBRSEQ
     if (rseq_ready)
     {
-        /// slots[cpu].value += delta
-        int cpu;
+        /// One rseq CS per call. We peek `current` outside the CS (racy);
+        /// inside, the CS does `slot[cpu] += adjustment`, where:
+        ///   - if peek showed |current| > limit: adjustment = delta - current,
+        ///     leaving slot ≈ delta + (peer adds since peek);
+        ///   - otherwise:                         adjustment = delta.
+        /// Whatever the peek's staleness, total bytes accounted == real bytes:
+        /// caller flushes `current` to its parent tracker, slot retains
+        /// (real_at_CS - current) + delta. Migration aborts the CS; we retry
+        /// from the top with a fresh peek and CPU.
         while (true)
         {
-            cpu = static_cast<int>(rseq_cpu_start());
+            int cpu = static_cast<int>(rseq_cpu_start());
+            Int64 current = __atomic_load_n(&slots[cpu].value, __ATOMIC_RELAXED);
+            bool over = current > limit || current < -limit;
+            Int64 adjustment = over ? (delta - current) : delta;
             intptr_t * slot_ptr = reinterpret_cast<intptr_t *>(&slots[cpu].value);
-            intptr_t count = static_cast<intptr_t>(delta);
-            if (rseq_load_add_store__ptr(RSEQ_MO_RELAXED, RSEQ_PERCPU_CPU_ID, slot_ptr, count, cpu) == 0)
-                break;
+            if (rseq_load_add_store__ptr(RSEQ_MO_RELAXED, RSEQ_PERCPU_CPU_ID,
+                                         slot_ptr, static_cast<intptr_t>(adjustment), cpu) == 0)
+                return {cpu, over ? current : Int64{0}};
         }
-        /// Read-back is racy with concurrent rseq adds on the same CPU,
-        /// but bounded by one peer's count. Used only as an overflow
-        /// heuristic, where small drift is harmless. Lowers to a single
-        /// `mov` (x86_64) / `ldr` (aarch64); the C++ atomic load is for
-        /// the memory model, not for hardware atomicity.
-        Int64 new_local = __atomic_load_n(&slots[cpu].value, __ATOMIC_RELAXED);
-        return {cpu, new_local};
     }
 #endif
 
+    /// Atomic fallback: CAS loop with the same check-or-drain semantics.
+    /// One CAS per attempt; under contention may retry until peers settle.
     int cpu = currentCPU();
-    Int64 new_local = __atomic_add_fetch(&slots[cpu].value, delta, __ATOMIC_RELAXED);
-    return {cpu, new_local};
-}
-
-bool tryFlush(int cpu, Int64 amount)
-{
-    if (amount == 0)
-        return true;
-
-#if USE_LIBRSEQ
-    if (rseq_ready)
+    while (true)
     {
-        /// slots[cpu].value -= amount
-        intptr_t * slot_ptr = reinterpret_cast<intptr_t *>(&slots[cpu].value);
-        intptr_t count = -static_cast<intptr_t>(amount);
-        return rseq_load_add_store__ptr(RSEQ_MO_RELAXED, RSEQ_PERCPU_CPU_ID, slot_ptr, count, cpu) == 0;
+        Int64 current = __atomic_load_n(&slots[cpu].value, __ATOMIC_RELAXED);
+        bool over = current > limit || current < -limit;
+        Int64 next = over ? delta : (current + delta);
+        if (__atomic_compare_exchange_n(&slots[cpu].value, &current, next,
+                                        /*weak=*/false, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+            return {cpu, over ? current : Int64{0}};
     }
-#endif
-
-    /// Atomic fallback path: no rseq, so all writers use atomic ops and
-    /// fetch_sub is race-free against them. Always succeeds.
-    __atomic_fetch_sub(&slots[cpu].value, amount, __ATOMIC_RELAXED);
-    return true;
 }
 
 Int64 drain(int cpu)
