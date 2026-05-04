@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: prewhere reordering depends on in-memory statistics; DETACH/ATTACH races with materialization
+
 -- Test NullCount statistics: Prewhere column ordering and fallback selectivity
 -- All checks rely on `extractAll(explain, 'Prewhere filter column: ...')`,
 -- so the test stays robust to EXPLAIN formatting and indentation changes.
