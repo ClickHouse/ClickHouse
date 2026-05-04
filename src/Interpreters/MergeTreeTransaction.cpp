@@ -242,12 +242,18 @@ scope_guard MergeTreeTransaction::beforeCommit()
             throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", expected);
     }
+    /// Wake any threads parked in `waitStateChange(UnknownCSN)`. With C++20 atomics, neither
+    /// `compare_exchange_strong` nor `exchange` wakes waiters in `csn.wait(...)`; only an explicit
+    /// `notify_one`/`notify_all` does. Without this call, a waiter that was already blocked when
+    /// the transition happened can remain blocked indefinitely (modulo spurious wakeups).
+    csn.notify_all();
 
     /// We should set CSN back to Unknown if we will fail to commit transaction for some reason (connection loss, etc)
     return [this]()
     {
         CSN expected_value = Tx::CommittingCSN;
-        csn.compare_exchange_strong(expected_value, Tx::UnknownCSN);
+        if (csn.compare_exchange_strong(expected_value, Tx::UnknownCSN))
+            csn.notify_all();
     };
 }
 
@@ -291,11 +297,17 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     for (const auto & storage_and_mutation : committed_mutations)
         storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, assigned_csn);
 
-    /// Now publish the assigned CSN. After this point `getState()` returns `COMMITTED` and any
-    /// waiters on `csn` (via `waitStateChange`) are notified. They are guaranteed to observe the
-    /// updated parts and mutations because all writes above happen-before this atomic exchange.
+    /// Now publish the assigned CSN. After this point `getState()` returns `COMMITTED`.
+    /// Writes above happen-before this exchange, so any thread that observes the new CSN
+    /// also observes the updated `creation_csn` / `removal_csn` on the parts.
     [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
     chassert(prev_value == Tx::CommittingCSN);
+    /// Wake any threads parked in `waitStateChange(CommittingCSN)`. With C++20 atomics the
+    /// `exchange` above does NOT wake waiters in `csn.wait(...)`; only an explicit
+    /// `notify_one`/`notify_all` does. Without this call, the unknown-status path in
+    /// `executeCommit` (entered when the post-commit ZK fault injection fires) could remain
+    /// blocked indefinitely on a transaction that has actually committed.
+    csn.notify_all();
 }
 
 bool MergeTreeTransaction::rollback() noexcept
@@ -308,6 +320,11 @@ bool MergeTreeTransaction::rollback() noexcept
     /// Check that it was not rolled back concurrently
     if (!need_rollback)
         return false;
+
+    /// Wake any threads parked in `waitStateChange(UnknownCSN)`. With C++20 atomics the
+    /// `compare_exchange_strong` above does NOT wake waiters in `csn.wait(...)`; only an
+    /// explicit `notify_one`/`notify_all` does.
+    csn.notify_all();
 
     /// It's not a problem if server crash at this point
     /// because on startup we will see that TID is not committed and will simply discard these changes.
