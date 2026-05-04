@@ -805,7 +805,8 @@ def test_cluster_hosts_limit(started_cluster):
     assert int(hosts_2) == 2
 
 
-def test_object_storage_remote_initiator(started_cluster):
+# Turn off until merge https://github.com/Altinity/ClickHouse/pull/1646
+def _test_object_storage_remote_initiator(started_cluster):
     node = started_cluster.instances["s0_0_0"]
 
     # Simple cluster
