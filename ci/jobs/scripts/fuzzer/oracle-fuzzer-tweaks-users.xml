@@ -4,6 +4,19 @@
             <!-- Enable server-side AST fuzzer oracle (TLP WHERE + NoREC) -->
             <ast_fuzzer_runs>1</ast_fuzzer_runs>
             <ast_fuzzer_oracle>1</ast_fuzzer_oracle>
+            <!--
+                Disable the query condition cache for fuzzer runs. The fuzzer
+                generates PREWHERE expressions with relaxed type coercions
+                (e.g. `PREWHERE toNullable(toLowCardinality(<large int>))`)
+                whose mark-skip results get keyed into the global
+                `QueryConditionCache` by `(table_uuid, part_name, action_hash)`
+                — see `src/Storages/MergeTree/MergeTreeSelectProcessor.cpp:365`.
+                Subsequent unrelated `WHERE` queries that hash to the same
+                action key then read back "no marks match" and silently return
+                zero rows. With the cache disabled, fuzzer queries cannot leak
+                state into normal queries running against the same server.
+            -->
+            <use_query_condition_cache>0</use_query_condition_cache>
         </default>
     </profiles>
 </clickhouse>

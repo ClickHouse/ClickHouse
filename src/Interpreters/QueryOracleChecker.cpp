@@ -77,9 +77,12 @@ const std::unordered_set<String> non_deterministic_functions = {
     /// Order-dependent or floating-point aggregates whose State/Merge path
     /// can differ from direct computation.
     "deltaSum", "deltaSumTimestamp",
-    "stddevPop", "stddevSamp", "varPop", "varSamp",
-    "covarPop", "covarSamp", "corr",
+    "stddevPop", "stddevSamp", "stddevPopStable", "stddevSampStable",
+    "varPop", "varSamp", "varPopStable", "varSampStable",
+    "covarPop", "covarSamp", "covarPopStable", "covarSampStable", "corr", "corrStable",
     "avg", "avgWeighted",
+    "skewPop", "skewSamp", "kurtPop", "kurtSamp",
+    "sumKahan",
     "stochasticLinearRegression", "stochasticLogisticRegression",
     "initializeAggregation",
     /// Order-dependent aggregate functions.
