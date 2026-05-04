@@ -1212,9 +1212,17 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
         {
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
-            map_buckets[bucket] = column_map.cloneEmpty();
-            ColumnPtr nested_ptr = assert_cast<const ColumnMap &>(*map_buckets[bucket]).getNestedColumnPtr();
+            auto bucket_column = column_map.cloneEmpty();
+            auto & bucket_map = assert_cast<ColumnMap &>(*bucket_column);
+            ColumnPtr nested_ptr = bucket_map.getNestedColumnPtr();
             nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_ptr, rows_offset, limit, settings, map_state->bucket_nested_states[bucket], cache);
+            /// Write back: the nested deserialization may have replaced `nested_ptr` with a
+            /// cloned column (e.g. `SerializationArray` clones when its input is shared, which it
+            /// is here because `nested_ptr` and `bucket_map.nested` initially share the same
+            /// underlying column). Without this, `bucket_column` would keep its empty nested
+            /// column and `collectMapFromBuckets` would assemble an empty result.
+            bucket_map.getNestedColumnPtr() = std::move(nested_ptr);
+            map_buckets[bucket] = std::move(bucket_column);
             settings.path.pop_back();
         }
 
