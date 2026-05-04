@@ -17,7 +17,7 @@ using namespace DB;
 /// This test is useful for assessing the performance of getting the numbers of all currently committing
 /// blocks from ZooKeeper. This is needed to select merges without checking that all block numbers between
 /// parts have been abandoned (see DB::ReplicatedMergeTreeMergePredicate for details).
-int main(int argc, char ** argv)
+int mainEntryExampleGetCurrentInsertsInReplicated(int argc, char ** argv)
 try
 {
     if (argc != 3)
