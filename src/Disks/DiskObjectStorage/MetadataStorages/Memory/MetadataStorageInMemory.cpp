@@ -488,6 +488,22 @@ void MetadataStorageInMemoryTransaction::createHardLink(const std::string & path
         if (metadata_storage.findFile(path_to))
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", path_to);
 
+        /// Match disk-backed semantics (`link(2)`): the destination's parent directory must exist,
+        /// and there must be no directory occupying the destination path. Without these checks the
+        /// in-memory storage can create unreachable orphan entries (e.g. `non_existing/file`) or
+        /// represent a path that is simultaneously a file and a directory prefix.
+        auto last_slash = path_to.rfind('/');
+        if (last_slash != std::string::npos && last_slash > 0)
+        {
+            std::string parent = path_to.substr(0, last_slash + 1);
+            if (!metadata_storage.directories.contains(parent))
+                throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
+                    "Cannot create hardlink at {}: parent directory does not exist", path_to);
+        }
+        if (metadata_storage.directories.contains(path_to + "/"))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                "Cannot create hardlink at {}: a directory already exists at this path", path_to);
+
         /// Share the blob group between source and destination so all hardlinks observe
         /// the same object list, inline data, and modification time (matching disk inode semantics).
         entry->blob_group->ref_count += 1;
