@@ -11,8 +11,9 @@ namespace DB
   * DROP QUOTA [IF EXISTS] name [,...]
   * DROP [SETTINGS] PROFILE [IF EXISTS] name [,...]
   * DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
+  * DROP MASKING POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
   */
-class ParserDropAccessEntityQuery : public IParserBase
+class ParserDropAccessEntityQuery final : public IParserBase
 {
 protected:
     const char * getName() const override { return "DROP access entity query"; }

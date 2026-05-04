@@ -43,10 +43,10 @@ def run_check_concurrent(check_name, check_function, files, nproc=NPROC):
 
     result = Result(
         name=check_name,
-        status=Result.Status.SUCCESS if not results else Result.Status.FAILED,
+        status=Result.Status.OK if not results else Result.Status.FAIL,
         start_time=stop_watch.start_time,
         duration=stop_watch.duration,
-        info=f"errors: {results}" if results else "",
+        info="\n".join(results) if results else "",
     )
     return result
 
@@ -288,6 +288,205 @@ def check_pylint():
     return out
 
 
+def _find_enclosing_function_lines(lines, catch_line_idx):
+    """Return signature lines of the function enclosing the catch at *catch_line_idx*.
+
+    Walks backwards from the catch, tracking brace depth.  When depth goes
+    negative we have reached an enclosing scope's opening brace.  If that
+    scope is a control-flow block (``if``/``else``/``for``/``while``/``try``
+    /``switch``/``do``/``catch``) we reset and keep looking for the actual
+    function scope.  Returns a list of up to 6 source lines around the
+    opening brace (the signature area), or an empty list if nothing is found.
+    """
+    control_flow_re = re.compile(
+        r"^\s*(if\b|else\b|for\b|while\b|try\b|switch\b|do\b|catch\b)"
+    )
+    depth = 0
+    for i in range(catch_line_idx - 1, -1, -1):
+        line = lines[i]
+        stripped = line.strip()
+        if stripped.startswith("//"):
+            continue
+        depth += line.count("}") - line.count("{")
+        if depth < 0:
+            # Crossed into an enclosing scope.  Determine its kind.
+            is_control_flow = control_flow_re.match(stripped) is not None
+            if not is_control_flow:
+                for j in range(i - 1, max(i - 3, -1), -1):
+                    prev = lines[j].strip()
+                    if not prev or prev.startswith("//"):
+                        continue
+                    if control_flow_re.match(prev):
+                        is_control_flow = True
+                    break
+
+            if is_control_flow:
+                # Skip this control-flow scope and keep looking outward.
+                depth = 0
+                continue
+
+            # Looks like a function (or class/namespace) scope.
+            sig = []
+            for j in range(i, max(i - 6, -1), -1):
+                if j < i and (lines[j].strip() == "" or "}" in lines[j]):
+                    break
+                sig.append(lines[j])
+
+            # If the signature has no parentheses, it is likely a
+            # namespace/class scope rather than a function.  In that case
+            # fall through to the function-try-block scan below.
+            if any("(" in l for l in sig):
+                return sig
+            break
+
+    # Handle function-try blocks: "Type func(...) try { ... } catch (...) { ... }"
+    # In this pattern there is no separate function opening brace, so the loop
+    # above never reaches depth < 0 within the function, or it reaches
+    # a namespace/class scope.  Re-scan for a bare ``try`` at depth 0.
+    depth = 0
+    for i in range(catch_line_idx - 1, -1, -1):
+        line = lines[i]
+        stripped = line.strip()
+        if stripped.startswith("//"):
+            continue
+        depth += line.count("}") - line.count("{")
+        if depth < 0:
+            break
+        if depth == 0 and re.match(r"^\s*try\b", stripped):
+            sig = []
+            for j in range(i - 1, max(i - 7, -1), -1):
+                s = lines[j].strip()
+                if not s or s.startswith("//"):
+                    continue
+                if "}" in lines[j]:
+                    break
+                sig.append(lines[j])
+            return sig
+    return []
+
+
+def _is_in_destructor(lines, catch_line_idx):
+    """Check if the catch at the given line index is inside a destructor."""
+    sig = _find_enclosing_function_lines(lines, catch_line_idx)
+    return any(re.search(r"~\w+", l) for l in sig)
+
+
+def _is_in_main_or_fuzzer(lines, catch_line_idx):
+    """Check if the catch is inside ``main`` or ``LLVMFuzzerTestOneInput``."""
+    sig = _find_enclosing_function_lines(lines, catch_line_idx)
+    return any(
+        re.search(r"\b(main|LLVMFuzzerTestOneInput)\b", l) for l in sig
+    )
+
+
+def _get_catch_block_lines(lines, catch_line_idx):
+    """Return lines from the catch statement through the closing brace."""
+    result = []
+    depth = 0
+    started = False
+    for i in range(catch_line_idx, len(lines)):
+        line = lines[i]
+        result.append(line)
+        for ch in line:
+            if ch == "{":
+                started = True
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if started and depth == 0:
+                    return result
+    return result
+
+
+def check_catch_all(files) -> str:
+    """Find ``catch (...)`` blocks that silently swallow exceptions.
+
+    Flags catch-all blocks that do none of the following:
+    * rethrow (``throw;``),
+    * throw a different exception (``throw ...``),
+    * log the error (``tryLogCurrentException``, ``LOG_*``, ``std::cerr``),
+    * terminate (``std::terminate``, ``abort``, ``exit``),
+    * save the exception (``current_exception``),
+    * have a comment containing the word 'Ok'.
+
+    Also skips blocks inside destructors, ``main``/``LLVMFuzzerTestOneInput``,
+    and poco.
+    """
+    violations = []
+    catch_pattern = re.compile(r"\bcatch\s*\(\s*\.\.\.\s*\)")
+    ok_pattern = re.compile(r"(//|/\*).*\bok\b", re.IGNORECASE)
+
+    # Patterns that indicate the exception is handled somehow
+    handled_patterns = [
+        re.compile(r"\bthrow\b"),
+        re.compile(r"\btryLogCurrentException\b"),
+        re.compile(r"\bLOG_(ERROR|WARNING|FATAL)\b"),
+        re.compile(r"\bgetLogger\b"),
+        re.compile(r"\bstd::cerr\b"),
+        re.compile(r"\bstd::terminate\b"),
+        re.compile(r"\babort\s*\("),
+        re.compile(r"\bexit\s*\("),
+        re.compile(r"\bcurrent_exception\b"),
+        re.compile(r"\bgetCurrentExceptionMessage\b"),
+        re.compile(r"\bgetCurrentExceptionCode\b"),
+        re.compile(r"\bgetCurrentExceptionMessageAndPattern\b"),
+        re.compile(r"\bExecutionStatus::fromCurrentException\b"),
+        re.compile(r"\bonBackgroundException\b"),
+        re.compile(r"\bstoreException\b"),
+        re.compile(r"\bSTDERR_FILENO\b"),
+        re.compile(r"\bwriteRetry\b"),
+        re.compile(r"\bhandle_exception\b"),
+        re.compile(r"\bhandleException\b"),
+        re.compile(r"\bfinishWithException\b"),
+    ]
+
+    for file_path in files:
+        if "/poco/" in file_path:
+            continue
+
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
+                lines = fh.readlines()
+        except OSError:
+            continue
+
+        for i, line in enumerate(lines):
+            catch_match = catch_pattern.search(line)
+            if not catch_match:
+                continue
+
+            # Skip if the catch is inside a single-line comment
+            comment_pos = line.find("//")
+            if comment_pos >= 0 and comment_pos < catch_match.start():
+                continue
+
+            block_lines = _get_catch_block_lines(lines, i)
+            body = "".join(block_lines)
+
+            if any(p.search(body) for p in handled_patterns):
+                continue
+
+            if _is_in_destructor(lines, i):
+                continue
+
+            if _is_in_main_or_fuzzer(lines, i):
+                continue
+
+            # Check for an 'Ok' comment in the block and a few lines before
+            context_start = max(0, i - 2)
+            all_lines = lines[context_start:i] + block_lines
+            if any(ok_pattern.search(cl) for cl in all_lines):
+                continue
+
+            violations.append(
+                f"{file_path}:{i + 1}: "
+                "catch (...) that silently swallows exceptions. "
+                "Either handle the exception (log, rethrow, save) or add a comment containing 'Ok' to suppress this warning."
+            )
+
+    return "\n".join(violations)
+
+
 def check_file_names(files):
     files_set = set()
     for file in files:
@@ -392,6 +591,15 @@ if __name__ == "__main__":
                     "path": "./",
                     "exclude_paths": ["contrib/", "metadata/", "programs/server/data"],
                 },
+            )
+        )
+    testname = "catch_all"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_catch_all,
+                files=cpp_files,
             )
         )
     testname = "cpp"

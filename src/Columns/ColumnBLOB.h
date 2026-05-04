@@ -6,7 +6,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
-#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -15,6 +14,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Interpreters/castColumn.h>
 #include <base/defines.h>
+#include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/WeakHash.h>
 
@@ -81,10 +81,10 @@ public:
     BLOB & getBLOB() { return blob; }
     const BLOB & getBLOB() const { return blob; }
 
-    bool wrappedColumnIsSparse() const
+    const ColumnPtr & getWrappedColumn() const
     {
         chassert(wrapped_column);
-        return wrapped_column->isSparse();
+        return wrapped_column;
     }
 
     MutableColumnPtr cloneEmpty() const override
@@ -109,9 +109,9 @@ public:
     {
         WriteBufferFromVector<BLOB> wbuf(blob);
         CompressedWriteBuffer compressed_buffer(wbuf, codec);
-        auto serialization = NativeWriter::getSerialization(client_revision, wrapped_column);
+        auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(client_revision, wrapped_column);
         NativeWriter::writeData(
-            *serialization, wrapped_column.column, compressed_buffer, format_settings, 0, wrapped_column.column->size(), client_revision);
+            *serialization, column_to_write, compressed_buffer, format_settings, 0, column_to_write->size(), client_revision);
         compressed_buffer.finalize();
     }
 
@@ -147,8 +147,8 @@ public:
     TypeIndex getDataType() const override { throwInapplicable(); }
     Field operator[](size_t) const override { throwInapplicable(); }
     void get(size_t, Field &) const override { throwInapplicable(); }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override { throwInapplicable(); }
-    StringRef getDataAt(size_t) const override { throwInapplicable(); }
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwInapplicable(); }
+    std::string_view getDataAt(size_t) const override { throwInapplicable(); }
     bool isDefaultAt(size_t) const override { throwInapplicable(); }
     void insert(const Field &) override { throwInapplicable(); }
     bool tryInsert(const Field &) override { throwInapplicable(); }
@@ -160,14 +160,16 @@ public:
     void insertData(const char *, size_t) override { throwInapplicable(); }
     void insertDefault() override { throwInapplicable(); }
     void popBack(size_t) override { throwInapplicable(); }
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwInapplicable(); }
-    char * serializeValueIntoMemory(size_t, char *) const override { throwInapplicable(); }
-    const char * deserializeAndInsertFromArena(const char *) override { throwInapplicable(); }
-    const char * skipSerializedInArena(const char *) const override { throwInapplicable(); }
+    std::string_view serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
+    char * serializeValueIntoMemory(size_t, char *, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
+    void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwInapplicable(); }
+    void skipSerializedInArena(ReadBuffer &) const override { throwInapplicable(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwInapplicable(); }
     WeakHash32 getWeakHash32() const override { throwInapplicable(); }
     void updateHashFast(SipHash &) const override { throwInapplicable(); }
+
     ColumnPtr filter(const Filter &, ssize_t) const override { throwInapplicable(); }
+    void filter(const Filter &) override { throwInapplicable(); }
     void expand(const Filter &, bool) override { throwInapplicable(); }
     ColumnPtr permute(const Permutation &, size_t) const override { throwInapplicable(); }
     ColumnPtr index(const IColumn &, size_t) const override { throwInapplicable(); }
@@ -191,17 +193,18 @@ public:
         throwInapplicable();
     }
     ColumnPtr replicate(const Offsets &) const override { throwInapplicable(); }
-    MutableColumns scatter(ColumnIndex, const Selector &) const override { throwInapplicable(); }
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t, const Selector &) const override { throwInapplicable(); }
     void gather(ColumnGathererStream &) override { throwInapplicable(); }
-    void getExtremes(Field &, Field &) const override { throwInapplicable(); }
+    void getExtremes(Field &, Field &, size_t, size_t) const override { throwInapplicable(); }
     size_t byteSizeAt(size_t) const override { throwInapplicable(); }
     double getRatioOfDefaultRows(double) const override { throwInapplicable(); }
     UInt64 getNumberOfDefaultRows() const override { throwInapplicable(); }
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwInapplicable(); }
 
     bool hasDynamicStructure() const override { throwInapplicable(); }
-    void takeDynamicStructureFromSourceColumns(const Columns &) override { throwInapplicable(); }
-    void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwInapplicable(); }
+    void takeExactDynamicStructureFrom(const IColumn &) override { throwInapplicable(); }
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwInapplicable(); }
+    void fixDynamicStructure() override { throwInapplicable(); }
 
 private:
     /// Compressed and serialized representation of the wrapped column.

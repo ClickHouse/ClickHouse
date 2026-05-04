@@ -2,12 +2,13 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/assert_cast.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/assert_cast.h>
 
 #include <absl/container/inlined_vector.h>
 
@@ -106,6 +107,31 @@ public:
         return nested_function->getName();
     }
 
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (!this->haveSameDefinition(rhs))
+            return false;
+
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        if constexpr (result_is_nullable)
+            if (getFlag(rhs_place))
+                setFlag(place);
+
+        const size_t rhs_prefix_size = result_is_nullable ? rhs_nested->alignOfData() : 0;
+        nested_function->mergeStateFromDifferentVariant(nestedPlace(place), *rhs_nested, rhs_place + rhs_prefix_size, arena);
+    }
+
     static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
     {
         if constexpr (result_is_nullable)
@@ -168,7 +194,28 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
+        if constexpr (result_is_nullable)
+            if (getFlag(rhs))
+                setFlag(place);
+
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, is_cancelled, arena);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        if constexpr (result_is_nullable)
+            for (size_t i = 1; i < places.size(); ++i)
+                if (getFlag(places[i]))
+                {
+                    setFlag(places[0]);
+                    break;
+                }
+
+        AggregateDataPtrs nested_places(places.size());
+        for (size_t i = 0; i < places.size(); ++i)
+            nested_places[i] = nestedPlace(places[i]);
+
+        nested_function->parallelizeMergeMulti(nested_places, thread_pool, is_cancelled, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
@@ -204,7 +251,7 @@ public:
                     nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
                 else
                     nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                to_concrete.getNullMapData().push_back(0);
+                to_concrete.getNullMapData().push_back(false);
             }
             else
             {
@@ -404,6 +451,66 @@ public:
                 this->setFlag(place);
     }
 
+    void addManyDefaults(
+        AggregateDataPtr __restrict /*place*/,
+        const IColumn ** /*columns*/,
+        size_t /*length*/,
+        Arena * /*arena*/) const override
+    {
+    }
+
+    void addBatchSparseSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto & offsets = column_sparse.getOffsetsData();
+        const auto & values = column_sparse.getValuesColumn();
+        const auto * nested_column = &assert_cast<const ColumnNullable &>(values).getNestedColumn();
+
+        auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
+        auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
+
+        if (from >= to)
+            return;
+
+        this->setFlag(place);
+        this->nested_function->addBatchSinglePlace(from, to, this->nestedPlace(place), &nested_column, arena, -1);
+    }
+
+    void addBatchSparse(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto & offsets = column_sparse.getOffsetsData();
+        const auto & values = column_sparse.getValuesColumn();
+        const auto * nested_column = &assert_cast<const ColumnNullable &>(values).getNestedColumn();
+
+        size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
+        size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
+
+        for (size_t i = from; i < to; ++i)
+        {
+            size_t offset = offsets[i];
+            if (places[offset])
+            {
+                this->nested_function->add(
+                    this->nestedPlace(places[offset] + place_offset),
+                    &nested_column, i + 1, arena);
+
+                this->setFlag(places[offset] + place_offset);
+            }
+        }
+    }
+
 #if USE_EMBEDDED_COMPILER
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
@@ -515,7 +622,7 @@ public:
         ssize_t if_argument_pos) const final
     {
         /// We are going to merge all the flags into a single one to be able to call the nested batching functions
-        std::vector<const UInt8 *> nullable_filters;
+        VectorWithMemoryTracking<const UInt8 *> nullable_filters;
         absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
 
         std::unique_ptr<UInt8[]> final_flags;
@@ -617,7 +724,7 @@ public:
         ValuesWithType wrapped_arguments;
         wrapped_arguments.reserve(arguments_size);
 
-        std::vector<llvm::Value *> is_null_values;
+        VectorWithMemoryTracking<llvm::Value *> is_null_values;
         is_null_values.reserve(arguments_size);
 
         for (size_t i = 0; i < arguments_size; ++i)

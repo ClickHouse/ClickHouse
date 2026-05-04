@@ -150,7 +150,23 @@ public:
 
 REGISTER_FUNCTION(S2RectUnion)
 {
-    factory.registerFunction<FunctionS2RectUnion>();
+    FunctionDocumentation::Description description = R"(
+Returns the smallest S2 latitude-longitude rectangle that contains the union of two input rectangles. Each rectangle is represented by a pair of S2 cell identifiers for its low and high corners.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2RectUnion(s2Rect1Low, s2Rect1High, s2Rect2Low, s2Rect2High)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s2Rect1Low", "S2 cell identifier of the low vertex of the first rectangle.", {"UInt64"}},
+        {"s2Rect1High", "S2 cell identifier of the high vertex of the first rectangle.", {"UInt64"}},
+        {"s2Rect2Low", "S2 cell identifier of the low vertex of the second rectangle.", {"UInt64"}},
+        {"s2Rect2High", "S2 cell identifier of the high vertex of the second rectangle.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (s2RectLow, s2RectHigh) representing the union rectangle.", {"Tuple(UInt64, UInt64)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2RectUnion(5765131099823669248, 5765131099956887552, 5765131100074868736, 5765131100088901632)", ""}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2RectUnion>(documentation);
 }
 
 

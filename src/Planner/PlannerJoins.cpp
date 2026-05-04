@@ -13,6 +13,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDictionary.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageSnapshot.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -38,6 +40,7 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/PasteJoin.h>
+#include <Interpreters/SpillingHashJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -66,6 +69,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
+    extern const SettingsUInt64 max_bytes_before_external_join;
 }
 
 namespace ServerSetting
@@ -274,7 +278,15 @@ void buildJoinClauseImpl(
     std::string function_name;
     auto * function_node = join_expression->as<FunctionNode>();
     if (function_node)
-        function_name = function_node->getFunction()->getName();
+    {
+        function_name = function_node->getFunctionName();
+        if (!function_node->isOrdinaryFunction())
+        {
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
+                function_name, function_node->formatASTForErrorMessage());
+        }
+    }
 
     auto asof_inequality = getASOFJoinInequality(function_name);
     bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
@@ -470,7 +482,15 @@ void buildJoinClause(
     std::string function_name;
     auto * function_node = join_expression->as<FunctionNode>();
     if (function_node)
-        function_name = function_node->getFunction()->getName();
+    {
+        function_name = function_node->getFunctionName();
+        if (!function_node->isOrdinaryFunction())
+        {
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
+                function_name, function_node->formatASTForErrorMessage());
+        }
+    }
 
     /// For 'and' function go into children
     if (function_name == "and")
@@ -679,7 +699,7 @@ std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
 
     bool has_residual_filters = false;
     JoinClauses join_clauses;
-    const auto & function_name = function_node.getFunction()->getName();
+    const auto & function_name = function_node.getFunctionName();
     if (function_name == "or")
     {
         for (const auto & child : function_node.getArguments())
@@ -724,6 +744,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context)
 {
+    auto context = planner_context->getQueryContext();
     ActionsDAG left_join_actions(left_table_expression_columns);
     ActionsDAG right_join_actions(right_table_expression_columns);
     ColumnsWithTypeAndName result_relation_columns;
@@ -884,10 +905,10 @@ JoinClausesAndActions buildJoinClausesAndActions(
                 }
 
                 if (!left_key_node->result_type->equals(*common_type))
-                    left_key_node = &left_join_actions.addCast(*left_key_node, common_type, {});
+                    left_key_node = &left_join_actions.addCast(*left_key_node, common_type, {}, context);
 
                 if (!is_join_with_special_storage && !right_key_node->result_type->equals(*common_type))
-                    right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {});
+                    right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {}, context);
             }
 
             if (join_clause.isNullsafeCompareKey(i) && isNullableOrLowCardinalityNullable(left_key_node->result_type) && isNullableOrLowCardinalityNullable(right_key_node->result_type))
@@ -1142,6 +1163,40 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
+        if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
+        {
+            if (table_join->allowParallelHashJoin())
+            {
+                const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !params.rhs_size_estimation
+                    || (*params.rhs_size_estimation >= params.parallel_hash_join_threshold);
+                if (use_parallel_hash)
+                {
+                    StatsCollectingParams stats_collecting_params{
+                        params.hash_table_key_hash,
+                        params.collect_hash_table_stats_during_joins,
+                        params.max_entries_for_hash_table_stats,
+                        params.max_size_to_preallocate_for_joins};
+                    return std::make_shared<SpillingHashJoin>(
+                        table_join,
+                        left_table_expression_header,
+                        right_table_expression_header,
+                        table_join->getTempDataOnDisk(),
+                        params.grace_hash_join_initial_buckets,
+                        params.grace_hash_join_max_buckets,
+                        params.max_threads,
+                        stats_collecting_params);
+                }
+            }
+
+            return std::make_shared<SpillingHashJoin>(
+                table_join,
+                left_table_expression_header,
+                right_table_expression_header,
+                table_join->getTempDataOnDisk(),
+                params.grace_hash_join_initial_buckets,
+                params.grace_hash_join_max_buckets);
+        }
+
         if (table_join->allowParallelHashJoin())
         {
             const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !params.rhs_size_estimation
@@ -1169,6 +1224,11 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
     {
+        if (!table_join->getTempDataOnDisk())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Grace hash join requires temporary storage. Set `tmp_path` or `tmp_policy` in server configuration");
+
         if (GraceHashJoin::isSupported(table_join))
         {
             return std::make_shared<GraceHashJoin>(
@@ -1177,12 +1237,41 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 table_join,
                 left_table_expression_header,
                 right_table_expression_header,
-                Context::getGlobalContextInstance()->getTempDataOnDisk());
+                table_join->getTempDataOnDisk());
         }
     }
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
+        if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
+        {
+            if (table_join->allowParallelHashJoin())
+            {
+                StatsCollectingParams stats_collecting_params{
+                    params.hash_table_key_hash,
+                    params.collect_hash_table_stats_during_joins,
+                    params.max_entries_for_hash_table_stats,
+                    params.max_size_to_preallocate_for_joins};
+                return std::make_shared<SpillingHashJoin>(
+                    table_join,
+                    left_table_expression_header,
+                    right_table_expression_header,
+                    table_join->getTempDataOnDisk(),
+                    params.grace_hash_join_initial_buckets,
+                    params.grace_hash_join_max_buckets,
+                    params.max_threads,
+                    stats_collecting_params);
+            }
+
+            return std::make_shared<SpillingHashJoin>(
+                table_join,
+                left_table_expression_header,
+                right_table_expression_header,
+                table_join->getTempDataOnDisk(),
+                params.grace_hash_join_initial_buckets,
+                params.grace_hash_join_max_buckets);
+        }
+
         if (MergeJoin::isSupported(table_join))
             return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);
@@ -1208,8 +1297,10 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     max_size_to_preallocate_for_joins = settings[Setting::max_size_to_preallocate_for_joins];
     max_threads = settings[Setting::max_threads];
 
+    max_bytes_before_external_join = settings[Setting::max_bytes_before_external_join];
+
     initial_query_id = context.getInitialQueryId();
-    lock_acquire_timeout = settings[Setting::lock_acquire_timeout];
+    lock_acquire_timeout = std::chrono::milliseconds(settings[Setting::lock_acquire_timeout].totalMilliseconds());
 }
 
 JoinAlgorithmParams::JoinAlgorithmParams(
@@ -1232,6 +1323,8 @@ JoinAlgorithmParams::JoinAlgorithmParams(
 
     max_size_to_preallocate_for_joins = join_settings.max_size_to_preallocate_for_joins;
     max_threads = max_threads_;
+
+    max_bytes_before_external_join = join_settings.max_bytes_before_external_join;
 
     initial_query_id = std::move(initial_query_id_);
     lock_acquire_timeout = lock_acquire_timeout_;

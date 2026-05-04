@@ -11,7 +11,7 @@ namespace DB
 
 ASTPtr ASTColumnsRegexpMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTColumnsRegexpMatcher>(*this);
+    auto clone = make_intrusive<ASTColumnsRegexpMatcher>(*this);
     clone->children.clear();
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
@@ -69,7 +69,7 @@ const String & ASTColumnsRegexpMatcher::getPattern() const
 
 ASTPtr ASTColumnsListMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTColumnsListMatcher>(*this);
+    auto clone = make_intrusive<ASTColumnsListMatcher>(*this);
     clone->children.clear();
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
@@ -89,7 +89,7 @@ void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
         writeCString(".", ostr);
     }
     writeCString("COLUMNS(", ostr);
-    for (auto * it = column_list->children.begin(); it != column_list->children.end(); ++it)
+    for (auto it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
             writeCString(", ", ostr);
@@ -127,7 +127,7 @@ void ASTColumnsListMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
 ASTPtr ASTQualifiedColumnsRegexpMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTQualifiedColumnsRegexpMatcher>(*this);
+    auto clone = make_intrusive<ASTQualifiedColumnsRegexpMatcher>(*this);
     clone->children.clear();
 
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
@@ -179,7 +179,7 @@ void ASTQualifiedColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const Form
 
 ASTPtr ASTQualifiedColumnsListMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTQualifiedColumnsListMatcher>(*this);
+    auto clone = make_intrusive<ASTQualifiedColumnsListMatcher>(*this);
     clone->children.clear();
 
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
@@ -198,7 +198,7 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     qualifier->appendColumnName(ostr);
     writeCString(".COLUMNS(", ostr);
 
-    for (auto * it = column_list->children.begin(); it != column_list->children.end(); ++it)
+    for (auto it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
             writeCString(", ", ostr);

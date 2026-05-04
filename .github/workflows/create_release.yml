@@ -233,12 +233,18 @@ jobs:
           configs=(
             "ubuntu:../../docker/server/Dockerfile.ubuntu"
             "alpine:../../docker/server/Dockerfile.alpine"
+            "distroless:../../docker/server/Dockerfile.distroless"
           )
 
           for config in "${configs[@]}"; do
             # Split the config into variant and Dockerfile path
             variant=${config%%:*}
             dockerfile=${config##*:}
+
+            if [ ! -f "$dockerfile" ]; then
+              echo "Skipping $variant: $dockerfile not found at this tag"
+              continue
+            fi
 
             VERSION_SUFFIX=$([ "$variant" = "ubuntu" ] && echo "" || echo "-$variant")
             LABEL_VERSION="${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
@@ -257,6 +263,8 @@ jobs:
             # shellcheck disable=SC2086,SC2048
             docker buildx build \
               --platform=linux/amd64,linux/arm64 \
+              --provenance=true  \
+              --sbom=true \
               --output=type=registry \
               --label=com.clickhouse.build.version="$LABEL_VERSION" \
               ${TAGS[*]} \
@@ -295,12 +303,18 @@ jobs:
           configs=(
             "ubuntu:../../docker/keeper/Dockerfile.ubuntu"
             "alpine:../../docker/keeper/Dockerfile.alpine"
+            "distroless:../../docker/keeper/Dockerfile.distroless"
           )
 
           for config in "${configs[@]}"; do
             # Split the config into variant and Dockerfile path
             variant=${config%%:*}
             dockerfile=${config##*:}
+
+            if [ ! -f "$dockerfile" ]; then
+              echo "Skipping $variant: $dockerfile not found at this tag"
+              continue
+            fi
 
             VERSION_SUFFIX=$([ "$variant" = "ubuntu" ] && echo "" || echo "-$variant")
             LABEL_VERSION="${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
@@ -319,6 +333,8 @@ jobs:
             # shellcheck disable=SC2086,SC2048
             docker buildx build \
               --platform=linux/amd64,linux/arm64 \
+              --provenance=true  \
+              --sbom=true \
               --output=type=registry \
               --label=com.clickhoghuse.build.version="$LABEL_VERSION" \
               ${TAGS[*]} \

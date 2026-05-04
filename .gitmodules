@@ -6,7 +6,7 @@
 	url = https://github.com/Thalhammer/jwt-cpp
 [submodule "contrib/zstd"]
 	path = contrib/zstd
-	url = https://github.com/facebook/zstd
+	url = https://github.com/ClickHouse/zstd
 [submodule "contrib/lz4"]
 	path = contrib/lz4
 	url = https://github.com/lz4/lz4
@@ -33,7 +33,7 @@
 	url = https://github.com/ClickHouse/mariadb-connector-c
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
-	url = https://github.com/jemalloc/jemalloc
+	url = https://github.com/ClickHouse/jemalloc
 [submodule "contrib/google-protobuf"]
 	path = contrib/google-protobuf
 	url = https://github.com/ClickHouse/google-protobuf.git
@@ -45,7 +45,7 @@
 	url = https://github.com/ClickHouse/arrow
 [submodule "contrib/thrift"]
 	path = contrib/thrift
-	url = https://github.com/apache/thrift
+	url = https://github.com/ClickHouse/thrift
 [submodule "contrib/libhdfs3"]
 	path = contrib/libhdfs3
 	url = https://github.com/ClickHouse/libhdfs3
@@ -63,7 +63,7 @@
 	url = https://github.com/ClickHouse/cppkafka
 [submodule "contrib/brotli"]
 	path = contrib/brotli
-	url = https://github.com/google/brotli
+	url = https://github.com/ClickHouse/brotli
 [submodule "contrib/h3"]
 	path = contrib/h3
 	url = https://github.com/ClickHouse/h3
@@ -85,18 +85,6 @@
 [submodule "contrib/grpc"]
 	path = contrib/grpc
 	url = https://github.com/ClickHouse/grpc
-[submodule "contrib/aws"]
-	path = contrib/aws
-	url = https://github.com/ClickHouse/aws-sdk-cpp
-[submodule "contrib/aws-c-event-stream"]
-	path = contrib/aws-c-event-stream
-	url = https://github.com/awslabs/aws-c-event-stream
-[submodule "contrib/aws-c-common"]
-	path = contrib/aws-c-common
-	url = https://github.com/awslabs/aws-c-common.git
-[submodule "contrib/aws-checksums"]
-	path = contrib/aws-checksums
-	url = https://github.com/awslabs/aws-checksums
 [submodule "contrib/curl"]
 	path = contrib/curl
 	url = https://github.com/curl/curl
@@ -118,7 +106,7 @@
 	ignore = untracked
 [submodule "contrib/msgpack-c"]
 	path = contrib/msgpack-c
-	url = https://github.com/msgpack/msgpack-c
+	url = https://github.com/ClickHouse/msgpack-c
 [submodule "contrib/libcpuid"]
 	path = contrib/libcpuid
 	url = https://github.com/anrieff/libcpuid
@@ -136,7 +124,7 @@
 	url = https://github.com/ClickHouse/libuv
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
-	url = https://github.com/fmtlib/fmt
+	url = https://github.com/ClickHouse/fmt
 [submodule "contrib/krb5"]
 	path = contrib/krb5
 	url = https://github.com/ClickHouse/krb5
@@ -151,16 +139,13 @@
 	url = https://github.com/danlark1/miniselect
 [submodule "contrib/rocksdb"]
 	path = contrib/rocksdb
-	url = https://github.com/ClickHouse/rocksdb
+	url = https://github.com/facebook/rocksdb
 [submodule "contrib/xz"]
 	path = contrib/xz
-	url = https://github.com/xz-mirror/xz
+	url = https://github.com/tukaani-project/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
 	url = https://github.com/ClickHouse/abseil-cpp.git
-[submodule "contrib/dragonbox"]
-	path = contrib/dragonbox
-	url = https://github.com/ClickHouse/dragonbox
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
@@ -218,18 +203,6 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
-[submodule "contrib/qpl"]
-	path = contrib/qpl
-	url = https://github.com/intel/qpl
-[submodule "contrib/idxd-config"]
-	path = contrib/idxd-config
-	url = https://github.com/ClickHouse/idxd-config.git
-[submodule "contrib/QAT-ZSTD-Plugin"]
-	path = contrib/QAT-ZSTD-Plugin
-	url = https://github.com/intel/QAT-ZSTD-Plugin
-[submodule "contrib/qatlib"]
-	path = contrib/qatlib
-	url = https://github.com/intel/qatlib
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
@@ -238,7 +211,7 @@
 	url = https://github.com/ClickHouse/nats.c
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
-	url = https://github.com/VectorCamp/vectorscan.git
+	url = https://github.com/ClickHouse/vectorscan.git
 [submodule "contrib/llvm-project"]
 	path = contrib/llvm-project
 	url = https://github.com/ClickHouse/llvm-project
@@ -269,6 +242,18 @@
 [submodule "contrib/ulid-c"]
 	path = contrib/ulid-c
 	url = https://github.com/ClickHouse/ulid-c.git
+[submodule "contrib/aws"]
+	path = contrib/aws
+	url = https://github.com/ClickHouse/aws-sdk-cpp
+[submodule "contrib/aws-c-event-stream"]
+	path = contrib/aws-c-event-stream
+	url = https://github.com/awslabs/aws-c-event-stream
+[submodule "contrib/aws-c-common"]
+	path = contrib/aws-c-common
+	url = https://github.com/awslabs/aws-c-common.git
+[submodule "contrib/aws-checksums"]
+	path = contrib/aws-checksums
+	url = https://github.com/awslabs/aws-checksums
 [submodule "contrib/aws-crt-cpp"]
 	path = contrib/aws-crt-cpp
 	url = https://github.com/ClickHouse/aws-crt-cpp
@@ -315,9 +300,6 @@
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/c-ares/c-ares.git
-[submodule "contrib/incbin"]
-	path = contrib/incbin
-	url = https://github.com/graphitemaster/incbin.git
 [submodule "contrib/usearch"]
 	path = contrib/usearch
 	url = https://github.com/ClickHouse/usearch.git
@@ -327,9 +309,6 @@
 [submodule "contrib/FP16"]
 	path = contrib/FP16
 	url = https://github.com/Maratyszcza/FP16.git
-[submodule "contrib/aklomp-base64"]
-	path = contrib/aklomp-base64
-	url = https://github.com/aklomp/base64.git
 [submodule "contrib/pocketfft"]
 	path = contrib/pocketfft
 	url = https://github.com/mreineck/pocketfft.git
@@ -353,7 +332,7 @@
 	url = https://github.com/ClickHouse/double-conversion.git
 [submodule "contrib/mongo-cxx-driver"]
 	path = contrib/mongo-cxx-driver
-	url = https://github.com/ClickHouse/mongo-cxx-driver.git
+	url = https://github.com/mongodb/mongo-cxx-driver.git
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
 	url = https://github.com/ClickHouse/mongo-c-driver.git
@@ -363,6 +342,15 @@
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git
+[submodule "contrib/wasmedge"]
+	path = contrib/wasmedge
+	url = https://github.com/WasmEdge/WasmEdge.git
+[submodule "contrib/spdlog"]
+	path = contrib/spdlog
+	url = https://github.com/gabime/spdlog.git
+[submodule "contrib/wasmtime"]
+	path = contrib/wasmtime
+	url = https://github.com/ClickHouse/wasmtime
 [submodule "contrib/delta-kernel-rs"]
 	path = contrib/delta-kernel-rs
 	url = https://github.com/ClickHouse/delta-kernel-rs.git
@@ -380,10 +368,25 @@
 	url = https://github.com/nlohmann/json.git
 [submodule "contrib/crc32c"]
 	path = contrib/crc32c
-	url = https://github.com/google/crc32c.git
+	url = https://github.com/ClickHouse/crc32c
 [submodule "contrib/StringZilla"]
 	path = contrib/StringZilla
 	url = https://github.com/ClickHouse/StringZilla.git
+[submodule "contrib/simdcomp"]
+	path = contrib/simdcomp
+	url = https://github.com/fast-pack/simdcomp.git
 [submodule "contrib/antlr4-cpp-runtime"]
 	path = contrib/antlr4-cpp-runtime
 	url = https://github.com/antlr/antlr4.git
+[submodule "contrib/base64"]
+	path = contrib/base64
+	url = https://github.com/ClickHouse/base64.git
+[submodule "contrib/libcotp"]
+	path = contrib/libcotp
+	url = https://github.com/paolostivanin/libcotp.git
+[submodule "contrib/clickstack"]
+	path = contrib/clickstack
+	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/zmij"]
+	path = contrib/zmij
+	url = https://github.com/vitaut/zmij.git

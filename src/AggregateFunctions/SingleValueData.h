@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <base/AlignedUnion.h>
-#include <base/StringRef.h>
 
 namespace DB
 {
@@ -289,9 +288,9 @@ private:
     bool isSmall() const { return capacity == 0; }
     char * getDataMutable();
     const char * getData() const;
-    StringRef getStringRef() const;
+    std::string_view getStringView() const;
     void allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena);
-    void changeImpl(StringRef value, Arena * arena);
+    void changeImpl(std::string_view value, Arena * arena);
 
 public:
     static constexpr bool is_compilable = false;

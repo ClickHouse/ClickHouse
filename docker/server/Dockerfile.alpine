@@ -35,7 +35,7 @@ RUN arch=${TARGETARCH:-amd64} \
 # lts / testing / prestable / etc
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
-ARG VERSION="25.9.3.48"
+ARG VERSION="26.3.9.8"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 ARG DIRECT_DOWNLOAD_URLS=""
 
@@ -50,19 +50,32 @@ ARG DEFAULT_GID="101"
 RUN addgroup -S -g "${DEFAULT_GID}" clickhouse && \
     adduser -S -h "/var/lib/clickhouse" -s /bin/bash -G clickhouse -g "ClickHouse server" -u "${DEFAULT_UID}" clickhouse
 
+ARG WGET_RETRIES=5
+ARG WGET_RETRY_DELAY=1
+
 RUN arch=${TARGETARCH:-amd64} \
     && cd /tmp \
+    && wget_with_retry() { \
+        local url="$1"; local attempt=1; \
+        while [ "$attempt" -le "${WGET_RETRIES}" ]; do \
+            if wget -c -q "$url"; then return 0; fi; \
+            echo "Attempt $attempt/${WGET_RETRIES} failed for $url, retrying in ${WGET_RETRY_DELAY}s..."; \
+            sleep "${WGET_RETRY_DELAY}"; \
+            attempt=$((attempt + 1)); \
+        done; \
+        echo "ERROR: Failed to download $url after ${WGET_RETRIES} attempts"; return 1; \
+    } \
     && if [ -n "${DIRECT_DOWNLOAD_URLS}" ]; then \
         echo "installing from provided urls with tgz packages: ${DIRECT_DOWNLOAD_URLS}" \
         && for url in $DIRECT_DOWNLOAD_URLS; do \
             echo "Get ${url}" \
-            && wget -c -q "$url" \
+            && wget_with_retry "$url" \
         ; done \
     else \
         for package in ${PACKAGES}; do \
             echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
-            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
-            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz.sha512" \
+            && wget_with_retry "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
+            && wget_with_retry "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz.sha512" \
         ; done \
     fi \
     && cat *.tgz.sha512 | sed 's:/output/:/tmp/:' | sha512sum -c \

@@ -179,7 +179,7 @@ private:
             const auto * map_type = static_cast<arrow::MapType *>(field_type.get());
             auto index_snapshot = current_start_index;
             current_start_index += countIndicesForType(map_type->key_type());
-            calculateFieldIndices(*map_type->item_field(), Nested::concatenateName(field_name, "value"), current_start_index, result, name_prefix);
+            calculateFieldIndices(*map_type->item_field(), field_name, current_start_index, result, name_prefix);
             index_info.first = index_snapshot;
         }
         else

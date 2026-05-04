@@ -1,0 +1,337 @@
+name: Retry Infrastructure Failures
+
+on:
+  schedule:
+    - cron: '43 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  pull-requests: write
+
+jobs:
+  retry-failed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retry PR runs failed due to infrastructure errors
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          MAX_RERUNS=10
+          rerun_count=0
+          cutoff=$(date -u -d '6 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+
+          echo "Looking for failed PR workflow runs since $cutoff..."
+          echo ""
+
+          # Get recent failed runs for the PR workflow that have not been retried yet
+          run_ids=$(gh run list \
+            --repo "$GH_REPO" \
+            --workflow pull_request.yml \
+            --status failure \
+            --limit 50 \
+            --json databaseId,attempt,createdAt \
+            --jq ".[] | select(.attempt == 1 and .createdAt >= \"$cutoff\") | .databaseId")
+
+          if [ -z "$run_ids" ]; then
+            echo "No recent failed runs found."
+            exit 0
+          fi
+
+          for run_id in $run_ids; do
+            if [ "$rerun_count" -ge "$MAX_RERUNS" ]; then
+              echo "Reached maximum of $MAX_RERUNS reruns, stopping."
+              break
+            fi
+
+            run_url="https://github.com/$GH_REPO/actions/runs/$run_id"
+            echo "Checking run $run_url ..."
+
+            should_rerun=false
+
+            # Fetch all job data once (reused for multiple checks below)
+            jobs_raw=$(gh api "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" --paginate)
+
+            # Collect per-job verdicts across all pages (runs can have >100 jobs).
+            # Each failed job emits "true" (infrastructure) or "false" (real failure).
+            # A job is considered an infrastructure failure if:
+            # - it is the "Config Workflow" or "Finish Workflow" job (pipeline plumbing,
+            #   not actual tests — always treated as infrastructure failure), or
+            # - it never reached its main "Run" step (failed during checkout/setup), or
+            # - the "Run" step was skipped, or
+            # - the "Run" step failed almost immediately (under 2 minutes), indicating
+            #   a setup/download issue (e.g. missing S3 credentials) rather than a real
+            #   test failure
+            verdicts=$(echo "$jobs_raw" | jq -r '
+              .jobs[] | select(.conclusion == "failure") |
+              if .name == "Config Workflow" or .name == "Finish Workflow" then true
+              else
+                [.steps[] | select(.name == "Run")] |
+                if length == 0 then true
+                elif .[0].conclusion == "skipped" then true
+                elif .[0].conclusion == "failure" then
+                  ((.[0].completed_at | fromdateiso8601) -
+                   (.[0].started_at | fromdateiso8601)) < 120
+                else false
+                end
+              end
+            ')
+
+            # Infrastructure failure = at least one failed job, and all of them are infra
+            if [ -z "$verdicts" ]; then
+              :
+            elif echo "$verdicts" | grep -q "false"; then
+              :
+            else
+              should_rerun=true
+              echo "  Infrastructure failure detected (job-level heuristic)."
+            fi
+
+            # Fetch run metadata once for all checks below
+            run_data=$(gh api "repos/$GH_REPO/actions/runs/$run_id" \
+              --jq '{pr: .pull_requests[0].number, sha: .head_sha}')
+            pr_number=$(echo "$run_data" | jq -r '.pr // empty')
+            run_sha=$(echo "$run_data" | jq -r '.sha')
+
+            # If the job-level heuristic didn't trigger, check Praktika result JSONs
+            # on S3 for failures at the "Checkout Submodules" sub-step (e.g. transient
+            # DNS failures cloning git submodules).
+            if [ "$should_rerun" = "false" ] && [ -n "$verdicts" ] && [ -n "$pr_number" ] && [ -n "$run_sha" ]; then
+              # Get names of failed jobs (excluding pipeline plumbing)
+              failed_job_names=$(echo "$jobs_raw" | jq -r '
+                .jobs[] | select(.conclusion == "failure") |
+                select(.name != "Config Workflow" and .name != "Finish Workflow") |
+                .name
+              ')
+
+              all_checkout_failures=true
+              while IFS= read -r job_name; do
+                [ -z "$job_name" ] && continue
+                # Normalize job name to match Praktika result file naming:
+                # lowercase, replace non-alphanumeric chars with underscore, collapse runs
+                normalized=$(echo "$job_name" | tr '[:upper:]' '[:lower:]' | \
+                  sed 's/[^a-z0-9_]/_/g; s/__*/_/g')
+                result_url="https://s3.amazonaws.com/clickhouse-test-reports/PRs/${pr_number}/${run_sha}/result_${normalized}.json"
+
+                result_json=$(curl -sf --compressed "$result_url" 2>/dev/null || true)
+                if [ -z "$result_json" ]; then
+                  all_checkout_failures=false
+                  break
+                fi
+
+                # Check: all failed sub-results must be "Checkout Submodules"
+                has_non_checkout_failure=$(echo "$result_json" | jq -r '
+                  [.results[] | select(.status == "failure" or .status == "error") |
+                   .name] | map(select(. != "Checkout Submodules")) | length > 0
+                ')
+                if [ "$has_non_checkout_failure" = "true" ]; then
+                  all_checkout_failures=false
+                  break
+                fi
+              done <<< "$failed_job_names"
+
+              if [ "$all_checkout_failures" = "true" ] && [ -n "$failed_job_names" ]; then
+                should_rerun=true
+                echo "  Infrastructure failure detected (submodule checkout failure in Praktika results)."
+              fi
+            fi
+
+            # If still not marked for rerun, check Praktika result JSONs for
+            # infrastructure error patterns in the top-level info field (e.g. network
+            # failures during docker pull, disk full, OOM).  This catches cases where
+            # the job reached the "Run" step but failed due to infra issues before
+            # running any tests, so the sub-results list is empty.
+            if [ "$should_rerun" = "false" ] && [ -n "$verdicts" ] && [ -n "$pr_number" ] && [ -n "$run_sha" ]; then
+              infra_patterns="network is unreachable|No space left on device|Cannot allocate memory|Name or service not known|Temporary failure in name resolution|Connection reset by peer|Cannot connect to the Docker daemon|OCI runtime create failed"
+
+              failed_job_names_infra=$(echo "$jobs_raw" | jq -r '
+                .jobs[] | select(.conclusion == "failure") |
+                select(.name != "Config Workflow" and .name != "Finish Workflow") |
+                .name
+              ')
+
+              all_infra=true
+              has_jobs=false
+              while IFS= read -r job_name; do
+                [ -z "$job_name" ] && continue
+                has_jobs=true
+                normalized=$(echo "$job_name" | tr '[:upper:]' '[:lower:]' | \
+                  sed 's/[^a-z0-9_]/_/g; s/__*/_/g')
+                result_url="https://s3.amazonaws.com/clickhouse-test-reports/PRs/${pr_number}/${run_sha}/result_${normalized}.json"
+
+                result_json=$(curl -sf --compressed "$result_url" 2>/dev/null || true)
+                if [ -z "$result_json" ]; then
+                  all_infra=false
+                  break
+                fi
+
+                job_status=$(echo "$result_json" | jq -r '.status // empty')
+                job_info=$(echo "$result_json" | jq -r '.info // empty')
+                if [ "$job_status" != "error" ] || [ -z "$job_info" ]; then
+                  all_infra=false
+                  break
+                fi
+                if ! echo "$job_info" | grep -qiE "$infra_patterns"; then
+                  all_infra=false
+                  break
+                fi
+              done <<< "$failed_job_names_infra"
+
+              if [ "$all_infra" = "true" ] && [ "$has_jobs" = "true" ]; then
+                should_rerun=true
+                echo "  Infrastructure failure detected (infra error pattern in Praktika results)."
+              fi
+            fi
+
+            # Check if "Config Workflow" failed in its "Run" step (e.g. due to
+            # pr_labels_and_category.py rejecting the changelog category).  If the PR
+            # description was edited after the failure (same HEAD commit, so no new
+            # workflow run was triggered), re-run to pick up the fix.
+            if [ "$should_rerun" = "false" ]; then
+              config_failed_at=$(echo "$jobs_raw" | jq -r '
+                [.jobs[]
+                 | select(.name == "Config Workflow" and .conclusion == "failure")
+                 | .steps[] | select(.name == "Run" and .conclusion == "failure")
+                 | .completed_at
+                ] | first // empty
+              ')
+
+              if [ -n "$config_failed_at" ] && [ -n "$pr_number" ]; then
+                pr_data=$(gh api "repos/$GH_REPO/pulls/$pr_number" \
+                  --jq '{sha: .head.sha, updated: .updated_at}')
+                pr_sha=$(echo "$pr_data" | jq -r '.sha')
+                pr_updated=$(echo "$pr_data" | jq -r '.updated')
+
+                if [ "$run_sha" = "$pr_sha" ] && [[ "$pr_updated" > "$config_failed_at" ]]; then
+                  should_rerun=true
+                  echo "  Config Workflow failed but PR #$pr_number was updated after — rerunning."
+                fi
+              fi
+            fi
+
+            if [ "$should_rerun" = "true" ]; then
+              if gh run rerun "$run_id" --repo "$GH_REPO"; then
+                rerun_count=$((rerun_count + 1))
+                echo "  Triggered rerun: $run_url/attempts/2"
+              else
+                echo "  Failed to trigger rerun (may already be rerunning)"
+              fi
+            else
+              echo "  Not an infrastructure failure, skipping."
+            fi
+
+            echo ""
+          done
+
+          echo "Done. Triggered $rerun_count rerun(s)."
+
+  fix-stuck-auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fix PRs stuck with auto-merge enabled but not queued
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          echo "Looking for PRs with auto-merge enabled but not queued..."
+          echo ""
+
+          now=$(date +%s)
+          cutoff_seconds=3600  # 60 minutes
+
+          # Get open PRs with auto-merge enabled that have mergeStateStatus CLEAN
+          # or UNKNOWN (checks passed but not queued into merge queue).
+          # UNKNOWN can happen when GitHub's merge status evaluation gets stuck.
+          # We use GraphQL pagination (20 PRs per page) to avoid 502 errors
+          # that occur when fetching too many PRs in a single request.
+          owner="${GH_REPO%%/*}"
+          repo_name="${GH_REPO##*/}"
+
+          cat > /tmp/query.graphql << 'QUERYEOF'
+          query($owner: String!, $repo: String!, $cursor: String) {
+            repository(owner: $owner, name: $repo) {
+              pullRequests(states: OPEN, first: 20, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  number
+                  isDraft
+                  mergeStateStatus
+                  autoMergeRequest { enabledAt }
+                }
+              }
+            }
+          }
+          QUERYEOF
+
+          stuck_prs='[]'
+          cursor_args=()
+
+          for i in $(seq 1 10); do
+            response=$(gh api graphql \
+              -f query="$(cat /tmp/query.graphql)" \
+              -f owner="$owner" \
+              -f repo="$repo_name" \
+              "${cursor_args[@]}")
+
+            filtered=$(echo "$response" | jq '[
+              .data.repository.pullRequests.nodes[] | select(
+                .autoMergeRequest != null and
+                (.mergeStateStatus == "CLEAN" or .mergeStateStatus == "UNKNOWN") and
+                .isDraft == false
+              ) | {number, autoMergeRequest, mergeStateStatus, isDraft}
+            ]')
+            stuck_prs=$(echo "$stuck_prs" "$filtered" | jq -s '.[0] + .[1]')
+
+            has_next=$(echo "$response" | jq -r '.data.repository.pullRequests.pageInfo.hasNextPage')
+            if [ "$has_next" != "true" ]; then
+              break
+            fi
+            cursor=$(echo "$response" | jq -r '.data.repository.pullRequests.pageInfo.endCursor')
+            cursor_args=(-f cursor="$cursor")
+          done
+
+          count=$(echo "$stuck_prs" | jq 'length')
+          if [ "$count" -eq 0 ]; then
+            echo "No stuck PRs found."
+            exit 0
+          fi
+
+          echo "Found $count candidate PR(s), checking age..."
+          echo ""
+
+          fixed=0
+          pr_numbers=$(echo "$stuck_prs" | jq -r '.[].number')
+
+          for pr_number in $pr_numbers; do
+            enabled_at=$(echo "$stuck_prs" | jq -r ".[] | select(.number == $pr_number) | .autoMergeRequest.enabledAt")
+            enabled_ts=$(date -d "$enabled_at" +%s 2>/dev/null || echo 0)
+            age_seconds=$((now - enabled_ts))
+
+            if [ "$age_seconds" -lt "$cutoff_seconds" ]; then
+              echo "PR #$pr_number: auto-merge enabled ${age_seconds}s ago (< ${cutoff_seconds}s), skipping."
+              continue
+            fi
+
+            age_minutes=$((age_seconds / 60))
+            echo "PR #$pr_number: stuck for ${age_minutes} minutes, retoggling auto-merge..."
+
+            if gh pr merge "$pr_number" --disable-auto --repo "$GH_REPO"; then
+              sleep 2
+              if gh pr merge "$pr_number" --auto --repo "$GH_REPO"; then
+                echo "  OK: Auto-merge retoggled for PR #$pr_number"
+                fixed=$((fixed + 1))
+              else
+                echo "  ERROR: Failed to re-enable auto-merge for PR #$pr_number"
+              fi
+            else
+              echo "  ERROR: Failed to disable auto-merge for PR #$pr_number"
+            fi
+            echo ""
+          done
+
+          echo "Done. Fixed $fixed stuck PR(s)."

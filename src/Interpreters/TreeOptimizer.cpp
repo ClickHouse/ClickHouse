@@ -20,7 +20,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
 #include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
 
@@ -58,7 +57,6 @@ namespace Setting
     extern const SettingsBool optimize_time_filter_with_preimage;
     extern const SettingsBool optimize_using_constraints;
     extern const SettingsBool optimize_redundant_functions_in_order_by;
-    extern const SettingsBool optimize_rewrite_array_exists_to_has;
     extern const SettingsBool optimize_or_like_chain;
 }
 
@@ -97,8 +95,8 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
 {
     /// Since ASTLiteral is different from ASTIdentifier, so we can use a special constant String Literal for this,
     /// and do not need to worry about it conflict with the name of the column in the table.
-    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>("__unused_group_by_column"));
+    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, make_intrusive<ASTExpressionList>());
+    select_query->groupBy()->children.emplace_back(make_intrusive<ASTLiteral>("__unused_group_by_column"));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
@@ -485,7 +483,7 @@ bool convertQueryToCNF(ASTSelectQuery * select_query)
 {
     if (select_query->where())
     {
-        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where());
+        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where().get());
         if (!cnf_form)
             return false;
 
@@ -515,7 +513,7 @@ void optimizeUsing(const ASTSelectQuery * select_query)
     for (const auto & expression : expression_list)
     {
         auto expression_name = expression->getAliasOrColumnName();
-        if (expressions_names.find(expression_name) == expressions_names.end())
+        if (!expressions_names.contains(expression_name))
         {
             uniq_expressions_list.push_back(expression);
             expressions_names.insert(expression_name);
@@ -531,12 +529,6 @@ void optimizeAggregationFunctions(ASTPtr & query)
     /// Move arithmetic operations out of aggregation functions
     ArithmeticOperationsInAgrFuncVisitor::Data data;
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
-}
-
-void optimizeArrayExistsFunctions(ASTPtr & query)
-{
-    RewriteArrayExistsFunctionVisitor::Data data = {};
-    RewriteArrayExistsFunctionVisitor(data).visit(query);
 }
 
 void optimizeMultiIfToIf(ASTPtr & query)
@@ -689,9 +681,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings[Setting::optimize_normalize_count_variants])
         optimizeCountConstantAndSumOne(query, context);
-
-    if (settings[Setting::optimize_rewrite_array_exists_to_has])
-        optimizeArrayExistsFunctions(query);
 
     /// Remove injective functions inside uniq
     if (settings[Setting::optimize_injective_functions_inside_uniq])

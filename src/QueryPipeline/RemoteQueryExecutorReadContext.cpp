@@ -4,6 +4,7 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/NetException.h>
 #include <Client/IConnections.h>
 #include <Common/AsyncTaskExecutor.h>

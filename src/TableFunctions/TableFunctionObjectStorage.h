@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -134,6 +134,19 @@ using TableFunctionIcebergAzure = TableFunctionObjectStorage<IcebergAzureDefinit
 using TableFunctionIcebergHDFS = TableFunctionObjectStorage<IcebergHDFSDefinition, StorageHDFSIcebergConfiguration, true>;
 #    endif
 using TableFunctionIcebergLocal = TableFunctionObjectStorage<IcebergLocalDefinition, StorageLocalIcebergConfiguration, true>;
+#endif
+#if USE_AVRO
+#    if USE_AWS_S3
+using TableFunctionPaimon = TableFunctionObjectStorage<PaimonDefinition, StorageS3PaimonConfiguration, true>;
+using TableFunctionPaimonS3 = TableFunctionObjectStorage<PaimonS3Definition, StorageS3PaimonConfiguration, true>;
+#    endif
+#    if USE_AZURE_BLOB_STORAGE
+using TableFunctionPaimonAzure = TableFunctionObjectStorage<PaimonAzureDefinition, StorageAzurePaimonConfiguration, true>;
+#    endif
+#    if USE_HDFS
+using TableFunctionPaimonHDFS = TableFunctionObjectStorage<PaimonHDFSDefinition, StorageHDFSPaimonConfiguration, true>;
+#    endif
+using TableFunctionPaimonLocal = TableFunctionObjectStorage<PaimonLocalDefinition, StorageLocalPaimonConfiguration, true>;
 #endif
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #if USE_AWS_S3

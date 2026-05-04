@@ -89,18 +89,18 @@ template <typename StringColumnType>
 static void writeBSONString(const IColumn & column, size_t row_num, const String & name, WriteBuffer & buf, bool as_bson_string)
 {
     const auto & string_column = assert_cast<const StringColumnType &>(column);
-    StringRef data = string_column.getDataAt(row_num);
+    std::string_view data = string_column.getDataAt(row_num);
     if (as_bson_string)
     {
         writeBSONTypeAndKeyName(BSONType::STRING, name, buf);
-        writeBSONSize(data.size + 1, buf);
+        writeBSONSize(data.size() + 1, buf);
         writeString(data, buf);
         writeChar(0x00, buf);
     }
     else
     {
         writeBSONTypeAndKeyName(BSONType::BINARY, name, buf);
-        writeBSONSize(data.size, buf);
+        writeBSONSize(data.size(), buf);
         writeBSONType(BSONBinarySubtype::BINARY, buf);
         writeString(data, buf);
     }
@@ -167,7 +167,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         case TypeIndex::String:
         {
             const auto & string_column = assert_cast<const ColumnString &>(column);
-            return size + sizeof(BSONSizeT) + string_column.getDataAt(row_num).size + 1; // Size of data + data + \0 or BSON subtype (in case of BSON binary)
+            return size + sizeof(BSONSizeT) + string_column.getDataAt(row_num).size() + 1; // Size of data + data + \0 or BSON subtype (in case of BSON binary)
         }
         case TypeIndex::FixedString:
         {

@@ -2,9 +2,10 @@
 
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTColumnDeclaration.h>
 
 #include <base/types.h>
+
+#include <map>
 
 namespace DB
 {
@@ -15,6 +16,7 @@ enum class StatisticsType : UInt8
     Uniq = 1,
     CountMinSketch = 2,
     MinMax = 3,
+    NullCount = 4,
 
     Max = 63,
 };
@@ -58,6 +60,8 @@ struct ColumnStatisticsDescription
 
     ASTPtr getAST() const;
 
+    String getNameForLogs() const;
+
     /// get a vector of <column name, statistics desc> pair
     static std::vector<std::pair<String, ColumnStatisticsDescription>> fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
     static ColumnStatisticsDescription fromStatisticsDescriptionAST(const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type);
@@ -68,5 +72,6 @@ struct ColumnStatisticsDescription
 };
 
 StatisticsType stringToStatisticsType(String type);
+String statisticsTypeToString(StatisticsType type);
 
 }

@@ -142,10 +142,10 @@ public:
         ///     key3:
         ///        key4: value3"
         WriteBufferFromOwnString wb;
-        Strings prev_key_parts;
+        std::vector<std::string_view> prev_key_parts;
         for (const auto & key : keys)
         {
-            Strings key_parts;
+            std::vector<std::string_view> key_parts;
             splitInto<'.'>(key_parts, key);
             size_t tab_cnt = 0;
 

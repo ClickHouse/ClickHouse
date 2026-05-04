@@ -26,6 +26,6 @@ def test_writes_different_path_format_error(started_cluster_iceberg_with_spark, 
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('maneskin');", settings={"allow_experimental_insert_into_iceberg": 1})
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('radiohead');", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('maneskin');", settings={"allow_insert_into_iceberg": 1})
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('radiohead');", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL;") == 'maneskin\nradiohead\n'

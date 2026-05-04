@@ -11,19 +11,23 @@
 #include <IO/S3/ReadBufferFromGetObjectResult.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 #include <aws/s3/model/GetObjectResult.h>
 
 namespace DB
 {
+
+class BlobStorageLogWriter;
+using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
+
 /**
  * Perform S3 HTTP GET request and provide response to read.
  */
 class ReadBufferFromS3 : public ReadBufferFromFileBase
 {
 private:
-    std::shared_ptr<const S3::Client> client_ptr;
+    mutable std::shared_ptr<const S3::Client> client_ptr;
     String bucket;
     String key;
     String version_id;
@@ -35,12 +39,15 @@ private:
     std::atomic<off_t> offset = 0;
     std::atomic<off_t> read_until_position = 0;
     std::string stop_reason;
+    std::string release_reason;
 
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
 
     LoggerPtr log = getLogger("ReadBufferFromS3");
 
 public:
+    using S3CredentialsRefreshCallback = std::function<std::unique_ptr<const S3::Client>()>;
+
     ReadBufferFromS3(
         std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
@@ -52,7 +59,10 @@ public:
         size_t offset_ = 0,
         size_t read_until_position_ = 0,
         bool restricted_seek_ = false,
-        std::optional<size_t> file_size = std::nullopt);
+        std::optional<size_t> file_size = std::nullopt,
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] {return nullptr;},
+        BlobStorageLogWriterPtr blob_storage_log_ = {}
+        );
 
     ~ReadBufferFromS3() override = default;
 
@@ -85,6 +95,8 @@ public:
 
     std::string getStopReason() const { return stop_reason; }
 
+    std::optional<size_t> getRemoteFileSize() const override;
+
 private:
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
 
@@ -94,6 +106,8 @@ private:
     /// Call inside catch() block if GetObject fails. Bumps metrics, logs the error.
     /// Returns true if the error looks retriable.
     bool processException(size_t read_offset, size_t attempt) const;
+
+    size_t getObjectSizeFromS3() const;
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
 
@@ -106,6 +120,10 @@ private:
     bool restricted_seek;
 
     bool read_all_range_successfully = false;
+
+    const S3CredentialsRefreshCallback credentials_refresh_callback;
+
+    mutable BlobStorageLogWriterPtr blob_storage_log;
 };
 
 }

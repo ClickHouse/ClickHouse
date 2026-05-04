@@ -8,11 +8,11 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Compression/CompressionFactory.h>
+#include <IO/NullWriteBuffer.h>
 
 namespace ProfileEvents
 {
-extern const Event MergeTreeDataWriterSkipIndicesCalculationMicroseconds;
-extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
+    extern const Event MergeTreeDataWriterSkipIndicesCalculationMicroseconds;
 }
 
 namespace DB
@@ -22,8 +22,6 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-    extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
-    extern const MergeTreeSettingsUInt64 max_file_name_length;
 }
 
 namespace ErrorCodes
@@ -40,23 +38,22 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const VirtualsDescriptionPtr & virtual_columns_,
     const MergeTreeIndices & indices_to_recalc_,
-    const ColumnsStatistics & stats_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
-    MergeTreeIndexGranularityPtr index_granularity_)
+    MergeTreeIndexGranularityPtr index_granularity_,
+    WrittenOffsetSubstreams * written_offset_substreams_)
     : IMergeTreeDataPartWriter(
         data_part_name_, serializations_, data_part_storage_, index_granularity_info_,
-        storage_settings_, columns_list_, metadata_snapshot_, virtual_columns_, settings_, std::move(index_granularity_))
+        storage_settings_, columns_list_, metadata_snapshot_, settings_, std::move(index_granularity_))
     , skip_indices(indices_to_recalc_)
-    , stats(stats_to_recalc_)
     , marks_file_extension(marks_file_extension_)
     , default_codec(default_codec_)
     , compute_granularity(index_granularity->empty())
     , compress_primary_key(settings.compress_primary_key)
-    , execution_stats(skip_indices.size(), stats.size())
+    , written_offset_substreams(written_offset_substreams_)
+    , execution_stats(skip_indices.size())
     , log(getLogger(logger_name_ + " (DataPartWriter)"))
 {
     if (settings.blocks_are_granules_size && !index_granularity->empty())
@@ -70,7 +67,6 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         initPrimaryIndex();
 
     initSkipIndices();
-    initStatistics();
 }
 
 void MergeTreeDataPartWriterOnDisk::cancel() noexcept
@@ -83,9 +79,6 @@ void MergeTreeDataPartWriterOnDisk::cancel() noexcept
         index_compressor_stream->cancel();
     if (index_source_hashing_stream)
         index_source_hashing_stream->cancel();
-
-    for (auto & stream : stats_streams)
-        stream->cancel();
 
     for (auto & stream : skip_indices_streams_holders)
         stream->cancel();
@@ -125,25 +118,6 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
     }
 }
 
-void MergeTreeDataPartWriterOnDisk::initStatistics()
-{
-    for (const auto & stat_ptr : stats)
-    {
-        auto stats_filename = escapeForFileName(stat_ptr->getStatisticName());
-        if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && stats_filename.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
-            stats_filename = sipHash128String(stats_filename);
-
-        stats_streams.emplace_back(std::make_unique<MergeTreeWriterStream<true>>(
-                                       stats_filename,
-                                       data_part_storage,
-                                       stats_filename,
-                                       STATS_FILE_SUFFIX,
-                                       default_codec,
-                                       settings.max_compress_block_size,
-                                       settings.query_write_settings));
-    }
-}
-
 void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 {
     if (skip_indices.empty())
@@ -161,7 +135,8 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
         for (const auto & index_substream : index_substreams)
         {
-            auto stream_name = index_name + index_substream.suffix;
+            auto full_stream_name = index_name + index_substream.suffix;
+            auto stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
 
             auto stream = std::make_unique<MergeTreeIndexWriterStream>(
                 stream_name,
@@ -178,9 +153,12 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
             index_streams[index_substream.type] = stream.get();
             skip_indices_streams_holders.push_back(std::move(stream));
+
+            if (settings.save_marks_in_cache)
+                cached_index_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
         }
 
-        skip_indices_aggregators.push_back(skip_index->createIndexAggregator(settings));
+        skip_indices_aggregators.push_back(skip_index->createIndexAggregator());
         skip_index_accumulated_marks.push_back(0);
     }
 }
@@ -232,17 +210,6 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
         last_index_block = primary_index_block;
 }
 
-void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block & block)
-{
-    for (size_t i = 0; i < stats.size(); ++i)
-    {
-        const auto & stat_ptr = stats[i];
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        stat_ptr->build(block.getByName(stat_ptr->getColumnName()).column);
-        execution_stats.statistics_build_us[i] += watch.elapsed();
-    }
-}
-
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write)
 {
     /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
@@ -262,7 +229,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
-                skip_indices_aggregators[i] = index_helper->createIndexAggregator(settings);
+                skip_indices_aggregators[i] = index_helper->createIndexAggregator();
 
                 for (const auto & [type, stream] : index_streams)
                 {
@@ -271,13 +238,18 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                     if (stream->compressed_hashing.offset() >= settings.min_compress_block_size)
                         stream->compressed_hashing.next();
 
-                    writeBinaryLittleEndian(stream->plain_hashing.count(), marks_out);
-                    writeBinaryLittleEndian(stream->compressed_hashing.offset(), marks_out);
+                    MarkInCompressedFile mark{stream->plain_hashing.count(), stream->compressed_hashing.offset()};
+
+                    writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
+                    writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
 
                     /// Actually this numbers is redundant, but we have to store them
                     /// to be compatible with the normal .mrk2 file format
                     if (settings.can_use_adaptive_granularity)
                         writeBinaryLittleEndian(1UL, marks_out);
+
+                    if (auto it = cached_index_marks.find(stream->escaped_column_name); it != cached_index_marks.end())
+                        it->second->push_back(mark);
                 }
             }
 
@@ -363,34 +335,13 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         }
     }
 
-    for (auto & stream : skip_indices_streams_holders)
+    for (const auto & streams : skip_indices_streams)
     {
-        stream->preFinalize();
-        stream->addToChecksums(checksums);
-    }
-}
-
-void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
-{
-    for (auto & stream : stats_streams)
-    {
-        stream->finalize();
-        if (sync)
-            stream->sync();
-    }
-
-    for (size_t i = 0; i < stats.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->getColumnName(), data_part_name);
-}
-
-void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
-{
-    for (size_t i = 0; i < stats.size(); i++)
-    {
-        auto & stream = *stats_streams[i];
-        stats[i]->serialize(stream.compressed_hashing);
-        stream.preFinalize();
-        stream.addToChecksums(checksums);
+        for (const auto & [type, stream] : streams)
+        {
+            stream->preFinalize();
+            stream->addToChecksums(checksums, MergeTreeIndexSubstream::isCompressed(type));
+        }
     }
 }
 
@@ -403,8 +354,52 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
             stream->sync();
     }
 
-    for (size_t i = 0; i < skip_indices.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating index {} for the part {}", execution_stats.skip_indices_build_us[i] / 1000, skip_indices[i]->index.name, data_part_name);
+    if (!skip_indices.empty() && log->is(Poco::Message::PRIO_DEBUG))
+    {
+        UInt64 total_us = 0;
+        std::string indices_str;
+
+        /// Create pairs of (index, time_us) for sorting
+        std::vector<std::pair<size_t, UInt64>> index_times;
+        index_times.reserve(skip_indices.size());
+
+        for (size_t i = 0; i < skip_indices.size(); ++i)
+        {
+            index_times.emplace_back(i, execution_stats.skip_indices_build_us[i]);
+            total_us += execution_stats.skip_indices_build_us[i];
+        }
+
+        /// If there are many indices, show only the slowest ones
+        constexpr size_t max_indices_to_show = 10;
+        if (skip_indices.size() > max_indices_to_show)
+        {
+            std::partial_sort(
+                index_times.begin(),
+                index_times.begin() + max_indices_to_show,
+                index_times.end(),
+                [](const auto & a, const auto & b) { return a.second > b.second; });
+            index_times.resize(max_indices_to_show);
+        }
+
+        for (size_t i = 0; i < index_times.size(); ++i)
+        {
+            if (i > 0)
+                indices_str += ", ";
+            auto [idx, time_us] = index_times[i];
+            indices_str += fmt::format("{}: {} ms", skip_indices[idx]->index.name, time_us / 1000);
+        }
+
+        if (skip_indices.size() > max_indices_to_show)
+            indices_str += fmt::format(" (showing {} slowest out of {})", max_indices_to_show, skip_indices.size());
+
+        LOG_DEBUG(
+            log,
+            "Spent {} ms calculating {} skip indices for the part {}: [{}]",
+            total_us / 1000,
+            skip_indices.size(),
+            data_part_name,
+            indices_str);
+    }
 
     skip_indices_streams.clear();
     skip_indices_streams_holders.clear();
@@ -421,23 +416,30 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
     return Names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 }
 
-void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block & block)
+void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
 {
-    if (!is_dynamic_streams_initialized)
+    /// If block sample is empty, initialize it using current block (it will be the first block to write).
+    if (block_sample.empty())
     {
-        block_sample = block.cloneEmpty();
-
-        for (const auto & column : columns_list)
+        for (size_t i = 0; i != block.columns(); ++i)
         {
-            if (column.type->hasDynamicSubcolumns())
-            {
-                /// Create all streams for dynamic subcolumns using dynamic structure from block.
-                auto compression = getCodecDescOrDefault(column.name, default_codec);
-                addStreams(column, compression);
-            }
+            auto & column = block.getByPosition(i);
+            ColumnWithTypeAndName sample_column;
+            sample_column.name = column.name;
+            sample_column.type = column.type;
+            auto mutable_column = column.column->cloneEmpty();
+            /// Set of streams may depend on dynamic structure and statistics.
+            /// For example: ColumnObject, ColumnDynamic, ColumnMap (with adaptive number of buckets).
+            /// So we need to save them from the first block and set them later to all next blocks.
+            if (column.column->hasDynamicStructure())
+                mutable_column->takeExactDynamicStructureFrom(*column.column);
+            if (column.column->hasStatistics())
+                mutable_column->takeOrCalculateStatisticsFrom({column.column});
+            sample_column.column = std::move(mutable_column);
+            block_sample.insert(std::move(sample_column));
         }
-        is_dynamic_streams_initialized = true;
     }
+    /// Otherwise, adjust this block so all columns will be written in the same set of substreams as columns from sample block.
     else
     {
         size_t size = block.columns();
@@ -445,19 +447,86 @@ void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block &
         {
             auto & column = block.getByPosition(i);
             const auto & sample_column = block_sample.getByPosition(i);
+
             /// Check if the dynamic structure of this column is different from the sample column.
-            if (column.type->hasDynamicSubcolumns() && !column.column->dynamicStructureEquals(*sample_column.column))
+            if (column.column->hasDynamicStructure() && !column.column->dynamicStructureEquals(*sample_column.column))
             {
                 /// We need to change the dynamic structure of the column so it matches the sample column.
                 /// To do it, we create empty column of this type, take dynamic structure from sample column
                 /// and insert data into it. Resulting column will have required dynamic structure and the content
                 /// of the column in current block.
                 auto new_column = sample_column.type->createColumn();
-                new_column->takeDynamicStructureFromColumn(sample_column.column);
+                new_column->takeExactDynamicStructureFrom(*sample_column.column);
                 new_column->insertRangeFrom(*column.column, 0, column.column->size());
                 column.column = std::move(new_column);
             }
+
+            /// Take statistics from sample column.
+            if (column.column->hasStatistics())
+            {
+                auto mutable_column = IColumn::mutate(std::move(column.column));
+                mutable_column->takeOrCalculateStatisticsFrom({sample_column.column});
+                column.column = std::move(mutable_column);
+            }
         }
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
+{
+    if (streams_initialized)
+        return;
+
+    /// Block sample is required. It's initialized in prepareBlockForWriting on first written block.
+    /// If block sample is empty, it means we didn't write any data, so we need to initialize it
+    /// with empty columns.
+    if (block_sample.empty())
+    {
+        for (const auto & [name, type] : columns_list)
+            block_sample.insert(ColumnWithTypeAndName{type->createColumn(), type, name});
+    }
+
+    for (const auto & column : columns_list)
+    {
+        auto compression = getCodecDescOrDefault(column.name, default_codec);
+        addStreams(column, compression);
+    }
+
+    streams_initialized = true;
+}
+
+void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
+{
+    if (columns_substreams.getTotalSubstreams() || (index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact && !index_granularity_info.mark_type.with_substreams))
+        return;
+
+    /// Block sample is required. It's initialized in prepareBlockForWriting on first written block.
+    /// If block sample is empty, it means we didn't write any data, so we need to initialize it
+    /// with empty columns.
+    if (block_sample.empty())
+    {
+        for (const auto & [name, type] : columns_list)
+            block_sample.insert(ColumnWithTypeAndName{type->createColumn(), type, name});
+    }
+
+    NullWriteBuffer buf;
+    auto serialize_settings = getSerializationSettings();
+    for (const auto & name_and_type : columns_list)
+    {
+        columns_substreams.addColumn(name_and_type.name);
+        serialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)));
+            return &buf;
+        };
+        serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath &){ return MarkInCompressedFile(); };
+
+        ISerialization::SerializeBinaryBulkStatePtr state;
+        auto serialization = getSerialization(name_and_type.name);
+        const auto & column = block_sample.getByName(name_and_type.name);
+        serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
+        serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
     }
 }
 

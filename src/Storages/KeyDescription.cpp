@@ -1,4 +1,5 @@
 #include <Storages/KeyDescription.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -31,7 +32,8 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , column_names(other.column_names)
     , reverse_flags(other.reverse_flags)
     , data_types(other.data_types)
-    , additional_column(other.additional_column)
+    , additional_columns(other.additional_columns)
+    , sort_order_id(other.sort_order_id)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -62,35 +64,29 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
     reverse_flags = other.reverse_flags;
     data_types = other.data_types;
 
-    /// additional_column is constant property It should never be lost.
-    if (additional_column.has_value() && !other.additional_column.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing additional_column");
-    additional_column = other.additional_column;
+    if (!additional_columns.empty() && other.additional_columns.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing additional_columns");
+
+    additional_columns = other.additional_columns;
+    sort_order_id = other.sort_order_id;
     return *this;
 }
-
 
 void KeyDescription::recalculateWithNewAST(
     const ASTPtr & new_ast,
     const ColumnsDescription & columns,
-    ContextPtr context)
+    const VirtualColumnsDescription & virtuals,
+    const ContextPtr & context)
 {
-    *this = getSortingKeyFromAST(new_ast, columns, context, additional_column);
+    *this = getKeyFromAST(new_ast, columns, virtuals, context, additional_columns);
 }
 
 void KeyDescription::recalculateWithNewColumns(
     const ColumnsDescription & new_columns,
-    ContextPtr context)
+    const VirtualColumnsDescription & virtuals,
+    const ContextPtr & context)
 {
-    *this = getSortingKeyFromAST(definition_ast, new_columns, context, additional_column);
-}
-
-KeyDescription KeyDescription::getKeyFromAST(
-    const ASTPtr & definition_ast,
-    const ColumnsDescription & columns,
-    ContextPtr context)
-{
-    return getSortingKeyFromAST(definition_ast, columns, context, {});
+    *this = getKeyFromAST(definition_ast, new_columns, virtuals, context, additional_columns);
 }
 
 bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
@@ -114,44 +110,62 @@ bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
                 modulo_in_ast |= moduloToModuloLegacyRecursive(child);
         }
     }
+
     return modulo_in_ast;
 }
 
-KeyDescription KeyDescription::getSortingKeyFromAST(
-    const ASTPtr & definition_ast,
-    const ColumnsDescription & columns,
-    ContextPtr context,
-    const std::optional<String> & additional_column)
+/// Build expression_list_ast, column_names, and reverse_flags from key children and additional columns.
+std::tuple<ASTPtr, Names, std::vector<bool>> buildKeyColumns(
+    const ASTPtr & key_expression_list,
+    const NamesAndTypesList & additional_columns)
 {
-    KeyDescription result;
-    result.definition_ast = definition_ast;
-    auto key_expression_list = extractKeyExpressionList(definition_ast);
+    auto expression_list_ast = make_intrusive<ASTExpressionList>();
+    Names column_names;
+    std::vector<bool> reverse_flags;
 
-    result.expression_list_ast = std::make_shared<ASTExpressionList>();
     for (const auto & child : key_expression_list->children)
     {
         auto real_key = child;
         if (auto * elem = child->as<ASTStorageOrderByElement>())
         {
             real_key = elem->children.front();
-            result.reverse_flags.emplace_back(elem->direction < 0);
+            reverse_flags.emplace_back(elem->direction < 0);
         }
 
-        result.expression_list_ast->children.push_back(real_key);
-        result.column_names.emplace_back(real_key->getColumnName());
+        expression_list_ast->children.push_back(real_key);
+        column_names.emplace_back(real_key->getColumnName());
     }
 
-    if (additional_column)
+    for (const auto & col : additional_columns)
     {
-        result.additional_column = additional_column;
-        ASTPtr column_identifier = std::make_shared<ASTIdentifier>(*additional_column);
-        result.column_names.emplace_back(column_identifier->getColumnName());
-        result.expression_list_ast->children.push_back(column_identifier);
+        if (std::ranges::contains(column_names, col.name))
+            continue;
 
-        if (!result.reverse_flags.empty())
-            result.reverse_flags.emplace_back(false);
+        ASTPtr column_identifier = make_intrusive<ASTIdentifier>(col.name);
+        column_names.emplace_back(column_identifier->getColumnName());
+        expression_list_ast->children.push_back(column_identifier);
+
+        if (!reverse_flags.empty())
+            reverse_flags.emplace_back(false);
     }
 
+    return {expression_list_ast, std::move(column_names), std::move(reverse_flags)};
+}
+
+KeyDescription KeyDescription::getKeyFromAST(
+    const ASTPtr & definition_ast,
+    const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
+    const ContextPtr & context,
+    const NamesAndTypesList & additional_columns)
+{
+    KeyDescription result;
+    result.definition_ast = definition_ast;
+    result.additional_columns = additional_columns;
+    auto key_expression_list = extractKeyExpressionList(definition_ast);
+    checkExpressionDoesntContainSubqueries(*key_expression_list);
+
+    std::tie(result.expression_list_ast, result.column_names, result.reverse_flags) = buildKeyColumns(key_expression_list, additional_columns);
     if (!result.reverse_flags.empty() && result.reverse_flags.size() != result.expression_list_ast->children.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -160,7 +174,8 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
 
     {
         auto expr = result.expression_list_ast->clone();
-        auto syntax_result = TreeRewriter(context).analyze(expr, columns.get(GetColumnsOptions(GetColumnsOptions::Kind::AllPhysical).withSubcolumns()));
+        auto all_columns = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals);
+        auto syntax_result = TreeRewriter(context).analyze(expr, all_columns);
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
         /// In sample block we use just key columns
@@ -196,11 +211,11 @@ ASTPtr KeyDescription::getOriginalExpressionList() const
     if (!expression_list_ast || reverse_flags.empty())
         return expression_list_ast;
 
-    auto expr_list = std::make_shared<ASTExpressionList>();
+    auto expr_list = make_intrusive<ASTExpressionList>();
     size_t size = expression_list_ast->children.size();
     for (size_t i = 0; i < size; ++i)
     {
-        auto column_ast = std::make_shared<ASTStorageOrderByElement>();
+        auto column_ast = make_intrusive<ASTStorageOrderByElement>();
         column_ast->children.push_back(expression_list_ast->children[i]);
         column_ast->direction = (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1;
         expr_list->children.push_back(std::move(column_ast));
@@ -212,12 +227,17 @@ ASTPtr KeyDescription::getOriginalExpressionList() const
 KeyDescription KeyDescription::buildEmptyKey()
 {
     KeyDescription result;
-    result.expression_list_ast = std::make_shared<ASTExpressionList>();
+    result.expression_list_ast = make_intrusive<ASTExpressionList>();
     result.expression = std::make_shared<ExpressionActions>(ActionsDAG(), ExpressionActionsSettings{});
     return result;
 }
 
-KeyDescription KeyDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context, bool allow_order)
+KeyDescription KeyDescription::parse(
+    const String & str,
+    const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
+    const ContextPtr & context,
+    bool allow_order)
 {
     KeyDescription result;
     if (str.empty())
@@ -227,7 +247,7 @@ KeyDescription KeyDescription::parse(const String & str, const ColumnsDescriptio
     ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
-    return getKeyFromAST(ast, columns, context);
+    return getKeyFromAST(ast, columns, virtuals, context);
 }
 
 }

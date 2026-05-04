@@ -21,7 +21,6 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     QueryProcessingStage::Enum processed_stage,
     size_t shard_num,
     size_t shard_count,
-    bool has_missing_objects,
     bool build_logical_plan,
     const std::string & default_database)
 {
@@ -62,7 +61,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         interpreter.buildQueryPlan(*query_plan);
     }
 
-    addConvertingActions(*query_plan, header, has_missing_objects);
+    addConvertingActions(*query_plan, header, new_context);
     return query_plan;
 }
 

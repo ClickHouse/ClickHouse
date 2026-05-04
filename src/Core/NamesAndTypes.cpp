@@ -250,7 +250,7 @@ NamesAndTypesList NamesAndTypesList::eraseNames(const NameSet & names) const
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
     /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
-    HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash> types;
+    HashMapWithSavedHash<std::string_view, const DataTypePtr *, StringViewHash> types;
 
     for (const auto & column : *this)
         types[column.name] = &column.type;

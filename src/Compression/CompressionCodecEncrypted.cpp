@@ -9,6 +9,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
+#include <Core/Types.h>
 #include "config.h"
 
 #if USE_SSL
@@ -537,7 +538,7 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
     return safe_cast<UInt32>(out_size);
 }
 
-void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     /// The key is needed for decrypting. That's why it is read at the beginning of process.
     UInt64 key_id;
@@ -566,6 +567,8 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Can't decrypt data, out length after decryption {} is wrong, expected {}",
                         out_len, ciphertext_size - tag_size);
+
+    return static_cast<UInt32>(out_len);
 }
 
 }

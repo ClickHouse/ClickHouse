@@ -1,10 +1,10 @@
 #pragma once
 
 #include <base/defines.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/ProcessList.h>
@@ -71,7 +71,7 @@ public:
     }
 
     void scheduleNext(String query_id) TSA_REQUIRES(getMutex());
-    std::optional<QueryMetricLogElement> createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next = true) TSA_REQUIRES(getMutex());
+    std::optional<QueryMetricLogElement> createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next = true, bool is_final = false) TSA_REQUIRES(getMutex());
 
 private:
     /// We need to be able to move it for the hash map, so we need to add an indirection here.

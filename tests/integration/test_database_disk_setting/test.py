@@ -166,7 +166,7 @@ def test_attach_db_from_readonly_remote_disk(start_cluster):
     db_uuid = node1.query(
         f"SELECT uuid FROM system.databases WHERE database='{db_name}'"
     ).strip()
-    table_disk_setting = 'disk(type = "s3_plain_rewritable", endpoint = "http://minio1:9001/root/data/disks/disk_s3_plain_rewritable/", access_key_id="minio", secret_access_key = "ClickHouse_Minio_P@ssw0rd")'
+    table_disk_setting = "'s3_plain_rewritable'"
     node1.query(
         f"CREATE TABLE {db_name}.test (x INT, y INT) ENGINE=MergeTree ORDER BY x SETTINGS disk={table_disk_setting}"
     )
