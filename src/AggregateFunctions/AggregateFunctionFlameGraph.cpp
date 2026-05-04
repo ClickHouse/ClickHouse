@@ -322,7 +322,7 @@ struct AggregateFunctionFlameGraphData
             return res;
         }
 
-        return reinterpret_cast<Entry *>(arena->alloc(sizeof(Entry)));
+        return arena->alloc<Entry>();
     }
 
     void release(Entry * entry)
