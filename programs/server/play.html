@@ -29,7 +29,6 @@
     Also, it can provide visual indication that credentials are correct.
 
     Nice to have:
-    - display totals
     - show/hide the editor
     - check for readonly
     - query caching
@@ -66,9 +65,11 @@
             --menu-toggle-color: #000;
 
             --progress-color: #0C4;
+            --table-size-bar-color: #FFF;
 
             --selection-color: #FFF;
             --selection-background-color: #456;
+            --current-query-background-color: #FFF4E0;
         }
 
         [data-theme="dark"] {
@@ -97,9 +98,11 @@
             --menu-toggle-color: #FF0;
 
             --progress-color: #FF0;
+            --table-size-bar-color: #104050;
 
             --selection-color: #000;
             --selection-background-color: #FF8;
+            --current-query-background-color: #442;
         }
 
         ::selection {
@@ -178,11 +181,20 @@
         #databases-icon
         {
             grid-area: databases-icon;
+            text-decoration: none;
+            display: block;
         }
 
         #databases
         {
             grid-area: contents;
+            max-width: 25em;
+            overflow: hidden;
+        }
+
+        .tables:not(:empty)
+        {
+            margin-bottom: 1em;
         }
 
         #github-icon
@@ -240,11 +252,6 @@
             color: var(--misc-text-color);
         }
 
-        .tables
-        {
-            padding-left: 1rem;
-        }
-
         .current
         {
             font-weight: bold;
@@ -252,40 +259,63 @@
 
         .table
         {
-            background-position: bottom;
-            background-size: 100% 2px;
             background-repeat: no-repeat;
+        }
+
+        .table button
+        {
+            display: inline-block;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+
+        .table-icon
+        {
+            width: 1em;
+            height: 1em;
+            vertical-align: -0.1em;
+            margin-right: 0.25em;
+            flex-shrink: 0;
+            opacity: 0.5;
         }
 
         .table-addendum
         {
             position: absolute;
             z-index: 999;
-            display: none;
             white-space: pre;
             transform: translate(0.25rem, calc(-50% + 0.5em));
             color: var(--element-background-color);
-            background: var(--text-color);
-            border: 1px solid var(--border-color);
+            background: color-mix(in srgb, var(--text-color) 50%, var(--background-color));
+            backdrop-filter: blur(4px);
             border-radius: 0.5rem;
             padding: 0.25rem;
             margin-left: 0.25rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0s 0.1s;
         }
 
         .table-addendum::before {
             content: " ";
             position: absolute;
             top: 50%;
-            transform: translate(-110%, -50%);
+            transform: translate(calc(-100% - 0.2rem), -50%);
             line-height: 0;
             border-width: 0.5rem;
             border-style: solid;
-            border-color: transparent var(--text-color) transparent transparent;
+            border-color: transparent color-mix(in srgb, var(--text-color) 50%, var(--background-color)) transparent transparent;
         }
 
-        .table:hover .table-addendum
+        .table button:hover + .table-addendum,
+        .table .table-addendum:hover
         {
-            display: inline-block;
+            opacity: 1;
+            pointer-events: auto;
+            transition: opacity 0s 0.1s;
         }
 
         .table-addendum-elem
@@ -341,6 +371,8 @@
         #query
         {
             display: block;
+            position: relative;
+            z-index: 1;
             /* Make enough space for even big queries. */
             height: 20vh;
             /* Keeps query text-area's width full screen even when user adjusting the width of the query box. */
@@ -348,9 +380,39 @@
             min-width: 100%;
             max-width: 100%;
             margin-top: -1px; /* To compensate the border. */
-            contain: strict; /* Less input lag even if the table is large. */
             resize: none; /* Disable default browser resizer */
         }
+
+        /* When the backdrop is active, the textarea becomes transparent so
+           the colored query spans behind it are visible. */
+        #query.has-backdrop
+        {
+            background: transparent;
+        }
+
+        #query-backdrop
+        {
+            display: none;
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 0;
+            /* Typography MUST match the textarea exactly. */
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+            font-size: 11pt;
+            line-height: normal;
+            padding: 0.25rem;
+            border: 1px solid transparent; /* same box model as textarea */
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            background-color: var(--element-background-color);
+            color: transparent; /* text is invisible; only backgrounds are visible */
+        }
+
+        #query-backdrop .q-active { background-color: var(--current-query-background-color); }
+
 
         #inputs
         {
@@ -391,7 +453,7 @@
             flex: 1;
         }
 
-        #run
+        #run, #run-all
         {
             grid-area: run;
             user-select: none;
@@ -403,7 +465,12 @@
             font-size: 100%; /* Otherwise button element will have a lower font size. */
         }
 
-        #run:hover, #run:focus, #copy-div:hover, #copy-div:focus, #download-div:hover, #download-div:focus
+        #run-all
+        {
+            display: none;
+        }
+
+        #run:hover, #run:focus, #run-all:hover, #run-all:focus, #copy-div:hover, #copy-div:focus, #download-div:hover, #download-div:focus
         {
             color: var(--button-active-text-color);
             background-color: var(--button-active-color);
@@ -639,6 +706,7 @@
             line-height: 0.75;
             position: sticky;
             left: 0;
+            z-index: -1; /* Below the expanded selected cell */
         }
 
         #url_status
@@ -681,9 +749,9 @@
 
 <body>
     <div id="menu">
-        <div id="databases-icon" class="menu-icon">
+        <a id="databases-icon" class="menu-icon" href="">
             <svg id="databases-toggle" viewBox="0 0 9 9"><path d="M0,0 h1 v8 h-1 z"/><path d="M2,0 h1 v8 h-1 z"/><path d="M4,0 h1 v8 h-1 z"/><path d="M6,0 h1 v8 h-1 z"/><path d="M8,3.25 h1 v1.5 h-1 z"/></svg>
-        </div>
+        </a>
         <div id="databases"></div>
         <!-- https://github.com/logos -->
         <div id="github-icon" class="menu-icon">
@@ -698,11 +766,12 @@
             <div id="inputs">
                 <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
             </div>
-            <div id="query_div"><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
+            <div id="query_div"><div id="query-backdrop"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
             <div id="query-params"></div>
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
-                <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
+                <button type="button" class="shadow" id="run-all">Run all</button>
+                <div id="hint">&nbsp;(Ctrl/Cmd+Enter, +Shift to run all)</div>
                 <query-progress id="query-progress"></query-progress>
                 <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -913,6 +982,11 @@ class QueryResultElement extends HTMLElement
         this.attachShadow({ mode: 'open' });
         this.shadowRoot.innerHTML = `
             <style>
+                *
+                {
+                    box-sizing: border-box;
+                }
+
                 :host
                 {
                     display: block;
@@ -977,13 +1051,19 @@ class QueryResultElement extends HTMLElement
                 td
                 {
                     background-color: var(--element-background-color);
-                    max-width: 50vw;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    padding: 0.25rem 0.5rem;
+                    max-width: 40vw;
+                    padding: 0; /* Padding is on .cell-content instead */
                     border: 1px solid var(--border-color);
                     white-space: pre;
                     vertical-align: top;
+                }
+
+                /* Inner div limits cell height to 3 lines; expands on selection */
+                .cell-content
+                {
+                    padding: 0.25rem 0.5rem;
+                    max-height: 3lh;
+                    overflow: hidden;
                 }
 
                 td u
@@ -1020,13 +1100,17 @@ class QueryResultElement extends HTMLElement
                     user-select: none;
                     left: 0;
                     top: -1px;
-                    transform: translateY(-100%);
                     font-size: 75%;
                     font-weight: normal;
                     color: var(--misc-text-color);
                     background: var(--element-background-color);
                     max-height: 5em;
                     white-space: pre;
+                }
+
+                thead .type-hint
+                {
+                    transform: translateY(-100%);
                 }
 
                 th:hover .type-hint
@@ -1051,12 +1135,20 @@ class QueryResultElement extends HTMLElement
                     background-color: var(--border-color-selected);
                 }
 
-                tr:hover
+                /* Apply hover/selection filter per-cell, excluding the active cell,
+                   because filter on tr would create a stacking context trapping it. */
+                tr:hover td:not(.td-selected)
                 {
                     filter: var(--table-hover-filter);
                 }
 
                 .tr-selected
+                {
+                    position: relative;
+                    z-index: 1; /* Above hovered rows */
+                }
+
+                .tr-selected td:not(.td-selected)
                 {
                     filter: var(--table-hover-filter);
                 }
@@ -1069,12 +1161,68 @@ class QueryResultElement extends HTMLElement
                     display: none;
                 }
 
+                .cell-copy
+                {
+                    display: none;
+                    position: absolute;
+                    bottom: 100%;
+                    right: -1px;
+                    padding: 0.25rem;
+                    width: fit-content;
+                    cursor: pointer;
+                    filter: invert(1);
+                    background-color: var(--element-background-color);
+                    z-index: 1;
+                }
+
+                /* First row after a sticky header: place to the side to avoid overlap */
+                thead + tbody tr:first-child .cell-copy
+                {
+                    bottom: auto;
+                    left: 100%;
+                    top: -1px;
+                }
+
+                thead + tbody tr:first-child td:last-child .cell-copy
+                {
+                    left: auto;
+                    right: 100%;
+                }
+
+                .cell-copy svg
+                {
+                    width: 1em;
+                    height: 1em;
+                    vertical-align: middle;
+                }
+
+                .td-selected .cell-copy
+                {
+                    display: block;
+                }
+
+                /* Selected cell stacks above all other cells */
                 .td-selected
                 {
+                    position: relative;
+                    z-index: 10;
+                }
+
+                /* Expand the inner div on top of the table without reflowing it */
+                .td-selected .cell-content
+                {
+                    position: absolute;
+                    top: -1px;
+                    left: -1px;
+                    width: calc(100% + 2px); /* Compensate for collapsed border (1px each side) */
+                    min-height: calc(100% + 2px);
+                    max-height: 50vh;
                     white-space: pre-wrap;
-                    max-width: none;
-                    outline: 2px solid var(--border-color-selected);
-                    outline-offset: -2px;
+                    word-break: break-all;
+                    overflow-y: auto;
+                    scrollbar-width: thin;
+                    filter: invert(1);
+                    background-color: var(--element-background-color);
                 }
 
                 td.empty-result
@@ -1087,8 +1235,18 @@ class QueryResultElement extends HTMLElement
                 {
                     width: 1%;
                     text-align: right;
+                    padding: 0.25rem 0.5rem;
                     background-color: var(--table-header-color);
                     color: var(--misc-text-color);
+                }
+
+                tfoot td
+                {
+                    font-weight: bold;
+                    background-color: var(--table-header-color);
+                    position: sticky;
+                    bottom: -0.5rem;
+                    border: 1px solid var(--border-color);
                 }
 
                 div.empty-result
@@ -1182,6 +1340,7 @@ class QueryResultElement extends HTMLElement
         this._explain_graph = '';
         this._column_is_number = {};
         this._extremes = {};
+        this._totals = null;
         this._header = {};
         this._current_selected_cell = null;
         this._uplot = null;
@@ -1190,11 +1349,20 @@ class QueryResultElement extends HTMLElement
         this._max_rows = 1_000;
         this._max_cells = 100_000;
 
-        this.setAttribute('tabindex', '0');
-        this.style.outline = 'none';
         this.addEventListener('keydown', (e) => this._handleKeyDown(e));
 
+        /* Clicking on non-data areas (e.g. table header) deactivates the selected cell */
+        this.shadowRoot.addEventListener('click', (e) => {
+            if (!e.target.closest('td') || e.target.closest('.row-number')) this.clearSelection();
+        });
+
         new ResizeObserver(() => this._resizeChart()).observe(this._chart);
+    }
+
+    connectedCallback()
+    {
+        if (!this.hasAttribute('tabindex')) this.setAttribute('tabindex', '0');
+        this.style.outline = 'none';
     }
 
     get rowCount() { return this._row_idx; }
@@ -1227,6 +1395,7 @@ class QueryResultElement extends HTMLElement
         this._dataDiv.classList.remove('fixed');
 
         this._extremes = {};
+        this._totals = null;
         this._header = {};
         this._row_idx = 0;
         this._elapsed_ns = 0;
@@ -1238,8 +1407,11 @@ class QueryResultElement extends HTMLElement
 
     clearSelection()
     {
-        this._current_selected_cell?.classList.remove('td-selected');
-        this._current_selected_cell?.parentElement.classList.remove('tr-selected');
+        if (this._current_selected_cell)
+        {
+            this._current_selected_cell.classList.remove('td-selected');
+            this._current_selected_cell.parentElement.classList.remove('tr-selected');
+        }
         this._current_selected_cell = null;
     }
 
@@ -1251,6 +1423,9 @@ class QueryResultElement extends HTMLElement
     _renderCell(name, value)
     {
         let td = document.createElement('td');
+        let div = document.createElement('div');
+        div.className = 'cell-content'; /* Height-limited container; expands absolutely when selected */
+
         let is_null = (value === null);
         let is_link = false;
 
@@ -1289,15 +1464,37 @@ class QueryResultElement extends HTMLElement
             if (text.length >= 5 && text.match(/^[\d]{5,}$/))
             {
                 let i = 0;
-                td.innerHTML = text.split('').reverse().map(c => {
+                div.innerHTML = text.split('').reverse().map(c => {
                     if (i > 0 && i % 3 == 0) { c = `<u>${c}<\/u>`; }; ++i; return c;
                 }).reverse().join('');
+                td.appendChild(div);
+                this._appendCopyButton(td, text, value);
                 return td;
             }
         }
 
-        td.appendChild(node);
+        div.appendChild(node);
+        td.appendChild(div);
+        this._appendCopyButton(td, text, value);
         return td;
+    }
+
+    _appendCopyButton(td, text, value)
+    {
+        if (value === null || value === '' || value === 0 || value === '0') return;
+
+        let btn = document.createElement('span');
+        btn.className = 'cell-copy';
+        btn.title = 'Copy to clipboard';
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            if (navigator.clipboard && navigator.clipboard.writeText)
+            {
+                navigator.clipboard.writeText(text);
+            }
+        };
+        td.appendChild(btn);
     }
 
     appendHeader(meta)
@@ -1368,12 +1565,15 @@ class QueryResultElement extends HTMLElement
             const td = this._renderCell(column.name, row[column.name]);
 
             td.onclick = () => {
-                this._current_selected_cell?.classList.remove('td-selected');
-                this._current_selected_cell?.parentElement.classList.remove('tr-selected');
+                if (this._current_selected_cell)
+                {
+                    this._current_selected_cell.classList.remove('td-selected');
+                    this._current_selected_cell.parentElement.classList.remove('tr-selected');
+                }
                 this._current_selected_cell = td;
-                this._current_selected_cell.classList.add('td-selected');
-                this._current_selected_cell.parentElement.classList.add('tr-selected');
-                this._current_selected_cell.scrollIntoView({ block: 'nearest' });
+                td.classList.add('td-selected');
+                td.parentElement.classList.add('tr-selected');
+                (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
                 this.focus();
             };
 
@@ -1414,6 +1614,7 @@ class QueryResultElement extends HTMLElement
                 for (let row of table.rows)
                 {
                     let cell = row.cells[col_idx];
+                    let div = cell.querySelector('.cell-content') || cell; /* Apply bars to the inner div */
                     let value = +cell.innerText;
 
                     if (!double_sided)
@@ -1422,7 +1623,7 @@ class QueryResultElement extends HTMLElement
                         {
                             const ratio = value / this._extremes.max[name];
 
-                            cell.style.cssText = `
+                            div.style.cssText = `
                                 background-size: 100% 50%;
                                 background-position: center;
                                 background-repeat: no-repeat;
@@ -1437,7 +1638,7 @@ class QueryResultElement extends HTMLElement
                         {
                             const ratio = value / this._extremes.max[name];
 
-                            cell.style.cssText = `
+                            div.style.cssText = `
                                 background-size: 100% 50%;
                                 background-position: center;
                                 background-repeat: no-repeat;
@@ -1450,7 +1651,7 @@ class QueryResultElement extends HTMLElement
                         {
                             const ratio = value / this._extremes.min[name];
 
-                            cell.style.cssText = `
+                            div.style.cssText = `
                                 background-size: 100% 50%;
                                 background-position: center;
                                 background-repeat: no-repeat;
@@ -1465,9 +1666,33 @@ class QueryResultElement extends HTMLElement
         }
     }
 
+    renderTotals()
+    {
+        if (!this._totals) return;
+
+        let table = this._dataTable;
+        let tfoot = document.createElement('tfoot');
+        let tr = document.createElement('tr');
+
+        let td = document.createElement('td');
+        td.className = 'row-number';
+        td.appendChild(document.createTextNode('\u03A3'));
+        tr.appendChild(td);
+
+        for (const column of this._header)
+        {
+            const td = this._renderCell(column.name, this._totals[column.name]);
+            tr.appendChild(td);
+        }
+
+        tfoot.appendChild(tr);
+        table.appendChild(tfoot);
+    }
+
     transposeIfNeeded()
     {
         let table = this._dataTable;
+        if (this._totals) return;
         if (Object.keys(this._header).length == 0 || table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
 
         let heads = table.tHead.childNodes;
@@ -1520,12 +1745,27 @@ class QueryResultElement extends HTMLElement
             columnWidths.push(header.offsetWidth);
         });
 
+        /* Freeze row heights so that absolutely-positioned cell content
+           does not cause reflow. Read all heights first, then write,
+           to avoid layout thrashing. */
+        let rowHeights = [];
+        for (let row of table.rows)
+        {
+            rowHeights.push(row.offsetHeight);
+        }
+
         table.classList.add('fixed');
         this._dataDiv.classList.add('fixed');
 
         headers.forEach((header, index) => {
             header.style.width = `${columnWidths[index]}px`;
         });
+
+        let i = 0;
+        for (let row of table.rows)
+        {
+            row.style.height = `${rowHeights[i++]}px`;
+        }
     }
 
     _appendHeaderResizer(header)
@@ -1622,6 +1862,11 @@ class QueryResultElement extends HTMLElement
                 return this.appendRow(json.row, fragment);
             }
         }
+        else if (json.totals)
+        {
+            this._totals = json.totals;
+            return true;
+        }
         else if (json.min)
         {
             this._extremes['min'] = json.min;
@@ -1670,7 +1915,7 @@ class QueryResultElement extends HTMLElement
         cell.parentElement.classList.remove('tr-selected');
         new_cell.classList.add('td-selected');
         new_cell.parentElement.classList.add('tr-selected');
-        new_cell.scrollIntoView({ block: 'nearest' });
+        (new_cell.querySelector('.cell-content') || new_cell).scrollIntoView({ block: 'nearest' });
         this._current_selected_cell = new_cell;
     }
 
@@ -2097,6 +2342,124 @@ async function loadDatabases(server_address, user, password) {
     }
 }
 
+function makeSVG(viewBox, ...paths)
+{
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', viewBox);
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.classList.add('table-icon');
+    for (const d of paths)
+    {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        svg.appendChild(path);
+    }
+    return svg;
+}
+
+function getTableIcon(engine)
+{
+    const e = engine.replace(/^Replicated|^Shared/, '');
+
+    /// Aggregating/Summing - sigma
+    if (/^(Summing|Aggregating)MergeTree/.test(e))
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M18 4 H6',     // top bar
+            'M6 4 L16 12',  // upper diagonal
+            'M16 12 L6 20', // lower diagonal
+            'M6 20 H18'     // bottom bar
+        );
+        return svg;
+    }
+
+    /// Memory - microchip
+    if (e === 'Memory')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M6 6 h12 v12 h-12 z',  // chip body
+            'M9 6 v-2', 'M12 6 v-2', 'M15 6 v-2',    // top pins
+            'M9 18 v2', 'M12 18 v2', 'M15 18 v2',     // bottom pins
+            'M6 10 h-2', 'M6 14 h-2',                  // left pins
+            'M18 10 h2', 'M18 14 h2'                   // right pins
+        );
+        return svg;
+    }
+
+    /// View - eye
+    if (e === 'View')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M1 12 C5 5, 19 5, 23 12 C19 19, 5 19, 1 12 Z',  // eye outline
+            'M12 9 a3 3 0 1 0 0 6 a3 3 0 1 0 0 -6'             // pupil
+        );
+        return svg;
+    }
+
+    /// MaterializedView - eye over table
+    if (e === 'MaterializedView')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M1 8 C5 2, 19 2, 23 8 C19 14, 5 14, 1 8 Z',  // eye
+            'M12 5.5 a2.5 2.5 0 1 0 0 5 a2.5 2.5 0 1 0 0 -5', // pupil
+            'M4 17 h16', 'M4 21 h16'                        // table lines
+        );
+        return svg;
+    }
+
+    /// Merge - three overlaid tables
+    if (e === 'Merge')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M8 8 h14 v14 h-14 z', 'M8 12 h14',     // back table (bottom-right)
+            'M5 5 h14 v14 h-14 z', 'M5 9 h14',      // middle table
+            'M2 2 h14 v14 h-14 z', 'M2 6 h14'       // front table (top-left)
+        );
+        svg.setAttribute('fill', 'var(--element-background-color)');
+        return svg;
+    }
+
+    /// Distributed - fanout
+    if (e === 'Distributed')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M2 9.5 h6 v5 h-6 z',     // source box
+            'M16 1 h6 v5 h-6 z',      // target top
+            'M16 9.5 h6 v5 h-6 z',    // target middle
+            'M16 18 h6 v5 h-6 z',     // target bottom
+            'M8 12 L16 3.5',          // arrow top
+            'M8 12 L16 12',           // arrow middle
+            'M8 12 L16 20.5'          // arrow bottom
+        );
+        return svg;
+    }
+
+    /// StorageProxy - arrow between two boxes
+    if (e === 'Proxy')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M1 7 h6 v10 h-6 z',    // left box
+            'M17 7 h6 v10 h-6 z',   // right box
+            'M7 12 h10',            // arrow line
+            'M14 9 l3 3 l-3 3'     // arrowhead
+        );
+        return svg;
+    }
+
+    /// Default MergeTree family - table
+    const svg = makeSVG('0 0 24 24',
+        'M3 4 h18 v16 h-18 z',  // border
+        'M3 9 h18',             // header line
+        'M3 14 h18',            // middle line
+        'M10 9 v11'             // column divider
+    );
+    return svg;
+}
+
 let load_tables_request_num = 0;
 async function loadTables(server_address, user, password, database, container) {
     ++load_tables_request_num;
@@ -2117,20 +2480,21 @@ async function loadTables(server_address, user, password, database, container) {
 
     let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
 
-    // Use natural order for table names
-    json.data.sort((a, b) => a.table.localeCompare(b.table, undefined, { numeric: true }));
+    // Use natural order for table names; .inner tables go last
+    json.data.sort((a, b) => a.table.startsWith('.inner') - b.table.startsWith('.inner')
+        || a.table.localeCompare(b.table, undefined, { numeric: true }));
 
     for (let elem of json.data) {
         let table = document.createElement('div');
         table.className = 'table';
         let table_link = document.createElement('button');
-        table_link.append(elem.table);
+        table_link.append(getTableIcon(elem.engine), elem.table);
 
         if (max_total_bytes && +elem.total_bytes) {
             const percent = Number(100 * +elem.total_bytes / max_total_bytes).toFixed(2);
             table.style.backgroundImage = `linear-gradient(to right,
-                var(--progress-color) 0%,
-                var(--progress-color) ${percent}%,
+                var(--table-size-bar-color) 0%,
+                var(--table-size-bar-color) ${percent}%,
                 transparent ${percent}%)`;
         }
 
@@ -2140,9 +2504,10 @@ async function loadTables(server_address, user, password, database, container) {
         const set_query_or_run = (e, value) => {
             if (query_area.value == value) {
                 /// Double click will run the query.
-                post();
+                postOne();
             } else {
                 query_area.value = value;
+                query_area.dispatchEvent(new Event('input'));
             }
             e.stopPropagation();
         }
@@ -2203,12 +2568,24 @@ function toggleDatabases() {
     }
 }
 
+/// The logo is an <a> element so that Ctrl/Cmd/Shift+click and middle-click
+/// natively open the current page (with the query) in a new tab.
+/// We update the href on mousedown so it always reflects the current URL.
+document.getElementById('databases-icon').addEventListener('mousedown', () => {
+    document.getElementById('databases-icon').href = window.location.href;
+});
+
 databases_toggle.addEventListener('click', e => {
     e.stopPropagation();
+    /// Let the browser handle modifier clicks as a link (open in new tab).
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    /// Normal click: toggle the databases panel instead of following the link.
+    e.preventDefault();
     toggleDatabases();
 });
 
 document.getElementById('menu').addEventListener('click', e => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle') && !e.target.closest('button')) {
         toggleDatabases();
     }
@@ -2283,7 +2660,11 @@ let elapsed_ns = 0;
 const default_format = 'JSONStringsEachRowWithProgress';
 
 let controller = null;
-async function postImpl(posted_request_num, query)
+/// Execute a single query, rendering results into the given targetResultEl.
+/// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_error }.
+/// The caller is responsible for top-level UI (download buttons, history, favicon).
+/// `abortController` is an AbortController that can be used to cancel this query.
+async function postImpl(posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot)
 {
     const user = user_elem.value;
     const password = password_elem.value;
@@ -2299,9 +2680,6 @@ async function postImpl(posted_request_num, query)
     /// But we don't use cached results, so the results that we get here, are always fresh.
     url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore';
 
-    /// Add query parameter values. Capture the snapshot before fetch so that
-    /// edits made while the request is in flight do not affect history/download.
-    const paramValuesSnapshot = getParamValues();
     for (const [name, value] of Object.entries(paramValuesSnapshot))
     {
         url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
@@ -2310,14 +2688,7 @@ async function postImpl(posted_request_num, query)
     /// Extremes only if the format is likely to be unchanged. This is imprecise.
     if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
 
-    last_query_start = performance.now();
-
-    document.getElementById('download-div').style.display = 'none';
-    document.getElementById('copy-div').style.display = 'none';
-
-    clear();
-    progressEl.start();
-    resultEl.queryText = query;
+    targetResultEl.queryText = query;
 
     let is_table = false;
     let is_raw = false;
@@ -2327,8 +2698,7 @@ async function postImpl(posted_request_num, query)
     let response, reply, format;
     reply = '';
     try {
-        controller = new AbortController();
-        response = await fetch(url, { method: "POST", body: query, signal: controller.signal,
+        response = await fetch(url, { method: "POST", body: query, signal: abortController.signal,
             headers: { 'Authorization': 'never' } });
 
         format = response.headers.get('X-ClickHouse-Format') ?? default_format;
@@ -2336,25 +2706,21 @@ async function postImpl(posted_request_num, query)
         if (!response.ok) {
             is_error = true;
             reply = await response.text();
-            if (posted_request_num != request_num) { return; }
+            if (posted_request_num != request_num) { return { cancelled: true }; }
 
             let has_exception = false;
-            for (line of reply.split('\n')) {
+            for (const line of reply.split('\n')) {
                 if (line.startsWith(`{"exception":`)) {
-                    resultEl.update(JSON.parse(line));
+                    targetResultEl.update(JSON.parse(line));
                     has_exception = true;
                     break;
                 }
             }
             if (!has_exception) {
-                resultEl.renderError(reply);
-                logoEl.style.display = 'none';
+                targetResultEl.renderError(reply);
             }
 
-            progressEl.clear();
-            document.getElementById('download-div').style.display = 'none';
-            document.getElementById('copy-div').style.display = 'none';
-            return;
+            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_error };
         } else if (format == default_format) {
             is_table = true;
             const reader = response.body.getReader();
@@ -2363,7 +2729,7 @@ async function postImpl(posted_request_num, query)
             let buffer = '';
             while (true) {
                 const { done, value } = await reader.read();
-                if (posted_request_num != request_num) { return; }
+                if (posted_request_num != request_num) { return { cancelled: true }; }
                 if (done) break;
 
                 let new_content = decoder.decode(value, { stream: true });
@@ -2374,17 +2740,17 @@ async function postImpl(posted_request_num, query)
                 let fragment = document.createDocumentFragment();
 
                 let cont = true;
-                for (line of lines.slice(0, -1)) {
+                for (const line of lines.slice(0, -1)) {
                     const data = JSON.parse(line);
-                    cont = resultEl.update(data, fragment);
+                    cont = targetResultEl.update(data, fragment);
                     if (!cont) { break; }
                 }
 
-                resultEl.flushFragment(fragment);
+                targetResultEl.flushFragment(fragment);
 
                 if (!cont)
                 {
-                    controller.abort();
+                    abortController.abort();
                     break;
                 }
                 buffer = lines[lines.length - 1];
@@ -2392,8 +2758,8 @@ async function postImpl(posted_request_num, query)
         } else if (format == 'JSONCompactColumns') {
             is_chart = true;
             reply = await response.text();
-            if (posted_request_num != request_num) { return; }
-            resultEl.renderChart(JSON.parse(reply));
+            if (posted_request_num != request_num) { return { cancelled: true }; }
+            targetResultEl.renderChart(JSON.parse(reply));
         } else {
             is_raw = true;
             const reader = response.body.getReader();
@@ -2407,12 +2773,12 @@ async function postImpl(posted_request_num, query)
                 let new_content = decoder.decode(value, { stream: true });
                 reply += new_content;
 
-                if (posted_request_num != request_num) { return; }
-                resultEl.updateRaw(new_content);
+                if (posted_request_num != request_num) { return { cancelled: true }; }
+                targetResultEl.updateRaw(new_content);
             }
         }
     } catch (e) {
-        if (posted_request_num != request_num) { return; }
+        if (posted_request_num != request_num) { return { cancelled: true }; }
 
         console.log(e);
         if (e instanceof TypeError) {
@@ -2422,7 +2788,41 @@ async function postImpl(posted_request_num, query)
         } else {
             reply = e.toString();
         }
-        resultEl.renderError(reply);
+        targetResultEl.renderError(reply);
+        return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_error: true };
+    }
+
+    if (targetResultEl.isExplainGraph) {
+        await targetResultEl.renderGraph();
+    } else {
+        if (targetResultEl._extremes['min'] && targetResultEl._extremes['max']) targetResultEl.renderExtremes();
+        if (is_table) targetResultEl.renderTotals();
+        if (is_table) targetResultEl.transposeIfNeeded();
+    }
+
+    return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_error };
+}
+
+/// Execute a single query (legacy path, used for single-query mode).
+/// When `history_query_text` is provided, it overrides `query` for browser history/URL storage,
+/// preserving the full textarea content when running a selected query in multi-query mode.
+async function postSingle(posted_request_num, query, history_query_text)
+{
+    const paramValuesSnapshot = getParamValues();
+    last_query_start = performance.now();
+
+    document.getElementById('download-div').style.display = 'none';
+    document.getElementById('copy-div').style.display = 'none';
+
+    clear();
+    progressEl.start();
+
+    controller = new AbortController();
+    const result = await postImpl(posted_request_num, query, resultEl, controller, paramValuesSnapshot);
+
+    if (result.cancelled) return;
+
+    if (result.is_error || !result.response_ok) {
         logoEl.style.display = 'none';
         progressEl.clear();
         document.getElementById('download-div').style.display = 'none';
@@ -2430,20 +2830,17 @@ async function postImpl(posted_request_num, query)
         return;
     }
 
-    if (resultEl.isExplainGraph) {
-        await resultEl.renderGraph();
-    } else {
-        if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
-        if (is_table) resultEl.transposeIfNeeded();
-    }
+    /// `postImpl` already performed `renderGraph`/`renderExtremes`/`renderTotals`/`transposeIfNeeded`;
+    /// the only step specific to the single-query path is the final table layout pass.
+    if (result.is_table) resultEl._changeTableLayout();
 
     progressEl.finish();
     document.getElementById('download-div').style.display = 'block';
-    document.getElementById('copy-div').style.display = is_raw ? 'block' : 'none';
+    document.getElementById('copy-div').style.display = result.is_raw ? 'block' : 'none';
     last_query_for_download = query;
     last_params_for_download = paramValuesSnapshot;
 
-    if (is_raw) {
+    if (result.is_raw) {
         resultEl.elapsedNs = 1e6 * (performance.now() - last_query_start);
         elapsed_ns = resultEl.elapsedNs;
     } else {
@@ -2458,30 +2855,34 @@ async function postImpl(posted_request_num, query)
 
     /// The query is saved in browser history (in a state JSON object)
     /// as well as in URL fragment identifier.
-    if (query != previous_query) {
+    /// When history_query_text is provided (multi-query "Run selected" with a single query),
+    /// use the full textarea content for history/URL to avoid losing the rest of the editor.
+    const saved_query = history_query_text || query;
+    if (saved_query != previous_query) {
         const state = {
-            query: query,
-            format: format,
-            ok: response.ok,
-            data: reply.length > 100000 ? null : reply, /// Lower than the browser's limit.
+            query: saved_query,
+            format: result.format,
+            ok: result.response_ok,
+            data: result.reply.length > 100000 ? null : result.reply,
             elapsed_ns: elapsed_ns,
             params: paramValuesSnapshot,
         };
-        const title = "ClickHouse Query: " + query;
+        const title = "ClickHouse Query: " + saved_query;
 
+        const user = user_elem.value;
+        const server_address = url_elem.value;
         let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
         if (run_immediately) {
             history_url += "&run=1";
         }
         if (server_address != location.origin) {
-            /// Save server's address in URL if it's not identical to the address of the play UI.
             history_url += '&url=' + encodeURIComponent(server_address);
         }
         for (const [name, value] of Object.entries(paramValuesSnapshot))
         {
             history_url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
         }
-        history_url += '#' + toBase64(query);
+        history_url += '#' + toBase64(saved_query);
 
         if (previous_query == '') {
             history.replaceState(state, title, history_url);
@@ -2489,13 +2890,187 @@ async function postImpl(posted_request_num, query)
             history.pushState(state, title, history_url);
         }
         document.title = title;
-        previous_query = query;
+        previous_query = saved_query;
+    }
+}
+
+/// Container for dynamically created result elements in multi-query mode.
+let multiQueryContainer = null;
+/// Array of AbortControllers for all in-flight queries in multi-query mode.
+let multiQueryControllers = [];
+
+/// Execute multiple queries with parallelization of consecutive SELECTs.
+/// `parsed` is an array of { query, is_select } objects from splitAllQueries.
+async function postMulti(posted_request_num, parsed)
+{
+    const paramValuesSnapshot = getParamValues();
+    last_query_start = performance.now();
+
+    document.getElementById('download-div').style.display = 'none';
+    document.getElementById('copy-div').style.display = 'none';
+
+    clear();
+    progressEl.start();
+
+    /// Hide the default single result element and the logo.
+    resultEl.style.display = 'none';
+    logoEl.style.display = 'none';
+
+    /// Create a container for multiple results if it doesn't exist.
+    if (!multiQueryContainer) {
+        multiQueryContainer = document.createElement('div');
+        multiQueryContainer.id = 'multi-query-results';
+        resultEl.parentElement.insertBefore(multiQueryContainer, resultEl);
+    }
+    multiQueryContainer.innerHTML = '';
+    multiQueryContainer.style.display = 'block';
+    multiQueryControllers = [];
+
+    /// Create result elements for each query.
+    const resultElements = [];
+    for (let i = 0; i < parsed.length; ++i) {
+        const el = document.createElement('query-result');
+        multiQueryContainer.appendChild(el);
+        resultElements.push(el);
+    }
+
+    /// Track aggregated progress across all concurrent queries.
+    const progressState = new Map(); /// query index -> { read_rows, read_bytes, total_rows, elapsed_ns }
+    function updateAggregatedProgress() {
+        let total_read_rows = 0, total_read_bytes = 0, total_total_rows = 0, max_elapsed_ns = 0;
+        for (const [, p] of progressState) {
+            total_read_rows += p.read_rows;
+            total_read_bytes += p.read_bytes;
+            total_total_rows += p.total_rows;
+            max_elapsed_ns = Math.max(max_elapsed_ns, p.elapsed_ns);
+        }
+        progressEl.updateProgress({
+            read_rows: String(total_read_rows),
+            read_bytes: String(total_read_bytes),
+            total_rows_to_read: String(total_total_rows),
+            elapsed_ns: String(max_elapsed_ns),
+        });
+    }
+
+    /// Listen for progress events from each result element.
+    for (let i = 0; i < resultElements.length; ++i) {
+        resultElements[i].addEventListener('query-progress', (e) => {
+            progressState.set(i, {
+                read_rows: +e.detail.read_rows,
+                read_bytes: +e.detail.read_bytes,
+                total_rows: +e.detail.total_rows_to_read,
+                elapsed_ns: +e.detail.elapsed_ns,
+            });
+            updateAggregatedProgress();
+        });
+    }
+
+    /// Group consecutive parallelizable queries together.
+    /// Each group is either a batch of SELECTs (run in parallel) or a single non-SELECT (barrier).
+    const groups = [];
+    let current_group = null;
+    for (let i = 0; i < parsed.length; ++i) {
+        if (parsed[i].is_select) {
+            if (!current_group || !current_group.parallelizable) {
+                current_group = { parallelizable: true, indices: [] };
+                groups.push(current_group);
+            }
+            current_group.indices.push(i);
+        } else {
+            current_group = { parallelizable: false, indices: [i] };
+            groups.push(current_group);
+        }
+    }
+
+    /// Execute groups sequentially; within a parallelizable group, execute all queries concurrently.
+    let had_error = false;
+    for (const group of groups) {
+        if (posted_request_num != request_num) return;
+        if (had_error) break;
+
+        const promises = group.indices.map(i => {
+            const ac = new AbortController();
+            multiQueryControllers.push(ac);
+            return postImpl(posted_request_num, parsed[i].query, resultElements[i], ac, paramValuesSnapshot)
+                .then(result => ({ index: i, result }));
+        });
+
+        const results = await Promise.all(promises);
+
+        for (const { index, result } of results) {
+            if (result.cancelled) return;
+            if (result.is_error || !result.response_ok) {
+                had_error = true;
+            }
+        }
+    }
+
+    if (posted_request_num != request_num) return;
+
+    /// Compute aggregated stats.
+    let total_rows = 0;
+    let max_elapsed_ns = 0;
+    let any_incomplete = false;
+    for (const el of resultElements) {
+        total_rows += el.rowCount;
+        max_elapsed_ns = Math.max(max_elapsed_ns, el.elapsedNs);
+        if (el.incompleteResult) any_incomplete = true;
+    }
+
+    if (!had_error) {
+        logoEl.style.display = 'block';
+    }
+
+    progressEl.finish();
+    elapsed_ns = max_elapsed_ns || 1e6 * (performance.now() - last_query_start);
+    progressEl.updateText(total_rows, elapsed_ns, any_incomplete);
+    progressEl.style.setProperty('--progress', '0');
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(parsed[0].query));
+
+    if (posted_request_num != request_num) return;
+
+    /// Save all queries to browser history, using the full textarea content.
+    const all_queries_text = query_area.value;
+    if (all_queries_text != previous_query) {
+        const state = {
+            query: all_queries_text,
+            format: null,
+            ok: !had_error,
+            data: null,
+            elapsed_ns: elapsed_ns,
+            params: paramValuesSnapshot,
+        };
+        const title = "ClickHouse Query: " + parsed[0].query;
+
+        const user = user_elem.value;
+        const server_address = url_elem.value;
+        let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+        if (run_immediately) {
+            history_url += "&run=1";
+        }
+        if (server_address != location.origin) {
+            history_url += '&url=' + encodeURIComponent(server_address);
+        }
+        for (const [name, value] of Object.entries(paramValuesSnapshot))
+        {
+            history_url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
+        }
+        history_url += '#' + toBase64(all_queries_text);
+
+        if (previous_query == '') {
+            history.replaceState(state, title, history_url);
+        } else {
+            history.pushState(state, title, history_url);
+        }
+        document.title = title;
+        previous_query = all_queries_text;
     }
 }
 
 async function restoreFromHistory(state) {
     clear();
     query_area.value = state.query;
+    query_area.dispatchEvent(new Event('input'));
     resultEl.queryText = state.query;
 
     /// Restore query parameter inputs and their values.
@@ -2518,7 +3093,7 @@ async function restoreFromHistory(state) {
         is_error = true;
 
         let has_exception = false;
-        for (line of state.data.split('\n')) {
+        for (const line of state.data.split('\n')) {
             if (line.startsWith(`{"exception":`)) {
                 resultEl.update(JSON.parse(line));
                 has_exception = true;
@@ -2537,7 +3112,7 @@ async function restoreFromHistory(state) {
         let lines = state.data.split('\n');
         let fragment = document.createDocumentFragment();
 
-        for (line of lines) {
+        for (const line of lines) {
             if (line.length == 0) continue;
             if (!resultEl.update(JSON.parse(line), fragment)) { break; }
         }
@@ -2556,7 +3131,9 @@ async function restoreFromHistory(state) {
         await resultEl.renderGraph();
     } else {
         if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
+        if (is_table) resultEl.renderTotals();
         if (is_table) resultEl.transposeIfNeeded();
+        if (is_table) resultEl._changeTableLayout();
     }
 
     progressEl.finish();
@@ -2583,6 +3160,7 @@ window.onpopstate = function(event) {
 
 if (window.location.hash) {
     query_area.value = fromBase64(window.location.hash.substr(1));
+    query_area.dispatchEvent(new Event('input'));
 }
 
 let in_flight = false;
@@ -2593,51 +3171,140 @@ const favicon_running = 'data:image/svg+xml;base64,' + btoa(atob(favicon_default
 
 function setFavicon(href) { document.querySelector('link[rel="icon"]').href = href; }
 
-async function post()
+function beginFlight() {
+    in_flight = true;
+    setFavicon(favicon_running);
+    document.getElementById('run').innerText = 'Stop';
+    document.getElementById('run-all').style.display = 'none';
+}
+
+function endFlight() {
+    in_flight = false;
+    document.getElementById('run').blur();
+    updateRunButtons(isMultiQuery);
+    setFavicon(favicon_default);
+}
+
+/// Run the query under cursor, or all queries intersecting the selection.
+async function postOne()
 {
     ++request_num;
     document.body.scrollTo(0, 0);
-    let query = await getQueryUnderCursor();
-    in_flight = true;
-    setFavicon(favicon_running);
-    let run = document.getElementById('run');
-    run.innerText = 'Stop';
-    await postImpl(request_num, query);
-    run.blur();
-    run.innerText = 'Run';
-    setFavicon(favicon_default);
-    in_flight = false;
+    beginFlight();
+
+    const has_selection = query_area.selectionStart !== query_area.selectionEnd;
+    if (has_selection && isMultiQuery) {
+        /// Find all queries that intersect the selection and run them.
+        const all_text = query_area.value;
+        const parsed = await splitAllQueries(all_text);
+        const selStart = query_area.selectionStart;
+        const selEnd = query_area.selectionEnd;
+
+        /// Use start/end offsets from splitAllQueries to find which queries overlap with the selection.
+        const selected = [];
+        for (let i = 0; i < parsed.length; ++i) {
+            if (parsed[i].end > selStart && parsed[i].start < selEnd) {
+                selected.push(parsed[i]);
+            }
+        }
+
+        if (selected.length > 1) {
+            await postMulti(request_num, selected);
+        } else if (selected.length === 1) {
+            await postSingle(request_num, selected[0].query, all_text);
+        }
+    } else {
+        const query = await getQueryUnderCursor();
+        /// In multi-query mode, preserve the full textarea content in history/URL
+        /// even when running a single query under cursor (so refresh restores all queries).
+        await postSingle(request_num, query, isMultiQuery ? query_area.value : undefined);
+    }
+
+    endFlight();
+}
+
+/// Run all queries from the textarea.
+async function postAll()
+{
+    ++request_num;
+    document.body.scrollTo(0, 0);
+    beginFlight();
+
+    const all_text = query_area.value;
+    const parsed = await splitAllQueries(all_text);
+
+    if (parsed.length > 1) {
+        await postMulti(request_num, parsed);
+    } else {
+        const query = await getQueryUnderCursor();
+        await postSingle(request_num, query);
+    }
+
+    endFlight();
 }
 
 async function cancel()
 {
-    controller.abort();
-    document.getElementById('run').innerText = 'Run';
+    /// Invalidate in-flight requests so postImpl/postSingle/postMulti will
+    /// see a stale posted_request_num and bail out before saving history.
+    ++request_num;
+    /// Cancel single-query mode controller.
+    if (controller) controller.abort();
+    /// Cancel all multi-query mode controllers.
+    for (const ac of multiQueryControllers) {
+        ac.abort();
+    }
+    multiQueryControllers = [];
+    endFlight();
 }
 
+function storeCredentials() {
+    if (password_elem.value) {
+        const cred = new PasswordCredential({
+            id: user_elem.value,
+            password: password_elem.value,
+            name: url_elem.value,
+        });
+        navigator.credentials.store(cred);
+    }
+}
+
+/// The "Run" / "Run one" button submits the form; handle it here.
 document.getElementById('controls').addEventListener('submit', e =>
 {
     e.preventDefault();
     if (in_flight) {
         cancel();
     } else {
-        post();
+        postOne();
+        storeCredentials();
+    }
+});
 
-        if (password_elem.value) {
-            const cred = new PasswordCredential({
-                id: user_elem.value,
-                password: password_elem.value,
-                name: url_elem.value,
-            });
-            navigator.credentials.store(cred);
-        }
+/// The "Run all" button.
+document.getElementById('run-all').addEventListener('click', e =>
+{
+    e.preventDefault();
+    if (!in_flight) {
+        postAll();
+        storeCredentials();
     }
 });
 
 document.addEventListener('keydown', event => {
     /// Firefox has code 13 for Enter and Chromium has code 10.
     if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
-        document.getElementById('controls').requestSubmit();
+        if (in_flight) {
+            cancel();
+        } else if (event.shiftKey && isMultiQuery) {
+            /// Ctrl/Cmd+Shift+Enter runs all queries in multi-query mode.
+            postAll();
+            storeCredentials();
+        } else {
+            postOne();
+            storeCredentials();
+        }
+        event.preventDefault();
     }
 });
 
@@ -2728,9 +3395,16 @@ query_area.onkeydown = (e) => {
 function clear()
 {
     resultEl.clear();
+    resultEl.style.display = '';
     progressEl.clear();
     logoEl.style.display = 'block';
     elapsed_ns = 0;
+
+    /// Clean up multi-query results.
+    if (multiQueryContainer) {
+        multiQueryContainer.innerHTML = '';
+        multiQueryContainer.style.display = 'none';
+    }
 }
 
 function formatReadable(number = 0, decimals = 2, units = []) {
@@ -2753,9 +3427,12 @@ function formatReadableRows(rows) {
     return formatReadable(rows, 2, units);
 }
 
-document.getElementById('query').addEventListener('focus', e => {
+/* Clicking outside data cells deactivates the selected cell */
+document.addEventListener('click', e => {
+    if (e.target.closest('query-result')) return;
     resultEl.clearSelection();
 });
+
 
 function appendTextareaResizer() {
     const queryDiv = document.getElementById('query_div');
@@ -2904,8 +3581,232 @@ async function getQueryUnderCursor() {
 
     }
 
-    return all_queries;
+    /// Cursor is in the last query (no trailing semicolon).
+    const tail = all_queries.substring(current_query_start);
+    query_area.setSelectionRange(current_query_start, all_queries.length);
+    query_area.focus();
+    return tail;
 }
+
+const PARALLELIZABLE_KEYWORDS = new Set([
+    'SELECT', 'SHOW', 'DESCRIBE', 'DESC', 'EXISTS', 'EXPLAIN', 'WITH'
+]);
+
+/// Split the textarea content into individual queries using the lexer.
+/// Returns an array of { query, is_select } objects.
+/// `is_select` is true for queries that start with a parallelizable keyword
+/// (after skipping whitespace, comments, and opening brackets).
+async function splitAllQueries(text) {
+    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+        return [{ query: text, is_select: PARALLELIZABLE_KEYWORDS.has(text.trimStart().split(/\s/)[0].toUpperCase()), start: 0, end: text.length }];
+    }
+
+    const tokens = await tokenize(text);
+    const queries = [];
+    let current_query_start = 0;
+    let current_offset = 0;
+    let first_keyword = null; /// First significant non-bracket token of the current query.
+    let has_significant = false;
+    let first_significant_offset = -1;
+    let last_significant_end = -1;
+
+    for (const elem of tokens) {
+        current_offset += elem.token.length;
+
+        if (elem.token == ';') {
+            if (has_significant) {
+                const q = text.substring(current_query_start, current_offset).trim();
+                if (q && q !== ';') {
+                    queries.push({
+                        query: q,
+                        is_select: first_keyword !== null && PARALLELIZABLE_KEYWORDS.has(first_keyword),
+                        start: first_significant_offset,
+                        end: last_significant_end,
+                    });
+                }
+            }
+            current_query_start = current_offset;
+            first_keyword = null;
+            has_significant = false;
+            first_significant_offset = -1;
+            last_significant_end = -1;
+        } else if (elem.significant) {
+            if (!has_significant) {
+                first_significant_offset = current_offset - elem.token.length;
+            }
+            last_significant_end = current_offset;
+            has_significant = true;
+            if (first_keyword === null && elem.token !== '(') {
+                first_keyword = elem.token.toUpperCase();
+            }
+        }
+    }
+
+    /// Last query (no trailing semicolon)
+    if (has_significant) {
+        const last = text.substring(current_query_start).trim();
+        if (last && last !== ';') {
+            queries.push({
+                query: last,
+                is_select: first_keyword !== null && PARALLELIZABLE_KEYWORDS.has(first_keyword),
+                start: first_significant_offset,
+                end: last_significant_end,
+            });
+        }
+    }
+
+    return queries;
+}
+
+/// Return an array of { start, end } character offsets for each non-empty query.
+/// Includes surrounding whitespace/semicolons so spans cover the full text without gaps.
+/// Used by updateQueryParams to detect multi-query mode and to highlight query regions.
+function getQueryBoundaries(tokens, text) {
+    const boundaries = [];
+    let current_query_start = 0;
+    let current_offset = 0;
+    let has_significant = false;
+
+    let first_significant_offset = -1;
+    let last_significant_end = -1;
+
+    for (const elem of tokens) {
+        current_offset += elem.token.length;
+        if (elem.token == ';') {
+            if (has_significant) {
+                boundaries.push({ start: first_significant_offset, end: last_significant_end });
+            }
+            current_query_start = current_offset;
+            has_significant = false;
+            first_significant_offset = -1;
+            last_significant_end = -1;
+        } else if (elem.significant) {
+            if (!has_significant) {
+                first_significant_offset = current_offset - elem.token.length;
+            }
+            last_significant_end = current_offset;
+            has_significant = true;
+        }
+    }
+
+    /// Last query (no trailing semicolon).
+    if (has_significant) {
+        boundaries.push({ start: first_significant_offset, end: last_significant_end });
+    }
+
+    return boundaries;
+}
+
+/// Show/hide the "Run all" button and relabel "Run" depending on multi-query mode and selection.
+let isMultiQuery = false;
+function updateRunButtons(multi) {
+    isMultiQuery = multi;
+    const runBtn = document.getElementById('run');
+    const runAllBtn = document.getElementById('run-all');
+    const has_selection = query_area.selectionStart !== query_area.selectionEnd;
+    const selects_all = has_selection
+        && query_area.selectionStart === 0
+        && query_area.selectionEnd >= query_area.value.length;
+
+    if (!in_flight) {
+        if (!multi) {
+            runBtn.innerText = 'Run';
+        } else {
+            runBtn.innerText = has_selection ? 'Run selected' : 'Run one';
+        }
+    }
+    runAllBtn.style.display = (multi && !selects_all) ? 'inline-block' : 'none';
+}
+
+/// Update the backdrop div behind the textarea to highlight individual queries
+/// with alternating faint background colors.
+const queryBackdrop = document.getElementById('query-backdrop');
+
+function escapeHTML(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/// Cached boundaries for cursor-tracking updates.
+let currentBoundaries = [];
+let currentBackdropText = '';
+
+function updateQueryBackdrop(text, boundaries) {
+    currentBoundaries = boundaries;
+    currentBackdropText = text;
+    renderQueryBackdrop();
+}
+
+function renderQueryBackdrop() {
+    const text = currentBackdropText;
+    const boundaries = currentBoundaries;
+
+    /// Update button labels to reflect current selection state.
+    updateRunButtons(boundaries.length > 1);
+
+    if (boundaries.length <= 1) {
+        queryBackdrop.style.display = 'none';
+        query_area.classList.remove('has-backdrop');
+        return;
+    }
+
+    const cursor = query_area.selectionStart;
+    const focused = document.activeElement === query_area;
+
+    /// Find which query contains the cursor (only when textarea is focused).
+    let activeIdx = -1;
+    if (focused) for (let i = 0; i < boundaries.length; ++i) {
+        if (cursor >= boundaries[i].start && cursor <= boundaries[i].end) {
+            activeIdx = i;
+            break;
+        }
+    }
+
+    let html = '';
+    let pos = 0;
+    for (let i = 0; i < boundaries.length; ++i) {
+        const b = boundaries[i];
+        if (b.start > pos) {
+            html += escapeHTML(text.substring(pos, b.start));
+        }
+        if (i === activeIdx) {
+            html += '<span class="q-active">' + escapeHTML(text.substring(b.start, b.end)) + '</span>';
+        } else {
+            html += escapeHTML(text.substring(b.start, b.end));
+        }
+        pos = b.end;
+    }
+    if (pos < text.length) {
+        html += escapeHTML(text.substring(pos));
+    }
+    /// Trailing newline fix: browsers collapse a trailing \n in a div.
+    if (html.endsWith('\n')) html += ' ';
+
+    queryBackdrop.innerHTML = html;
+    queryBackdrop.style.display = 'block';
+    query_area.classList.add('has-backdrop');
+
+    /// Match the scrollbar: reserve extra right padding so text wraps identically.
+    /// clientWidth excludes borders and scrollbar; offsetWidth includes borders.
+    /// The border is 1px on each side, so scrollbar = offsetWidth - clientWidth - 2.
+    const scrollbarWidth = query_area.offsetWidth - query_area.clientWidth - 2;
+    queryBackdrop.style.paddingRight = scrollbarWidth > 0 ? 'calc(0.25rem + ' + scrollbarWidth + 'px)' : '';
+
+    queryBackdrop.scrollTop = query_area.scrollTop;
+    queryBackdrop.scrollLeft = query_area.scrollLeft;
+}
+
+/// Re-render backdrop when cursor moves or selection changes.
+query_area.addEventListener('click', renderQueryBackdrop);
+query_area.addEventListener('keyup', renderQueryBackdrop);
+query_area.addEventListener('select', renderQueryBackdrop);
+query_area.addEventListener('focus', renderQueryBackdrop);
+query_area.addEventListener('blur', renderQueryBackdrop);
+
+/// Keep backdrop scroll in sync with textarea.
+query_area.addEventListener('scroll', () => {
+    queryBackdrop.scrollTop = query_area.scrollTop;
+    queryBackdrop.scrollLeft = query_area.scrollLeft;
+});
 
 /// Query parameters support: detect {name:Type} placeholders and show input fields.
 
@@ -2983,6 +3884,8 @@ async function updateQueryParams()
     {
         queryParamsContainer.innerHTML = '';
         currentQueryParams = [];
+        updateRunButtons(false);
+        updateQueryBackdrop('', []);
         return;
     }
 
@@ -2990,6 +3893,11 @@ async function updateQueryParams()
     const tokens = await tokenize(query);
     if (generation !== updateQueryParamsGeneration) { return; }
     const params = extractQueryParams(tokens);
+
+    /// Detect multi-query mode from the same token stream.
+    const boundaries = getQueryBoundaries(tokens, query);
+    updateRunButtons(boundaries.length > 1);
+    updateQueryBackdrop(query, boundaries);
 
     if (JSON.stringify(params) === JSON.stringify(currentQueryParams))
     {
@@ -3098,13 +4006,13 @@ if (query_area.value)
         setParamValues(urlParamValues);
         if (run_immediately)
         {
-            post();
+            postAll();
         }
     });
 }
 else if (run_immediately)
 {
-    post();
+    postAll();
 }
 
 document.getElementById('toggle-light').onclick = function() {

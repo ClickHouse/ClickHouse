@@ -70,6 +70,7 @@ static struct InitFiu
     REGULAR(cache_filesystem_failure) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
+    ONCE(distributed_cache_simulate_stale_connection) \
     REGULAR(write_through_cache_fail) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(object_storage_queue_fail_after_insert) \
@@ -100,6 +101,7 @@ static struct InitFiu
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
+    ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
@@ -168,7 +170,10 @@ static struct InitFiu
     REGULAR(datalake_try_get_table_return_nullptr) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
-    REGULAR(patch_parts_reverse_column_order)
+    REGULAR(patch_parts_reverse_column_order) \
+    REGULAR(wide_part_writer_fail_in_add_streams) \
+    REGULAR(compact_part_writer_fail_in_add_streams) \
+    REGULAR(query_metric_log_delay_collect)
 
 namespace FailPoints
 {
@@ -203,6 +208,10 @@ struct FailPointChannel
     /// after a notify, waitForPause waits for pause_epoch > resume_epoch,
     /// ensuring the pause happened after the most recent resume.
     size_t pause_epoch = 0;
+
+    /// Set to true by disableFailPoint so that waitForPause can return
+    /// even when no thread has paused (pause_epoch <= resume_epoch).
+    bool disabled = false;
 };
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
@@ -245,6 +254,7 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
     {
         /// Increment resume_epoch to wake up all waiting threads.
         ++iter->second->resume_epoch;
+        iter->second->disabled = true;
         iter->second->resume_cv.notify_all();
         iter->second->pause_cv.notify_all();
         fail_point_wait_channels.erase(iter);
@@ -305,7 +315,7 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
     /// after NOTIFY, the task thread may not have decremented pause_count yet,
     /// so a stale pause_count > 0 could cause waitForPause to return prematurely.
     channel->pause_cv.wait(lock, [&] {
-        return channel->pause_epoch > channel->resume_epoch;
+        return channel->pause_epoch > channel->resume_epoch || channel->disabled;
     });
 }
 
