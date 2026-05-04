@@ -37,49 +37,49 @@ Field JSONObjectReader::readFieldFromObject(const Poco::JSON::Object & obj)
 
     if (field_type == "Array")
     {
-        Array arr;
         auto json_arr = obj.getArray("value");
-        if (json_arr)
+        if (!json_arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected JSON array for `value` of Array field during AST JSON deserialization");
+        Array arr;
+        arr.reserve(json_arr->size());
+        for (unsigned int i = 0; i < json_arr->size(); ++i)
         {
-            for (unsigned int i = 0; i < json_arr->size(); ++i)
-            {
-                auto elem = json_arr->getObject(i);
-                if (!elem)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Array field during AST JSON deserialization", i);
-                arr.push_back(readFieldFromObject(*elem));
-            }
+            auto elem = json_arr->getObject(i);
+            if (!elem)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Array field during AST JSON deserialization", i);
+            arr.push_back(readFieldFromObject(*elem));
         }
         return Field(std::move(arr));
     }
     if (field_type == "Tuple")
     {
-        Tuple tup;
         auto json_arr = obj.getArray("value");
-        if (json_arr)
+        if (!json_arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected JSON array for `value` of Tuple field during AST JSON deserialization");
+        Tuple tup;
+        tup.reserve(json_arr->size());
+        for (unsigned int i = 0; i < json_arr->size(); ++i)
         {
-            for (unsigned int i = 0; i < json_arr->size(); ++i)
-            {
-                auto elem = json_arr->getObject(i);
-                if (!elem)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Tuple field during AST JSON deserialization", i);
-                tup.push_back(readFieldFromObject(*elem));
-            }
+            auto elem = json_arr->getObject(i);
+            if (!elem)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Tuple field during AST JSON deserialization", i);
+            tup.push_back(readFieldFromObject(*elem));
         }
         return Field(std::move(tup));
     }
     if (field_type == "Map")
     {
-        Map map;
         auto json_arr = obj.getArray("value");
-        if (json_arr)
+        if (!json_arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected JSON array for `value` of Map field during AST JSON deserialization");
+        Map map;
+        map.reserve(json_arr->size());
+        for (unsigned int i = 0; i < json_arr->size(); ++i)
         {
-            for (unsigned int i = 0; i < json_arr->size(); ++i)
-            {
-                auto elem = json_arr->getObject(i);
-                if (!elem)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Map field during AST JSON deserialization", i);
-                map.push_back(readFieldFromObject(*elem));
-            }
+            auto elem = json_arr->getObject(i);
+            if (!elem)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Map field during AST JSON deserialization", i);
+            map.push_back(readFieldFromObject(*elem));
         }
         return Field(std::move(map));
     }
