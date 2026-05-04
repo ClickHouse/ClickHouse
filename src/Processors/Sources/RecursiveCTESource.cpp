@@ -454,7 +454,17 @@ Map buildAdditionalTableFiltersForRecursiveStep(
         auto [user_idx, user_filter] = find_user_filter(group_key, entry.storage_id);
         if (user_idx != SIZE_MAX)
         {
-            combined_filter = "(" + combined_filter + ") AND (" + user_filter + ")";
+            String merged_filter = "(" + combined_filter + ") AND (" + user_filter + ")";
+
+            /// The merged predicate is also re-parsed under `max_query_size`. If the
+            /// CTE-derived filter and the user filter together exceed the budget,
+            /// drop the CTE-derived part and let the user filter pass through
+            /// unchanged via the loop below. This preserves the pre-optimization
+            /// behavior for queries that previously worked with just the user filter.
+            if (merged_filter.size() > max_filter_size)
+                continue;
+
+            combined_filter = std::move(merged_filter);
             merged_user_filter_indices.insert(user_idx);
         }
 
