@@ -1,6 +1,8 @@
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Port.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -45,6 +47,20 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
 
     if (context->getApplicationType() == Context::ApplicationType::SERVER)
     {
+        /// `WriteBufferFromFile` requires a local-filesystem destination. When
+        /// `user_files_policy` is configured, the first disk is what
+        /// `getUserFilesPaths().front()` resolves to; if that disk is remote
+        /// (e.g. `s3_plain`), reject with a clear error rather than attempting
+        /// to write through local APIs to a path that does not exist locally.
+        if (auto user_files_volume = context->getUserFilesVolume())
+        {
+            auto first_disk = user_files_volume->getDisks().front();
+            if (first_disk->isRemote())
+                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                                "input_format_record_errors_file_path is not supported "
+                                "with non-local `user_files_policy` disks (first disk `{}` is remote)",
+                                first_disk->getName());
+        }
         const auto user_files_paths = context->getUserFilesPaths();
         /// Resolve against the first user_files_path
         errors_file_path = fs::path(user_files_paths.front()) / path_in_setting;
