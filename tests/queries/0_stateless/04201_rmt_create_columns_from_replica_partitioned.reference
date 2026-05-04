@@ -1,0 +1,13 @@
+CREATE TABLE default.rmt_part_r2
+(
+    `key` Int32,
+    `val` String,
+    `dt` Date
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/test/04201_rmt_part/default', 'r2')
+PARTITION BY toYYYYMM(dt)
+ORDER BY key
+SETTINGS index_granularity = 8192
+2
+1	a	2024-01-01
+2	b	2024-02-01
