@@ -5,10 +5,6 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/PerCpuUntrackedMemory.h>
 
-#if defined(__linux__)
-#    include <sched.h>
-#endif
-
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 thread_local bool memory_tracker_always_throw_logical_error_on_allocation = false;
@@ -37,24 +33,6 @@ MemoryTracker * getMemoryTracker()
 
     return nullptr;
 }
-
-#if defined(__linux__)
-
-/// Resolve the CPU index once per call. The same value is reused for the
-/// paired `drain` on overflow so that overflow-and-flush race against
-/// migration cleanly.
-inline int currentCpu()
-{
-    int cpu = ::sched_getcpu();
-    if (cpu < 0)
-        return 0;
-    int n = DB::PerCpuUntrackedMemory::cpuCount();
-    if (n > 0 && cpu >= n)
-        cpu %= n;
-    return cpu;
-}
-
-#endif
 
 }
 
@@ -88,13 +66,11 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
     VariableContext blocker_level = MemoryTrackerBlockerInThread::getLevel();
     bool blocker_changed = blocker_level != current_thread->untracked_memory_blocker_level;
 
-#if defined(__linux__)
     if (likely(DB::PerCpuUntrackedMemory::isEnabled()))
     {
-        int cpu = currentCpu();
-
         if (blocker_changed)
         {
+            int cpu = DB::PerCpuUntrackedMemory::currentCpu();
             Int64 drained = DB::PerCpuUntrackedMemory::drain(cpu);
             if (drained > 0)
                 std::ignore = memory_tracker->allocImpl(drained, /*throw_if_memory_exceeded=*/false);
@@ -103,10 +79,10 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             current_thread->untracked_memory_blocker_level = blocker_level;
         }
 
-        Int64 new_local = DB::PerCpuUntrackedMemory::add(cpu, size);
-        if (new_local > current_thread->untracked_memory_limit)
+        auto added = DB::PerCpuUntrackedMemory::add(size);
+        if (added.new_local > current_thread->untracked_memory_limit)
         {
-            Int64 to_flush = DB::PerCpuUntrackedMemory::drain(cpu);
+            Int64 to_flush = DB::PerCpuUntrackedMemory::drain(added.cpu);
             if (to_flush > 0)
             {
                 try
@@ -117,7 +93,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
                 {
                     /// Re-stage the drained delta. May land on a different CPU
                     /// after migration; bounded by `untracked_memory_limit`.
-                    DB::PerCpuUntrackedMemory::add(cpu, to_flush - size);
+                    DB::PerCpuUntrackedMemory::add(to_flush - size);
                     throw;
                 }
             }
@@ -128,7 +104,6 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
         }
         return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
     }
-#endif
 
     /// Fallback: legacy per-thread path.
     if (blocker_changed)
@@ -184,13 +159,11 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
     VariableContext blocker_level = MemoryTrackerBlockerInThread::getLevel();
     bool blocker_changed = blocker_level != current_thread->untracked_memory_blocker_level;
 
-#if defined(__linux__)
     if (likely(DB::PerCpuUntrackedMemory::isEnabled()))
     {
-        int cpu = currentCpu();
-
         if (blocker_changed)
         {
+            int cpu = DB::PerCpuUntrackedMemory::currentCpu();
             Int64 drained = DB::PerCpuUntrackedMemory::drain(cpu);
             if (drained > 0)
                 std::ignore = memory_tracker->allocImpl(drained, /*throw_if_memory_exceeded=*/false);
@@ -199,10 +172,10 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
             current_thread->untracked_memory_blocker_level = blocker_level;
         }
 
-        Int64 new_local = DB::PerCpuUntrackedMemory::add(cpu, -size);
-        if (new_local < -current_thread->untracked_memory_limit)
+        auto added = DB::PerCpuUntrackedMemory::add(-size);
+        if (added.new_local < -current_thread->untracked_memory_limit)
         {
-            Int64 to_flush = DB::PerCpuUntrackedMemory::drain(cpu);
+            Int64 to_flush = DB::PerCpuUntrackedMemory::drain(added.cpu);
             if (to_flush < 0)
                 return memory_tracker->free(-to_flush);
             else if (to_flush > 0)
@@ -210,7 +183,6 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         }
         return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
     }
-#endif
 
     if (blocker_changed)
         current_thread->flushUntrackedMemory();

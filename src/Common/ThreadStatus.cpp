@@ -18,10 +18,6 @@
 #include <csignal>
 #include <sys/mman.h>
 
-#if defined(__linux__)
-#    include <sched.h>
-#endif
-
 
 namespace DB
 {
@@ -243,21 +239,12 @@ void ThreadStatus::flushUntrackedMemory()
     Int64 current_untracked_memory = untracked_memory;
     untracked_memory = 0;
 
-#if defined(__linux__)
     /// Drain the current CPU's slot too. The slot is shared across threads,
     /// so this picks up other threads' contributions as well — fine for the
     /// "make all pending memory visible" contract this method provides.
     /// Attribution drift is bounded by `untracked_memory_limit`.
     if (PerCpuUntrackedMemory::isEnabled())
-    {
-        int cpu = ::sched_getcpu();
-        if (cpu < 0)
-            cpu = 0;
-        else if (int n = PerCpuUntrackedMemory::cpuCount(); n > 0 && cpu >= n)
-            cpu %= n;
-        current_untracked_memory += PerCpuUntrackedMemory::drain(cpu);
-    }
-#endif
+        current_untracked_memory += PerCpuUntrackedMemory::drain(PerCpuUntrackedMemory::currentCpu());
 
     if (current_untracked_memory == 0)
         return;
