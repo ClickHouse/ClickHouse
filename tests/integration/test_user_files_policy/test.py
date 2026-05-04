@@ -337,3 +337,36 @@ def test_local_partitioned_insert_rejected():
             "INSERT INTO FUNCTION file('part_{_partition_id}.csv', 'CSV', 'x UInt64') "
             "PARTITION BY x SELECT number FROM numbers(3)"
         )
+
+
+def test_local_truncate_table_routes_through_disk():
+    """`TRUNCATE TABLE` for `File` engine must route through `IDisk` so it actually
+    empties the underlying file. Without disk-aware truncation, `fs::exists`/`::truncate`
+    on the absolute disk path would silently no-op for non-local backends (and even for
+    local disks, this exercises the disk-routing path used for object storage)."""
+    node_local.query("DROP TABLE IF EXISTS truncate_routed")
+    node_local.query(
+        "CREATE TABLE truncate_routed (x UInt64) ENGINE = File(CSV, 'truncate_routed.csv')"
+    )
+    node_local.query("INSERT INTO truncate_routed VALUES (1), (2), (3)")
+    assert node_local.query("SELECT count() FROM truncate_routed").strip() == "3"
+
+    node_local.query("TRUNCATE TABLE truncate_routed")
+    assert node_local.query("SELECT count() FROM truncate_routed").strip() == "0"
+    node_local.query("DROP TABLE truncate_routed")
+
+
+def test_s3_truncate_table_routes_through_disk():
+    """Same as above for the S3-backed disk: `TRUNCATE TABLE` must remove the
+    underlying object instead of relying on local `fs::exists`/`::truncate`,
+    which would silently no-op against an object-storage backend."""
+    node_s3.query("DROP TABLE IF EXISTS s3_truncate_routed")
+    node_s3.query(
+        "CREATE TABLE s3_truncate_routed (x UInt64) ENGINE = File(CSV, 's3_truncate_routed.csv')"
+    )
+    node_s3.query("INSERT INTO s3_truncate_routed VALUES (10), (20)")
+    assert node_s3.query("SELECT count() FROM s3_truncate_routed").strip() == "2"
+
+    node_s3.query("TRUNCATE TABLE s3_truncate_routed")
+    assert node_s3.query("SELECT count() FROM s3_truncate_routed").strip() == "0"
+    node_s3.query("DROP TABLE s3_truncate_routed")

@@ -2906,10 +2906,25 @@ void StorageFile::truncate(
     {
         if (0 != ::ftruncate(table_fd, 0))
             throw ErrnoException(ErrorCodes::CANNOT_TRUNCATE_FILE, "Cannot truncate file at fd {}", toString(table_fd));
+        return;
     }
-    else
+
+    for (const auto & path : paths)
     {
-        for (const auto & path : paths)
+        if (user_files_volume)
+        {
+            /// `paths` hold absolute display paths `<disk_path>/<relative>`. Route truncation
+            /// through `IDisk` so it works for non-local backends (e.g. `s3_plain`); using
+            /// local `fs::exists`/`::truncate` would silently no-op there because the
+            /// absolute disk path does not exist on the local filesystem.
+            auto [disk, relative] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+            if (!disk)
+                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                    "Path `{}` is not inside any user files disk", path);
+            validateDiskRelativePathBoundary(disk, relative);
+            disk->removeFileIfExists(relative);
+        }
+        else
         {
             if (!fs::exists(path))
                 continue;
