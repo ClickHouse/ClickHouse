@@ -203,7 +203,7 @@ Test output:
         title = result.name
         body = f"""\
 Test name: {result.name}
-{ci_report_line}Failing test history: [cidb]({result.get_hlabel_link("cidb")})
+{ci_report_line}Failing test history: [cidb]({result.get_label_link(Result.Label.CIDB)})
 
 Test output:
 ```
@@ -263,8 +263,8 @@ Test output:
             max_info_lines_cnt=50,
             max_line_length=200,
         )
-        res += f"\n - flags: {', '.join(result.get_labels()) or 'not flaged'}"
-        res += f"\n - cidb: {result.get_hlabel_link('cidb') or 'not found'}"
+        res += f"\n - flags: {', '.join(result.get_labels()) or 'not flagged'}"
+        res += f"\n - cidb: {result.get_label_link(Result.Label.CIDB) or 'not found'}"
         return res
 
     @classmethod
@@ -409,16 +409,16 @@ class CommitStatusCheck:
                 sys.exit(0)
             GH.post_commit_status(
                 CheckStatuses.CH_INC_SYNC,
-                Result.Status.SUCCESS,
+                Result.Status.OK,
                 "Manually overridden",
                 "",
                 sha=sha,
                 repo="ClickHouse/ClickHouse",
             )
             return
-        if commit_status_data.state in (Result.Status.SUCCESS,):
+        if commit_status_data.state in (Result.GHStatus.SUCCESS,):
             pass
-        elif commit_status_data.state in (Result.Status.FAILED,):
+        elif commit_status_data.state in (Result.GHStatus.FAILURE,):
             if commit_status_data.description == "tests failed":
                 print(
                     f"\nCH Sync failed for commit, description: {commit_status_data.description}"
@@ -426,7 +426,7 @@ class CommitStatusCheck:
                 if UserPrompt.confirm("You sure it can be ignored?"):
                     GH.post_commit_status(
                         commit_status_data.context,
-                        Result.Status.SUCCESS,
+                        Result.Status.OK,
                         "Ignored",
                         commit_status_data.url,
                         sha=sha,
@@ -439,7 +439,7 @@ class CommitStatusCheck:
                     f"\nCH Sync commit status state: {commit_status_data.state} and description: {commit_status_data.description} - cannot proceed"
                 )
                 sys.exit(1)
-        elif commit_status_data.state in (Result.Status.PENDING,):
+        elif commit_status_data.state in (Result.GHStatus.PENDING,):
             if commit_status_data.description == "tests started":
                 print(
                     f"\n{commit_status_data.context} is pending with description {commit_status_data.description}"
@@ -447,7 +447,7 @@ class CommitStatusCheck:
                 if UserPrompt.confirm("You sure it can be ignored?"):
                     GH.post_commit_status(
                         commit_status_data.context,
-                        Result.Status.SUCCESS,
+                        Result.Status.OK,
                         "Ignored",
                         commit_status_data.url,
                         sha=sha,
@@ -466,11 +466,11 @@ class CommitStatusCheck:
         commit_status_data: Optional[GH.CommitStatus], sha: str
     ):
         override = False
-        if commit_status_data and commit_status_data.state in (Result.Status.SUCCESS,):
+        if commit_status_data and commit_status_data.state in (Result.GHStatus.SUCCESS,):
             pass
         elif not commit_status_data:
             override = True
-        elif commit_status_data.state in (Result.Status.FAILED,):
+        elif commit_status_data.state in (Result.GHStatus.FAILURE,):
             if UserPrompt.confirm("Do you want to override mergeable check?"):
                 override = True
             else:
@@ -482,7 +482,7 @@ class CommitStatusCheck:
         if override:
             GH.post_commit_status(
                 CheckStatuses.MERGEABLE_CHECK,
-                Result.Status.SUCCESS,
+                Result.Status.OK,
                 "Manually overridden",
                 "",
                 sha=sha,
@@ -708,7 +708,7 @@ def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_is
             print(f"{failure_cnt}. [ {failure_result.status} ] {failure_result.name}")
             if job_name != failure_result.name:
                 print(f"  in {job_name}")
-                print(f"cidb: {failure_result.get_hlabel_link('cidb')}")
+                print(f"cidb: {failure_result.get_label_link(Result.Label.CIDB)}")
 
             # Create new issue if user confirms
             if UserPrompt.confirm("Create GitHub issue for this failure?"):
@@ -731,7 +731,7 @@ def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_is
                         issue_catalog.active_test_issues.append(ci_issue)
                         issue_catalog.dump()
                     failure_result.set_comment("ISSUE CREATED")
-                    failure_result.set_clickable_label("issue", ci_issue.url)
+                    failure_result.set_label(Result.Label.ISSUE, link=ci_issue.url)
                     known_failures.append((job_name, failure_result))
                     issues_created_count += 1
                 else:
@@ -872,8 +872,8 @@ def main():
         if (
             status_map[CheckStatuses.PR].state
             not in (
-                Result.Status.SUCCESS,
-                Result.Status.FAILED,
+                Result.GHStatus.SUCCESS,
+                Result.GHStatus.FAILURE,
             )
             and not FORCE_MERGE
         ):
@@ -915,7 +915,7 @@ def main():
     sync_unknown_failures = []
     if (
         sync_status
-        and sync_status.state == Result.Status.FAILED
+        and sync_status.state == Result.GHStatus.FAILURE
         and sync_status.description == "tests failed"
     ):
         print("\n=== Processing Sync PR (CH Inc sync) failures ===")

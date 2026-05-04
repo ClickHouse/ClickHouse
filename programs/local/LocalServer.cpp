@@ -22,6 +22,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/SystemLog.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Access/AccessControl.h>
@@ -39,7 +40,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
@@ -1174,6 +1175,18 @@ void LocalServer::processConfig()
         DatabaseCatalog::instance().createBackgroundTasks();
         DatabaseCatalog::instance().startupBackgroundTasks();
     }
+
+    /// Initialize system logs only when explicitly configured (e.g. `query_log`, `processors_profile_log`).
+    /// Default `clickhouse-local` invocations have no system log sections in the config, and skipping
+    /// initialization avoids a TSan-visible race between background pool task logging and `Context`
+    /// teardown that would otherwise be triggered for short-lived processes.
+    /// Also skip in `--only-system-tables` mode, which is intended for reading existing persisted
+    /// system tables; spinning up the loggers there is unnecessary and can race with shutdown.
+    /// This must happen after the system database is attached.
+    if (!getClientConfiguration().has("no-system-tables")
+        && !getClientConfiguration().has("only-system-tables")
+        && hasAnySystemLogConfigured(config()))
+        global_context->initializeSystemLogs();
 
     std::string default_database = getClientConfiguration().getString("database", server_default_database);
     if (default_database.empty())

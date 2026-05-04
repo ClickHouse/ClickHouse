@@ -1,4 +1,5 @@
 #include <Core/QueryProcessingStage.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -59,7 +60,7 @@ void StorageWithCommonVirtualColumns::read(
     }
 
     /// Proxy to underlying storage.
-    auto filtered_columns = VirtualColumnUtils::filterVirtualColumns(column_names, storage_snapshot->metadata, storage_snapshot->virtual_columns, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Plan);
+    auto filtered_columns = VirtualColumnUtils::filterVirtualColumns(column_names, storage_snapshot->metadata, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Plan);
     readImpl(query_plan, filtered_columns, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
     /// Materialize constant virtuals.
