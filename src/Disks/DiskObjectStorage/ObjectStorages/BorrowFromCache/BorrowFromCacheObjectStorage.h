@@ -73,7 +73,10 @@ public:
 private:
     struct SegmentEntry
     {
-        FileSegmentsHolderPtr holder;
+        /// Shared with the active `WriteBufferToFileSegment` decorator, so the holder
+        /// (and the cache reservation it pins) outlives both the entry and the buffer
+        /// regardless of which one is destroyed first.
+        std::shared_ptr<FileSegmentsHolder> holder;
         std::string cache_path; /// Path on the local filesystem inside the cache
     };
 

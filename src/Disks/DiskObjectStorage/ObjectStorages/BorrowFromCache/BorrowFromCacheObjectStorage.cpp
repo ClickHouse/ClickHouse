@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/BorrowFromCache/BorrowFromCacheObjectStorage.h>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/copyData.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/WriteBufferToFileSegment.h>
@@ -20,6 +21,26 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
+}
+
+namespace
+{
+    /// Decorator that keeps a shared `FileSegmentsHolder` alive for as long as the write buffer is alive.
+    /// The same holder is also stored in `BorrowFromCacheObjectStorage::entries`. Sharing ownership
+    /// ensures the segment outlives both the buffer and concurrent removals from `entries`,
+    /// avoiding a use-after-free of the raw `FileSegment *` held inside `WriteBufferToFileSegment`.
+    class HoldingWriteBuffer : public WriteBufferFromFileDecorator
+    {
+    public:
+        HoldingWriteBuffer(std::unique_ptr<WriteBuffer> impl_, std::shared_ptr<FileSegmentsHolder> holder_)
+            : WriteBufferFromFileDecorator(std::move(impl_))
+            , holder(std::move(holder_))
+        {
+        }
+
+    private:
+        std::shared_ptr<FileSegmentsHolder> holder;
+    };
 }
 
 BorrowFromCacheObjectStorage::BorrowFromCacheObjectStorage(const std::string & name_, FileCachePtr file_cache_)
@@ -80,7 +101,7 @@ std::unique_ptr<WriteBufferFromFileBase> BorrowFromCacheObjectStorage::writeObje
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "BorrowFromCacheObjectStorage doesn't support append to files");
 
     const auto key = FileSegment::Key::random();
-    auto segment_holder = file_cache->set(
+    std::shared_ptr<FileSegmentsHolder> segment_holder = file_cache->set(
         key, 0, std::max<size_t>(1, buf_size),
         CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonOrigin());
 
@@ -90,11 +111,12 @@ std::unique_ptr<WriteBufferFromFileBase> BorrowFromCacheObjectStorage::writeObje
     std::string cache_path = segment_holder->front().getPath();
     LOG_TEST(log, "Write object: {} -> {}", object.remote_path, cache_path);
 
-    auto write_buffer = std::make_unique<WriteBufferToFileSegment>(&segment_holder->front(), buf_size);
+    auto inner_buffer = std::make_unique<WriteBufferToFileSegment>(&segment_holder->front(), buf_size);
+    auto write_buffer = std::make_unique<HoldingWriteBuffer>(std::move(inner_buffer), segment_holder);
 
     {
         std::lock_guard lock(mutex);
-        entries[object.remote_path] = SegmentEntry{std::move(segment_holder), cache_path};
+        entries[object.remote_path] = SegmentEntry{segment_holder, cache_path};
     }
 
     return write_buffer;
