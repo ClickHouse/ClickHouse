@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Sources/NullSource.h>
@@ -934,31 +935,65 @@ std::optional<String> optimizeUseAggregateProjections(
 
     const auto & projection_header = aggregate_projection_node->step->getOutputHeader();
 
+    QueryPlan::Node * source_node = aggregate_projection_node;
+
+    if (aggregating)
+    {
+        if (has_parent_parts)
+            node.step = aggregating->convertToAggregatingProjection(projection_header);
+        else
+            aggregating->requestOnlyMergeForAggregateProjection(projection_header);
+    }
+    else
+    {
+        /// For DISTINCT, handle potential type mismatches between the projection
+        /// output and the expected types. This can happen when removeTrivialWrappers
+        /// strips materialize/identity from the query DAG, causing the query to match
+        /// a projection whose column types differ in LowCardinality wrapping.
+        const auto & expected_header = node.step->getOutputHeader();
+        if (blocksHaveEqualStructure(*projection_header, *expected_header))
+        {
+            if (!has_parent_parts)
+                node.step->updateInputHeader(projection_header);
+        }
+        else
+        {
+            auto converting = ActionsDAG::makeConvertingActions(
+                projection_header->getColumnsWithTypeAndName(),
+                expected_header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                context);
+            auto & converting_node = nodes.emplace_back();
+            converting_node.step = std::make_unique<ExpressionStep>(
+                projection_header, std::move(converting));
+            converting_node.children.push_back(aggregate_projection_node);
+            source_node = &converting_node;
+        }
+    }
+
     if (has_parent_parts)
     {
         if (aggregating)
         {
-            node.step = aggregating->convertToAggregatingProjection(projection_header);
+            node.children.push_back(source_node);
         }
         else
         {
-            node.step->updateInputHeader(projection_header);
+            /// Some parts have no projection data. DistinctStep must see rows from both readings
+            /// to return the correct set of distinct values; union them into its single input.
+            auto * main_node = node.children.front();
+            SharedHeaders input_headers = {
+                main_node->step->getOutputHeader(),
+                source_node->step->getOutputHeader(),
+            };
+            auto & union_node = nodes.emplace_back();
+            union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
+            union_node.children = {main_node, source_node};
+            node.children.front() = &union_node;
         }
-        node.children.push_back(aggregate_projection_node);
     }
     else
-    {
-        /// All parts are taken from projection
-        if (aggregating)
-        {
-            aggregating->requestOnlyMergeForAggregateProjection(projection_header);
-        }
-        else
-        {
-            node.step->updateInputHeader(projection_header);
-        }
-        node.children.front() = aggregate_projection_node;
-    }
+        node.children.front() = source_node;
 
     return selected_projection_name;
 }
