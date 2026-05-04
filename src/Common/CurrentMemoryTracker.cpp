@@ -83,25 +83,25 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
         /// `to_flush` is the bytes the caller must transfer to the parent
         /// tracker; the slot keeps the new delta plus any peer adds that
         /// arrived between our peek and the CS.
-        auto t = DB::PerCPUUntrackedMemory::track(size, current_thread->untracked_memory_limit);
-        if (t.to_flush > 0)
+        Int64 to_flush = DB::PerCPUUntrackedMemory::track(size, current_thread->untracked_memory_limit);
+        if (to_flush > 0)
         {
             try
             {
-                return memory_tracker->allocImpl(t.to_flush, throw_if_memory_exceeded);
+                return memory_tracker->allocImpl(to_flush, throw_if_memory_exceeded);
             }
             catch (...)
             {
                 /// Stage the failed flush back so the bytes are not lost.
-                /// The reverse `track(t.to_flush, ...)` may land on a
-                /// different CPU after migration; bounded by limit.
-                DB::PerCPUUntrackedMemory::track(t.to_flush, current_thread->untracked_memory_limit);
+                /// The reverse `track` may land on a different CPU after
+                /// migration; bounded by `untracked_memory_limit`.
+                DB::PerCPUUntrackedMemory::track(to_flush, current_thread->untracked_memory_limit);
                 throw;
             }
         }
-        else if (t.to_flush < 0)
+        else if (to_flush < 0)
         {
-            std::ignore = memory_tracker->free(-t.to_flush);
+            std::ignore = memory_tracker->free(-to_flush);
         }
         return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
     }
@@ -173,11 +173,11 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
             current_thread->untracked_memory_blocker_level = blocker_level;
         }
 
-        auto t = DB::PerCPUUntrackedMemory::track(-size, current_thread->untracked_memory_limit);
-        if (t.to_flush < 0)
-            return memory_tracker->free(-t.to_flush);
-        if (t.to_flush > 0)
-            std::ignore = memory_tracker->allocImpl(t.to_flush, /*throw_if_memory_exceeded=*/false);
+        Int64 to_flush = DB::PerCPUUntrackedMemory::track(-size, current_thread->untracked_memory_limit);
+        if (to_flush < 0)
+            return memory_tracker->free(-to_flush);
+        if (to_flush > 0)
+            std::ignore = memory_tracker->allocImpl(to_flush, /*throw_if_memory_exceeded=*/false);
         return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
     }
 

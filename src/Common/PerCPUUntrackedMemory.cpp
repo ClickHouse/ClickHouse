@@ -104,7 +104,7 @@ int currentCPU()
 #endif
 }
 
-TrackResult track(Int64 delta, Int64 limit)
+Int64 track(Int64 delta, Int64 limit)
 {
 #if USE_LIBRSEQ
     if (rseq_ready)
@@ -127,7 +127,7 @@ TrackResult track(Int64 delta, Int64 limit)
             intptr_t * slot_ptr = reinterpret_cast<intptr_t *>(&slots[cpu].value);
             if (rseq_load_add_store__ptr(RSEQ_MO_RELAXED, RSEQ_PERCPU_CPU_ID,
                                          slot_ptr, static_cast<intptr_t>(adjustment), cpu) == 0)
-                return {cpu, over ? current : Int64{0}};
+                return over ? current : Int64{0};
         }
     }
 #endif
@@ -142,7 +142,7 @@ TrackResult track(Int64 delta, Int64 limit)
         Int64 next = over ? delta : (current + delta);
         if (__atomic_compare_exchange_n(&slots[cpu].value, &current, next,
                                         /*weak=*/false, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
-            return {cpu, over ? current : Int64{0}};
+            return over ? current : Int64{0};
     }
 }
 
