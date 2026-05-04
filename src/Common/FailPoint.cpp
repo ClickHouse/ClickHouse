@@ -132,7 +132,8 @@ static struct InitFiu
     REGULAR(patch_parts_reverse_column_order) \
     ONCE(smt_commit_exception_before_op) \
     ONCE(backup_add_empty_memory_table) \
-    REGULAR(refresh_task_stop_racing_for_running_refresh)
+    REGULAR(refresh_task_stop_racing_for_running_refresh) \
+    REGULAR(wide_part_writer_fail_in_add_streams)
 
 
 namespace FailPoints
