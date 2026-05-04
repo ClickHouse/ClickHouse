@@ -246,7 +246,7 @@ void ThreadStatus::flushUntrackedMemory()
     /// contributions too. That matches the "make pending bytes visible"
     /// contract; attribution drift is bounded by `untracked_memory_limit`.
     if (PerCPUUntrackedMemory::isEnabled())
-        current_untracked_memory += PerCPUUntrackedMemory::drain(PerCPUUntrackedMemory::currentCPU());
+        current_untracked_memory += PerCPUUntrackedMemory::drain();
 
     if (current_untracked_memory == 0)
         return;

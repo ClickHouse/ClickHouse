@@ -70,8 +70,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
     {
         if (blocker_changed)
         {
-            int cpu = DB::PerCPUUntrackedMemory::currentCPU();
-            Int64 drained = DB::PerCPUUntrackedMemory::drain(cpu);
+            Int64 drained = DB::PerCPUUntrackedMemory::drain();
             if (drained > 0)
                 std::ignore = memory_tracker->allocImpl(drained, /*throw_if_memory_exceeded=*/false);
             else if (drained < 0)
@@ -164,8 +163,7 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
     {
         if (blocker_changed)
         {
-            int cpu = DB::PerCPUUntrackedMemory::currentCPU();
-            Int64 drained = DB::PerCPUUntrackedMemory::drain(cpu);
+            Int64 drained = DB::PerCPUUntrackedMemory::drain();
             if (drained > 0)
                 std::ignore = memory_tracker->allocImpl(drained, /*throw_if_memory_exceeded=*/false);
             else if (drained < 0)

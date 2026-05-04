@@ -73,19 +73,7 @@ constexpr bool rseq_ready = false;
 
 #endif
 
-}
-
-bool isEnabled()
-{
-    return n_cpu > 0;
-}
-
-int cpuCount()
-{
-    return n_cpu;
-}
-
-int currentCPU()
+inline int currentCPU()
 {
 #if USE_LIBRSEQ
     if (rseq_ready)
@@ -102,6 +90,18 @@ int currentCPU()
 #else
     return 0;
 #endif
+}
+
+}
+
+bool isEnabled()
+{
+    return n_cpu > 0;
+}
+
+int cpuCount()
+{
+    return n_cpu;
 }
 
 Int64 track(Int64 delta, Int64 limit)
@@ -146,14 +146,13 @@ Int64 track(Int64 delta, Int64 limit)
     }
 }
 
-Int64 drain(int cpu)
+Int64 drain()
 {
-    /// Un-paired drain. Caller is expected to be running on `cpu` itself,
-    /// so the kernel guarantees no concurrent rseq RMW from other threads
-    /// on this CPU (whoever was in a CS got preempted and restarted by the
-    /// kernel before we ran). The atomic exchange therefore sees a stable
-    /// slot value and cannot race with rseq's load/add/store sequence.
-    return __atomic_exchange_n(&slots[cpu].value, Int64{0}, __ATOMIC_RELAXED);
+    /// Un-paired drain on this thread's current CPU. The kernel serializes
+    /// our atomic exchange against any concurrent rseq RMW from other
+    /// threads on the same CPU (whoever was in a CS got preempted and
+    /// restarted), so the exchange sees a stable slot value.
+    return __atomic_exchange_n(&slots[currentCPU()].value, Int64{0}, __ATOMIC_RELAXED);
 }
 
 Int64 peekTotal()

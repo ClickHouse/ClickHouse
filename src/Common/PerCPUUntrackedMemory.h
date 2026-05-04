@@ -24,10 +24,6 @@ namespace DB::PerCPUUntrackedMemory
 bool isEnabled();
 int  cpuCount();
 
-/// Resolve the current CPU index without performing a slot operation.
-/// Useful for un-paired drain sites (e.g. `flushUntrackedMemory`).
-int currentCPU();
-
 /// Add `delta` to the current CPU's slot. If the slot's prior value was over
 /// `limit` (in magnitude), drain it as part of the same rseq CS — return the
 /// drained value (signed). Otherwise return 0; the delta is just buffered.
@@ -42,12 +38,12 @@ int currentCPU();
 /// the CS. No bytes are lost or double-counted.
 Int64 track(Int64 delta, Int64 limit);
 
-/// Un-paired drain: atomically swap slots[cpu] with 0 and return the prior
-/// value. Always succeeds. The caller is expected to be running on `cpu`
-/// itself (typically resolved via `currentCPU()` immediately before this
-/// call), so concurrent rseq adds from other threads on the same CPU are
-/// serialized by the kernel and cannot race.
-Int64 drain(int cpu);
+/// Un-paired drain of the current CPU's slot: atomically swaps it with 0
+/// and returns the prior value. Always succeeds. The kernel serializes
+/// our atomic exchange against any concurrent rseq add from other threads
+/// on the same CPU (whoever was in a CS got preempted and restarted), so
+/// no cross-CPU race against the rseq load/add/store sequence is possible.
+Int64 drain();
 
 /// Sum of slots[i] across all i, with relaxed loads and no reset. O(ncpu).
 /// Slow path — intended for `MemoryTracker` to consult under memory pressure.
