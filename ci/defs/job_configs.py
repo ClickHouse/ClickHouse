@@ -128,6 +128,7 @@ common_stress_job_config = Job.Config(
             "./tests/config",
             "./tests/*.txt",
             "./tests/docker_scripts/",
+            "./tests/integration/",  # NOTE (strtgbb): integration tests are gated by fast test, so need to include them
             "./ci/docker/stress-test",
             "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/log_parser.py",
