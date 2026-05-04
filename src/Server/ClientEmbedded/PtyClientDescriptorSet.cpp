@@ -1,6 +1,7 @@
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
+#include <Common/logger_useful.h>
 
 #include <base/openpty.h>
 #include <unistd.h>
@@ -26,6 +27,19 @@ void PtyClientDescriptorSet::FileDescriptorWrapper::close()
     fd = -1;
     if (::close(to_close) != 0 && errno != EINTR)
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Unexpected error while closing file descriptor");
+}
+
+
+PtyClientDescriptorSet::FileDescriptorWrapper::~FileDescriptorWrapper()
+{
+    try
+    {
+        close();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
