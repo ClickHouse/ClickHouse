@@ -255,11 +255,6 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
-    /// Write allocated CSN into version metadata, so we will know CSN without reading it from transaction log
-    /// and we will be able to remove old entries from transaction log in ZK.
-    /// It's not a problem if server crash before CSN is written, because we already have TID in data part and entry in the log.
-    [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
-    chassert(prev_value == Tx::CommittingCSN);
 
     DataPartsVector created_parts;
     DataPartsVector removed_parts;
@@ -272,18 +267,35 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
         committed_mutations = mutations;
     }
 
+    /// Write allocated CSN into version metadata, so we will know CSN without reading it from transaction log
+    /// and we will be able to remove old entries from transaction log in ZK.
+    /// It's not a problem if server crash before CSN is written, because we already have TID in data part and entry in the log.
+    ///
+    /// IMPORTANT: update parts and mutations BEFORE publishing the COMMITTED state via `csn.exchange(assigned_csn)`.
+    /// Otherwise threads waiting on `waitStateChange(CommittingCSN)` (e.g. `executeCommit` for the
+    /// unknown-state path triggered by fault injection in ZK after the commit point) wake up
+    /// as soon as the state transitions to COMMITTED, race ahead, and observe parts whose
+    /// `creation_csn` / `removal_csn` are still 0 because the loops below have not run yet.
+    /// Crash recovery is unaffected: the source of truth is the TID in the part metadata + the
+    /// CSN entry in the log; either of those alone is enough to recover the CSN on startup.
     for (const auto & part : created_parts)
     {
-        part->version->setAndStoreCreationCSN(csn);
+        part->version->setAndStoreCreationCSN(assigned_csn);
     }
 
     for (const auto & part : removed_parts)
     {
-        part->version->setAndStoreRemovalCSN(csn);
+        part->version->setAndStoreRemovalCSN(assigned_csn);
     }
 
     for (const auto & storage_and_mutation : committed_mutations)
-        storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, csn);
+        storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, assigned_csn);
+
+    /// Now publish the assigned CSN. After this point `getState()` returns `COMMITTED` and any
+    /// waiters on `csn` (via `waitStateChange`) are notified. They are guaranteed to observe the
+    /// updated parts and mutations because all writes above happen-before this atomic exchange.
+    [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
+    chassert(prev_value == Tx::CommittingCSN);
 }
 
 bool MergeTreeTransaction::rollback() noexcept
