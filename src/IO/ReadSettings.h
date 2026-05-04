@@ -4,8 +4,8 @@
 #include <Core/Defines.h>
 #include <IO/DistributedCacheSettings.h>
 #include <IO/ReadMethod.h>
-#include <Interpreters/Cache/FileCache_fwd.h>
-#include <Interpreters/Cache/FileCacheOriginInfo.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
+#include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/IThrottler.h>
@@ -93,6 +93,7 @@ struct ReadSettings
     DistributedCacheSettings distributed_cache_settings;
     std::optional<FileCacheOriginInfo> filecache_origin_info;
     bool enable_hdfs_pread = true;
+    bool enable_blob_storage_log_for_read_operations = false;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
     ReadSettings withNestedBuffer(bool seekable = false) const;

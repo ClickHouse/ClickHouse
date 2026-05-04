@@ -1,0 +1,84 @@
+-- Disabled by default
+-- Enabled after setting
+aiGenerate
+-- aiGenerate: too few arguments
+-- aiGenerate: too many arguments
+-- Named collection missing provider
+-- Named collection missing endpoint
+-- Named collection missing model
+-- Named collection missing api_key
+-- Nonexistent named collection
+-- aiGenerate return type
+result	String
+-- NULL input returns NULL
+1
+-- Empty string input accepted
+0
+-- Unknown provider name
+-- Anthropic provider resolves
+0
+-- Custom system prompt accepted
+0
+-- Temperature: Float32
+0
+-- Temperature: Float64
+0
+-- Temperature: zero
+0
+-- Temperature: integer literal
+0
+-- Temperature without system prompt
+-- Temperature without system prompt (integer)
+-- Non-constant system prompt
+-- Non-constant temperature
+-- Wrong type for system prompt (number instead of string)
+-- Wrong type for temperature (string instead of number)
+-- Setting defaults
+ai_function_max_api_calls_per_query	0
+ai_function_max_input_tokens_per_query	1000000
+ai_function_max_output_tokens_per_query	500000
+ai_function_max_retries	0
+ai_function_request_timeout_sec	60
+ai_function_retry_initial_delay_ms	1000
+ai_function_throw_on_error	1
+ai_function_throw_on_quota_exceeded	1
+allow_experimental_ai_functions	0
+-- aiClassify: registered
+aiClassify
+-- aiClassify: too few arguments
+-- aiClassify: too many arguments
+-- aiClassify: non-constant categories
+-- aiClassify: wrong type for categories (not array)
+-- aiClassify: wrong type for categories (Array of non-String)
+-- aiClassify: empty categories array
+-- aiClassify: return type
+result	String
+-- aiClassify: empty input executes
+0
+-- aiClassify: with temperature
+0
+-- aiExtract: registered
+aiExtract
+-- aiExtract: too few arguments
+-- aiExtract: too many arguments
+-- aiExtract: non-constant instruction
+-- aiExtract: return type
+result	String
+-- aiExtract: JSON schema mode accepted
+0
+-- aiExtract: malformed JSON schema
+-- aiExtract: JSON schema with non-string value
+-- aiExtract: schema mode detection ignores leading whitespace
+-- aiExtract: with temperature
+0
+-- aiTranslate: registered
+aiTranslate
+-- aiTranslate: too few arguments
+-- aiTranslate: too many arguments
+-- aiTranslate: non-constant target language
+-- aiTranslate: empty target language
+-- aiTranslate: return type
+result	String
+-- aiTranslate: with instructions and temperature
+0
+-- Re-disabled blocks function

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <DataTypes/IDataType.h>
 #include <Parsers/ASTWithAlias.h>
 
 namespace DB
