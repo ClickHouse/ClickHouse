@@ -165,7 +165,7 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     /// `LimitByStep`. Each stream can reduce its row count before the final merge to
     /// a single stream, so the final merge and later pipeline steps have less data to process.
     ///
-    /// We try to apply `LIMIT BY` per stream each stream is sorted and `LIMIT BY` keys are a
+    /// We try to apply `LIMIT BY` per stream when each stream is sorted and `LIMIT BY` keys are a
     /// prefix of the sort keys. This way we run the in-order variant of LIMIT BY, which is
     /// just a linear scan over the data with O(1) memory.
     ///
