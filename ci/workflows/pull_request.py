@@ -142,7 +142,7 @@ workflow = Workflow.Config(
         JobConfigs.sqllogic_test_master_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
-        JobConfigs.sqlstorm_test_job.set_dependency(
+        JobConfigs.sqlstorm_test_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
