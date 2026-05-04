@@ -179,6 +179,11 @@ public:
             return new_params;
         }
 
+        /// `aggregates` is declared `const` so it cannot be mutated after construction.
+        /// This helper builds a new `Params` instance with replacement keys and aggregates,
+        /// copying every other field from `*this`.
+        Params cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_) const;
+
         static Block
         getHeader(const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final);
 

@@ -432,6 +432,34 @@ Aggregator::Params::Params(
 {
 }
 
+Aggregator::Params Aggregator::Params::cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_) const
+{
+    Params new_params(
+        keys_,
+        aggregates_,
+        overflow_row,
+        max_rows_to_group_by,
+        group_by_overflow_mode,
+        group_by_two_level_threshold,
+        group_by_two_level_threshold_bytes,
+        max_bytes_before_external_group_by,
+        empty_result_for_aggregation_by_empty_set,
+        tmp_data_scope,
+        max_threads,
+        min_free_disk_space,
+        compile_aggregate_expressions,
+        min_count_to_compile_aggregate_expression,
+        max_block_size,
+        enable_prefetch,
+        only_merge,
+        optimize_group_by_constant_keys,
+        min_hit_rate_to_use_consecutive_keys_optimization,
+        stats_collecting_params,
+        enable_producing_buckets_out_of_order_in_aggregation,
+        serialize_string_with_zero_byte);
+    return new_params;
+}
+
 Block Aggregator::Params::getHeader(
     const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final)
 {

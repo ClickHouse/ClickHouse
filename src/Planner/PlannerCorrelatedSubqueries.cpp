@@ -369,23 +369,23 @@ QueryPlan decorrelateQueryPlan(
         if (aggeregating_step->isGroupingSets())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Decorrelation of GROUP BY GROUPING SETS is not supported yet");
 
-        auto new_aggregator_params = aggeregating_step->getAggregatorParameters();
+        const auto & original_aggregator_params = aggeregating_step->getAggregatorParameters();
 
+        Names new_keys = original_aggregator_params.keys;
         for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
         {
-            new_aggregator_params.keys.push_back(correlated_column_identifier);
+            new_keys.push_back(correlated_column_identifier);
         }
-        new_aggregator_params.keys_size = new_aggregator_params.keys.size();
 
         /// Rebuild aggregate functions whose argument types changed after decorrelation.
         /// A correlated outer column may become `Nullable` (for example, due to
         /// `group_by_use_nulls` + ROLLUP/CUBE). The aggregate function was bound at
         /// analysis time to the original (non-Nullable) type and would otherwise raise
         /// "Bad cast from type ColumnNullable to ColumnVector<...>" at runtime.
-        /// `Aggregator::Params::aggregates` is declared `const` so we use a `const_cast`
-        /// to mutate the local copy in place; the underlying object is non-const memory.
-        auto & mutable_aggregates = const_cast<AggregateDescriptions &>(new_aggregator_params.aggregates);
-        for (auto & agg : mutable_aggregates)
+        /// Build a fresh `AggregateDescriptions` and feed it into a new `Aggregator::Params`
+        /// via `cloneWithKeysAndAggregates` rather than mutating the const member in place.
+        AggregateDescriptions new_aggregates = original_aggregator_params.aggregates;
+        for (auto & agg : new_aggregates)
         {
             DataTypes actual_argument_types;
             actual_argument_types.reserve(agg.argument_names.size());
@@ -422,6 +422,8 @@ QueryPlan decorrelateQueryPlan(
                 agg.parameters,
                 properties);
         }
+
+        auto new_aggregator_params = original_aggregator_params.cloneWithKeysAndAggregates(new_keys, new_aggregates);
 
         auto result_step = std::make_unique<AggregatingStep>(
             std::move(input_header),
