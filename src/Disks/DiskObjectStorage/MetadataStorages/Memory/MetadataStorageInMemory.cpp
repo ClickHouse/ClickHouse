@@ -525,6 +525,22 @@ void MetadataStorageInMemoryTransaction::moveFile(const std::string & path_from,
         if (metadata_storage.files.contains(path_to))
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", path_to);
 
+        /// Match disk-backed semantics (`rename(2)`): the destination's parent directory must exist,
+        /// and there must be no directory occupying the destination path. Without these checks the
+        /// in-memory storage could create orphan entries (e.g. `non_existing/file`) or represent a
+        /// path that is simultaneously a file and a directory prefix.
+        auto last_slash = path_to.rfind('/');
+        if (last_slash != std::string::npos && last_slash > 0)
+        {
+            std::string parent = path_to.substr(0, last_slash + 1);
+            if (!metadata_storage.directories.contains(parent))
+                throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
+                    "Cannot move file to {}: parent directory does not exist", path_to);
+        }
+        if (metadata_storage.directories.contains(path_to + "/"))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                "Cannot move file to {}: a directory already exists at this path", path_to);
+
         metadata_storage.files[path_to] = std::move(it_from->second);
         metadata_storage.files.erase(it_from);
     });
@@ -619,6 +635,22 @@ void MetadataStorageInMemoryTransaction::replaceFile(const std::string & path_fr
         /// from `it_from->second` would dereference an invalidated iterator (undefined behavior).
         if (path_from == path_to)
             return;
+
+        /// Match disk-backed semantics (`rename(2)`): the destination's parent directory must exist,
+        /// and there must be no directory occupying the destination path. Without these checks the
+        /// in-memory storage could create orphan entries or a path that is simultaneously a file
+        /// and a directory prefix.
+        auto last_slash = path_to.rfind('/');
+        if (last_slash != std::string::npos && last_slash > 0)
+        {
+            std::string parent = path_to.substr(0, last_slash + 1);
+            if (!metadata_storage.directories.contains(parent))
+                throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
+                    "Cannot replace file at {}: parent directory does not exist", path_to);
+        }
+        if (metadata_storage.directories.contains(path_to + "/"))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                "Cannot replace file at {}: a directory already exists at this path", path_to);
 
         auto it_to = metadata_storage.files.find(path_to);
         if (it_to != metadata_storage.files.end())
