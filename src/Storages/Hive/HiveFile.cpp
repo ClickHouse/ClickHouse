@@ -313,7 +313,6 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
         auto row_group_meta = meta->RowGroup(static_cast<int>(i));
         split_minmax_idxes[i] = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
         split_minmax_idxes[i]->hyperrectangle.resize(num_cols, Range::createWholeUniverseWithoutNull());
-        split_minmax_idxes[i]->initialized = true;
 
         size_t j = 0;
         auto it = index_names_and_types.begin();
@@ -360,6 +359,7 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
             }
             /// Other types are not supported for minmax index, skip
         }
+        split_minmax_idxes[i]->initialized = true;
     }
 }
 

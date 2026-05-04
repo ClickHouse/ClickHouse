@@ -156,14 +156,14 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
     const auto data_settings = part.storage.getSettings();
 
     const auto & part_info = part.isProjectionPart() ? part.getParentPart()->info : part.info;
-    const bool correct_block_virtuals = !part_info.isPatch() && part_info.getBlocksCount() == 1;
+    const bool correct_virtuals = !part_info.isPatch() && part_info.getBlocksCount() == 1;
 
     FormatSettings format_settings;
     for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(partition_key, data_settings))
     {
-        if (correct_block_virtuals)
+        if (correct_virtuals)
         {
-            if (column_name == BlockNumberColumn::name)
+            if (metadata_snapshot->isVirtualColumn(BlockNumberColumn::name) && column_name == BlockNumberColumn::name)
             {
                 const Field block_number = getFieldForConstVirtualColumn(BlockNumberColumn::name, part);
                 hyperrectangle.emplace_back(block_number, true, block_number, true);
