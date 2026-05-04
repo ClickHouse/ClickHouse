@@ -1,6 +1,7 @@
--- Reproduces the failing pattern for PromQL binary operators because of that
--- ClickHouse optimization reorders things so that `timeSeriesIdToGroup(id)`
--- is evaluated for an `id` that `timeSeriesStoreTags(...)` has not yet recorded.
+-- Regression test for the PromQL binary-operator path where ClickHouse query optimization
+-- could push `timeSeriesIdToGroup(id)` ahead of the matching `timeSeriesStoreTags(...)` call,
+-- resulting in `BAD_ARGUMENTS` ("Unknown identifier"). Fixed by marking
+-- `timeSeriesIdToGroup` as stateful so the optimizer doesn't move it across pipeline barriers.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -42,37 +43,34 @@ INSERT INTO samples_table (id, timestamp, value) VALUES
     (3691271, toDateTime64(100, 3), 20.);
 
 
--- Here PromQL query `(foo == bar)[50:10]` fails because ClickHouse query optimization reorders things
--- so that `timeSeriesIdToGroup(id)` is evaluated for an `id` that `timeSeriesStoreTags(...)`
--- has not yet recorded, and the lookup fails with `BAD_ARGUMENTS` ("Unknown identifier") inside
--- `MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder)`.
-SELECT * FROM prometheusQuery('prometheus', '(foo == bar)[50:10]', toDateTime64(150, 3)); -- { serverError BAD_ARGUMENTS }
+-- PromQL query `(foo == bar)[50:10]` internally evaluates a SQL query like this:
+--
+-- SELECT timeSeriesGroupToTags(foo.group) AS tags, foo.timestamp, foo.value
+-- FROM
+-- (
+--     SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
+--     FROM samples_table
+--     WHERE id IN (
+--         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name)
+--         FROM tags_table
+--         WHERE metric_name = 'foo' AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
+--       AND timestamp >= toDateTime64(60, 3) AND timestamp <= toDateTime64(150, 3)
+-- ) AS foo
+-- ANY INNER JOIN
+-- (
+--     SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
+--     FROM samples_table
+--     WHERE id IN (
+--         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name)
+--         FROM tags_table
+--         WHERE metric_name = 'bar' AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
+--       AND timestamp >= toDateTime64(60, 3) AND timestamp <= toDateTime64(150, 3)
+-- ) AS bar
+-- ON timeSeriesRemoveTag(foo.group, '__name__') = timeSeriesRemoveTag(bar.group, '__name__')
+--    AND foo.timestamp = bar.timestamp AND foo.value = bar.value
+-- ORDER BY tags;
 
--- The query above `(foo == bar)[50:10]` is equivalent to the following SQL query which also fails:
-SELECT timeSeriesGroupToTags(foo.group) AS tags, foo.timestamp, foo.value
-FROM
-(
-    SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
-    FROM samples_table
-    WHERE id IN (
-        SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name)
-        FROM tags_table
-        WHERE metric_name = 'foo' AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
-      AND timestamp >= toDateTime64(60, 3) AND timestamp <= toDateTime64(150, 3)
-) AS foo
-ANY INNER JOIN
-(
-    SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
-    FROM samples_table
-    WHERE id IN (
-        SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name)
-        FROM tags_table
-        WHERE metric_name = 'bar' AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
-      AND timestamp >= toDateTime64(60, 3) AND timestamp <= toDateTime64(150, 3)
-) AS bar
-ON timeSeriesRemoveTag(foo.group, '__name__') = timeSeriesRemoveTag(bar.group, '__name__')
-   AND foo.timestamp = bar.timestamp AND foo.value = bar.value
-ORDER BY tags; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM prometheusQuery('prometheus', '(foo == bar)[50:10]', toDateTime64(150, 3));
 
 
 DROP TABLE prometheus;
