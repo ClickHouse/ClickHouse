@@ -9,8 +9,8 @@ DROP TABLE IF EXISTS t_read_in_order_pk;
 
 -- Use a small index_granularity to produce enough marks for the check to trigger
 -- (the check requires total_marks > requested_num_streams).
--- Insert in multiple parts so there is real inter-part parallelism to lose:
--- the PK-selectivity guard intentionally only fires when more than one part is selected.
+-- Insert in multiple parts so the test mirrors the original motivating case
+-- (a large multi-part table where read-in-order serializes per-part reads).
 CREATE TABLE t_read_in_order_pk (path String, value UInt64)
 ENGINE = MergeTree ORDER BY path
 SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
