@@ -251,6 +251,70 @@ def test_mysql_dictionaries_custom_query_partial_load_complex_key(started_cluste
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_2;")
 
 
+def test_mysql_dict_complex_key_with_single_quote(started_cluster):
+    """Regression test: string keys containing single quotes must not break MySQL dictionary lookups.
+
+    ExternalQueryBuilder now uses SQL-standard quote doubling ('') instead of backslash
+    escaping (\\').  MySQL accepts both styles, so this verifies there is no regression
+    for the MySQL backend after the escaping change.
+    """
+    mysql_connection = get_mysql_conn(started_cluster)
+
+    execute_mysql_query(
+        mysql_connection,
+        "CREATE TABLE IF NOT EXISTS test.test_single_quote (id_key TEXT, value TEXT);",
+    )
+    execute_mysql_query(
+        mysql_connection,
+        "INSERT INTO test.test_single_quote VALUES (\"it's a key\", 'found it');",
+    )
+    execute_mysql_query(
+        mysql_connection,
+        "INSERT INTO test.test_single_quote VALUES ('normal', 'normal value');",
+    )
+
+    query = instance.query
+    query(
+        f"""
+    CREATE DICTIONARY test_dict_single_quote
+    (
+        id_key String,
+        value String DEFAULT ''
+    )
+    PRIMARY KEY id_key
+    LAYOUT(COMPLEX_KEY_DIRECT())
+    SOURCE(MYSQL(
+        HOST 'mysql80'
+        PORT 3306
+        USER 'root'
+        PASSWORD '{mysql_pass}'
+        DB 'test'
+        TABLE 'test_single_quote'))
+    """
+    )
+
+    # Key containing a single quote: must return the correct value.
+    result = query(
+        "SELECT dictGet('test_dict_single_quote', 'value', tuple('it\\'s a key'))"
+    )
+    assert result == "found it\n", f"Unexpected result: {result!r}"
+
+    # Key without a quote: must still work after the escaping change.
+    result = query(
+        "SELECT dictGet('test_dict_single_quote', 'value', tuple('normal'))"
+    )
+    assert result == "normal value\n", f"Unexpected result: {result!r}"
+
+    # Missing key must return the default, not raise an exception.
+    result = query(
+        "SELECT dictGet('test_dict_single_quote', 'value', tuple('no such key'))"
+    )
+    assert result == "\n", f"Unexpected result: {result!r}"
+
+    query("DROP DICTIONARY test_dict_single_quote;")
+    execute_mysql_query(mysql_connection, "DROP TABLE test.test_single_quote;")
+
+
 def test_predefined_connection_configuration(started_cluster):
     mysql_connection = get_mysql_conn(started_cluster)
 
