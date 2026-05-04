@@ -239,12 +239,19 @@ void ThreadStatus::flushUntrackedMemory()
     Int64 current_untracked_memory = untracked_memory;
     untracked_memory = 0;
 
-    /// Drain the current CPU's slot too. The slot is shared across threads,
-    /// so this picks up other threads' contributions as well — fine for the
-    /// "make all pending memory visible" contract this method provides.
-    /// Attribution drift is bounded by `untracked_memory_limit`.
+    /// Best-effort drain of the current CPU's slot. tryFlush is itself an
+    /// rseq RMW so it cannot corrupt the slot under concurrent rseq adds.
+    /// Slot is shared across threads, so this picks up other threads'
+    /// contributions too — fine for the "make pending bytes visible"
+    /// contract. Migration during the rseq aborts cleanly; the bytes stay
+    /// in the slot and will be drained on the next overflow on that cpu.
     if (PerCpuUntrackedMemory::isEnabled())
-        current_untracked_memory += PerCpuUntrackedMemory::drain(PerCpuUntrackedMemory::currentCpu());
+    {
+        int cpu = PerCpuUntrackedMemory::currentCpu();
+        Int64 v = PerCpuUntrackedMemory::peek(cpu);
+        if (v != 0 && PerCpuUntrackedMemory::tryFlush(cpu, v))
+            current_untracked_memory += v;
+    }
 
     if (current_untracked_memory == 0)
         return;

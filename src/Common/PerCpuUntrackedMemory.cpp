@@ -56,9 +56,9 @@ Slot * const slots = nullptr;
 
 #if USE_LIBRSEQ
 
-/// Resolved at startup. `rseq_size > 0` after a successful registration —
-/// glibc auto-registers and `rseq_init` only discovers that, so this should
-/// succeed on any modern Linux x86_64 / aarch64 build.
+/// Non-zero `rseq_size` means glibc auto-registered an rseq area for this
+/// thread and `rseq_init` discovered it. After that, all the per-CPU helpers
+/// in this file run on the rseq fast path.
 const bool rseq_ready = []
 {
     if (!slots)
@@ -72,75 +72,20 @@ constexpr bool rseq_ready = false;
 
 #endif
 
-inline int resolveCpu()
+inline int normalizeCpu(int cpu)
 {
-#if USE_LIBRSEQ
-    if (rseq_ready)
-    {
-        int32_t cpu = rseq_current_cpu_raw();
-        if (cpu < 0)
-            cpu = 0;
-        else if (cpu >= n_cpu)
-            cpu %= n_cpu;
-        return cpu;
-    }
-#endif
-
-#if defined(__linux__)
-    int cpu = ::sched_getcpu();
     if (cpu < 0)
-        cpu = 0;
-    else if (cpu >= n_cpu)
-        cpu %= n_cpu;
+        return 0;
+    if (cpu >= n_cpu)
+        return cpu % n_cpu;
     return cpu;
-#else
-    return 0;
-#endif
 }
-
-#if USE_LIBRSEQ
-
-/// rseq RMW: `slots[cpu].value += delta` with kernel-restartable
-/// non-atomicity. Loops on preempt/migrate (return value != 0), refreshing
-/// the CPU index each iteration. After commit, read back the slot value
-/// for the caller — this read is racy with concurrent rseq adds on the
-/// same CPU but only by a bounded amount (one peer's commit), and the
-/// caller uses the value only as an overflow heuristic.
-inline AddResult rseqAdd(Int64 delta)
-{
-    int cpu;
-    while (true)
-    {
-        cpu = rseq_current_cpu_raw();
-        if (cpu < 0)
-            cpu = 0;
-        else if (cpu >= n_cpu)
-            cpu %= n_cpu;
-
-        intptr_t * slot_ptr = reinterpret_cast<intptr_t *>(&slots[cpu].value);
-        intptr_t count = static_cast<intptr_t>(delta);
-        if (rseq_load_add_store__ptr(RSEQ_MO_RELAXED, RSEQ_PERCPU_CPU_ID, slot_ptr, count, cpu) == 0)
-            break;
-    }
-    Int64 new_local = __atomic_load_n(&slots[cpu].value, __ATOMIC_RELAXED);
-    return {cpu, new_local};
-}
-
-#endif
 
 }
 
 bool isEnabled()
 {
-    if (!slots)
-        return false;
-#if USE_LIBRSEQ
-    /// Even if rseq registration failed we can still service ops via the
-    /// atomic fallback below, but we want isEnabled() to mean "the per-CPU
-    /// path is active". With librseq linked in, atomic-only is the fallback
-    /// inside the same TU; expose isEnabled iff slots exist.
-#endif
-    return true;
+    return slots != nullptr;
 }
 
 int cpuCount()
@@ -150,24 +95,77 @@ int cpuCount()
 
 int currentCpu()
 {
-    return resolveCpu();
+#if USE_LIBRSEQ
+    if (rseq_ready)
+        return normalizeCpu(rseq_current_cpu_raw());
+#endif
+
+#if defined(__linux__)
+    return normalizeCpu(::sched_getcpu());
+#else
+    return 0;
+#endif
 }
 
 AddResult add(Int64 delta)
 {
 #if USE_LIBRSEQ
     if (rseq_ready)
-        return rseqAdd(delta);
+    {
+        /// rseq RMW: `slots[cpu].value += delta` with kernel-restartable
+        /// non-atomicity. Loops until we commit on some CPU.
+        int cpu;
+        while (true)
+        {
+            cpu = normalizeCpu(rseq_current_cpu_raw());
+            intptr_t * slot_ptr = reinterpret_cast<intptr_t *>(&slots[cpu].value);
+            intptr_t count = static_cast<intptr_t>(delta);
+            if (rseq_load_add_store__ptr(RSEQ_MO_RELAXED, RSEQ_PERCPU_CPU_ID, slot_ptr, count, cpu) == 0)
+                break;
+        }
+        /// Read-back is racy with concurrent rseq adds on the same CPU,
+        /// but bounded by one peer's count. Used only as an overflow
+        /// heuristic, where small drift is harmless. Lowers to a single
+        /// `mov` (x86_64) / `ldr` (aarch64); the C++ atomic load is for
+        /// the memory model, not for hardware atomicity.
+        Int64 new_local = __atomic_load_n(&slots[cpu].value, __ATOMIC_RELAXED);
+        return {cpu, new_local};
+    }
 #endif
 
-    int cpu = resolveCpu();
+    int cpu = currentCpu();
     Int64 new_local = __atomic_add_fetch(&slots[cpu].value, delta, __ATOMIC_RELAXED);
     return {cpu, new_local};
 }
 
-Int64 drain(int cpu)
+bool tryFlush(int cpu, Int64 amount)
 {
-    return __atomic_exchange_n(&slots[cpu].value, Int64{0}, __ATOMIC_RELAXED);
+    if (amount == 0)
+        return true;
+
+#if USE_LIBRSEQ
+    if (rseq_ready)
+    {
+        /// Same rseq primitive as `add`, with delta = -amount. The kernel
+        /// restarts whoever was preempted, so there is no race between
+        /// concurrent rseq adds on `cpu` and this subtract. If we are no
+        /// longer on `cpu`, the rseq sequence aborts cleanly and the slot
+        /// is unchanged — caller treats this as "flush deferred".
+        intptr_t * slot_ptr = reinterpret_cast<intptr_t *>(&slots[cpu].value);
+        intptr_t count = -static_cast<intptr_t>(amount);
+        return rseq_load_add_store__ptr(RSEQ_MO_RELAXED, RSEQ_PERCPU_CPU_ID, slot_ptr, count, cpu) == 0;
+    }
+#endif
+
+    /// Atomic fallback path: no rseq, so all writers use atomic ops and
+    /// fetch_sub is race-free against them. Always succeeds.
+    __atomic_fetch_sub(&slots[cpu].value, amount, __ATOMIC_RELAXED);
+    return true;
+}
+
+Int64 peek(int cpu)
+{
+    return __atomic_load_n(&slots[cpu].value, __ATOMIC_RELAXED);
 }
 
 Int64 peekTotal()
