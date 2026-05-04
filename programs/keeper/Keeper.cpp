@@ -35,7 +35,6 @@
 
 #include <Interpreters/Context.h>
 
-#include <Coordination/KeeperContext.h>
 #include <Coordination/FourLetterCommand.h>
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
@@ -363,7 +362,32 @@ try
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
 
-    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
+    auto update_memory_soft_limit_in_config = [&](Poco::Util::AbstractConfiguration & config)
+    {
+        UInt64 memory_soft_limit = 0;
+        if (config.has("keeper_server.max_memory_usage_soft_limit"))
+        {
+            memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
+        }
+
+        /// if memory soft limit is not set, we will use default value
+        if (memory_soft_limit == 0)
+        {
+            Float64 ratio = 0.9;
+            if (config.has("keeper_server.max_memory_usage_soft_limit_ratio"))
+                ratio = config.getDouble("keeper_server.max_memory_usage_soft_limit_ratio");
+
+            size_t physical_server_memory = getMemoryAmount();
+            if (ratio > 0 && physical_server_memory > 0)
+            {
+                memory_soft_limit = static_cast<UInt64>(static_cast<double>(physical_server_memory) * ratio);
+                config.setUInt64("keeper_server.max_memory_usage_soft_limit", memory_soft_limit);
+            }
+        }
+        LOG_INFO(log, "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(memory_soft_limit));
+    };
+
+    update_memory_soft_limit_in_config(config());
 
     std::string path = getKeeperPath(config());
     std::filesystem::create_directories(path);
@@ -457,11 +481,6 @@ try
         listen_hosts.emplace_back("127.0.0.1");
         listen_try = true;
     }
-
-#if USE_SSL
-    CertificateReloader::instance().tryLoad(config());
-    CertificateReloader::instance().tryLoadClient(config());
-#endif
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
     global_context->initializeKeeperDispatcher(/* start_async = */ false);
@@ -633,7 +652,7 @@ try
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             updateLevels(config(), logger());
-            KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
+            update_memory_soft_limit_in_config(config());
 
             if (config().has("keeper_server"))
                 global_context->updateKeeperConfiguration(config());
@@ -649,10 +668,6 @@ try
         main_config_reloader.reset();
 
         async_metrics.stop();
-
-        /// Signal Keeper TCP handlers to close before waiting for connections,
-        /// otherwise they keep running indefinitely and block shutdown.
-        global_context->signalKeeperDispatcherShutdown();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         size_t current_connections = 0;
