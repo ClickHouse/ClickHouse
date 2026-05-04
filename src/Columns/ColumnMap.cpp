@@ -39,7 +39,12 @@ std::string ColumnMap::getName() const
 ColumnMap::ColumnMap(MutableColumnPtr && nested_, const StatisticsPtr & statistics_)
     : nested(std::move(nested_)), statistics(statistics_)
 {
-    const auto * column_array = typeid_cast<const ColumnArray *>(nested.get());
+    /// Use the const `ColumnPtr` accessor `getNestedColumnPtr` rather than `nested.get()`. The
+    /// latter goes through `WrappedPtr::get` → `assumeMutableRef`, which now
+    /// `chassert(use_count() == 1)`. When this constructor is reached via
+    /// `ColumnMap::create(const ColumnPtr &, ...)`, the caller still holds an immutable reference
+    /// to the underlying column, so `use_count()` is at least 2 and the assertion would fire.
+    const auto * column_array = typeid_cast<const ColumnArray *>(getNestedColumnPtr().get());
     if (!column_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnMap can be created only from array of tuples");
 
