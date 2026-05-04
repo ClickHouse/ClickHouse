@@ -1,5 +1,7 @@
 #include <Common/PerCPUUntrackedMemory.h>
 
+#include <Common/CacheLine.h>
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -8,7 +10,6 @@
 
 #if defined(__linux__)
 #    include <sched.h>
-#    include <sys/mman.h>
 #    include <unistd.h>
 #endif
 
@@ -22,34 +23,35 @@ namespace DB::PerCPUUntrackedMemory
 namespace
 {
 
-/// Cache-line padded to keep cross-CPU writes from bouncing the same line.
-struct alignas(64) Slot
+/// Upper bound on the number of CPUs we are willing to track per slot.
+/// Sizing the BSS array at 1024 costs MAX_CPUS * CH_CACHE_LINE_SIZE bytes —
+/// at most 256 KiB on s390x, 128 KiB on POWER, 64 KiB everywhere else. If a
+/// system exceeds the cap we disable the per-CPU path and fall back to the
+/// legacy per-thread accumulator in `CurrentMemoryTracker`.
+constexpr int MAX_CPUS = 1024;
+
+/// Cache-line padded so cross-CPU writes do not bounce the same line.
+struct alignas(CH_CACHE_LINE_SIZE) Slot
 {
     Int64 value;
-    char pad[64 - sizeof(Int64)];
+    char pad[CH_CACHE_LINE_SIZE - sizeof(Int64)];
 };
+
+alignas(CH_CACHE_LINE_SIZE) Slot slots[MAX_CPUS]{};
 
 #if defined(__linux__)
 
 const int n_cpu = []
 {
     long n = ::sysconf(_SC_NPROCESSORS_CONF);
-    return n > 0 ? static_cast<int>(n) : 0;
-}();
-
-Slot * const slots = []() -> Slot *
-{
-    if (n_cpu <= 0)
-        return nullptr;
-    size_t bytes = sizeof(Slot) * static_cast<size_t>(n_cpu);
-    void * p = ::mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    return p == MAP_FAILED ? nullptr : static_cast<Slot *>(p);
+    if (n <= 0 || n > MAX_CPUS)
+        return 0;
+    return static_cast<int>(n);
 }();
 
 #else
 
 constexpr int n_cpu = 0;
-Slot * const slots = nullptr;
 
 #endif
 
@@ -60,7 +62,7 @@ Slot * const slots = nullptr;
 /// in this file run on the rseq fast path.
 const bool rseq_ready = []
 {
-    if (!slots)
+    if (n_cpu <= 0)
         return false;
     return rseq_init() == RSEQ_INIT_OK && rseq_size > 0;
 }();
@@ -75,7 +77,7 @@ constexpr bool rseq_ready = false;
 
 bool isEnabled()
 {
-    return slots != nullptr;
+    return n_cpu > 0;
 }
 
 int cpuCount()
