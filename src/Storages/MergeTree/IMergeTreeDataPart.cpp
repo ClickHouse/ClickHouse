@@ -169,6 +169,15 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
                 hyperrectangle.emplace_back(block_number, true, block_number, true);
                 continue;
             }
+
+            if (metadata_snapshot->isVirtualColumn(BlockOffsetColumn::name) && column_name == BlockOffsetColumn::name)
+            {
+                if (part.rows_count == 0)
+                    hyperrectangle.emplace_back(Range::createWholeUniverse());
+                else
+                    hyperrectangle.emplace_back(Field(UInt64(0)), true, Field(UInt64(part.rows_count - 1)), true);
+                continue;
+            }
         }
 
         const String file_name = "minmax_" + getFileColumnName(column_name, part.checksums) + ".idx";
@@ -222,6 +231,9 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     size_t i = 0;
     for (const auto & [column_name, column_type] : columns_to_write)
     {
+        if (i >= hyperrectangle.size())
+            break;
+
         String file_name = "minmax_" + getFileColumnName(column_name, storage_settings, part_storage) + ".idx";
         auto serialization = column_type->getDefaultSerialization();
 
@@ -285,6 +297,9 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
     }
     else
     {
+        while (hyperrectangle.size() > other.hyperrectangle.size())
+            hyperrectangle.pop_back();
+
         for (size_t i = 0; i < hyperrectangle.size(); ++i)
         {
             hyperrectangle[i].left = accurateLess(hyperrectangle[i].left, other.hyperrectangle[i].left)
