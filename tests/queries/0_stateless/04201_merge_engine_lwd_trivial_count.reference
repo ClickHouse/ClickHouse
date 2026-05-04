@@ -1,0 +1,5 @@
+before_lwd_count	1000
+ReadFromPreparedSource (Optimized trivial count)
+after_lwd_count	900
+ReadFromMerge
+ReadFromMergeTree (default.t_lwd_inner)
