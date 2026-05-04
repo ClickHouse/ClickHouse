@@ -632,6 +632,24 @@ void SortingStep::describeActions(FormatSettings & settings) const
 
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
+
+    if (!limit_by_columns.empty())
+    {
+        settings.out << prefix << "Per-stream LIMIT BY columns: ";
+
+        bool first = true;
+        for (const auto & column : limit_by_columns)
+        {
+            if (!first)
+                settings.out << ", ";
+            first = false;
+
+            settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
+        }
+        settings.out << '\n';
+
+        settings.out << prefix << "Per-stream LIMIT BY length " << limit_by_group_length << '\n';
+    }
 }
 
 void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -646,6 +664,16 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 
     if (limit)
         map.add("Limit", limit);
+
+    if (!limit_by_columns.empty())
+    {
+        auto columns_array = std::make_unique<JSONBuilder::JSONArray>();
+        for (const auto & column : limit_by_columns)
+            columns_array->add(column);
+
+        map.add("Per-stream LIMIT BY Columns", std::move(columns_array));
+        map.add("Per-stream LIMIT BY Length", limit_by_group_length);
+    }
 }
 
 void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
