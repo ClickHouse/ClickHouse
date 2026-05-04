@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 
 #include <Core/ParallelReplicasMode.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 
@@ -116,6 +117,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsUInt64 parallel_replicas_count;
@@ -469,9 +471,12 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         }
 
         auto & global_planner_context = planner_context->getGlobalPlannerContext();
-        const auto & column_identifier = global_planner_context->createColumnIdentifier(additional_column_to_read, table_expression);
-        columns_names.push_back(additional_column_to_read.name);
-        table_expression_data.addColumn(additional_column_to_read, column_identifier);
+        if (!table_expression_data.hasColumn(additional_column_to_read.name))
+        {
+            const auto & column_identifier = global_planner_context->createColumnIdentifierOrGet(additional_column_to_read, table_expression);
+            columns_names.push_back(additional_column_to_read.name);
+            table_expression_data.addColumn(additional_column_to_read, column_identifier);
+        }
     }
 
     /// Limitation on the number of columns to read
@@ -776,8 +781,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         if (const auto & filter_actions = table_expression_data.getFilterActions())
             table_expression_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions->clone());
 
-        size_t max_streams = settings[Setting::max_threads];
-        size_t max_threads_execute_query = settings[Setting::max_threads];
+        const size_t memory_limited_max_threads = getMaxThreadsForAvailableMemory(
+            settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+        size_t max_streams = memory_limited_max_threads;
+        size_t max_threads_execute_query = memory_limited_max_threads;
 
         /**
          * To simultaneously query more remote servers when async_socket_for_remote is off
@@ -1860,7 +1867,8 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             settings[Setting::max_block_size],
             settings[Setting::min_joined_block_size_rows],
             settings[Setting::min_joined_block_size_bytes],
-            settings[Setting::max_threads],
+            getMaxThreadsForAvailableMemory(
+                settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]),
             required_columns_after_join,
             false /*optimize_read_in_order*/,
             true /*optimize_skip_unused_shards*/,
