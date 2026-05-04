@@ -294,7 +294,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
-    extern const MergeTreeSettingsBool extend_minmax_index_with_persisted_virtual_columns;
+    extern const MergeTreeSettingsMergeTreePartMinMaxIndexColumns part_minmax_index_columns;
     extern const MergeTreeSettingsBool allow_commit_order_projection;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
@@ -1260,15 +1260,15 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
 {
     NamesAndTypesList columns;
 
-    if (!partition_key.column_names.empty())
+    const auto level = (*data_settings)[MergeTreeSetting::part_minmax_index_columns];
+
+    if (level >= MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY && !partition_key.column_names.empty())
         columns = partition_key.expression->getRequiredColumnsWithTypes();
 
-    if ((*data_settings)[MergeTreeSetting::extend_minmax_index_with_persisted_virtual_columns])
+    if (level >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
     {
-        if ((*data_settings)[MergeTreeSetting::enable_block_number_column])
-            columns.emplace_back(BlockNumberColumn::name, BlockNumberColumn::type);
-        if ((*data_settings)[MergeTreeSetting::enable_block_offset_column])
-            columns.emplace_back(BlockOffsetColumn::name, BlockOffsetColumn::type);
+        columns.emplace_back(BlockNumberColumn::name, BlockNumberColumn::type);
+        columns.emplace_back(BlockOffsetColumn::name, BlockOffsetColumn::type);
     }
 
     return columns;

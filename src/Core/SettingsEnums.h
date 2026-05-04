@@ -483,6 +483,14 @@ enum class SearchOrphanedPartsDisks : uint8_t
 
 DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 
+enum class MergeTreePartMinMaxIndexColumns : uint8_t
+{
+    PARTITION_KEY_ONLY = 0,
+    WITH_BLOCK_NUMBER_OFFSET = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
+
 enum class DecorrelationJoinKind : uint8_t
 {
     LEFT = 0,

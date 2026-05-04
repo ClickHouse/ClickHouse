@@ -4,7 +4,7 @@
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t (id UInt64, p UInt64) ENGINE = MergeTree() PARTITION BY p ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, extend_minmax_index_with_persisted_virtual_columns = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, part_minmax_index_columns = 'with_block_number_offset';
 
 SYSTEM STOP MERGES t;
 
