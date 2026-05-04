@@ -33,3 +33,19 @@ WHERE number >= (SELECT number - 1)
 GROUP BY number
 WITH ROLLUP
 ORDER BY number ASC NULLS FIRST;
+
+-- Correlated subquery with an aggregate function over the outer column under CUBE used to fail
+-- with "Bad cast from type ColumnNullable to ColumnVector<UInt64>" because the inner aggregate
+-- function `anyLastOrDefault` was bound at analysis time to the original non-Nullable type.
+-- See https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=100365&sha=5ac64a85eca68d3b5f67201f4c9fcc381dc54007&name_0=PR&name_1=AST%20fuzzer%20%28amd_debug%2C%20targeted%29
+SELECT number, (SELECT anyLastOrDefault(number) AS val)
+FROM numbers(3)
+GROUP BY number
+WITH CUBE
+ORDER BY number ASC NULLS LAST;
+
+SELECT number, (SELECT sum(number) AS val)
+FROM numbers(3)
+GROUP BY number
+WITH ROLLUP
+ORDER BY number ASC NULLS LAST;
