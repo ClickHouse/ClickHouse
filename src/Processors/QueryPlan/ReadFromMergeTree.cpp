@@ -1444,8 +1444,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             /// For pure pass-through reads (`SELECT * ... ORDER BY pk`) the
             /// single-output `MergingSortedTransform` is already efficient for
             /// non-overlapping ranges, and adding a concat with its own buffering
-            /// just introduces scheduling overhead — see perf regressions in the
-            /// `monotonous_order_by` test.
+            /// just introduces scheduling overhead — see the filter-less
+            /// `SELECT * ... ORDER BY key` query in
+            /// `tests/performance/read_in_order_single_part.xml`, which guards
+            /// against this regression.
             ///
             /// Note: a `LIMIT` from the query is not propagated to
             /// `input_order_info->limit` whenever a filter is in the plan
