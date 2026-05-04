@@ -202,8 +202,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
     StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums, const MergeTreeSettingsPtr & storage_settings) const
 {
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
-    return store(MergeTreeData::getMinMaxColumns(partition_key, storage_settings), part_storage, out_checksums, storage_settings);
+    return store(MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), storage_settings), part_storage, out_checksums, storage_settings);
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
@@ -298,18 +297,6 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
     }
 }
 
-void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage)
-{
-    const auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
-    const auto data_settings = data.getSettings();
-    for (const auto & [name, type] : MergeTreeData::getMinMaxColumns(partition_key, data_settings))
-    {
-        String file_name = "minmax_" + getFileColumnName(name, data_settings, data_part_storage) + ".idx";
-        files.push_back(file_name);
-    }
-}
-
 String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage)
 {
     return replaceFileNameToHashIfNeeded(escapeForFileName(column_name), *storage_settings_, &data_part_storage);
@@ -327,8 +314,16 @@ String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_
     return stream_name;
 }
 
-const IMergeTreeDataPart::MinMaxIndexPtr & IMergeTreeDataPart::getMinMaxIndex() const
+IMergeTreeDataPart::MinMaxIndexPtr IMergeTreeDataPart::getMinMaxIndex() const
 {
+    if (is_minmax_idx_created.load())
+        return minmax_idx;
+
+    std::lock_guard lock(minmax_idx_mutex);
+
+    if (is_minmax_idx_created.load())
+        return minmax_idx;
+
     if (is_temp || isEmpty())
     {
         if (!minmax_idx)
@@ -343,12 +338,15 @@ const IMergeTreeDataPart::MinMaxIndexPtr & IMergeTreeDataPart::getMinMaxIndex() 
         }
     }
 
+    is_minmax_idx_created.store(true);
     return minmax_idx;
 }
 
 void IMergeTreeDataPart::setMinMaxIndex(MinMaxIndexPtr minmax_index) const
 {
+    std::lock_guard lock(minmax_idx_mutex);
     minmax_idx = std::move(minmax_index);
+    is_minmax_idx_created.store(minmax_idx != nullptr);
 }
 
 void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) const

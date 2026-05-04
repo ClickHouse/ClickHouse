@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <mutex>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/WriteSettings.h>
@@ -378,7 +379,6 @@ public:
 
         void update(const Block & block, const NamesAndTypesList & columns);
         void merge(const MinMaxIndex & other);
-        static void appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage);
         /// For Store
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
         /// For Load
@@ -389,10 +389,12 @@ public:
 
 private:
     mutable MinMaxIndexPtr minmax_idx;
+    mutable std::atomic<bool> is_minmax_idx_created{false};
+    mutable std::mutex minmax_idx_mutex;
 
 public:
     /// Returns the per-part MinMaxIndex. Lazy-creates an empty one for temporary parts and lazy-loads from disk for committed parts.
-    const MinMaxIndexPtr & getMinMaxIndex() const;
+    MinMaxIndexPtr getMinMaxIndex() const;
 
     /// Replace the in-memory MinMaxIndex pointer; pass nullptr to drop and force reload on next access.
     void setMinMaxIndex(MinMaxIndexPtr minmax_index) const;
