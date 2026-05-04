@@ -697,6 +697,19 @@ void MetadataStorageInMemoryTransaction::addBlobToMetadata(const std::string & p
                 throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
                     "Cannot create file {}: a directory already exists at this path", path);
 
+            /// Match `MetadataStorageFromDisk::AddBlobOperation` semantics: implicit creation goes
+            /// through `WriteFileOperation`, which fails if the parent directory is missing. Without
+            /// this check, a transaction could create orphan paths (e.g. `non_existing/file`) that
+            /// disk-backed metadata would reject.
+            auto last_slash = path.rfind('/');
+            if (last_slash != std::string::npos && last_slash > 0)
+            {
+                std::string parent = path.substr(0, last_slash + 1);
+                if (!metadata_storage.directories.contains(parent))
+                    throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
+                        "Cannot create file {}: parent directory does not exist", path);
+            }
+
             /// Create new file entry if it doesn't exist
             metadata_storage.files[path] = MetadataStorageInMemory::FileEntry{};
             entry = &metadata_storage.files[path];
