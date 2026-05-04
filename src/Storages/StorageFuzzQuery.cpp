@@ -31,52 +31,54 @@ ColumnPtr FuzzQuerySource::createColumn()
     IColumn::Offset offset = 0;
 
     auto fuzz_base = query;
+    auto base_text = fuzz_base->formatForErrorMessage();
     size_t row_num = 0;
 
-    /// Per-row attempt budget: avoids unbounded loops when `max_query_length` is too small
-    /// for any fuzzed result to fit (e.g. cap = 1) or when fuzzing keeps producing identical
-    /// output. After the budget is exhausted, fall back to emitting the original (unfuzzed)
-    /// query so the loop always makes progress.
+    /// Per-row attempt budget: when fuzzing keeps producing oversized variants we fall back
+    /// to emitting the original (unfuzzed) query so the loop always makes progress. The
+    /// formatted base query is guaranteed to fit `max_query_length` because
+    /// `getConfiguration` rejects configurations where it does not.
     constexpr size_t max_attempts_per_row = 1024;
 
     while (row_num < block_size)
     {
+        /// Stop generating rows promptly on cancellation (e.g. `KILL QUERY` or
+        /// `max_execution_time`) instead of filling the rest of the block with fallback rows.
+        if (isCancelled())
+            break;
+
         String text_to_emit;
         bool produced = false;
 
-        if (!isCancelled())
+        for (size_t attempt = 0; attempt < max_attempts_per_row; ++attempt)
         {
-            for (size_t attempt = 0; attempt < max_attempts_per_row; ++attempt)
+            ASTPtr new_query = fuzz_base->clone();
+
+            auto base_before_fuzz = fuzz_base->formatForErrorMessage();
+            fuzzer.fuzzMain(new_query);
+            auto fuzzed_text = new_query->formatForErrorMessage();
+
+            if (base_before_fuzz == fuzzed_text)
+                continue;
+
+            /// AST is too long, will start from the original query.
+            if (fuzzed_text.size() > config.max_query_length)
             {
-                ASTPtr new_query = fuzz_base->clone();
-
-                auto base_before_fuzz = fuzz_base->formatForErrorMessage();
-                fuzzer.fuzzMain(new_query);
-                auto fuzzed_text = new_query->formatForErrorMessage();
-
-                if (base_before_fuzz == fuzzed_text)
-                    continue;
-
-                /// AST is too long, will start from the original query.
-                if (fuzzed_text.size() > config.max_query_length)
-                {
-                    fuzz_base = query;
-                    continue;
-                }
-
-                text_to_emit = std::move(fuzzed_text);
-                fuzz_base = new_query;
-                produced = true;
-                break;
+                fuzz_base = query;
+                continue;
             }
+
+            text_to_emit = std::move(fuzzed_text);
+            fuzz_base = new_query;
+            produced = true;
+            break;
         }
 
         if (!produced)
         {
-            /// Fallback: emit the original (unfuzzed) query. May exceed `max_query_length`
-            /// when the cap is too small for any fuzzed result, but emitting the original
-            /// is preferred over an unbounded loop.
-            text_to_emit = config.query;
+            /// Fallback: emit the formatted unfuzzed query. Always within `max_query_length`
+            /// thanks to the upfront check in `getConfiguration`.
+            text_to_emit = base_text;
             fuzz_base = query;
         }
 
@@ -90,6 +92,11 @@ ColumnPtr FuzzQuerySource::createColumn()
         offset = next_offset;
         ++row_num;
     }
+
+    /// Early break on cancellation may leave the tail of `offsets_to` uninitialised;
+    /// shrink to the rows actually produced.
+    if (row_num < block_size)
+        offsets_to.resize(row_num);
 
     return column;
 }
@@ -184,6 +191,21 @@ StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine
     /// every non-empty fuzzed AST exceeds the cap, the loop resets and never produces a row.
     if (configuration.max_query_length == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "FuzzQuery `max_query_length` must be greater than 0");
+
+    /// The fuzzed text is bounded by `max_query_length`; if even the formatted base query
+    /// exceeds the cap, no fuzzed variant can satisfy it and the source would have to
+    /// silently emit oversized fallback rows. Reject the impossible configuration up front
+    /// so the contract `length(generated) <= max_query_length` holds for every emitted row.
+    const char * begin = configuration.query.data();
+    const char * end = begin + configuration.query.size();
+    ParserQuery parser(end, false);
+    auto base_ast = parseQuery(parser, begin, end, "FuzzQuery base query", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    const size_t base_formatted_size = base_ast->formatForErrorMessage().size();
+    if (base_formatted_size > configuration.max_query_length)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "FuzzQuery `max_query_length` ({}) is smaller than the formatted base query length ({}); "
+            "fuzzer cannot produce any rows that satisfy the cap",
+            configuration.max_query_length, base_formatted_size);
 
     return configuration;
 }
