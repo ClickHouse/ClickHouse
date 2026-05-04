@@ -2922,7 +2922,16 @@ void StorageFile::truncate(
                 throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                     "Path `{}` is not inside any user files disk", path);
             validateDiskRelativePathBoundary(disk, relative);
-            disk->removeFileIfExists(relative);
+
+            if (!disk->existsFile(relative))
+                continue;
+
+            /// Re-create as an empty file rather than removing it, to mirror the local
+            /// `::truncate(path, 0)` semantics: subsequent reads see an empty file
+            /// (zero rows), not `FILE_DOESNT_EXIST`. Backends that do not support
+            /// `WriteMode::Rewrite` (e.g. truly read-only object stores) will throw a
+            /// visible `NOT_IMPLEMENTED` instead of silently dropping the truncate.
+            disk->writeFile(relative, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite)->finalize();
         }
         else
         {
