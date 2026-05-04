@@ -11,6 +11,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
+#include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
@@ -271,6 +272,28 @@ void SortingStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
+void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_)
+{
+    limit_by_columns = std::move(limit_by_columns_);
+    limit_by_group_length = limit_by_group_length_;
+}
+
+void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc)
+{
+    if (limit_by_columns.empty() || pipeline.getNumStreams() <= 1)
+        return;
+    if (!stream_sort_desc.hasPrefix(limit_by_columns))
+        return;
+
+    pipeline.addSimpleTransform(
+        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        {
+            if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                return nullptr;
+            return std::make_shared<LimitByTransform>(header, limit_by_group_length, 0, true, limit_by_columns);
+        });
+}
+
 void SortingStep::updateLimit(size_t limit_)
 {
     if (limit_ && (limit == 0 || limit_ < limit))
@@ -505,6 +528,8 @@ void SortingStep::fullSort(
 
     fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort, threshold_tracker);
 
+    addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
+
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
     {
@@ -535,6 +560,8 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     if (type == Type::MergingSorted)
     {
+        addPerStreamLimitByIfNeeded(pipeline, result_description);
+
         mergingSorted(pipeline, result_description, limit);
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
@@ -545,6 +572,12 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     if (type == Type::FinishSorting)
     {
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
+
+        /// Do not apply `LIMIT BY` before the final sort order is known. Suffix sort
+        /// keys can change which rows are first inside a `LIMIT BY` group.
+        if (!need_finish_sorting)
+            addPerStreamLimitByIfNeeded(pipeline, result_description);
+
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
         if (need_finish_sorting)
@@ -561,6 +594,8 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
+
+        addPerStreamLimitByIfNeeded(pipeline, result_description);
 
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
