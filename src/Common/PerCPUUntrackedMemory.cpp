@@ -29,11 +29,12 @@ namespace
 /// legacy per-thread accumulator in `CurrentMemoryTracker`.
 constexpr int MAX_CPUS = 1024;
 
-/// Cache-line padded so cross-CPU writes do not bounce the same line.
+/// Cache-line aligned so cross-CPU writes do not bounce the same line.
+/// `alignas` also forces tail padding (sizeof must be a multiple of
+/// alignof), so the array stride is exactly CH_CACHE_LINE_SIZE.
 struct alignas(CH_CACHE_LINE_SIZE) Slot
 {
     Int64 value;
-    char pad[CH_CACHE_LINE_SIZE - sizeof(Int64)];
 };
 
 alignas(CH_CACHE_LINE_SIZE) Slot slots[MAX_CPUS]{};
