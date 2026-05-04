@@ -818,9 +818,12 @@ const auto DefaultCodecsToTest = ::testing::Values(
     Codec("Gorilla"),
     Codec("Gorilla, LZ4"),
     Codec("Gorilla, ZSTD"),
-    Codec("ALP"),
-    Codec("ALP, LZ4"),
-    Codec("ALP, ZSTD"),
+    Codec("ALP(AUTO)"),
+    Codec("ALP(AUTO), LZ4"),
+    Codec("ALP(AUTO), ZSTD"),
+    Codec("ALP(STD)"),
+    Codec("ALP(STD), LZ4"),
+    Codec("ALP(STD), ZSTD"),
     Codec("ALP(RD)"),
     Codec("ALP(RD), LZ4"),
     Codec("ALP(RD), ZSTD")
@@ -919,9 +922,12 @@ INSTANTIATE_TEST_SUITE_P(SameValueFloat,
             Codec("Gorilla"),
             Codec("Gorilla, LZ4"),
             Codec("Gorilla, ZSTD"),
-            Codec("ALP"),
-            Codec("ALP, LZ4"),
-            Codec("ALP, ZSTD"),
+            Codec("ALP(AUTO)"),
+            Codec("ALP(AUTO), LZ4"),
+            Codec("ALP(AUTO), ZSTD"),
+            Codec("ALP(STD)"),
+            Codec("ALP(STD), LZ4"),
+            Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
             Codec("ALP(RD), ZSTD")
@@ -940,9 +946,12 @@ INSTANTIATE_TEST_SUITE_P(SameNegativeValueFloat,
             Codec("Gorilla"),
             Codec("Gorilla, LZ4"),
             Codec("Gorilla, ZSTD"),
-            Codec("ALP"),
-            Codec("ALP, LZ4"),
-            Codec("ALP, ZSTD"),
+            Codec("ALP(AUTO)"),
+            Codec("ALP(AUTO), LZ4"),
+            Codec("ALP(AUTO), ZSTD"),
+            Codec("ALP(STD)"),
+            Codec("ALP(STD), LZ4"),
+            Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
             Codec("ALP(RD), ZSTD")
@@ -997,9 +1006,12 @@ INSTANTIATE_TEST_SUITE_P(SequentialFloat,
             Codec("Gorilla"),
             Codec("Gorilla, LZ4"),
             Codec("Gorilla, ZSTD"),
-            Codec("ALP"),
-            Codec("ALP, LZ4"),
-            Codec("ALP, ZSTD"),
+            Codec("ALP(AUTO)"),
+            Codec("ALP(AUTO), LZ4"),
+            Codec("ALP(AUTO), ZSTD"),
+            Codec("ALP(STD)"),
+            Codec("ALP(STD), LZ4"),
+            Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
             Codec("ALP(RD), ZSTD")
@@ -1018,9 +1030,12 @@ INSTANTIATE_TEST_SUITE_P(SequentialReverseFloat,
             Codec("Gorilla"),
             Codec("Gorilla, LZ4"),
             Codec("Gorilla, ZSTD"),
-            Codec("ALP"),
-            Codec("ALP, LZ4"),
-            Codec("ALP, ZSTD"),
+            Codec("ALP(AUTO)"),
+            Codec("ALP(AUTO), LZ4"),
+            Codec("ALP(AUTO), ZSTD"),
+            Codec("ALP(STD)"),
+            Codec("ALP(STD), LZ4"),
+            Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
             Codec("ALP(RD), ZSTD")
@@ -1071,7 +1086,8 @@ INSTANTIATE_TEST_SUITE_P(MonotonicFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla"),
-            Codec("ALP"),
+            Codec("ALP(AUTO)"),
+            Codec("ALP(STD)"),
             Codec("ALP(RD)")
         ),
         ::testing::Values(
@@ -1086,7 +1102,8 @@ INSTANTIATE_TEST_SUITE_P(MonotonicReverseFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla"),
-            Codec("ALP"),
+            Codec("ALP(AUTO)"),
+            Codec("ALP(STD)"),
             Codec("ALP(RD)")
         ),
         ::testing::Values(
@@ -1159,9 +1176,12 @@ INSTANTIATE_TEST_SUITE_P(OverflowFloat,
             Codec("Gorilla", 1.1),
             Codec("Gorilla, LZ4", 1.0),
             Codec("Gorilla, ZSTD", 1.0),
-            Codec("ALP", 1.1),
-            Codec("ALP, LZ4", 1.0),
-            Codec("ALP, ZSTD", 1.0),
+            Codec("ALP(AUTO)", 1.1),
+            Codec("ALP(AUTO), LZ4", 1.0),
+            Codec("ALP(AUTO), ZSTD", 1.0),
+            Codec("ALP(STD)", 1.1),
+            Codec("ALP(STD), LZ4", 1.0),
+            Codec("ALP(STD), ZSTD", 1.0),
             Codec("ALP(RD)", 1.1),
             Codec("ALP(RD), LZ4", 1.0),
             Codec("ALP(RD), ZSTD", 1.0)
@@ -1576,7 +1596,7 @@ auto ALPSequentialGenerator = []<typename T>(T base = T{0}, T exception = T{0}, 
 INSTANTIATE_TEST_SUITE_P(ALPSequentialF64,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 0.3)),
+        ::testing::Values(Codec("ALP(STD)", 0.3)),
         ::testing::Values(
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 1024),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 2048),
@@ -1602,7 +1622,7 @@ INSTANTIATE_TEST_SUITE_P(ALPRDSequentialF64,
 INSTANTIATE_TEST_SUITE_P(ALPSequentialF32,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 0.8)),
+        ::testing::Values(Codec("ALP(STD)", 0.8)),
         ::testing::Values(
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 1024),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 2048),
@@ -1616,7 +1636,7 @@ INSTANTIATE_TEST_SUITE_P(ALPSequentialF32,
 INSTANTIATE_TEST_SUITE_P(ALPRDSequentialF32,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP(RD)", 0.82)),
+        ::testing::Values(Codec("ALP(RD)", 0.87)),
         ::testing::Values(
             generateSeq<Float32>(G(RandomGenerator<Float32>(42, M_Ef32, 2 * M_Ef32)), 0, 1024),
             generateSeq<Float32>(G(RandomGenerator<Float32>(42, M_Ef32, 2 * M_Ef32)), 0, 2048),
@@ -1629,7 +1649,7 @@ INSTANTIATE_TEST_SUITE_P(ALPPyramidOfSequences,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
-            Codec("ALP"),
+            Codec("ALP(STD)"),
             Codec("ALP(RD)")
         ),
         ::testing::ValuesIn(
@@ -1642,7 +1662,7 @@ INSTANTIATE_TEST_SUITE_P(ALPPyramidOfSequences,
 INSTANTIATE_TEST_SUITE_P(ALPLongSequencesF64,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 0.3)),
+        ::testing::Values(Codec("ALP(STD)", 0.3)),
         ::testing::Values(
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 65536),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 66000),
@@ -1654,7 +1674,7 @@ INSTANTIATE_TEST_SUITE_P(ALPLongSequencesF64,
 INSTANTIATE_TEST_SUITE_P(ALPLongSequencesF32,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 0.9)),
+        ::testing::Values(Codec("ALP(STD)", 0.9)),
         ::testing::Values(
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 65536),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 66000),
@@ -1666,7 +1686,7 @@ INSTANTIATE_TEST_SUITE_P(ALPLongSequencesF32,
 INSTANTIATE_TEST_SUITE_P(ALPHighPrecissionFloatsF64,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 0.5)),
+        ::testing::Values(Codec("ALP(STD)", 0.5)),
         ::testing::Values(
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 0, 0, 4)), 0, 2048),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 0, 0, 6)), 0, 2048)
@@ -1677,7 +1697,7 @@ INSTANTIATE_TEST_SUITE_P(ALPHighPrecissionFloatsF64,
 INSTANTIATE_TEST_SUITE_P(ALPHighPrecissionFloatsF32,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 0.999)),
+        ::testing::Values(Codec("ALP(STD)", 0.999)),
         ::testing::Values(
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 0, 0, 4)), 0, 2048),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 0, 0, 6)), 0, 2048)
@@ -1688,7 +1708,7 @@ INSTANTIATE_TEST_SUITE_P(ALPHighPrecissionFloatsF32,
 INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF64,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 0.4)),
+        ::testing::Values(Codec("ALP(STD)", 0.4)),
         ::testing::Values(
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::infinity(), 0.1))),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -std::numeric_limits<Float64>::infinity(), 0.1))),
@@ -1707,7 +1727,7 @@ INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF64,
 INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF32,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 0.9)),
+        ::testing::Values(Codec("ALP(STD)", 0.9)),
         ::testing::Values(
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::infinity(), 0.1))),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -std::numeric_limits<Float32>::infinity(), 0.1))),
@@ -1726,7 +1746,7 @@ INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF32,
 INSTANTIATE_TEST_SUITE_P(ALPManyExceptionsF64,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 0.99)),
+        ::testing::Values(Codec("ALP(STD)", 0.99)),
         ::testing::Values(
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.4))),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.6)))
@@ -1737,7 +1757,7 @@ INSTANTIATE_TEST_SUITE_P(ALPManyExceptionsF64,
 INSTANTIATE_TEST_SUITE_P(ALPManyExceptionsF32,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 1.01)),
+        ::testing::Values(Codec("ALP(STD)", 1.01)),
         ::testing::Values(
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.4))),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.6)))
@@ -1748,7 +1768,7 @@ INSTANTIATE_TEST_SUITE_P(ALPManyExceptionsF32,
 INSTANTIATE_TEST_SUITE_P(ALPExceptionsOnly,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 1.01)),
+        ::testing::Values(Codec("ALP(STD)", 1.01)),
         ::testing::Values(
             generateSeq<Float64>(G([](auto) { return std::numeric_limits<Float64>::quiet_NaN(); })),
             generateSeq<Float32>(G([](auto) { return std::numeric_limits<Float32>::quiet_NaN(); })),
@@ -1761,7 +1781,7 @@ INSTANTIATE_TEST_SUITE_P(ALPExceptionsOnly,
 INSTANTIATE_TEST_SUITE_P(ALPSameValuesF64,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 0.1)),
+        ::testing::Values(Codec("ALP(STD)", 0.1)),
         ::testing::Values(
             generateSeq<Float64>(G([](auto) { return 2.2; })),
             generateSeq<Float64>(G([](auto) { return -2.2; })),
@@ -1773,7 +1793,7 @@ INSTANTIATE_TEST_SUITE_P(ALPSameValuesF64,
 INSTANTIATE_TEST_SUITE_P(ALPSameValuesF32,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP", 0.1)),
+        ::testing::Values(Codec("ALP(STD)", 0.1)),
         ::testing::Values(
             generateSeq<Float32>(G([](auto) { return 2.2f; })),
             generateSeq<Float32>(G([](auto) { return -2.2f; })),
@@ -1832,7 +1852,7 @@ protected:
         try
         {
             std::vector<UInt8> source_with_header = constructSourceWithHeader(source, dest_size);
-            auto codec = makeCodec("ALP", std::make_shared<T>());
+            auto codec = makeCodec("ALP(STD)", std::make_shared<T>());
             std::vector<char> dest(dest_size);
 
             codec->decompress(reinterpret_cast<const char *>(source_with_header.data()), static_cast<UInt32>(source_with_header.size()), dest.data());
@@ -1854,7 +1874,7 @@ TEST_F(ALPTest, SupportedFloatTypes)
     };
 
     for (const auto & type : supported_types)
-        ASSERT_NO_THROW(makeCodec("ALP", type)) << "ALP codec should accept " << type->getName();
+        ASSERT_NO_THROW(makeCodec("ALP(STD)", type)) << "ALP codec should accept " << type->getName();
 }
 
 TEST_F(ALPTest, UnsupportedFloatTypes)
@@ -1868,14 +1888,12 @@ TEST_F(ALPTest, UnsupportedFloatTypes)
     };
 
     for (const auto & type : unsupported_types)
-        ASSERT_THROW(makeCodec("ALP", type), Exception) << "ALP codec should reject " << type->getName();
+        ASSERT_THROW(makeCodec("ALP(STD)", type), Exception) << "ALP codec should reject " << type->getName();
 }
 
 TEST_F(ALPTest, CompressProducesCorrectHeader)
 {
     const std::vector<std::tuple<std::string, DataTypePtr, UInt8, UInt8>> test_cases = {
-        {"ALP", std::make_shared<DataTypeFloat64>(), 0x01, 0x08},
-        {"ALP", std::make_shared<DataTypeFloat32>(), 0x01, 0x04},
         {"ALP(STD)", std::make_shared<DataTypeFloat64>(), 0x01, 0x08},
         {"ALP(STD)", std::make_shared<DataTypeFloat32>(), 0x01, 0x04},
         {"ALP(RD)", std::make_shared<DataTypeFloat64>(), 0x11, 0x08},
@@ -2056,14 +2074,15 @@ TEST_F(ALPTest, DecompressMalformedInputWithInvalidReservedBitsInMetaByte)
     verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid meta byte with reserved bits set: 33");
 }
 
-TEST_F(ALPTest, DecompressMalformedInputRDWithTruncatedBlock)
+TEST_F(ALPTest, DecompressMalformedInputRDWithTruncatedRDHeader)
 {
     const std::vector<UInt8> source = {
         0x11,       // meta byte (version=1, variant=RD)
         0x08,       // float width (Float64)
         0x00, 0x04  // block float count = 1024
+        // RD header is missing entirely
     };
-    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, stream size mismatch");
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, incomplete RD header");
 }
 
 TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidLeftBitWidthZero)
@@ -2072,7 +2091,9 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidLeftBitWidthZero)
         0x11,       // meta byte (version=1, variant=RD)
         0x08,       // float width (Float64)
         0x00, 0x04, // block float count = 1024
-        0x00        // left_bits = 0 (invalid, must be 1–16)
+        // RD header
+        0x00,       // left_bits = 0 (invalid, must be 1–16)
+        0x01        // dict_size = 1
     };
     verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, invalid left bit-width: 0, allowed: 1-16");
 }
@@ -2083,7 +2104,9 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidLeftBitWidthTooLarge)
         0x11,       // meta byte (version=1, variant=RD)
         0x08,       // float width (Float64)
         0x00, 0x04, // block float count = 1024
-        0x11        // left_bits = 17 (invalid, max 16)
+        // RD header
+        0x11,       // left_bits = 17 (invalid, max 16)
+        0x01        // dict_size = 1
     };
     verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, invalid left bit-width: 17, allowed: 1-16");
 }
@@ -2094,20 +2117,38 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithTruncatedBlockHeaderEncoded)
         0x11,       // meta byte (version=1, variant=RD)
         0x08,       // float width (Float64)
         0x00, 0x04, // block float count = 1024
-        0x01        // left_bits = 1 (valid), but remaining header is missing
+        // RD header: left_bits=1, dict_size=1, one dictionary entry
+        0x01,       // left_bits = 1
+        0x01,       // dict_size = 1
+        0x00, 0x00, // dictionary entry
+        // Block header: only first byte of exception count, second byte missing
+        0x01        // first byte of exception count (not 0xFF, so not unencoded), but second byte is missing
     };
     verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, incomplete block header (encoded)");
 }
 
-TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidDictionarySize)
+TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidDictionarySizeZero)
 {
     const std::vector<UInt8> source = {
         0x11,       // meta byte (version=1, variant=RD)
         0x08,       // float width (Float64)
         0x00, 0x04, // block float count = 1024
+        // RD header
         0x01,       // left_bits = 1
-        0x09,       // dict_size = 9 (invalid, max 8)
-        0x00, 0x00  // exception count = 0
+        0x00        // dict_size = 0 (invalid, must be 1–8)
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, invalid dictionary size: 0");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidDictionarySizeGreaterThanAllowed)
+{
+    const std::vector<UInt8> source = {
+        0x11,       // meta byte (version=1, variant=RD)
+        0x08,       // float width (Float64)
+        0x00, 0x04, // block float count = 1024
+        // RD header
+        0x01,       // left_bits = 1
+        0x09        // dict_size = 9 (invalid, max 8)
     };
     verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, invalid dictionary size: 9, max allowed: 8");
 }
@@ -2118,15 +2159,16 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithTruncatedBlockData)
         0x11,       // meta byte (version=1, variant=RD)
         0x08,       // float width (Float64)
         0x00, 0x04, // block float count = 1024
+        // RD header: left_bits=1, dict_size=1, one dictionary entry
         0x01,       // left_bits = 1
         0x01,       // dict_size = 1
+        0x00, 0x00, // dictionary entry
+        // Block: exception count = 0, but missing bitpacked data
         0x00, 0x00, // exception count = 0
-        // Dictionary entry (2 bytes) but missing bitpacked right data
-        0x00, 0x00,
         // Only 4 bytes of right data (need 8064)
         0xFF, 0xFF, 0xFF, 0xFF
     };
-    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, incomplete block payload, available size: 6, left bit-width: 1, dictionary size: 1, exceptions: 0");
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, incomplete block payload, available size: 4, left bit-width: 1, dictionary size: 1, exceptions: 0");
 }
 
 TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidExceptionsCount)
@@ -2135,16 +2177,17 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidExceptionsCount)
         0x11,       // meta byte (version=1, variant=RD)
         0x08,       // float width (Float64)
         0x00, 0x04, // block float count = 1024
+        // RD header: left_bits=1, dict_size=1, one dictionary entry
         0x01,       // left_bits = 1
         0x01,       // dict_size = 1
-        0x01, 0x00, // exception count = 1
-        // Dictionary entry (2 bytes)
-        0x00, 0x00
+        0x00, 0x00, // dictionary entry
+        // Block: exception count = 1
+        0x01, 0x00  // exception count = 1
     };
-    // Append 8064 zero bytes for bitpacked right data (bitpacked left is 0 bytes)
+    // Append 8064 zero bytes for bitpacked right data (bitpacked left is 0 bytes for dict_size=1)
     source.resize(source.size() + 8064, 0x00);
 
-    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, incomplete block payload, available size: 8066, left bit-width: 1, dictionary size: 1, exceptions: 1");
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, incomplete block payload, available size: 8064, left bit-width: 1, dictionary size: 1, exceptions: 1");
 }
 
 TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidDictionaryIndex)
@@ -2153,15 +2196,16 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidDictionaryIndex)
         0x11,       // meta byte (version=1, variant=RD)
         0x08,       // float width (Float64)
         0x00, 0x04, // block float count = 1024
+        // RD header: left_bits=1, dict_size=3, three dictionary entries
         0x01,       // left_bits = 1
         0x03,       // dict_size = 3
-        0x00, 0x00, // exception count = 0
-        // Dictionary entries: 3 × 2 bytes = 6 bytes
-        0x00, 0x00,
-        0x01, 0x00,
-        0x02, 0x00
+        0x00, 0x00, // dict entry 0
+        0x01, 0x00, // dict entry 1
+        0x02, 0x00, // dict entry 2
+        // Block: exception count = 0
+        0x00, 0x00  // exception count = 0
     };
-    // Append 256 bytes of 0xFF for bitpacked left (all indices decode to 3, invalid)
+    // Append 256 bytes of 0xFF for bitpacked left (all indices decode to 3, invalid for dict_size=3)
     source.resize(source.size() + 256, 0xFF);
     // Append 8064 zero bytes for bitpacked right
     source.resize(source.size() + 8064, 0x00);
@@ -2175,13 +2219,14 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidExceptionIndex)
         0x11,       // meta byte (version=1, variant=RD)
         0x08,       // float width (Float64)
         0x00, 0x04, // block float count = 1024
+        // RD header: left_bits=1, dict_size=1, one dictionary entry
         0x01,       // left_bits = 1
         0x01,       // dict_size = 1
-        0x01, 0x00, // exception count = 1
-        // Dictionary entry (2 bytes)
-        0x00, 0x00
+        0x00, 0x00, // dictionary entry
+        // Block: exception count = 1
+        0x01, 0x00  // exception count = 1
     };
-    // Append 8064 zero bytes for bitpacked right (bitpacked left is 0 bytes)
+    // Append 8064 zero bytes for bitpacked right (bitpacked left is 0 bytes for dict_size=1)
     source.resize(source.size() + 8064, 0x00);
     // Exception: index=1024 (0x0400 LE) + 8 bytes value
     const std::vector<UInt8> exception_data = {

@@ -10,6 +10,7 @@
 
 #include <Compression/FFOR.h>
 
+#include <algorithm>
 #include <array>
 
 namespace DB
@@ -93,22 +94,24 @@ namespace DB
  *
  *   value_bits = left_part (top left_bits bits) | right_part (remaining right_bits bits)
  *
- * The key observation is that in many float columns the high bits-sign, exponent, and top mantissa - repeat heavily across values in a block.
+ * The key observation is that in many float columns the high bits — sign, exponent, and top mantissa — repeat heavily across values in a column.
  * The left parts therefore form a small vocabulary that can be represented as a compact dictionary (up to 8 entries), while the right parts are bit-packed directly.
  *
- * Per-Block left_bits Selection
- * For each block, the encoder searches for the `left_bits` split point that minimises the estimated encoded block size.
- * It samples up to ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS values evenly from the block and evaluates every candidate left_bits from 1 to ALP_RD_CUTTING_LIMIT (16).
+ * Stream-Level left_bits Selection
+ * The encoder selects a single `left_bits` split point for the entire column that minimises the estimated encoded size.
+ * It samples up to ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS values evenly from the column and evaluates every candidate left_bits from 1 to ALP_RD_CUTTING_LIMIT (16).
+ *
+ * Per-Stream RD Header (written once before all blocks)
+ *   - 1 byte:  left bit-width (UInt8, valid range 1–16)
+ *   - 1 byte:  dictionary size (UInt8, valid range 0–8)
+ *   - Dictionary: dict_size × 2 bytes (UInt16), each a left-part bit pattern, ordered by frequency descending (index 0 = most frequent)
  *
  * Per-Block Encoding Schema (Compressed Case)
- *   - 1 byte:  left bit-width (UInt8, valid range 1–16)
- *   - 1 byte:  dictionary size (Int8, valid range 0-8)
  *   - 2 bytes: exception count (UInt16)
- *   - Dictionary: dict_size × 2 bytes (UInt16), each a left-part bit pattern, ordered by frequency descending (index 0 = most frequent)
- *   - Bit-packed dictionary indices: FFOR payload, "bit-width of dictionary size" bits per slot, always sized for ALP_BLOCK_MAX_FLOAT_COUNT (1024) slots and base 0
- *   - Bit-packed right parts: FFOR payload, right bits per slot, always sized for ALP_BLOCK_MAX_FLOAT_COUNT (1024) slots and base 0
+ *   - Bit-packed dictionary indices: FFOR payload, "bit-width of (dictionary size - 1)" bits per slot, always sized for ALP_BLOCK_MAX_FLOAT_COUNT (1024) slots and base 0
+ *   - Bit-packed right parts: FFOR payload, right_bits per slot, always sized for ALP_BLOCK_MAX_FLOAT_COUNT (1024) slots and base 0
  *   - Exceptions (one per non-dictionary value):
- *       - UInt16 index (position in source block - offset)
+ *       - UInt16 index (position in source block)
  *       - raw value (float or double)
  *
  * Per-Block Encoding Schema (Uncompressed Case)
@@ -126,9 +129,10 @@ class CompressionCodecALP final : public ICompressionCodec
 public:
     enum class Variant : UInt8
     {
-        Default = 0, // Same as STD, but indicates missing explicit variant setting
-        STD = 1, // Standard ALP variant with decimal-based integerization
-        RD = 2 // Real Doubles ALP variant with bit-split and dictionary encoding of the high bits.
+        DEFAULT = 0, // Default ALP variant (AUTO)
+        AUTO = 1, // Auto-select variant per block based on estimated compressed size (default)
+        STD = 2, // Standard ALP variant with decimal-based integerization
+        RD = 3 // Real Doubles ALP variant with bit-split and dictionary encoding of the high bits.
     };
 
     explicit CompressionCodecALP(UInt8 float_width_, Variant variant_);
@@ -184,20 +188,29 @@ constexpr UInt32 ALP_PARAMS_ESTIMATION_SAMPLES = 8;
 constexpr UInt32 ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS = 32;
 constexpr UInt32 ALP_PARAMS_ESTIMATION_CANDIDATES = 5;
 
-/**
- * ALP RD block header size in bytes: left bit-width (1) + dictionary size (1) + exception count (2)
- */
-constexpr UInt32 ALP_RD_BLOCK_HEADER_SIZE = 2 * sizeof(UInt8) + sizeof(UInt16);
-
-constexpr UInt32 ALP_RD_UNENCODED_BLOCK_HEADER_SIZE = sizeof(UInt8);
-constexpr UInt8 ALP_RD_UNENCODED_BLOCK_BIT_WIDTH = 255;
-
 constexpr UInt8 ALP_RD_CUTTING_LIMIT = 16;
 /**
  * Limit the dictionary size to 8 entries (3 bits to encode the dictionary index).
  */
 constexpr UInt8 ALP_RD_MAX_DICT_BITS = 3;
 constexpr UInt8 ALP_RD_MAX_DICT_SIZE = (1 << ALP_RD_MAX_DICT_BITS); // 8
+
+/**
+ * ALP RD header size in bytes: left bit-width (1) + dictionary size (1)
+ */
+constexpr UInt32 ALP_RD_HEADER_MIN_SIZE = 2 * sizeof(UInt8);
+/**
+ * ALP RD maximum header size in bytes: left bit-width (1) + dictionary size (1) + dictionary entries (8 * 2)
+ */
+constexpr UInt32 ALP_RD_HEADER_TOTAL_MAX_SIZE = ALP_RD_HEADER_MIN_SIZE + ALP_RD_MAX_DICT_SIZE * sizeof(UInt16);
+
+/**
+ * ALP RD block header size in bytes: exception count (2)
+ */
+constexpr UInt32 ALP_RD_BLOCK_HEADER_SIZE = sizeof(UInt16);
+
+constexpr UInt32 ALP_RD_UNENCODED_BLOCK_HEADER_SIZE = sizeof(UInt8);
+constexpr UInt8 ALP_RD_UNENCODED_BLOCK_BYTE = 255;
 
 /**
  * Alignment for internal ALP buffers. Used to align buffers for FFOR encoding/decoding.
@@ -240,6 +253,8 @@ struct ALPFloatTraits<Float64>
 
     static constexpr Float64 ROUND_MAGIC = 6755399441055744.0; // 2^51 + 2^52
 
+    static constexpr size_t RD_SIZE_THRESHOLD_LIMIT = 48 * ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS;
+
     /**
      * Unsigned integer type with the same size as the float type, used for bit-level operations and reinterpretation.
      */
@@ -267,6 +282,8 @@ struct ALPFloatTraits<Float32>
     static constexpr Float32 LOWER = -9223371487098961920.0f;
 
     static constexpr Float32 ROUND_MAGIC = 12582912.0f; // 2^22 + 2^23
+
+    static constexpr size_t RD_SIZE_THRESHOLD_LIMIT = 22 * ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS;
 
     /**
      * Unsigned integer type with the same size as the float type, used for bit-level operations and reinterpretation.
@@ -321,6 +338,19 @@ struct ALPUtils
     }
 
     /**
+     * Calculate the bit-width required to encode dictionary indices for a given dictionary size.
+     * ceil(log2(dict_size))
+     */
+    static UInt8 calcRdDictBits(const UInt8 dict_size)
+    {
+        if (unlikely(dict_size == 0))
+            return 1;
+
+        // Dictionary indices are from 0 to dict_size - 1, so the bit-width is calculated based on dict_size - 1.
+        return calculateBitWidth(dict_size - 1);
+    }
+
+    /**
      * Write an unencoded block to the destination buffer.
      * Returns the pointer to the end of the written block.
      */
@@ -361,23 +391,26 @@ public:
         if (source_size % sizeof(T) != 0)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ALP codec, data size {} is not aligned to {}", source_size, sizeof(T));
 
-        UInt32 float_count = source_size / sizeof(T);
+        const UInt32 float_count = source_size / sizeof(T);
 
-        estimateParamCandidates(source, float_count);
+        estimateParamCandidates(source, float_count, false);
 
-        const char * dest_start = dest;
+        return encodeBlocks(source, float_count, dest);
+    }
 
-        while (float_count >= ALP_BLOCK_MAX_FLOAT_COUNT)
-        {
-            dest = encodeBlock(source, ALP_BLOCK_MAX_FLOAT_COUNT, dest);
-            source += ALP_BLOCK_MAX_FLOAT_COUNT * sizeof(T);
-            float_count -= ALP_BLOCK_MAX_FLOAT_COUNT;
-        }
+    bool tryEncodeWithAuto(const char * source, const UInt32 source_size, char * dest, UInt32 & encoded_size)
+    {
+        if (source_size % sizeof(T) != 0)
+            throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ALP codec, data size {} is not aligned to {}", source_size, sizeof(T));
 
-        if (float_count > 0)
-            dest = encodeBlock(source, static_cast<UInt16>(float_count), dest);
+        const UInt32 float_count = source_size / sizeof(T);
 
-        return static_cast<UInt32>(dest - dest_start);
+        if (!estimateParamCandidates(source, float_count, true))
+            return false;
+
+        encoded_size = encodeBlocks(source, float_count, dest);
+
+        return true;
     }
 
 private:
@@ -412,6 +445,23 @@ private:
 
     std::vector<EncodingParams> param_candidates;
     BlockState block;
+
+    UInt32 encodeBlocks(const char * source, UInt32 float_count, char * dest)
+    {
+        const char * dest_start = dest;
+
+        while (float_count >= ALP_BLOCK_MAX_FLOAT_COUNT)
+        {
+            dest = encodeBlock(source, ALP_BLOCK_MAX_FLOAT_COUNT, dest);
+            source += ALP_BLOCK_MAX_FLOAT_COUNT * sizeof(T);
+            float_count -= ALP_BLOCK_MAX_FLOAT_COUNT;
+        }
+
+        if (float_count > 0)
+            dest = encodeBlock(source, static_cast<UInt16>(float_count), dest);
+
+        return static_cast<UInt32>(dest - dest_start);
+    }
 
     char * encodeBlock(const char * source, const UInt16 float_count, char * dest)
     {
@@ -548,7 +598,7 @@ private:
         return best_params;
     }
 
-    void estimateParamCandidates(const char * source, const UInt32 float_count)
+    bool estimateParamCandidates(const char * source, const UInt32 float_count, bool is_auto_mode)
     {
         struct Estimation
         {
@@ -565,6 +615,8 @@ private:
 
         T sample[ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS];
 
+        size_t best_size = std::numeric_limits<size_t>::max();
+
         // For each sample, brute-force over all valid (exponent, fraction) pairs to find the best parameters for that sample.
         for (UInt32 i = 0; i < ALP_PARAMS_ESTIMATION_SAMPLES; ++i)
         {
@@ -579,7 +631,7 @@ private:
                 sample[j] = unalignedLoadLittleEndian<T>(sample_pos);
 
             Estimation best_estimation = {{0, 0}, 0};
-            size_t best_size = std::numeric_limits<size_t>::max();
+            size_t sample_best_size = std::numeric_limits<size_t>::max();
 
             for (UInt8 exponent = 0; exponent < ALPFloatTraits<T>::EXPONENT_COUNT; ++exponent)
             {
@@ -588,13 +640,15 @@ private:
                     const Estimation estimation{{exponent, fraction}, 1};
                     const size_t estimated_size = estimateEncodedSize(sample, sample_float_count, estimation.params);
 
-                    if (estimated_size < best_size)
+                    if (estimated_size < sample_best_size)
                     {
-                        best_size = estimated_size;
+                        sample_best_size = estimated_size;
                         best_estimation = estimation;
                     }
                 }
             }
+
+            best_size = std::min(best_size, sample_best_size);
 
             const UInt16 key = static_cast<UInt16>((best_estimation.params.exponent << 8) | best_estimation.params.fraction);
             auto it = estimations_map.find(key);
@@ -603,6 +657,9 @@ private:
             else
                 estimations_map[key] = best_estimation;
         }
+
+        if (is_auto_mode && best_size > ALPFloatTraits<T>::RD_SIZE_THRESHOLD_LIMIT)
+            return false;
 
         // Sort estimations by occurred times desc, exponent asc, fraction asc
         std::array<Estimation, ALP_PARAMS_ESTIMATION_SAMPLES> estimations;
@@ -626,8 +683,13 @@ private:
         estimation_count = std::min(estimation_count, ALP_PARAMS_ESTIMATION_CANDIDATES);
         for (UInt32 i = 0; i < estimation_count; ++i)
             param_candidates.push_back(estimations[i].params);
+
+        return true;
     }
 
+    /**
+     * Estimate the encoded size in bits for a given set of parameters on a sample.
+     */
     static size_t estimateEncodedSize(const T * const source, const UInt32 float_count, const EncodingParams & params)
     {
         Int64 min = std::numeric_limits<Int64>::max();
@@ -650,7 +712,7 @@ private:
         }
 
         const UInt8 bits = calculateEncodeBits(min, max);
-        const size_t total_size = ALP_BLOCK_HEADER_SIZE + float_count * bits / 8 + exception_count * (sizeof(UInt16) + sizeof(T));
+        const size_t total_size = float_count * bits + exception_count * ((sizeof(UInt16) + sizeof(T)) * 8);
         return total_size;
     }
 
@@ -796,8 +858,8 @@ class ALPRDCodecEncoder
 public:
     ALPRDCodecEncoder()
     {
-        block.dict_map.reserve(ALP_RD_MAX_DICT_SIZE);
-        block.dict_values.reserve(ALP_RD_MAX_DICT_SIZE);
+        dict_params.map.reserve(ALP_RD_MAX_DICT_SIZE);
+        dict_params.values.reserve(ALP_RD_MAX_DICT_SIZE);
         block.exceptions.reserve(ALP_BLOCK_MAX_FLOAT_COUNT);
     }
 
@@ -809,6 +871,10 @@ public:
         UInt32 float_count = source_size / sizeof(T);
 
         const char * dest_start = dest;
+
+        estimateDictParams(source, float_count);
+
+        dest = encodeDictParams(dest);
 
         while (float_count >= ALP_BLOCK_MAX_FLOAT_COUNT)
         {
@@ -826,11 +892,18 @@ public:
 private:
     using Unsigned = ALPFloatTraits<T>::Unsigned;
 
-    struct DictParams
+    struct DictParamsCandidate
     {
         UInt8 left_bits;
         std::vector<std::pair<UInt16, UInt16>> left_part_freq; // frequency desc, left part value asc
-        size_t estimated_size;
+        double estimated_size;
+    };
+
+    struct DictParams
+    {
+        UInt8 left_bits;
+        std::unordered_map<UInt16, UInt8> map; // left part value → dictionary index
+        std::vector<UInt16> values; // left part value for each dictionary index, sorted by frequency desc (index 0 is most frequent)
     };
 
     struct EncodingException
@@ -841,11 +914,6 @@ private:
 
     struct BlockState
     {
-        UInt8 left_bits;
-
-        std::unordered_map<UInt16, UInt8> dict_map; // left part value → dictionary index
-        std::vector<UInt16> dict_values; // left part value for each dictionary index, sorted by frequency desc (index 0 is most frequent)
-
         alignas(ALP_BUFFER_ALIGNMENT) UInt16 encoded_left[ALP_BLOCK_MAX_FLOAT_COUNT];
         alignas(ALP_BUFFER_ALIGNMENT) UInt16 bitpacked_left[ALP_BLOCK_MAX_FLOAT_COUNT];
         UInt16 bitpacked_left_bytes;
@@ -857,40 +925,49 @@ private:
         std::vector<EncodingException> exceptions;
     };
 
+    DictParams dict_params;
     BlockState block;
 
-    char * encodeBlock(const char * source, const UInt16 float_count, [[maybe_unused]] char * dest)
+    char * encodeDictParams(char * dest)
     {
-        encodeBlockToState(source, float_count);
-
-        const UInt8 dict_size = static_cast<UInt8>(block.dict_values.size());
-        const UInt16 exception_count = static_cast<UInt16>(block.exceptions.size());
-
-        // Check if encoding yields size reduction
-        const size_t total_encoded_size = calcTotalSize(dict_size, block.left_bits, exception_count);
-        const size_t total_unencoded_size = ALP_UNENCODED_BLOCK_HEADER_SIZE + float_count * sizeof(T);
-        if (total_encoded_size >= total_unencoded_size) // No compression gain
-        {
-            *dest++ = ALP_RD_UNENCODED_BLOCK_BIT_WIDTH; // Unencoded block marker
-            return ALPUtils<T>::writeUnencoded(source, float_count, dest);
-        }
-
         // Left Bit-Width
-        *dest++ = block.left_bits;
+        *dest++ = dict_params.left_bits;
 
         // Dictionary Size
-        *dest++ = static_cast<UInt8>(block.dict_values.size());
-
-        // Exception Count
-        unalignedStoreLittleEndian<UInt16>(dest, exception_count);
-        dest += sizeof(UInt16);
+        *dest++ = static_cast<UInt8>(dict_params.values.size());
 
         // Write Dictionary Values
-        for (const UInt16 left_part : block.dict_values)
+        for (const UInt16 left_part : dict_params.values)
         {
             unalignedStoreLittleEndian<UInt16>(dest, left_part);
             dest += sizeof(UInt16);
         }
+
+        return dest;
+    }
+
+    char * encodeBlock(const char * source, const UInt16 float_count, char * dest)
+    {
+        encodeBlockToState(source, float_count);
+
+        const UInt8 dict_size = static_cast<UInt8>(dict_params.values.size());
+        const UInt16 exception_count = static_cast<UInt16>(block.exceptions.size());
+
+        // Check if encoding yields size reduction
+        const size_t total_encoded_size = ALP_RD_BLOCK_HEADER_SIZE +
+            Compression::FFOR::calculateBitpackedBytes(ALPUtils<T>::calcRdDictBits(dict_size)) + // Left part bit-packed indices
+                Compression::FFOR::calculateBitpackedBytes(calcRightBits(dict_params.left_bits)) + // Right part bit-packed values
+                    exception_count * (sizeof(UInt16) + sizeof(T)); // Exceptions
+        const size_t total_unencoded_size = ALP_UNENCODED_BLOCK_HEADER_SIZE + float_count * sizeof(T);
+        if (total_encoded_size >= total_unencoded_size) // No compression gain
+        {
+            *dest++ = ALP_RD_UNENCODED_BLOCK_BYTE; // Unencoded block marker
+            return ALPUtils<T>::writeUnencoded(source, float_count, dest);
+        }
+
+        // Exception Count
+        unalignedStoreLittleEndian<UInt16>(dest, exception_count);
+        dest += sizeof(UInt16);
 
         // Write Left Part Bit-Packed Indices
         memcpy(dest, block.bitpacked_left, block.bitpacked_left_bytes);
@@ -914,9 +991,7 @@ private:
 
     void encodeBlockToState(const char * source, const UInt16 float_count)
     {
-        estimateBlockDictParams(source, float_count);
-
-        UInt8 right_bits = calcRightBits(block.left_bits);
+        UInt8 right_bits = calcRightBits(dict_params.left_bits);
         Unsigned right_part_mask = (static_cast<Unsigned>(1) << right_bits) - 1;
 
         block.exceptions.clear();
@@ -925,8 +1000,8 @@ private:
             const Unsigned value = unalignedLoadLittleEndian<Unsigned>(source); // reinterpret float bits as unsigned integer
 
             const UInt16 left_part = static_cast<UInt16>(value >> right_bits);
-            const auto dict_it = block.dict_map.find(left_part);
-            if (dict_it != block.dict_map.end())
+            const auto dict_it = dict_params.map.find(left_part);
+            if (dict_it != dict_params.map.end())
                 block.encoded_left[i] = dict_it->second;
             else
             {
@@ -941,7 +1016,7 @@ private:
         std::fill(block.encoded_left + float_count, block.encoded_left + ALP_BLOCK_MAX_FLOAT_COUNT, 0);
         std::fill(block.encoded_right + float_count, block.encoded_right + ALP_BLOCK_MAX_FLOAT_COUNT, 0);
 
-        auto dict_bits = calcDictBits(block.dict_values.size());
+        auto dict_bits = ALPUtils<T>::calcRdDictBits(static_cast<UInt8>(dict_params.values.size()));
         block.bitpacked_left_bytes = Compression::FFOR::calculateBitpackedBytes(dict_bits);
         Compression::FFOR::bitPack(block.encoded_left, block.bitpacked_left, dict_bits, 0);
 
@@ -949,27 +1024,27 @@ private:
         Compression::FFOR::bitPack(block.encoded_right, block.bitpacked_right, right_bits, 0);
     }
 
-    void estimateBlockDictParams(const char * source, const UInt16 float_count)
+    void estimateDictParams(const char * source, const UInt32 float_count)
     {
         // Sample up to ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS values from the block for local parameter estimation.
         // Evenly select sample values across the block and copy them into a temporary buffer for evaluation.
         T sample[ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS];
-        const UInt16 sample_count = std::min<UInt16>(float_count, ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS);
-        const UInt16 sample_step = std::max<UInt16>(float_count / sample_count, 1u);
-        for (UInt16 i = 0; i < sample_count; ++i)
+        const UInt32 sample_count = std::min<UInt32>(float_count, ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS);
+        const UInt32 sample_step = std::max<UInt32>(float_count / sample_count, 1u);
+        for (UInt32 i = 0; i < sample_count; ++i)
             sample[i] = unalignedLoadLittleEndian<T>(&source[i * sample_step * sizeof(T)]);
 
-        DictParams best_params
+        DictParamsCandidate best_params
         {
             .left_bits = 0,
             .left_part_freq = {},
-            .estimated_size = std::numeric_limits<size_t>::max()
+            .estimated_size = std::numeric_limits<double>::max()
         };
         bool is_prev_worse = false;
 
         for (UInt8 left_bits = 1; left_bits <= ALP_RD_CUTTING_LIMIT; ++left_bits)
         {
-            auto params = estimateBlockDictParamsCandidate(sample, sample_count, left_bits);
+            auto params = estimateDictParamsCandidate(sample, sample_count, left_bits);
             if (params.estimated_size < best_params.estimated_size)
             {
                 best_params = params;
@@ -985,31 +1060,31 @@ private:
             }
         }
 
-        block.left_bits = best_params.left_bits;
+        dict_params.left_bits = best_params.left_bits;
 
-        block.dict_map.clear();
-        block.dict_values.clear();
+        dict_params.map.clear();
+        dict_params.values.clear();
         for (size_t i = 0; i < best_params.left_part_freq.size(); ++i)
         {
             const UInt16 left_part = best_params.left_part_freq[i].second;
-            block.dict_values.push_back(left_part);
-            block.dict_map[left_part] = static_cast<UInt8>(i);
+            dict_params.values.push_back(left_part);
+            dict_params.map[left_part] = static_cast<UInt8>(i);
         }
     }
 
-    static DictParams estimateBlockDictParamsCandidate(const T * const source, const UInt16 float_count, const UInt8 left_bits)
+    static DictParamsCandidate estimateDictParamsCandidate(const T * const source, const UInt32 float_count, const UInt8 left_bits)
     {
-        DictParams params
+        DictParamsCandidate params
         {
             .left_bits = left_bits,
             .left_part_freq = {},
-            .estimated_size = std::numeric_limits<size_t>::max()
+            .estimated_size = std::numeric_limits<double>::max()
         };
         UInt8 right_bits = calcRightBits(left_bits);
 
         // Count frequency of left part values
         std::unordered_map<UInt16, UInt16> left_part_freq(float_count); // left part value → occurrence count
-        for (UInt16 i = 0; i < float_count; ++i)
+        for (UInt32 i = 0; i < float_count; ++i)
         {
             Unsigned value = std::bit_cast<Unsigned>(source[i]);
             UInt16 left_part = static_cast<UInt16>(value >> right_bits);
@@ -1036,30 +1111,19 @@ private:
         if (params.left_part_freq.size() > ALP_RD_MAX_DICT_SIZE)
             params.left_part_freq.resize(ALP_RD_MAX_DICT_SIZE);
 
-        // Estimated size
-        params.estimated_size = calcTotalSize(static_cast<UInt8>(params.left_part_freq.size()), left_bits, exceptions_count);
+        const UInt8 dict_bits = ALPUtils<T>::calcRdDictBits(static_cast<UInt8>(params.left_part_freq.size()));
+
+        // Estimated size is calculated as the sum of: left part bit-width, right part bit-width, and average exception size in bits per float
+        params.estimated_size = static_cast<double>(dict_bits) +
+            static_cast<double>(right_bits) +
+                static_cast<double>(exceptions_count * (sizeof(UInt16) + sizeof(T)) * 8) / static_cast<double>(float_count);
 
         return params;
-    }
-
-    static size_t calcTotalSize(const UInt8 dict_size, const UInt8 left_bits, const UInt16 exceptions_count)
-    {
-        return ALP_RD_BLOCK_HEADER_SIZE +
-            dict_size * sizeof(UInt16) + // Dictionary values
-                Compression::FFOR::calculateBitpackedBytes(calcDictBits(dict_size)) + // Left part bit-packed indices
-                    Compression::FFOR::calculateBitpackedBytes(calcRightBits(left_bits)) + // Right part bit-packed values
-                        exceptions_count * (sizeof(UInt16) + sizeof(T)); // Exceptions
     }
 
     static UInt8 calcRightBits(const UInt8 left_bits)
     {
         return static_cast<UInt8>(sizeof(Unsigned) * 8 - left_bits);
-    }
-
-    static UInt8 calcDictBits(const size_t dict_size)
-    {
-        // Dictionary indices are from 0 to dict_size - 1, so the bit-width is calculated based on dict_size - 1.
-        return ALPUtils<T>::calculateBitWidth(dict_size - 1);
     }
 };
 
@@ -1069,7 +1133,7 @@ class ALPRDCodecDecoder
 public:
     explicit ALPRDCodecDecoder()
     {
-        block.dict_values.reserve(ALP_RD_MAX_DICT_SIZE);
+        dict_params.values.reserve(ALP_RD_MAX_DICT_SIZE);
     }
 
     UInt32 decode(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size)
@@ -1080,6 +1144,8 @@ public:
         const char * source_end = source + source_size;
         const char * dest_start = dest;
         const char * dest_end = dest + uncompressed_size;
+
+        decodeDictParams(source, source_end);
 
         while (source < source_end)
         {
@@ -1096,10 +1162,14 @@ public:
 private:
     using Unsigned = ALPFloatTraits<T>::Unsigned;
 
+    struct DictParams
+    {
+        UInt8 left_bits;
+        std::vector<UInt16> values;
+    };
+
     struct BlockState
     {
-        std::vector<UInt16> dict_values;
-
         alignas(ALP_BUFFER_ALIGNMENT) UInt16 encoded_left[ALP_BLOCK_MAX_FLOAT_COUNT];
         alignas(ALP_BUFFER_ALIGNMENT) UInt16 bitpacked_left[ALP_BLOCK_MAX_FLOAT_COUNT];
 
@@ -1107,7 +1177,47 @@ private:
         alignas(ALP_BUFFER_ALIGNMENT) Unsigned bitpacked_right[ALP_BLOCK_MAX_FLOAT_COUNT];
     };
 
+    DictParams dict_params;
     BlockState block;
+
+    void decodeDictParams(const char * & source, const char * source_end)
+    {
+        if (unlikely(source + ALP_RD_HEADER_MIN_SIZE > source_end))
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                "Cannot decompress ALP(RD)-encoded data, incomplete RD header");
+
+        // Read left bit-width and check for unencoded block marker
+        dict_params.left_bits = static_cast<UInt8>(*source++);
+        if (unlikely(dict_params.left_bits == 0 || dict_params.left_bits > ALP_RD_CUTTING_LIMIT))
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                "Cannot decompress ALP(RD)-encoded data, invalid left bit-width: {}, allowed: {}-{}",
+                static_cast<UInt32>(dict_params.left_bits), 1, static_cast<UInt32>(ALP_RD_CUTTING_LIMIT));
+
+        // Read dictionary size
+        const UInt8 dict_size = static_cast<UInt8>(*source++);
+        if (unlikely(dict_size == 0))
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                "Cannot decompress ALP(RD)-encoded data, invalid dictionary size: 0");
+        if (unlikely(dict_size > ALP_RD_MAX_DICT_SIZE))
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                "Cannot decompress ALP(RD)-encoded data, invalid dictionary size: {}, max allowed: {}",
+                static_cast<UInt32>(dict_size), static_cast<UInt32>(ALP_RD_MAX_DICT_SIZE));
+
+        // Validate dictionary values size
+        if (unlikely(source + dict_size * sizeof(UInt16) > source_end))
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                "Cannot decompress ALP(RD)-encoded data, incomplete dictionary values, available size: {}, expected size: {}",
+                source_end - source, dict_size * sizeof(UInt16));
+
+        // Read dictionary values
+        dict_params.values.clear();
+        for (UInt16 i = 0; i < dict_size; ++i)
+        {
+            const UInt16 dict_entry = unalignedLoadLittleEndian<UInt16>(source);
+            source += sizeof(UInt16);
+            dict_params.values.push_back(dict_entry);
+        }
+    }
 
     void decodeBlock(const char * & source, const char * source_end, char * & dest, const char * dest_end, const UInt16 float_count)
     {
@@ -1115,59 +1225,38 @@ private:
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
                 "Cannot decompress ALP(RD)-encoded data, incomplete block header");
 
-        // Read left bit-width and check for unencoded block marker
-        const UInt8 left_bits = static_cast<UInt8>(*source++);
-        if (left_bits == ALP_RD_UNENCODED_BLOCK_BIT_WIDTH)
+        // Read first byte of exception count
+        const UInt8 exception_count_first_byte = static_cast<UInt8>(*source++);
+        if (exception_count_first_byte == ALP_RD_UNENCODED_BLOCK_BYTE)
         {
             ALPUtils<T>::decompressUnencodedBlock(source, source_end, dest, dest_end, float_count);
             return;
         }
-        if (unlikely(left_bits == 0 || left_bits > ALP_RD_CUTTING_LIMIT))
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-                "Cannot decompress ALP(RD)-encoded data, invalid left bit-width: {}, allowed: {}-{}",
-                static_cast<UInt32>(left_bits), 1, static_cast<UInt32>(ALP_RD_CUTTING_LIMIT));
-
         if (unlikely(source + (ALP_RD_BLOCK_HEADER_SIZE - ALP_RD_UNENCODED_BLOCK_HEADER_SIZE) > source_end))
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
                 "Cannot decompress ALP(RD)-encoded data, incomplete block header (encoded)");
 
-        // Read dictionary size
-        const UInt8 dict_size = static_cast<UInt8>(*source++);
-        if (unlikely(dict_size > ALP_RD_MAX_DICT_SIZE))
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-                "Cannot decompress ALP(RD)-encoded data, invalid dictionary size: {}, max allowed: {}",
-                static_cast<UInt32>(dict_size), static_cast<UInt32>(ALP_RD_MAX_DICT_SIZE));
-
         // Read exception count
-        const UInt16 exception_count = unalignedLoadLittleEndian<UInt16>(source);
-        source += sizeof(UInt16);
+        const UInt16 exception_count = unalignedLoadLittleEndian<UInt16>(source - 1); // exception count starts from the first byte we just read
+        ++source; // Move by one byte since the first byte has been read
 
         // Calculate additional parameters based on header values
-        UInt8 dict_bits = ALPUtils<T>::calculateBitWidth(dict_size - 1); // Dictionary indices are from 0 to dict_size - 1
-        UInt8 right_bits = static_cast<UInt8>(sizeof(Unsigned) * 8 - left_bits);
+        UInt8 dict_size = static_cast<UInt8>(dict_params.values.size());
+        UInt8 dict_bits = ALPUtils<T>::calcRdDictBits(dict_size);
+        UInt8 right_bits = static_cast<UInt8>(sizeof(Unsigned) * 8 - dict_params.left_bits);
 
         UInt16 bitpacked_left_bytes = Compression::FFOR::calculateBitpackedBytes<ALP_BLOCK_MAX_FLOAT_COUNT>(dict_bits);
         UInt16 bitpacked_right_bytes = Compression::FFOR::calculateBitpackedBytes<ALP_BLOCK_MAX_FLOAT_COUNT>(right_bits);
 
         // Validate block payload size
         const size_t total_encoded_size =
-            dict_size * sizeof(UInt16) + // Dictionary values
-                bitpacked_left_bytes + // Left part bit-packed indices
-                    bitpacked_right_bytes + // Right part bit-packed values
-                        exception_count * (sizeof(UInt16) + sizeof(T)); // Exceptions
+            bitpacked_left_bytes + // Left part bit-packed indices
+                bitpacked_right_bytes + // Right part bit-packed values
+                    exception_count * (sizeof(UInt16) + sizeof(T)); // Exceptions
         if (unlikely(source + total_encoded_size > source_end))
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
                 "Cannot decompress ALP(RD)-encoded data, incomplete block payload, available size: {}, left bit-width: {}, dictionary size: {}, exceptions: {}",
-                source_end - source, static_cast<UInt32>(left_bits), static_cast<UInt32>(dict_size), static_cast<UInt32>(exception_count));
-
-        // Read dictionary values
-        block.dict_values.clear();
-        for (UInt16 i = 0; i < dict_size; ++i)
-        {
-            const UInt16 dict_entry = unalignedLoadLittleEndian<UInt16>(source);
-            source += sizeof(UInt16);
-            block.dict_values.push_back(dict_entry);
-        }
+                source_end - source, static_cast<UInt32>(dict_params.left_bits), static_cast<UInt32>(dict_size), static_cast<UInt32>(exception_count));
 
         // Read left part bit-packed indices into temporary buffer and decode
         memcpy(block.bitpacked_left, source, bitpacked_left_bytes);
@@ -1189,7 +1278,7 @@ private:
                     "Cannot decompress ALP(RD)-encoded data, invalid dictionary index: {}, dict size: {}",
                     dict_index, static_cast<UInt16>(dict_size));
 
-            const UInt16 left_part = block.dict_values[dict_index];
+            const UInt16 left_part = dict_params.values[dict_index];
             const Unsigned right_part = block.encoded_right[i];
             const Unsigned decoded_value = (static_cast<Unsigned>(left_part) << right_bits) | right_part;
 
@@ -1220,9 +1309,24 @@ CompressionCodecALP::CompressionCodecALP(UInt8 float_width_, Variant variant_)
     : float_width(float_width_), variant(variant_)
 {
     ASTs arguments;
-    if (variant != Variant::Default)
+    if (variant != Variant::DEFAULT)
     {
-        const String variant_str = variant == Variant::STD ? "STD" : "RD";
+        String variant_str;
+        switch (variant)
+        {
+            case Variant::AUTO:
+                variant_str = "AUTO";
+                break;
+            case Variant::STD:
+                variant_str = "STD";
+                break;
+            case Variant::RD:
+                variant_str = "RD";
+                break;
+            default:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ALP variant");
+        }
+
         arguments.push_back(make_intrusive<ASTIdentifier>(variant_str));
     }
 
@@ -1248,22 +1352,34 @@ UInt32 CompressionCodecALP::getMaxCompressedDataSize(UInt32 uncompressed_size) c
 {
     // Maximum possible encoding size = uncompressed data + codec header + number of blocks * block header
     const UInt32 num_blocks = uncompressed_size / float_width / ALP_BLOCK_MAX_FLOAT_COUNT + 1;
-    return uncompressed_size + ALP_CODEC_HEADER_SIZE + num_blocks * ALP_BLOCK_HEADER_SIZE;
+    return uncompressed_size +
+        std::max(ALP_CODEC_HEADER_SIZE, ALP_RD_HEADER_TOTAL_MAX_SIZE) +
+            num_blocks * std::max(ALP_BLOCK_HEADER_SIZE, ALP_RD_BLOCK_HEADER_SIZE);
 }
 
 UInt32 CompressionCodecALP::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     // Write ALP header
-    *dest++ = ALP_CODEC_VERSION | (variant == Variant::RD ? 1 << 4 : 0); // meta_byte (version and variant)
+    char * meta_byte = dest;
+    *dest++ = ALP_CODEC_VERSION;
     *dest++ = float_width;
     unalignedStoreLittleEndian<UInt16>(dest, ALP_BLOCK_MAX_FLOAT_COUNT);
     dest += sizeof(UInt16);
 
     UInt32 dest_size = 0;
+    bool is_rd = variant == Variant::RD;
 
     if (float_width == sizeof(Float32))
     {
-        if (variant == Variant::Default || variant == Variant::STD)
+        if (variant == Variant::DEFAULT || variant == Variant::AUTO)
+        {
+            if (const bool encoded = ALPCodecEncoder<Float32>().tryEncodeWithAuto(source, source_size, dest, dest_size); !encoded)
+            {
+                dest_size = ALPRDCodecEncoder<Float32>().encode(source, source_size, dest);
+                is_rd = true;
+            }
+        }
+        else if (variant == Variant::STD)
             dest_size = ALPCodecEncoder<Float32>().encode(source, source_size, dest);
         else if (variant == Variant::RD)
             dest_size = ALPRDCodecEncoder<Float32>().encode(source, source_size, dest);
@@ -1274,7 +1390,15 @@ UInt32 CompressionCodecALP::doCompressData(const char * source, UInt32 source_si
     }
     else if (float_width == sizeof(Float64))
     {
-        if (variant == Variant::Default || variant == Variant::STD)
+        if (variant == Variant::DEFAULT || variant == Variant::AUTO)
+        {
+            if (const bool encoded = ALPCodecEncoder<Float64>().tryEncodeWithAuto(source, source_size, dest, dest_size); !encoded)
+            {
+                dest_size = ALPRDCodecEncoder<Float64>().encode(source, source_size, dest);
+                is_rd = true;
+            }
+        }
+        else if (variant == Variant::STD)
             dest_size = ALPCodecEncoder<Float64>().encode(source, source_size, dest);
         else if (variant == Variant::RD)
             dest_size = ALPRDCodecEncoder<Float64>().encode(source, source_size, dest);
@@ -1287,6 +1411,9 @@ UInt32 CompressionCodecALP::doCompressData(const char * source, UInt32 source_si
         throw Exception(ErrorCodes::CANNOT_COMPRESS,
             "Cannot compress with codec ALP, unsupported float width {}",
             static_cast<size_t>(float_width));
+
+    if (is_rd)
+        *meta_byte |= 1 << 4; // Set variant bit to indicate RD variant
 
     return dest_size + ALP_CODEC_HEADER_SIZE;
 }
@@ -1366,7 +1493,7 @@ void registerCodecALP(CompressionCodecFactory & factory)
             float_width = static_cast<UInt8>(column_type->getSizeOfValueInMemory());
         }
 
-        CompressionCodecALP::Variant variant = CompressionCodecALP::Variant::Default;
+        CompressionCodecALP::Variant variant = CompressionCodecALP::Variant::DEFAULT;
         if (arguments && arguments->children.size() == 1)
         {
             const auto * variant_ident = arguments->children[0]->as<ASTIdentifier>();
@@ -1375,7 +1502,9 @@ void registerCodecALP(CompressionCodecFactory & factory)
                     "ALP codec variant must be an identifier with STD or RD");
 
             const String variant_str = variant_ident->shortName();
-            if (variant_str == "STD")
+            if (variant_str == "AUTO")
+                variant = CompressionCodecALP::Variant::AUTO;
+            else if (variant_str == "STD")
                 variant = CompressionCodecALP::Variant::STD;
             else if (variant_str == "RD")
                 variant = CompressionCodecALP::Variant::RD;
