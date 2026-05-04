@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include <Backups/BackupOperationInfo.h>
+#include <Common/Logger_fwd.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/UUID.h>

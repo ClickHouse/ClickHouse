@@ -43,6 +43,10 @@ public:
     /// This method detects the final mark and adjusts the last data mark's granularity.
     void fixFromRowsCount(size_t rows_count);
 
+    /// Same as fixFromRowsCount but returns a new object, leaving this one unchanged.
+    /// Use this when the current object may be shared with concurrent readers.
+    std::shared_ptr<MergeTreeIndexGranularityConstant> fixedFromRowsCount(size_t rows_count) const;
+
     uint64_t getBytesSize() const override { return sizeof(size_t) * 3 + sizeof(bool); }
     uint64_t getBytesAllocated() const override { return getBytesSize(); }
 

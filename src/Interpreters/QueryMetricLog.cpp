@@ -1,6 +1,9 @@
 #include <base/getFQDNOrHostName.h>
+#include <base/sleep.h>
+#include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/UniqueLock.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -23,6 +26,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char query_metric_log_delay_collect[];
+}
 
 static auto logger = getLogger("QueryMetricLog");
 
@@ -100,6 +108,12 @@ void QueryMetricLog::shutdown()
 
 void QueryMetricLog::collectMetric(const ProcessList & process_list, String query_id)
 {
+    /// Failpoint hook for `04117_query_metric_log_backfill_missed_periodics`. Sleeping
+    /// before capturing `current_time` simulates a backlogged `BackgroundSchedulePool`
+    /// where a periodic task fires past the query's finish moment, exposing the race
+    /// the backfill+`is_final` logic in `finishQuery` repairs.
+    fiu_do_on(FailPoints::query_metric_log_delay_collect, { sleepForSeconds(1); });
+
     auto current_time = std::chrono::system_clock::now();
     const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
     if (!query_info)
@@ -195,7 +209,20 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
 
     if (query_info)
     {
-        auto elem = query_status.createLogMetricElement(query_id, *query_info, finish_time, false);
+        /// Backfill periodic events that were due to fire but didn't: when the
+        /// `BackgroundSchedulePool` falls behind, a scheduled `collectMetric` task can fire
+        /// after the query has already finished and return early from `collectMetric`,
+        /// silently dropping the row.
+        const auto interval = std::chrono::milliseconds(query_status.info.interval_milliseconds);
+        for (auto missed_time = query_status.info.next_collect_time; missed_time < finish_time; missed_time += interval)
+        {
+            if (auto missed_elem = query_status.createLogMetricElement(query_id, *query_info, missed_time, /*schedule_next=*/false))
+                add(std::move(missed_elem.value()));
+        }
+
+        /// `is_final=true` bypasses the dedup guard so the final row is always emitted, even
+        /// if the last periodic happens to share its timestamp with the finish moment.
+        auto elem = query_status.createLogMetricElement(query_id, *query_info, finish_time, /*schedule_next=*/false, /*is_final=*/true);
         if (elem)
             add(std::move(elem.value()));
     }
@@ -256,13 +283,15 @@ void QueryMetricLogStatus::scheduleNext(String query_id)
     }
 }
 
-std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next)
+std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next, bool is_final)
 {
     LOG_TEST(logger, "Collecting query_metric_log for query {} and interval {} ms with QueryStatusInfo from {}. Next collection time: {}",
         query_id, info.interval_milliseconds, timePointToString(query_info_time),
         schedule_next ? timePointToString(info.next_collect_time + std::chrono::milliseconds(info.interval_milliseconds)) : "finished");
 
-    if (query_info_time <= info.last_collect_time)
+    /// Drop duplicates from periodic ticks that share a timestamp; the final event must
+    /// always be emitted so `is_final` bypasses the guard.
+    if (!is_final && query_info_time <= info.last_collect_time)
     {
         LOG_TEST(logger, "Query {} has a more recent metrics collected at {}. This metrics are from {}. Skipping this one",
             timePointToString(info.last_collect_time), timePointToString(query_info_time), query_id);

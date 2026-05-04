@@ -173,6 +173,13 @@ void MergeTreeIndexGranularityConstant::fixFromRowsCount(size_t rows_count)
     }
 }
 
+std::shared_ptr<MergeTreeIndexGranularityConstant> MergeTreeIndexGranularityConstant::fixedFromRowsCount(size_t rows_count) const
+{
+    auto result = std::make_shared<MergeTreeIndexGranularityConstant>(constant_granularity, last_mark_granularity, num_marks_without_final, has_final_mark);
+    result->fixFromRowsCount(rows_count);
+    return result;
+}
+
 std::string MergeTreeIndexGranularityConstant::describe() const
 {
     return fmt::format(

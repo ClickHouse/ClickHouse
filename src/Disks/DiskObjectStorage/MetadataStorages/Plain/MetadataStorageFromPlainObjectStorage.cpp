@@ -111,7 +111,7 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
 
     RelativePathsWithMetadata files;
     std::string absolute_key = key_prefix;
-    if (!absolute_key.ends_with('/'))
+    if (!absolute_key.empty() && !absolute_key.ends_with('/'))
         absolute_key += '/';
 
     object_storage->listObjects(absolute_key, files, 0);

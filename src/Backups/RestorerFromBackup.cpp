@@ -1,6 +1,8 @@
 #include <Access/AccessBackup.h>
 #include <Access/AccessRights.h>
 #include <Access/ContextAccess.h>
+#include <Access/User.h>
+#include <Access/Role.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupMetadataFinder.h>
 #include <Backups/BackupSettings.h>
@@ -12,6 +14,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -52,6 +55,7 @@ namespace Setting
     extern const SettingsUInt64 backup_restore_keeper_max_retries;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool restore_replicated_merge_tree_to_shared_merge_tree;
+    extern const SettingsBool restore_replace_external_engines_to_null;
 }
 
 namespace ErrorCodes
@@ -366,7 +370,44 @@ AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const Str
     if (!access_restorer)
         return {};
     access_restorer->generateRandomIDsAndResolveDependencies(context->getAccessControl());
-    return access_restorer->getEntitiesToRestore(data_path_in_backup);
+    auto entities = access_restorer->getEntitiesToRestore(data_path_in_backup);
+
+    if (restore_settings.restore_access_entities_with_current_grants)
+    {
+        /// Limit restored grants to what the current user is allowed to grant (same as GRANT CURRENT GRANTS).
+        auto current_user_grantable_rights = context->getAccess()->getAccessRights()->getGrantableRights();
+
+        for (auto & [id, entity] : entities.new_entities)
+        {
+            auto entity_type = entity->getType();
+            if (entity_type == User::TYPE)
+            {
+                const auto & user = typeid_cast<const User &>(*entity);
+                AccessRights limited_access = user.access;
+                limited_access.makeIntersection(current_user_grantable_rights);
+                if (limited_access != user.access)
+                {
+                    auto cloned = entity->clone();
+                    typeid_cast<User &>(*cloned).access = std::move(limited_access);
+                    entity = cloned;
+                }
+            }
+            else if (entity_type == Role::TYPE)
+            {
+                const auto & role = typeid_cast<const Role &>(*entity);
+                AccessRights limited_access = role.access;
+                limited_access.makeIntersection(current_user_grantable_rights);
+                if (limited_access != role.access)
+                {
+                    auto cloned = entity->clone();
+                    typeid_cast<Role &>(*cloned).access = std::move(limited_access);
+                    entity = cloned;
+                }
+            }
+        }
+    }
+
+    return entities;
 }
 
 void RestorerFromBackup::createAndCheckDatabases()
@@ -386,14 +427,34 @@ void RestorerFromBackup::createAndCheckDatabases()
 
 void RestorerFromBackup::createAndCheckDatabase(const String & database_name)
 {
-    schedule(
-        [this, database_name]() { createAndCheckDatabaseImpl(database_name); },
-        ThreadName::RESTORE_MAKE_DATABASE);
+    schedule([this, database_name]() { createAndCheckDatabaseImpl(database_name); }, ThreadName::RESTORE_MAKE_DATABASE);
 }
 
 void RestorerFromBackup::createAndCheckDatabaseImpl(const String & database_name)
 {
     checkIsQueryCancelled();
+
+    /// Skip external database engines (e.g. MySQL, PostgreSQL, S3, DataLakeCatalog) when
+    /// restore_replace_external_engines_to_null is set - there is no meaningful way to
+    /// replace a database engine with Null, so we skip both creation and verification.
+    if (context->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
+    {
+        std::lock_guard lock{mutex};
+        const auto & database_info = database_infos.at(database_name);
+        if (database_info.create_database_query)
+        {
+            const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
+            if (create.storage && create.storage->engine
+                && DatabaseFactory::instance().isDatabaseExternal(create.storage->engine->name))
+            {
+                LOG_TRACE(log, "Skipping external database {} with engine {} because restore_replace_external_engines_to_null is set",
+                    backQuoteIfNeed(database_name), create.storage->engine->name);
+                skipped_databases.emplace(database_name);
+                return;
+            }
+        }
+    }
+
     createDatabase(database_name);
     checkDatabase(database_name);
 }
@@ -632,6 +693,19 @@ void RestorerFromBackup::createAndCheckTable(const QualifiedTableName & table_na
 void RestorerFromBackup::createAndCheckTableImpl(const QualifiedTableName & table_name)
 {
     checkIsQueryCancelled();
+
+    /// Skip tables belonging to databases that were skipped during restore
+    /// (external database engines when restore_replace_external_engines_to_null is set).
+    {
+        std::lock_guard lock{mutex};
+        if (skipped_databases.contains(table_name.database))
+        {
+            LOG_TRACE(log, "Skipping table {}.{} because its database was skipped",
+                backQuoteIfNeed(table_name.database), backQuoteIfNeed(table_name.table));
+            return;
+        }
+    }
+
     createTable(table_name);
     checkTable(table_name);
 }
@@ -808,6 +882,12 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
     if (restore_settings.structure_only)
         return;
 
+    {
+        std::lock_guard lock{mutex};
+        if (skipped_databases.contains(table_name.database))
+            return;
+    }
+
     StoragePtr storage;
     String data_path_in_backup;
     std::optional<ASTs> partitions;
@@ -889,8 +969,11 @@ void RestorerFromBackup::finalizeTables()
     {
         std::lock_guard lock{mutex};
         tables.reserve(table_infos.size());
-        for (const auto & [_, info] : table_infos)
-            tables.push_back(info.storage);
+        for (const auto & [table_name, info] : table_infos)
+        {
+            if (!skipped_databases.contains(table_name.database) && info.storage)
+                tables.push_back(info.storage);
+        }
     }
 
     for (const auto & storage : tables)

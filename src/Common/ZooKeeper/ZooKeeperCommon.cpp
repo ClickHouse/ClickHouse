@@ -72,7 +72,7 @@ void ZooKeeperRequest::write(WriteBuffer & out, bool use_xid_64, bool supports_t
 
     if (supports_tracing)
     {
-        const uint8_t has_tracing_context = tracing_context.has_value();
+        const uint8_t has_tracing_context = tracing_context != nullptr;
         Coordination::write(has_tracing_context, out);
         if (has_tracing_context)
         {
@@ -721,7 +721,7 @@ std::string ZooKeeperCheckWatchRequest::toStringImpl(bool /*short_format*/) cons
 
 ZooKeeperResponsePtr ZooKeeperCheckWatchRequest::makeResponse() const
 {
-    return std::make_shared<ZooKeeperAddWatchResponse>();
+    return std::make_shared<ZooKeeperCheckWatchResponse>();
 }
 
 void ZooKeeperCheckWatchResponse::readImpl(ReadBuffer &)
@@ -765,7 +765,7 @@ std::string ZooKeeperRemoveWatchRequest::toStringImpl(bool /*short_format*/) con
 
 ZooKeeperResponsePtr ZooKeeperRemoveWatchRequest::makeResponse() const
 {
-    return std::make_shared<ZooKeeperAddWatchResponse>();
+    return std::make_shared<ZooKeeperRemoveWatchResponse>();
 }
 
 void ZooKeeperRemoveWatchResponse::readImpl(ReadBuffer &)
@@ -812,17 +812,23 @@ ZooKeeperResponsePtr ZooKeeperAddWatchRequest::makeResponse() const
     return std::make_shared<ZooKeeperAddWatchResponse>();
 }
 
-void ZooKeeperAddWatchResponse::readImpl(ReadBuffer &)
+void ZooKeeperAddWatchResponse::readImpl(ReadBuffer & in)
 {
+    int32_t err;
+    Coordination::read(err, in);
 }
 
-void ZooKeeperAddWatchResponse::writeImpl(WriteBuffer &) const
+void ZooKeeperAddWatchResponse::writeImpl(WriteBuffer & out) const
 {
+    /// The Java ZooKeeper client uses ErrorResponse as the response type for
+    /// addWatch, which expects a 4-byte error code in the response body.
+    /// Without it, the client gets EOFException and disconnects.
+    Coordination::write(static_cast<int32_t>(error), out);
 }
 
 size_t ZooKeeperAddWatchResponse::sizeImpl() const
 {
-    return 0;
+    return sizeof(int32_t);
 }
 
 void ZooKeeperSetWatchesRequest::readImpl(ReadBuffer & in)
@@ -1077,6 +1083,11 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(std::span<const Coordination::Reque
         {
             checkOperationType(Read);
             requests.push_back(std::make_shared<ZooKeeperSimpleListRequest>(*concrete_request_simple_list));
+        }
+        else if (const auto * concrete_request_list_recursive = dynamic_cast<const ZooKeeperListRecursiveRequest *>(generic_request.get()))
+        {
+            checkOperationType(Read);
+            requests.push_back(std::make_shared<ZooKeeperListRecursiveRequest>(*concrete_request_list_recursive));
         }
         else if (const auto * concrete_request_list = dynamic_cast<const ZooKeeperFilteredListRequest *>(generic_request.get()))
         {
@@ -1514,7 +1525,7 @@ void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t idx) 
 {
     Coordination::ZooKeeperCreateResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
-    elem.path_created = path_created;
+    elem.stat = zstat;
 }
 
 void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t idx) const
@@ -1545,6 +1556,52 @@ void ZooKeeperListResponse::fillLogElements(LogElements & elems, size_t idx) con
     auto & elem =  elems[idx];
     elem.stat = stat;
     elem.children = names;
+}
+
+void ZooKeeperListRecursiveRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+    Coordination::write(children_nodes_limit, out);
+}
+
+void ZooKeeperListRecursiveRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+    Coordination::read(children_nodes_limit, in);
+}
+
+std::string ZooKeeperListRecursiveRequest::toStringImpl(bool /*short_format*/) const
+{
+    return fmt::format(
+        "path = {}\n"
+        "children_nodes_limit = {}",
+        path,
+        children_nodes_limit);
+}
+
+size_t ZooKeeperListRecursiveRequest::sizeImpl() const
+{
+    return Coordination::size(path) + Coordination::size(children_nodes_limit);
+}
+
+void ZooKeeperListRecursiveResponse::readImpl(ReadBuffer & in)
+{
+    Coordination::read(children, in);
+}
+
+void ZooKeeperListRecursiveResponse::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(children, out);
+}
+
+size_t ZooKeeperListRecursiveResponse::sizeImpl() const
+{
+    return Coordination::size(children);
+}
+
+ZooKeeperResponsePtr ZooKeeperListRecursiveRequest::makeResponse() const
+{
+    return std::make_shared<ZooKeeperListRecursiveResponse>();
 }
 
 void ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t idx) const
@@ -1592,7 +1649,8 @@ ZooKeeperRequestPtr ZooKeeperRequestFactory::get(OpNum op_num) const
     if (it == op_num_to_request.end())
         throw Exception(Error::ZBADARGUMENTS, "Unknown operation type {}", op_num);
 
-    return it->second();
+    auto request = it->second();
+    return request;
 }
 
 ZooKeeperRequestFactory & ZooKeeperRequestFactory::instance()
@@ -1653,6 +1711,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
     registerZooKeeperRequest<OpNum::FilteredListWithStatsAndData, ZooKeeperFilteredListWithStatsAndDataRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveRecursive, ZooKeeperRemoveRecursiveRequest>(*this);
+    registerZooKeeperRequest<OpNum::ListRecursive, ZooKeeperListRecursiveRequest>(*this);
     registerZooKeeperRequest<OpNum::AddWatch, ZooKeeperAddWatchRequest>(*this);
     registerZooKeeperRequest<OpNum::CheckWatch, ZooKeeperCheckWatchRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveWatch, ZooKeeperRemoveWatchRequest>(*this);

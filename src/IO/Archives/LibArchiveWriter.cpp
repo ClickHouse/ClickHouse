@@ -225,10 +225,10 @@ private:
 
     std::weak_ptr<LibArchiveWriter> archive_writer;
     const String filename;
-    Entry entry;
-    Archive archive;
-    size_t size;
-    size_t expected_size;
+    Entry entry = nullptr;
+    Archive archive = nullptr;
+    size_t size = 0;
+    size_t expected_size = 0;
 };
 
 LibArchiveWriter::LibArchiveWriter(

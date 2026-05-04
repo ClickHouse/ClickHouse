@@ -19,7 +19,7 @@ SYSTEM FLUSH LOGS system.query_log;
 
 SELECT ProfileEvents['RuntimeFilterRowsChecked'], ProfileEvents['RuntimeFilterRowsSkipped']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE AND type = 'QueryFinish' AND log_comment = 'Q1';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE AND type = 'QueryFinish' AND log_comment = 'Q1';
 
 
 SELECT '============ Filter key count less than exact values limit';
@@ -34,4 +34,4 @@ SYSTEM FLUSH LOGS system.query_log;
 
 SELECT ProfileEvents['RuntimeFilterRowsChecked'], ProfileEvents['RuntimeFilterRowsSkipped']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE AND type = 'QueryFinish' AND log_comment = 'Q2';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE AND type = 'QueryFinish' AND log_comment = 'Q2';

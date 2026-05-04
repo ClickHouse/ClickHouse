@@ -1,23 +1,23 @@
 SELECT
-    `_--t1.a` AS `t1.a`,
-    `_--t1.b` AS `t1.b`,
-    `_--t2.a` AS `t2.a`,
-    `_--t2.b` AS `t2.b`,
+    `--t1.a` AS `t1.a`,
+    `--t1.b` AS `t1.b`,
+    `--t2.a` AS `t2.a`,
+    `--t2.b` AS `t2.b`,
     `toNullable(10)` AS `t3.toNullable(10)`,
-    `_--t3.a` AS `t3.a`,
-    `_--t3.b` AS `t3.b`,
+    `--t3.a` AS `t3.a`,
+    `--t3.b` AS `t3.b`,
     `isZeroOrNull(10)` AS `t3.isZeroOrNull(10)`,
-    `_--t3.10` AS `t3.10`,
+    `10` AS `t3.10`,
     `assumeNotNull(materialize(10))` AS `t3.assumeNotNull(materialize(10))`,
     `isNotNull(10)` AS `t3.isNotNull(10)`,
     x AS `t3.x`
 FROM
 (
     SELECT
-        b AS `_--t1.b`,
-        a AS `_--t1.a`,
-        t2.b AS `_--t2.b`,
-        t2.a AS `_--t2.a`
+        b AS `--t1.b`,
+        a AS `--t1.a`,
+        t2.b AS `--t2.b`,
+        t2.a AS `--t2.a`
     FROM t1
     ALL INNER JOIN
     (
@@ -25,8 +25,8 @@ FROM
             a,
             b
         FROM t2
-    ) AS t2 ON if((t2.b AS `_--t2.b`) > 0, t2.a AS `_--t2.a`, 0) = (a AS `_--t1.a`)
-    WHERE if((t2.b AS `_--t2.b`) > 0, t2.a AS `_--t2.a`, 0) = (a AS `_--t1.a`)
+    ) AS t2 ON if((t2.b AS `--t2.b`) > 0, t2.a AS `--t2.a`, 0) = (a AS `--t1.a`)
+    WHERE if((t2.b AS `--t2.b`) > 0, t2.a AS `--t2.a`, 0) = (a AS `--t1.a`)
 ) AS `--.s`
 CROSS JOIN
 (
@@ -34,11 +34,11 @@ CROSS JOIN
         x,
         `assumeNotNull(materialize(10))`,
         `isNotNull(10)`,
+        `10`,
         `isZeroOrNull(10)`,
         `toNullable(10)`,
-        `10` AS `_--t3.10`,
-        b AS `_--t3.b`,
-        a AS `_--t3.a`
+        b AS `--t3.b`,
+        a AS `--t3.a`
     FROM
     (
         SELECT
@@ -56,11 +56,11 @@ CROSS JOIN
         WHERE (toNullable(toUInt256(1)) + a) = b
     ) AS t3
 ) AS `--.t`
-WHERE if(`_--t2.b` > 0, `_--t2.a`, 0) = `_--t1.a`
+WHERE if(`--t2.b` > 0, `--t2.a`, 0) = `--t1.a`
 ORDER BY
     x ASC NULLS FIRST,
-    `_--t2.a` DESC NULLS LAST,
-    `_--t1.a` DESC NULLS FIRST
+    `--t2.a` DESC NULLS LAST,
+    `--t1.a` DESC NULLS FIRST
 SELECT *
 FROM t1, t2,
 (

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <exception>
 #include <filesystem>
 #include <mutex>
@@ -1204,11 +1205,17 @@ void LogEntryStorage::cleanUpTo(uint64_t index)
         /// the last log index in the snapshot should be the
         /// last log we cleaned up
         startCommitLogsPrefetch(index - 1);
+        /// Only advance — don't regress from a higher value stored by getEntry
+        if (index > last_cleaned_committed_index.load(std::memory_order_relaxed))
+            last_cleaned_committed_index.store(index, std::memory_order_relaxed);
     }
     else
     {
         std::lock_guard lock(commit_logs_cache_mutex);
         commit_logs_cache.cleanUpTo(index);
+        /// Only advance — don't regress from a higher value stored by getEntry
+        if (index > last_cleaned_committed_index.load(std::memory_order_relaxed))
+            last_cleaned_committed_index.store(index, std::memory_order_relaxed);
     }
 
     std::erase_if(logs_with_config_changes, [&](const auto conf_index) { return conf_index < index; });
@@ -1327,10 +1334,16 @@ bool LogEntryStorage::contains(uint64_t index) const
 LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
 {
     auto last_committed_index = keeper_context->lastCommittedIndex();
+    if (last_committed_index > last_cleaned_committed_index.load(std::memory_order_relaxed))
     {
         std::lock_guard lock(commit_logs_cache_mutex);
-        commit_logs_cache.cleanUpTo(last_committed_index);
-        startCommitLogsPrefetch(last_committed_index);
+        /// Re-check under lock to avoid redundant work if another thread already cleaned
+        if (last_committed_index > last_cleaned_committed_index.load(std::memory_order_relaxed))
+        {
+            commit_logs_cache.cleanUpTo(last_committed_index);
+            startCommitLogsPrefetch(last_committed_index);
+            last_cleaned_committed_index.store(last_committed_index, std::memory_order_relaxed);
+        }
     }
 
     LogEntryPtr entry = nullptr;
@@ -1396,6 +1409,7 @@ void LogEntryStorage::clear()
     {
         std::lock_guard lock(commit_logs_cache_mutex);
         commit_logs_cache.clear();
+        last_cleaned_committed_index.store(0, std::memory_order_relaxed);
     }
 
     logs_location.clear();
@@ -1421,16 +1435,16 @@ LogEntryPtr LogEntryStorage::getLatestConfigChange() const
 
 uint64_t LogEntryStorage::termAt(uint64_t index) const
 {
-    uint64_t term_for_index = 0;
-    for (const auto [term, first_index] : log_term_infos)
-    {
-        if (index < first_index)
-            return term_for_index;
+    if (log_term_infos.empty())
+        return 0;
 
-        term_for_index = term;
-    }
+    auto it = std::ranges::upper_bound(log_term_infos, index, {}, &LogTermInfo::first_index);
 
-    return term_for_index;
+    if (it == log_term_infos.begin())
+        return 0;
+
+    --it;
+    return it->term;
 }
 
 void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocation>> && indices_with_log_locations)
@@ -2363,6 +2377,17 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
     /// wait for all appends to finish before changing active changelog file
     flush();
+
+    {
+        /// After flush(), last_durable_idx == old max_log_id. But we are about to
+        /// truncate entries from 'index' onward and rewrite them. The new entries
+        /// are not durable until the write thread fsyncs them, so we must decrease
+        /// last_durable_idx to reflect that entries at 'index' and beyond are no
+        /// longer durably persisted. Without this, the NuRaft follower durability
+        /// loop would see the stale high value and skip waiting for the fsync.
+        std::lock_guard lock{durable_idx_mutex};
+        last_durable_idx = std::min(last_durable_idx, index - 1);
+    }
 
     {
         std::lock_guard lock(writer_mutex);

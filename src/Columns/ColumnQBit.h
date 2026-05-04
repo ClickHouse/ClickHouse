@@ -83,7 +83,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
 
     std::string_view getDataAt(size_t n) const override { return tuple->getDataAt(n); }
     void insertData(const char * pos, size_t length) override { tuple->insertData(pos, length); }
@@ -138,7 +138,7 @@ public:
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr compress(bool force_compression) const override;
 
-    void getExtremes(Field & min, Field & max) const override { tuple->getExtremes(min, max); }
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override { tuple->getExtremes(min, max, start, end); }
     void getPermutation(
         PermutationSortDirection direction,
         PermutationSortStability stability,
@@ -161,7 +161,7 @@ public:
     }
 
     void reserve(size_t n) override { tuple->reserve(n); }
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
     void shrinkToFit() override { tuple->shrinkToFit(); }
     void ensureOwnership() override { tuple->ensureOwnership(); }
     void protect() override { tuple->protect(); }
@@ -180,7 +180,12 @@ public:
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     void finalize() override { tuple->finalize(); }
 
-    bool structureEquals(const IColumn & rhs) const override { return tuple->structureEquals(rhs); }
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (const auto * rhs_qbit = typeid_cast<const ColumnQBit *>(&rhs))
+            return dimension == rhs_qbit->dimension && tuple->structureEquals(*rhs_qbit->tuple);
+        return false;
+    }
     bool isFinalized() const override { return tuple->isFinalized(); }
 
     /// Efficient access to the underlying tuple

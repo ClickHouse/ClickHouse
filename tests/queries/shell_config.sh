@@ -6,6 +6,8 @@
 export CLICKHOUSE_WRITE_COVERAGE=${CLICKHOUSE_WRITE_COVERAGE:="coverage"}
 
 export CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:="test"}
+export CLICKHOUSE_DATABASE_1="${CLICKHOUSE_DATABASE}_1"
+export CLICKHOUSE_DATABASE_2="${CLICKHOUSE_DATABASE}_2"
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:="warning"}
 
 # Unique zookeeper path (based on test name and current database) to avoid overlaps
@@ -170,6 +172,20 @@ function clickhouse_client_removed_host_parameter()
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub(r'--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
 
+function wait_for_query_to_start()
+{
+    local query_id="$1"
+    local timeout="${2:-120}"
+    local start=$EPOCHSECONDS
+    while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE query_id = '$query_id' SETTINGS use_query_cache = 0") == 0 ]]; do
+        if ((EPOCHSECONDS - start > timeout)); then
+            echo "Timeout waiting for query $query_id to start" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
+}
+
 function wait_for_queries_to_finish()
 {
     local max_tries="${1:-20}"
@@ -235,7 +251,7 @@ function with_lock()
 }
 
 # BASH_XTRACEFD is supported only since 4.1
-if [[ -v CLICKHOUSE_BASH_TRACING_FILE ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
+if [[ -n "${CLICKHOUSE_BASH_TRACING_FILE+x}" ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
     exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"
     # It will be also nice to have stderr in the tracing output, but:
     # - exec 2>&3

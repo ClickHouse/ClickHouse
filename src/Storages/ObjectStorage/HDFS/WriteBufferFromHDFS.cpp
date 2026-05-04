@@ -9,6 +9,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
+#include <Common/ErrnoException.h>
 #include <Interpreters/BlobStorageLog.h>
 #include <hdfs/hdfs.h>
 

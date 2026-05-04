@@ -158,7 +158,20 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
     if (command.type == RENAME_COLUMN)
     {
-        rename_map.emplace_back(RenamePair{command.rename_to, command.column_name});
+        /// Handle chained renames: if column A was renamed to B, and now B is renamed to C,
+        /// update the existing entry to map A directly to C instead of having two separate entries.
+        bool chained = false;
+        for (auto & entry : rename_map)
+        {
+            if (entry.rename_to == command.column_name)
+            {
+                entry.rename_to = command.rename_to;
+                chained = true;
+                break;
+            }
+        }
+        if (!chained)
+            rename_map.emplace_back(RenamePair{command.rename_to, command.column_name});
     }
     else if (command.type == DROP_COLUMN)
     {
@@ -261,11 +274,16 @@ std::string AlterConversions::getColumnOldName(const std::string & new_name) con
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} was not renamed", new_name);
 }
 
-bool AlterConversions::isColumnDropped(const std::string & name) const
+bool AlterConversions::isColumnDropped(const std::string & name, bool share_nested_offsets) const
 {
     /// Check exact match (e.g. DROP COLUMN `n.s`)
     if (dropped_columns.contains(name))
         return true;
+
+    /// When share_nested_offsets is disabled, dotted-name columns are independent
+    /// and dropping `n` should not affect `n.a`.
+    if (!share_nested_offsets)
+        return false;
 
     /// Check if the parent nested column was dropped (e.g. DROP COLUMN `n` should match `n.s`, `n.d`, etc.)
     auto nested_prefix_end = name.find('.');

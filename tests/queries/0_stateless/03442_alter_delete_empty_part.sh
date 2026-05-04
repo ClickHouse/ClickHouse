@@ -24,7 +24,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # So, we may have to retry the flush of logs until all entries are actually flushed.
 for _ in {1..10}; do
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
-    res=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.part_log WHERE database = currentDatabase() AND table = 't_delete_empty_part' AND event_type = 'MutatePart'")
+    res=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_delete_empty_part' AND event_type = 'MutatePart'")
 
     if [[ $res -eq 3 ]]; then
         break
@@ -40,7 +40,7 @@ ${CLICKHOUSE_CLIENT} --query "
         ProfileEvents['MutationUntouchedParts'],
         ProfileEvents['MutationCreatedEmptyParts']
     FROM system.part_log
-    WHERE database = currentDatabase() AND table = 't_delete_empty_part' AND event_type = 'MutatePart'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_delete_empty_part' AND event_type = 'MutatePart'
     ORDER BY part_name;
 
     DROP TABLE t_delete_empty_part;

@@ -1,4 +1,4 @@
--- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage
+-- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-llvm-coverage
 
 SET log_queries = 1;
 SET log_query_threads = 1;
@@ -6,6 +6,6 @@ SET query_profiler_real_time_period_ns = 100000000;
 SELECT sleep(1);
 SYSTEM FLUSH LOGS trace_log;
 
-SELECT COUNT(*) > 1 FROM system.trace_log WHERE build_id IS NOT NULL;
-SELECT countIf(arrayExists(x -> x LIKE '%:%:%', lines)) > 1 FROM system.trace_log;
+SELECT COUNT(*) > 1 FROM system.trace_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND build_id IS NOT NULL;
+SELECT countIf(arrayExists(x -> x LIKE '%:%:%', lines)) > 1 FROM system.trace_log WHERE event_date >= yesterday() AND event_time >= now() - 600;
 

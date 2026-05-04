@@ -284,7 +284,7 @@ public:
     {
         auto it = find(key);
         chassert(it != end());
-        return MockNode(it->value.stats.numChildren(), it->value.getData(), it->value.acl_id);
+        return MockNode(it->value.numChildren(), it->value.getData(), it->value.acl_id);
     }
 
     const_iterator updateValue(std::string_view key, ValueUpdater updater)

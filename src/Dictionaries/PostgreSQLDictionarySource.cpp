@@ -39,7 +39,7 @@ namespace ErrorCodes
 
 static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "table", "schema", "background_reconnect",
-    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority"};
+    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority", "sslmode"};
 
 #if USE_LIBPQXX
 

@@ -716,7 +716,7 @@ clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGr
 
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
-    factory.registerFunction("flameGraph", { createAggregateFunctionFlameGraph, properties, documentation });
+    factory.registerFunction("flameGraph", { createAggregateFunctionFlameGraph, documentation, properties });
 }
 
 }

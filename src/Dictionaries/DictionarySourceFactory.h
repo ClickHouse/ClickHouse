@@ -2,6 +2,7 @@
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/Logger_fwd.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <boost/noncopyable.hpp>
@@ -12,8 +13,6 @@ namespace Util
 {
     class AbstractConfiguration;
 }
-
-class Logger;
 }
 
 namespace DB
@@ -44,6 +43,8 @@ public:
     DictionarySourceFactory();
 
     void registerSource(const std::string & source_type, Creator create_source);
+
+    std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     DictionarySourcePtr create(
         const std::string & name,

@@ -1,5 +1,6 @@
 #include <Interpreters/SystemLog.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
 
 #include <base/scope_guard.h>
@@ -30,6 +31,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
+#include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -45,6 +47,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
+#include <Interpreters/HistogramMetricLog.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -58,6 +61,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Interpreters/SystemLogDefaultFlushPolicy.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
@@ -359,6 +363,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
     }
 
+    if (histogram_metric_log)
+    {
+        size_t collect_interval_milliseconds = config.getUInt64("histogram_metric_log.collect_interval_milliseconds",
+                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        histogram_metric_log->startCollect(ThreadName::HISTOGRAM_METRIC_LOG, collect_interval_milliseconds);
+    }
+
     if (background_schedule_pool_log)
     {
         size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 30);
@@ -389,6 +400,21 @@ std::vector<ISystemLog *> SystemLogs::getAllLogs() const
     result.erase(last_it, result.end());
 
     return result;
+}
+
+bool hasAnySystemLogConfigured(const Poco::Util::AbstractConfiguration & config)
+{
+#define CHECK_HAS_SYSTEM_LOG(log_type, member, descr) \
+    if (config.has(#member)) \
+        return true;
+
+    LIST_OF_ALL_SYSTEM_LOGS(CHECK_HAS_SYSTEM_LOG)
+    #if CLICKHOUSE_CLOUD
+        LIST_OF_CLOUD_SYSTEM_LOGS(CHECK_HAS_SYSTEM_LOG)
+    #endif
+#undef CHECK_HAS_SYSTEM_LOG
+
+    return false;
 }
 
 namespace
@@ -427,6 +453,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
+            if (should_prepare_tables_anyway)
+                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -469,6 +497,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             const auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
+            if (should_prepare_tables_anyway)
+                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -512,9 +542,36 @@ void SystemLogs::shutdown()
 
 void SystemLogs::handleCrash()
 {
+    /// Flush crash_log first since it's the most important log during a crash.
+    /// Other logs with flush_on_crash (e.g. query_log) can consume significant
+    /// time budget from the signal handler's 303-second timeout, potentially
+    /// preventing crash_log from being flushed if stack symbolization was slow.
+    /// Use try/catch so that a timeout in one log does not prevent flushing others.
+    if (crash_log)
+    {
+        try
+        {
+            crash_log->handleCrash();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
     auto logs = getAllLogs();
     for (auto & log : logs)
-        log->handleCrash();
+    {
+        try
+        {
+            if (log != crash_log.get())
+                log->handleCrash();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 template <typename LogElement>
@@ -527,8 +584,9 @@ SystemLog<LogElement>::SystemLog(
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
-    , create_query(getCreateTableQuery()->formatWithSecretsOneLine())
+    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
 {
+    create_query = getCreateTableQuery()->formatWithSecretsOneLine();
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
 
@@ -581,12 +639,14 @@ void SystemLog<LogElement>::savingThreadFunction()
 template <typename LogElement>
 void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end)
 {
+    auto component_guard = Coordination::setCurrentComponent("SystemLog::flushImpl");
     Stopwatch stopwatch;
     UInt64 prepare_table_time = 0;
     UInt64 prepare_insert_data_to_block = 0;
     UInt64 execute_insert_time = 0;
     UInt64 confirm_time = 0;
     size_t flush_size = to_flush.size();
+    bool is_manual_flush = flush_policy->isManualFlush(to_flush_end);
 
     try
     {
@@ -631,6 +691,14 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
         auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = table_id;
+
+        /// Explicitly specify column names to avoid mismatch when the table
+        /// has been altered (e.g. columns added) between prepareTable() and this INSERT.
+        auto columns_ast = make_intrusive<ASTExpressionList>();
+        for (const auto & name : block.getNames())
+            columns_ast->children.emplace_back(make_intrusive<ASTIdentifier>(name));
+        insert->columns = std::move(columns_ast);
+
         ASTPtr query_ptr = std::move(insert);
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
@@ -652,11 +720,15 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         executor.start();
         executor.push(block);
         executor.finish();
+
+        flush_policy->afterFlush(io, is_manual_flush, flush_size);
         execute_insert_time = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
     }
     catch (...)
     {
+        if (is_manual_flush)
+            flush_policy->cancelManualFlush();
         ProfileEvents::increment(ProfileEvents::SystemLogErrorOnFlush);
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
             table_id.getNameForLogs(), to_flush.size(), to_flush_end));
@@ -689,6 +761,7 @@ StoragePtr SystemLog<LogElement>::getStorage() const
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
+    auto component_guard = Coordination::setCurrentComponent("SystemLog::prepareTable");
     String description = table_id.getNameForLogs();
 
     auto table = getStorage();
@@ -781,6 +854,7 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
     {
         /// We always want to deliver the data to the original table regardless of the MVs
         mutable_context->setSetting("materialized_views_ignore_errors", true);
+        flush_policy->addInsertSettings(mutable_context);
     }
     else if (query_kind == IAST::QueryKind::Rename)
     {
@@ -801,7 +875,11 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     auto new_columns_list = make_intrusive<ASTColumns>();
     auto ordinary_columns = LogElement::getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
-    ordinary_columns.setAliases(alias_columns);
+    /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
+    /// `true` for `SharedSystemLogFlushPolicy` and for `DefaultSystemLogFlushPolicy` when
+    /// `default_system_log_flush_policy.skip_alias_columns` is set to `true` in config.
+    if (!flush_policy->shouldSkipAliasColumns())
+        ordinary_columns.setAliases(alias_columns);
 
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
 
