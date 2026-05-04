@@ -1,0 +1,22 @@
+-- 3-arg trivial-char fallback (max_substrings, default setting)
+['a','b','c','d']
+['a','b','c','d']
+['a']
+['a','b']
+['a','b','c']
+['a','b','c','d']
+['a','b','c','d']
+-- 3-arg trivial-char fallback (max_substrings, include_remaining_string=1)
+['a b c d']
+['a','b c d']
+['a','b','c d']
+['a','b','c','d']
+-- non-const 2nd argument flowing through trivial-char fallback
+['a','b']
+['1','2']
+['x','y']
+-- equivalence with splitByChar across all branches
+1
+1
+1
+1
