@@ -277,6 +277,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool remove_empty_parts;
     extern const MergeTreeSettingsBool remove_rolled_back_parts_immediately;
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
+    extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsUInt64 simultaneous_parts_removal_limit;
     extern const MergeTreeSettingsUInt64 sleep_before_loading_outdated_parts_ms;
     extern const MergeTreeSettingsString storage_policy;
@@ -705,7 +706,11 @@ MergeTreeData::MergeTreeData(
         const auto & ac = getContext()->getAccessControl();
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
-        settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
+        settings->sanityCheck(
+            getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
+            allow_experimental,
+            allow_beta,
+            getContext()->wasBackgroundPoolAutoLowered());
     }
 
     if (!date_column_name.empty())
@@ -4859,7 +4864,11 @@ void MergeTreeData::changeSettings(
         const auto & ac = getContext()->getAccessControl();
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
-        copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
+        copy->sanityCheck(
+            getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
+            allow_experimental,
+            allow_beta,
+            getContext()->wasBackgroundPoolAutoLowered());
 
         bool has_escape_index_filenames_changed
             = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
@@ -5211,7 +5220,6 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     if (hierarchy.duplicate_part)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", hierarchy.duplicate_part->getNameWithState());
-
 
     if (part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
@@ -8937,7 +8945,9 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
 void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
 {
     std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
-    auto columns_list = Nested::collect(columns.getAllPhysical());
+    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
+        ? Nested::collect(columns.getAllPhysical())
+        : columns.getAllPhysical();
     SerializationInfo::Settings serialization_settings
     {
         settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
@@ -10393,50 +10403,55 @@ SerializationInfoByName MergeTreeData::getSerializationHints() const
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
-    if (hasLightweightDeletedMask())
-        return false;
-
     const auto & settings = query_context->getSettingsRef();
+
+    auto supports_trivial_count = [&]()
+    {
+        /// Fallback for callers that don't provide a storage snapshot (e.g. StorageMerge).
+        return !has_lightweight_delete_parts.load(std::memory_order_relaxed) && !settings[Setting::apply_mutations_on_fly] && !settings[Setting::apply_patch_parts];
+    };
+
     if (!storage_snapshot)
-        return !settings[Setting::apply_mutations_on_fly] && !settings[Setting::apply_patch_parts];
+        return supports_trivial_count();
 
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & mutations_snapshot = snapshot_data.mutations_snapshot;
 
     if (!mutations_snapshot)
-        return !settings[Setting::apply_mutations_on_fly] && !settings[Setting::apply_patch_parts];
+        return supports_trivial_count();
 
-    return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasPatchParts();
+    return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasPatchParts() && !mutations_snapshot->hasLightweightDeletedMask();
 }
 
-Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
+MergeTreeData::PartsSnapshotInfo MergeTreeData::getPartsSnapshotInfo(const DataPartsVector & parts)
 {
-    Int64 version = -1;
-    for (const auto & part : parts)
-    {
-        Int64 part_version = part->getMetadataVersion();
-        if (version == -1 || part_version < version)
-            version = part_version;
-    }
-    return version;
-}
-
-MergeTreeData::PartitionIdToMinBlockPtr MergeTreeData::getMinDataVersionForEachPartition(const DataPartsVector & parts)
-{
-    PartitionIdToMinBlock partition_to_min_data_version;
+    PartsSnapshotInfo info;
+    PartitionIdToMinBlock min_data_versions;
 
     for (const auto & part : parts)
     {
-        const String & partition_id = part->info.getPartitionId();
-        const Int64 data_version = part->info.getDataVersion();
+        {
+            Int64 part_metadata_version = part->getMetadataVersion();
+            if (info.min_metadata_version == -1 || part_metadata_version < info.min_metadata_version)
+                info.min_metadata_version = part_metadata_version;
+        }
 
-        if (auto partition_it = partition_to_min_data_version.find(partition_id); partition_it != partition_to_min_data_version.end())
-            partition_it->second = std::min(partition_it->second, data_version);
-        else
-            partition_to_min_data_version.emplace(partition_id, data_version);
+        {
+            const String & partition_id = part->info.getPartitionId();
+            const Int64 data_version = part->info.getDataVersion();
+
+            if (auto it = min_data_versions.find(partition_id); it != min_data_versions.end())
+                it->second = std::min(it->second, data_version);
+            else
+                min_data_versions.emplace(partition_id, data_version);
+        }
+
+        if (!info.has_lightweight_delete_parts && part->hasLightweightDelete())
+            info.has_lightweight_delete_parts = true;
     }
 
-    return std::make_shared<PartitionIdToMinBlock>(std::move(partition_to_min_data_version));
+    info.min_data_versions = std::make_shared<PartitionIdToMinBlock>(std::move(min_data_versions));
+    return info;
 }
 
 MergeTreeSettingsPtr MergeTreeData::getSettings(ProjectionDescriptionRawPtr projection) const
@@ -10490,18 +10505,21 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
     auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);
     snapshot_data->parts = query_ranges;
 
+    auto parts_info = getPartsSnapshotInfo(*query_parts);
+
     bool apply_mutations_on_fly = query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
     bool apply_patch_parts = query_context->getSettingsRef()[Setting::apply_patch_parts];
 
     IMutationsSnapshot::Params params
     {
         .metadata_version = metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = getMinMetadataVersion(*query_parts),
-        .min_part_data_versions = getMinDataVersionForEachPartition(*query_parts),
+        .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_part_data_versions = std::move(parts_info.min_data_versions),
         .max_mutation_versions = query_context->getPartitionIdToMaxBlock(getStorageID().uuid),
         .need_data_mutations = apply_mutations_on_fly,
         .need_alter_mutations = apply_mutations_on_fly || apply_patch_parts,
         .need_patch_parts = apply_patch_parts,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
     };
 
     snapshot_data->mutations_snapshot = getMutationsSnapshot(params);
@@ -10811,9 +10829,11 @@ MergeTreeData::ColumnsDescriptionCache MergeTreeData::getColumnsDescriptionForCo
     ColumnsDescriptionCache cache
     {
         .original = std::make_shared<ColumnsDescription>(columns),
-        .with_collected_nested = std::make_shared<ColumnsDescription>(Nested::collect(columns)),
+        .with_collected_nested = (*getSettings())[MergeTreeSetting::share_nested_offsets]
+            ? std::make_shared<ColumnsDescription>(Nested::collect(columns))
+            : nullptr,
     };
-    if (*cache.with_collected_nested == *cache.original)
+    if (!cache.with_collected_nested || *cache.with_collected_nested == *cache.original)
         cache.with_collected_nested = cache.original;
     auto [_, inserted] = columns_descriptions_cache.emplace(columns, cache);
     columns_descriptions_metric_handle.add(inserted);

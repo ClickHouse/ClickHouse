@@ -71,6 +71,10 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
+if (ENABLE_EXAMPLES)
+    add_subdirectory (Examples)
+endif()
+
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     # Files inherited via extract_into_parent_list that would be marked to remove heavy symbols otherwise
     set_source_files_properties(
@@ -722,8 +726,11 @@ target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 target_link_libraries(clickhouse_common_io PUBLIC boost::context)
 target_link_libraries(dbms PUBLIC boost::context)
 
-if (ENABLE_NLP)
+if (TARGET ch_contrib::stemmer)
     target_link_libraries(dbms PUBLIC ch_contrib::stemmer)
+endif()
+
+if (ENABLE_NLP)
     target_link_libraries(dbms PUBLIC ch_contrib::wnb)
     target_link_libraries(dbms PUBLIC ch_contrib::lemmagen)
 endif()
