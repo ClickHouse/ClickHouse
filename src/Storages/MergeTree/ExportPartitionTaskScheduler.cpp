@@ -4,6 +4,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ProfileEvents.h>
 #include "Storages/MergeTree/ExportPartitionUtils.h"
 #include "Storages/MergeTree/MergeTreePartExportManifest.h"
@@ -271,6 +272,9 @@ void ExportPartitionTaskScheduler::handlePartExportCompletion(
     const StoragePtr & destination_storage,
     const MergeTreePartExportManifest::CompletionCallbackResult & result)
 {
+    /// Invoked from MergeTreeBackgroundExecutor threads, so the component is not inherited from selectPartsToExport.
+    auto component_guard = Coordination::setCurrentComponent("ExportPartitionTaskScheduler::handlePartExportCompletion");
+
     const auto export_path = fs::path(storage.zookeeper_path) / "exports" / export_key;
     const auto processing_parts_path = export_path / "processing";
     const auto processed_part_path = export_path / "processed" / part_name;

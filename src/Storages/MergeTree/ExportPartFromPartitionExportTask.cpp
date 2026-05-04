@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ExportPartFromPartitionExportTask.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 namespace ProfileEvents
 {
@@ -23,6 +24,9 @@ ExportPartFromPartitionExportTask::ExportPartFromPartitionExportTask(
 
 bool ExportPartFromPartitionExportTask::executeStep()
 {
+    /// Runs on a MergeTreeBackgroundExecutor thread, so it does not inherit any component set by the scheduling task.
+    auto component_guard = Coordination::setCurrentComponent("ExportPartFromPartitionExportTask::executeStep");
+
     const auto zk = storage.getZooKeeper();
     const auto part_name = manifest.data_part->name;
 
