@@ -3,16 +3,33 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Parsers/obfuscateQueries.h>
 #include <IO/WriteBufferFromString.h>
 #include <Functions/FunctionHelpers.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Formats/FormatFactory.h>
+#include <Compression/CompressionFactory.h>
+#include <Databases/DatabaseFactory.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Core/Settings.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
+#include <Poco/String.h>
+#include <boost/algorithm/string/split.hpp>
 #include <string_view>
 #include <optional>
+#include <unordered_set>
 
+
+extern const char * auto_time_zones[];
 
 namespace DB
 {
@@ -24,6 +41,59 @@ namespace ErrorCodes
 
 namespace
 {
+
+const KnownIdentifierFunc & getKnownIdentifierFunc()
+{
+    /// Built once per process: the registered names are populated at server startup
+    /// and do not change afterwards. Mirrors the logic of `clickhouse-format --obfuscate`
+    /// in programs/format/Format.cpp so that names of functions, aggregate functions,
+    /// table functions, formats, storages, data types, settings, codecs, etc. are kept
+    /// as-is instead of being replaced by random words.
+    static const KnownIdentifierFunc func = []() -> KnownIdentifierFunc
+    {
+        auto names = std::make_shared<std::unordered_set<std::string>>();
+
+        auto insert = [&](const auto & range) { names->insert(range.begin(), range.end()); };
+        insert(StorageFactory::instance().getAllRegisteredNames());
+        insert(DataTypeFactory::instance().getAllRegisteredNames());
+        insert(Settings().getAllRegisteredNames());
+        insert(MergeTreeSettings().getAllRegisteredNames());
+        insert(MergeTreeIndexFactory::instance().getAllRegisteredNames());
+        insert(CompressionCodecFactory::instance().getAllRegisteredNames());
+        insert(DatabaseFactory::instance().getAllRegisteredNames());
+        insert(DictionaryFactory::instance().getAllRegisteredNames());
+        insert(DictionarySourceFactory::instance().getAllRegisteredNames());
+
+        for (const auto * it = auto_time_zones; *it; ++it)
+        {
+            std::vector<std::string> split;
+            boost::split(split, std::string(*it), [](char c) { return c == '/'; });
+            for (const auto & word : split)
+                if (!word.empty())
+                    names->insert(word);
+        }
+
+        auto names_lowercase = std::make_shared<std::unordered_set<std::string>>();
+        for (const auto & name : *names)
+            names_lowercase->insert(Poco::toLower(name));
+
+        return [names, names_lowercase](std::string_view name) -> bool
+        {
+            std::string what(name);
+            if (FunctionFactory::instance().has(what)
+                || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
+                || TableFunctionFactory::instance().isTableFunctionName(what)
+                || FormatFactory::instance().isOutputFormat(what)
+                || FormatFactory::instance().isInputFormat(what)
+                || names->contains(what))
+                return true;
+
+            return names_lowercase->contains(Poco::toLower(what));
+        };
+    }();
+
+    return func;
+}
 
 class ObfuscateQueryFunction
 {
@@ -84,6 +154,7 @@ ColumnPtr ObfuscateQueryFunction::execute(const ColumnsWithTypeAndName & argumen
 
     auto col_res = ColumnString::create();
     const std::optional<UInt64> const_seed_hash = (arguments.size() >= 2) ? extractConstSeedFromArg(arguments[1].column) : std::nullopt;
+    const KnownIdentifierFunc & known_identifier_func = getKnownIdentifierFunc();
 
     /// Two main paths: column of strings, or a const column.
     if (const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get()))
@@ -109,7 +180,7 @@ ColumnPtr ObfuscateQueryFunction::execute(const ColumnsWithTypeAndName & argumen
             hash_func.update(seed_value);
 
             WriteBufferFromOwnString wb;
-            obfuscateQueries(src, wb, obfuscate_map, used_nouns, hash_func, [](std::string_view){ return false; });
+            obfuscateQueries(src, wb, obfuscate_map, used_nouns, hash_func, known_identifier_func);
             auto & out = wb.str();
 
             col_res->insertData(out.data(), out.size());
@@ -137,7 +208,7 @@ ColumnPtr ObfuscateQueryFunction::execute(const ColumnsWithTypeAndName & argumen
             hash_func.update(seed_value);
 
             WriteBufferFromOwnString wb;
-            obfuscateQueries(std::string_view(const_query), wb, obfuscate_map, used_nouns, hash_func, [](std::string_view){ return false; });
+            obfuscateQueries(std::string_view(const_query), wb, obfuscate_map, used_nouns, hash_func, known_identifier_func);
             auto & out = wb.str();
 
             col_res->insertData(out.data(), out.size());
