@@ -245,7 +245,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
     /// Under sanitizers we use frame-pointer-based unwinding (via abseil) which does not
     /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed for
     /// stack capture. Symbolization happens later in a normal thread context.
-#if !defined(SANITIZER)
+#if !defined(THREAD_SANITIZER)
     if (!hasPHDRCache())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache, that is not available for TSan build");
 #endif

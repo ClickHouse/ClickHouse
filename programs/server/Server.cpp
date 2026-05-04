@@ -1402,9 +1402,9 @@ try
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
 #endif
 
-    /// Under sanitizers we use frame-pointer-based unwinding (via abseil) which does not
+    /// Under thread sanitizer we use frame-pointer-based unwinding (via abseil) which does not
     /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed.
-#if defined(SANITIZER)
+#if defined(THREAD_SANITIZER)
     bool has_trace_collector = config().has("trace_log");
     LOG_INFO(log, "Query Profiler will use frame-pointer-based stack unwinding under sanitizers.");
 #else
