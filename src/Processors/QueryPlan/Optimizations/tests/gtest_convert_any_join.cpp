@@ -89,7 +89,7 @@ ActionsDAG makePreActionsDagWithNotReadySetFunction(const FunctionOverloadResolv
     lhs_col.name = "lhs";
     lhs_col.type = std::make_shared<DataTypeUInt32>();
     lhs_col.column = ColumnConst::create(ColumnUInt32::create(1, 1), 1);
-    auto & lhs_node = dag.addColumn(lhs_col);
+    const auto & lhs_node = dag.addColumn(lhs_col);
 
     ColumnWithTypeAndName set_column;
     set_column.name = set_column_name;
@@ -97,10 +97,10 @@ ActionsDAG makePreActionsDagWithNotReadySetFunction(const FunctionOverloadResolv
     set_column.column = ColumnSet::create(
         1,
         std::make_shared<MockNotReadyFutureSet>(DataTypes{std::make_shared<DataTypeUInt32>()}));
-    auto & set_node = dag.addColumn(set_column);
+    const auto & set_node = dag.addColumn(set_column);
 
     ActionsDAG::NodeRawConstPtrs children = {&lhs_node, &set_node};
-    auto & flag_node = dag.addFunction(function, children, "flag");
+    const auto & flag_node = dag.addFunction(function, children, "flag");
 
     dag.getOutputs().clear();
     dag.getOutputs().push_back(&flag_node);
@@ -111,7 +111,7 @@ ActionsDAG makePreActionsDagWithNotReadySetFunction(const FunctionOverloadResolv
 ActionsDAG makeFlagFilterDag()
 {
     ActionsDAG dag;
-    auto & flag_input = dag.addInput("flag", std::make_shared<DataTypeUInt8>());
+    const auto & flag_input = dag.addInput("flag", std::make_shared<DataTypeUInt8>());
     dag.getOutputs().clear();
     dag.getOutputs().push_back(&flag_input);
     return dag;
