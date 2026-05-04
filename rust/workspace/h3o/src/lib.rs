@@ -483,9 +483,14 @@ pub unsafe extern "C" fn stringToH3(str_ptr: *const c_char, out: *mut H3Index) -
         negate = bytes[i] == b'-';
         i += 1;
     }
-    // Optional "0x"/"0X" prefix (sscanf %x accepts it).
+    // Optional "0x"/"0X" prefix (sscanf %x accepts it). When the prefix is
+    // present but no hex digit follows (e.g. "0x", "0xg", "-0x"), glibc
+    // `sscanf` still returns a successful conversion with value 0, so we treat
+    // the consumed prefix as if a leading `0` digit had been read.
+    let mut had_prefix = false;
     if i + 1 < bytes.len() && bytes[i] == b'0' && (bytes[i + 1] == b'x' || bytes[i + 1] == b'X') {
         i += 2;
+        had_prefix = true;
     }
 
     let mut result: u64 = 0;
@@ -512,7 +517,7 @@ pub unsafe extern "C" fn stringToH3(str_ptr: *const c_char, out: *mut H3Index) -
         i += 1;
     }
 
-    if count == 0 {
+    if count == 0 && !had_prefix {
         return E_FAILED;
     }
     if negate {
@@ -1168,6 +1173,24 @@ mod tests {
         out = 0;
         let s = CString::new("-z").unwrap();
         assert_eq!(unsafe { stringToH3(s.as_ptr(), &mut out) }, E_FAILED);
+    }
+
+    #[test]
+    fn test_string_to_h3_prefix_only() {
+        use std::ffi::CString;
+        // glibc `sscanf("%x")` returns success with value 0 when a "0x"
+        // prefix is consumed but no hex digit follows. The Rust H3 backend
+        // advertises sscanf-compatible semantics, so reproduce that exactly.
+        for input in ["0x", "0X", "0xg", "-0x", "+0x"] {
+            let mut out: H3Index = 0xdead_beef;
+            let s = CString::new(input).unwrap();
+            assert_eq!(
+                unsafe { stringToH3(s.as_ptr(), &mut out) },
+                E_SUCCESS,
+                "input {input:?} should succeed",
+            );
+            assert_eq!(out, 0, "input {input:?} should produce 0");
+        }
     }
 
     #[test]
