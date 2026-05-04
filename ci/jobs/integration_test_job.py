@@ -724,9 +724,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     if is_bugfix_validation:
         bt_paths = {bt: f"{temp_path}/clickhouse_{bt}" for bt in BUGFIX_BUILD_TYPES}
-        # In local runs, reuse existing binaries if all are already present.
-        # Probing master commits in S3 is only available in CI mode.
-        if info.is_local_run and all(Path(p).is_file() for p in bt_paths.values()):
+        # In local runs, only reuse existing binaries; probing master commits in S3
+        # depends on `master_commits` workflow data populated by CI workflow hooks
+        # and is not available locally.
+        if info.is_local_run:
+            missing = [str(p) for p in bt_paths.values() if not Path(p).is_file()]
+            assert not missing, (
+                "Local bugfix validation requires all build-type binaries to be "
+                f"present under {temp_path}; missing: {missing}"
+            )
             build_urls = None
         else:
             build_urls = find_master_builds()
