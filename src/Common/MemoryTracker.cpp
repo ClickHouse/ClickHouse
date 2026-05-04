@@ -11,6 +11,7 @@
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/PageCache.h>
+#include <Common/PerCPUUntrackedMemory.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
@@ -361,8 +362,30 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         incrementAllocationWithoutCheck(size);
     }
 
-    if (unlikely(
-            current_hard_limit && (will_be > current_hard_limit || (level == VariableContext::Global && will_be_rss > current_hard_limit))))
+    bool over = current_hard_limit
+        && (will_be > current_hard_limit
+            || (level == VariableContext::Global && will_be_rss > current_hard_limit));
+
+    /// Per-CPU untracked memory holds allocations that have not yet reached
+    /// `amount`. On the global tracker, when we approach the hard limit, peek
+    /// the per-CPU sum to confirm we are not actually past it. The watermark
+    /// keeps the hot path at a single comparison; the O(ncpu) peek runs only
+    /// in the last `ncpu * default-untracked-bytes` window before OOM.
+    if (!over
+        && current_hard_limit
+        && level == VariableContext::Global
+        && DB::PerCPUUntrackedMemory::isEnabled())
+    {
+        static const Int64 pressure_window
+            = static_cast<Int64>(DB::PerCPUUntrackedMemory::cpuCount()) * (4 * 1024 * 1024);
+        if (will_be > current_hard_limit - pressure_window)
+        {
+            Int64 in_flight = DB::PerCPUUntrackedMemory::peekTotal();
+            over = (will_be + in_flight) > current_hard_limit;
+        }
+    }
+
+    if (unlikely(over))
     {
 #if USE_JEMALLOC
         if (level == VariableContext::Global && (jemalloc_flush_profile_on_memory_exceeded_interval_s || jemalloc_flush_profile_on_memory_exceeded))

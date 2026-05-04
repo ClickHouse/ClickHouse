@@ -8,6 +8,7 @@
 #include <Common/setThreadName.h>
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/PerCPUUntrackedMemory.h>
 #include <Core/Settings.h>
 #include <base/getPageSize.h>
 #include <Interpreters/Context.h>
@@ -16,6 +17,10 @@
 
 #include <csignal>
 #include <sys/mman.h>
+
+#if defined(__linux__)
+#    include <sched.h>
+#endif
 
 
 namespace DB
@@ -235,12 +240,29 @@ LogsLevel ThreadStatus::getClientLogsLevel() const
 
 void ThreadStatus::flushUntrackedMemory()
 {
-    if (untracked_memory == 0)
+    Int64 current_untracked_memory = untracked_memory;
+    untracked_memory = 0;
+
+#if defined(__linux__)
+    /// Drain the current CPU's slot too. The slot is shared across threads,
+    /// so this picks up other threads' contributions as well — fine for the
+    /// "make all pending memory visible" contract this method provides.
+    /// Attribution drift is bounded by `untracked_memory_limit`.
+    if (PerCPUUntrackedMemory::isEnabled())
+    {
+        int cpu = ::sched_getcpu();
+        if (cpu < 0)
+            cpu = 0;
+        else if (int n = PerCPUUntrackedMemory::cpuCount(); n > 0 && cpu >= n)
+            cpu %= n;
+        current_untracked_memory += PerCPUUntrackedMemory::drain(cpu);
+    }
+#endif
+
+    if (current_untracked_memory == 0)
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    Int64 current_untracked_memory = current_thread->untracked_memory;
-    untracked_memory = 0;
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
