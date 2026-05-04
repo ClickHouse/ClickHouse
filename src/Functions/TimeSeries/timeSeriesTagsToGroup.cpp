@@ -37,6 +37,9 @@ public:
     /// This function allows NULLs as a way to specify that some tags don't have values.
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

@@ -34,6 +34,9 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
