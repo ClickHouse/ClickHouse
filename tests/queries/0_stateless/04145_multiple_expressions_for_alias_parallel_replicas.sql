@@ -1,4 +1,4 @@
--- Tags: long, no-parallel
+-- Tags: long
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/74324
 --
 -- Sending an analyzed query tree to a remote replica via
