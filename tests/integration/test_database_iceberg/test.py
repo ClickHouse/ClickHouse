@@ -28,7 +28,7 @@ from pyiceberg.types import (
     TimestamptzType
 )
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
@@ -450,7 +450,7 @@ def test_hide_sensitive_info(started_cluster):
         started_cluster,
         node,
         CATALOG_NAME,
-        additional_settings={"auth_header": "SECRET_2"},
+        additional_settings={"auth_header": "Authorization: SECRET_2"},
     )
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
 
@@ -593,6 +593,29 @@ def test_backup_database(started_cluster):
         node.query("SHOW CREATE DATABASE backup_database")
         == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://rest:8181/v1\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'demo\\', storage_endpoint = \\'http://minio:9000/warehouse-rest\\'\n"
     )
+
+
+def test_restore_database_replace_external_to_null(started_cluster):
+    node = started_cluster.instances["node1"]
+    db_name = "backup_database_null"
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+
+    backup_id = uuid.uuid4().hex
+    backup_name = f"File('/backups/test_backup_{backup_id}/')"
+
+    node.query(f"BACKUP DATABASE {db_name} TO {backup_name}")
+    node.query(f"DROP DATABASE {db_name} SYNC")
+    assert db_name not in node.query("SHOW DATABASES")
+
+    node.query(
+        f"RESTORE DATABASE {db_name} FROM {backup_name}",
+        settings={
+            "restore_replace_external_engines_to_null": 1,
+            "restore_replace_external_table_functions_to_null": 1,
+            "restore_replace_external_dictionary_source_to_null": 1,
+        },
+    )
+    assert db_name not in node.query("SHOW DATABASES")
 
 
 def test_non_existing_tables(started_cluster):
@@ -936,3 +959,22 @@ def test_gcs(started_cluster):
             settings={"allow_database_iceberg": 1},
         )
         assert "Google cloud storage converts to S3" in str(err.value)
+
+
+def test_invalid_auth_header_format(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
+    with pytest.raises(Exception) as err:
+        node.query(
+            f"""
+            SET allow_database_iceberg = 1;
+            CREATE DATABASE {CATALOG_NAME}
+            ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
+            SETTINGS
+                catalog_type = 'rest',
+                warehouse = 'demo',
+                auth_header = 'wrong.header'
+            """
+        )
+    assert "Invalid auth header format" in str(err.value)

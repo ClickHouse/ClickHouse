@@ -90,27 +90,6 @@ IMPLEMENT_SETTINGS_TRAITS(S3RequestSettingsTraits, REQUEST_SETTINGS_LIST, S3Requ
 namespace S3
 {
 
-namespace
-{
-bool setValueFromConfig(
-    const Poco::Util::AbstractConfiguration & config, const std::string & path, typename S3RequestSettingsImpl::SettingFieldRef & field)
-{
-    if (!config.has(path))
-        return false;
-
-    auto which = field.getValue().getType();
-    if (isInt64OrUInt64FieldType(which))
-        field.setValue(config.getUInt64(path));
-    else if (which == Field::Types::String)
-        field.setValue(config.getString(path));
-    else if (which == Field::Types::Bool)
-        field.setValue(config.getBool(path));
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
-
-    return true;
-}
-}
 
 S3RequestSettings::S3RequestSettings() : impl(std::make_unique<S3RequestSettingsImpl>())
 {
@@ -142,7 +121,7 @@ S3RequestSettings::S3RequestSettings(
     {
         auto path = fmt::format("{}.{}{}", config_prefix, setting_name_prefix, field.getName());
 
-        bool updated = setValueFromConfig(config, path, field);
+        bool updated = S3::setValueFromConfig(config, path, field);
         if (!updated)
         {
             auto setting_name = "s3_" + field.getName();
