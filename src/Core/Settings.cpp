@@ -32,6 +32,7 @@ namespace
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = 5lu;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = 10lu;
+constexpr UInt64 default_distributed_cache_write_request_max_tries = 10lu;
 constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
 constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = 0;
 constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = 50;
@@ -45,6 +46,7 @@ constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
+constexpr UInt64 default_distributed_cache_write_request_max_tries = DistributedCache::DEFAULT_WRITE_REQUEST_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = DistributedCache::DEFAULT_CREDENTIALS_REFRESH_PERIOD_SECONDS;
 constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MIN_MS;
 constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MAX_MS;
@@ -319,6 +321,24 @@ Without SMT (e.g. Intel HyperThreading), this corresponds to the number of CPU c
 
 For ClickHouse Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 2vCPU/8GiB, 4vCPU/16GiB etc.
 See the settings tab in the Cloud console for a list of all service sizes.
+)", 0) \
+    DECLARE(UInt64, max_threads_min_free_memory_per_thread, 1_GiB, R"(
+Lowers `max_threads` when the server is under memory pressure, to avoid starting highly-parallel queries that are likely to hit the memory limit.
+
+Free memory is computed as the server's `max_server_memory_usage` minus the memory currently tracked by the global memory tracker. If that free memory is less than `max_threads` multiplied by this value, `max_threads` is reduced to the largest N such that `N * value <= free_memory`, with a minimum of `1`.
+
+Set to `0` to disable this limit.
+
+For example, with the default of 1 GiB and 32 GiB of free memory, `max_threads` is capped at 32; with 1 GiB of free memory it falls back to 1.
+
+This setting applies to read-side parallelism (`SELECT`, `UNION`, `INTERSECT`/`EXCEPT`, and the `SELECT` side of `INSERT ... SELECT`). For the write side, see `max_insert_threads_min_free_memory_per_thread`.
+)", 0) \
+    DECLARE(UInt64, max_insert_threads_min_free_memory_per_thread, 4_GiB, R"(
+Same as `max_threads_min_free_memory_per_thread`, but applied to `max_insert_threads` instead of `max_threads`. The default is higher because insert pipelines typically hold larger per-thread buffers (merge tree parts, compression blocks) than read pipelines.
+
+If the amount of free memory is less than `max_insert_threads` multiplied by this value, `max_insert_threads` is reduced to fit, down to a minimum of `1`.
+
+Set to `0` to disable this limit.
 )", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
@@ -1072,6 +1092,18 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
 )", 0) \
     DECLARE(Bool, use_variant_default_implementation_for_comparisons, true, R"(
 Enables or disables default implementation for Variant type in comparison functions.
+)", 0) \
+    DECLARE(Bool, variant_throw_on_type_mismatch, true, R"(
+When applying a function to a [Variant](../../sql-reference/data-types/variant.md) column using the default implementation,
+controls what happens for rows whose actual type is incompatible with the function:
+- `true` (default) — throw an exception.
+- `false` — return `NULL` for those rows instead.
+)", 0) \
+    DECLARE(Bool, dynamic_throw_on_type_mismatch, true, R"(
+When applying a function to a [Dynamic](../../sql-reference/data-types/dynamic.md) column using the default implementation,
+controls what happens for rows whose actual type is incompatible with the function:
+- `true` (default) — throw an exception.
+- `false` — return `NULL` for those rows instead.
 )", 0) \
     DECLARE(Bool, compile_expressions, true, R"(
 Compile some scalar functions and operators to native code.
@@ -2566,14 +2598,20 @@ Possible values:
 
 - Positive integer.
 )", 0) \
-    DECLARE(UInt64, http_max_fields, 1000000, R"(
+    DECLARE(UInt64, http_max_fields, 1000, R"(
 Maximum number of fields in HTTP header
 )", 0) \
-    DECLARE(UInt64, http_max_field_name_size, 128 * 1024, R"(
+    DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
 Maximum length of field name in HTTP header
 )", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
 Maximum length of field value in HTTP header
+)", 0) \
+    DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
+Maximum total size of all HTTP request headers (names and values combined) in bytes.
+)", 0) \
+    DECLARE(Seconds, http_headers_read_timeout, 30, R"(
+Maximum time in seconds to read all HTTP request headers. This is a total deadline for the entire header parsing phase, not a per-read timeout. Protects against slowloris-style attacks where a client trickles header data slowly to hold connections open.
 )", 0) \
     DECLARE(Bool, http_skip_not_found_url_for_globs, true, R"(
 Skip URLs for globs with HTTP_NOT_FOUND error
@@ -2602,6 +2640,9 @@ The maximum size of the set in the right-hand side of the IN operator to use tab
 )", 0) \
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+)", 0) \
+    DECLARE(Bool, allow_key_condition_coalesce_rewrite, true, R"(
+Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into the disjunction `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are handled: the argument list is normalized like `coalesce` itself (`NULL` literals dropped, arguments after the first non-`Nullable` one dropped), and a trailing non-`NULL` constant, if any, is emitted as the final branch. The rewrite is strictly additive for index pruning; runtime filtering still uses the original predicate.
 )", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
@@ -5514,7 +5555,7 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Supported only with the analyzer (`enable_analyzer = 1`).
 :::
 )", 0) \
-    DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
+    DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
     DECLARE(Bool, optimize_rewrite_like_perfect_affix, true, R"(
@@ -5773,6 +5814,12 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
     DECLARE(SetOperationMode, except_default_mode, SetOperationMode::ALL, R"(
 Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 )", 0) \
+    DECLARE(UInt64, max_streams_for_union_step, 0, R"(
+Limits the number of simultaneously active data streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`, because `UNION DISTINCT` is implemented via a `UNION ALL` step followed by a `DISTINCT` step). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied.
+)", 0) \
+    DECLARE(Float, max_streams_for_union_step_to_max_threads_ratio, 8, R"(
+This ratio multiplied by `max_threads` determines a limit on simultaneously active streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`). The actual limit is the minimum of this computed value and `max_streams_for_union_step` (either one being 0 means it is ignored). For example, with `max_threads = 8` and this ratio set to 1, at most 8 streams will be active. Set to 0 to disable this ratio-based limit.
+)", 0) \
     DECLARE(Bool, optimize_aggregators_of_group_by_keys, true, R"(
 Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section
 )", 0) \
@@ -6010,6 +6057,18 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
+    DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
+Optimize reading with FINAL from ReplacingMergeTree by building a set of primary keys and using it for index analysis.
+)", 0) \
+    DECLARE(UInt64, max_rows_for_lazy_final, 10000000, R"(
+Maximum number of rows in the set for lazy FINAL optimization. If exceeded, falls back to normal FINAL.
+)", 0) \
+    DECLARE(UInt64, max_bytes_for_lazy_final, 256000000, R"(
+Maximum number of bytes in the set for lazy FINAL optimization. If exceeded, falls back to normal FINAL.
+)", 0) \
+    DECLARE(Float, min_filtered_ratio_for_lazy_final, 0.5, R"(
+Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. If less than this fraction of marks is filtered, falls back to normal FINAL. Value 0 disables this check.
+)", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
@@ -6177,6 +6236,10 @@ Hard lower limit on the task size (even when the number of granules is low and t
 )", 0) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
 Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
+)", 0) \
+    \
+    DECLARE(Bool, send_table_structure_on_insert_with_inline_data, true, R"(
+If disabled and the INSERT query contains inline data, the server will not send the table structure and column defaults back to the client over the native protocol. Instead, the server will parse the inline data itself. This can improve performance for many small inserts over the native protocol.
 )", 0) \
     \
     DECLARE(Bool, async_insert, true, R"(
@@ -6536,7 +6599,10 @@ Only has an effect in ClickHouse Cloud. Fetch metrics only from current availabi
 Only has an effect in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
 )", 0) \
     DECLARE(UInt64, distributed_cache_read_request_max_tries, default_distributed_cache_read_request_max_tries, R"(
-Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache request if unsuccessful
+Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache read request if unsuccessful
+)", 0) \
+    DECLARE(UInt64, distributed_cache_write_request_max_tries, default_distributed_cache_write_request_max_tries, R"(
+Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache write request if unsuccessful
 )", 0) \
     DECLARE(UInt64, distributed_cache_receive_response_wait_milliseconds, 60000, R"(
 Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive data for request from distributed cache
@@ -6947,6 +7013,13 @@ See also:
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
 )", 0) \
+    DECLARE(Bool, enable_blob_storage_log_for_read_operations, false, R"(
+Write information about blob storage read operations to system.blob_storage_log table.
+Requires `enable_blob_storage_log` to be enabled as well.
+)", 0) \
+    DECLARE(UInt64, predicate_statistics_sample_rate, 0, R"(
+Collect predicate selectivity statistics into `system.predicate_statistics_log`. When set to N > 0, approximately 1/N of queries are sampled (by the query ID). 0 means disabled.
+)", 0) \
     DECLARE(Bool, allow_create_index_without_type, false, R"(
 Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.
 )", 0) \
@@ -7029,6 +7102,9 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
 )", 0) \
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
+)", 0) \
+    DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
+Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 )", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
 Enables showing data lake catalogs in system tables.
@@ -7185,6 +7261,11 @@ Parts virtually divided into segments to be distributed between replicas for par
     DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
 )", 0) \
+    DECLARE(Bool, parallel_replicas_prefer_local_replica, true, R"(
+When enabled (default), the local replica is always included in the set of replicas used for parallel reading.
+When disabled, the local replica is not given any preference and replicas are selected purely by the load balancing algorithm.
+This allows queries with `max_parallel_replicas = 1` to be directed to another host, which can improve cache locality when many short queries are distributed across a cluster.
+)", 0) \
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 )", 0) \
@@ -7208,6 +7289,9 @@ Allow usage of materialized views with parallel replicas
 )", 0) \
     DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
 Allow pushing down filters to part of query which parallel replicas choose to execute
+)", BETA) \
+    DECLARE(Bool, parallel_replicas_allow_view_over_mergetree, false, R"(
+Allow parallel replicas to execute the outer query of a simple view over `MergeTree` tables (instead of the view's inner query), improving parallelization across nodes. Also applies to `UNION ALL` views whose branches all read from different `MergeTree` tables.
 )", BETA) \
     DECLARE(Bool, distributed_index_analysis, false, R"(
 Index analysis will be distributed across replicas.
@@ -7431,6 +7515,9 @@ Note that initially (24.12) there was a server setting (`send_settings_to_client
     DECLARE(Bool, allow_archive_path_syntax, true, R"(
 File/S3 engines/table function will parse paths with '::' as `<archive> :: <file>` if the archive has correct extension.
 )", 0) \
+    DECLARE(S3UriStyle, s3_uri_style, S3UriStyle::AUTO, R"(
+Force the s3 endpoint style. Possible values: auto, virtual_hosted, path.
+)", 0) \
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
@@ -7573,6 +7660,9 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
+    DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), automatic spilling is disabled. It prevents read in order through join optimization.
+)", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 )", 0) \
