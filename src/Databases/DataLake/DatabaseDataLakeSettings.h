@@ -35,6 +35,7 @@ class SettingsChanges;
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, MsgPackUUIDRepresentation) \
@@ -44,6 +45,7 @@ class SettingsChanges;
     M(CLASS_NAME, ORCCompression) \
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
+    M(CLASS_NAME, S3UriStyle) \
     M(CLASS_NAME, SchemaInferenceMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt32) \
