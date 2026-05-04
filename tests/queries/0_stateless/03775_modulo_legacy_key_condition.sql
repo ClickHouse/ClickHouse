@@ -1,7 +1,6 @@
--- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
+-- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
--- no-random-merge-tree-settings: random `enable_block_number_column` activates Min-Max in EXPLAIN.
 
 -- { echo }
 
