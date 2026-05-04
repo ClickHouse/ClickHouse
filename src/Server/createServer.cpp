@@ -41,12 +41,26 @@ bool createServer(
     try
     {
         servers.push_back(func(static_cast<UInt16>(port)));
-        if (start_server)
+        try
         {
-            servers.back().start();
-            LOG_INFO(log, "Listening for {}", servers.back().getDescription());
+            if (start_server)
+            {
+                servers.back().start();
+                LOG_INFO(log, "Listening for {}", servers.back().getDescription());
+            }
+            return true;
         }
-        return true;
+        catch (...)
+        {
+            /// Roll back the just-pushed adapter so its bound socket is released
+            /// and a half-initialized listener does not linger in `servers`. We must
+            /// catch all exception types — not only `Poco::Exception` — so the outer
+            /// `Poco::Exception` handler below still wraps `Poco`-class errors into
+            /// `NETWORK_ERROR` (or logs them when `listen_try`) while non-`Poco`
+            /// exceptions propagate to the caller after the rollback.
+            servers.pop_back();
+            throw;
+        }
     }
     catch (const Poco::Exception &)
     {
