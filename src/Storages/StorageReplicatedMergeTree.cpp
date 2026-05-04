@@ -4650,6 +4650,9 @@ void StorageReplicatedMergeTree::exportMergeTreePartitionStatusHandlingTask()
 
 std::vector<ReplicatedPartitionExportInfo> StorageReplicatedMergeTree::getPartitionExportsInfo(bool prefer_remote_information) const
 {
+    /// Called from a query thread (system.replicated_partition_exports), which does not have a component set.
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::getPartitionExportsInfo");
+
     if (prefer_remote_information && getZooKeeper()->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ))
     {
         return export_merge_tree_partition_manifest_updater->getPartitionExportsInfo();
