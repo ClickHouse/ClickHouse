@@ -118,53 +118,54 @@ def check():
     has_ft = has_new_functional_tests(changed_files)
     has_it = has_new_integration_tests(changed_files)
 
-    if not has_unit and not has_ft and not has_it:
-        if has_ci_report_link(pr_body):
+    # Branching by what kinds of new tests the PR adds. The structure
+    # below is deliberately mutually exclusive on the FT/IT-vs-rest axis
+    # so neither the unit-only shortcut nor the CI-report-link fallback
+    # can bypass per-arch Bugfix Validation when the PR adds functional
+    # or integration regression tests. (Bot reviews on PR #103541,
+    # 2026-05-03 / 2026-05-04 — concerns #5 and #6.)
+
+    # New functional or integration regression tests exist. Those tests
+    # MUST validate on at least one arch (the bug reproduces on master
+    # HEAD and is fixed on the PR). The CI-report-link fallback is NOT
+    # accepted here — it would let an unvalidated FT/IT regression test
+    # through and weaken the contract this hook enforces. The presence
+    # of an additional unit test alongside FT/IT does not relax this
+    # requirement either.
+    if has_ft or has_it:
+        if any_bugfix_validation_passed():
             print(
-                "No new tests have been added, but the PR description has a link to a CI report - pass"
+                "At least one per-arch Bugfix Validation job validated the bug - pass"
             )
             return True
-        print(f"No new tests have been added")
+        print(
+            "No per-arch Bugfix Validation job validated the bug — the test "
+            "either passes on master HEAD on every arch (so it's not actually "
+            "a regression test for the fix) or every arch errored out. See "
+            "the per-arch Bugfix validation jobs in the report."
+        )
         return False
 
-    # Unit tests can't be auto-validated by re-running master HEAD (they
-    # live in compiled C++ and the validation framework can't selectively
-    # run them against the master binary). Adding new unit tests is
-    # accepted as proof on its own — but ONLY when no functional or
-    # integration regression tests were also added in the same PR.
-    #
-    # If the PR adds new functional/integration tests, those tests MUST
-    # validate on at least one arch (the bug reproduces on master HEAD and
-    # is fixed on the PR). Otherwise the unit-test shortcut would silently
-    # let an unvalidated FT/IT regression test through, weakening the
-    # contract this hook enforces. (Bot review on PR #103541, 2026-05-03.)
-    if has_unit and not has_ft and not has_it:
+    # Unit-only PR. Unit tests can't be auto-validated by re-running
+    # master HEAD (they live in compiled C++ and the validation
+    # framework can't selectively run them against the master binary),
+    # so the per-arch Bugfix Validation machinery doesn't apply. Adding
+    # new unit tests is accepted as proof on its own.
+    if has_unit:
         print("New unit tests added (no functional/integration tests) - pass")
         return True
 
-    # New functional or integration tests exist (with or without an
-    # accompanying unit test). The per-arch Bugfix Validation jobs ran them
-    # against master HEAD and the PR. We pass iff at least one per-arch job
-    # reported the bug as validated.
-    if any_bugfix_validation_passed():
-        print(
-            "At least one per-arch Bugfix Validation job validated the bug - pass"
-        )
-        return True
-
+    # No new tests at all. Allow a link to a CI report in the PR body as
+    # proof the bug exists and was fixed (operator-supplied evidence in
+    # lieu of an automated test). This fallback applies only here — it
+    # does NOT override per-arch Bugfix Validation when FT/IT tests are
+    # present (see the branch above).
     if has_ci_report_link(pr_body):
         print(
-            "No per-arch Bugfix Validation job validated the bug, but the "
-            "PR description has a link to a CI report - pass"
+            "No new tests have been added, but the PR description has a link to a CI report - pass"
         )
         return True
-
-    print(
-        "No per-arch Bugfix Validation job validated the bug — the test "
-        "either passes on master HEAD on every arch (so it's not actually "
-        "a regression test for the fix) or every arch errored out. See "
-        "the per-arch Bugfix validation jobs in the report."
-    )
+    print(f"No new tests have been added")
     return False
 
 
