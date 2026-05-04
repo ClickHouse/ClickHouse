@@ -165,7 +165,7 @@ private:
     const bool allow_join_sorting = false;
     const bool allow_dynamic_type_in_join_keys = false;
     const bool enable_lazy_columns_replication = false;
-    const bool enable_software_prefetch_in_join = true;
+    const bool enable_software_prefetch_in_join = false;
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
 
