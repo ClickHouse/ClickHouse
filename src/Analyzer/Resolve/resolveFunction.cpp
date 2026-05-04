@@ -3,6 +3,8 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/SortNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/LambdaNode.h>
@@ -44,6 +46,9 @@
 
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
+
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -955,6 +960,94 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
         }
+    }
+
+    /// Aggregate function combinator: ORDER BY [LIMIT N].
+    /// Transform f(x ORDER BY y DESC LIMIT 10) into the parametric form
+    /// fOrderBy('0 DESC', 10)(x, y), which the AggregateFunctionFactory understands
+    /// via the OrderBy combinator. The transformation must happen here, BEFORE
+    /// argument_types and argument_columns are computed, so that the rest of the
+    /// resolve flow sees the already-extended arguments and updated function name.
+    if (function_node.hasOrderByCombinator())
+    {
+        auto & order_by_list_node = function_node.getOrderByColumnsNode();
+        auto & order_by_nodes = order_by_list_node->as<ListNode &>().getNodes();
+
+        /// 1. Resolve the expressions inside SortNode children against the table columns.
+        ///    Each SortNode wraps an expression; its inner expression may still be an
+        ///    unresolved IdentifierNode that we must resolve now, before we use it as
+        ///    a regular function argument.
+        for (auto & sort_node : order_by_nodes)
+        {
+            auto & sort_typed = sort_node->as<SortNode &>();
+            auto & sort_expression = sort_typed.getExpression();
+            resolveExpressionNode(sort_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        }
+
+        /// 2. Build a sort description string of the form "0 DESC, 1 ASC NULLS FIRST".
+        ///    The integer is the position (0-based) within the appended sort columns;
+        ///    AggregateFunctionOrderBy::insertResultInto names columns std::to_string(i)
+        ///    matching the same scheme.
+        WriteBufferFromOwnString sort_desc_buf;
+        bool first = true;
+        size_t idx = 0;
+        for (auto & sort_node : order_by_nodes)
+        {
+            if (!first)
+                sort_desc_buf << ", ";
+            first = false;
+
+            auto & sort_typed = sort_node->as<SortNode &>();
+            sort_desc_buf << idx;
+            sort_desc_buf << (sort_typed.getSortDirection() == SortDirection::ASCENDING ? " ASC" : " DESC");
+            if (sort_typed.getNullsSortDirection().has_value())
+                sort_desc_buf << " NULLS "
+                              << (*sort_typed.getNullsSortDirection() == SortDirection::ASCENDING ? "FIRST" : "LAST");
+            ++idx;
+        }
+        const String sort_desc_str = sort_desc_buf.str();
+
+        /// 3. Prepend sort description (and optional LIMIT) to function parameters.
+        ///    The combinator factory expects:
+        ///      params[0] = sort description string
+        ///      params[1] = LIMIT (optional UInt64)
+        ///      params[2..] = original parameters (passed through to the nested function)
+        auto & params_nodes = function_node.getParameters().getNodes();
+        params_nodes.insert(params_nodes.begin(), std::make_shared<ConstantNode>(sort_desc_str));
+        parameters.insert(parameters.begin(), Field(sort_desc_str));
+
+        if (function_node.getOrderByLimit().has_value())
+        {
+            const UInt64 limit_value = *function_node.getOrderByLimit();
+            params_nodes.insert(params_nodes.begin() + 1, std::make_shared<ConstantNode>(limit_value));
+            parameters.insert(parameters.begin() + 1, Field(limit_value));
+        }
+
+        /// 4. Append sort-key expressions to the function arguments.
+        ///    AggregateFunctionOrderBy reads the trailing N arguments as sort keys
+        ///    (where N comes from the combinator's getNumberOfNestedArguments).
+        auto & args_nodes = function_node.getArguments().getNodes();
+        for (auto & sort_node : order_by_nodes)
+        {
+            auto & sort_typed = sort_node->as<SortNode &>();
+            args_nodes.push_back(sort_typed.getExpression());
+        }
+
+        /// 5. Rename: f -> fOrderBy. From now on the factory dispatches to the OrderBy combinator.
+        function_name = function_name + "OrderBy";
+
+        /// 6. Clear the combinator markers so subsequent passes don't try to re-process them.
+        function_node.getOrderByColumnsNode().reset();
+        function_node.setOrderByLimit(std::nullopt);
+
+        /// 7. Re-compute arguments_projection_names because we appended new arguments.
+        ///    These will be used a few lines below when building argument_columns.
+        arguments_projection_names = resolveExpressionNodeList(
+            function_node_ptr->getArgumentsNode(),
+            scope,
+            false /*allow_lambda_expression*/,
+            false /*allow_table_expression*/,
+            allow_niladic_functions);
     }
 
     /// Initialize function argument columns
