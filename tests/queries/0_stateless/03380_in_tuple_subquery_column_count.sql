@@ -26,3 +26,9 @@ SELECT (1, 2) IN (SELECT toLowCardinality(1), toLowCardinality(2));
 
 -- Original reproducer from the issue: previously silently returned empty result, now should error.
 SELECT 1 FROM (SELECT 2 AS c1 WHERE (1, 1) IN (SELECT 1)) t0 WHERE t0.c1 = 1; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+
+-- A lambda expression as the left side of IN does not have a resolved result type at this point.
+-- The validation must skip such cases instead of dereferencing a null type
+-- (regression for the AST fuzzer crash from PR #97540).
+SELECT (x -> x) IN (SELECT 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT 1 WHERE (x -> -1 * x) GLOBAL NOT IN (SELECT arrayJoin([1])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

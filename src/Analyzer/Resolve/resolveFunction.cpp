@@ -962,10 +962,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// in the subquery on the right side. This must happen during analysis, before constant folding
         /// can optimize away the IN expression and silently hide the mismatch.
         auto in_second_argument_type = in_second_argument->getNodeType();
-        if (in_second_argument_type == QueryTreeNodeType::QUERY || in_second_argument_type == QueryTreeNodeType::UNION)
+        auto in_first_argument_result_type = in_first_argument->getResultType();
+        if ((in_second_argument_type == QueryTreeNodeType::QUERY || in_second_argument_type == QueryTreeNodeType::UNION)
+            && in_first_argument_result_type)
         {
+            /// `getResultType` may be null for unresolved nodes (e.g. a lambda used as the left side of IN).
+            /// Such cases are rejected later with a more informative error, so skip the column-count check here.
             size_t left_columns_count = 1;
-            auto left_type = removeLowCardinalityAndNullable(in_first_argument->getResultType());
+            auto left_type = removeLowCardinalityAndNullable(in_first_argument_result_type);
             if (const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_type.get()))
                 left_columns_count = left_tuple_type->getElements().size();
 
