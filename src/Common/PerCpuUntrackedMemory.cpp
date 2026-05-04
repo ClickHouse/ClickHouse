@@ -7,14 +7,13 @@
 #include "config.h"
 
 #if defined(__linux__)
+#    include <sched.h>
 #    include <sys/mman.h>
 #    include <unistd.h>
 #endif
 
 #if USE_LIBRSEQ
 #    include <rseq/rseq.h>
-#elif defined(__linux__)
-#    include <sched.h>
 #endif
 
 namespace DB::PerCpuUntrackedMemory
@@ -72,15 +71,6 @@ constexpr bool rseq_ready = false;
 
 #endif
 
-inline int normalizeCpu(int cpu)
-{
-    if (cpu < 0)
-        return 0;
-    if (cpu >= n_cpu)
-        return cpu % n_cpu;
-    return cpu;
-}
-
 }
 
 bool isEnabled()
@@ -97,11 +87,16 @@ int currentCpu()
 {
 #if USE_LIBRSEQ
     if (rseq_ready)
-        return normalizeCpu(rseq_current_cpu_raw());
+    {
+        /// `cpu_id_start` is the snapshot field: always a valid CPU index
+        /// (no -1/-2 sentinels), use it for indexing without a branch.
+        return static_cast<int>(rseq_cpu_start());
+    }
 #endif
 
 #if defined(__linux__)
-    return normalizeCpu(::sched_getcpu());
+    int cpu = ::sched_getcpu();
+    return cpu < 0 ? 0 : cpu;
 #else
     return 0;
 #endif
@@ -113,11 +108,14 @@ AddResult add(Int64 delta)
     if (rseq_ready)
     {
         /// rseq RMW: `slots[cpu].value += delta` with kernel-restartable
-        /// non-atomicity. Loops until we commit on some CPU.
+        /// non-atomicity. The librseq protocol expects the snapshot CPU id
+        /// to come from `rseq_cpu_start()`; the CS body internally reads
+        /// `cpu_id` (live) and aborts if it differs from `cpu`. Loop until
+        /// we commit on some CPU.
         int cpu;
         while (true)
         {
-            cpu = normalizeCpu(rseq_current_cpu_raw());
+            cpu = static_cast<int>(rseq_cpu_start());
             intptr_t * slot_ptr = reinterpret_cast<intptr_t *>(&slots[cpu].value);
             intptr_t count = static_cast<intptr_t>(delta);
             if (rseq_load_add_store__ptr(RSEQ_MO_RELAXED, RSEQ_PERCPU_CPU_ID, slot_ptr, count, cpu) == 0)
