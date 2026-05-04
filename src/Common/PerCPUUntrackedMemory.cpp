@@ -2,13 +2,12 @@
 
 #include <Common/CacheLine.h>
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 
 #include "config.h"
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 #    include <sched.h>
 #    include <unistd.h>
 #endif
@@ -39,11 +38,11 @@ struct alignas(CH_CACHE_LINE_SIZE) Slot
 
 alignas(CH_CACHE_LINE_SIZE) Slot slots[MAX_CPUS]{};
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 const int n_cpu = []
 {
-    long n = ::sysconf(_SC_NPROCESSORS_CONF);
+    Int64 n = ::sysconf(_SC_NPROCESSORS_CONF);
     if (n <= 0 || n > MAX_CPUS)
         return 0;
     return static_cast<int>(n);
@@ -96,7 +95,7 @@ int currentCPU()
     }
 #endif
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     int cpu = ::sched_getcpu();
     return cpu < 0 ? 0 : cpu;
 #else
