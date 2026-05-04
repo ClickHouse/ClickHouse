@@ -109,11 +109,7 @@ AddResult add(Int64 delta)
 #if USE_LIBRSEQ
     if (rseq_ready)
     {
-        /// rseq RMW: `slots[cpu].value += delta` with kernel-restartable
-        /// non-atomicity. The librseq protocol expects the snapshot CPU id
-        /// to come from `rseq_cpu_start()`; the CS body internally reads
-        /// `cpu_id` (live) and aborts if it differs from `cpu`. Loop until
-        /// we commit on some CPU.
+        /// slots[cpu].value += delta
         int cpu;
         while (true)
         {
@@ -146,11 +142,7 @@ bool tryFlush(int cpu, Int64 amount)
 #if USE_LIBRSEQ
     if (rseq_ready)
     {
-        /// Same rseq primitive as `add`, with delta = -amount. The kernel
-        /// restarts whoever was preempted, so there is no race between
-        /// concurrent rseq adds on `cpu` and this subtract. If we are no
-        /// longer on `cpu`, the rseq sequence aborts cleanly and the slot
-        /// is unchanged — caller treats this as "flush deferred".
+        /// slots[cpu].value -= amount
         intptr_t * slot_ptr = reinterpret_cast<intptr_t *>(&slots[cpu].value);
         intptr_t count = -static_cast<intptr_t>(amount);
         return rseq_load_add_store__ptr(RSEQ_MO_RELAXED, RSEQ_PERCPU_CPU_ID, slot_ptr, count, cpu) == 0;
