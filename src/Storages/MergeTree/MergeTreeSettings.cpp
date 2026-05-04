@@ -2527,14 +2527,33 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
                 zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock.value);
     }
 
-    if (leader_election && leader_election_session_timeout.totalSeconds() < leader_election_heartbeat_interval.totalSeconds() * 3)
+    if (leader_election)
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The value of `leader_election_session_timeout` ({} s) must be at least 3x"
-            " the value of `leader_election_heartbeat_interval` ({} s)",
-            leader_election_session_timeout.totalSeconds(),
-            leader_election_heartbeat_interval.totalSeconds());
+        if (leader_election_heartbeat_interval.totalSeconds() <= 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of `leader_election_heartbeat_interval` must be a positive number of seconds, got {} s",
+                leader_election_heartbeat_interval.totalSeconds());
+        }
+
+        if (leader_election_session_timeout.totalSeconds() <= 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of `leader_election_session_timeout` must be a positive number of seconds, got {} s",
+                leader_election_session_timeout.totalSeconds());
+        }
+
+        if (leader_election_session_timeout.totalSeconds() < leader_election_heartbeat_interval.totalSeconds() * 3)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of `leader_election_session_timeout` ({} s) must be at least 3x"
+                " the value of `leader_election_heartbeat_interval` ({} s)",
+                leader_election_session_timeout.totalSeconds(),
+                leader_election_heartbeat_interval.totalSeconds());
+        }
     }
 }
 

@@ -12,6 +12,16 @@ CREATE TABLE test_leader_election_bad (x UInt64) ENGINE = MergeTree ORDER BY x
 CREATE TABLE test_leader_election_bad2 (x UInt64) ENGINE = MergeTree ORDER BY x
     SETTINGS leader_election = true, leader_election_heartbeat_interval = 10, leader_election_session_timeout = 10; -- { serverError BAD_ARGUMENTS }
 
+-- Validation: `leader_election_heartbeat_interval` must be a positive number of seconds.
+-- A zero value would cause an immediate-reschedule loop in the heartbeat task and make
+-- `isLeader` always false (it compares elapsed time against `heartbeat_interval * 2`).
+CREATE TABLE test_leader_election_zero_heartbeat (x UInt64) ENGINE = MergeTree ORDER BY x
+    SETTINGS leader_election = true, leader_election_heartbeat_interval = 0; -- { serverError BAD_ARGUMENTS }
+
+-- Validation: `leader_election_session_timeout` must be a positive number of seconds.
+CREATE TABLE test_leader_election_zero_timeout (x UInt64) ENGINE = MergeTree ORDER BY x
+    SETTINGS leader_election = true, leader_election_session_timeout = 0; -- { serverError BAD_ARGUMENTS }
+
 -- Validation: `leader_election` requires an S3 or Azure object storage disk
 -- (the lease protocol relies on conditional writes that other backends do not support).
 CREATE TABLE test_leader_election_local (x UInt64) ENGINE = MergeTree ORDER BY x
