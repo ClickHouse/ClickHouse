@@ -42,22 +42,20 @@ struct AddResult
 /// result.new_local)` with this call to flush on overflow.
 AddResult add(Int64 delta);
 
-/// Subtract `amount` from slots[cpu], race-free against concurrent rseq
-/// adds on the same cpu (uses rseq itself on the librseq path).
-///
-/// Returns `true` if the subtraction was applied. The caller is then
-/// responsible for transferring `amount` to the underlying `MemoryTracker`
-/// chain (positive: alloc, negative: free).
-///
-/// Returns `false` if the rseq sequence aborted because the caller is no
-/// longer on `cpu`. The slot is unchanged in this case; the bytes stay
-/// accounted in the slot and will be drained by a future overflow on
-/// that CPU. Bounded by `cpuCount() * max_untracked_memory`.
+/// Paired with `add`: subtract `amount` from slots[cpu] via the same rseq
+/// primitive. Race-free against concurrent rseq adds on `cpu`. Returns
+/// `false` if the rseq sequence aborted because the caller migrated off
+/// `cpu`; the slot is unchanged in that case and the bytes stay accounted
+/// in the slot until a future overflow on that cpu drains them. Bounded
+/// by `cpuCount() * max_untracked_memory`.
 bool tryFlush(int cpu, Int64 amount);
 
-/// Relaxed-load read of slots[cpu]. Useful before an un-paired `tryFlush`
-/// so the caller knows the amount to subtract.
-Int64 peek(int cpu);
+/// Un-paired drain: atomically swap slots[cpu] with 0 and return the prior
+/// value. Always succeeds. The caller is expected to be running on `cpu`
+/// itself (typically resolved via `currentCpu()` immediately before this
+/// call), so concurrent rseq adds from other threads on the same CPU are
+/// serialized by the kernel and cannot race.
+Int64 drain(int cpu);
 
 /// Sum of slots[i] across all i, with relaxed loads and no reset. O(ncpu).
 /// Slow path — intended for `MemoryTracker` to consult under memory pressure.

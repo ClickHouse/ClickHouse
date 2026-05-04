@@ -163,9 +163,14 @@ bool tryFlush(int cpu, Int64 amount)
     return true;
 }
 
-Int64 peek(int cpu)
+Int64 drain(int cpu)
 {
-    return __atomic_load_n(&slots[cpu].value, __ATOMIC_RELAXED);
+    /// Un-paired drain. Caller is expected to be running on `cpu` itself,
+    /// so the kernel guarantees no concurrent rseq RMW from other threads
+    /// on this CPU (whoever was in a CS got preempted and restarted by the
+    /// kernel before we ran). The atomic exchange therefore sees a stable
+    /// slot value and cannot race with rseq's load/add/store sequence.
+    return __atomic_exchange_n(&slots[cpu].value, Int64{0}, __ATOMIC_RELAXED);
 }
 
 Int64 peekTotal()

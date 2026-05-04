@@ -71,14 +71,11 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
         if (blocker_changed)
         {
             int cpu = DB::PerCpuUntrackedMemory::currentCpu();
-            Int64 v = DB::PerCpuUntrackedMemory::peek(cpu);
-            if (v != 0 && DB::PerCpuUntrackedMemory::tryFlush(cpu, v))
-            {
-                if (v > 0)
-                    std::ignore = memory_tracker->allocImpl(v, /*throw_if_memory_exceeded=*/false);
-                else
-                    std::ignore = memory_tracker->free(-v);
-            }
+            Int64 drained = DB::PerCpuUntrackedMemory::drain(cpu);
+            if (drained > 0)
+                std::ignore = memory_tracker->allocImpl(drained, /*throw_if_memory_exceeded=*/false);
+            else if (drained < 0)
+                std::ignore = memory_tracker->free(-drained);
             current_thread->untracked_memory_blocker_level = blocker_level;
         }
 
@@ -168,14 +165,11 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         if (blocker_changed)
         {
             int cpu = DB::PerCpuUntrackedMemory::currentCpu();
-            Int64 v = DB::PerCpuUntrackedMemory::peek(cpu);
-            if (v != 0 && DB::PerCpuUntrackedMemory::tryFlush(cpu, v))
-            {
-                if (v > 0)
-                    std::ignore = memory_tracker->allocImpl(v, /*throw_if_memory_exceeded=*/false);
-                else
-                    std::ignore = memory_tracker->free(-v);
-            }
+            Int64 drained = DB::PerCpuUntrackedMemory::drain(cpu);
+            if (drained > 0)
+                std::ignore = memory_tracker->allocImpl(drained, /*throw_if_memory_exceeded=*/false);
+            else if (drained < 0)
+                std::ignore = memory_tracker->free(-drained);
             current_thread->untracked_memory_blocker_level = blocker_level;
         }
 
