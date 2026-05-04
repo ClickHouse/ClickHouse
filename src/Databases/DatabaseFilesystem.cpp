@@ -4,6 +4,7 @@
 #include <Common/Logger.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Disks/IVolume.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -13,6 +14,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageFile.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/filesystemHelpers.h>
 #include <Formats/FormatFactory.h>
@@ -45,6 +47,18 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
     const auto user_files_paths = is_local ? Strings{""} : getContext()->getUserFilesPaths();
 
+    /// When `user_files_policy` is configured with non-local disks (e.g. `s3_plain`),
+    /// `fs::exists` only checks the local filesystem and would reject valid paths
+    /// that exist on the configured `IDisk`. Use disk-aware existence checks that
+    /// fall back to `fs::exists` when no volume is configured.
+    auto user_files_volume = is_local ? VolumePtr{} : getContext()->getUserFilesVolume();
+    auto path_exists = [&](const fs::path & p)
+    {
+        if (user_files_volume)
+            return userFilesPathExists(p.string(), user_files_volume->getDisks());
+        return fs::exists(p);
+    };
+
     if (fs::path(path).is_relative())
     {
         /// For relative paths, try each user_files_path and use the first one where the path exists.
@@ -52,7 +66,7 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
         for (const auto & ufp : user_files_paths)
         {
             fs::path candidate = fs::absolute(fs::path(ufp) / path).lexically_normal();
-            if (fs::exists(candidate))
+            if (path_exists(candidate))
             {
                 path = candidate.string();
                 found = true;
@@ -73,7 +87,7 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
                         "Path must be inside user-files path");
     }
 
-    if (!fs::exists(path))
+    if (!path_exists(path))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
 }
 

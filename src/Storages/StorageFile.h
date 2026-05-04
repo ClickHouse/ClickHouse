@@ -29,6 +29,15 @@ using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
 class PullingPipelineExecutor;
 
+/// Splits an absolute user-files path into (disk, disk-relative-path) by matching the
+/// configured disk path prefix with the longest matching root. Returns {nullptr, ""}
+/// if no disk matches.
+std::pair<DiskPtr, String> splitUserFilesAbsolutePath(const String & absolute_path, const Disks & disks);
+
+/// Returns true if the given absolute user-files path resolves to an existing file
+/// or directory on one of the disks of the user-files volume.
+bool userFilesPathExists(const String & absolute_path, const Disks & disks);
+
 class StorageFile final : public IStorage
 {
 public:

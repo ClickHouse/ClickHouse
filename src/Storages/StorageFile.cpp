@@ -402,6 +402,8 @@ void validateDiskRelativePathBoundary(const DiskPtr & disk, const String & relat
             relative_path, getDiskPathWithSlash(disk));
 }
 
+}
+
 /// Splits an absolute path into (disk, disk-relative-path) by matching the
 /// configured disk path prefix. Returns {nullptr, ""} if no disk matches.
 ///
@@ -441,6 +443,9 @@ bool userFilesPathExists(const String & absolute_path, const Disks & disks)
         return false;
     return disk->existsFile(relative) || disk->existsDirectory(relative);
 }
+
+namespace
+{
 
 std::string getTablePath(const std::string & table_dir_path, const std::string & format_name)
 {
