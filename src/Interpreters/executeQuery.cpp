@@ -595,10 +595,23 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
 
 QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage query_result_cache_usage, bool pulling_pipeline)
 {
+    bool query_result_cache_write_failed = false;
     if (query_result_cache_usage == QueryResultCacheUsage::Write)
+    {
         /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
         /// prevent partial/garbage results in case of exceptions during query execution.
-        query_pipeline.finalizeWriteInQueryResultCache();
+        /// A failure to finalize the cache write must not prevent collecting profile counters or resetting the
+        /// pipeline, otherwise the `QueryFinish` entry would be lost from `query_log`.
+        try
+        {
+            query_pipeline.finalizeWriteInQueryResultCache();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger("executeQuery"), "Failed to finalize query result cache write");
+            query_result_cache_write_failed = true;
+        }
+    }
 
     std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
@@ -626,7 +639,8 @@ QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && q
     return QueryPipelineFinalizedInfo{
         .result_progress = std::move(result_progress),
         .processors_profile_infos = std::move(processors_profile_infos),
-        .pipeline_dump = std::move(pipeline_dump)};
+        .pipeline_dump = std::move(pipeline_dump),
+        .query_result_cache_write_failed = query_result_cache_write_failed};
 }
 
 void logQueryFinishImpl(
@@ -695,6 +709,11 @@ void logQueryFinishImpl(
         }
 
         context->getRuntimeFilterLookup()->logStats();
+
+        /// If the buffered query result cache write threw during finalization, the result was *not* actually
+        /// stored in the cache. Downgrade the logged usage accordingly so `query_log` reflects reality.
+        if (query_pipeline_finalized_info.query_result_cache_write_failed)
+            query_result_cache_usage = QueryResultCacheUsage::None;
 
         elem.query_result_cache_usage = query_result_cache_usage;
 
@@ -1506,6 +1525,7 @@ static BlockIO executeQueryImpl(
         bool async_insert_enabled = settings[Setting::async_insert];
 
         /// Resolve database before trying to use async insert feature - to properly hash the query.
+        StoragePtr insert_table;
         if (insert_query)
         {
             if (insert_query->table_id)
@@ -1514,8 +1534,11 @@ static BlockIO executeQueryImpl(
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
 
             if (insert_query->table_id)
-                if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context))
-                    async_insert_enabled |= table->areAsynchronousInsertsEnabled();
+            {
+                insert_table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context);
+                if (insert_table)
+                    async_insert_enabled |= insert_table->areAsynchronousInsertsEnabled();
+            }
         }
 
         if (insert_query && insert_query->select)
@@ -1527,9 +1550,20 @@ static BlockIO executeQueryImpl(
                 insert_query->tryFindInputFunction(input_function);
                 if (input_function)
                 {
-                    StoragePtr storage = context->executeTableFunction(input_function, insert_query->select->as<ASTSelectQuery>());
+                    /// For input('auto'), make sure that Context::insertion_table_info is set.
+                    if (insert_table && !context->hasInsertionTableColumnsDescription())
+                        InterpreterInsertQuery::setInsertContextValues(context, *insert_query, insert_table);
+
+                    const ASTSelectQuery * select_query_hint = insert_query->select->as<ASTSelectQuery>();
+                    if (!select_query_hint)
+                    {
+                        if (const auto * union_query = insert_query->select->as<ASTSelectWithUnionQuery>();
+                            union_query && union_query->list_of_selects->children.size() == 1)
+                            select_query_hint = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
+                    }
+                    StoragePtr storage = context->executeTableFunction(input_function, select_query_hint);
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
-                    auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
+                    auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(context, false);
 
                     auto pipe = getSourceFromASTInsertQuery(
                         out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);

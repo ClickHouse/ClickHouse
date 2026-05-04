@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
+#include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/ExpressionActions.h>
@@ -288,12 +289,13 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     data_parts = merge_tree->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
-    key_sample_block = std::make_shared<const Block>(merge_tree->getInMemoryMetadataPtr()->getPrimaryKey().sample_block);
+    key_sample_block = std::make_shared<const Block>(merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getPrimaryKey().sample_block);
 
     if (with_minmax)
     {
         Block minmax_block;
-        const auto & partition_key = merge_tree->getInMemoryMetadataPtr()->getPartitionKey();
+        const auto metadata_snapshot = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        const auto & partition_key = metadata_snapshot->getPartitionKey();
         if (!partition_key.column_names.empty() && partition_key.expression)
         {
             for (const auto & column : partition_key.expression->getRequiredColumnsWithTypes())
@@ -305,8 +307,8 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageMergeTreeIndex::createVirtuals()
@@ -376,7 +378,8 @@ void StorageMergeTreeIndex::readImpl(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    const auto & storage_columns = source_table->getInMemoryMetadataPtr()->getColumns();
+    const auto storage_metadata = source_table->getInMemoryMetadataPtr(context, false);
+    const auto & storage_columns = storage_metadata->getColumns();
     Names columns_from_storage;
 
     for (const auto & column_name : column_names)

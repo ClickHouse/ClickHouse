@@ -19,14 +19,12 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/DecimalFunctions.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -39,7 +37,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/NumberTraits.h>
-#include <DataTypes/getMostSubtype.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/DivisionUtils.h>
@@ -826,6 +823,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_division = IsOperation<Op>::division;
     static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
+    static constexpr bool is_positive_modulo = IsOperation<Op>::positive_modulo;
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
     static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
@@ -1062,10 +1060,10 @@ class FunctionBinaryArithmetic : public IFunction
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
         /// We construct another function (example: tupleMultiplyByNumber) and call it.
 
-        if constexpr (!is_multiply && !is_division)
+        if constexpr (!is_multiply && !is_division && !is_positive_modulo)
             return {};
 
-        if (isNumber(type0) && is_division)
+        if (isNumber(type0) && (is_division || is_positive_modulo))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
                                                                   "argument of numeric type cannot be first", name);
 
@@ -1073,6 +1071,10 @@ class FunctionBinaryArithmetic : public IFunction
         if constexpr (is_multiply)
         {
             function_name = "tupleMultiplyByNumber";
+        }
+        else if constexpr (is_positive_modulo)
+        {
+            function_name = "tuplePositiveModuloByNumber";
         }
         else // is_division
         {
@@ -3214,9 +3216,9 @@ public:
             // const +|- variable
             if (left.column && isColumnConst(*left.column))
             {
-                auto left_type = removeNullable(removeLowCardinality(left.type));
-                auto right_type = removeNullable(removeLowCardinality(right.type));
-                auto ret_type = removeNullable(removeLowCardinality(return_type));
+                auto left_type = removeNullable(recursiveRemoveLowCardinality(left.type));
+                auto right_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+                auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
 
                 auto transform = [&](const Field & point)
                 {
@@ -3224,9 +3226,11 @@ public:
                         = {{left_type->createColumnConst(1, (*left.column)[0]), left_type, left.name},
                            {right_type->createColumnConst(1, point), right_type, right.name}};
 
-                    /// This is a bit dangerous to call Base::executeImpl cause it ignores `use Default Implementation For XXX` flags.
-                    /// It was possible to check monotonicity for nullable right type which result to exception.
-                    /// Adding removeNullable above fixes the issue, but some other inconsistency may left.
+                    /// This is a bit dangerous to call `Base::executeImpl` cause it ignores `use Default Implementation For XXX` flags.
+                    /// It was possible to check monotonicity for nullable right type, which results in an exception.
+                    /// We also strip `LowCardinality` recursively (e.g. `Array(LowCardinality(Float64))` -> `Array(Float64)`)
+                    /// because the framework's `LowCardinality` default implementation is bypassed when calling `Base::executeImpl`
+                    /// directly, and the inner numeric dispatch (via `castBothTypes`) does not recognize `LowCardinality`.
                     auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
                     Field point_transformed;
                     col->get(0, point_transformed);
@@ -3252,9 +3256,9 @@ public:
             // variable +|- constant
             if (right.column && isColumnConst(*right.column))
             {
-                auto left_type = removeNullable(removeLowCardinality(left.type));
-                auto right_type = removeNullable(removeLowCardinality(right.type));
-                auto ret_type = removeNullable(removeLowCardinality(return_type));
+                auto left_type = removeNullable(recursiveRemoveLowCardinality(left.type));
+                auto right_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+                auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
 
                 auto transform = [&](const Field & point)
                 {
@@ -3283,7 +3287,17 @@ public:
             {
                 auto constant = (*left.column)[0];
                 if (accurateEquals(constant, Field(0)))
-                    return {true, true, false, false}; // 0 / 0 is undefined, thus it's not always monotonic
+                {
+                    /// `0 / x` is 0 for any `x` != 0, but undefined at `x` = 0
+                    /// (`NaN`/`Inf` for `divide`, division-by-zero exception for `intDiv`).
+                    /// The function is constant (and therefore monotonic) only when the range
+                    /// strictly excludes 0. Otherwise the chain is non-monotonic and the
+                    /// `MergeTreeSetIndex` binary search invariant (begin <= end) can be violated.
+                    if ((accurateLess(left_point, Field(0)) && accurateLess(right_point, Field(0)))
+                        || (accurateLess(Field(0), left_point) && accurateLess(Field(0), right_point)))
+                        return {true, true, false, false};
+                    return {false, true, false, false};
+                }
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
                 if (accurateLess(left_point, Field(0))
