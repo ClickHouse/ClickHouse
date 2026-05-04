@@ -505,7 +505,13 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto mutable_column = column->assumeMutable();
+    /// Use `IColumn::mutate` rather than `assumeMutable` because the caller may pass in a column
+    /// that is shared (e.g. `SerializationMap` first copies `column_map.getNestedColumnPtr()` into
+    /// a local `ColumnPtr` and then calls this function on it, so `use_count() >= 2`).
+    /// `assumeMutable` would `chassert(use_count() == 1)` and abort; `IColumn::mutate` clones the
+    /// shared column instead, so subsequent mutations are safe and don't affect other holders.
+    /// The cloned/unique column is written back to the caller's `column` reference at the end.
+    auto mutable_column = IColumn::mutate(std::move(column));
     ColumnArray & column_array = typeid_cast<ColumnArray &>(*mutable_column);
 
     settings.path.push_back(Substream::ArraySizes);
