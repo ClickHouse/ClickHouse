@@ -187,25 +187,6 @@ class Targeting:
     PASS_WEIGHT_SIBLING       = 0.25  # Pass 2: test covers a sibling file in the same source directory
     PASS_WEIGHT_KEYWORD       = 0.20  # Fallback: test filename contains domain keywords from changed files
 
-    # Shared-registry files: purely declarative files whose changes are virtually always
-    # additive (`extern const Event …`, new setting entries, new error codes).  Every
-    # test emits profile events / reads settings, so coverage for any changed line in
-    # these files returns thousands of tests and floods the candidate pool with noise
-    # (the real signal lives in the other files touched by the same PR).  Skip them
-    # entirely from coverage, sibling, indirect, and keyword-fallback passes.
-    SHARED_REGISTRY_FILES = frozenset({
-        "src/Common/ProfileEvents.cpp",
-        "src/Common/ProfileEvents.h",
-        "src/Common/CurrentMetrics.cpp",
-        "src/Common/CurrentMetrics.h",
-        "src/Common/ErrorCodes.cpp",
-        "src/Common/ErrorCodes.h",
-        "src/Common/SettingsChanges.cpp",
-        "src/Core/Settings.cpp",
-        "src/Core/SettingsChangesHistory.cpp",
-        "src/Core/SettingsChangesHistory.h",
-    })
-
     def get_tests_by_changed_lines(self, changed_lines: list,
                                    hunk_ranges: dict | None = None) -> dict:
         """
@@ -241,21 +222,12 @@ class Targeting:
             (f, ln)
             for f, ln in changed_lines
             if any(f.startswith(p) for p in COVERAGE_TRACKED_PREFIXES)
-            and f not in self.SHARED_REGISTRY_FILES
         ]
         skipped = len(changed_lines) - len(coverage_lines)
         if skipped:
             print(
-                f"[find_tests] skipping {skipped} lines in non-tracked or shared-registry "
-                f"files (test scripts, docs, CI, contrib, ProfileEvents/Settings registries)"
-            )
-        skipped_registry = sorted(
-            {f for f, _ in changed_lines if f in self.SHARED_REGISTRY_FILES}
-        )
-        if skipped_registry:
-            print(
-                f"[find_tests] skipping {len(skipped_registry)} shared-registry file(s): "
-                f"{skipped_registry}"
+                f"[find_tests] skipping {skipped} lines in non-tracked files "
+                f"(test scripts, docs, CI, contrib)"
             )
 
         # Return the original (full) key-set in the result dict so that
@@ -1560,7 +1532,7 @@ class Targeting:
             info += f" - {test}\n"
         return tests, Result(
             name="tests that were changed or added",
-            status=Result.Status.OK,
+            status=Result.StatusExtended.OK,
             info=info,
         )
 
@@ -1579,7 +1551,7 @@ class Targeting:
             info += f" - {test}\n"
         return tests, Result(
             name="tests that failed in previous runs",
-            status=Result.Status.OK,
+            status=Result.StatusExtended.OK,
             info=info,
         )
 
@@ -1720,7 +1692,6 @@ class Targeting:
             f for f, ln in changed_lines
             if any(f.startswith(p) for p in COVERAGE_TRACKED_PREFIXES)
             and (f.endswith(".cpp") or f.endswith(".h"))
-            and f not in self.SHARED_REGISTRY_FILES
             and not any(pairs for (ff, _), pairs in line_to_tests.items() if ff == f)
         ]
         # Deduplicate file list.
@@ -1757,7 +1728,6 @@ class Targeting:
             if any(f.startswith(p) for p in COVERAGE_TRACKED_PREFIXES)
             and (f.endswith(".cpp") or f.endswith(".h"))
             and f not in cpp_with_zero_coverage
-            and f not in self.SHARED_REGISTRY_FILES
             and any(pairs for (ff, _), pairs in line_to_tests.items() if ff == f)
         ))
         # Always run the supplementary keyword pass: keyword tests get PASS_WEIGHT_KEYWORD
@@ -1942,7 +1912,7 @@ class Targeting:
             info += f"Bottom test: {bottom} (score={width_score[bottom]:.6f})\n"
 
         return ranked, Result(
-            name="tests found by coverage", status=Result.Status.OK, info=info
+            name="tests found by coverage", status=Result.StatusExtended.OK, info=info
         )
 
     def get_all_relevant_tests_with_info(self):
@@ -1959,12 +1929,12 @@ class Targeting:
                     seen.add(t)
                     ranked.append(t)
 
-        # Changed/new tests are already covered by the flaky check — skip them
-        # in the targeted check to avoid duplication.
-        # if self.job_type == self.STATELESS_JOB_TYPE:
-        #     changed_tests, result = self.get_changed_or_new_tests_with_info()
-        #     add_tests(changed_tests)
-        #     results.append(result)
+        # Integration tests run changed test suboptimally (entire module), it might be too long
+        # limit it to stateless tests only
+        if self.job_type == self.STATELESS_JOB_TYPE:
+            changed_tests, result = self.get_changed_or_new_tests_with_info()
+            add_tests(changed_tests)
+            results.append(result)
 
         previously_failed_tests, result = self.get_previously_failed_tests_with_info()
         add_tests(previously_failed_tests)
@@ -1984,7 +1954,7 @@ class Targeting:
                 results.append(
                     Result(
                         name="tests found by coverage",
-                        status=Result.Status.OK,
+                        status=Result.StatusExtended.OK,
                         info=f"Skipped: {e}",
                     )
                 )
@@ -1992,7 +1962,7 @@ class Targeting:
 
         return ranked, Result(
             name="Fetch relevant tests",
-            status=Result.Status.OK,
+            status=Result.Status.SUCCESS,
             info=f"Found {len(ranked)} relevant tests",
             results=results,
         )

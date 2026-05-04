@@ -1,6 +1,4 @@
 #include <Common/FieldVisitorToString.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -18,7 +16,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -363,22 +360,16 @@ private:
 
     static bool needApplyTokenizer(const String & function_name)
     {
-        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        return function_name == "hasAllTokens" || function_name == "hasAnyTokens";
     }
 
     static bool needApplyPreprocessor(const String & function_name)
     {
-        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
     }
 
-    std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
+    std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node)
     {
-        /// Canonicalize the function-node subtree so that the serialized column names
-        /// fed to MergeTreeIndexConditionText::traverseFunctionNode match the ones
-        /// produced when the condition was originally constructed in ReadFromMergeTree::applyFilters.
-        ActionsDAGWithInversionPushDown canonical_dag(&function_node, context);
-        const auto & canonical_node = canonical_dag.predicate ? *canonical_dag.predicate : function_node;
-
         NameSet used_index_columns;
         std::vector<SelectedCondition> selected_conditions;
 
@@ -393,7 +384,7 @@ private:
             if (index_header.columns() != 1 || used_index_columns.contains(index_header.begin()->name))
                 continue;
 
-            auto search_query = text_index_condition.createTextSearchQuery(canonical_node);
+            auto search_query = text_index_condition.createTextSearchQuery(function_node);
             if (!search_query || search_query->direct_read_mode == TextIndexDirectReadMode::None)
                 continue;
 
@@ -430,7 +421,7 @@ private:
         if (!need_preprocess_function && !direct_read_from_text_index)
             return replacement;
 
-        auto selected_conditions = selectConditions(function_node, context);
+        auto selected_conditions = selectConditions(function_node);
         if (selected_conditions.empty())
             return replacement;
 
@@ -515,8 +506,7 @@ private:
             new_children.push_back(&actions_dag.addColumn(std::move(arg)));
 
             /// Convert needles to array if they are a string by applying a tokenizer.
-            /// For hasPhrase the phrase must stay as a string — tokenization is done inside hasPhrase itself.
-            if (function_name != "hasPhrase" && needles_field.getType() == Field::Types::String)
+            if (needles_field.getType() == Field::Types::String)
             {
                 std::vector<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();

@@ -55,7 +55,6 @@ namespace
         auto key_description = KeyDescription::getKeyFromAST(
             partition_by,
             ColumnsDescription(header.getNamesAndTypesList()),
-            {},
             context);
 
         return std::make_unique<HiveStylePartitionStrategy>(

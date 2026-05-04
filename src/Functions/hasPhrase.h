@@ -13,11 +13,10 @@ class ExecutableFunctionHasPhrase : public IExecutableFunction
 public:
     static constexpr auto name = "hasPhrase";
 
-    ExecutableFunctionHasPhrase(
-        std::shared_ptr<const ITokenizer> tokenizer_, std::vector<String> phrase_tokens_, std::vector<size_t> failure_table_)
+    explicit ExecutableFunctionHasPhrase(
+        std::shared_ptr<const ITokenizer> tokenizer_, std::vector<String> phrase_tokens_)
         : tokenizer(std::move(tokenizer_))
         , phrase_tokens(std::move(phrase_tokens_))
-        , failure_table(std::move(failure_table_))
     {
     }
 
@@ -28,7 +27,6 @@ public:
 private:
     std::shared_ptr<const ITokenizer> tokenizer;
     std::vector<String> phrase_tokens;
-    std::vector<size_t> failure_table;
 };
 
 class FunctionBaseHasPhrase : public IFunctionBase

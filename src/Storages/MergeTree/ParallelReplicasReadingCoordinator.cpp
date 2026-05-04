@@ -176,7 +176,6 @@ public:
     Stats stats;
     const size_t replicas_count{0};
     const CoordinationMode mode;
-    const String stream_id;
     size_t unavailable_replicas_count{0};
     size_t received_initial_requests{0};
 
@@ -192,11 +191,10 @@ public:
     };
     std::vector<ReplicaStatus> replica_status;
 
-    ImplInterface(size_t replicas_count_, CoordinationMode mode_, const String & stream_id_ = {})
+    ImplInterface(size_t replicas_count_, CoordinationMode mode_)
         : stats{replicas_count_}
         , replicas_count(replicas_count_)
         , mode(mode_)
-        , stream_id(stream_id_)
         , replica_status(replicas_count_)
     {
     }
@@ -253,9 +251,8 @@ using PartRefs = std::deque<Parts::iterator>;
 class DefaultCoordinator : public ParallelReplicasReadingCoordinator::ImplInterface
 {
 public:
-    DefaultCoordinator(size_t replicas_count_, CoordinationMode mode_, const String & stream_id_ = {})
-        : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_, mode_, stream_id_)
-        , log(getLogger(stream_id_.empty() ? "DefaultCoordinator" : fmt::format("DefaultCoordinator({})", stream_id_)))
+    DefaultCoordinator(size_t replicas_count_, CoordinationMode mode_)
+        : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_, mode_)
         , distribution_by_hash_queue(replicas_count_)
     {
     }
@@ -279,7 +276,7 @@ private:
     bool state_initialized{false};
     size_t finished_replicas{0};
 
-    LoggerPtr log;
+    LoggerPtr log = getLogger("DefaultCoordinator");
 
     /// Workflow of a segment:
     /// 0. `all_parts_to_read` contains all the parts and thus all the segments initially present there (virtually)
@@ -442,15 +439,11 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
 
 void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
+    LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
     chassert(replica_number < replicas_count);
 
-    if (stats[replica_number].is_unavailable)
-        return;
-
-    LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
-
-    stats[replica_number].is_unavailable = true;
     ++unavailable_replicas_count;
+    stats[replica_number].is_unavailable = true;
 
     for (const auto & segment : distribution_by_hash_queue[replica_number])
     {
@@ -923,11 +916,8 @@ bool DefaultCoordinator::isReadingCompleted() const
 class InOrderCoordinator : public ParallelReplicasReadingCoordinator::ImplInterface
 {
 public:
-    InOrderCoordinator([[maybe_unused]] size_t replicas_count_, CoordinationMode mode_, const String & stream_id_ = {})
-        : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_, mode_, stream_id_)
-        , log(getLogger(stream_id_.empty()
-            ? fmt::format("{}Coordinator", magic_enum::enum_name(mode))
-            : fmt::format("{}Coordinator({})", magic_enum::enum_name(mode), stream_id_)))
+    InOrderCoordinator([[maybe_unused]] size_t replicas_count_, CoordinationMode mode_)
+        : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_, mode_)
     {
         chassert(mode_ == CoordinationMode::WithOrder || mode_ == CoordinationMode::ReverseOrder);
     }
@@ -944,7 +934,7 @@ public:
     size_t total_rows_to_read = 0;
     bool state_initialized{false};
 
-    LoggerPtr log;
+    LoggerPtr log = getLogger(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
 
 void InOrderCoordinator::markReplicaAsUnavailable(size_t replica_number)
@@ -1145,37 +1135,34 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
     ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
 
-    if (is_reading_completed)
-        return;
-
     std::lock_guard lock(mutex);
 
-    if (announcement.stream_id.empty())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Got announcement with empty stream id from replica {}. "
-            "Old replicas without stream_id support should have been filtered out at connection time",
-            announcement.replica_num);
-
-    if (announcement.replica_num >= replicas_count)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Replica number ({}) is bigger than total replicas count ({})",
-            announcement.replica_num,
-            replicas_count);
-
-    if (!snapshot_replica_num)
+    if (!pimpl)
     {
+        initialize(announcement.mode);
+
+        chassert(!snapshot_replica_num);
         snapshot_replica_num = announcement.replica_num;
         LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Using snapshot from replica num {}", snapshot_replica_num.value());
     }
-
-    auto coordinator = getOrCreateCoordinator(announcement.stream_id, announcement.mode);
+    else
+    {
+        // let's always check the reading mode match
+        if (announcement.mode != pimpl->getCoordinationMode())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Replica {} decided to read in {} mode, not in {}. This is a bug",
+                announcement.replica_num,
+                magic_enum::enum_name(announcement.mode),
+                magic_enum::enum_name(pimpl->getCoordinationMode()));
+        }
+    }
 
     if (is_reading_completed)
         return;
 
-    coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
+    pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
@@ -1196,49 +1183,26 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         if (is_reading_completed)
             return response;
 
-        if (request.stream_id.empty())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Got request from replica {} with empty stream id. "
-                "Old replicas without stream_id support should have been filtered out at connection time",
-                request.replica_num);
+        if (!pimpl)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got read request from replica {} without ranges announcement", request.replica_num);
 
-        auto coordinator = getCoordinator(request.stream_id);
-        if (!coordinator)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Got read request from replica {} for stream {} without ranges announcement",
-                request.replica_num,
-                request.stream_id);
-
-        if (request.mode != coordinator->getCoordinationMode())
+        if (request.mode != pimpl->getCoordinationMode())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Replica {} decided to read in {} mode, not in {}. This is a bug",
                 request.replica_num,
                 magic_enum::enum_name(request.mode),
-                magic_enum::enum_name(coordinator->getCoordinationMode()));
+                magic_enum::enum_name(pimpl->getCoordinationMode()));
 
         const auto replica_num = request.replica_num;
-        const auto request_stream_id = request.stream_id;
 
-        if (replica_num >= replicas_count)
+        if (pimpl->replica_status[replica_num].is_finished)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Replica number ({}) is bigger than total replicas count ({})",
-                replica_num,
-                replicas_count);
+                "Got request from replica {} after ranges assignment has been completed for the replica",
+                request.replica_num);
 
-        if (coordinator->replica_status[replica_num].is_finished)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Got request from replica {} for stream {} after ranges assignment has been completed for the replica",
-                replica_num,
-                request_stream_id);
-
-        response = coordinator->handleRequest(std::move(request));
-        response.stream_id = request_stream_id;
-
+        response = pimpl->handleRequest(std::move(request));
         if (!response.finish)
         {
             chassert(!is_reading_completed);
@@ -1248,7 +1212,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         }
         else
         {
-            coordinator->replica_status[replica_num].is_finished = true;
+            pimpl->replica_status[replica_num].is_finished = true;
 
             if (isReadingCompleted())
             {
@@ -1277,10 +1241,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
                 "All ranges for reading has been assigned to replicas. Cancelling execution for unused replicas. Used replicas: {}",
                 replicas);
 
-            bool all_initialized_with_empty_ranges = std::all_of(
-                stream_to_coordinator.begin(), stream_to_coordinator.end(),
-                [](const auto & p) { return p.second->initializedWithEmptyRanges(); });
-            if (!all_initialized_with_empty_ranges)
+            if (pimpl && !pimpl->initializedWithEmptyRanges())
                 chassert(!replicas_used.empty());
 
             (*read_completed_callback)(replicas_to_exclude);
@@ -1297,65 +1258,39 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
 
     std::lock_guard lock(mutex);
 
-    auto [_, inserted] = unavailable_replicas.insert(replica_number);
-    if (!inserted)
-        return;
-
-    if (unavailable_replicas.size() == replicas_count)
-        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Can't connect to any replica chosen for query execution");
-
-    for (auto & [table, coordinator] : stream_to_coordinator)
-        coordinator->markReplicaAsUnavailable(replica_number);
+    if (!pimpl)
+    {
+        unavailable_nodes_registered_before_initialization.push_back(replica_number);
+        if (unavailable_nodes_registered_before_initialization.size() == replicas_count)
+            throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Can't connect to any replica chosen for query execution");
+    }
+    else
+        pimpl->markReplicaAsUnavailable(replica_number);
 }
 
-std::shared_ptr<ParallelReplicasReadingCoordinator::ImplInterface>
-ParallelReplicasReadingCoordinator::getOrCreateCoordinator(const String & stream_id, CoordinationMode mode)
+void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 {
-    const auto & key = stream_id;
-    auto it = stream_to_coordinator.find(key);
-    if (it != stream_to_coordinator.end())
-    {
-        if (mode != it->second->getCoordinationMode())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Coordination mode mismatch for stream {}: got {}, expected {}",
-                key,
-                magic_enum::enum_name(mode),
-                magic_enum::enum_name(it->second->getCoordinationMode()));
-        return it->second;
-    }
+    chassert(!pimpl);
 
-    std::shared_ptr<ImplInterface> coordinator;
     switch (mode)
     {
         case CoordinationMode::Default:
-            coordinator = std::make_shared<DefaultCoordinator>(replicas_count, mode, key);
+            pimpl = std::make_unique<DefaultCoordinator>(replicas_count, mode);
             break;
         case CoordinationMode::WithOrder:
-            coordinator = std::make_shared<InOrderCoordinator>(replicas_count, mode, key);
+            pimpl = std::make_unique<InOrderCoordinator>(replicas_count, mode);
             break;
         case CoordinationMode::ReverseOrder:
-            coordinator = std::make_shared<InOrderCoordinator>(replicas_count, mode, key);
+            pimpl = std::make_unique<InOrderCoordinator>(replicas_count, mode);
             break;
     }
 
     // progress_callback is not set when local plan is used for initiator
     if (progress_callback)
-        coordinator->setProgressCallback(progress_callback);
+        pimpl->setProgressCallback(std::move(progress_callback));
 
-    for (const auto replica : unavailable_replicas)
-        coordinator->markReplicaAsUnavailable(replica);
-
-    stream_to_coordinator[key] = coordinator;
-
-    LOG_DEBUG(
-        getLogger("ParallelReplicasReadingCoordinator"),
-        "Created coordinator for stream {} with mode {}, total streams: {}",
-        key,
-        magic_enum::enum_name(mode),
-        stream_to_coordinator.size());
-
-    return coordinator;
+    for (const auto replica : unavailable_nodes_registered_before_initialization)
+        pimpl->markReplicaAsUnavailable(replica);
 }
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_)
@@ -1372,10 +1307,10 @@ ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator()
 void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback callback)
 {
     std::lock_guard lock(mutex);
-    // store callback since coordinators may not be instantiated yet
+    // store callback since pimpl can be not instantiated yet
     progress_callback = std::move(callback);
-    for (auto & [_, coordinator] : stream_to_coordinator)
-        coordinator->setProgressCallback(progress_callback);
+    if (pimpl)
+        pimpl->setProgressCallback(std::move(progress_callback));
 }
 
 void ParallelReplicasReadingCoordinator::setReadCompletedCallback(ReadCompletedCallback callback)
@@ -1385,23 +1320,10 @@ void ParallelReplicasReadingCoordinator::setReadCompletedCallback(ReadCompletedC
 
 bool ParallelReplicasReadingCoordinator::isReadingCompleted() const
 {
-    chassert(!stream_to_coordinator.empty());
+    if (pimpl)
+        return pimpl->isReadingCompleted();
 
-    for (const auto & [_, coordinator] : stream_to_coordinator)
-    {
-        if (!coordinator->isReadingCompleted())
-            return false;
-    }
-    return true;
+    return false;
 }
 
-std::shared_ptr<ParallelReplicasReadingCoordinator::ImplInterface>
-ParallelReplicasReadingCoordinator::getCoordinator(const String & stream_id) const
-{
-    const auto & key = stream_id;
-    auto it = stream_to_coordinator.find(key);
-    if (it != stream_to_coordinator.end())
-        return it->second;
-    return nullptr;
-}
 }

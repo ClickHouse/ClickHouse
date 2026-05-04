@@ -1675,20 +1675,7 @@ void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<C
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-    {
-        if (!source_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
-
-        const auto * array_column = typeid_cast<const ColumnArray *>(source_column.get());
-        if (!array_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Array, but {}", source_column->getName());
-
-        nested_source_columns.push_back(array_column->getDataPtr());
-    }
-
-    if (!data)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data column is invalid");
-
+        nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
     data->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 

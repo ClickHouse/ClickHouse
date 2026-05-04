@@ -14,6 +14,7 @@
 #include <Functions/TransformDateTime64.h>
 
 #include <Functions/TransformTime64.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

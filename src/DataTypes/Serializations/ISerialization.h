@@ -644,7 +644,6 @@ public:
         explicit StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings);
 
         bool escape_variant_substreams = true;
-        bool share_nested_offsets = true;
     };
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);

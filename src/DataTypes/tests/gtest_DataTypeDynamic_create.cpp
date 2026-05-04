@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/IDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>

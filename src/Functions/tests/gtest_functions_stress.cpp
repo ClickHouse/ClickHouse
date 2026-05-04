@@ -149,7 +149,13 @@ struct Options
 {
     int num_threads = -1;
 
-    int duration_seconds = 600;
+    /// Under sanitizers, everything is ~10-20x slower, so reduce default duration
+    /// to avoid CI timeouts (the gtest CI job has a 45-minute hard limit).
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+    int duration_seconds = 10;
+#else
+    int duration_seconds = 60;
+#endif
 
     size_t rows_per_batch = 32;
 
@@ -230,10 +236,6 @@ const std::unordered_set<std::string_view> excluded_functions = {
     /// Avoid depending on environment (e.g. current query, configuration, settings).
     "synonyms",
     "catboostEvaluate",
-    "aiGenerate",
-    "aiClassify",
-    "aiExtract",
-    "aiTranslate",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
@@ -264,7 +266,6 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "timeSeriesCopyTag",
     "timeSeriesCopyTags",
     "timeSeriesExtractTag",
-    "timeSeriesGroupToSamplingKey",
     "timeSeriesGroupToTags",
     "timeSeriesIdToGroup",
     "timeSeriesJoinTags",
@@ -644,11 +645,6 @@ public:
         return !problems.at(p).empty();
     }
 
-    const String & getProblemError(Problem p) const
-    {
-        return problems.at(p);
-    }
-
     void merge(const FunctionStats & s)
     {
         chassert(function_idx == size_t(-1) || function_idx == s.function_idx);
@@ -904,8 +900,7 @@ String valueToString(const DataTypePtr & type, const ColumnPtr & column, size_t 
     return std::move(buf.str());
 }
 
-/// Returns empty string on success, or a non-empty error description on failure.
-String reportResults(const std::vector<FunctionStats> & function_stats, size_t stuck_threads)
+bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stuck_threads)
 {
     FunctionStats totals;
     /// Names should fit in sentences "functions with {}".
@@ -913,11 +908,7 @@ String reportResults(const std::vector<FunctionStats> & function_stats, size_t s
     std::vector<std::pair<Int64, String>> by_time_max;
     std::vector<std::pair<Int64, String>> by_time_total;
     std::vector<std::pair<Int64, String>> by_memory_peak;
-
-    /// Collect detailed error messages for unignored problems.
-    /// Maps problem category name -> list of error messages.
-    std::map<String, std::vector<String>> unignored_errors;
-
+    bool have_unignored_problems = false;
     for (size_t i = 0; i < testable_functions.size(); ++i)
     {
         const String & name = testable_functions[i].name;
@@ -932,7 +923,7 @@ String reportResults(const std::vector<FunctionStats> & function_stats, size_t s
                 function_lists[problemInfo(p).first].push_back(name);
 
                 if (!options.ignore_problem.at(p))
-                    unignored_errors[problemInfo(p).first].push_back(stats.getProblemError(p));
+                    have_unignored_problems = true;
             }
         }
 
@@ -1002,19 +993,7 @@ String reportResults(const std::vector<FunctionStats> & function_stats, size_t s
     print_top_few("total time", 1e9, "s", by_time_total);
     print_top_few("memory peak", 1 << 20, "MiB", by_memory_peak);
 
-    String failure_details;
-
-    if (stuck_threads != 0)
-        failure_details += fmt::format("{} threads got stuck\n", stuck_threads);
-
-    for (const auto & [category, errors] : unignored_errors)
-    {
-        failure_details += fmt::format("\n{}:\n", category);
-        for (const auto & error : errors)
-            failure_details += fmt::format("  {}\n", error);
-    }
-
-    return failure_details;
+    return !have_unignored_problems && stuck_threads == 0;
 }
 
 /// Quirk in string vs enum comparison when the string value is not in the enum:
@@ -1959,14 +1938,17 @@ struct FunctionsStressTestThread
 
         bool injective = resolved_function->isInjective(valid_args);
         bool resolver_injective = resolver->isInjective(valid_args);
-        if (resolver_injective != injective)
+        if (resolver_injective && !injective)
         {
-            /// Skip isInjective mismatch for Dynamic/Variant/Object types: the adaptors intentionally
-            /// return false (conservative) because injectivity of the underlying function does not hold
-            /// on the mixed-type domain, and the resolver lacks full type information before build().
+            stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective is false with arguments but true without; {}", operation.describe()));
+        }
+        else if (!resolver_injective && injective)
+        {
+            /// Skip isInjective mismatch check for Dynamic/Variant/Object types: the resolver doesn't have full
+            /// type information before build(), so it may return a different (default) answer than the resolved function.
             if (!isAnyArgumentDynamicallyTyped(valid_args))
             {
-                stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective mismatch between IFunctionOverloadResolver ({}) and IFunctionBase ({}); {}", resolver_injective, injective, operation.describe()));
+                stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective mismatch between IFunctionOverloadResolver and IFunctionBase; {}", operation.describe()));
             }
         }
 
@@ -2213,13 +2195,13 @@ TEST(FunctionsStress, stress)
         }
     }
 
-    String failure_details = reportResults(total_stats, stuck_threads);
+    bool ok = reportResults(total_stats, stuck_threads);
 
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
     HandledSignals::instance().reset();
 
-    ASSERT_TRUE(failure_details.empty()) << failure_details;
+    ASSERT_TRUE(ok) << "Functions stress test found problems (see log above)";
 }
 
 // TODO:

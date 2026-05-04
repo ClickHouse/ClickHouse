@@ -479,7 +479,7 @@ void KeeperTCPHandler::runImpl()
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
         if (request)
-            request->spans.maybeInitialize(KeeperSpan::SendResponse, request->tracing_context.get());
+            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.send_response, request->tracing_context);
 
         if (!my_responses->push(RequestWithResponse{response, std::move(request)}))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
@@ -580,8 +580,8 @@ void KeeperTCPHandler::runImpl()
                     if (!request)
                         return;
 
-                    request->spans.maybeFinalize(
-                        KeeperSpan::SendResponse,
+                    ZooKeeperOpentelemetrySpans::maybeFinalize(
+                        request->spans.send_response,
                         [&]
                         {
                             return std::vector<OpenTelemetry::SpanAttribute>{
@@ -781,12 +781,12 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
         if (has_tracing_context)
         {
-            request->tracing_context = std::make_shared<OpenTelemetry::TracingContext>();
+            request->tracing_context.emplace();
             request->tracing_context->deserialize(read_buffer);
 
-            request->spans.maybeInitialize(KeeperSpan::ReceiveRequest, request->tracing_context.get(), receive_start_time);
-            request->spans.maybeFinalize(
-                KeeperSpan::ReceiveRequest,
+            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.receive_request, request->tracing_context, receive_start_time);
+            ZooKeeperOpentelemetrySpans::maybeFinalize(
+                request->spans.receive_request,
                 [&]
                 {
                     return std::vector<OpenTelemetry::SpanAttribute>{

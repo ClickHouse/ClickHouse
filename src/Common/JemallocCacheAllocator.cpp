@@ -41,12 +41,9 @@ int arenaFlags(size_t alignment)
     return flags;
 }
 
-int freeFlags(size_t alignment)
+int freeFlags()
 {
-    int flags = MALLOCX_TCACHE_NONE;
-    if (alignment > MALLOC_MIN_ALIGNMENT)
-        flags |= MALLOCX_ALIGN(alignment);
-    return flags;
+    return MALLOCX_TCACHE_NONE;
 }
 
 }
@@ -68,12 +65,12 @@ void * JemallocCacheAllocator::alloc(size_t size, size_t alignment)
     return ptr;
 }
 
-void JemallocCacheAllocator::free(void * buf, size_t size, size_t alignment)
+void JemallocCacheAllocator::free(void * buf, size_t size)
 {
     try
     {
         checkSize(size);
-        je_sdallocx(buf, size, freeFlags(alignment));
+        je_sdallocx(buf, size, freeFlags());
         auto trace = CurrentMemoryTracker::free(size);
         trace.onFree(buf, size);
     }

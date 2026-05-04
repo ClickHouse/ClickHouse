@@ -215,7 +215,7 @@ void LocalConnection::sendQuery(
         if (context != query_context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
 
-        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
+        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
         Block sample = metadata_snapshot->getSampleBlock();
 
         next_packet_type = Protocol::Server::Data;

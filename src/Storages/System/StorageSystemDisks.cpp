@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDisks.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -7,7 +6,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 
 namespace DB
 {
@@ -39,8 +38,8 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
         {"is_broken", std::make_shared<DataTypeUInt8>(), "Flag which indicates if disk is broken. Broken disks will have 0 space and cannot be used."},
         {"cache_path", std::make_shared<DataTypeString>(), "The path to the cache directory on local drive in case when the disk supports caching."},
     }));
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemDisks::createVirtuals()

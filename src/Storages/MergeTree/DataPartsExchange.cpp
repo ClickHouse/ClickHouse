@@ -2,32 +2,29 @@
 
 #include "config.h"
 
-#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Formats/NativeWriter.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
-#include <Formats/NativeWriter.h>
-#include <IO/HTTPCommon.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/HTTPCommon.h>
 #include <IO/S3Common.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <base/scope_guard.h>
-#include <base/sort.h>
-#include <boost/algorithm/string/join.hpp>
-#include <Poco/Net/HTTPRequest.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/FailPoint.h>
 #include <Common/randomDelay.h>
-#include <Common/thread_local_rng.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <base/scope_guard.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <boost/algorithm/string/join.hpp>
+#include <base/sort.h>
 
 namespace fs = std::filesystem;
 
@@ -865,7 +862,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings());
         new_data_part = builder.withPartFormatFromDisk().build();
 
-        new_data_part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
+        new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
         new_data_part->is_temp = true;
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs

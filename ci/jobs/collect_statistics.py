@@ -166,7 +166,7 @@ if __name__ == "__main__":
     results.append(
         Result(
             name="Fetch statistics",
-            status=Result.Status.OK if is_collected else Result.Status.FAIL,
+            status=Result.Status.SUCCESS if is_collected else Result.Status.FAILED,
             results=results_stat,
         )
     )

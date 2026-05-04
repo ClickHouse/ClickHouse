@@ -1,5 +1,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Poco/String.h>
 #include <Common/quoteString.h>
@@ -62,16 +63,32 @@ String ASTSystemQuery::getTable() const
 
 void ASTSystemQuery::setDatabase(const String & name)
 {
-    reset(database);
+    if (database)
+    {
+        std::erase(children, database);
+        database.reset();
+    }
+
     if (!name.empty())
-        set(database, make_intrusive<ASTIdentifier>(name));
+    {
+        database = make_intrusive<ASTIdentifier>(name);
+        children.push_back(database);
+    }
 }
 
 void ASTSystemQuery::setTable(const String & name)
 {
-    reset(table);
+    if (table)
+    {
+        std::erase(children, table);
+        table.reset();
+    }
+
     if (!name.empty())
-        set(table, make_intrusive<ASTIdentifier>(name));
+    {
+        table = make_intrusive<ASTIdentifier>(name);
+        children.push_back(table);
+    }
 }
 
 void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -370,7 +387,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::UNLOCK_SNAPSHOT:
         {
-            ostr << " " << quoteString(backup_name);
+            ostr << quoteString(backup_name);
             if (backup_source)
             {
                 print_keyword(" FROM ");

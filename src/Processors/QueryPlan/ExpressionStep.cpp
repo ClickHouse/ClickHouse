@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Transforms/ExpressionTransform.h>

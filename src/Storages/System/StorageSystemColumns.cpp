@@ -74,8 +74,8 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     });
 
     storage_metadata.setColumns(description);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemColumns::createVirtuals()
@@ -103,14 +103,13 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        ContextPtr context_)
+        ContextPtr context)
         : ISource(header_)
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
         , tables(std::move(tables_))
         , storages(std::move(storages_))
-        , context(std::move(context_))
         , client_info_interface(context->getClientInfo().interface)
         , total_tables(tables->size())
         , access(context->getAccess())
@@ -155,7 +154,7 @@ protected:
                     continue;
                 }
 
-                StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+                auto metadata_snapshot = storage->tryGetInMemoryMetadataPtr().value_or(std::make_shared<StorageInMemoryMetadata>());
                 columns = metadata_snapshot->getColumns();
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
@@ -355,7 +354,6 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
-    ContextPtr context;
     ClientInfo::Interface client_info_interface;
     size_t db_table_num = 0;
     size_t total_tables;

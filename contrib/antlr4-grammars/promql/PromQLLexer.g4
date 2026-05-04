@@ -120,7 +120,6 @@ AGGREGATION_OPERATOR:
     | 'bottomk'
     | 'topk'
     | 'quantile'
-    | 'limitk'
 ;
 
 FUNCTION options {

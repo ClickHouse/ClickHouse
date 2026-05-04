@@ -1,5 +1,4 @@
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
@@ -37,7 +36,6 @@ UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & fun
     hash.update(type_name_.size());
     hash.update(type_name_);
     hash.update(version_);
-    hash.update(static_cast<UInt8>(function_->getStateVariant()));
     return hash.get128();
 }
 

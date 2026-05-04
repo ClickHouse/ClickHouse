@@ -1,6 +1,5 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -310,7 +309,7 @@ StorageObjectStorage::StorageObjectStorage(
     if (configuration->partition_strategy)
         metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
 
-    metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         metadata.columns,
         context,
         format_settings,
@@ -352,12 +351,12 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+    return getInMemoryMetadataPtr()->getFakeColumnSizes();
 }
 
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
@@ -384,7 +383,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     if (!state)
         return;
 
-    auto new_metadata = *getInMemoryMetadataPtr(query_context, false);
+    auto new_metadata = *getInMemoryMetadataPtr();
     /// Always pin the current snapshot version to prevent logical races between query
     /// analysis (which picks the schema) and query execution (which iterates files).
     new_metadata.setDataLakeTableState(*state);
@@ -397,11 +396,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
             new_metadata = *metadata_snapshot;
     }
 
-    setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        new_metadata.columns,
-        query_context,
-        format_settings,
-        configuration->partition_strategy_type)));
+    setInMemoryMetadata(new_metadata);
 }
 
 
@@ -531,7 +526,7 @@ void StorageObjectStorage::read(
         object_storage,
         configuration,
         column_names,
-        storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         query_info,
         storage_snapshot,
         modified_format_settings,
@@ -781,15 +776,7 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
-    /// For datalake tables (e.g. Iceberg), refresh external metadata so that the
-    /// storage snapshot contains the `datalake_table_state`. Without this the mutation
-    /// pipeline will hit a `LOGICAL_ERROR` exception in `iterate` when building the read side.
-    /// Normally `updateExternalDynamicMetadataIfExists` is called by the
-    /// analyzer/interpreter for `SELECT` and `INSERT` queries, but `InterpreterAlterQuery`
-    /// does not call it before invoking `mutate`.
-    updateExternalDynamicMetadataIfExists(context_);
-
-    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
     configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
 }
@@ -809,7 +796,7 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
     configuration->alter(params, context);

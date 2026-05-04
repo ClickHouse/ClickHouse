@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
 #include <Common/RWLock.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
@@ -91,7 +90,7 @@ public:
 
     Block getRightSampleBlock() const
     {
-        auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        auto metadata_snapshot = getInMemoryMetadataPtr();
         Block block = metadata_snapshot->getSampleBlock();
         convertRightBlock(block);
         return block;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/DataTypeString.h>
 #include <Common/PODArray.h>
 #include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>

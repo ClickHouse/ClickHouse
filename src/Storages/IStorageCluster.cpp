@@ -20,17 +20,10 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 
-#include <Common/ProfileEvents.h>
-
 #include <algorithm>
 #include <memory>
 #include <string>
 
-
-namespace ProfileEvents
-{
-    extern const Event Shards;
-}
 
 namespace DB
 {
@@ -165,8 +158,6 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
     createExtension(nullptr);
 
-    ProfileEvents::increment(ProfileEvents::Shards, max_replicas_to_use);
-
     for (const auto & shard_info : cluster->getShardsInfo())
     {
         if (pipes.size() >= max_replicas_to_use)
@@ -196,8 +187,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             Tables(),
             processed_stage,
             nullptr,
-            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)},
-            shard_info.pool);
+            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)});
 
         remote_query_executor->setLogger(log);
         Pipe pipe{std::make_shared<RemoteSource>(

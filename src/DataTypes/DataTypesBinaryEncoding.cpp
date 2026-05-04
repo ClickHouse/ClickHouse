@@ -208,8 +208,6 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             }
         }
     }
-
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Type {} is not supported for binary encoding", type->getName());
 }
 
 template <typename T>

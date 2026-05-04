@@ -3,6 +3,7 @@
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -121,8 +122,6 @@ public:
     {
         /// Show header of output ports.
         bool header = false;
-        /// Show remote pipelines for distributed query.
-        bool distributed = false;
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
@@ -168,7 +167,6 @@ public:
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
     void replaceNodeWithPlan(Node * node, QueryPlan plan);
-    void replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader expected_header);
 
     QueryPlan extractSubplan(Node * subplan_root);
     void cloneInplace(Node * node_to_replace, Node * subplan_root);

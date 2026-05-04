@@ -111,7 +111,6 @@ StorageExecutable::StorageExecutable(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints);
     storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     ShellCommandSourceCoordinator::Configuration configuration
@@ -132,6 +131,7 @@ StorageExecutable::StorageExecutable(
     };
 
     coordinator = std::make_unique<ShellCommandSourceCoordinator>(std::move(configuration));
+    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageExecutable::createVirtuals()

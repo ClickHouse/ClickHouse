@@ -5,6 +5,7 @@
 
 #include <IO/ReadBuffer.h>
 #include <Functions/geometryConverters.h>
+#include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <IO/WriteBuffer.h>
 

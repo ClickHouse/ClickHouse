@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Formats/FormatSettings.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>

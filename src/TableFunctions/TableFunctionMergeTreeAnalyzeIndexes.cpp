@@ -1,8 +1,4 @@
 #include <DataTypes/DataTypeArray.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/DataTypeString.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>

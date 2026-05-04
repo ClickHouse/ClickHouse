@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <DataTypes/DataTypesNumber.h>
 #include <csignal>
 #include <filesystem>
 #include <utility>
@@ -23,8 +22,8 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/FileCache/FileCache.h>
-#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -37,7 +36,6 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -131,8 +129,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsSetOperationMode except_default_mode;
-    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -1498,7 +1494,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                 "SYSTEM DROP REPLICA",
                 fmt::join(required_access, ", "));
 
-        /// If we are here, then the user has the necessary access to drop the replica, continue with the operation.
+        /// If we are here, then the user has the necassary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
@@ -1725,14 +1721,8 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
                 /*query=*/create_query_string);
             auto create_query_context = make_create_context();
 
-            {
-                SelectIntersectExceptQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::intersect_default_mode], create_query_context->getSettingsRef()[Setting::except_default_mode]};
-                SelectIntersectExceptQueryVisitor{data}.visit(query_ast);
-            }
-            {
-                NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
-                NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
-            }
+            NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
 
             LOG_INFO(log, "Restoring {}", query_ast->formatForLogging());
             InterpreterCreateQuery(query_ast, create_query_context).execute();

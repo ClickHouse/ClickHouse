@@ -217,21 +217,12 @@ function parseTestResults(jsonData) {
           test.links = result.links;
         }
 
-        // Extract CIDB links from unified ext.labels (or legacy ext.hlabels).
-        if (result.ext) {
+        // Extract CIDB links from ext.hlabels
+        if (result.ext && result.ext.hlabels) {
           const cidbLinks = [];
-          if (Array.isArray(result.ext.labels)) {
-            for (const label of result.ext.labels) {
-              if (label && typeof label === 'object' && label.name === 'cidb' && label.link) {
-                cidbLinks.push(label.link);
-              }
-            }
-          }
-          if (Array.isArray(result.ext.hlabels)) {
-            for (const hlabel of result.ext.hlabels) {
-              if (Array.isArray(hlabel) && hlabel[0] === 'cidb' && hlabel[1]) {
-                cidbLinks.push(hlabel[1]);
-              }
+          for (const hlabel of result.ext.hlabels) {
+            if (Array.isArray(hlabel) && hlabel[0] === 'cidb' && hlabel[1]) {
+              cidbLinks.push(hlabel[1]);
             }
           }
           if (cidbLinks.length > 0) {

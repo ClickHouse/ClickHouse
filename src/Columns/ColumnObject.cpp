@@ -546,7 +546,6 @@ bool ColumnObject::tryInsert(const Field & x)
         for (const auto & path : new_dynamic_paths)
         {
             dynamic_paths_ptrs.erase(path);
-            sorted_dynamic_paths.erase(path);
             dynamic_paths.erase(path);
         }
 
@@ -582,7 +581,6 @@ bool ColumnObject::tryInsert(const Field & x)
         }
         else if (auto * dynamic_path_column = tryToAddNewDynamicPath(path))
         {
-            new_dynamic_paths.insert(String(path));
             if (!dynamic_path_column->tryInsert(value_field))
             {
                 restore_sizes();
@@ -1559,27 +1557,18 @@ bool ColumnObject::isFinalized() const
     return finalized;
 }
 
-void ColumnObject::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnObject::getExtremes(DB::Field & min, DB::Field & max, size_t, size_t) const
 {
-    min = Object();
-    max = Object();
-
-    if (start >= end)
-        return;
-
-    size_t min_idx = start;
-    size_t max_idx = start;
-
-    for (size_t i = start + 1; i < end; ++i)
+    if (empty())
     {
-        if (compareAt(i, min_idx, *this, /* nan_direction_hint = */ 1) < 0)
-            min_idx = i;
-        else if (compareAt(i, max_idx, *this, /* nan_direction_hint = */ -1) > 0)
-            max_idx = i;
+        min = Object();
+        max = Object();
     }
-
-    get(min_idx, min);
-    get(max_idx, max);
+    else
+    {
+        get(0, min);
+        get(0, max);
+    }
 }
 
 void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)

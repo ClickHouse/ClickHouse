@@ -1,5 +1,4 @@
 #include <Storages/IStorage.h>
-#include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
@@ -941,8 +940,8 @@ StorageGenerateRandom::StorageGenerateRandom(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageGenerateRandom::createVirtuals()
@@ -978,7 +977,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         if (engine_args.size() >= 2)
         {
             engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
+            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[0], "max_string_length");
         }
 
         if (engine_args.size() == 3)

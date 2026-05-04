@@ -13,7 +13,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/ComparisonNames.h>
+#include <Functions/FunctionsComparison.h>
 #include <Common/logger_useful.h>
 #include <fmt/ranges.h>
 

@@ -20,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -76,9 +75,9 @@ std::vector<size_t> buildFailureFunction(const std::vector<String> & phrase_toke
 /// Matcher that checks if all phrase tokens appear consecutively in the input's token stream.
 struct MatchPhraseMatcher
 {
-    MatchPhraseMatcher(const std::vector<String> & phrase_tokens_, const std::vector<size_t> & failure_)
+    explicit MatchPhraseMatcher(const std::vector<String> & phrase_tokens_)
         : phrase_tokens(phrase_tokens_)
-        , failure(failure_)
+        , failure(buildFailureFunction(phrase_tokens_))
         , match_position(0)
     {
     }
@@ -112,7 +111,7 @@ struct MatchPhraseMatcher
 
 private:
     const std::vector<String> & phrase_tokens;
-    const std::vector<size_t> & failure;
+    std::vector<size_t> failure;
     size_t match_position;
 };
 
@@ -123,10 +122,9 @@ void executeMatchPhrase(
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
     const ITokenizer * tokenizer,
-    const std::vector<String> & phrase_tokens,
-    const std::vector<size_t> & failure_table)
+    const std::vector<String> & phrase_tokens)
 {
-    MatchPhraseMatcher matcher(phrase_tokens, failure_table);
+    MatchPhraseMatcher matcher(phrase_tokens);
 
     col_result.resize(input_rows_count);
 
@@ -165,42 +163,20 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
     if (arguments.size() < 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' requires at least 2 arguments, got {}", name, arguments.size());
 
-    if (!isString(arguments[arg_phrase].type))
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "A value of illegal type was provided as 2nd argument 'phrase' to function '{}'. Expected: const String, got: {}",
-            name,
-            arguments[arg_phrase].type->getName());
-
-    if (!arguments[arg_phrase].column || !isColumnConst(*arguments[arg_phrase].column))
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "A value of illegal type was provided as 2nd argument 'phrase' to function '{}'. Expected: const String, got: {}",
-            name,
-            arguments[arg_phrase].type->getName());
-
-    DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
-
     const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column ? SplitByNonAlphaTokenizer::getExternalName()
                                                                                          : arguments[arg_tokenizer].column->getDataAt(0);
-    auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
-    static const std::unordered_set<ITokenizer::Type> supported_types = {
-        ITokenizer::Type::SplitByNonAlpha,
-        ITokenizer::Type::SplitByString,
-        ITokenizer::Type::AsciiCJK,
-        ITokenizer::Type::Ngrams,
-    };
-    if (!supported_types.contains(tokenizer->getType()))
+    if (tokenizer_name == SparseGramsTokenizer::getExternalName() || tokenizer_name == ArrayTokenizer::getExternalName())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' does not support the '{}' tokenizer.", name, tokenizer_name);
 
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
     auto phrase_tokens = initializePhraseTokens(arguments, *tokenizer, getName());
+    DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
     return std::make_shared<FunctionBaseHasPhrase>(std::move(tokenizer), std::move(phrase_tokens), std::move(argument_types), return_type);
 }
 
 ExecutableFunctionPtr FunctionBaseHasPhrase::prepare(const ColumnsWithTypeAndName &) const
 {
-    auto failure_table = buildFailureFunction(phrase_tokens);
-    return std::make_unique<ExecutableFunctionHasPhrase>(tokenizer, phrase_tokens, std::move(failure_table));
+    return std::make_unique<ExecutableFunctionHasPhrase>(tokenizer, phrase_tokens);
 }
 
 ColumnPtr
@@ -218,9 +194,9 @@ ExecutableFunctionHasPhrase::executeImpl(const ColumnsWithTypeAndName & argument
 
     ColumnPtr col_input = arguments[arg_input].column;
     if (const auto * col_input_string = checkAndGetColumn<ColumnString>(col_input.get()))
-        executeMatchPhrase(*col_input_string, col_result->getData(), input_rows_count, tokenizer.get(), phrase_tokens, failure_table);
+        executeMatchPhrase(*col_input_string, col_result->getData(), input_rows_count, tokenizer.get(), phrase_tokens);
     else if (const auto * col_input_fixedstring = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-        executeMatchPhrase(*col_input_fixedstring, col_result->getData(), input_rows_count, tokenizer.get(), phrase_tokens, failure_table);
+        executeMatchPhrase(*col_input_fixedstring, col_result->getData(), input_rows_count, tokenizer.get(), phrase_tokens);
 
     return col_result;
 }
@@ -231,7 +207,6 @@ REGISTER_FUNCTION(HasPhrase)
 Checks if the haystack contains all tokens from the phrase in consecutive order.
 
 Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified as the optional third argument.
-The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK`.
 If no tokenizer is specified, by default the `splitByNonAlpha` tokenizer would be used.
 
 Unlike [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens), `hasPhrase` requires the tokens to appear in the same order

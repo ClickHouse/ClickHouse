@@ -49,6 +49,7 @@ public:
     size_t getBucket() const override { chassert(useBucketsForProcessing() && bucket_info); return bucket_info->bucket; }
 
     PathState getPathState(std::string & failure_message) const override;
+    const std::string & getProcessedWatchPath() const override;
 
     static BucketHolderPtr tryAcquireBucket(
         const std::filesystem::path & zk_path,
@@ -79,6 +80,13 @@ public:
         size_t prev_value,
         const std::string & zookeeper_name_);
 
+    /// Derive the partition key for `path` under the configured partitioning mode.
+    /// Returns an empty string when partitioning is NONE or the key cannot be extracted.
+    static std::string getPartitionKey(
+        const std::string & path,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser);
+
     /// Represents the processed / failed state of a single file path as seen in Keeper.
     struct ProcessingStateFromKeeper
     {
@@ -90,8 +98,6 @@ public:
         bool is_processed = false;
         /// Populated from the failed node data when `is_failed` is true.
         std::string failure_message;
-        /// Version of the bucket-level processed pointer node (`processed_bucket_path`).
-        std::optional<int32_t> processed_bucket_version;
     };
 
     /// Return vector of indexes of filtered paths.
@@ -113,10 +119,10 @@ private:
     const BucketInfoPtr bucket_info;
     const ObjectStorageQueuePartitioningMode partitioning_mode;
     const ObjectStorageQueueFilenameParser * parser;
-    /// Bucket-level processed pointer node: `zk_path/processed` or
-    /// `zk_path/buckets/<N>/processed`.  Stores NodeMetadata and is used for
-    /// global version-pinning and for writes via doPrepareProcessedRequests.
-    const std::string processed_bucket_path;
+    /// Keeper path to watch for processing completion.
+    /// Equals `processed_node_path` when there is no partitioning, or
+    /// `processed_node_path / <partition_key>` for HIVE/REGEX partitioned queues.
+    std::string processed_watch_path;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
 
@@ -131,23 +137,25 @@ private:
         const std::string & zookeeper_name_);
 
     ProcessingStateFromKeeper getProcessingStateFromKeeper(
+        Coordination::Stat * processed_node_stat,
         bool check_failed = false,
         LoggerPtr log_ = nullptr) const;
 
     /// Read the processed/failed state of `file_path` from Keeper without side-effects.
-    /// `processed_bucket_path` is the bucket-level processed pointer node.
-    /// `partition_node_path` is the partition-specific child node (optional, for HIVE/REGEX modes).
-    /// `failed_node_path` is the per-file failed node (optional).
+    /// `processed_node_path_` is the global or per-bucket processed pointer node.
+    /// `processed_node_hive_partitioning_path` is the partition-specific sub-node (optional).
+    /// `failed_node_path_` is the per-file failed node (optional).
     static ProcessingStateFromKeeper getProcessingStateFromKeeper(
-        const std::string & processed_bucket_path,
+        Coordination::Stat * processed_node_stat,
+        const std::string & processed_node_path_,
         const std::string & file_path,
-        std::optional<std::string> partition_node_path = std::nullopt,
+        std::optional<std::string> processed_node_hive_partitioning_path = std::nullopt,
         std::optional<std::string> failed_node_path = std::nullopt,
         LoggerPtr log_ = nullptr,
         const std::string & zookeeper_name_ = {});
 
-    static bool getMaxProcessedFilesByPartition(
-        std::unordered_map<std::string, std::string> & last_processed_path_per_partition,
+    static bool getMaxProcessedFilesByHivePartition(
+        std::unordered_map<std::string, std::string> & last_processed_path_per_hive_partition,
         const std::string & processed_node_path_,
         LoggerPtr log_,
         const std::string & zookeeper_name_);

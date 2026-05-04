@@ -112,10 +112,6 @@ namespace
                 return std::nullopt;
             }
         }
-        else if (non_nullable_type->getTypeId() == DB::TypeIndex::Variant)
-        {
-            return std::nullopt;
-        }
         else
         {
             /// For all other types except decimal binary representation
@@ -310,7 +306,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::optional<DB::KeyDescription> partition_key_description;
     if (!partition_columns_description.empty())
         partition_key_description.emplace(
-            DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, context_));
+            DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context_));
 
     size_t total_rows = manifest_file_deserializer_->rows();
 
@@ -477,8 +473,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                     continue;
 
                 if (const auto type_id = name_and_type.type->getTypeId();
-                    type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array
-                    || type_id == DB::TypeIndex::Variant)
+                    type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array)
                     continue;
 
                 auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);

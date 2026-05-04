@@ -107,14 +107,12 @@ RangesInDataPart::RangesInDataPart(
     const DataPartPtr & parent_part_,
     size_t part_index_in_query_,
     size_t part_starting_offset_in_query_,
-    const MarkRanges & ranges_,
-    const RangesInDataPartReadHints & read_hints_)
+    const MarkRanges & ranges_)
     : data_part{data_part_}
     , parent_part{parent_part_}
     , part_index_in_query{part_index_in_query_}
     , part_starting_offset_in_query{part_starting_offset_in_query_}
     , ranges{ranges_}
-    , read_hints{read_hints_}
 {
 }
 
@@ -143,7 +141,11 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
 
 size_t RangesInDataPart::getMarksCount() const
 {
-    return ranges.getNumberOfMarks();
+    size_t total = 0;
+    for (const auto & range : ranges)
+        total += range.end - range.begin;
+
+    return total;
 }
 
 size_t RangesInDataPart::getRowsCount() const
