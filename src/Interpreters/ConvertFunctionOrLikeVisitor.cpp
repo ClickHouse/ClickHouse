@@ -73,7 +73,8 @@ struct PatternInfo
         return result;
     }
 
-    Array getRegexps() const
+    /// Used by `multiMatchAny` when ClickHouse is built with Vectorscan.
+    [[maybe_unused]] Array getRegexps() const
     {
         Array result;
         for (const auto & p : patterns)
