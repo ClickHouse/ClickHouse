@@ -2504,24 +2504,26 @@ public:
             WriteMode mode = WriteMode::Rewrite;
             if (!truncate)
             {
-                /// Resolve append-mode and the existing-prefix flag from a single
-                /// existence check + size lookup, swallowing concurrent removal: the
-                /// `existsFile`/`getFileSize` pair is not atomic, and a removal between
-                /// the two would otherwise turn into a spurious insert failure. Treat
-                /// any such race as "file is not there now", which is the correct
-                /// semantics for choosing `Rewrite` and re-emitting the format prefix.
-                try
+                /// Resolve append-mode and the existing-prefix flag from an existence
+                /// check followed by a size lookup. The two operations are not atomic,
+                /// so a concurrent removal between them would otherwise turn into a
+                /// spurious insert failure. Tolerate that single race here by
+                /// catching `FILE_DOESNT_EXIST` from `getFileSize`; rethrow everything
+                /// else so transient backend errors do not silently overwrite data.
+                if (user_files_disk->existsFile(user_files_disk_relative_path))
                 {
-                    if (user_files_disk->existsFile(user_files_disk_relative_path))
+                    try
                     {
                         existing_size = user_files_disk->getFileSize(user_files_disk_relative_path);
                         mode = WriteMode::Append;
                     }
-                }
-                catch (...) /// Ok: tolerate concurrent removal between `existsFile` and `getFileSize`.
-                {
-                    existing_size = 0;
-                    mode = WriteMode::Rewrite;
+                    catch (const Exception & e)
+                    {
+                        if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                            throw;
+                        existing_size = 0;
+                        mode = WriteMode::Rewrite;
+                    }
                 }
             }
             do_not_write_prefix = (mode == WriteMode::Append) && existing_size != 0;
