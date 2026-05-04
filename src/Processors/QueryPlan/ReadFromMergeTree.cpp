@@ -3297,7 +3297,12 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
         return false;
 
-    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
+    /// Pending ALTER mutations (e.g. `MODIFY COLUMN`) can change the type of an indexed column,
+    /// making the existing on-disk index data incompatible with the current column type.
+    /// In the data-read phase the skip index is applied without the per-part `can_use_index` check
+    /// that `filterPartsByPrimaryKeyAndSkipIndexes` performs, so disable the feature entirely when
+    /// any data/alter mutations or patches are pending.
+    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts())
         return false;
 
     return true;
@@ -3739,7 +3744,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// the read step deliberately reduced streams (e.g. because data is small).
     /// Downstream steps like AggregatingStep use this to avoid expanding the pipeline
     /// back to max_threads, which would create overhead from mostly-empty streams.
-    if (pipeline.getNumStreams() < requested_num_streams)
+    /// Don't set this flag for read-in-order: the stream count there is determined
+    /// by the number of parts and ordering requirements, not by data size.
+    /// After merge-sort, the pipeline will have 1 stream, and AggregatingStep
+    /// should still expand it to max_threads.
+    if (pipeline.getNumStreams() < requested_num_streams && !reader_settings.read_in_order)
         pipeline.setReadStreamCountWasReduced(true);
 
     pipeline.addContext(context);

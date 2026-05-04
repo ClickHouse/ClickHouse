@@ -83,7 +83,7 @@ def _mark_infrastructure_errors(results: list) -> int:
     return count
 
 
-def _start_docker_in_docker():
+def start_docker_in_docker():
     with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
         dockerd_proc = subprocess.Popen(
             "./ci/jobs/scripts/docker_in_docker.sh",
@@ -692,6 +692,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         changed_test_modules.append(
                             file.removeprefix("tests/integration/")
                         )
+                if not changed_test_modules and Labels.CI_FORCE_ALL in info.pr_labels:
+                    print(
+                        f"NOTE: No changed test modules found, but '{Labels.CI_FORCE_ALL}' label forces run - using sanity test"
+                    )
+                    changed_test_modules = ["test_accept_invalid_certificate/test.py"]
 
     if is_bugfix_validation:
         if Utils.is_arm():
@@ -742,7 +747,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
     if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
-        _start_docker_in_docker()
+        start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
     parallel_test_modules, sequential_test_modules = (
