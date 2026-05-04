@@ -1165,7 +1165,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
-
+            {"extend_minmax_index_with_persisted_virtual_columns", false, false, "New setting."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
