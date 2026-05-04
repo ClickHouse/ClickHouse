@@ -322,6 +322,24 @@ Without SMT (e.g. Intel HyperThreading), this corresponds to the number of CPU c
 For ClickHouse Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 2vCPU/8GiB, 4vCPU/16GiB etc.
 See the settings tab in the Cloud console for a list of all service sizes.
 )", 0) \
+    DECLARE(UInt64, max_threads_min_free_memory_per_thread, 1_GiB, R"(
+Lowers `max_threads` when the server is under memory pressure, to avoid starting highly-parallel queries that are likely to hit the memory limit.
+
+Free memory is computed as the server's `max_server_memory_usage` minus the memory currently tracked by the global memory tracker. If that free memory is less than `max_threads` multiplied by this value, `max_threads` is reduced to the largest N such that `N * value <= free_memory`, with a minimum of `1`.
+
+Set to `0` to disable this limit.
+
+For example, with the default of 1 GiB and 32 GiB of free memory, `max_threads` is capped at 32; with 1 GiB of free memory it falls back to 1.
+
+This setting applies to read-side parallelism (`SELECT`, `UNION`, `INTERSECT`/`EXCEPT`, and the `SELECT` side of `INSERT ... SELECT`). For the write side, see `max_insert_threads_min_free_memory_per_thread`.
+)", 0) \
+    DECLARE(UInt64, max_insert_threads_min_free_memory_per_thread, 4_GiB, R"(
+Same as `max_threads_min_free_memory_per_thread`, but applied to `max_insert_threads` instead of `max_threads`. The default is higher because insert pipelines typically hold larger per-thread buffers (merge tree parts, compression blocks) than read pipelines.
+
+If the amount of free memory is less than `max_insert_threads` multiplied by this value, `max_insert_threads` is reduced to fit, down to a minimum of `1`.
+
+Set to `0` to disable this limit.
+)", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
 
@@ -5796,6 +5814,12 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
     DECLARE(SetOperationMode, except_default_mode, SetOperationMode::ALL, R"(
 Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 )", 0) \
+    DECLARE(UInt64, max_streams_for_union_step, 0, R"(
+Limits the number of simultaneously active data streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`, because `UNION DISTINCT` is implemented via a `UNION ALL` step followed by a `DISTINCT` step). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied.
+)", 0) \
+    DECLARE(Float, max_streams_for_union_step_to_max_threads_ratio, 8, R"(
+This ratio multiplied by `max_threads` determines a limit on simultaneously active streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`). The actual limit is the minimum of this computed value and `max_streams_for_union_step` (either one being 0 means it is ignored). For example, with `max_threads = 8` and this ratio set to 1, at most 8 streams will be active. Set to 0 to disable this ratio-based limit.
+)", 0) \
     DECLARE(Bool, optimize_aggregators_of_group_by_keys, true, R"(
 Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section
 )", 0) \
@@ -6989,6 +7013,10 @@ See also:
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
 )", 0) \
+    DECLARE(Bool, enable_blob_storage_log_for_read_operations, false, R"(
+Write information about blob storage read operations to system.blob_storage_log table.
+Requires `enable_blob_storage_log` to be enabled as well.
+)", 0) \
     DECLARE(UInt64, predicate_statistics_sample_rate, 0, R"(
 Collect predicate selectivity statistics into `system.predicate_statistics_log`. When set to N > 0, approximately 1/N of queries are sampled (by the query ID). 0 means disabled.
 )", 0) \
@@ -7074,6 +7102,9 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
 )", 0) \
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
+)", 0) \
+    DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
+Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 )", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
 Enables showing data lake catalogs in system tables.
