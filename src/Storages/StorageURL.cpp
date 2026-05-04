@@ -381,6 +381,11 @@ StorageURLSource::StorageURLSource(
                 glob_url,
                 current_uri_options.size() == 1);
 
+            if (auto * http_buf = dynamic_cast<ReadWriteBufferFromHTTP *>(uri_and_buf.second.get()))
+            {
+                http_buf->setCancellationCheck([this]() { return isCancelled(); });
+            }
+
             /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
         }
         while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
