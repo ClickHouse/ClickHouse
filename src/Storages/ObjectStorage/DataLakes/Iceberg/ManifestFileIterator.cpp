@@ -409,25 +409,13 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         resolved_snapshot_id = inherited_snapshot_id;
     }
 
+    /// The snapshot that originally added a data file referenced by a manifest entry with
+    /// status=EXISTING may have been expired from the table's snapshot log (e.g. after
+    /// `expire_snapshots`). That is expected and spec-compliant, so we silently fall back
+    /// to the manifest's own schema id, which is the schema under which the manifest's
+    /// statistics (lower/upper bounds, null counts) were written anyway.
     const auto schema_id_opt = schema_processor_ptr->tryGetSchemaIdForSnapshot(resolved_snapshot_id);
-    if (!schema_id_opt.has_value())
-    {
-        /// Error logged but not thrown to avoid breaking whole query because of backward compatibility reasons.
-        /// That's actually an error because it can lead to incorrect query results, so we are creating an exception to put it to system.error_log.
-        try
-        {
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
-                path_to_manifest_file,
-                resolved_snapshot_id);
-        }
-        catch (const Exception &)
-        {
-            tryLogCurrentException("ICEBERG_SPECIFICATION_VIOLATION", "", LogsLevel::error);
-        }
-    }
-    const auto resolved_schema_id = schema_id_opt.has_value() ? *schema_id_opt : manifest_schema_id;
+    const auto resolved_schema_id = schema_id_opt.value_or(manifest_schema_id);
 
     Int64 resolved_sequence_number = 0;
     if (format_version > 1)
