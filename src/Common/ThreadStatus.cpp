@@ -8,7 +8,7 @@
 #include <Common/setThreadName.h>
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/PerCpuUntrackedMemory.h>
+#include <Common/PerCPUUntrackedMemory.h>
 #include <Core/Settings.h>
 #include <base/getPageSize.h>
 #include <Interpreters/Context.h>
@@ -245,8 +245,8 @@ void ThreadStatus::flushUntrackedMemory()
     /// The slot is shared across threads, so this picks up other threads'
     /// contributions too. That matches the "make pending bytes visible"
     /// contract; attribution drift is bounded by `untracked_memory_limit`.
-    if (PerCpuUntrackedMemory::isEnabled())
-        current_untracked_memory += PerCpuUntrackedMemory::drain(PerCpuUntrackedMemory::currentCpu());
+    if (PerCPUUntrackedMemory::isEnabled())
+        current_untracked_memory += PerCPUUntrackedMemory::drain(PerCPUUntrackedMemory::currentCPU());
 
     if (current_untracked_memory == 0)
         return;

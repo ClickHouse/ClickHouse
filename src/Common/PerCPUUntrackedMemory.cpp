@@ -1,4 +1,4 @@
-#include <Common/PerCpuUntrackedMemory.h>
+#include <Common/PerCPUUntrackedMemory.h>
 
 #include <atomic>
 #include <cstddef>
@@ -16,7 +16,7 @@
 #    include <rseq/rseq.h>
 #endif
 
-namespace DB::PerCpuUntrackedMemory
+namespace DB::PerCPUUntrackedMemory
 {
 
 namespace
@@ -83,7 +83,7 @@ int cpuCount()
     return n_cpu;
 }
 
-int currentCpu()
+int currentCPU()
 {
 #if USE_LIBRSEQ
     if (rseq_ready)
@@ -131,7 +131,7 @@ AddResult add(Int64 delta)
     }
 #endif
 
-    int cpu = currentCpu();
+    int cpu = currentCPU();
     Int64 new_local = __atomic_add_fetch(&slots[cpu].value, delta, __ATOMIC_RELAXED);
     return {cpu, new_local};
 }

@@ -3,7 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/PerCpuUntrackedMemory.h>
+#include <Common/PerCPUUntrackedMemory.h>
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
@@ -66,12 +66,12 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
     VariableContext blocker_level = MemoryTrackerBlockerInThread::getLevel();
     bool blocker_changed = blocker_level != current_thread->untracked_memory_blocker_level;
 
-    if (likely(DB::PerCpuUntrackedMemory::isEnabled()))
+    if (likely(DB::PerCPUUntrackedMemory::isEnabled()))
     {
         if (blocker_changed)
         {
-            int cpu = DB::PerCpuUntrackedMemory::currentCpu();
-            Int64 drained = DB::PerCpuUntrackedMemory::drain(cpu);
+            int cpu = DB::PerCPUUntrackedMemory::currentCPU();
+            Int64 drained = DB::PerCPUUntrackedMemory::drain(cpu);
             if (drained > 0)
                 std::ignore = memory_tracker->allocImpl(drained, /*throw_if_memory_exceeded=*/false);
             else if (drained < 0)
@@ -79,7 +79,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             current_thread->untracked_memory_blocker_level = blocker_level;
         }
 
-        auto added = DB::PerCpuUntrackedMemory::add(size);
+        auto added = DB::PerCPUUntrackedMemory::add(size);
         if (added.new_local > current_thread->untracked_memory_limit)
         {
             /// `tryFlush` is itself a kernel-restartable rseq RMW, so it is
@@ -88,7 +88,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             /// the bytes stay accounted in the slot and will be drained by
             /// a future overflow on that cpu. Bounded by
             /// `cpuCount() * untracked_memory_limit`.
-            if (DB::PerCpuUntrackedMemory::tryFlush(added.cpu, added.new_local))
+            if (DB::PerCPUUntrackedMemory::tryFlush(added.cpu, added.new_local))
             {
                 try
                 {
@@ -98,7 +98,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
                 {
                     /// Re-stage what we just subtracted. May land on a
                     /// different CPU after migration; bounded by limit.
-                    DB::PerCpuUntrackedMemory::add(added.new_local - size);
+                    DB::PerCPUUntrackedMemory::add(added.new_local - size);
                     throw;
                 }
             }
@@ -160,12 +160,12 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
     VariableContext blocker_level = MemoryTrackerBlockerInThread::getLevel();
     bool blocker_changed = blocker_level != current_thread->untracked_memory_blocker_level;
 
-    if (likely(DB::PerCpuUntrackedMemory::isEnabled()))
+    if (likely(DB::PerCPUUntrackedMemory::isEnabled()))
     {
         if (blocker_changed)
         {
-            int cpu = DB::PerCpuUntrackedMemory::currentCpu();
-            Int64 drained = DB::PerCpuUntrackedMemory::drain(cpu);
+            int cpu = DB::PerCPUUntrackedMemory::currentCPU();
+            Int64 drained = DB::PerCPUUntrackedMemory::drain(cpu);
             if (drained > 0)
                 std::ignore = memory_tracker->allocImpl(drained, /*throw_if_memory_exceeded=*/false);
             else if (drained < 0)
@@ -173,10 +173,10 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
             current_thread->untracked_memory_blocker_level = blocker_level;
         }
 
-        auto added = DB::PerCpuUntrackedMemory::add(-size);
+        auto added = DB::PerCPUUntrackedMemory::add(-size);
         if (added.new_local < -current_thread->untracked_memory_limit)
         {
-            if (DB::PerCpuUntrackedMemory::tryFlush(added.cpu, added.new_local))
+            if (DB::PerCPUUntrackedMemory::tryFlush(added.cpu, added.new_local))
             {
                 /// added.new_local is negative here; flush as a free.
                 return memory_tracker->free(-added.new_local);

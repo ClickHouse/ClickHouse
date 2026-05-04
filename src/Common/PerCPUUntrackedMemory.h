@@ -21,7 +21,7 @@
 ///      slot is L1-resident and uncontended.
 ///
 /// All overflow/limit policy stays in the caller.
-namespace DB::PerCpuUntrackedMemory
+namespace DB::PerCPUUntrackedMemory
 {
 
 bool isEnabled();
@@ -29,7 +29,7 @@ int  cpuCount();
 
 /// Resolve the current CPU index without performing a slot operation.
 /// Useful for un-paired drain sites (e.g. `flushUntrackedMemory`).
-int currentCpu();
+int currentCPU();
 
 struct AddResult
 {
@@ -52,7 +52,7 @@ bool tryFlush(int cpu, Int64 amount);
 
 /// Un-paired drain: atomically swap slots[cpu] with 0 and return the prior
 /// value. Always succeeds. The caller is expected to be running on `cpu`
-/// itself (typically resolved via `currentCpu()` immediately before this
+/// itself (typically resolved via `currentCPU()` immediately before this
 /// call), so concurrent rseq adds from other threads on the same CPU are
 /// serialized by the kernel and cannot race.
 Int64 drain(int cpu);

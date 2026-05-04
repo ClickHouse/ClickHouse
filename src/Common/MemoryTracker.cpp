@@ -11,7 +11,7 @@
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/PageCache.h>
-#include <Common/PerCpuUntrackedMemory.h>
+#include <Common/PerCPUUntrackedMemory.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
@@ -374,13 +374,13 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     if (!over
         && current_hard_limit
         && level == VariableContext::Global
-        && DB::PerCpuUntrackedMemory::isEnabled())
+        && DB::PerCPUUntrackedMemory::isEnabled())
     {
         static const Int64 pressure_window
-            = static_cast<Int64>(DB::PerCpuUntrackedMemory::cpuCount()) * (4 * 1024 * 1024);
+            = static_cast<Int64>(DB::PerCPUUntrackedMemory::cpuCount()) * (4 * 1024 * 1024);
         if (will_be > current_hard_limit - pressure_window)
         {
-            Int64 in_flight = DB::PerCpuUntrackedMemory::peekTotal();
+            Int64 in_flight = DB::PerCPUUntrackedMemory::peekTotal();
             over = (will_be + in_flight) > current_hard_limit;
         }
     }
