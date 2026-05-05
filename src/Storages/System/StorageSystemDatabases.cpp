@@ -12,7 +12,6 @@
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 
 
 namespace DB
@@ -23,10 +22,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
 }
 
-namespace Setting
-{
-    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
-}
 
 ColumnsDescription StorageSystemDatabases::getColumnsDescription()
 {
@@ -124,8 +119,10 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 {
     const auto access = context->getAccess();
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
-    const auto & settings = context->getSettingsRef();
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
+    /// Data lake catalog databases are always shown in system.databases regardless of show_data_lake_catalogs_in_system_tables.
+    /// Listing a database name is purely local metadata and never requires expensive calls to an external catalog service.
+    /// The setting only guards operations like system.tables / system.columns that enumerate a catalog's contents.
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
     ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
 
     for (size_t i = 0; i < filtered_databases_column->size(); ++i)

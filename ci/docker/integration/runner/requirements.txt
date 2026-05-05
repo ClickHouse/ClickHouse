@@ -79,7 +79,7 @@ pyiceberg[sql-sqlite]==0.11.1
 pymongo==4.16.0
 pyspark==3.5.5
 pyspnego==0.12.1
-pytest==9.0.2
+pytest==9.0.3
 pytest-order==1.3.0
 pytest-random-order==1.2.0
 pytest-repeat==0.9.4
@@ -107,3 +107,5 @@ websocket-client==1.9.0
 wheel==0.46.3
 filelock==3.25.0
 kazoo @ git+https://github.com/ClickHouse/kazoo.git@879e0b0e4ae367a289847b43a531938f68770125
+apache-sedona==1.6.1
+shapely==2.1.0

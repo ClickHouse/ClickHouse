@@ -236,7 +236,7 @@ if __name__ == "__main__":
         print(msg)
         r = Result.create_from(
             name="Print Uncovered Code",
-            status=Result.Status.SUCCESS,
+            status=Result.Status.OK,
             info=msg,
         )
         r.set_comment(msg)
@@ -459,7 +459,7 @@ if __name__ == "__main__":
 
     r = Result.create_from(
         name="Print Uncovered Code",
-        status=Result.Status.SUCCESS,
+        status=Result.Status.OK,
         info=full_msg,
         with_info_from_results=True,
     )

@@ -60,7 +60,6 @@ struct ProjectionDescription
     Block sample_block_for_keys;
 
     StorageMetadataPtr metadata;
-    VirtualsDescriptionPtr virtuals;
 
     size_t key_size = 0;
 
