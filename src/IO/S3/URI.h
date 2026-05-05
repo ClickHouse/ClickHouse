@@ -52,6 +52,10 @@ private:
     bool tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bool use_strict_pattern);
 };
 
+/// Expand an AWS region into the corresponding Amazon S3 endpoint URL using the SDK's
+/// Smithy endpoint rules (handles all partitions: standard, China, GovCloud, etc.).
+std::string expandRegionToAmazonPath(const std::string & region);
+
 }
 
 #endif

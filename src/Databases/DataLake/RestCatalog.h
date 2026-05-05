@@ -125,10 +125,10 @@ protected:
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
-    DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
+    virtual DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const std::string & endpoint,
-        const Poco::URI::QueryParameters & params = {},
-        const DB::HTTPHeaderEntries & headers = {}) const;
+        const Poco::URI::QueryParameters & params,
+        const DB::HTTPHeaderEntries & headers) const;
 
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
 
@@ -158,15 +158,20 @@ protected:
     virtual DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
-    void sendRequest(
+    virtual void sendRequest(
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
-        const String & method = Poco::Net::HTTPRequest::HTTP_POST,
-        bool ignore_result = false) const;
+        const String & method,
+        bool ignore_result) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 
     AccessToken retrieveAccessToken() const;
+
+private:
+    /// Parses JSON from `/v1/config` response. Used by `loadConfig` and by the public `RestCatalog` ctor
+    /// (which must not call virtual `createReadBuffer` during construction — see `clang-analyzer-optin.cplusplus.VirtualCall`).
+    Config parseCatalogConfigResponse(DB::ReadWriteBufferFromHTTPPtr buf) const;
 };
 
 class OneLakeCatalog : public RestCatalog

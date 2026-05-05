@@ -163,7 +163,9 @@ RestCatalog::RestCatalog(
     {
         auth_header = parseAuthHeader(auth_header_);
     }
-    config = loadConfig();
+    Poco::URI::QueryParameters config_params = {{"warehouse", warehouse}};
+    auto config_buf = RestCatalog::createReadBuffer(CONFIG_ENDPOINT, config_params, /* headers */ {});
+    config = parseCatalogConfigResponse(std::move(config_buf));
 }
 
 RestCatalog::RestCatalog(
@@ -187,8 +189,12 @@ RestCatalog::RestCatalog(
 RestCatalog::Config RestCatalog::loadConfig()
 {
     Poco::URI::QueryParameters params = {{"warehouse", warehouse}};
-    auto buf = createReadBuffer(CONFIG_ENDPOINT, params);
+    auto buf = createReadBuffer(CONFIG_ENDPOINT, params, /* headers */ {});
+    return parseCatalogConfigResponse(std::move(buf));
+}
 
+RestCatalog::Config RestCatalog::parseCatalogConfigResponse(DB::ReadWriteBufferFromHTTPPtr buf) const
+{
     std::string json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
@@ -681,7 +687,7 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
 
     try
     {
-        auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
+        auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params, /* headers */ {});
         auto namespaces = parseNamespaces(*buf, base_namespace);
         LOG_DEBUG(log, "Loaded {} namespaces in base namespace {}", namespaces.size(), base_namespace);
         return namespaces;
@@ -767,7 +773,7 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
     auto encoded_namespace = encodeNamespaceForURI(base_namespace);
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
 
-    auto buf = createReadBuffer(config.prefix / endpoint);
+    auto buf = createReadBuffer(config.prefix / endpoint, /* params */ {}, /* headers */ {});
     return parseTables(*buf, base_namespace, limit);
 }
 
@@ -947,9 +953,6 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
         request_body->stringify(oss);
     const std::string body_str = DB::removeEscapedSlashes(oss.str());
 
-    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
-    headers.emplace_back("Content-Type", "application/json");
-
     const auto & context = getContext();
 
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
@@ -961,8 +964,12 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
         };
     }
 
+    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
+    headers.emplace_back("Content-Type", "application/json");
+
     /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
     Poco::URI url(endpoint, /* enable_url_encoding */ false);
+
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)
@@ -999,7 +1006,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     try
     {
-        sendRequest(endpoint, request_body);
+        sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (...)
     {
@@ -1037,7 +1044,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
     try
     {
-        sendRequest(endpoint, request_body);
+        sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -1102,7 +1109,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     try
     {
-        sendRequest(endpoint, request_body);
+        sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException &)
     {

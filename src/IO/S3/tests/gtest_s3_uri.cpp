@@ -38,4 +38,23 @@ TEST(IOTestS3URI, PathStyleWithKey)
     ASSERT_EQ(uri_with_no_key_and_with_slash.key, "key/key/key/key");
 }
 
+TEST(IOTestS3URI, ExpandRegionToAmazonPath)
+{
+    using namespace DB;
+
+    ASSERT_EQ(S3::expandRegionToAmazonPath("us-east-1"),
+              "https://s3.us-east-1.amazonaws.com");
+    ASSERT_EQ(S3::expandRegionToAmazonPath("eu-west-1"),
+              "https://s3.eu-west-1.amazonaws.com");
+
+    auto cn_north = S3::expandRegionToAmazonPath("cn-north-1");
+    ASSERT_TRUE(cn_north.ends_with(".amazonaws.com.cn"))
+        << "China region should resolve to .amazonaws.com.cn suffix, got: " << cn_north;
+    ASSERT_TRUE(cn_north.find("cn-north-1") != std::string::npos)
+        << "Got: " << cn_north;
+
+    ASSERT_EQ(S3::expandRegionToAmazonPath("us-gov-west-1"),
+              "https://s3.us-gov-west-1.amazonaws.com");
+}
+
 #endif

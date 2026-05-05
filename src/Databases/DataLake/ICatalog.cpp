@@ -100,15 +100,24 @@ void TableMetadata::setLocation(const std::string & location_)
     // pos+3 to account for ://
     storage_type_str = location_.substr(0, pos+3);
     auto pos_to_bucket = pos + std::strlen("://");
-    auto pos_to_path = location_.substr(pos_to_bucket).find('/');
+    auto path_separator_offset = location_.substr(pos_to_bucket).find('/');
 
-    if (pos_to_path == std::string::npos)
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
-
-    pos_to_path = pos_to_bucket + pos_to_path;
-
-    location_without_path = location_.substr(0, pos_to_path);
-    path = location_.substr(pos_to_path + 1);
+    size_t pos_to_path = 0;
+    if (path_separator_offset == std::string::npos)
+    {
+        /// Some catalogs (notably AWS S3 Tables) return the table's data location as just
+        /// `<scheme>://<bucket>` because the table data lives at the root of a dedicated bucket.
+        /// Treat the whole input as `location_without_path` and leave `path` empty.
+        pos_to_path = location_.size();
+        location_without_path = location_;
+        path.clear();
+    }
+    else
+    {
+        pos_to_path = pos_to_bucket + path_separator_offset;
+        location_without_path = location_.substr(0, pos_to_path);
+        path = location_.substr(pos_to_path + 1);
+    }
 
     /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
     /// The bucket (container) is the part before '@', not the whole string before '/'
@@ -151,7 +160,10 @@ std::string TableMetadata::getLocation() const
     if (!endpoint.empty())
         return constructLocation(endpoint, DB::S3UriStyle::AUTO);
 
-    return std::filesystem::path(location_without_path) / path;
+    if (path.empty())
+        return location_without_path;
+
+    return (std::filesystem::path(location_without_path) / path).string();
 }
 
 std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style) const
@@ -286,6 +298,11 @@ bool TableMetadata::hasSchema() const
 bool TableMetadata::hasStorageCredentials() const
 {
     return storage_credentials != nullptr;
+}
+
+bool TableMetadata::hasDataLakeSpecificProperties() const
+{
+    return data_lake_specific_metadata.has_value();
 }
 
 std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metadata_file_location) const
