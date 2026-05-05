@@ -422,6 +422,28 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             checksums_txt.remove(projection_file);
     }
 
+    /// Handle the complementary fetch-side variant: `checksums.txt` references
+    /// a `.proj` entry whose directory was never transferred.  When a replica
+    /// fetches a part containing a projection that was dropped from the table
+    /// schema, the sender's `getProjectionParts` does not include the
+    /// unknown projection, so the `send_projections` loop skips its
+    /// `.proj/` subdirectory -- but `checksums.txt` is copied verbatim and
+    /// still references the orphan entry.  Without stripping these entries,
+    /// the `checkEqual` below throws `NO_FILE_IN_DATA_PART`; the caller
+    /// marks the part broken and re-fetches the same part from the same
+    /// replica, producing the same state and looping indefinitely (#100413).
+    {
+        const auto orphan_proj_erased = std::erase_if(
+            checksums_txt.files,
+            [&](const auto & entry)
+            {
+                return entry.first.ends_with(".proj")
+                    && !data_part_storage.existsDirectory(entry.first);
+            });
+        if (orphan_proj_erased > 0)
+            is_broken_projection = true;
+    }
+
     if (throw_on_broken_projection)
     {
         if (!broken_projections_message.empty())
