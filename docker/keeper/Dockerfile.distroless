@@ -31,7 +31,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="26.3.3.20"
+ARG VERSION="26.3.9.8"
 ARG PACKAGES="clickhouse-common-static clickhouse-keeper"
 
 ARG deb_location_url=""
@@ -80,10 +80,17 @@ RUN clickhouse local -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
     && apt-get install --yes --no-install-recommends dirmngr gnupg2 \
     && mkdir -p /etc/apt/sources.list.d \
     && GNUPGHOME=$(mktemp -d) \
-    && GNUPGHOME="$GNUPGHOME" gpg --batch --no-default-keyring \
-        --keyring /usr/share/keyrings/clickhouse-keyring.gpg \
-        --keyserver hkp://keyserver.ubuntu.com:80 \
-        --recv-keys 3a9ea1193a97b548be1457d48919f6bd2b48d754 \
+    && ( set +e; \
+        for KEYSERVER in \
+            hkp://keys.openpgp.org:80 \
+            hkp://pgp.mit.edu:80 \
+            hkp://keyserver.ubuntu.com:80; do \
+            GNUPGHOME="$GNUPGHOME" gpg --batch --no-default-keyring \
+                --keyring /usr/share/keyrings/clickhouse-keyring.gpg \
+                --keyserver "$KEYSERVER" \
+                --recv-keys 3a9ea1193a97b548be1457d48919f6bd2b48d754 && break; \
+        done || exit 1 \
+    ) \
     && rm -rf "$GNUPGHOME" \
     && chmod +r /usr/share/keyrings/clickhouse-keyring.gpg \
     && echo "${REPOSITORY}" > /etc/apt/sources.list.d/clickhouse.list \
@@ -138,8 +145,8 @@ RUN mkdir -p \
 # ──────────────────────────────────────────────────────────────────────────────
 # Stage 2: Production distroless image.
 # ──────────────────────────────────────────────────────────────────────────────
-# Pinned 2026-04-02. Refresh: docker pull gcr.io/distroless/cc-debian13:nonroot && docker inspect --format='{{index .RepoDigests 0}}' gcr.io/distroless/cc-debian13:nonroot
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:9c4fe2381c2e6d53c4cfdefeff6edbd2a67ec7713e2c3ca6653806cbdbf27a1e AS production
+# Pinned 2026-04-26. Refresh: docker pull gcr.io/distroless/cc-debian13:nonroot && docker inspect --format='{{index .RepoDigests 0}}' gcr.io/distroless/cc-debian13:nonroot
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:8f960b7fc6a5d6e28bb07f982655925d6206678bd9a6cde2ad00ddb5e2077d78 AS production
 
 COPY --from=ch-builder /output/ /
 
@@ -161,8 +168,8 @@ ENTRYPOINT ["/usr/bin/clickhouse", "docker-init", "--keeper"]
 # Stage 3: Debug image — same as production but includes the busybox shell
 #           at /busybox/sh for interactive troubleshooting.
 # ──────────────────────────────────────────────────────────────────────────────
-# Pinned 2026-04-02. Refresh: docker pull gcr.io/distroless/cc-debian13:debug-nonroot && docker inspect --format='{{index .RepoDigests 0}}' gcr.io/distroless/cc-debian13:debug-nonroot
-FROM gcr.io/distroless/cc-debian13:debug-nonroot@sha256:d47b319b1047dff7cdee335e3e61468f3610fac20060653aabe3786d6ecba621 AS debug
+# Pinned 2026-04-26. Refresh: docker pull gcr.io/distroless/cc-debian13:debug-nonroot && docker inspect --format='{{index .RepoDigests 0}}' gcr.io/distroless/cc-debian13:debug-nonroot
+FROM gcr.io/distroless/cc-debian13:debug-nonroot@sha256:55dd32378f7562c890342098a04726f4ef386bb86c87bec3db6ed4eef27d99fb AS debug
 
 COPY --from=ch-builder /output/ /
 
