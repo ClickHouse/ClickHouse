@@ -117,7 +117,7 @@ TEST(GetPriorityForLoadBalancing, CopyAndMovePropagateCounter)
     GetPriorityForLoadBalancing src(LoadBalancing::ROUND_ROBIN);
     for (int i = 0; i < 4; ++i)
         (void)src.getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, pool_size);
-    GetPriorityForLoadBalancing copy(src);
+    GetPriorityForLoadBalancing copy(src); // NOLINT(performance-unnecessary-copy-initialization) - intentionally testing copy constructor
     ASSERT_EQ(
         observedHead(src.getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, pool_size), pool_size),
         observedHead(copy.getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, pool_size), pool_size));
