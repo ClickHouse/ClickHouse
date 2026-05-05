@@ -179,6 +179,42 @@ bool hasPasteJoin(const ASTSelectQuery & select)
     return false;
 }
 
+/// True if any table in the FROM clause refers to a database whose contents
+/// are not stable across two adjacent reads. This includes the `system`
+/// database (snapshots of live server state like `processes`, `merges`,
+/// `metric_log`, etc.) and `INFORMATION_SCHEMA`. Even when the rows look
+/// identical between calls, the underlying values (timings, counters,
+/// thread ids) drift, which causes spurious oracle mismatches between the
+/// reference and rewritten queries.
+bool referencesNonDeterministicDatabase(const ASTSelectQuery & select)
+{
+    ASTPtr tables = select.tables();
+    if (!tables)
+        return false;
+    for (const auto & table_child : tables->children)
+    {
+        const auto * tables_element = table_child->as<ASTTablesInSelectQueryElement>();
+        if (!tables_element || !tables_element->table_expression)
+            continue;
+        const auto * table_expr = tables_element->table_expression->as<ASTTableExpression>();
+        if (!table_expr)
+            continue;
+
+        /// Subquery / table function as the source — let the per-oracle logic decide.
+        if (!table_expr->database_and_table_name)
+            continue;
+
+        const auto * table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
+        if (!table_id)
+            continue;
+
+        String database = table_id->getDatabaseName();
+        if (database == "system" || database == "INFORMATION_SCHEMA" || database == "information_schema")
+            return true;
+    }
+    return false;
+}
+
 }
 
 
@@ -203,6 +239,9 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
     /// stays identical across all TLP partitions, only WHERE changes.
     /// ARRAY JOIN and PASTE JOIN are NOT safe.
     if (hasArrayJoin(select) || hasPasteJoin(select))
+        return false;
+    /// `system.*` / `INFORMATION_SCHEMA.*` views are non-deterministic.
+    if (referencesNonDeterministicDatabase(select))
         return false;
     if (select.distinct)
         return false;
@@ -1366,6 +1405,17 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (!select)
     {
         LOG_TRACE(logger, "Oracle skip: not a simple SELECT");
+        return false;
+    }
+
+    /// `system.*` and `INFORMATION_SCHEMA.*` are non-deterministic snapshots
+    /// of live server state; reading them twice (reference + rewrite) almost
+    /// always shows drift in `processes`, `merges`, `metric_log`, etc.
+    /// Reject the whole query at the gate to avoid spurious mismatches in
+    /// every oracle.
+    if (referencesNonDeterministicDatabase(*select))
+    {
+        LOG_TRACE(logger, "Oracle skip: query reads from system database");
         return false;
     }
 
