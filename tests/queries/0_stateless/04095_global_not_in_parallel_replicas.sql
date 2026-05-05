@@ -45,8 +45,10 @@ SELECT count() == 33333 FROM null_in_pr WHERE i global in (SELECT i FROM null_in
 SYSTEM ENABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 
 -- `idx` is the primary key, so the IN subquery triggers primary key analysis and
--- `buildOrderedSetInplace` is actually called here.
-SELECT count() > 0 FROM null_in_pr WHERE idx global in (SELECT idx FROM null_in_pr WHERE dt = 2);
+-- `buildOrderedSetInplace` is actually called here. Assert the exact expected count
+-- (33333 rows have dt = number % 3 == 2 among the 99999 inserted via `system.numbers`)
+-- so a wrong result under the failpoint path is not silently accepted.
+SELECT count() == 33333 FROM null_in_pr WHERE idx global in (SELECT idx FROM null_in_pr WHERE dt = 2);
 
 -- Disable the failpoint so it does not leak into other tests in the same server process
 -- if a future planner change makes the assertion query above stop calling
