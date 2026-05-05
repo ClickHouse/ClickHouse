@@ -55,6 +55,45 @@ SETTINGS max_rows_to_transfer = 0;
 SELECT count() FROM t1_dist WHERE a GLOBAL IN (SELECT a FROM t2_dist)
 SETTINGS max_rows_to_transfer = 0;
 
+-- `ColumnConst` regression: a subquery producing N rows of a single constant
+-- value must be counted as the materialized N * sizeof(value) payload, not
+-- as the single stored value. This guards against
+-- https://github.com/ClickHouse/ClickHouse/pull/104119#discussion_r... where
+-- `chunk.bytes()` was reading the unmaterialized `ColumnConst` (one stored
+-- entry only) and silently bypassed `max_bytes_to_transfer`.
+--
+-- The constants below sum to ~24 bytes per row when materialized (4-byte
+-- `Int32` + 20-byte `String`), times 1000 rows = ~24000 bytes >> 100.
+-- Without `materializeBlock` the limits transform would only see a few dozen
+-- bytes of `ColumnConst` storage and let the query through silently.
+-- We disable `enable_add_distinct_to_in_subqueries` here: the optimization
+-- inserts a `DISTINCT` into the `GLOBAL IN` subquery and would collapse the
+-- 1000 rows of `42` to a single row, which would defeat the regression we
+-- want to assert (the materialized payload, not the deduplicated payload, is
+-- what counts toward `max_bytes_to_transfer`).
+SELECT count() FROM t1_dist AS t1
+GLOBAL JOIN (
+    SELECT toInt32(42) AS a, 'aaaaaaaaaaaaaaaaaaaa' AS s FROM numbers(1000)
+) AS t2 ON t1.a = t2.a
+SETTINGS max_rows_to_transfer = 0, max_bytes_to_transfer = 100,
+    enable_add_distinct_to_in_subqueries = 0; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+
+SELECT count() FROM t1_dist
+WHERE a GLOBAL IN (
+    SELECT toInt32(42) AS x FROM numbers(1000)
+)
+SETTINGS max_rows_to_transfer = 0, max_bytes_to_transfer = 100,
+    enable_add_distinct_to_in_subqueries = 0; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+
+-- And the same constant-column workload with the limit relaxed must still
+-- succeed under the new analyzer.
+SELECT count() FROM t1_dist
+WHERE a GLOBAL IN (
+    SELECT toInt32(42) AS x FROM numbers(1000)
+)
+SETTINGS max_rows_to_transfer = 0, max_bytes_to_transfer = 0,
+    enable_add_distinct_to_in_subqueries = 0;
+
 DROP TABLE t1_local SYNC;
 DROP TABLE t2_local SYNC;
 DROP TABLE t1_dist SYNC;

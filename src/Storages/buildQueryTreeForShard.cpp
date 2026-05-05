@@ -10,6 +10,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -434,7 +435,19 @@ protected:
             return;
 
         rows_transferred += chunk.getNumRows();
-        bytes_transferred += chunk.bytes();
+
+        /// Match `CreatingSetsTransform::consume` exactly: count bytes after
+        /// `materializeBlock` so a `ColumnConst` is expanded to its full per-row
+        /// payload. `chunk.bytes()` on a `ColumnConst` only accounts for the
+        /// single stored value and would silently undercount
+        /// `max_bytes_to_transfer` for subqueries that produce const columns
+        /// (for example, a literal expression repeated over many rows). Pushing
+        /// the materialized columns downstream also keeps the temporary table
+        /// content in lockstep with the old-analyzer code path.
+        auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        block = materializeBlock(block);
+        bytes_transferred += block.bytes();
+        chunk.setColumns(block.getColumns(), block.rows());
 
         if (!limits.check(rows_transferred, bytes_transferred, "IN/JOIN external table", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
             stopReading();
