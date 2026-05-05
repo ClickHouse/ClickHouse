@@ -10020,6 +10020,9 @@ CancellationCode StorageReplicatedMergeTree::killPartMoveToShard(const UUID & ta
 
 CancellationCode StorageReplicatedMergeTree::killExportPartition(const String & transaction_id)
 {
+    /// Called from a query thread (KILL EXPORT PARTITION via InterpreterKillQueryQuery), which does not have a component set.
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::killExportPartition");
+
     auto try_set_status_to_killed = [this](const zkutil::ZooKeeperPtr & zk, const std::string & status_path)
     {
         Coordination::Stat stat;
