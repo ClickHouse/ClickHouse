@@ -322,6 +322,24 @@ Without SMT (e.g. Intel HyperThreading), this corresponds to the number of CPU c
 For ClickHouse Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 2vCPU/8GiB, 4vCPU/16GiB etc.
 See the settings tab in the Cloud console for a list of all service sizes.
 )", 0) \
+    DECLARE(UInt64, max_threads_min_free_memory_per_thread, 1_GiB, R"(
+Lowers `max_threads` when the server is under memory pressure, to avoid starting highly-parallel queries that are likely to hit the memory limit.
+
+Free memory is computed as the server's `max_server_memory_usage` minus the memory currently tracked by the global memory tracker. If that free memory is less than `max_threads` multiplied by this value, `max_threads` is reduced to the largest N such that `N * value <= free_memory`, with a minimum of `1`.
+
+Set to `0` to disable this limit.
+
+For example, with the default of 1 GiB and 32 GiB of free memory, `max_threads` is capped at 32; with 1 GiB of free memory it falls back to 1.
+
+This setting applies to read-side parallelism (`SELECT`, `UNION`, `INTERSECT`/`EXCEPT`, and the `SELECT` side of `INSERT ... SELECT`). For the write side, see `max_insert_threads_min_free_memory_per_thread`.
+)", 0) \
+    DECLARE(UInt64, max_insert_threads_min_free_memory_per_thread, 4_GiB, R"(
+Same as `max_threads_min_free_memory_per_thread`, but applied to `max_insert_threads` instead of `max_threads`. The default is higher because insert pipelines typically hold larger per-thread buffers (merge tree parts, compression blocks) than read pipelines.
+
+If the amount of free memory is less than `max_insert_threads` multiplied by this value, `max_insert_threads` is reduced to fit, down to a minimum of `1`.
+
+Set to `0` to disable this limit.
+)", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
 
@@ -2622,6 +2640,9 @@ The maximum size of the set in the right-hand side of the IN operator to use tab
 )", 0) \
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+)", 0) \
+    DECLARE(Bool, allow_key_condition_coalesce_rewrite, true, R"(
+Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into the disjunction `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are handled: the argument list is normalized like `coalesce` itself (`NULL` literals dropped, arguments after the first non-`Nullable` one dropped), and a trailing non-`NULL` constant, if any, is emitted as the final branch. The rewrite is strictly additive for index pruning; runtime filtering still uses the original predicate.
 )", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
@@ -5534,7 +5555,7 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Supported only with the analyzer (`enable_analyzer = 1`).
 :::
 )", 0) \
-    DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
+    DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
     DECLARE(Bool, optimize_rewrite_like_perfect_affix, true, R"(
@@ -5792,6 +5813,12 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
 )", 0) \
     DECLARE(SetOperationMode, except_default_mode, SetOperationMode::ALL, R"(
 Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
+)", 0) \
+    DECLARE(UInt64, max_streams_for_union_step, 0, R"(
+Limits the number of simultaneously active data streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`, because `UNION DISTINCT` is implemented via a `UNION ALL` step followed by a `DISTINCT` step). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied.
+)", 0) \
+    DECLARE(Float, max_streams_for_union_step_to_max_threads_ratio, 8, R"(
+This ratio multiplied by `max_threads` determines a limit on simultaneously active streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`). The actual limit is the minimum of this computed value and `max_streams_for_union_step` (either one being 0 means it is ignored). For example, with `max_threads = 8` and this ratio set to 1, at most 8 streams will be active. Set to 0 to disable this ratio-based limit.
 )", 0) \
     DECLARE(Bool, optimize_aggregators_of_group_by_keys, true, R"(
 Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section
@@ -6209,6 +6236,10 @@ Hard lower limit on the task size (even when the number of granules is low and t
 )", 0) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
 Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
+)", 0) \
+    \
+    DECLARE(Bool, send_table_structure_on_insert_with_inline_data, true, R"(
+If disabled and the INSERT query contains inline data, the server will not send the table structure and column defaults back to the client over the native protocol. Instead, the server will parse the inline data itself. This can improve performance for many small inserts over the native protocol.
 )", 0) \
     \
     DECLARE(Bool, async_insert, true, R"(
@@ -6982,6 +7013,10 @@ See also:
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
 )", 0) \
+    DECLARE(Bool, enable_blob_storage_log_for_read_operations, false, R"(
+Write information about blob storage read operations to system.blob_storage_log table.
+Requires `enable_blob_storage_log` to be enabled as well.
+)", 0) \
     DECLARE(UInt64, predicate_statistics_sample_rate, 0, R"(
 Collect predicate selectivity statistics into `system.predicate_statistics_log`. When set to N > 0, approximately 1/N of queries are sampled (by the query ID). 0 means disabled.
 )", 0) \
@@ -7067,6 +7102,9 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
 )", 0) \
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
+)", 0) \
+    DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
+Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 )", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
 Enables showing data lake catalogs in system tables.
@@ -7222,6 +7260,11 @@ Parts virtually divided into segments to be distributed between replicas for par
 )", 0) \
     DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
+)", 0) \
+    DECLARE(Bool, parallel_replicas_prefer_local_replica, true, R"(
+When enabled (default), the local replica is always included in the set of replicas used for parallel reading.
+When disabled, the local replica is not given any preference and replicas are selected purely by the load balancing algorithm.
+This allows queries with `max_parallel_replicas = 1` to be directed to another host, which can improve cache locality when many short queries are distributed across a cluster.
 )", 0) \
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
@@ -7617,6 +7660,9 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
+    DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), automatic spilling is disabled. It prevents read in order through join optimization.
+)", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 )", 0) \

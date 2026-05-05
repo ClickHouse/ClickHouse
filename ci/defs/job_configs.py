@@ -170,7 +170,7 @@ class JobConfigs:
         name=JobNames.PR_BODY,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/pr_formatter_job.py",
-        allow_merge_on_failure=True,
+        allow_failure=True,
         enable_gh_auth=True,
     )
     code_review = Job.Config(
@@ -182,8 +182,17 @@ class JobConfigs:
         name=JobNames.CI_RESULTS_REVIEW,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/copilot_review_job.py --post",
-        allow_merge_on_failure=True,
+        allow_failure=True,
         enable_gh_auth=True,
+    )
+    ci_tests = Job.Config(
+        name=JobNames.CI_TESTS,
+        runs_on=RunnerLabels.ARM_LARGE,
+        command="python3 ./ci/jobs/ci_tests_job.py --skip test_cleanup_kills_orphaned_test_process",
+        timeout=1200,
+        run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
+        digest_config=Job.CacheDigestConfig(include_paths=["./ci"]),
+        post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -198,13 +207,13 @@ class JobConfigs:
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",
         runs_on=None,  # from parametrize()
-        command="python3 ./ci/jobs/fast_test.py --set-status-success",
+        command="python3 ./ci/jobs/fast_test.py",
         digest_config=fast_test_digest_config,
-        result_name_for_cidb="Darwin tests",
-        allow_merge_on_failure=True,
+        result_name_for_cidb="Tests",
+        force_success=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
-            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run*; sudo find /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd -type f -mtime +2 -delete",
+            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
         ],
     ).parametrize(
         Job.ParamSet(
@@ -314,10 +323,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_BINARY,
-            provides=[
-                ArtifactNames.CH_ARM_BINARY,
-                ArtifactNames.PARSER_MEMORY_PROFILER,
-            ],
+            provides=[ArtifactNames.CH_ARM_BINARY],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -714,7 +720,7 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    functional_tests_jobs_azure = common_ft_job_config.set_allow_merge_on_failure(
+    functional_tests_jobs_azure = common_ft_job_config.set_allow_failure(
         True
     ).parametrize(
         Job.ParamSet(
