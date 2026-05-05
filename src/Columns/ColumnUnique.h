@@ -275,10 +275,14 @@ ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
     const auto & holder_type = is_nullable ? *static_cast<const DataTypeNullable &>(type).getNestedType() : type;
     column_holder = holder_type.createColumn()->cloneResized(numSpecialValues());
     reverse_index.setColumn(getRawColumnPtr());
-    createNullMask();
 
+    /// Read fixed-size info before `createNullMask`, which shares `column_holder`
+    /// via `nested_column_nullable` and would trip the `use_count() == 1` assertion
+    /// on the next non-const `column_holder->` access.
     if (column_holder->valuesHaveFixedSize())
         size_of_value_if_fixed = column_holder->sizeOfValueIfFixed();
+
+    createNullMask();
 }
 
 template <typename ColumnType>
@@ -291,10 +295,12 @@ ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nulla
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Holder column for ColumnUnique can't be nullable.");
 
     reverse_index.setColumn(getRawColumnPtr());
-    createNullMask();
 
+    /// See the matching note above: read fixed-size info before `createNullMask`.
     if (column_holder->valuesHaveFixedSize())
         size_of_value_if_fixed = column_holder->sizeOfValueIfFixed();
+
+    createNullMask();
 }
 
 template <typename ColumnType>
