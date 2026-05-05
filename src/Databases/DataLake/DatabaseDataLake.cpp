@@ -58,6 +58,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
+    extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
     extern const DatabaseDataLakeSettingsString oauth_server_uri;
     extern const DatabaseDataLakeSettingsBool oauth_server_use_request_body;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
@@ -476,7 +477,7 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
     auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
     if (endpoint_from_settings.empty())
         return table_metadata.getLocation();
-    return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
+    return table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
 }
 
 bool DatabaseDataLake::empty() const
@@ -1084,7 +1085,14 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             std::move(engine_for_tables),
             args.uuid);
     };
-    factory.registerDatabase("DataLakeCatalog", create_fn, { .supports_arguments = true, .supports_settings = true, .is_external = true });
+    /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
+    /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
+    /// for runtime-dependent or composite source checks exist.
+    factory.registerDatabase("DataLakeCatalog", create_fn, {
+        .supports_arguments = true,
+        .supports_settings = true,
+        .is_external = true,
+    });
 }
 
 }
