@@ -24,7 +24,6 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     size_t getLimit() const { return limit; }
-    size_t getOffset() const { return offset; }
 
     size_t getLimitForSorting() const
     {
@@ -35,16 +34,13 @@ public:
     }
 
     bool withTies() const { return with_ties; }
-    bool alwaysReadTillEnd() const { return always_read_till_end; }
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
     bool hasCorrelatedExpressions() const override { return false; }
-
-    bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     void updateOutputHeader() override
