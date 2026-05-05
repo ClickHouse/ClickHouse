@@ -38,3 +38,23 @@ SELECT name, enabled FROM system.fail_points WHERE name = 'replicated_merge_tree
 SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause;
 SELECT name, enabled FROM system.fail_points WHERE name = 'replicated_merge_tree_insert_retry_pause';
 -- Expected: replicated_merge_tree_insert_retry_pause 0
+
+-- Regression test for issue #103403:
+-- Querying system.fail_points must not consume 'once' and 'pauseable_once' failpoints.
+-- The old code called fiu_fail() which marks FIU_ONETIME failpoints as already-fired.
+
+-- 'once' type: enable, query three times, verify still enabled each time
+SYSTEM ENABLE FAILPOINT backup_add_empty_memory_table;
+SELECT name, enabled FROM system.fail_points WHERE name = 'backup_add_empty_memory_table';
+SELECT name, enabled FROM system.fail_points WHERE name = 'backup_add_empty_memory_table';
+SELECT name, enabled FROM system.fail_points WHERE name = 'backup_add_empty_memory_table';
+SYSTEM DISABLE FAILPOINT backup_add_empty_memory_table;
+SELECT name, enabled FROM system.fail_points WHERE name = 'backup_add_empty_memory_table';
+
+-- 'pauseable_once' type: same check
+SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_retry_pause;
+SELECT name, enabled FROM system.fail_points WHERE name = 'replicated_merge_tree_insert_retry_pause';
+SELECT name, enabled FROM system.fail_points WHERE name = 'replicated_merge_tree_insert_retry_pause';
+SELECT name, enabled FROM system.fail_points WHERE name = 'replicated_merge_tree_insert_retry_pause';
+SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause;
+SELECT name, enabled FROM system.fail_points WHERE name = 'replicated_merge_tree_insert_retry_pause';

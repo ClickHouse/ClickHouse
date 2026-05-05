@@ -1,9 +1,9 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 
-#include <boost/core/noncopyable.hpp>
 #include <condition_variable>
 #include <mutex>
+#include <boost/core/noncopyable.hpp>
 
 
 namespace DB
@@ -184,6 +184,7 @@ APPLY_FOR_FAILPOINTS(M, M, M, M)
 
 #if USE_LIBFIU
 
+std::unordered_set<String> FailPointInjection::enabled_failpoints;
 std::unordered_map<String, std::shared_ptr<FailPointChannel>> FailPointInjection::fail_point_wait_channels;
 std::mutex FailPointInjection::mu;
 
@@ -226,10 +227,11 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
     {                                                                                                           \
         /* FIU_ONETIME -- Only fail once; the point of failure will be automatically disabled afterwards.*/     \
         fiu_enable(FailPoints::NAME, 1, nullptr, flags);                                                        \
-        if (pause)                                                                                               \
         {                                                                                                       \
             std::lock_guard lock(mu);                                                                           \
-            fail_point_wait_channels.try_emplace(FailPoints::NAME, std::make_shared<FailPointChannel>());       \
+            enabled_failpoints.insert(FailPoints::NAME);                                                        \
+            if (pause)                                                                                          \
+                fail_point_wait_channels.try_emplace(FailPoints::NAME, std::make_shared<FailPointChannel>());   \
         }                                                                                                       \
         return;                                                                                                 \
     }
@@ -250,6 +252,7 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
 void FailPointInjection::disableFailPoint(const String & fail_point_name)
 {
     std::lock_guard lock(mu);
+    enabled_failpoints.erase(fail_point_name);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
         /// Increment resume_epoch to wake up all waiting threads.
@@ -293,12 +296,9 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     channel->pause_cv.notify_all();
 
     /// Wait for resume_epoch to be incremented by notify or disable
-    channel->resume_cv.wait(lock, [&] {
-        return channel->resume_epoch > my_resume_epoch;
-    });
+    channel->resume_cv.wait(lock, [&] { return channel->resume_epoch > my_resume_epoch; });
 
     --channel->pause_count;
-
 }
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
@@ -314,9 +314,7 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
     /// Using pause_epoch > resume_epoch instead of pause_count > 0 avoids a race:
     /// after NOTIFY, the task thread may not have decremented pause_count yet,
     /// so a stale pause_count > 0 could cause waitForPause to return prematurely.
-    channel->pause_cv.wait(lock, [&] {
-        return channel->pause_epoch > channel->resume_epoch || channel->disabled;
-    });
+    channel->pause_cv.wait(lock, [&] { return channel->pause_epoch > channel->resume_epoch || channel->disabled; });
 }
 
 void FailPointInjection::waitForResume(const String & fail_point_name)
@@ -330,21 +328,20 @@ void FailPointInjection::waitForResume(const String & fail_point_name)
     size_t my_resume_epoch = channel->resume_epoch;
 
     /// Wait for resume_epoch to be incremented by notify or disable
-    channel->resume_cv.wait(lock, [&] {
-        return channel->resume_epoch > my_resume_epoch;
-    });
+    channel->resume_cv.wait(lock, [&] { return channel->resume_epoch > my_resume_epoch; });
 }
 
 std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints()
 {
     std::vector<FailPointInfo> result;
+    std::lock_guard lock(mu);
 
 #define SUB_M(NAME, TP)                                 \
     result.push_back(                                   \
         FailPointInfo{                                  \
             .name = FailPoints::NAME,                   \
             .type = FailPointType::TP,                  \
-            .enabled = fiu_fail(FailPoints::NAME) != 0, \
+            .enabled = enabled_failpoints.contains(FailPoints::NAME), \
         });
 #define ADD_ONCE(NAME) SUB_M(NAME, Once)
 #define ADD_REGULAR(NAME) SUB_M(NAME, Regular)

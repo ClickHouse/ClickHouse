@@ -28,6 +28,7 @@
 #endif // USE_LIBFIU
 
 #include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -197,8 +198,12 @@ private:
     /// Guards all accesses to fail_point_wait_channels.
     static std::mutex mu;
 
+    /// Tracks all failpoints that have been enabled via enableFailPoint() and not yet
+    /// disabled via disableFailPoint(). Used by getFailPoints() to report enabled status
+    /// without calling fiu_fail(), which would consume FIU_ONETIME failpoints as a side effect.
+    static std::unordered_set<String> enabled_failpoints;
+
     /// Maps enabled failpoint names to their channels.
-    /// A failpoint is considered enabled if and only if it has an entry here.
     /// Channels carry the condition variables used by pauseable failpoints to
     /// block / resume threads and track pause_count / resume_epoch.
     static std::unordered_map<String, std::shared_ptr<FailPointChannel>> fail_point_wait_channels;
