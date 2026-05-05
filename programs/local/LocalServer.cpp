@@ -586,22 +586,17 @@ void LocalServer::startServers(const ServerType & server_type)
     http_params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
 
     /// Treat a repeated SYSTEM START LISTEN as a no-op when a matching listener is already active,
-    /// matching `clickhouse-server` behavior. We only throw below if neither a new server was
-    /// created nor a matching listener was already running.
-    auto matches_requested_type = [&](const ProtocolServerAdapter & s)
+    /// matching `clickhouse-server` behavior. We verify success per requested protocol below so a
+    /// partial start (e.g. TCP already running while HTTP fails on every `listen_host` under
+    /// `listen_try`) is reported instead of silently masked by an active sibling listener.
+    auto has_active_listener = [&](const char * port_name)
     {
-        if (s.isStopping())
-            return false;
-        const std::string & name = s.getPortName();
-        if (server_type.shouldStart(ServerType::Type::TCP) && name == "tcp_port")
-            return true;
-        if (server_type.shouldStart(ServerType::Type::HTTP) && name == "http_port")
-            return true;
-        return false;
+        return std::any_of(servers.begin(), servers.end(),
+            [port_name](const ProtocolServerAdapter & s)
+            {
+                return !s.isStopping() && s.getPortName() == port_name;
+            });
     };
-    bool had_active_matching_server = std::any_of(servers.begin(), servers.end(), matches_requested_type);
-
-    size_t servers_before = servers.size();
 
     for (const auto & listen_host : listen_hosts)
     {
@@ -660,8 +655,14 @@ void LocalServer::startServers(const ServerType & server_type)
         }
     }
 
-    if (servers.size() == servers_before && !had_active_matching_server)
-        throw Exception(ErrorCodes::NETWORK_ERROR, "No listeners started — check listen_host and port configuration");
+    /// Verify each requested protocol independently so grouped types (`QUERIES ALL` / `QUERIES DEFAULT`)
+    /// don't silently accept a partial start when one protocol fails on every `listen_host`.
+    if (server_type.shouldStart(ServerType::Type::TCP) && !has_active_listener("tcp_port"))
+        throw Exception(ErrorCodes::NETWORK_ERROR,
+            "Failed to start TCP listener — check listen_host and tcp_port configuration");
+    if (server_type.shouldStart(ServerType::Type::HTTP) && !has_active_listener("http_port"))
+        throw Exception(ErrorCodes::NETWORK_ERROR,
+            "Failed to start HTTP listener — check listen_host and http_port configuration");
 }
 
 
