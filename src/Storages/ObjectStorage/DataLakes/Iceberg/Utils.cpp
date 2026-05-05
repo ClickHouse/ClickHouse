@@ -607,8 +607,17 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::Int64:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
-        case TypeIndex::Time64:
             return "long";
+        case TypeIndex::Time64:
+        {
+            auto scale = getDecimalScale(*type);
+            if (scale == 0 || scale == 3)
+                return "int";
+            else if (scale == 6)
+                return "long";
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+        }
         case TypeIndex::Float32:
             return "float";
         case TypeIndex::Float64:
@@ -628,8 +637,14 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
 
 Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type)
 {
-    auto type_id = type->getTypeId();
-    if (type_id == TypeIndex::Time || type_id == TypeIndex::Time64)
+    if (type->isNullable())
+    {
+        auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
+        return getAvroLogicalType(type_nullable->getNestedType());
+    }
+
+    const WhichDataType which(type);
+    if (which.isTime64())
     {
         auto scale = getDecimalScale(*type);
         switch (scale)

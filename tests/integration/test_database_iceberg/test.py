@@ -981,8 +981,7 @@ def test_invalid_auth_header_format(started_cluster):
     assert "Invalid auth header format" in str(err.value)
 
 
-@pytest.mark.parametrize("storage_type", ["s3"])
-def test_partitioning_by_time(started_cluster, storage_type):
+def test_partitioning_by_time(started_cluster):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_partitioning_by_time_{uuid.uuid4()}"

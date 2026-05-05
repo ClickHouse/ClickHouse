@@ -155,9 +155,9 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
+        case TypeIndex::Time:
             return dumpValue(field.safeGet<Int32>());
         case TypeIndex::Int64:
-        case TypeIndex::Time:
             return dumpValue(field.safeGet<Int64>());
         case TypeIndex::Time64:
         case TypeIndex::DateTime64:
@@ -426,8 +426,8 @@ void generateManifestFile(
 
                 case Field::Types::Decimal64:
                 {
-                    auto type_id = partition_types[i]->getTypeId();
-                    if (type_id == TypeIndex::Time64 || type_id == TypeIndex::Time)
+                    const WhichDataType which(*partition_types[i]);
+                    if (which.isTime64())
                     { /// Need to write logical type into Avro
                         auto scale = getDecimalScale(*partition_types[i]);
                         if (scale == 0)
@@ -445,7 +445,7 @@ void generateManifestFile(
                         {
                             throw Exception(
                                 ErrorCodes::BAD_ARGUMENTS,
-                                "Avro file supports only seconds, milliseconds and microsecods for time, partition precision: {}", scale);
+                                "Avro file supports only seconds, milliseconds and microseconds for time, partition precision: {}", scale);
                         }
                     }
                     else
