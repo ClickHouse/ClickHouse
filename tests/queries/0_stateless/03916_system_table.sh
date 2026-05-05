@@ -113,3 +113,6 @@ wait $DROP_PID
 # After PAUSEABLE_ONCE fires and is resumed, enabled must be 0 automatically —
 # no explicit SYSTEM DISABLE FAILPOINT required.
 $CLICKHOUSE_CLIENT -q "SELECT name, enabled FROM system.fail_points WHERE name = '${FP}'"
+
+# Leak check: no failpoints must be left enabled at the end of the test.
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.fail_points WHERE enabled = 1"
