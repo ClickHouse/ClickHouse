@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel
+# Tags: no-replicated-database
 
 # Regression test: TablesStatusRequest sent before interserver authentication
 # should cause the connection to be closed without leaking table information.
