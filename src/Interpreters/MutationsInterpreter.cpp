@@ -457,11 +457,12 @@ MutationsInterpreter::MutationsInterpreter(
 
     const auto & part_columns = source_part_->getColumnsDescription();
     auto persistent_virtuals = metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
-    NameSet available_columns_set(available_columns.begin(), available_columns.end());
-
+    NameSet available_columns_set = available_columns | std::ranges::to<NameSet>();
+    NameSet key_columns = metadata_snapshot->getColumnsRequiredForSortingKey() | std::ranges::to<NameSet>();
     for (const auto & column : persistent_virtuals)
     {
-        if (part_columns.has(column.name) && !available_columns_set.contains(column.name))
+        bool needed = part_columns.has(column.name) || key_columns.contains(column.name);
+        if (needed && !available_columns_set.contains(column.name))
             available_columns.push_back(column.name);
     }
 

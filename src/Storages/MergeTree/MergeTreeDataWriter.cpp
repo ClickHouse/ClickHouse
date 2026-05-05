@@ -365,7 +365,7 @@ void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActions
     }
 }
 
-void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns, const Names & columns, const IColumnPermutation * perm_ptr = nullptr)
+void materializeVirtualColumns(Block & block, const Names & columns, const IColumnPermutation * perm_ptr = nullptr)
 {
     for (const auto & column_name : columns)
     {
@@ -375,7 +375,6 @@ void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns,
         if (column_name == BlockNumberColumn::name)
         {
             block.insert(ColumnWithTypeAndName{BlockNumberColumn::type->createColumnConst(block.rows(), MergeTreePartInfo::MAX_BLOCK_NUMBER)->convertToFullColumnIfConst(), BlockNumberColumn::type, column_name});
-            block_columns.emplace_back(BlockNumberColumn::name, BlockNumberColumn::type);
         }
         else if (column_name == BlockOffsetColumn::name)
         {
@@ -386,7 +385,6 @@ void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns,
                 data[perm_ptr ? (*perm_ptr)[i] : i] = i;
 
             block.insert(ColumnWithTypeAndName{std::move(mutable_column), BlockOffsetColumn::type, column_name});
-            block_columns.emplace_back(BlockOffsetColumn::name, BlockOffsetColumn::type);
         }
     }
 }
@@ -717,7 +715,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
         auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices);
-        materializeVirtualColumns(block, columns, expr->getRequiredColumns());
+        materializeVirtualColumns(block, expr->getRequiredColumns());
         addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
         expr->execute(block);
     }
@@ -948,7 +946,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
-        materializeVirtualColumns(block, columns, projection.required_columns, perm_ptr);
+        materializeVirtualColumns(block, projection.required_columns, perm_ptr);
 
         Block projection_block;
         {
@@ -1060,7 +1058,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
         auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {});
-        materializeVirtualColumns(block, columns, expr->getRequiredColumns());
+        materializeVirtualColumns(block, expr->getRequiredColumns());
         addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
         expr->execute(block);
     }
