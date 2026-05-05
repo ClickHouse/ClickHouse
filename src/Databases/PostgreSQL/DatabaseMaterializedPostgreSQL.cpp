@@ -566,6 +566,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         .supports_settings = true,
         .supports_table_overrides = true,
         .is_external = true,
+        .source_access_type = AccessTypeObjects::Source::POSTGRES,
     });
 }
 }
