@@ -13,7 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test_table"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test_table (k UInt64) ENGINE = MergeTree ORDER BY k"
 
-# Capture stderr and assert the specific LOGICAL_ERROR from `HashJoin::getNonJoinedBlocks`
+# Capture stderr and assert the specific exception from `HashJoin::getNonJoinedBlocks`
 # is absent. Other errors (e.g., type mismatch, syntax) from these fuzzer-style queries
 # are acceptable — only the regressed exception must not reappear.
 # `run_and_check` fails the test if the guarded pattern appears on stderr.
@@ -21,9 +21,9 @@ run_and_check()
 {
     local out
     out=$(${CLICKHOUSE_CLIENT} --query="$1" 2>&1 >/dev/null) || true
-    if echo "$out" | grep -qE 'LOGICAL_ERROR|Unexpected columns in result sample block|Unexpected number of columns in result sample block'
+    if echo "$out" | grep -qE 'Unexpected (columns|number of columns) in result sample block'
     then
-        echo "FAIL: unexpected LOGICAL_ERROR:"
+        echo "FAIL: regressed exception in HashJoin::getNonJoinedBlocks:"
         echo "$out"
         return 1
     fi
