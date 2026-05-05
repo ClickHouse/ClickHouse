@@ -73,10 +73,10 @@
 1
 1
 1
-12. Array tokenizer + postprocessor: has() applies postprocessor to both sides.
+12. Array tokenizer + postprocessor: has() / hasAll() / hasAny() bypass the postprocessor.
 1
 1
-1
+0
 0
 13. String tokenizer + non-commutative postprocessor: row-scan matches index.
 1

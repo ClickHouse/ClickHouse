@@ -313,9 +313,10 @@ SELECT count() FROM tab WHERE hasToken(val, 'world');  -- row 3, new part (index
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '12. Array tokenizer + postprocessor: has() applies postprocessor to both sides.';
--- With a lower postprocessor, has() becomes case-insensitive: each array element and the
--- needle are both lowercased before comparison, matching what is stored in the index.
+SELECT '12. Array tokenizer + postprocessor: has() / hasAll() / hasAny() bypass the postprocessor.';
+-- The array tokenizer stores raw elements; the postprocessor is not applied to them.
+-- has/hasAll/hasAny compare against the raw stored elements exactly.
+-- The postprocessor is irrelevant for these functions.
 
 CREATE TABLE tab
 (
@@ -327,9 +328,9 @@ ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
 
-SELECT count() FROM tab WHERE has(val, 'Foo');   -- 1
-SELECT count() FROM tab WHERE has(val, 'BAR');   -- 1
-SELECT count() FROM tab WHERE has(val, 'foo');   -- 1: lower('foo') = lower('Foo'), matches row 1
+SELECT count() FROM tab WHERE has(val, 'Foo');   -- 1: exact match 'Foo'
+SELECT count() FROM tab WHERE has(val, 'BAR');   -- 1: exact match 'BAR'
+SELECT count() FROM tab WHERE has(val, 'foo');   -- 0: 'foo' ≠ 'Foo', postprocessor not applied
 SELECT count() FROM tab WHERE has(val, 'xyz');   -- 0
 
 DROP TABLE tab;

@@ -229,9 +229,9 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     bool has_preprocessor = preprocessor && preprocessor->hasActions();
 
     /// Exact mode is possible when the array tokenizer is used without a preprocessor.
-    /// A postprocessor is fine: it is applied to both the stored tokens and the needle token
-    /// via stringToTokens, and in Exact mode the virtual column fully replaces the filter so
-    /// no row-level comparison of the postprocessed needle against the original haystack occurs.
+    /// has/hasAll/hasAny operate on array elements directly and bypass the postprocessor
+    /// (just as they bypass the tokenizer and preprocessor), so a postprocessor does not
+    /// affect the mode selection for these functions.
     const bool read_mode_can_be_exact = is_array_tokenizer && !has_preprocessor;
 
     if (function_name == "equals"
@@ -526,7 +526,7 @@ std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & fi
     const String value = preprocessor->processConstant(field.safeGet<String>());
     tokenizer->stringToTokens(value.data(), value.size(), tokens);
     tokens = tokenizer->compactTokens(tokens);
-    return postprocessor->applyBatch(std::move(tokens));
+    return tokens;
 }
 
 std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
@@ -535,7 +535,7 @@ std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field &
     const String value = preprocessor->processConstant(field.safeGet<String>());
     tokenizer->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
     tokens = tokenizer->compactTokens(tokens);
-    return postprocessor->applyBatch(std::move(tokens));
+    return tokens;
 }
 
 std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
@@ -544,7 +544,7 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
     const String value = preprocessor->processConstant(field.safeGet<String>());
     tokenizer->stringLikeToTokens(value.data(), value.size(), tokens);
     tokens = tokenizer->compactTokens(tokens);
-    return postprocessor->applyBatch(std::move(tokens));
+    return tokens;
 }
 
 std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const
@@ -697,8 +697,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!value_data_type.isStringOrFixedString())
             return false;
 
-        auto make_map_function = [&](auto tokens)
+        auto make_map_function = [&](std::vector<String> tokens)
         {
+            if (tokens.empty())
+                return false;
             out.function = RPNElement::FUNCTION_EQUALS;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             return true;
@@ -727,6 +729,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "equals")
     {
         auto tokens = stringToTokens(value_field);
+        if (tokens.empty())
+            return false;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
@@ -738,7 +742,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         // hasAny/AllTokens funcs accept either string which will be tokenized or array of strings to be used as-is
         if (value_data_type.isString())
         {
-            search_tokens = stringToTokens(value_field);
+            search_tokens = postprocessor->applyBatch(stringToTokens(value_field));
         }
         else
         {
@@ -859,6 +863,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                     return false;
             }
             tokens.push_back("");
+        }
+        else
+        {
+            tokens = postprocessor->applyBatch(std::move(tokens));
+            /// The postprocessor may map the token to nothing (e.g. a stop-word filter).
+            /// Use a sentinel that is never stored in the index so the condition evaluates to false.
+            if (tokens.empty())
+                tokens.push_back("");
         }
 
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -983,6 +995,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "has")
     {
         auto tokens = stringToTokens(value_field);
+        if (tokens.empty())
+            return false;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
@@ -1100,6 +1114,8 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         return false;
 
     auto tokens = stringToTokens(*key_const_value);
+    if (tokens.empty())
+        return false;
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>("mapContainsKey", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
     return true;

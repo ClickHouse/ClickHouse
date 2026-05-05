@@ -373,8 +373,9 @@ private:
     {
         using Entry = std::pair<std::string_view, TextIndexFunctionTransforms>;
         /// Entries must be sorted by name for binary search.
-        static constexpr std::array<Entry, 5> table = {{
-            {"has",          {false, false, true}},
+        /// has/hasAll/hasAny operate on array elements directly (no tokenizer, no preprocessor)
+        /// and therefore also bypass the postprocessor; they are not listed here.
+        static constexpr std::array<Entry, 4> table = {{
             {"hasAllTokens", {true,  true,  true}},
             {"hasAnyTokens", {true,  true,  true}},
             {"hasPhrase",    {true,  true,  false}},
