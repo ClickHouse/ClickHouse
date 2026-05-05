@@ -13,12 +13,18 @@
 
 DROP TABLE IF EXISTS t_63019;
 
+-- The user-provided `path` deliberately differs in its last component from the disk `name`.
+-- The metadata storage default at `<context.getPath()>/disks/<disk_name>/` would otherwise
+-- collide with the object storage path on builds where the server's working directory
+-- coincides with its data path (CI's run_r0 layout), causing intermittent
+-- `create_directory: No such file or directory` failures on the metadata-side `store/`
+-- subdirectory. Mirrors the path style of `02963_test_flexible_disk_configuration.sql`.
 CREATE TABLE t_63019 (a Int32, b Int64) ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = disk(
     name = '63019_disk_default',
     type = object_storage,
     object_storage_type = local_blob_storage,
-    path = './disks/63019_default/');
+    path = './63019_disk_default_objstore/');
 
 INSERT INTO t_63019 SELECT number, number * 10 FROM numbers(10);
 SELECT count(), sum(a) FROM t_63019;
@@ -61,12 +67,15 @@ DROP TABLE t_63019;
 
 DROP TABLE IF EXISTS t_63019_modify_disk;
 
+-- See note above on disk `name` vs `path`-last-component: the path here uses
+-- `63019_modify_disk_objstore/` (different from `name = '63019_modify_disk'`) to avoid the
+-- metadata-vs-object-storage directory collision in CI flaky-check iterations.
 CREATE TABLE t_63019_modify_disk (a Int32) ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = disk(
     name = '63019_modify_disk',
     type = object_storage,
     object_storage_type = local_blob_storage,
-    path = './disks/63019_modify_disk/');
+    path = './63019_modify_disk_objstore/');
 
 INSERT INTO t_63019_modify_disk SELECT number FROM numbers(5);
 SELECT count(), sum(a) FROM t_63019_modify_disk;
@@ -80,7 +89,7 @@ ALTER TABLE t_63019_modify_disk MODIFY SETTING disk = disk(
     name = '63019_modify_disk',
     type = object_storage,
     object_storage_type = local_blob_storage,
-    path = './disks/63019_modify_disk/');
+    path = './63019_modify_disk_objstore/');
 SELECT count(), sum(a) FROM t_63019_modify_disk;
 SELECT a FROM t_63019_modify_disk ORDER BY a;
 
@@ -96,7 +105,7 @@ ALTER TABLE t_63019_modify_disk MODIFY SETTING disk = disk(
     name = '63019_modify_disk_cache',
     type = cache,
     disk = '63019_modify_disk',
-    path = './filesystem_caches/63019_modify_disk_cache/',
+    path = './63019_modify_disk_cache_data/',
     max_size = '1Mi'); -- { serverError BAD_ARGUMENTS }
 
 -- The rejected ALTER above must not corrupt or alter the table's data — verify both the
