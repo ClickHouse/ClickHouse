@@ -1004,6 +1004,12 @@ use h3o::geom::ToCells;
 
 /// H3Error maxPolygonToCellsSize(const GeoPolygon *geoPolygon, int res,
 ///                               uint32_t flags, int64_t *out)
+///
+/// The polygon code paths in `h3o` (and its `geo` dependency) can panic on
+/// degenerate inputs — e.g. coordinates produced by the AST fuzzer that hit
+/// numerical edge cases in the line-sweep intersection algorithm. Such panics
+/// must not propagate across the FFI boundary, so we wrap the body in
+/// `catch_unwind` and translate panics into `E_FAILED`.
 #[no_mangle]
 pub unsafe extern "C" fn maxPolygonToCellsSize(
     geo_polygon: *const GeoPolygon,
@@ -1014,18 +1020,25 @@ pub unsafe extern "C" fn maxPolygonToCellsSize(
     let Some(resolution) = try_resolution(res) else {
         return E_FAILED;
     };
-    let geo_poly = c_polygon_to_geo(&*geo_polygon);
-    let Ok(polygon) = h3o::geom::Polygon::from_radians(geo_poly) else {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let geo_poly = c_polygon_to_geo(&*geo_polygon);
+        let polygon = h3o::geom::Polygon::from_radians(geo_poly).ok()?;
+        let config = h3o::geom::PolyfillConfig::new(resolution);
+        Some(polygon.max_cells_count(config))
+    }));
+    let Ok(Some(count)) = result else {
         return E_FAILED;
     };
-    let config = h3o::geom::PolyfillConfig::new(resolution);
-    let count = polygon.max_cells_count(config);
     *out = if count > i64::MAX as usize { i64::MAX } else { count as i64 };
     E_SUCCESS
 }
 
 /// H3Error polygonToCells(const GeoPolygon *geoPolygon, int res,
 ///                        uint32_t flags, H3Index *out)
+///
+/// Wrapped in `catch_unwind` for the same reason as `maxPolygonToCellsSize` —
+/// the polygon-to-cells iteration in `h3o`/`geo` is not panic-free on all
+/// inputs and we must not unwind across the C ABI.
 #[no_mangle]
 pub unsafe extern "C" fn polygonToCells(
     geo_polygon: *const GeoPolygon,
@@ -1036,22 +1049,24 @@ pub unsafe extern "C" fn polygonToCells(
     let Some(resolution) = try_resolution(res) else {
         return E_FAILED;
     };
-    let geo_poly = c_polygon_to_geo(&*geo_polygon);
-    let Ok(polygon) = h3o::geom::Polygon::from_radians(geo_poly.clone()) else {
-        return E_FAILED;
-    };
-    // Compute the maximum buffer size to defensively bound writes.
-    let max_config = h3o::geom::PolyfillConfig::new(resolution);
-    let Ok(max_polygon) = h3o::geom::Polygon::from_radians(geo_poly) else {
-        return E_FAILED;
-    };
-    let max_size = max_polygon.max_cells_count(max_config);
-    let config = h3o::geom::PolyfillConfig::new(resolution);
-    for (i, cell) in polygon.to_cells(config).enumerate() {
-        if i >= max_size {
-            break;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let geo_poly = c_polygon_to_geo(&*geo_polygon);
+        let polygon = h3o::geom::Polygon::from_radians(geo_poly.clone()).ok()?;
+        // Compute the maximum buffer size to defensively bound writes.
+        let max_config = h3o::geom::PolyfillConfig::new(resolution);
+        let max_polygon = h3o::geom::Polygon::from_radians(geo_poly).ok()?;
+        let max_size = max_polygon.max_cells_count(max_config);
+        let config = h3o::geom::PolyfillConfig::new(resolution);
+        for (i, cell) in polygon.to_cells(config).enumerate() {
+            if i >= max_size {
+                break;
+            }
+            *out.add(i) = u64::from(cell);
         }
-        *out.add(i) = u64::from(cell);
+        Some(())
+    }));
+    if !matches!(result, Ok(Some(()))) {
+        return E_FAILED;
     }
     E_SUCCESS
 }
