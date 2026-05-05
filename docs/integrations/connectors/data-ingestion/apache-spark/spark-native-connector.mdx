@@ -1911,6 +1911,25 @@ spark.conf.set("spark.clickhouse.write.repartitionByPartition", "true")
 If you also have `spark.clickhouse.write.distributed.convertLocal=true`, ignoring unsupported sharding keys can cause incorrect data distribution. In that case, either use a supported sharding key or set `spark.clickhouse.write.distributed.convertLocal.allowUnsupportedSharding=true` only if you have verified your data distribution — rows may be written to the wrong shard, causing data skew or incorrect query results when querying shards directly.
 :::
 
+---
+
+### Variant integers come back as quoted strings {#troubleshooting-variant-integer-roundtrip}
+
+**Symptom**: Integer values inside a `VariantType` column written with `spark.clickhouse.write.format=arrow` come back as **string-typed** Variant entries — Spark reads the value as a string, not a number. Writing `parse_json('{"v": 1}')` returns a Variant whose `v` path is the string `"1"` (JSON form: `{"v":"1"}`) instead of the number `1`. Floats, strings, and booleans are unaffected.
+
+**Cause**: The Arrow write path currently ships Variants as JSON strings and lets ClickHouse cast `String → JSON` on insert. The cast widens every JSON integer to `Int64`, and `output_format_json_quote_64bit_integers=1` then quotes those values on read. The rebuilt Variant stores them as strings.
+
+**Fix**: Pick one:
+- Use JSON write format — sidesteps the `String → JSON` cast entirely. Note that JSON writes can be slower than Arrow for large volumes, so benchmark if write throughput matters:
+  ```text
+  spark.clickhouse.write.format=json
+  ```
+- Disable integer quoting on reads (keeps Arrow writes):
+  ```text
+  spark.clickhouse.read.settings=output_format_json_quote_64bit_integers=0
+  ```
+- Declare typed JSON paths in ClickHouse out-of-band, e.g. `data JSON(v Int8)`. Typed paths bypass the quoting setting entirely.
+
 ## Contributing and support {#contributing-and-support}
 
 If you'd like to contribute to the project or report any issues, we welcome your input!
