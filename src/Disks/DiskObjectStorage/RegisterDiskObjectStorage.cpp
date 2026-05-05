@@ -55,7 +55,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
             cluster_registry["main"] = { .enabled = true, .local = true, .config_prefix = config_prefix };
         }
 
-        ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>(std::move(cluster_registry));
+        ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>(name, std::move(cluster_registry));
         ObjectStorageRouterPtr object_storages = std::make_shared<ObjectStorageRouter>(std::move(object_storage_registry));
 
         std::string compatibility_metadata_type_hint;

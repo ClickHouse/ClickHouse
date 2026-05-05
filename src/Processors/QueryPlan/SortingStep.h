@@ -42,6 +42,7 @@ public:
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
+        bool read_in_order_use_virtual_row_per_block = false;
         size_t temporary_files_buffer_size = 0;
         String temporary_files_codec = {};
 
@@ -82,10 +83,9 @@ public:
     SortingStep(
         const SharedHeader & input_header,
         SortDescription sort_description_,
-        size_t max_block_size_,
+        const Settings & settings_,
         UInt64 limit_ = 0,
-        bool always_read_till_end_ = false
-    );
+        bool always_read_till_end_ = false);
 
     String getName() const override { return "Sorting"; }
 
@@ -105,6 +105,9 @@ public:
     bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
 
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
+
+    void enableBuffering() { use_buffering = true; }
+    bool getUseBuffering() const { return use_buffering; }
 
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }

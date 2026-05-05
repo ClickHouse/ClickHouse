@@ -309,7 +309,7 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ]
 ```
 
-With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `MinMax`, `Partition`, `PrimaryKey` or `Skip`) and optional keys:
+With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` or `Skip`) and optional keys:
 
 - `Name` — The index name (currently only used for `Skip` indexes).
 - `Keys` — The array of columns used by the index.
@@ -325,7 +325,7 @@ Example:
 "Node Type": "ReadFromMergeTree",
 "Indexes": [
   {
-    "Type": "MinMax",
+    "Type": "Partition Min-Max",
     "Keys": ["y"],
     "Condition": "(y in [1, +inf))",
     "Parts": 4/5,
@@ -524,11 +524,14 @@ Expression ((Project names + Projection))
 
 In both examples, the query plan shows the complete execution flow including local and remote steps.
 
-With `pretty` = 1, the plan tree is displayed using line-drawing characters instead of indentation,
-and additional information is shown for key steps:
+With `pretty` = 1, the plan tree is displayed using line-drawing characters instead of indentation, and additional information is shown for key steps:
 
 - **Query output columns** are printed at the top of the plan.
+- **Expressions** in filters, aggregation keys, sort descriptions, and window functions are displayed in human-readable SQL-like notation (e.g., `a + 1 > 5` instead of `greater(plus(a, 1), 5)`). Internal column identifier prefixes (such as `__table1.`) are removed for clarity.
 - **Source steps** (such as `ReadFromMergeTree`) display their output columns.
+- **Filter steps** display the filter condition in SQL notation. When runtime join filters are present, they are shown separately.
+- **Aggregation steps** display keys and aggregate functions with their arguments (e.g., `sum(c)`, `count()`).
+- **IN sets** from tuple literals show their values (truncated for large sets), subquery-based sets are labeled `subquery1`, `subquery2`, etc., and sets from `Set` engine tables show the table name.
 - **Join steps** display the join relation using mathematical notation, estimated result row count,
   and which output columns come from the left vs. right side. The following symbols are used to
   represent different join types:
@@ -549,8 +552,7 @@ For example, `t1 ⟕ t2` means a left join between tables `t1` and `t2`.
 The number in brackets after the table name (e.g., `t1[100]`) indicates the estimated row count
 when table statistics are available.
 
-The `pretty` option works well together with `compact = 1`, which hides `Expression` steps and
-detailed action info, making the plan easier to read.
+The `pretty` option works well together with `compact = 1`, which hides `Expression` steps and detailed action info, making the plan easier to read.
 
 ```sql
 EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
@@ -582,10 +584,10 @@ Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Result rows: 100
-│  Join conditions: [(__table1.id) = (__table2.id)]
 │  Output:
 │    Left:  id, value
 │    Right: id, value
+│  Join conditions: id = id
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1

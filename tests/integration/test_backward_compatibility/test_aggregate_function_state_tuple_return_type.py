@@ -319,6 +319,22 @@ def test_backward_compatibility_for_tuple_return_type(start_cluster):
                 "argAndMinResample",
                 f"SELECT argAndMinResample(0, 2, 1)(a, b, g) FROM {remote_tab}",
             ),
+            # -OrDefault combinator
+            (
+                "sumCountOrDefault",
+                f"SELECT sumCountOrDefault(x) FROM {remote_tab}",
+            ),
+            (
+                "simpleLinearRegressionOrDefault",
+                f"SELECT tuple("
+                f"roundBankers(tupleElement(simpleLinearRegressionOrDefault(x, y), 1), 4), "
+                f"roundBankers(tupleElement(simpleLinearRegressionOrDefault(x, y), 2), 4)) "
+                f"FROM {remote_tab}",
+            ),
+            (
+                "argAndMinOrDefault",
+                f"SELECT argAndMinOrDefault(a, b) FROM {remote_tab}",
+            ),
         ]
 
     def build_empty_checks(remote_tab):
@@ -343,6 +359,7 @@ def test_backward_compatibility_for_tuple_return_type(start_cluster):
             ("argAndMinIf_empty", f"SELECT argAndMinIf(a, b, a > 0) FROM {remote_tab} WHERE 0"),
             ("sumCountForEach_empty", f"SELECT sumCountForEach([x]) FROM {remote_tab} WHERE 0"),
             ("sumCountResample_empty", f"SELECT sumCountResample(0, 2, 1)(x, g) FROM {remote_tab} WHERE 0"),
+            ("sumCountOrDefault_empty", f"SELECT sumCountOrDefault(x) FROM {remote_tab} WHERE 0"),
         ]
 
     def batch_query(checks):

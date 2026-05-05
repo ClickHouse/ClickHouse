@@ -52,6 +52,8 @@ public:
         {
             /// Atoms of a Boolean expression.
             FUNCTION_IN_RANGE,
+            FUNCTION_IS_NULL,
+            FUNCTION_IS_NOT_NULL,
             FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -69,8 +71,12 @@ public:
         /// column not in range (a, b) ...
         /// we use 'not ranges' to estimate condition a != 1 and a != 2 better.
         ColumnRanges column_not_ranges;
+        /// columns checked with IS NULL predicate
+        std::unordered_set<String> null_check_columns;
+        /// columns checked with IS NOT NULL predicate
+        std::unordered_set<String> not_null_check_columns;
         bool finalized = false;
-        Float64 selectivity;
+        Float64 selectivity = 0;
 
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
         void finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata);
@@ -85,6 +91,7 @@ private:
         ColumnStatisticsPtr stats;
 
         Float64 estimateRanges(const PlainRanges & ranges) const;
+        Float64 estimateNotRanges(const PlainRanges & ranges) const;
         UInt64 estimateCardinality() const;
     };
 
@@ -93,9 +100,10 @@ private:
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
-    static constexpr Float64 default_cond_range_factor = 0.5;
+    static constexpr Float64 default_cond_range_factor = 0.33;
     static constexpr Float64 default_cond_equal_factor = 0.01;
-    static constexpr Float64 default_unknown_cond_factor = 1;
+    static constexpr Float64 default_unknown_cond_factor = 0.33;
+    static constexpr Float64 default_like_factor = 0.1;
     static constexpr Float64 default_cardinality_ratio = 0.1;
 
     UInt64 total_rows = 0;

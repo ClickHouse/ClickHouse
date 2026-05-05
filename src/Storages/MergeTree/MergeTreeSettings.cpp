@@ -267,6 +267,14 @@ namespace ErrorCodes
     DECLARE(Bool, escape_variant_subcolumn_filenames, true, R"(
     Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility.
     )", 0) \
+    DECLARE(Bool, share_nested_offsets, true, R"(
+    When enabled (default), Array columns with dotted names that share a common prefix (e.g. n.a and n.b)
+    are treated as part of a Nested structure: they share a single offsets file on disk (e.g. n.size0),
+    and their array sizes are validated to be equal during INSERT.
+    When disabled, each Array column gets its own independent offset file, dotted names carry no special
+    semantics, and a scalar column may coexist with dotted Array columns sharing the same prefix
+    (e.g. n UInt32 alongside n.a Array(String)). This setting is immutable after table creation.
+    )", 0) \
     DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
     Serialization info version used when writing `serialization.json`.
     This setting is required for compatibility during cluster upgrades.
@@ -835,6 +843,13 @@ namespace ErrorCodes
     The maximum uncompressed size of data in all patch parts in bytes.
     If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
     0 - unlimited.
+    )", 0) \
+    DECLARE(Bool, compress_per_column_in_compact_parts, true, R"(
+    Controls the physical layout of Compact parts. If true (default), each column in a granule
+    starts a new compressed block, allowing ClickHouse to skip reading unnecessary columns
+    from disk. If false, all columns within a granule are packed into the same compressed block,
+    improving compression ratio but requiring more data to be decompressed during reads.
+    This is beneficial for workloads that always read all columns (e.g. projections).
     )", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
@@ -1522,8 +1537,10 @@ namespace ErrorCodes
     DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
     How often replica will try to reload it's flags according to background schedule.
     )", 0) \
-    DECLARE(Seconds, shared_merge_tree_replica_set_max_lifetime_seconds, 300, R"(
-    How often replicas will try to update replica set in background.
+    DECLARE(Seconds, shared_merge_tree_replica_set_max_lifetime_seconds, 1800, R"(
+    How often replicas will try to update replica set in background. Next run is jittered
+    uniformly in [0, value] seconds. Exception: value = 0 does not follow that contract;
+    the implementation applies a minimum of 200 ms, so the next run is jittered in [0, 200] ms.
     )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
@@ -1850,9 +1867,9 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
     )", 0) \
-    DECLARE(String, auto_statistics_types, "", R"(
+    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
-    Supported statistics types: tdigest, countmin, minmax, uniq.
+    Supported statistics types: tdigest, countmin, minmax, nullcount, uniq.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
@@ -1873,8 +1890,9 @@ namespace ErrorCodes
     DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
     Enables coordinated merges strategy
     )", 0) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
-    Number of merge entries that coordinator should prepare and distribute across workers
+    DECLARE(UInt64Auto, shared_merge_tree_merge_coordinator_merges_prepare_count, Field("auto"), R"(
+    Number of merge entries that coordinator should prepare and distribute across workers.
+    When set to 'auto', equals the max number of merge tasks allowed on a single replica multiplied by the number of active replicas.
     )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
     How often merge coordinator should sync with zookeeper to take fresh metadata
@@ -2211,7 +2229,7 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
+    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
 };
 
 static void validateTableDisk(const DiskPtr & disk)
@@ -2310,7 +2328,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
 {
     if (!allow_experimental || !allow_beta)
     {
@@ -2339,7 +2357,14 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
     }
 
 
-    if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks)
+    /// Skip these checks when the background pool was auto-lowered by the low-memory heuristic
+    /// AND the corresponding table-level threshold is at its default. On small systems the pool
+    /// may be tuned below the default thresholds, and we do not want to fail table creation in
+    /// that mode. However, if the operator explicitly overrides one of these thresholds at the
+    /// table level, the check must still fire so a misconfiguration that would silently disable
+    /// mutations or merge sizing is caught early.
+    if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks
+        && !(background_pool_auto_lowered && !number_of_free_entries_in_pool_to_execute_mutation.changed))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_mutation' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -2351,7 +2376,8 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             background_pool_tasks);
     }
 
-    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge > background_pool_tasks)
+    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge > background_pool_tasks
+        && !(background_pool_auto_lowered && !number_of_free_entries_in_pool_to_lower_max_size_of_merge.changed))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_lower_max_size_of_merge' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -2363,7 +2389,8 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             background_pool_tasks);
     }
 
-    if (number_of_free_entries_in_pool_to_execute_optimize_entire_partition > background_pool_tasks)
+    if (number_of_free_entries_in_pool_to_execute_optimize_entire_partition > background_pool_tasks
+        && !(background_pool_auto_lowered && !number_of_free_entries_in_pool_to_execute_optimize_entire_partition.changed))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -2639,9 +2666,9 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || (impl->min_compressed_bytes_to_fsync_after_merge && input_bytes >= impl->min_compressed_bytes_to_fsync_after_merge));
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta);
+    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta, background_pool_auto_lowered);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
@@ -2783,6 +2810,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_string_columns"
         || name == "add_minmax_index_for_temporal_columns"
         || name == "table_disk"
+        || name == "share_nested_offsets"
     ;
 }
 
