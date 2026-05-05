@@ -1,6 +1,7 @@
 #include <Dictionaries/HTTPDictionarySource.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Formats/formatBlock.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ConnectionTimeouts.h>
@@ -20,6 +21,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSnappyMode snappy_mode;
+}
+
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
@@ -66,9 +72,13 @@ QueryPipeline HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWrit
     auto compression_method = chooseCompressionMethod(uri.getPath(), http_request_compression_method_str);
     /// When the compression method came from the response's `Content-Encoding` header,
     /// `Content-Encoding: snappy` follows the HTTP standard wire format (snappy framing),
-    /// independent of the user-tunable `snappy_mode` (which controls generic file/url reads
-    /// where the compression is inferred from the file extension).
-    SnappyMode snappy_mode = !http_request_compression_method_str.empty() ? SnappyMode::Framed : SnappyMode::Basic;
+    /// independent of the user-tunable `snappy_mode`. When the method is instead inferred
+    /// from the URL path (for example `http://.../data.snappy`), respect the user's
+    /// `snappy_mode` setting like `StorageURL` does, so dictionary sources stay consistent
+    /// with generic file/url reads.
+    SnappyMode snappy_mode = !http_request_compression_method_str.empty()
+        ? SnappyMode::Framed
+        : context->getSettingsRef()[Setting::snappy_mode];
     auto in_ptr_wrapped
         = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), compression_method, /*zstd_window_log_max=*/0, snappy_mode);
     auto source = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);
