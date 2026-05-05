@@ -1698,10 +1698,26 @@ static BlockIO executeQueryImpl(
 
             /// Check the limits.
             checkASTSizeLimits(*out_ast, settings);
+        }
 
-            /// Reattach tables only after AST validations pass, so queries that fail
-            /// validation do not produce DETACH/ATTACH side effects.
-            /// Skip EXPLAIN: it should not mutate server state.
+        /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
+        if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
+        {
+            /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
+            process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
+            context->setProcessListElement(process_list_entry->getQueryStatus());
+        }
+
+        /// Load external tables if they were provided
+        context->initializeExternalTablesIfSet();
+
+        /// Reattach tables only after AST validations pass, the query is admitted
+        /// to the process list, and external tables are initialized — so queries
+        /// rejected before this point do not produce DETACH/ATTACH side effects,
+        /// and external tables correctly shadow persistent ones during resolution.
+        /// Skip EXPLAIN: it should not mutate server state.
+        if (out_ast)
+        {
             bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
             bool has_transaction = context->getCurrentTransaction() || settings[Setting::implicit_transaction];
             bool is_explain = out_ast->as<ASTExplainQuery>() != nullptr;
@@ -1725,17 +1741,6 @@ static BlockIO executeQueryImpl(
                 }
             }
         }
-
-        /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
-        if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
-        {
-            /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
-            process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
-            context->setProcessListElement(process_list_entry->getQueryStatus());
-        }
-
-        /// Load external tables if they were provided
-        context->initializeExternalTablesIfSet();
         std::shared_ptr<QueryPlanAndSets> query_plan;
         if (stage == QueryProcessingStage::QueryPlan)
             query_plan = context->getDeserializedQueryPlan();
