@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-parallel
 # no-replicated-database - path in zookeeper differs with replicated database
+# no-parallel - due to usage of fail points
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -48,3 +49,5 @@ $CLICKHOUSE_CLIENT --query "
     SELECT count() FROM t_lwu_on_fly WHERE s = 'bar' SETTINGS apply_patch_parts = 1;
     DROP TABLE t_lwu_on_fly SYNC;
 "
+
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $failpoint_name"

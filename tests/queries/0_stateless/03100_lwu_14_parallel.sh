@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-parallel
 # no-replicated-database - path in zookeeper differs with replicated database
+# no-parallel - due to usage of fail points
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -60,3 +61,5 @@ function run()
 
 run "sync"
 run "auto"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $failpoint_name"

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-parallel
 # no-replicated-database: failpoint is enabled only on one replica.
+# no-parallel - due to usage of fail points
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -52,3 +53,5 @@ $CLICKHOUSE_CLIENT --query "
     SELECT * FROM t_lwu_block_number ORDER BY id;
     DROP TABLE t_lwu_block_number SYNC;
 "
+
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $failpoint_name"
