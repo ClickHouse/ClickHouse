@@ -36,6 +36,12 @@ def create_database(node, db_name: str, engine: str, comment: str):
         )
         return
 
+    if engine == "Lazy":
+        node.query(
+            f"CREATE DATABASE {db_name} ON CLUSTER test_cluster ENGINE = Lazy(1) COMMENT '{comment}'"
+        )
+        return
+
     if engine == "Memory":
         node.query(
             f"CREATE DATABASE {db_name} ON CLUSTER test_cluster ENGINE = Memory COMMENT '{comment}'"
@@ -53,7 +59,7 @@ def create_database(node, db_name: str, engine: str, comment: str):
     raise QueryRuntimeException(f"Not supported engine {engine}")
 
 
-@pytest.mark.parametrize("engine", ["Atomic", "Memory", "Replicated"])
+@pytest.mark.parametrize("engine", ["Atomic", "Lazy", "Memory", "Replicated"])
 def test_alter_database_comment(started_cluster, engine):
     node1.query("DROP DATABASE IF EXISTS test")
     node2.query("DROP DATABASE IF EXISTS test")

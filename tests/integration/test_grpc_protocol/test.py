@@ -10,7 +10,7 @@ import lz4.frame
 import pytest
 import pytz
 
-from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.cluster import ClickHouseCluster, is_arm, run_and_check
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
@@ -22,6 +22,10 @@ import clickhouse_grpc_pb2_grpc
 GRPC_PORT = 9100
 DEFAULT_ENCODING = "utf-8"
 
+# GRPC is disabled on ARM build - skip tests
+if is_arm():
+    pytestmark = pytest.mark.skip
+
 
 # Utilities
 
@@ -31,7 +35,7 @@ config_dir = os.path.join(script_dir, "./configs")
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/config.xml"],
+    main_configs=["configs/grpc_config.xml"],
     # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
     env_variables={
         "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
