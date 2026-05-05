@@ -1200,8 +1200,9 @@ def test_sharded_export_partition_with_filename_pattern(cluster):
     shard2_r1 = cluster.instances["shard2_replica1"]
     watcher_node = cluster.instances["watcher_node"]
 
-    mt_table = "sharded_mt_table"
-    s3_table = "sharded_s3_table"
+    postfix = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"sharded_mt_table_{postfix}"
+    s3_table = f"sharded_s3_table_{postfix}"
 
     # Create sharded tables on all shards with same partition data (same part names)
     # Each shard uses different ZooKeeper path via {shard} macro
