@@ -34,6 +34,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char disk_access_storage_write_entity_fails[];
+    extern const char disk_access_storage_remove_old_file_fails[];
 }
 
 
@@ -524,11 +525,36 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
         {
             writeAccessEntityToDisk(id, *new_entity);
             scheduleWriteLists(new_entity->getType());
+
+            /// Now that the new file is on disk, remove the old collision file (different UUID, same name).
+            /// If removal fails we must roll back: leaving both `<old_id>.sql` and `<id>.sql` on disk
+            /// would let a later `reloadAllAndRebuildLists` see two entities with the same name, which
+            /// `clearConflictsInEntitiesList` resolves by dropping *all* same-name entries — losing the
+            /// entity entirely. Throwing here transfers control to the catch block, which restores a
+            /// single consistent on-disk state via the rollback path below.
+            if (name_collision_id.has_value() && *name_collision_id != id)
+            {
+                auto old_file_path = getEntityFilePath(directory_path, *name_collision_id);
+                fiu_do_on(FailPoints::disk_access_storage_remove_old_file_fails,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in remove old file");
+                });
+                std::error_code ec;
+                std::filesystem::remove(old_file_path, ec);
+                if (ec)
+                    throw Exception(
+                        ErrorCodes::FILE_DOESNT_EXIST,
+                        "Failed to remove replaced file {}: {}",
+                        old_file_path,
+                        ec.message());
+            }
         }
         catch (...)
         {
-            /// If we fail to write the .sql file or schedule list update, roll back the memory insert
-            /// to prevent an inconsistency where the entity is in the list but has no file on disk.
+            /// If we fail to write the .sql file, schedule list update, or remove the displaced
+            /// name-collision file, roll back the memory insert to prevent an inconsistency where
+            /// the entity is in the list but has no file on disk (or a stale duplicate file is left
+            /// behind that would later be dropped by conflict resolution).
             memory_storage.remove(id, /* throw_if_not_exists= */ false);
 
             /// Restore the entity at the same UUID (different or same name).
@@ -564,18 +590,6 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
                     LOG_WARNING(getLogger(), "Failed to clean up {} after a failed insert: {}", new_file_path, ec.message());
             }
             throw;
-        }
-
-        /// Now that the new file is on disk, remove the old collision file (different UUID, same name).
-        /// Tolerate missing files: the old file may have been already removed or never existed.
-        /// Use the non-throwing overload so that a cleanup error doesn't turn a successful replacement into a reported failure.
-        if (name_collision_id.has_value() && *name_collision_id != id)
-        {
-            auto old_file_path = getEntityFilePath(directory_path, *name_collision_id);
-            std::error_code ec;
-            std::filesystem::remove(old_file_path, ec);
-            if (ec)
-                LOG_WARNING(getLogger(), "Failed to remove replaced file {}: {}", old_file_path, ec.message());
         }
     }
 

@@ -174,6 +174,7 @@ static struct InitFiu
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
     REGULAR(disk_access_storage_write_entity_fails) \
+    REGULAR(disk_access_storage_remove_old_file_fails) \
     REGULAR(query_metric_log_delay_collect)
 
 namespace FailPoints

@@ -230,6 +230,51 @@ def test_replace_rolls_back_on_write_failure_after_restart():
     instance.query("DROP USER u_replace_after_restart")
 
 
+def test_replace_rolls_back_when_old_file_removal_fails():
+    # A `replace_if_exists` that successfully writes the new `.sql` file but then fails to
+    # remove the displaced (different UUID, same name) old file must roll back the replacement
+    # — otherwise both `<old_id>.sql` and `<new_id>.sql` would be left on disk with the same
+    # name, and a later list-rebuild would drop both of them via `clearConflictsInEntitiesList`.
+    instance.query("DROP USER IF EXISTS u_replace_remove")
+    instance.query(
+        "CREATE USER u_replace_remove IDENTIFIED WITH plaintext_password BY 'old_pw'"
+    )
+    original = instance.query("SHOW CREATE USER u_replace_remove")
+    original_id = instance.query(
+        "SELECT id FROM system.users WHERE name = 'u_replace_remove'"
+    ).strip()
+
+    instance.query("SYSTEM ENABLE FAILPOINT disk_access_storage_remove_old_file_fails")
+    try:
+        error = instance.query_and_get_error(
+            "CREATE USER OR REPLACE u_replace_remove IDENTIFIED WITH plaintext_password BY 'new_pw'"
+        )
+        assert "FAULT_INJECTED" in error or "Injected fault" in error
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT disk_access_storage_remove_old_file_fails")
+
+    # The previous entity must still be visible with the same UUID.
+    assert instance.query("SHOW CREATE USER u_replace_remove") == original
+    assert (
+        instance.query(
+            "SELECT id FROM system.users WHERE name = 'u_replace_remove'"
+        ).strip()
+        == original_id
+    )
+
+    # Disk state must match memory after restart — only the original `.sql` file remains.
+    instance.restart_clickhouse()
+    assert instance.query("SHOW CREATE USER u_replace_remove") == original
+    assert (
+        instance.query(
+            "SELECT id FROM system.users WHERE name = 'u_replace_remove'"
+        ).strip()
+        == original_id
+    )
+
+    instance.query("DROP USER u_replace_remove")
+
+
 def test_recovery_when_sql_file_is_missing():
     # Server should not fail to start when an entity is referenced from `users.list`
     # but its corresponding `<uuid>.sql` file is missing on disk. The list rebuild
