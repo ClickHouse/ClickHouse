@@ -1130,7 +1130,8 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
                 order_info.input_order->limit,
-                query_has_limit);
+                query_has_limit,
+                /* apply_pk_selectivity_check */ true);
 
             if (!can_read)
                 return nullptr;
@@ -1151,7 +1152,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         if (order_info.input_order)
         {
-            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_has_limit);
+            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_has_limit, /* apply_pk_selectivity_check */ true);
             if (!can_read)
                 return nullptr;
 
@@ -1204,13 +1205,13 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
 
-    /// `AggregatingStep` doesn't carry SQL-level `LIMIT` information here: a top-level
-    /// `LIMIT N` after `GROUP BY` lives in a separate `LimitStep` above the aggregation,
-    /// not in `AggregatingStep::params`, and `optimizeAggregationInOrder` is invoked per
-    /// node without parent context. Pass `query_has_limit = false` explicitly so the
-    /// PK-selectivity check uses its conservative default; this matches behavior before
-    /// the flag was introduced and keeps every `requestReadingInOrder` call site explicit
-    /// about the value it intends.
+    /// `AggregatingStep` requests read-in-order to enable the streaming aggregation
+    /// algorithm (memory bound), not to skip a separate sort. The PK-selectivity guard
+    /// in `requestReadingInOrder` therefore must not fire here — disabling read-in-order
+    /// would silently change the algorithm to batched aggregation and can cause
+    /// `MEMORY_LIMIT_EXCEEDED` for queries that explicitly enabled the streaming path
+    /// (e.g. `optimize_aggregation_in_order = 1`). `query_has_limit` is irrelevant for
+    /// this path since the check is skipped; pass the conservative default.
     constexpr bool query_has_limit = false;
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
@@ -1328,9 +1329,11 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     const auto & keys = distinct.getColumnNames();
     size_t limit = 0;
 
-    /// Propagate `query_has_limit` from `DistinctStep::limit_hint` so that the PK selectivity
-    /// check can let read-in-order finish early for queries like `SELECT DISTINCT k FROM t LIMIT N`.
-    const bool query_has_limit = distinct.getLimitHint() != 0;
+    /// `DistinctStep` requests read-in-order to enable streaming `DISTINCT` (memory bound),
+    /// not to skip a separate sort. Like `optimizeAggregationInOrder`, the PK-selectivity
+    /// guard in `requestReadingInOrder` must not fire here. `query_has_limit` is therefore
+    /// irrelevant; pass the conservative default.
+    constexpr bool query_has_limit = false;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -1688,7 +1691,8 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     if (order_info)
     {
         bool can_read = read_from_merge_tree->requestReadingInOrder(
-            order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit, sort_limit != 0);
+            order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit, sort_limit != 0,
+            /* apply_pk_selectivity_check */ true);
         if (!can_read)
             return 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, false, false);

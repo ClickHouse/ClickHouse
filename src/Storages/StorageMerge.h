@@ -180,9 +180,10 @@ public:
     const StorageListWithLocks & getSelectedTables();
 
     /// Returns `false` if requested reading cannot be performed.
-    /// `query_has_limit` mirrors the parameter of `ReadFromMergeTree::requestReadingInOrder`
-    /// and is propagated to underlying MergeTree reads to keep behavior consistent.
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_, bool query_has_limit = false);
+    /// `query_has_limit` and `apply_pk_selectivity_check` mirror the parameters of
+    /// `ReadFromMergeTree::requestReadingInOrder` and are propagated to underlying
+    /// MergeTree reads to keep behavior consistent.
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_, bool query_has_limit = false, bool apply_pk_selectivity_check = false);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;

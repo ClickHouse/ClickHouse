@@ -2855,7 +2855,7 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
         && context->canUseParallelReplicasOnInitiator();
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, bool query_has_limit)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, bool query_has_limit, bool apply_pk_selectivity_check)
 {
     /// if dirction is not set, use current one
     if (!direction)
@@ -2870,12 +2870,17 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// (e.g., because the WHERE clause uses a pattern like LIKE '%...' that can't use the index),
     /// read-in-order kills parallelism: each part is read by a single stream instead of many.
     /// In such cases, full parallel reading with sorting is much faster.
-    /// Skip this check for parallel replicas to avoid coordination mismatches,
-    /// when reading from a projection (the projection was chosen specifically to satisfy
-    /// `ORDER BY`, so disabling read-in-order on it would defeat the purpose),
-    /// and when the query has a LIMIT that can let read-in-order finish early
-    /// (with virtual row optimization, parts can be skipped entirely).
-    if (read_limit == 0 && !query_has_limit && !is_parallel_reading_from_replicas)
+    /// This guard only applies when `apply_pk_selectivity_check` is set, which is the case
+    /// for the `SortingStep` and window-function paths that use read-in-order purely to
+    /// skip a separate sort. For `optimizeAggregationInOrder` and `optimizeDistinctInOrder`,
+    /// read-in-order changes the underlying algorithm to a streaming one (memory bound),
+    /// so we never disable it based on PK selectivity.
+    /// Also skip for parallel replicas to avoid coordination mismatches, when reading from
+    /// a projection (the projection was chosen specifically to satisfy `ORDER BY`, so
+    /// disabling read-in-order on it would defeat the purpose), and when the query has a
+    /// LIMIT that can let read-in-order finish early (with virtual row optimization, parts
+    /// can be skipped entirely).
+    if (apply_pk_selectivity_check && read_limit == 0 && !query_has_limit && !is_parallel_reading_from_replicas)
     {
         const double max_ratio = context->getSettingsRef()[Setting::read_in_order_max_primary_key_ratio];
         const auto & analysis_result = getAnalysisResult();
