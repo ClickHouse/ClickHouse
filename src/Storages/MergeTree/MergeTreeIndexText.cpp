@@ -1420,7 +1420,6 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         });
 }
 
-
 void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
 {
     is_empty = false;
@@ -1480,7 +1479,6 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorText::getGranuleAndReset()
     granule_builder.reset();
     return granule;
 }
-
 
 void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, size_t limit)
 {
