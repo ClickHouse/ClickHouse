@@ -4140,7 +4140,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         '&enable_http_compression=1' +
         '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore' +
         '&default_format=' + encodeURIComponent(format) +
-        '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${extension}"'}`);
+        '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(extension)}"'}`);
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
 
