@@ -85,12 +85,16 @@ public:
         // Stores the position of the thread in the parent thread pool list
         typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_it;
 
+        /// Per-thread condition variable for LIFO idle scheduling.
+        /// Each idle thread waits on its own CV, so the scheduler can wake the
+        /// LIFO-selected thread directly without disturbing other idle threads.
+        /// This avoids the thundering herd that a shared CV with `notify_all` creates.
+        std::condition_variable cv;
+
         /// LIFO idle thread scheduling flag.
-        /// When a new job is scheduled, the most recently idle thread is selected
-        /// from the LIFO stack and this flag is set to give it priority.
-        /// Threads wake via the shared `new_job_or_shutdown` CV, but the LIFO-selected
-        /// thread takes the job; others re-evaluate the predicate and may also pick
-        /// up queued jobs to avoid lost wakeups.
+        /// When a new job is scheduled, the most recently idle thread is popped
+        /// from the LIFO stack, this flag is set to true, and only that thread's
+        /// CV is notified. The flag distinguishes a real wake-up from a spurious one.
         bool idle_wakeup_flag = false;
 
         /// Index of this thread in the idle_thread_stack, or -1 if not in the stack.
@@ -181,7 +185,6 @@ private:
 
     mutable std::mutex mutex;
     std::condition_variable job_finished;
-    std::condition_variable new_job_or_shutdown;
 
     Metric metric_threads;
     Metric metric_active_threads;

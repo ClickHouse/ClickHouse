@@ -206,10 +206,8 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
     }
     else if (need_finish_free_threads)
     {
-        /// Notify idle threads so they can re-evaluate conditions and finish if excess.
-        /// We don't set idle_wakeup_flag here to avoid tearing down all idle threads;
-        /// only excess threads will exit based on the updated max_free_threads limit.
-        new_job_or_shutdown.notify_all();
+        /// Wake idle threads so excess ones can observe the new limit and exit.
+        wakeUpAllIdleThreadsNoLock();
     }
 }
 
@@ -245,10 +243,8 @@ void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
 
     if (need_finish_free_threads)
     {
-        /// Notify idle threads so they can re-evaluate conditions and finish if excess.
-        /// We don't set idle_wakeup_flag here to avoid tearing down all idle threads;
-        /// only excess threads will exit based on the updated max_free_threads limit.
-        new_job_or_shutdown.notify_all();
+        /// Wake idle threads so excess ones can observe the new limit and exit.
+        wakeUpAllIdleThreadsNoLock();
     }
 }
 
@@ -289,6 +285,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     ScopedDecrement available_threads_decrement(available_threads);
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
+    ThreadFromThreadPool * thread_to_wake = nullptr;
 
     // Load the current capacity
     int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
@@ -423,26 +420,28 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             return on_error("cannot start the job or thread");
         }
 
-        /// Select the most recently idle thread (LIFO order) for priority wake-up.
-        /// LIFO scheduling concentrates work on fewer threads, improving cache locality
-        /// and reducing memory overhead from allocator per-thread caches.
+        /// Select the most recently idle thread (LIFO order) and wake only that one
+        /// via its per-thread CV. Concentrating work on fewer threads improves cache
+        /// locality and lets excess threads exit naturally, freeing their allocator
+        /// caches. Notifying a single thread (instead of `notify_all` on a shared CV)
+        /// avoids a thundering herd where every idle thread wakes, contends for the
+        /// mutex, and goes back to sleep on every job schedule.
+        ///
+        /// If the stack is empty, no notify is needed: either a new thread was just
+        /// added to `threads` and will see the queued job in its first worker-loop
+        /// iteration, or all threads are busy and will pick up the queued job when
+        /// they finish their current jobs and re-enter the loop.
         if (!idle_thread_stack.empty())
         {
-            auto * thread_to_wake = idle_thread_stack.back();
+            thread_to_wake = idle_thread_stack.back();
             idle_thread_stack.pop_back();
             thread_to_wake->idle_wakeup_flag = true;
             thread_to_wake->idle_stack_index = -1;
         }
     }
 
-    /// Wake up free threads. `notify_all` ensures the LIFO-selected thread (whose
-    /// `idle_wakeup_flag` was just set above) is reached regardless of which waiter
-    /// the kernel picks first. Without it, `notify_one` could land on a non-selected
-    /// thread that races to consume the job before the LIFO-selected one is reached,
-    /// erasing the cache-locality benefit of LIFO scheduling under contention. It also
-    /// gives excess idle threads a chance to observe `threads.size() > limit` and
-    /// exit, freeing their per-thread allocator caches - the point of LIFO.
-    new_job_or_shutdown.notify_all();
+    if (thread_to_wake)
+        thread_to_wake->cv.notify_one();
 
     ProfileEvents::increment(std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
@@ -532,12 +531,10 @@ void ThreadPoolImpl<Thread>::wait()
     ProfileEvents::increment(
         std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
         watch.elapsedMicroseconds());
-    /// Signal here just in case.
-    /// If threads are idle but there are some jobs in the queue
-    /// then it will prevent us from deadlock.
-    /// We don't set idle_wakeup_flag to avoid tearing down idle threads;
-    /// threads will re-check for pending jobs and go back to sleep if none.
-    new_job_or_shutdown.notify_all();
+    /// Defensive wake-up: if some queued job somehow has no notified thread,
+    /// rouse all idle workers so they re-check the queue. With LIFO scheduling
+    /// done correctly, this is redundant, but cheap insurance against deadlock.
+    wakeUpAllIdleThreadsNoLock();
     job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
 
     if (first_exception)
@@ -616,9 +613,9 @@ void ThreadPoolImpl<Thread>::wakeUpAllIdleThreadsNoLock()
     {
         thread->idle_wakeup_flag = true;
         thread->idle_stack_index = -1;
+        thread->cv.notify_one();
     }
     idle_thread_stack.clear();
-    new_job_or_shutdown.notify_all();
 }
 
 template <typename Thread>
@@ -769,20 +766,20 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             }
 
             /// LIFO idle thread scheduling: push this thread onto the idle stack
-            /// and wait on the shared `new_job_or_shutdown` CV. The scheduler selects
-            /// the most recently idle thread first via `idle_wakeup_flag`, concentrating
-            /// work on fewer OS threads. This improves CPU cache locality and reduces
-            /// memory fragmentation from allocator per-thread caches (e.g. jemalloc tcache).
+            /// and wait on its own per-thread CV. The scheduler pops the most
+            /// recently idle thread, sets its `idle_wakeup_flag`, and notifies
+            /// only that thread's CV. This concentrates work on fewer OS threads
+            /// (improving cache locality and letting jemalloc release per-thread
+            /// caches of unused threads) without the thundering-herd cost of a
+            /// shared CV with `notify_all`.
             ///
-            /// `scheduleImpl` uses `notify_all` so every idle thread re-evaluates the
-            /// predicate. The LIFO-flagged thread is guaranteed to be among them.
-            /// `!jobs.empty()` is kept in the predicate as a safety net: if a wakeup
-            /// reaches a non-flagged thread first, it can still consume the queued job
-            /// rather than going back to sleep with work pending. The strict-LIFO
-            /// version of this predicate (without `!jobs.empty()`) was found to
-            /// deadlock the `SchedulerWorkloadResourceManager.DropNotEmptyQueueLong`
-            /// unit test under contention, so we keep the soft tradeoff: the
-            /// concentration is a *bias*, not a hard rule.
+            /// `wakeUpAllIdleThreadsNoLock` is used for shutdown, limit changes,
+            /// and `wait()` — it sets the flag and notifies every idle thread's CV.
+            /// `!jobs.empty()` is kept in the predicate as a safety net for the
+            /// rare case of a queued job with no associated wake-up (which should
+            /// not occur with the LIFO logic above, but a queued-job-and-no-wake
+            /// state would deadlock without it — see
+            /// `SchedulerWorkloadResourceManager.DropNotEmptyQueueLong`).
             while (parent_pool.jobs.empty()
                 && !parent_pool.shutdown
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
@@ -794,7 +791,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 }
                 idle_wakeup_flag = false;
 
-                parent_pool.new_job_or_shutdown.wait(lock, [this]
+                cv.wait(lock, [this]
                 {
                     return idle_wakeup_flag
                         || !parent_pool.jobs.empty()
