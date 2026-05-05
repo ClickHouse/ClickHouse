@@ -576,9 +576,12 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
-void optimizeOrLikeChain(ASTPtr & query)
+void optimizeOrLikeChain(ASTPtr & query, const Settings & settings)
 {
-    ConvertFunctionOrLikeVisitor::Data data = {};
+    ConvertFunctionOrLikeVisitor::Data data;
+    data.allow_hyperscan = settings[Setting::allow_hyperscan];
+    data.max_hyperscan_regexp_length = settings[Setting::max_hyperscan_regexp_length];
+    data.max_hyperscan_regexp_total_length = settings[Setting::max_hyperscan_regexp_total_length];
     ConvertFunctionOrLikeVisitor(data).visit(query);
 }
 
@@ -712,10 +715,13 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
 
-    if (settings[Setting::optimize_or_like_chain] && settings[Setting::allow_hyperscan] && settings[Setting::max_hyperscan_regexp_length] == 0
-        && settings[Setting::max_hyperscan_regexp_total_length] == 0)
+    if (settings[Setting::optimize_or_like_chain])
     {
-        optimizeOrLikeChain(query);
+        /// `allow_hyperscan` and `max_hyperscan_regexp_*` are no longer entry-point gates here:
+        /// the rewrite emits `multiMatchAny` only when those settings allow it and falls back to
+        /// `match` with a combined regexp otherwise (see `ConvertFunctionOrLikeVisitor.cpp`), so
+        /// the optimization can still kick in even when Hyperscan is disabled or capped.
+        optimizeOrLikeChain(query, settings);
     }
 }
 

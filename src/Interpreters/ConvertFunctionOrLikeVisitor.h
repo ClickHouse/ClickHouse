@@ -19,14 +19,19 @@ class ASTFunction;
 /// If all patterns are simple substring searches (`%substring%`) with the same case sensitivity,
 /// the rewrite uses the faster `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8`.
 /// Otherwise, it uses `multiMatchAny` (which leverages Vectorscan/Hyperscan) when ClickHouse is
-/// built with Vectorscan, and falls back to `match` with a combined regexp using alternation when
-/// Vectorscan is not compiled in.
+/// built with Vectorscan, `allow_hyperscan` is on, and the per-pattern / total pattern lengths
+/// fit within `max_hyperscan_regexp_length` / `max_hyperscan_regexp_total_length`. It falls back
+/// to `match` with a combined regexp using alternation otherwise.
 class ConvertFunctionOrLikeData
 {
 public:
     using TypeToVisit = ASTFunction;
 
-    static void visit(ASTFunction & function, ASTPtr & ast);
+    bool allow_hyperscan = true;
+    size_t max_hyperscan_regexp_length = 0;
+    size_t max_hyperscan_regexp_total_length = 0;
+
+    void visit(ASTFunction & function, ASTPtr & ast) const;
 };
 
 using ConvertFunctionOrLikeVisitor = InDepthNodeVisitor<OneTypeMatcher<ConvertFunctionOrLikeData>, true>;

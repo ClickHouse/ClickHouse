@@ -84,7 +84,7 @@ struct PatternInfo
 
     /// Build a combined regexp pattern using alternation: (pattern1)|(pattern2)|...
     /// Used as the `match` fallback when the binary is built without Vectorscan.
-    [[maybe_unused]] String getCombinedRegexp() const
+    String getCombinedRegexp() const
     {
         String result;
         for (const auto & p : patterns)
@@ -95,11 +95,28 @@ struct PatternInfo
         }
         return result;
     }
+
+    /// Returns true if all per-pattern lengths and the total length fit within the hyperscan
+    /// regexp size limits. A limit value of 0 means "unlimited".
+    bool fitsHyperscanLimits(size_t max_length, size_t max_total_length) const
+    {
+        if (max_length == 0 && max_total_length == 0)
+            return true;
+
+        size_t total = 0;
+        for (const auto & p : patterns)
+        {
+            if (max_length > 0 && p.regexp.size() > max_length)
+                return false;
+            total += p.regexp.size();
+        }
+        return max_total_length == 0 || total <= max_total_length;
+    }
 };
 
 }
 
-void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/)
+void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) const
 {
     if (function.name != "or")
         return;
@@ -204,17 +221,27 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/)
                 else
                 {
 #if USE_VECTORSCAN
-                    /// Use `multiMatchAny` for non-substring patterns. The old-analyzer entry point is
-                    /// gated by `allow_hyperscan` in `TreeOptimizer`, so Hyperscan/Vectorscan is always
-                    /// permitted here and `multiMatchAny` is significantly faster than `match` with
-                    /// alternation in RE2.
-                    match_fn = makeASTFunction("multiMatchAny", identifier_ast, make_intrusive<ASTLiteral>(Field{info.getRegexps()}));
+                    const bool can_use_multi_match = allow_hyperscan
+                        && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 #else
-                    /// `multiMatchAny` requires Vectorscan compiled in. When ClickHouse is built without
-                    /// it, the function throws `NOT_IMPLEMENTED` at execution time, so fall back to
-                    /// `match` with combined alternation.
-                    match_fn = makeASTFunction("match", identifier_ast, make_intrusive<ASTLiteral>(Field{info.getCombinedRegexp()}));
+                    constexpr bool can_use_multi_match = false;
 #endif
+                    if (can_use_multi_match)
+                    {
+                        /// Use `multiMatchAny` for non-substring patterns. It is significantly faster
+                        /// than `match` with alternation in RE2 because it can leverage
+                        /// Vectorscan/Hyperscan. We pre-check `max_hyperscan_regexp_length` /
+                        /// `max_hyperscan_regexp_total_length` so a query that previously worked as
+                        /// `OR LIKE` cannot be turned into a `BAD_ARGUMENTS` failure by this rewrite.
+                        match_fn = makeASTFunction("multiMatchAny", identifier_ast, make_intrusive<ASTLiteral>(Field{info.getRegexps()}));
+                    }
+                    else
+                    {
+                        /// Fall back to `match` with combined alternation when Vectorscan is not
+                        /// compiled in, `allow_hyperscan` is off, or the hyperscan size limits
+                        /// would be exceeded.
+                        match_fn = makeASTFunction("match", identifier_ast, make_intrusive<ASTLiteral>(Field{info.getCombinedRegexp()}));
+                    }
                 }
 
                 unique_elems[pos] = std::move(match_fn);
