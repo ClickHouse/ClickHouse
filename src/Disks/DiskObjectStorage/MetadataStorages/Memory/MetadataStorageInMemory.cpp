@@ -587,6 +587,23 @@ void MetadataStorageInMemoryTransaction::moveDirectory(const std::string & path_
                 "Cannot move directory {} to {}: destination directory already exists",
                 path_from, path_to);
 
+        /// Match `DiskLocal::moveDirectory` semantics (`rename`): the destination's parent directory
+        /// must exist. Without this check, `moveDirectory("a", "x/y")` would succeed even when `x/`
+        /// has never been created, producing an invalid topology (the moved subtree becomes
+        /// unreachable from a recursive listing rooted at `/`).
+        if (prefix_to.size() > 1)
+        {
+            auto parent_end = prefix_to.rfind('/', prefix_to.size() - 2);
+            if (parent_end != std::string::npos && parent_end > 0)
+            {
+                std::string parent = prefix_to.substr(0, parent_end + 1);
+                if (!metadata_storage.directories.contains(parent))
+                    throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
+                        "Cannot move directory {} to {}: parent of destination does not exist",
+                        path_from, path_to);
+            }
+        }
+
         /// Move files
         std::vector<std::pair<std::string, MetadataStorageInMemory::FileEntry>> to_move;
         for (auto it = metadata_storage.files.begin(); it != metadata_storage.files.end();)
