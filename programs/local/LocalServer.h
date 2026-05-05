@@ -25,8 +25,9 @@ namespace DB
 class AsynchronousMetrics;
 class ServerType;
 
-/// Lightweight Application for clickhouse-local
-/// No networking, no extra configs and working directories, no pid and status files, no dictionaries, no logging.
+/// Lightweight Application for clickhouse-local.
+/// No networking by default; TCP/HTTP listeners can be started explicitly via `SYSTEM START LISTEN`.
+/// No extra configs and working directories, no pid and status files, no dictionaries, no logging.
 /// Quiet mode by default
 class LocalServer : public ClientApplicationBase, public Loggers, public IServer
 {
