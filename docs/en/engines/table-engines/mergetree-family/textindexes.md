@@ -505,14 +505,14 @@ Similarly, `endsWith` should be used with a leading space:
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 ```
 
-#### `hasToken` and `hasTokenOrNull` {#functions-example-hastoken-hastokenornull}
+#### `hasToken`, `hasTokenOrNull`, `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` {#functions-example-hastoken-hastokenornull}
 
 :::note
-Function `hasToken` looks straightforward to use but it has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
+Functions `hasToken`, `hasTokenOrNull`, `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` look straightforward to use but they have certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
 We recommend using functions `hasAnyTokens` and `hasAllTokens` instead.
 :::
 
-Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken) and [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull) match against a single given token.
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull), [hasTokenCaseInsensitive](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitive) and [hasTokenCaseInsensitiveOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull) match against a single given token.
 
 Unlike the previously mentioned functions, they do not tokenize the search term (they assume the input is a single token).
 
