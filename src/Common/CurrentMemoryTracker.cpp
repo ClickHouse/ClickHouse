@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/PerCPUMemoryBudget.h>
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
@@ -51,7 +52,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
     {
         if (!current_thread)
         {
-            /// total_memory_tracker only, ignore untracked_memory
+            /// total_memory_tracker only, ignore untracked_memory and budget
             return memory_tracker->allocImpl(size, throw_if_memory_exceeded);
         }
 
@@ -69,18 +70,26 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
 
         Int64 previous_untracked_memory = current_thread->untracked_memory;
         current_thread->untracked_memory += size;
-        if (current_thread->untracked_memory > current_thread->untracked_memory_limit)
+
+        bool flush_per_cpu = DB::PerCPUMemoryBudget::charge(size);
+
+        if (current_thread->untracked_memory > current_thread->untracked_memory_limit || flush_per_cpu)
         {
             Int64 current_untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
+            DB::PerCPUMemoryBudget::charge(-current_untracked_memory);
 
             try
             {
-                return memory_tracker->allocImpl(current_untracked_memory, throw_if_memory_exceeded);
+                if (current_untracked_memory > 0)
+                    return memory_tracker->allocImpl(current_untracked_memory, throw_if_memory_exceeded);
+                else
+                    return memory_tracker->free(-current_untracked_memory);
             }
             catch (...)
             {
                 current_thread->untracked_memory += previous_untracked_memory;
+                DB::PerCPUMemoryBudget::charge(previous_untracked_memory);
                 throw;
             }
         }
@@ -124,11 +133,17 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         current_thread->untracked_memory_blocker_level = blocker_level;
 
         current_thread->untracked_memory -= size;
-        if (current_thread->untracked_memory < -current_thread->untracked_memory_limit)
+        bool flush_per_cpu = DB::PerCPUMemoryBudget::charge(-size);
+
+        if (current_thread->untracked_memory < -current_thread->untracked_memory_limit || flush_per_cpu)
         {
             Int64 untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
-            return memory_tracker->free(-untracked_memory);
+            DB::PerCPUMemoryBudget::charge(-untracked_memory);
+            if (untracked_memory > 0)
+                return memory_tracker->allocImpl(untracked_memory, /*throw_if_memory_exceeded=*/ false);
+            else
+                return memory_tracker->free(-untracked_memory);
         }
 
         return AllocationTrace(current_thread->getEffectiveSampleProbability(size));

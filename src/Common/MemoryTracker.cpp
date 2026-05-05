@@ -11,6 +11,7 @@
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/PageCache.h>
+#include <Common/PerCPUMemoryBudget.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
@@ -271,8 +272,11 @@ void incrementAllocationWithoutCheck(Int64 size)
 
 AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker, double _sample_probability)
 {
-    if (size < 0)
+    if (unlikely(size < 0))
+    {
+        MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
+    }
 
     if (_sample_probability < 0)
         _sample_probability = sample_probability;
@@ -511,6 +515,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
 
 void MemoryTracker::adjustWithUntrackedMemory(Int64 untracked_memory)
 {
+    DB::PerCPUMemoryBudget::charge(-untracked_memory);
+
     if (untracked_memory > 0)
         std::ignore = allocImpl(untracked_memory, /*throw_if_memory_exceeded*/ false);
     else

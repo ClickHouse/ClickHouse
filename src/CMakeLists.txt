@@ -587,6 +587,10 @@ target_link_libraries(
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
     ch_contrib::pdqsort)
+
+if (TARGET ch_contrib::librseq)
+    target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::librseq)
+endif ()
 target_link_libraries(dbms PUBLIC
     ch_contrib::miniselect
     ch_contrib::pdqsort)

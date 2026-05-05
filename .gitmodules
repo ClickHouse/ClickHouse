@@ -390,3 +390,6 @@
 [submodule "contrib/zmij"]
 	path = contrib/zmij
 	url = https://github.com/vitaut/zmij.git
+[submodule "contrib/librseq"]
+	path = contrib/librseq
+	url = https://github.com/compudj/librseq.git

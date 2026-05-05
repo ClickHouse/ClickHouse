@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/MemoryWorker.h>
+#include <Common/PerCPUMemoryBudget.h>
 #include <Common/formatReadable.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
@@ -1219,6 +1220,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
+    new_values["PerCPUMemoryBudget"] = { PerCPUMemoryBudget::reservedBytes(), "Amount of bytes reserved in per-CPU memory pools" };
 
 #if defined(OS_LINUX)
     if (loadavg)
