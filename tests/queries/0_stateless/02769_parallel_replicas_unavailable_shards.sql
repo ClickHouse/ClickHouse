@@ -20,4 +20,5 @@ SYSTEM FLUSH LOGS query_log;
 SET enable_parallel_replicas=0;
 SELECT ProfileEvents['ParallelReplicasUnavailableCount'] FROM system.query_log WHERE yesterday() <= event_date AND event_time >= now() - 600 AND query_id in (select query_id from system.query_log where log_comment = '02769_7b513191-5082-4073-8568-53b86a49da79' and current_database = currentDatabase()) and type = 'QueryFinish' and query_id == initial_query_id;
 
+SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 DROP TABLE test_parallel_replicas_unavailable_shards;
