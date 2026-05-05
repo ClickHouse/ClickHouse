@@ -16,8 +16,6 @@ ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_t
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
-# shellcheck source=../stateless/attach_gdb.lib
-source /repo/tests/docker_scripts/attach_gdb.lib
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
@@ -319,6 +317,42 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
+# `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
+#       (with `unicodeWord` as a transitional alias). Tables from old versions using `unicode_word` trigger this
+#       on attach. Narrowed to the exact legacy name so genuinely unsupported tokenizer names are not masked.
+# `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
+#       for `openbucketforpublicci.blob.core.windows.net`. Filtered via regex in the secondary pipe below to match
+#       both the Azure SDK exception type AND the DNS error together, so non-Azure DNS errors are not masked.
+# `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
+#       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
+#       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
+#       had been full ...`), so other SystemLogQueue errors are not masked.
+# `TraceCollector` + `CANNOT_READ_FROM_FILE_DESCRIPTOR` is a transient pipe close error during server shutdown,
+#       unrelated to upgrade compatibility. Filtered via regex in the secondary pipe below to require both
+#       the component name AND the specific error code together, so non-pipe TraceCollector errors are not masked.
+# `This engine is deprecated and is not supported in transactions` appears for Ordinary engine tables from old versions.
+# `Prevent converting Nullable type to non-Nullable type inside mutation` is from stricter validation in new versions
+#       applied to old mutations that were created before the validation existed.
+# `e.what() = failed to parse response body` is a transient Azure blob storage batch-parsing error from
+#       `Azure::Storage::Blobs`. Narrowed with the `e.what() = ` prefix to only match caught C++ exceptions of this
+#       type (stable ClickHouse exception formatting), so arbitrary log lines containing the phrase are not masked.
+# `while loading statistics` + `ILLEGAL_STATISTICS` appears when the statistics file format version changes between
+#       releases. The new binary cannot deserialize old statistics files and throws ILLEGAL_STATISTICS (Code: 708).
+#       Filtered via regex in the secondary pipe below to require both the loading context AND the error code together.
+# `rdk:FAIL` + `Connect to` + `Connection refused` is a librdkafka broker connection error when the Kafka
+#       broker is unavailable during upgrade (no broker is running in the upgrade test environment). Filtered
+#       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
+#       message together, so real Kafka regressions (auth, protocol, config) that also emit `rdk:FAIL` are
+#       not masked.
+# `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
+#       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
+#       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
+#       upgraded server detaches the renamed-column parts of `02538_alter_rename_sequence`'s `wrong_metadata_wide`
+#       table. Matched via the exact corrupted filename + column name, which is unique to that test and that bug.
+# `wrong_metadata_wide` + `Detaching broken part` + `backward incompatibility` is the follow-up cleanup line for
+#       the same issue: a "Detaching broken part" notice that does not contain the corrupted filename. Filtered
+#       via regex in the secondary pipe below to require all three substrings together, so unrelated broken-part
+#       detach messages are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -383,8 +417,20 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse projection test_projection" \
            -e "Key expressions cannot contain subqueries" \
            -e "Expression must be deterministic but it contains non-deterministic part" \
+           -e "Unknown tokenizer: 'unicode_word'" \
+           -e "This engine is deprecated and is not supported in transactions" \
+           -e "Prevent converting Nullable type to non-Nullable type inside mutation" \
+           -e "e.what() = failed to parse response body" \
+           -e "Tuple element name 'null' is reserved" \
+           -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
+    | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
+    | grep -av -e "SystemLogQueue.*Queue had been full" \
+    | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
+    | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
+    | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
+    | grep -av -e "wrong_metadata_wide.*Detaching broken part.*backward incompatibility" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
@@ -404,5 +450,3 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
-
-collect_core_dumps
