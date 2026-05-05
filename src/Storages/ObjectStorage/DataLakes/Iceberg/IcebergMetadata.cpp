@@ -1492,7 +1492,7 @@ bool IcebergMetadata::commitImportPartitionTransactionImpl(
 
     String manifest_entry_name;
     String storage_manifest_entry_name;
-    Int32 manifest_lengths = 0;
+    Int64 manifest_lengths = 0;
 
     /// Tracks whether the snapshot has become visible to readers.
     /// For the file-based layout that happens as soon as writeMetadataFileAndVersionHint

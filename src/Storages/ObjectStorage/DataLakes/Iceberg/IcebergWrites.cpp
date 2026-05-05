@@ -1374,6 +1374,11 @@ IcebergImportSink::IcebergImportSink(
         new_file_path_callback);
 }
 
+IcebergImportSink::~IcebergImportSink()
+{
+    cancelBuffers();
+}
+
 void IcebergImportSink::consume(Chunk & chunk)
 {
     if (isCancelled())
@@ -1385,7 +1390,10 @@ void IcebergImportSink::consume(Chunk & chunk)
 void IcebergImportSink::onFinish()
 {
     if (isCancelled())
+    {
+        cancelBuffers();
         return;
+    }
 
     finalizeBuffers();
 
@@ -1406,6 +1414,11 @@ void IcebergImportSink::onFinish()
     }
 
     releaseBuffers();
+}
+
+void IcebergImportSink::onException(std::exception_ptr /* exception */)
+{
+    cancelBuffers();
 }
 
 void IcebergImportSink::finalizeBuffers()

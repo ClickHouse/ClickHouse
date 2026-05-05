@@ -182,13 +182,14 @@ public:
         const DataLakeStorageSettings & data_lake_settings_,
         std::function<void(const std::string &)> new_file_path_callback_ = {});
 
-    ~IcebergImportSink() override = default;
+    ~IcebergImportSink() override;
 
     String getName() const override { return "IcebergImportSink"; }
 
     void consume(Chunk & chunk) override;
 
     void onFinish() override;
+    void onException(std::exception_ptr exception) override;
 
 private:
     void finalizeBuffers();
