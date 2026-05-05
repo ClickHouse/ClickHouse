@@ -407,6 +407,26 @@ struct ConverterDateTime
     }
 };
 
+struct ConverterTime
+{
+    using Statistics = StatisticsNumeric<Int64, Int64>;
+
+    using Col = ColumnVector<Int32>;
+    const Col & column;
+    PODArray<Int64> buf;
+    Int64 multiplier;
+
+    ConverterTime(const ColumnPtr & c, Int64 multiplier_) : column(assert_cast<const Col &>(*c)), multiplier(multiplier_) {}
+
+    const Int64 * getBatch(size_t offset, size_t count)
+    {
+        buf.resize(count);
+        for (size_t i = 0; i < count; ++i)
+            buf[i] = static_cast<Int64>(column.getData()[offset + i]) * multiplier;
+        return buf.data();
+    }
+};
+
 struct ConverterString
 {
     using Statistics = StatisticsStringRef;
@@ -1214,7 +1234,12 @@ void writeColumnChunkBody(
                 N(Int16, Int32Type);
             break;
         }
-        case TypeIndex::Int32  : N(Int32,  Int32Type); break;
+        case TypeIndex::Int32:
+            if (s.type->getTypeId() == TypeIndex::Time)
+                writeColumnImpl<parquet::Int64Type>(s, options, out, ConverterTime(s.primitive_column, s.datetime_multiplier));
+            else
+                N(Int32,  Int32Type);
+            break;
         case TypeIndex::Int64  : N(Int64,  Int64Type); break;
 
         case TypeIndex::UInt32:

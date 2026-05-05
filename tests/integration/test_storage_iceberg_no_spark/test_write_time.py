@@ -3,7 +3,19 @@ from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.iceberg_utils import get_uuid_str
 
 
-@pytest.mark.parametrize("time_type", ["Time", "Time64(0)", "Time64(3)", "Time64(6)"])
+@pytest.mark.parametrize(
+    "time_type",
+    [
+        "Time",
+        "Time64(0)",
+        "Time64(3)",
+        "Time64(6)",
+        "Nullable(Time)",
+        "Nullable(Time64(0))",
+        "Nullable(Time64(3))",
+        "Nullable(Time64(6))",
+    ],
+)
 def test_write_time(started_cluster_iceberg_no_spark, time_type):
     node = started_cluster_iceberg_no_spark.instances["node1"]
 

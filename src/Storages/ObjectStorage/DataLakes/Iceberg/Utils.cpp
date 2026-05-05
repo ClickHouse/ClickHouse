@@ -516,8 +516,11 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::DateTime64:
             return {"timestamp", true};
         case TypeIndex::Time:
-        case TypeIndex::Time64:
             return {"time", true};
+        case TypeIndex::Time64:
+            if (getDecimalScale(*type) <= 6)
+                return {"time", true};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
         case TypeIndex::String:
             return {"string", true};
         case TypeIndex::UUID:
@@ -601,19 +604,17 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
-        case TypeIndex::Time:
             return "int";
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
+        case TypeIndex::Time:
             return "long";
         case TypeIndex::Time64:
         {
             auto scale = getDecimalScale(*type);
-            if (scale == 0 || scale == 3)
-                return "int";
-            else if (scale == 6)
+            if (scale <= 6)
                 return "long";
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
@@ -644,20 +645,14 @@ Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type)
     }
 
     const WhichDataType which(type);
+    if (which.isTime())
+        return "time-micros";
     if (which.isTime64())
     {
         auto scale = getDecimalScale(*type);
-        switch (scale)
-        { /// Apache avro has millis and micros time precisions, https://avro.apache.org/docs/1.11.0/spec.html
-            case 0:
-                return Poco::Dynamic::Var();
-            case 3:
-                return "time-millis";
-            case 6:
-                return "time-micros";
-            default:
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported time precision for avro {}({})", type->getName(), scale);
-        }
+        if (scale <= 6)
+            return "time-micros";
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported time precision for avro {}({})", type->getName(), scale);
     }
     return Poco::Dynamic::Var();
 }

@@ -12,6 +12,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DataLake/Common.h>
@@ -146,6 +147,46 @@ std::vector<uint8_t> dumpValue(T value)
     return bytes;
 }
 
+DataTypePtr getTimeTypeOrNull(DataTypePtr type)
+{
+    if (type->isNullable())
+        return getTimeTypeOrNull(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
+
+    const WhichDataType which(type);
+    if (which.isTime() || which.isTime64())
+        return type;
+
+    return nullptr;
+}
+
+Int64 getTimeValueInMicroseconds(const Field & field, DataTypePtr type)
+{
+    if (type->isNullable())
+        return getTimeValueInMicroseconds(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
+
+    const WhichDataType which(type);
+    if (which.isTime())
+    {
+        if (field.getType() == Field::Types::Int64)
+            return field.safeGet<Int64>() * 1'000'000;
+        if (field.getType() == Field::Types::UInt64)
+            return static_cast<Int64>(field.safeGet<UInt64>()) * 1'000'000;
+        return static_cast<Int64>(field.safeGet<Int32>()) * 1'000'000;
+    }
+
+    if (which.isTime64())
+    {
+        const auto scale = getDecimalScale(*type);
+        if (scale > 6)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+
+        const auto value = field.safeGet<Decimal64>().getValue().value;
+        return value * DataTypeTime64::getScaleMultiplier(6 - scale).value;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Time or Time64, got {}", type->getName());
+}
+
 std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
 {
     switch (type->getTypeId())
@@ -155,11 +196,13 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
-        case TypeIndex::Time:
             return dumpValue(field.safeGet<Int32>());
+        case TypeIndex::Time:
+            return dumpValue(getTimeValueInMicroseconds(field, type));
         case TypeIndex::Int64:
             return dumpValue(field.safeGet<Int64>());
         case TypeIndex::Time64:
+            return dumpValue(getTimeValueInMicroseconds(field, type));
         case TypeIndex::DateTime64:
             return dumpValue(field.safeGet<Decimal64>().getValue().value);
         case TypeIndex::String:
@@ -401,6 +444,14 @@ void generateManifestFile(
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
+            auto partition_time_type = getTimeTypeOrNull(partition_types[i]);
+            if (!partition_values[i].isNull() && partition_time_type)
+            {
+                partition_record.field(partition_columns[i]) =
+                    avro::GenericDatum(getTimeValueInMicroseconds(partition_values[i], partition_types[i]));
+                continue;
+            }
+
             switch (partition_values[i].getType())
             {
                 case Field::Types::Int64:
@@ -425,34 +476,9 @@ void generateManifestFile(
                     break;
 
                 case Field::Types::Decimal64:
-                {
-                    const WhichDataType which(*partition_types[i]);
-                    if (which.isTime64())
-                    { /// Need to write logical type into Avro
-                        auto scale = getDecimalScale(*partition_types[i]);
-                        if (scale == 0)
-                            partition_record.field(partition_columns[i]) =
-                                avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
-                        else if (scale == 3 || scale == 6)
-                        {
-                            avro::NodePtr node = std::make_shared<avro::NodePrimitive>(avro::AVRO_LONG);
-                            node->setLogicalType(avro::LogicalType(scale == 3 ? avro::LogicalType::TIME_MILLIS : avro::LogicalType::TIME_MICROS));
-                            int64_t value = partition_values[i].safeGet<Decimal64>().getValue();
-                            auto datum = avro::GenericDatum(node, value);
-                            partition_record.field(partition_columns[i]) = datum;
-                        }
-                        else
-                        {
-                            throw Exception(
-                                ErrorCodes::BAD_ARGUMENTS,
-                                "Avro file supports only seconds, milliseconds and microseconds for time, partition precision: {}", scale);
-                        }
-                    }
-                    else
-                        partition_record.field(partition_columns[i]) =
-                            avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
                     break;
-                }
                 case Field::Types::Null:
                     break;
 
