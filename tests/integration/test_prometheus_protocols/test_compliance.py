@@ -496,6 +496,84 @@ class ComplianceResult:
         self.failures.append((query, f"UNSUPPORTED: {reason}"))
 
 
+_UNSUPPORTED_FEATURE_RE = re.compile(
+    r"(Function \S+ is not implemented|"
+    r"Aggregation operator '\S+' is not implemented|"
+    r"Prometheus query node type \S+ is not implemented|"
+    r"\S+ is not implemented)"
+)
+
+_DATE_FUNC_RE = re.compile(
+    r"^(day_of_month|day_of_week|days_in_month|hour|minute|month|year)\(\)"
+)
+
+_HISTOGRAM_QUERY_RE = re.compile(
+    r"\bhistogram_(quantile|fraction|sum|count|avg)\b"
+)
+
+
+# Keep this categorization non-gating: it is a navigation aid for staged PromQL
+# coverage, not a full-compliance assertion.
+def _categorize_failure(query, reason):
+    if "UNSUPPORTED:" in reason:
+        feature = _extract_unsupported_feature(reason)
+        if _HISTOGRAM_QUERY_RE.search(query):
+            return "deferred histogram support"
+        return feature or "other unsupported"
+
+    if "expected failure but ClickHouse succeeded" in reason:
+        return "should-fail mismatch (ClickHouse should reject but accepts)"
+
+    if "reference unexpectedly" in reason:
+        return "reference/corpus mismatch (Prometheus behavior differs from test expectation)"
+
+    if "Number of values (0)" in reason:
+        return "aggregation on nonexistent metric errors instead of returning empty"
+
+    if "Quantile level is out of range" in reason:
+        return "quantile out-of-range phi rejected (Prometheus accepts)"
+
+    if _DATE_FUNC_RE.match(query) and "expects 1 arguments" in reason:
+        return "date function default-argument mismatch"
+
+    if _is_result_mismatch(reason):
+        return "result mismatch for implemented feature"
+
+    if reason.startswith("ClickHouse error:"):
+        return "unexpected ClickHouse error for implemented feature"
+
+    return "other"
+
+
+def _extract_unsupported_feature(reason):
+    match = _UNSUPPORTED_FEATURE_RE.search(reason)
+    return match.group(1) if match else None
+
+
+def _is_result_mismatch(reason):
+    return any(
+        marker in reason
+        for marker in (
+            "resultType mismatch",
+            "series count mismatch",
+            "metric mismatch",
+            "values count mismatch",
+            "timestamp mismatch",
+            "value mismatch",
+            "scalar mismatch",
+        )
+    )
+
+
+def _category_needs_details(category):
+    return (
+        "mismatch" in category
+        or category == "other"
+        or category.startswith("unexpected ClickHouse error")
+        or category.startswith("date function")
+    )
+
+
 # ── Fixtures and test ────────────────────────────────────────────────────────
 
 @pytest.fixture(scope="module", autouse=True)
@@ -578,27 +656,9 @@ def test_promql_compliance():
     print("=" * 80)
 
     if result.failures:
-        import re as _re
         categories = {}  # key -> [(query, reason)]
         for query, reason in result.failures:
-            if "UNSUPPORTED:" in reason:
-                m = _re.search(r"(Function \S+ is not implemented|"
-                               r"Aggregation operator '\S+' is not implemented|"
-                               r"Prometheus query node type \S+ is not implemented|"
-                               r"\S+ is not implemented)", reason)
-                key = m.group(1) if m else "other unsupported"
-            elif "expected failure but ClickHouse succeeded" in reason:
-                key = "should_fail mismatch (ClickHouse should reject but accepts)"
-            elif "reference unexpectedly" in reason:
-                key = "reference mismatch (Prometheus behaves differently than expected)"
-            elif "Number of values (0)" in reason:
-                key = "aggregation on nonexistent metric errors instead of returning empty"
-            elif "Quantile level is out of range" in reason:
-                key = "quantile out-of-range phi rejected (Prometheus accepts)"
-            elif "value mismatch" in reason or "series count mismatch" in reason:
-                key = "result value/count mismatch"
-            else:
-                key = "other"
+            key = _categorize_failure(query, reason)
             categories.setdefault(key, []).append((query, reason))
 
         print(f"\n{'─' * 80}")
@@ -613,7 +673,7 @@ def test_promql_compliance():
             if len(entries) > 3:
                 print(f"           ... and {len(entries) - 3} more")
 
-            if "other" in cat or "reference" in cat or "mismatch" in cat.split("(")[0].strip():
+            if _category_needs_details(cat):
                 print(f"           Details:")
                 for q, r in entries:
                     q_short = q if len(q) <= 60 else q[:57] + "..."
