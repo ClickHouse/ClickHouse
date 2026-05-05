@@ -34,6 +34,7 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
@@ -1126,10 +1127,18 @@ public:
 
         const ContextPtr context;
         std::vector<StorageID> tables;
+        /// Names defined in any `WITH name AS ...` clause anywhere in the query.
+        /// Unqualified table references that match a CTE name are skipped to avoid
+        /// detaching/attaching an unrelated persistent table that happens to share the name.
+        std::unordered_set<String> cte_names;
 
         void addTableIfNotEmpty(const String & database, const String & table)
         {
             if (table.empty())
+                return;
+
+            /// Unqualified reference matching a CTE name: it likely refers to the CTE, not a real table.
+            if (database.empty() && cte_names.contains(table))
                 return;
 
             StorageID storage_id = database.empty()
@@ -1166,6 +1175,18 @@ public:
             data.addTableIfNotEmpty(table.database, table.table);
     }
 
+    /// Pre-pass: collect names of all CTEs declared anywhere in the query so that
+    /// unqualified references matching them are not treated as real tables.
+    static void collectCteNames(const ASTPtr & ast, Data & data)
+    {
+        if (!ast)
+            return;
+        if (const auto * with_element = ast->as<ASTWithElement>())
+            data.cte_names.insert(with_element->name);
+        for (const auto & child : ast->children)
+            collectCteNames(child, data);
+    }
+
     static void visit(const ASTInsertQuery & insert, Data & data)
     {
         data.addTableIfNotEmpty(insert.getDatabase(), insert.getTable());
@@ -1192,6 +1213,7 @@ using CollectTablesInQueryVisitor = ConstInDepthNodeVisitor<CollectTablesInQuery
 static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr context)
 {
     CollectTablesInQueryVisitor::Data data(context);
+    CollectTablesInQueryMatcher::collectCteNames(query, data);
     CollectTablesInQueryVisitor(data).visit(query);
 
     /// Deduplicate: the same table can appear multiple times (e.g. self-joins).

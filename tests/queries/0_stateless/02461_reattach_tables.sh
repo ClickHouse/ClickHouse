@@ -69,3 +69,9 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_1"
 
 ${CLICKHOUSE_CLIENT} --reattach_tables_before_query_execution=1 -q "SELECT number FROM system.numbers LIMIT 1"
 ${CLICKHOUSE_CLIENT} --reattach_tables_before_query_execution=1 -q "SELECT number FROM system.numbers LIMIT 1"
+
+# CTE name should not match a real table with the same name.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_cte"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_cte (a UInt64) ENGINE = MergeTree ORDER BY a"
+check_if_not_detached "WITH (SELECT 1) AS t_reattach_cte SELECT * FROM t_reattach_cte" "t_reattach_cte"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_cte"
