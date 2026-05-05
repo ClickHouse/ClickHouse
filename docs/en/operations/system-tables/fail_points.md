@@ -1,7 +1,7 @@
 ---
 title: 'system.fail_points'
 slug: /operations/system-tables/fail_points
-description: 'Contains a list of all available failpoints with their type and current status.'
+description: 'Contains a list of all available failpoints with their type.'
 keywords: ['system table', 'fail_points', 'failpoint', 'testing', 'debug']
 doc_type: 'reference'
 ---
