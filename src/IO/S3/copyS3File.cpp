@@ -265,6 +265,8 @@ namespace
             calculatePartSize(size);
             createMultipartUpload();
 
+            multipart_tags.resize(num_parts);
+
             size_t position = start_offset;
             size_t end_position = start_offset + size;
 
@@ -285,9 +287,7 @@ namespace
 
                     assert(part_size);
 
-                    multipart_tags.push_back({});
-                    chassert(part_number == multipart_tags.size());
-                    auto & part_tag = multipart_tags.back();
+                    auto & part_tag = multipart_tags[part_number - 1];
 
                     task_tracker.add([this, part_number, position, part_size, &part_tag]()
                     {
