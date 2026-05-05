@@ -185,6 +185,12 @@ void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
     boost::replace_all(path.path, SCHEMA_HASH_WILDCARD, schema_hash);
     setRawPath(path);
     setPaths({path});
+
+    /// `file_path_generator` was constructed before `setSchemaHash` ran and still
+    /// holds a copy of the raw path with the unreplaced `{_schema_hash}` placeholder.
+    /// `_schema_hash` is rejected for hive partitioning earlier, so the wildcard
+    /// generator is the only valid variant here.
+    file_path_generator = std::make_shared<ObjectStorageWildcardFilePathGenerator>(path.path);
 }
 
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
