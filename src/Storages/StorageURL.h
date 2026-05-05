@@ -220,8 +220,7 @@ public:
         Poco::Net::HTTPBasicCredentials & credentials,
         const HTTPHeaderEntries & headers,
         bool glob_url,
-        bool delay_initialization,
-        ReadWriteBufferFromHTTP::CheckCancelled check_cancelled = nullptr);
+        bool delay_initialization);
 
 private:
     void addNumRowsToCache(const String & uri, size_t num_rows);

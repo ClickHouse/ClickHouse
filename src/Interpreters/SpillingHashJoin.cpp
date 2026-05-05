@@ -52,7 +52,13 @@ SpillingHashJoin::SpillingHashJoin(
     , max_num_buckets(max_num_buckets_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
-    concurrent_join = std::make_shared<ConcurrentHashJoin>(table_join, concurrent_slots_, right_sample_block_, stats_collecting_params_);
+    concurrent_join = std::make_shared<ConcurrentHashJoin>(
+        table_join,
+        concurrent_slots_,
+        right_sample_block_,
+        stats_collecting_params_,
+        /*any_take_last_row_=*/false,
+        max_bytes_before_external_join);
     supports_parallel_non_joined_blocks_processing = concurrent_join->supportParallelNonJoinedBlocksProcessing();
 }
 
@@ -105,44 +111,55 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
         return chosen_join->addBlockToJoin(block, check_limits);
     }
 
+    /// The hash table buffer grows in power-of-two steps. Doubling from X to 2X allocates the new
+    /// buffer while the old one is still alive, transiently using 3X memory. We must trigger the
+    /// switch BEFORE the inner `addBlockToJoin` runs (and possibly doubles the buffer); a check
+    /// that runs after the call would race with the doubling and observe the OOM only as an
+    /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
+    /// the switch the live buffer (already at half) plus the conversion peak still fit under the
+    /// configured cap.
     if (concurrent_join)
     {
-        {
-            /// Shared lock: multiple threads add to ConcurrentHashJoin concurrently.
-            std::shared_lock lock(switch_mutex);
-
-            /// Re-check: another thread may have switched while we waited for the lock.
-            if (state.load(std::memory_order_acquire) != State::COLLECTING)
-                return chosen_join->addBlockToJoin(block, check_limits);
-
-            if (!concurrent_join->addBlockToJoin(block, check_limits))
-                return false;
-        }
-
-        /// Check memory limit outside the shared lock.
-        if (concurrent_join->getTotalByteCount() >= max_bytes_before_external_join)
+        if (concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
             switchToGraceHashJoin();
+    }
+    else
+    {
+        if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+            switchToGraceHashJoin();
+    }
 
-        return true;
+    /// Re-check: we may have just switched.
+    if (state.load(std::memory_order_acquire) != State::COLLECTING)
+    {
+        if (concurrent_join)
+            tryConvertSlots();
+        return chosen_join->addBlockToJoin(block, check_limits);
+    }
+
+    if (concurrent_join)
+    {
+        /// Shared lock: multiple threads add to ConcurrentHashJoin concurrently.
+        std::shared_lock lock(switch_mutex);
+
+        /// Re-check: another thread may have switched while we waited for the lock.
+        if (state.load(std::memory_order_acquire) != State::COLLECTING)
+            return chosen_join->addBlockToJoin(block, check_limits);
+
+        return concurrent_join->addBlockToJoin(block, check_limits);
     }
 
     /// Single-thread HashJoin path.
-    if (!hash_join->addBlockToJoin(block, check_limits))
-        return false;
-
-    if (hash_join->getTotalByteCount() >= max_bytes_before_external_join)
-        switchToGraceHashJoin();
-
-    return true;
+    return hash_join->addBlockToJoin(block, check_limits);
 }
 
 void SpillingHashJoin::switchToGraceHashJoin()
 {
-    const auto print_limit_exceeded_log = [this](const JoinPtr & join, std::string_view join_name)
+    const auto print_threshold_reached_log = [this](const JoinPtr & join, std::string_view join_name)
     {
         LOG_DEBUG(
             log,
-            "Memory limit exceeded with {} ({} bytes, {} rows), switching to GraceHashJoin",
+            "Memory spill threshold reached with {} ({} bytes, {} rows), switching to GraceHashJoin",
             join_name,
             join->getTotalByteCount(),
             join->getTotalRowCount());
@@ -160,7 +177,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
 
             ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
 
-            print_limit_exceeded_log(concurrent_join, "ConcurrentHashJoin");
+            print_threshold_reached_log(concurrent_join, "ConcurrentHashJoin");
 
             /// Create GraceHashJoin.
             grace_join = std::make_shared<GraceHashJoin>(
@@ -169,7 +186,9 @@ void SpillingHashJoin::switchToGraceHashJoin()
                 table_join,
                 left_sample_block,
                 std::make_shared<const Block>(right_sample_block),
-                tmp_data);
+                tmp_data,
+                /*any_take_last_row_=*/false,
+                max_bytes_before_external_join);
             grace_join->initialize(*left_sample_block);
             chosen_join = grace_join;
 
@@ -183,13 +202,20 @@ void SpillingHashJoin::switchToGraceHashJoin()
         return;
     }
 
-    print_limit_exceeded_log(hash_join, "HashJoin");
+    print_threshold_reached_log(hash_join, "HashJoin");
     /// Single-thread path: extract from HashJoin, feed to GraceHashJoin.
     ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
 
     chosen_join = std::make_shared<GraceHashJoin>(
-        initial_num_buckets, max_num_buckets, table_join, left_sample_block, std::make_shared<const Block>(right_sample_block), tmp_data);
+        initial_num_buckets,
+        max_num_buckets,
+        table_join,
+        left_sample_block,
+        std::make_shared<const Block>(right_sample_block),
+        tmp_data,
+        /*any_take_last_row_=*/false,
+        max_bytes_before_external_join);
 
     chosen_join->initialize(*left_sample_block);
 
@@ -208,25 +234,35 @@ void SpillingHashJoin::onBuildPhaseFinish()
 {
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
-        if (concurrent_join)
+        /// Safety net for the terminal block: the proactive pre-insert check in `addBlockToJoin`
+        /// fires only on subsequent calls. If the very last block pushed total bytes past
+        /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
+        /// promote it to `GraceHashJoin` here so the configured cap is honored.
+        const size_t total_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
+        if (total_bytes >= max_bytes_before_external_join)
+        {
+            switchToGraceHashJoin();
+        }
+        else if (concurrent_join)
         {
             LOG_DEBUG(
                 log,
                 "All blocks fit in memory ({} bytes, {} rows), promoting ConcurrentHashJoin",
-                concurrent_join->getTotalByteCount(),
+                total_bytes,
                 concurrent_join->getTotalRowCount());
             chosen_join = concurrent_join;
+            state.store(State::IN_MEMORY_JOIN, std::memory_order_release);
         }
         else
         {
             LOG_DEBUG(
                 log,
                 "All blocks fit in memory ({} bytes, {} rows), promoting HashJoin",
-                hash_join->getTotalByteCount(),
+                total_bytes,
                 hash_join->getTotalRowCount());
             chosen_join = hash_join;
+            state.store(State::IN_MEMORY_JOIN, std::memory_order_release);
         }
-        state.store(State::IN_MEMORY_JOIN, std::memory_order_release);
     }
 
     chosen_join->onBuildPhaseFinish();

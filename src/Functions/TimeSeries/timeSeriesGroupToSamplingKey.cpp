@@ -100,7 +100,7 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
