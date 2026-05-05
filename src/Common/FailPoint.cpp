@@ -354,8 +354,12 @@ void FailPointInjection::waitForResume(const String & fail_point_name)
     auto channel = iter->second;
     size_t my_resume_epoch = channel->resume_epoch;
 
-    /// Wait for resume_epoch to be incremented by notify or disable
-    channel->resume_cv.wait(lock, [&] { return channel->resume_epoch > my_resume_epoch; });
+    /// Wait for resume_epoch to be incremented by notify or disable.
+    /// Also exit if the channel is marked disabled: this covers the race where
+    /// SYSTEM NOTIFY fires, the worker's cleanup sets disabled=true and notifies,
+    /// but we entered waitForResume after the notify so my_resume_epoch already
+    /// equals the current resume_epoch and the epoch predicate would never fire.
+    channel->resume_cv.wait(lock, [&] { return channel->resume_epoch > my_resume_epoch || channel->disabled; });
 }
 
 std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints()
