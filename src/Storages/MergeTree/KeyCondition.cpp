@@ -4336,6 +4336,24 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 
     for (const auto & element : rpn)
     {
+        /// `extractPlainRanges` produces a range set that consumers (e.g. `ReadFromSystemNumbersStep`,
+        /// `ReadFromSystemPrimesStep`, `LIMIT` pushdown) treat as the exact set of matching key values.
+        /// A relaxed atom by definition does not yield exact ranges: depending on the source it may be
+        /// a strict superset of true matches (e.g. `LIKE` without a perfect prefix, monotonic-constant
+        /// wrapping) or, after complement, a strict subset that incorrectly skips matching rows
+        /// (e.g. `tuple(i, i) NOT IN (tuple(1, 2))` deduplicates the set to `i NOT IN (1)` and builds
+        /// `(-inf, 1) U (1, +inf)`, skipping `i = 1` even though `tuple(1, 1) != tuple(1, 2)`).
+        ///
+        /// Bail out for any relaxed atom and let the caller fall back to a conservative bound. This
+        /// guard is positioned at the top of the loop intentionally, so it covers all current atom
+        /// kinds (`FUNCTION_IN_SET`, `FUNCTION_NOT_IN_SET`, `FUNCTION_IN_RANGE`, `FUNCTION_NOT_IN_RANGE`,
+        /// `FUNCTION_IS_NULL`, `FUNCTION_IS_NOT_NULL`, ...) and any future atom that introduces
+        /// relaxation handling. Operator elements (`FUNCTION_AND`, `FUNCTION_OR`, `FUNCTION_NOT`,
+        /// `ALWAYS_TRUE`, `ALWAYS_FALSE`) are never set as relaxed; relaxation propagates through them
+        /// via their child atoms (see the comment on `KeyCondition::relaxed` in `KeyCondition.h`).
+        if (element.relaxed)
+            return false;
+
         if (element.function == RPNElement::FUNCTION_AND)
         {
             auto right_ranges = rpn_stack.top();
