@@ -344,15 +344,20 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
 #       message together, so real Kafka regressions (auth, protocol, config) that also emit `rdk:FAIL` are
 #       not masked.
-# `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
-#       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
-#       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
-#       upgraded server detaches the renamed-column parts of `02538_alter_rename_sequence`'s `wrong_metadata_wide`
-#       table. Matched via the exact corrupted filename + column name, which is unique to that test and that bug.
-# `wrong_metadata_wide` + `Detaching broken part` + `backward incompatibility` is the follow-up cleanup line for
+# `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` and
+# `No stream (ba1.bin) file checksum for column b` are the unique signatures of issue #102259
+#       (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
+#       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until the
+#       fix appears in a stable release used by the upgrade test, the upgraded server detaches
+#       renamed-column parts of two tests:
+#         - `02538_alter_rename_sequence`'s `wrong_metadata_wide` (rename `column1` -> `column1_renamed`)
+#         - `02555_davengers_rename_chain`'s `wrong_metadata` (rename chain `a` -> `a1` -> `b`)
+#       Matched via the exact corrupted filenames + column names, which are unique to those tests and that bug.
+# `wrong_metadata` + `Detaching broken part` + `backward incompatibility` is the follow-up cleanup line for
 #       the same issue: a "Detaching broken part" notice that does not contain the corrupted filename. Filtered
 #       via regex in the secondary pipe below to require all three substrings together, so unrelated broken-part
-#       detach messages are not masked.
+#       detach messages are not masked. The match covers `wrong_metadata`, `wrong_metadata_wide`, and
+#       `wrong_metadata_compact` (all three tables exist only in the two tests above).
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -423,6 +428,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "e.what() = failed to parse response body" \
            -e "Tuple element name 'null' is reserved" \
            -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
+           -e "No stream (ba1.bin) file checksum for column b" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
@@ -430,7 +436,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
-    | grep -av -e "wrong_metadata_wide.*Detaching broken part.*backward incompatibility" \
+    | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
