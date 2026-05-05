@@ -6,6 +6,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+DROP_DB="${CLICKHOUSE_DATABASE}_fp_drop"
+
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT backup_add_empty_memory_table" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT drop_database_before_exclusive_ddl_lock" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${DROP_DB}" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Static checks (no concurrency needed)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -72,14 +83,6 @@ SELECT name, enabled FROM system.fail_points WHERE name = 'replicated_merge_tree
 # ──────────────────────────────────────────────────────────────────────────────
 
 FP="drop_database_before_exclusive_ddl_lock"
-DROP_DB="${CLICKHOUSE_DATABASE}_fp_drop"
-
-function cleanup()
-{
-    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT ${FP}" 2>/dev/null || true
-    $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${DROP_DB}" 2>/dev/null || true
-}
-trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE ${DROP_DB}"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${DROP_DB}.t (n UInt64) ENGINE = Memory"
