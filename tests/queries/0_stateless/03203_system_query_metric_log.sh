@@ -18,7 +18,7 @@ $CLICKHOUSE_CLIENT --query-id="${query_prefix}_fast" -q "SELECT sleep(0.1) SETTI
 
 wait
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_metric_log"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, query_metric_log"
 
 function check_log()
 {
@@ -75,8 +75,26 @@ $CLICKHOUSE_CLIENT -m -q """
     SELECT count() == 0 FROM system.query_metric_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_fast'
 """
 
-# a query that takes more than query_metric_log_interval is collected including the final row
+# A query that runs longer than `query_metric_log_interval` must always emit a final row
+# from `QueryMetricLog::finishQuery`. Both that final row and the `QueryFinish` entry in
+# `system.query_log` derive `event_time_microseconds` from the same `system_clock::now()`
+# capture in `executeQuery.cpp` (see `time_now` / `query_end_time` flowing into both
+# `addStatusInfoToQueryLogElement` and `logQueryMetricLogFinish`), so the two values must
+# be byte-equal. If the final row is missing, `max(event_time_microseconds)` in
+# `query_metric_log` falls back to the previous periodic boundary - at least one full
+# interval (1000 ms) earlier - and equality fails. This is a tighter and more semantic
+# check than counting rows, and it does not depend on how many periodic ticks survived
+# under load.
 $CLICKHOUSE_CLIENT -m -q """
     SELECT '--Check that there is a final event when queries finish';
-    SELECT count() > 2 FROM system.query_metric_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_1000'
+    SELECT
+        (SELECT max(event_time_microseconds)
+         FROM system.query_metric_log
+         WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_1000')
+        =
+        (SELECT event_time_microseconds
+         FROM system.query_log
+         WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query_id = '${query_prefix}_1000' AND type = 'QueryFinish'
+         ORDER BY event_time_microseconds DESC
+         LIMIT 1)
 """
