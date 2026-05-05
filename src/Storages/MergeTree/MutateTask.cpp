@@ -1385,6 +1385,7 @@ struct MutationContext
 
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+    NamesAndTypesList minmax_idx_columns{};
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeIndexPtr> text_indices_to_recalc;
@@ -1565,7 +1566,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         ctx->out->write(cur_block);
 
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings()));
+            ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
 
         if (!ctx->all_gathered_data.statistics.empty())
             ctx->all_gathered_data.statistics.buildIfExists(cur_block);
@@ -1992,6 +1993,7 @@ private:
         }
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings());
         ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
 
         MutationHelpers::processStatisticsChanges(
