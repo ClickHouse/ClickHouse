@@ -16,6 +16,11 @@ decompression and deserialization again.
 Each entry corresponds to a contiguous row range `[row_begin, row_end)` of a
 single column of a single data part.
 
+The cache identifies entries by table UUID, so it is only active for tables in
+databases that assign UUIDs (`Atomic` and `Replicated`). Tables in legacy
+`Ordinary` databases, which do not have UUIDs, are silently excluded from the
+cache.
+
 The cache is controlled by the server settings `columns_cache_size` and
 `columns_cache_size_ratio`, and by the query-level settings `use_columns_cache`,
 `enable_reads_from_columns_cache`, and `enable_writes_to_columns_cache`. It can
