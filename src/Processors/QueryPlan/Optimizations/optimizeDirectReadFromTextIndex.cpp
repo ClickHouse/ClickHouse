@@ -371,16 +371,17 @@ private:
 
     static TextIndexFunctionTransforms getRequiredTransforms(const String & function_name)
     {
-        static const std::unordered_map<std::string_view, TextIndexFunctionTransforms> table =
-        {
-            {"hasToken",     {false, true,  true}},
+        using Entry = std::pair<std::string_view, TextIndexFunctionTransforms>;
+        /// Entries must be sorted by name for binary search.
+        static constexpr std::array<Entry, 5> table = {{
+            {"has",          {false, false, true}},
             {"hasAllTokens", {true,  true,  true}},
             {"hasAnyTokens", {true,  true,  true}},
             {"hasPhrase",    {true,  true,  false}},
-            {"has",          {false, false, true}},
-        };
-        auto it = table.find(function_name);
-        return it != table.end() ? it->second : TextIndexFunctionTransforms{};
+            {"hasToken",     {false, true,  true}},
+        }};
+        const auto it = std::ranges::lower_bound(table, function_name, {}, &Entry::first);
+        return (it != table.end() && it->first == function_name) ? it->second : TextIndexFunctionTransforms{};
     }
 
     static bool needApplyTokenizer(const String & fn)     { return getRequiredTransforms(fn).apply_tokenizer; }
