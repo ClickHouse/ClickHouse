@@ -207,7 +207,10 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     if (!low_cardinality_src)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
 
-    if (&low_cardinality_src->getDictionary() == &getDictionary())
+    /// Use the const overload on `*this` to compare dictionary addresses without going through
+    /// the non-const `WrappedPtr::operator*` -> `assumeMutableRef` path, which would trip
+    /// `chassert(use_count() == 1)` when the dictionary is shared (e.g. with a global dictionary).
+    if (&low_cardinality_src->getDictionary() == &std::as_const(*this).getDictionary())
     {
         /// Dictionary is shared with src column. Insert only indexes.
         idx.insertIndexesRange(low_cardinality_src->getIndexes(), start, length);
