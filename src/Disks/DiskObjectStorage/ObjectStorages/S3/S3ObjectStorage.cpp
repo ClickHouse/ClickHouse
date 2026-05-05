@@ -68,6 +68,7 @@ namespace S3RequestSetting
 
 namespace ErrorCodes
 {
+    extern const int S3_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -84,20 +85,6 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
         throw S3Exception(
             fmt::format("{} (Code: {}, S3 exception: '{}')",
                         err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName()),
-            err.GetErrorType());
-    }
-}
-
-template <typename Result, typename Error, typename... Args>
-void throwIfError(const Aws::Utils::Outcome<Result, Error> & response, fmt::format_string<Args...> context_fmt, Args &&... args)
-{
-    if (!response.IsSuccess())
-    {
-        const auto & err = response.GetError();
-        throw S3Exception(
-            fmt::format("{} (Code: {}, S3 exception: '{}'), {}",
-                        err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName(),
-                        fmt::format(context_fmt, std::forward<Args>(args)...)),
             err.GetErrorType());
     }
 }
@@ -229,15 +216,6 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     std::optional<size_t>) const
 {
     auto settings_ptr = s3_settings.get();
-
-    BlobStorageLogWriterPtr blob_storage_log;
-    if (read_settings.enable_blob_storage_log_for_read_operations)
-    {
-        blob_storage_log = BlobStorageLogWriter::create(disk_name);
-        if (blob_storage_log)
-            blob_storage_log->local_path = object.local_path;
-    }
-
     return std::make_unique<ReadBufferFromS3>(
         client.get(),
         uri.bucket,
@@ -250,8 +228,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         /* read_until_position */0,
         read_settings.remote_read_buffer_restrict_seek,
         object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
-        credentials_refresh_callback,
-        std::move(blob_storage_log));
+        credentials_refresh_callback);
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -345,7 +322,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
 
         outcome = client.get()->ListObjectsV2(request);
-        throwIfError(outcome, "while listing objects in bucket '{}' with prefix '{}' on disk '{}'", uri.bucket, path, disk_name);
+        throwIfError(outcome);
 
         auto result = outcome.GetResult();
         auto objects = result.GetContents();
@@ -537,7 +514,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
         }
         if (!updated)
         {
-            e.addMessage("while reading '{}' in bucket '{}' on disk '{}'", path, uri.bucket, disk_name);
+            e.addMessage("while reading " + path);
             throw;
         }
     }
@@ -675,20 +652,17 @@ void S3ObjectStorage::applyNewSettings(
         config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
-
-    /// Apply global <s3> endpoint settings first (lowest priority).
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
-    {
-        modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-        modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-    }
-
-    /// Apply disk config settings on top (higher priority than global <s3> section).
     modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
     modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
 
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
+
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
+    {
+        modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+        modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+    }
 
     auto current_settings = s3_settings.get();
     if (options.allow_client_change

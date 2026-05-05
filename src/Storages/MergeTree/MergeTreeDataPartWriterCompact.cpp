@@ -1,29 +1,16 @@
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
-#include <Common/FailPoint.h>
 
 namespace DB
 {
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char compact_part_writer_fail_in_add_streams[];
 }
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
@@ -35,6 +22,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
+    const VirtualsDescriptionPtr & virtual_columns_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -43,7 +31,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     : MergeTreeDataPartWriterOnDisk(
         data_part_name_, logger_name_, serializations_,
         data_part_storage_, index_granularity_info_, storage_settings_,
-        columns_list_, metadata_snapshot_,
+        columns_list_, metadata_snapshot_, virtual_columns_,
         indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, std::move(index_granularity_),
         static_cast<WrittenOffsetSubstreams *>(nullptr))
@@ -95,18 +83,11 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
         UInt64 codec_id = compression_codec->getHash();
-        /// Exception safety: if `make_shared` throws, the map is not modified, avoiding null entries in `cancel`.
-        auto it = streams_by_codec.find(codec_id);
-        if (it == streams_by_codec.end())
-        {
-            fiu_do_on(FailPoints::compact_part_writer_fail_in_add_streams,
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Compact part writer addStreams");
-            });
-            it = streams_by_codec.emplace(codec_id, std::make_shared<CompressedStream>(plain_hashing, compression_codec)).first;
-        }
+        auto & stream = streams_by_codec[codec_id];
+        if (!stream)
+            stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec);
 
-        compressed_streams.emplace(stream_name, it->second);
+        compressed_streams.emplace(stream_name, stream);
     };
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;
@@ -292,15 +273,14 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
     for (const auto & granule : granules)
     {
-        /// Tricky part, because we share compressed streams between different columns substreams.
-        /// Compressed streams write data to the single file, but with different compression codecs.
-        /// So we flush each stream (using next()) before using new one, because otherwise we will override
-        /// data in result file.
-        CompressedStreamPtr prev_stream;
         auto name_and_type = columns_list.begin();
         for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
         {
-            bool is_first_substream = true;
+            /// Tricky part, because we share compressed streams between different columns substreams.
+            /// Compressed streams write data to the single file, but with different compression codecs.
+            /// So we flush each stream (using next()) before using new one, because otherwise we will override
+            /// data in result file.
+            CompressedStreamPtr prev_stream;
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
                 String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
@@ -321,7 +301,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 /// We have 2 types of marks in Compact part. With or without substreams.
                 /// In format without substreams we write single mark per column (here once on the first requested substream).
                 /// In format with substreams we write a mark for each column substream.
-                if (is_first_substream || index_granularity_info.mark_type.with_substreams)
+                if (!prev_stream || index_granularity_info.mark_type.with_substreams)
                 {
                     MarkInCompressedFile mark{plain_hashing.count(), result_stream->hashing_buf.offset()};
                     writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
@@ -329,8 +309,6 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
                     if (!cached_marks.empty())
                         cached_marks.begin()->second->push_back(mark);
-
-                    is_first_substream = false;
                 }
 
                 prev_stream = result_stream;
@@ -349,15 +327,9 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 getSerialization(name_and_type->name),
                 stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, getSerializationSettings());
 
-            if (settings.compress_per_column_in_compact_parts)
-            {
-                prev_stream->hashing_buf.next();
-                prev_stream = nullptr;
-            }
-        }
-
-        if (!settings.compress_per_column_in_compact_parts && prev_stream)
+            /// Each type always have at least one substream
             prev_stream->hashing_buf.next();
+        }
 
         writeBinaryLittleEndian(granule.rows_to_write, marks_out);
         data_written = true;
