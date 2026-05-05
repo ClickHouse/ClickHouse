@@ -363,3 +363,56 @@ SELECT count() FROM tab WHERE hasAllTokens(val, 'running walking');  -- 1
 SELECT count() FROM tab WHERE hasAllTokens(val, 'running cat');      -- 0
 
 DROP TABLE tab;
+
+SELECT '14. Partially materialized index + postprocessor: haystack is not postprocessed on row-scan.';
+
+-- Old parts use row-level scan. The postprocessor is applied to the needle only,
+-- never to the haystack. When old-part data is uppercase and the postprocessor lowercases
+-- tokens, the row-scan cannot match: hasToken('FOO', lower('FOO')) = hasToken('FOO', 'foo') = 0.
+-- New parts have the index: it stores lower('FOO')='foo', and lower('FOO')='foo' is the
+-- lookup key, so row 3 is found. The count 1 (not 2) proves the haystack is untouched.
+
+CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES (1, 'FOO'), (2, 'BAR');  -- old parts: no index, uppercase data
+
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val));
+
+INSERT INTO tab VALUES (3, 'FOO'), (4, 'BAR');  -- new parts: with index, same data
+
+-- Old part row-scan: hasToken('FOO', 'foo') = 0. New part index: lower('FOO')='foo' found → 1. Total: 1.
+SELECT count() FROM tab WHERE hasToken(val, 'FOO');  -- 1
+SELECT count() FROM tab WHERE hasToken(val, 'BAR');  -- 1
+SELECT count() FROM tab WHERE hasToken(val, 'xyz');  -- 0
+
+SYSTEM START MERGES tab;
+DROP TABLE tab;
+
+SELECT '15. Partially materialized index + non-trivial postprocessor: postprocessed needle vs. raw haystack token.';
+
+-- When the postprocessor significantly transforms tokens (here: strips the suffix "ing"),
+-- the postprocessed needle no longer matches the raw token in an unindexed part.
+-- Old parts: hasToken('running', postprocessor('running')) = hasToken('running', 'runn') = 0.
+-- New parts: index stores 'runn' (from 'running') and looks up postprocessor('running')='runn' → found.
+-- Token unaffected by postprocessor ('cat'): old row-scan also matches → total is 2.
+
+CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES (1, 'running'), (2, 'cat');  -- old parts: no index
+
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = replaceRegexpAll(val, 'ing$', ''));
+
+INSERT INTO tab VALUES (3, 'running'), (4, 'cat');  -- new parts: with index
+
+-- 'running' → postprocessor → 'runn'. Old row-scan: hasToken('running', 'runn') = 0. New index: 'runn' found → 1. Total: 1.
+SELECT count() FROM tab WHERE hasToken(val, 'running');  -- 1
+-- 'cat' is unchanged by the postprocessor. Old row-scan: hasToken('cat', 'cat') = 1. New index: 'cat' found → 1. Total: 2.
+SELECT count() FROM tab WHERE hasToken(val, 'cat');      -- 2
+SELECT count() FROM tab WHERE hasToken(val, 'xyz');      -- 0
+
+SYSTEM START MERGES tab;
+DROP TABLE tab;

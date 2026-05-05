@@ -175,3 +175,11 @@ Baz	3
 - Negative tests
 -- Index on whole map must fail
 -- The preprocessor expression must contain the index definition
+14. Partially materialized index + preprocessor: haystack IS preprocessed on row-scan.
+2
+2
+0
+15. Partially materialized index + non-trivial preprocessor: preprocessor applied consistently to both needle and haystack.
+2
+2
+0
