@@ -607,7 +607,10 @@ bool StorageObjectStorage::optimize(
 bool StorageObjectStorage::supportsImport(ContextPtr local_context) const
 {
     if (isDataLake())
+    {
+        configuration->lazyInitializeIfNeeded(object_storage, local_context);
         return configuration->getExternalMetadata()->supportsImport(local_context);
+    }
 
     if (!configuration->partition_strategy)
         return false;
@@ -631,6 +634,7 @@ SinkToStoragePtr StorageObjectStorage::import(
 {
     if (isDataLake())
     {
+        configuration->lazyInitializeIfNeeded(object_storage, local_context);
         return configuration->getExternalMetadata()->import(
             catalog,
             new_file_path_callback,
@@ -688,6 +692,7 @@ void StorageObjectStorage::commitExportPartitionTransaction(
         const auto original_schema_id = iceberg_metadata->getValue<Int64>(Iceberg::f_current_schema_id);
         const auto partition_spec_id   = iceberg_metadata->getValue<Int64>(Iceberg::f_default_spec_id);
 
+        configuration->lazyInitializeIfNeeded(object_storage, local_context);
         configuration->getExternalMetadata()->commitExportPartitionTransaction(
             catalog,
             storage_id,
