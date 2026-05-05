@@ -23,7 +23,7 @@ public:
         = std::function<IFileCachePriorityPtr(size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String description)>;
     using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
     using SegmentType = FileSegmentKeyType;
-    using PriorityPerType = std::unordered_map<SegmentType, IFileCachePriorityPtr>;
+    using PriorityPerType = std::array<IFileCachePriorityPtr, 3>;
 
     SplitFileCachePriority(
         CachePriorityCreatorFunction creator_function,
@@ -33,7 +33,7 @@ public:
         double system_segment_size_ratio_,
         const std::string & description_ = "none");
 
-    Type getType() const override { return priorities_holder.at(SegmentType::Data)->getType(); }
+    Type getType() const override { return getPriority(SegmentType::Data).getType(); }
 
     size_t getSize(const CacheStateGuard::Lock &) const override;
     size_t getSizeApprox() const override;
@@ -58,6 +58,14 @@ public:
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *,
         bool is_initial_load = false) override;
+
+    IteratorPtr addForRestore( /// NOLINT
+        KeyMetadataPtr key_metadata,
+        size_t offset,
+        size_t size,
+        QueueEntryType original_queue_type,
+        const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock *) override;
 
     bool tryIncreasePriority(
         Iterator & iterator,
@@ -117,6 +125,9 @@ protected:
 private:
     SegmentType getPriorityType(const SegmentType & segment_type) const;
 
+    IFileCachePriority & getPriority(SegmentType type) { return *priorities_holder[static_cast<uint8_t>(type)]; }
+    const IFileCachePriority & getPriority(SegmentType type) const { return *priorities_holder[static_cast<uint8_t>(type)]; }
+
     PriorityPerType priorities_holder;
     double system_segment_size_ratio;
     size_t max_data_segment_size;
@@ -154,6 +165,9 @@ public:
             ? QueueEntryType::SplitCache_Data
             : QueueEntryType::SplitCache_System;
     }
+
+    const Iterator * getNestedOrThis() const override { return iterator->getNestedOrThis(); }
+    Iterator * getNestedOrThis() override { return iterator->getNestedOrThis(); }
 
     const FileSegmentKeyType type;
 

@@ -71,11 +71,13 @@ EvictionInfo::EvictionInfo(QueueID queue_id, QueueEvictionInfoPtr info)
 std::string EvictionInfo::toString() const
 {
     WriteBufferFromOwnString wb;
-    for (auto it = begin(); it != end(); ++it)
+    bool first = true;
+    for (const auto & [queue_id, info] : *this)
     {
-        if (it != begin())
+        if (!first)
             wb << ", ";
-        wb << "[queue id " << it->first << ", " << it->second->toString() << "]";
+        first = false;
+        wb << "[queue id " << queue_id << ", " << info->toString() << "]";
     }
     return wb.str();
 }
@@ -113,7 +115,7 @@ void EvictionInfo::addImpl(
 {
     size_to_evict += info->size_to_evict;
     elements_to_evict += info->elements_to_evict;
-    auto [it, inserted] = emplace(queue_id, std::move(info));
+    auto [it, inserted] = try_emplace(queue_id, std::move(info));
     if (!inserted)
     {
         if (!merge_if_exists)
@@ -215,6 +217,13 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::WriteLock 
         for (const auto & candidate : key_candidates.candidates)
         {
             auto queue_iterator = candidate->getQueueIterator();
+
+            /// Save the inner queue type before invalidation so we can
+            /// restore entries to their original queue if eviction fails.
+            /// Use getNestedOrThis() to see through SplitIterator and get
+            /// the SLRU_Protected/SLRU_Probationary type, not SplitCache_Data/System.
+            original_queue_types[candidate.get()] = queue_iterator->getNestedOrThis()->getType();
+
             queue_iterator->invalidate();
 
             chassert(candidate->releasable());

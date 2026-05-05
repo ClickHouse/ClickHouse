@@ -75,7 +75,7 @@ namespace
                 /// If it's not an ATTACH request then
                 /// check that the specified target table has all the required columns.
                 auto target_table = DatabaseCatalog::instance().getTable(target_table_id, context);
-                auto target_metadata = target_table->getInMemoryMetadataPtr();
+                auto target_metadata = target_table->getInMemoryMetadataPtr(context, false);
                 const auto & target_columns = target_metadata->columns;
                 TimeSeriesColumnsValidator validator{time_series_storage_id, time_series_settings};
                 validator.validateTargetColumns(kind, target_table_id, target_columns);
@@ -152,8 +152,8 @@ StorageTimeSeries::StorageTimeSeries(
     storage_metadata.setColumns(columns);
     if (!comment.empty())
         storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     has_inner_tables = false;
 
@@ -168,7 +168,7 @@ StorageTimeSeries::StorageTimeSeries(
         if (target_kind == ViewTarget::Metrics && !target.is_inner_table)
         {
             auto table = DatabaseCatalog::instance().tryGetTable(target.table_id, getContext());
-            auto metadata = table->getInMemoryMetadataPtr();
+            auto metadata = table->getInMemoryMetadataPtr(getContext(), false);
 
             for (const auto & column : metadata->columns)
                 if (column.type->lowCardinality())
@@ -358,7 +358,7 @@ bool StorageTimeSeries::optimize(
         if (target.is_inner_table)
         {
             auto inner_table = DatabaseCatalog::instance().getTable(target.table_id, local_context);
-            optimized |= inner_table->optimize(query, inner_table->getInMemoryMetadataPtr(), partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
+            optimized |= inner_table->optimize(query, inner_table->getInMemoryMetadataPtr(local_context, false), partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
         }
     }
 

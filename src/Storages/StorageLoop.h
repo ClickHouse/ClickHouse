@@ -17,8 +17,6 @@ namespace DB
 
         std::string getName() const override { return "Loop"; }
 
-        StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
-
         QueryProcessingStage::Enum
         getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 

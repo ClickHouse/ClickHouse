@@ -44,6 +44,8 @@
     M(AggregatedZooKeeperLog, aggregated_zookeeper_log, "Contains statistics (number of operations, latencies, errors) of ZooKeeper operations grouped by session_id, parent_path and operation. Periodically flushed to disk.") \
     M(IcebergMetadataLog,    iceberg_metadata_log, "Contains content of Iceberg metadata files.") \
     M(DeltaMetadataLog,    delta_lake_metadata_log, "Contains content of Delta metadata files.") \
+    M(PredicateStatisticsLog, predicate_statistics_log, "Contains sampled per-predicate selectivity statistics collected during query execution. Sampling is controlled by predicate_statistics_sample_rate; lower values increase overhead and should be tuned with care.") \
+    M(HistogramMetricLog,    histogram_metric_log, "Contains periodic snapshots of histogram metrics. Each row stores histogram bucket counts of one metric and label-combination.") \
 
 #define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
     M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
@@ -143,6 +145,10 @@ LIST_OF_ALL_SYSTEM_LOGS(FORWARD_DECLARATION)
 #endif
 #undef FORWARD_DECLARATION
 /// NOLINTEND(bugprone-macro-parentheses)
+
+/// Returns `true` if the configuration contains any system log section
+/// (e.g. `query_log`, `processors_profile_log`).
+bool hasAnySystemLogConfigured(const Poco::Util::AbstractConfiguration & config);
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables

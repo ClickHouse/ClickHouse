@@ -11,7 +11,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnDecimal.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FieldInterval.h>
 #include <Functions/FunctionHelpers.h>

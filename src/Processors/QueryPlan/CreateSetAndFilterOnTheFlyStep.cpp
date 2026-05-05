@@ -10,6 +10,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/IProcessor.h>
 #include <Processors/PingPongProcessor.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 namespace DB
 {

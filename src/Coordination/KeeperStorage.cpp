@@ -1610,9 +1610,9 @@ void handleSystemNodeModification(const KeeperContext & keeper_context, std::str
 }
 
 template<typename Container>
-bool KeeperStorage<Container>::checkACL(std::string_view path, int32_t permission, int64_t session_id, bool is_local, bool is_reconfig)
+bool KeeperStorage<Container>::checkACL(std::string_view path, int32_t permission, int64_t session_id, bool is_local, bool should_lock_storage)
 {
-    const auto node_acls = getNodeACLs(*this, path, is_local, /*should_lock_storage=*/ !is_local || is_reconfig);
+    const auto node_acls = getNodeACLs(*this, path, is_local, /*should_lock_storage=*/ should_lock_storage);
     if (node_acls.empty())
         return true;
 
@@ -1706,7 +1706,7 @@ template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
     auto path = zk_request.getPath();
-    return storage.checkACL(Coordination::parentNodePath(path), Coordination::ACL::Create, session_id, is_local);
+    return storage.checkACL(Coordination::parentNodePath(path), Coordination::ACL::Create, session_id, is_local, !is_local);
 }
 
 template <typename Storage>
@@ -1871,7 +1871,7 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperGetRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
-    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Read, session_id, is_local);
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Read, session_id, is_local, !is_local);
 }
 
 template <typename Storage>
@@ -1960,12 +1960,12 @@ template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
     if (auto check_node_acl = storage.keeper_context->getCoordinationSettings()[CoordinationSetting::check_node_acl_on_remove];
-        check_node_acl && !storage.checkACL(zk_request.getPath(), Coordination::ACL::Delete, session_id, is_local))
+        check_node_acl && !storage.checkACL(zk_request.getPath(), Coordination::ACL::Delete, session_id, is_local, !is_local))
     {
         return false;
     }
 
-    return storage.checkACL(Coordination::parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local);
+    return storage.checkACL(Coordination::parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local, !is_local);
 }
 
 template <typename Storage>
@@ -2171,7 +2171,7 @@ public:
             const auto & current_path = current_delta_it->path;
             chassert(!current_path.empty());
 
-            if (!storage.checkACL(current_path, Coordination::ACL::Delete, session_id, /*is_local=*/false))
+            if (!storage.checkACL(current_path, Coordination::ACL::Delete, session_id, /*is_local=*/false, true))
                 return CollectStatus::NoAuth;
 
             ProcessedUncommittedChildren processed_uncommitted_children;
@@ -2296,7 +2296,7 @@ private:
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperRemoveRecursiveRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
-    return storage.checkACL(Coordination::parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local);
+    return storage.checkACL(Coordination::parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local, !is_local);
 }
 
 template <typename Storage>
@@ -2432,12 +2432,12 @@ process(const Coordination::ZooKeeperRemoveRecursiveRequest & zk_request, Storag
 
 /// REMOVERECURSIVE Request ///
 
-/// GETRECURSIVECHILDREN Request ///
+/// LISTRECURSIVE Request ///
 
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
-    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Read, session_id, is_local);
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Read, session_id, is_local, !is_local);
 }
 
 template <typename Storage>
@@ -2557,7 +2557,7 @@ processLocal(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Sto
     return processImpl<true>(zk_request, storage, std::move(deltas), session_id);
 }
 
-/// GETRECURSIVECHILDREN Request ///
+/// LISTRECURSIVE Request ///
 
 
 /// EXISTS Request ///
@@ -2631,7 +2631,7 @@ processLocal(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & 
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperSetRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
-    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Write, session_id, is_local);
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Write, session_id, is_local, !is_local);
 }
 
 template <typename Storage>
@@ -2927,7 +2927,7 @@ processLocal(const Coordination::ZooKeeperSetWatches2Request & zk_request, Stora
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
-    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Read, session_id, is_local);
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Read, session_id, is_local, !is_local);
 }
 
 template <typename Storage>
@@ -3127,7 +3127,8 @@ bool checkAuth(const Coordination::ZooKeeperCheckRequest & zk_request, Storage &
         zk_request.getOpNum() == Coordination::OpNum::CheckNotExists ? Coordination::parentNodePath(path) : path,
         Coordination::ACL::Read,
         session_id,
-        is_local);
+        is_local,
+        !is_local);
 }
 
 namespace
@@ -3499,7 +3500,7 @@ process(const Coordination::ZooKeeperCloseRequest & /* zk_request */, Storage &,
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperSetACLRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
-    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Admin, session_id, is_local);
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Admin, session_id, is_local, !is_local);
 }
 
 template <typename Storage>
@@ -3569,7 +3570,7 @@ process(const Coordination::ZooKeeperSetACLRequest & zk_request, Storage & stora
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperGetACLRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
-    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Admin | Coordination::ACL::Read, session_id, is_local);
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Admin | Coordination::ACL::Read, session_id, is_local, !is_local);
 }
 
 template <typename Storage>
@@ -4197,13 +4198,13 @@ KeeperResponsesForSessions KeeperStorage<Container>::processLocalRequests(
             {
                 const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
                 {
-                    ZooKeeperOpentelemetrySpans::maybeInitialize(
-                        concrete_zk_request.spans.read_process,
-                        concrete_zk_request.tracing_context,
+                    concrete_zk_request.spans.maybeInitialize(
+                        KeeperSpan::ReadProcess,
+                        concrete_zk_request.tracing_context.get(),
                         start_time_us);
 
-                    ZooKeeperOpentelemetrySpans::maybeFinalize(
-                        concrete_zk_request.spans.read_process,
+                    concrete_zk_request.spans.maybeFinalize(
+                        KeeperSpan::ReadProcess,
                         [&]
                         {
                             return std::vector<OpenTelemetry::SpanAttribute>{

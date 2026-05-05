@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <IO/copyData.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <gtest/gtest.h>
@@ -65,9 +66,10 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 boundary_alignment;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
-    extern const FileCacheSettingsUInt64 load_metadata_threads;
+    extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
+    extern const FileCacheSettingsBool allow_dynamic_cache_resize;
 }
 
 void printRanges(const auto & segments)
@@ -355,14 +357,19 @@ public:
             fs::remove_all(cache_base_path);
         if (fs::exists(cache_base_path2))
             fs::remove_all(cache_base_path2);
+        if (fs::exists(cache_base_path3))
+            fs::remove_all(cache_base_path3);
         fs::create_directories(cache_base_path);
         fs::create_directories(cache_base_path2);
+        fs::create_directories(cache_base_path3);
     }
 
     void TearDown() override
     {
         if (fs::exists(cache_base_path))
             fs::remove_all(cache_base_path);
+        if (fs::exists(cache_base_path3))
+            fs::remove_all(cache_base_path3);
     }
 
     pcg64 rng;
@@ -1442,6 +1449,98 @@ TEST_F(FileCacheTest, SLRUPolicy)
     }
 }
 
+TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
+{
+    /// Test that SLRU dynamic resize correctly evicts from both sub-queues
+    /// after the per-queue stat fix.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
+
+    auto write_file = [](const std::string & filename, const std::string & s)
+    {
+        std::string file_path = fs::current_path() / filename;
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(s.data(), s.size());
+        wb->next();
+        wb->finalize();
+        return file_path;
+    };
+
+    /// Create SLRU cache: max_size=30, max_elements=6, ratio=0.5
+    /// So protected = 15 bytes / 3 elements, probationary = 15 bytes / 3 elements.
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path2;
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 6;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::allow_dynamic_cache_resize] = true;
+
+    auto cache = std::make_shared<DB::FileCache>("slru_resize", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+
+    auto read_and_check = [&](const std::string & file, const FileCacheKey & key, const std::string & expect_result)
+    {
+        auto read_buffer_creator = [&]()
+        {
+            return createReadBufferFromFileBase(file, read_settings, std::nullopt, std::nullopt);
+        };
+        auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+            file, key, cache, user, read_buffer_creator, read_settings,
+            "test", expect_result.size(), false, false, std::nullopt, nullptr);
+        WriteBufferFromOwnString result;
+        copyData(*cached_buffer, result);
+        ASSERT_EQ(result.str(), expect_result);
+    };
+
+    /// Read file1 twice -> 15 bytes in protected (3 segs x 5)
+    std::string data1(15, '*');
+    auto file1 = write_file("test_resize1", data1);
+    auto key1 = DB::FileCacheKey::fromPath(file1);
+    read_and_check(file1, key1, data1);
+    read_and_check(file1, key1, data1);
+
+    assertProtected(cache->dumpQueue(), { Range(0, 4), Range(5, 9), Range(10, 14) });
+
+    /// Read file2 once -> 10 bytes in probationary (2 segs x 5)
+    std::string data2(10, '+');
+    auto file2 = write_file("test_resize2", data2);
+    auto key2 = DB::FileCacheKey::fromPath(file2);
+    read_and_check(file2, key2, data2);
+
+    assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
+    ASSERT_EQ(cache->getUsedCacheSize(), 25);
+    ASSERT_EQ(cache->getFileSegmentsNum(), 5);
+
+    /// Resize to max_size=8, max_elements=6.
+    /// Protected limit = 4, probationary limit = 4.
+    /// Both queues need eviction. Without the fix, the protected pass
+    /// would short-circuit and modifySizeLimits would throw LOGICAL_ERROR.
+    DB::FileCacheSettings new_settings = settings;
+    new_settings[FileCacheSetting::max_size] = 8;
+    DB::FileCacheSettings actual_settings = settings;
+
+    /// Must not throw -- this is the core regression test for the bug.
+    ASSERT_NO_THROW(cache->applySettingsIfPossible(new_settings, actual_settings));
+
+    /// Verify limits were applied.
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 8);
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_elements].value, 6);
+
+    /// Verify cache usage is within new limits.
+    ASSERT_LE(cache->getUsedCacheSize(), 8);
+    ASSERT_LE(cache->getFileSegmentsNum(), 6);
+}
+
 TEST_F(FileCacheTest, FileCacheGetOrSet)
 {
     ServerUUID::setRandomForUnitTests();
@@ -1623,4 +1722,101 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     priority.resetEvictionPos();
     ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
+}
+
+TEST_F(FileCacheTest, LoadMetadataParallelism)
+{
+    /// Test that loading cache metadata with different numbers of threads produces
+    /// correct results. We build a complex structure — many keys spread across
+    /// different 3-char prefix directories, each with multiple segments at
+    /// non-overlapping offsets — and then reload it with 1, 3, and 32 threads.
+
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t num_keys = 50;
+    const size_t segments_per_key = 3;
+    const size_t segment_size = 50;
+    const size_t file_size = segments_per_key * segment_size;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = num_keys * segments_per_key * segment_size * 2;
+    settings[FileCacheSetting::max_elements] = num_keys * segments_per_key * 2;
+    settings[FileCacheSetting::max_file_segment_size] = segment_size;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::load_metadata_threads] = 1;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    /// Use diverse paths so keys hash to many different 3-char prefix directories,
+    /// exercising parallel listing across multiple prefix dirs.
+    std::vector<FileCacheKey> keys;
+    keys.reserve(num_keys);
+    for (size_t i = 0; i < num_keys; ++i)
+        keys.push_back(FileCacheKey::fromPath("test/dir/subdir_" + std::to_string(i * 7) + "/file_" + std::to_string(i)));
+
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// Phase 1: populate cache with the full key/segment structure and download everything.
+    {
+        auto cache = DB::FileCache("LoadMetadataParallelism_init", settings);
+        cache.initialize();
+
+        for (size_t k = 0; k < num_keys; ++k)
+        {
+            for (size_t s = 0; s < segments_per_key; ++s)
+            {
+                auto holder = cache.getOrSet(keys[k], s * segment_size, segment_size, file_size, {}, 0, user);
+                ASSERT_EQ(holder->size(), 1);
+                download(*holder->begin());
+            }
+        }
+    }
+
+    /// Phase 2: reload with different thread counts and verify all segments are intact.
+    for (UInt64 thread_count : {1u, 3u, 32u})
+    {
+        const UInt64 expected_listing = std::max(UInt64(1), thread_count / 2);
+        const UInt64 expected_loading = thread_count - expected_listing;
+
+        settings[FileCacheSetting::load_metadata_threads] = thread_count;
+
+        testing::internal::CaptureStderr();
+        auto cache = DB::FileCache("LoadMetadataParallelism_" + std::to_string(thread_count), settings);
+        cache.initialize();
+        const auto log_output = testing::internal::GetCapturedStderr();
+
+        const auto expected_log = fmt::format(
+            "using {} listing thread(s) and {} loading thread(s)",
+            expected_listing, expected_loading);
+        ASSERT_NE(log_output.find(expected_log), std::string::npos)
+            << "Expected log message not found for load_metadata_threads=" << thread_count
+            << "\nExpected substring: " << expected_log;
+
+        size_t total_loaded = 0;
+        for (size_t k = 0; k < num_keys; ++k)
+        {
+            auto infos = cache.getFileSegmentInfos(keys[k], user.user_id);
+            ASSERT_EQ(infos.size(), segments_per_key)
+                << "key_index=" << k << " load_metadata_threads=" << thread_count;
+
+            std::sort(infos.begin(), infos.end(), [](const auto & a, const auto & b)
+            {
+                return a.range_left < b.range_left;
+            });
+
+            for (size_t s = 0; s < segments_per_key; ++s)
+            {
+                ASSERT_EQ(infos[s].state, State::DOWNLOADED)
+                    << "key_index=" << k << " segment=" << s << " load_metadata_threads=" << thread_count;
+                ASSERT_EQ(infos[s].range_left, s * segment_size);
+                ASSERT_EQ(infos[s].range_right, (s + 1) * segment_size - 1);
+            }
+            total_loaded += infos.size();
+        }
+
+        ASSERT_EQ(total_loaded, num_keys * segments_per_key)
+            << "load_metadata_threads=" << thread_count;
+    }
 }

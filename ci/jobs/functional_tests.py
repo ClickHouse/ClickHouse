@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import random
 import subprocess
@@ -20,7 +21,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
     START = "start"
     TEST = "test"
-    RETRIES = "retries"
+    DIAGNOSTICS = "diagnostics"
     CHECK_ERRORS = "check_errors"
     COLLECT_LOGS = "collect_logs"
     COLLECT_COVERAGE = "collect_coverage"
@@ -93,14 +94,19 @@ def run_tests(
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     memory_limit = 10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
-    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
+    # `set -o pipefail` is required so that the pipeline's exit code reflects
+    # `clickhouse-test`'s exit code rather than `tee`'s. Without it, a non-zero
+    # exit from `clickhouse-test` is silently swallowed by `tee` returning 0.
+    command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
                 {extra_args} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
-    Shell.run(command, verbose=True, timeout=global_time_limit if global_time_limit > 0 else None)
+    return Shell.run(
+        command, verbose=True, timeout=global_time_limit if global_time_limit > 0 else None
+    )
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
@@ -127,7 +133,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check",
-    "targeted": "--flaky-check",
+    "targeted": "--flaky-check --no-self-parallel",
 }
 
 
@@ -236,9 +242,8 @@ def main():
 
     runner_options += f" --jobs {workers}"
 
-    if is_flaky_check:
+    if is_flaky_check or is_targeted_check:
         # Stop after 5 total failures across all parallel workers (fast feedback on broken PRs).
-        # The 45-min global_time_limit is the primary stopping condition for healthy PRs.
         runner_options += " --max-failures 5"
 
     if is_excluded_from_llvm:
@@ -252,6 +257,9 @@ def main():
             runner_options += " --collect-per-test-coverage"
         else:
             runner_options += " --no-random-settings --no-random-merge-tree-settings  --no-long"
+
+    diagnostics_dir = f"{temp_dir}/random-settings-diagnostics"
+    runner_options += f" --random-settings-diagnostics-dir {diagnostics_dir}"
 
     if (
         not is_flaky_check
@@ -273,8 +281,7 @@ def main():
         # random settings per TestCase; --max-failures 5 stops early on broken PRs.
         rerun_count = 50
     elif is_targeted_check:
-        print("Rerun count set to 5 for targeted check")
-        rerun_count = 5
+        rerun_count = 50
 
     if is_flaky_check:
         # Run no-parallel and no-flaky-check tests sequentially with fewer iterations.
@@ -358,7 +365,7 @@ def main():
         or is_targeted_check
         or info.is_local_run
     ):
-        stages.remove(JobStages.RETRIES)
+        stages.remove(JobStages.DIAGNOSTICS)
 
     tests = args.test
 
@@ -401,34 +408,12 @@ def main():
                 # Not a bugfix PR - run a simple sanity test
                 tests = ["00001_select_1"]
             elif is_flaky_check:
-                # Step 1: changed/new test files in this PR
-                changed_tests = targeter.get_changed_tests()
-                changed_str = ", ".join(changed_tests) if changed_tests else "(none)"
-                print(f"[flaky-check] Step 1 — changed/new tests ({len(changed_tests)}): {changed_str}")
-
-                # Step 2: tests that failed in previous CI runs for this PR
-                try:
-                    previously_failed = targeter.get_previously_failed_tests()
-                except Exception as e:
-                    print(f"[flaky-check] Step 2 — failed to fetch previously-failed tests: {e}")
-                    previously_failed = []
-                failed_str = ", ".join(previously_failed) if previously_failed else "(none)"
-                print(f"[flaky-check] Step 2 — previously failed tests ({len(previously_failed)}): {failed_str}")
-
-                # Step 3: coverage-relevant tests (direct lines, indirect callees, siblings)
-                relevant_tests, relevance_result = targeter.get_most_relevant_tests()
-                results.append(relevance_result)
-                relevant_preview = ", ".join(relevant_tests[:20]) + ("..." if len(relevant_tests) > 20 else "")
-                print(f"[flaky-check] Step 3 — coverage-relevant tests ({len(relevant_tests)}): {relevant_preview if relevant_tests else '(none)'}")
-
-                # Merge all three sets preserving priority order (changed first)
-                seen: set = set()
-                tests = []
-                for t in list(changed_tests) + list(previously_failed) + list(relevant_tests):
-                    if t not in seen:
-                        seen.add(t)
-                        tests.append(t)
-                print(f"[flaky-check] Total unique tests to run: {len(tests)}")
+                # Flaky check runs only changed/new test files in this PR.
+                # Previously failed and coverage-relevant tests are handled
+                # by the separate targeted check jobs.
+                tests = targeter.get_changed_tests()
+                tests_str = ", ".join(tests) if tests else "(none)"
+                print(f"[flaky-check] Changed/new tests ({len(tests)}): {tests_str}")
             else:
                 tests = targeter.get_changed_tests()
 
@@ -444,6 +429,7 @@ def main():
         assert not args.test, "--test not supposed to be used for targeted check"
         tests, results_with_info = targeter.get_all_relevant_tests_with_info()
         results.append(results_with_info)
+
         if not tests:
             # early exit
             Result.create_from(
@@ -534,14 +520,10 @@ def main():
 
                 if not Info().is_local_run:
                     if not CH.start_log_exports(stop_watch.start_time):
-                        info.add_workflow_report_message(
-                            "WARNING: Failed to start log export"
-                        )
+                        info.add_workflow_warning("Failed to start log export")
                         print("Failed to start log export")
                 if not CH.create_minio_log_tables():
-                    info.add_workflow_report_message(
-                        "WARNING: Failed to create minio log tables"
-                    )
+                    info.add_workflow_warning("Failed to create minio log tables")
                     print("Failed to create minio log tables")
 
                 if has_stateful_tests:
@@ -572,15 +554,8 @@ def main():
 
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 
-        # For targeted checks with multiple iterations, use N separate clickhouse-test
-        # invocations so that every invocation creates fresh TestCase objects with
-        # independently randomized settings.
-        run_sets_cnt = rerun_count if is_targeted_check else 1
-        rerun_count = 1 if is_targeted_check else rerun_count
-
         global_time_limit = 0
         if is_flaky_check:
-            # Hard 45-minute wall-clock limit for the test runner.
             FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min
             global_time_limit = max(
                 FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 0
@@ -590,44 +565,50 @@ def main():
                 f" (elapsed so far: {int(stop_watch.duration)}s,"
                 f" remaining: {global_time_limit}s)"
             )
-        elif is_targeted_check:
-            job_timeout = int(3600 * 2.5)
-            soft_limit_margin = 3600
-            global_time_limit = max(
-                job_timeout - soft_limit_margin - int(stop_watch.duration), 0
-            )
-            print(
-                f"Soft time limit for test runner: {global_time_limit}s"
-                f" (elapsed so far: {int(stop_watch.duration)}s)"
-            )
 
-        tests_to_run = list(tests) if tests else tests
-
-        for cnt in range(run_sets_cnt):
-            if run_sets_cnt > 1 and cnt > 0:
-                if is_targeted_check:
-                    job_timeout = int(3600 * 2.5)
-                    soft_limit_margin = 3600
-                    global_time_limit = max(
-                        job_timeout - soft_limit_margin - int(stop_watch.duration), 0
-                    )
-                if global_time_limit <= 0:
-                    print(
-                        "NOTE: Time limit exhausted; stopping before next iteration"
-                    )
-                    break
-
-            run_tests(
-                batch_num=batch_num if not tests_to_run else 0,
-                batch_total=total_batches if not tests_to_run else 0,
-                tests=tests_to_run,
+            runner_exit_code = run_tests(
+                batch_num=0,
+                batch_total=0,
+                tests=list(tests) if tests else tests,
                 extra_args=runner_options,
-                random_order=is_flaky_check or is_targeted_check or is_bugfix_validation,
+                random_order=True,
                 rerun_count=rerun_count,
                 global_time_limit=global_time_limit,
             )
 
-        test_result = ft_res_processor.run()
+        elif is_targeted_check:
+            TARGETED_CHECK_TIME_LIMIT = 50 * 60  # 50 min
+            global_time_limit = max(
+                TARGETED_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
+            )
+            print(
+                f"Targeted-check time limit: {TARGETED_CHECK_TIME_LIMIT}s"
+                f" (elapsed so far: {int(stop_watch.duration)}s,"
+                f" remaining: {global_time_limit}s)"
+            )
+
+            runner_exit_code = run_tests(
+                batch_num=0,
+                batch_total=0,
+                tests=list(tests) if tests else tests,
+                extra_args=runner_options,
+                random_order=True,
+                rerun_count=rerun_count,
+                global_time_limit=global_time_limit,
+            )
+
+        else:
+            runner_exit_code = run_tests(
+                batch_num=batch_num,
+                batch_total=total_batches,
+                tests=list(tests) if tests else tests,
+                extra_args=runner_options,
+                random_order=is_bugfix_validation,
+                rerun_count=rerun_count,
+                global_time_limit=global_time_limit,
+            )
+
+        test_result = ft_res_processor.run(runner_exit_code=runner_exit_code)
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -642,60 +623,99 @@ def main():
 
         res = results[-1].is_ok()
 
-    if JobStages.RETRIES in stages and test_result and test_result.is_failure():
-        # retry all failed tests and mark original failed either as success on retry or failed on retry
+    if JobStages.DIAGNOSTICS in stages and test_result and test_result.is_failure():
+        diag_stopwatch = Utils.Stopwatch()
+        failed_tests_seen = set()
         failed_tests = []
+        has_errors = False
         for t in test_result.results:
             if t.is_failure() and t.name and t.name[0].isdigit():
-                failed_tests.append(t.name)
+                if t.name not in failed_tests_seen:
+                    failed_tests_seen.add(t.name)
+                    failed_tests.append(t.name)
             elif t.is_error():
-                failed_tests = []
+                has_errors = True
                 print(
-                    "NOTE: Skipping retry stage because the main test run ended with errors"
+                    "NOTE: Skipping diagnostics because the main test run ended with errors"
                 )
                 break
 
-        if len(failed_tests) > 10:
+        if has_errors:
+            pass
+        elif len(failed_tests) > 10:
             results.append(
                 Result(
-                    name="Retries",
+                    name="Diagnostics",
                     status=Result.Status.SKIPPED,
                     info="Too many failed tests",
-                )
+                ).set_timing(stopwatch=diag_stopwatch)
             )
         elif failed_tests:
-            ft_res_processor = FTResultsProcessor(wd=temp_dir)
-            run_tests(
-                batch_num=0,
-                batch_total=0,
-                tests=failed_tests,
-                extra_args=runner_options,
-                random_order=True,
-                rerun_count=1,
+            memory_limit = (
+                10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
             )
-            retry_result = ft_res_processor.run(task_name="Retries")
-            if retry_result.is_failure():
-                # do not produce noise failures
-                retry_result.set_success()
-            success_after_rerun = [t.name for t in retry_result.results if t.is_ok()]
-            failed_after_rerun = [
-                t.name for t in retry_result.results if t.is_failure()
-            ]
-            if success_after_rerun or failed_after_rerun:
-                for test_case in test_result.results:
-                    if test_case.name in success_after_rerun:
-                        if is_llvm_coverage:
-                            print(
-                                f"Test {test_case.name} has succeeded after rerun. Mark it as OK"
-                            )
-                            test_case.remove_label(Result.Status.FAILED)
-                            test_case.remove_label(Result.StatusExtended.FAIL)
-                            test_case.set_status(Result.StatusExtended.OK)
-                        else:
-                            test_case.set_label(Result.Label.OK_ON_RETRY)
-                    elif test_case.name in failed_after_rerun:
-                        test_case.set_label(Result.Label.FAILED_ON_RETRY)
-            results.append(retry_result)
+            diag_command = (
+                f"clickhouse-test --testname --check-zookeeper-session --hung-check"
+                f" --memory-limit {memory_limit} --trace --capture-client-stacktrace"
+                f" --queries ./tests/queries --shard --zookeeper"
+                f" --diagnose-random-settings"
+                f" --random-settings-diagnostics-dir {diagnostics_dir}"
+                f" --no-random-settings --no-random-merge-tree-settings"
+                f" -- {' '.join(failed_tests)}"
+            )
+            print(f"Running diagnostics for {len(failed_tests)} test(s)...")
+            diag_exit_code = Shell.run(diag_command, verbose=True)
+
+            # Read diagnostics results and prepend to original test info
+            diag_results_path = os.path.join(
+                diagnostics_dir, "random_settings_diagnostics_results.jsonl"
+            )
+            diag_results = {}
+            if os.path.isfile(diag_results_path):
+                with open(diag_results_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            entry = json.loads(line)
+                            diag_results[entry["test_name"]] = entry
+            label_map = {
+                "setting": Result.Label.SETTING_VALUE,
+                "flaky": Result.Label.FLAKY,
+                "reproducible": Result.Label.REPRODUCIBLE,
+            }
+            for test_case in test_result.results:
+                diag = diag_results.get(test_case.name)
+                if not diag:
+                    continue
+                if diag.get("diagnosis"):
+                    test_case.info = diag["diagnosis"] + "\n" + test_case.info
+                label_key = diag.get("label", "")
+                if label_key in label_map:
+                    test_case.set_label(label_map[label_key])
+                if label_key == "flaky" and is_llvm_coverage:
+                    # Coverage binaries are slow and prone to timing-related flakiness
+                    # (e.g. TIMEOUT_EXCEEDED on SystemLogQueue). Don't penalise them
+                    # for it — mark the test green so it doesn't block coverage jobs.
+                    # See: https://github.com/ClickHouse/ClickHouse/pull/95763
+                    test_case.set_status(Result.Status.OK)
+            if diag_exit_code != 0:
+                diag_status = Result.Status.FAIL
+                diag_info = (
+                    f"Diagnostics runner exited with code {diag_exit_code}; "
+                    f"diagnosed {len(diag_results)} out of {len(failed_tests)} failed test(s)"
+                )
+            else:
+                diag_status = Result.Status.OK
+                diag_info = (
+                    f"Diagnosed {len(diag_results)} out of {len(failed_tests)} failed test(s)"
+                )
+            results.append(
+                Result(
+                    name="Diagnostics",
+                    status=diag_status,
+                    info=diag_info,
+                ).set_timing(stopwatch=diag_stopwatch)
+            )
 
     if args.debug:
         print("\n\n=== Debug mode enabled, starting clickhouse-client ===\n")
@@ -732,7 +752,7 @@ def main():
             Result.create_from(
                 name="Check errors",
                 results=CH.check_fatal_messages_in_logs(),
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 stopwatch=sw_,
             )
         )
@@ -744,12 +764,12 @@ def main():
     if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
         has_failure = False
         for r in test_result.results:
-            r.set_label("xfail")
-            if r.status == Result.StatusExtended.FAIL:
-                r.status = Result.StatusExtended.OK
+            r.set_label(Result.Label.XFAIL)
+            if r.status == Result.Status.FAIL:
+                r.status = Result.Status.OK
                 has_failure = True
-            elif r.status == Result.StatusExtended.OK:
-                r.status = Result.StatusExtended.FAIL
+            elif r.status == Result.Status.OK:
+                r.status = Result.Status.FAIL
         if not has_failure:
             print("Failed to reproduce the bug")
             test_result.set_failed().set_info("Failed to reproduce the bug")

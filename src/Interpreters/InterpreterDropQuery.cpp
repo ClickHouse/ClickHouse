@@ -321,7 +321,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (!std::dynamic_pointer_cast<MergeTreeData>(table))
                 table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-            auto metadata_snapshot = table->getInMemoryMetadataPtr();
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
             /// Drop table data, don't touch metadata
             table->truncate(current_query_ptr, metadata_snapshot, context_, table_excl_lock);
         }
@@ -380,7 +380,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             auto table_lock
                 = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
             /// Drop table data, don't touch metadata
-            auto metadata_snapshot = table->getInMemoryMetadataPtr();
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
             table->truncate(current_query_ptr, metadata_snapshot, getContext(), table_lock);
         }
         else if (kind == ASTDropQuery::Kind::Drop)
@@ -520,6 +520,12 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     auto table_ptr = iterator->table();
+
+                    /// Skip tables that don't support truncation (e.g. views)
+                    /// when doing TRUNCATE ALL TABLES.
+                    if (truncate && query.has_tables && !table_ptr->supportsTruncate())
+                        continue;
+
                     StorageID storage_id = table_ptr->getStorageID();
                     tables_to_drop.push_back({storage_id, table_ptr->isDictionary()});
                     /// If the database doesn't support table UUIDs, we might call
@@ -663,6 +669,11 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
         {
             const auto & table_ptr = it->table();
+
+            /// Skip tables that don't support truncation (e.g. views).
+            if (!table_ptr->supportsTruncate())
+                continue;
+
             const auto & storage_id = table_ptr->getStorageID();
             const auto & tname = storage_id.table_name;
 
