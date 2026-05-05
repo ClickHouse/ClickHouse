@@ -316,6 +316,13 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     if (channel->is_once && !channel->disabled)
     {
         enabled_failpoints.erase(fail_point_name);
+        /// Mark disabled and wake any thread that raced into waitForPause or
+        /// waitForResume between SYSTEM NOTIFY and this cleanup.  Must happen
+        /// before erasing the channel so the notified threads see disabled=true
+        /// on the shared object they already hold a reference to.
+        channel->disabled = true;
+        channel->pause_cv.notify_all();
+        channel->resume_cv.notify_all();
         fail_point_wait_channels.erase(fail_point_name);
         fiu_disable(fail_point_name.c_str());
     }
