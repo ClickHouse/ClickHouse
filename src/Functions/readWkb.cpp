@@ -258,7 +258,7 @@ SELECT toTypeName(readWKBPoint(unhex('0101000000333333333333f33f3333333333330b40
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_point = {25, 11};
+    FunctionDocumentation::IntroducedIn introduced_in_point = {25, 6};
     FunctionDocumentation::Category category_point = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_point = {description_point, syntax_point, arguments_point, {}, returned_value_point, examples_point, introduced_in_point, category_point};
 
@@ -282,7 +282,7 @@ SELECT readWKBLineString(unhex('010200000004000000000000000000f03f000000000000f0
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_linestring = {25, 11};
+    FunctionDocumentation::IntroducedIn introduced_in_linestring = {25, 6};
     FunctionDocumentation::Category category_linestring = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_linestring = {description_linestring, syntax_linestring, arguments_linestring, {}, returned_value_linestring, examples_linestring, introduced_in_linestring, category_linestring};
 
@@ -306,7 +306,7 @@ SELECT readWKBMultiLineString(unhex('0105000000020000000102000000030000000000000
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_multilinestring = {25, 11};
+    FunctionDocumentation::IntroducedIn introduced_in_multilinestring = {25, 6};
     FunctionDocumentation::Category category_multilinestring = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_multilinestring = {description_multilinestring, syntax_multilinestring, arguments_multilinestring, {}, returned_value_multilinestring, examples_multilinestring, introduced_in_multilinestring, category_multilinestring};
 
@@ -332,7 +332,7 @@ Polygon [[(2,0),(10,0),(10,10),(0,10),(2,0)]]
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_polygon = {25, 11};
+    FunctionDocumentation::IntroducedIn introduced_in_polygon = {25, 6};
     FunctionDocumentation::Category category_polygon = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_polygon = {description_polygon, syntax_polygon, arguments_polygon, {}, returned_value_polygon, examples_polygon, introduced_in_polygon, category_polygon};
 
@@ -359,7 +359,7 @@ readWKBMulti~000024c0')): [[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_multipolygon = {25, 11};
+    FunctionDocumentation::IntroducedIn introduced_in_multipolygon = {25, 6};
     FunctionDocumentation::Category category_multipolygon = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_multipolygon = {description_multipolygon, syntax_multipolygon, arguments_multipolygon, {}, returned_value_multipolygon, examples_multipolygon, introduced_in_multipolygon, category_multipolygon};
 
