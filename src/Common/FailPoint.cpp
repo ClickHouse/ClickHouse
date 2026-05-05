@@ -219,6 +219,14 @@ struct FailPointChannel
     /// and fail_point_wait_channels after the thread is resumed, so that
     /// system.fail_points correctly reports enabled = 0 after natural firing.
     bool is_once = false;
+
+    /// Incremented each time enableFailPoint arms this channel (even on a
+    /// re-enable of the same failpoint while a prior firing is still in flight).
+    /// notifyPauseAndWaitForResume captures this before sleeping; the
+    /// PAUSEABLE_ONCE cleanup only runs when the generation has not changed,
+    /// so a concurrent re-enable between SYSTEM NOTIFY and the worker resuming
+    /// is never silently discarded.
+    size_t enable_generation = 0;
 };
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
@@ -240,6 +248,7 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
             {                                                                                                   \
                 auto & ch = fail_point_wait_channels.try_emplace(FailPoints::NAME, std::make_shared<FailPointChannel>()).first->second; \
                 ch->is_once = ((flags) & FIU_ONETIME) != 0;                                                     \
+                ++ch->enable_generation;                                                                         \
             }                                                                                                   \
         }                                                                                                       \
         return;                                                                                                 \
@@ -298,6 +307,10 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
 
     auto channel = iter->second;
     size_t my_resume_epoch = channel->resume_epoch;
+    /// Snapshot the enable-generation so the cleanup below can detect a
+    /// concurrent re-enable that arrived between SYSTEM NOTIFY and this thread
+    /// reacquiring the mutex.
+    size_t my_enable_generation = channel->enable_generation;
 
     /// Signal that a thread has reached and paused at this failpoint
     ++channel->pause_count;
@@ -311,9 +324,11 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
 
     /// For PAUSEABLE_ONCE: after natural fire-and-resume, clean up so that
     /// system.fail_points reports enabled = 0 without waiting for an explicit
-    /// SYSTEM DISABLE FAILPOINT. Skip if disableFailPoint already ran
-    /// (it sets disabled = true and removes both maps entries).
-    if (channel->is_once && !channel->disabled)
+    /// SYSTEM DISABLE FAILPOINT. Skip if:
+    ///  - disableFailPoint already ran (sets disabled = true), or
+    ///  - a concurrent SYSTEM ENABLE FAILPOINT re-armed this channel between
+    ///    SYSTEM NOTIFY and our reacquisition of mu (enable_generation changed).
+    if (channel->is_once && !channel->disabled && channel->enable_generation == my_enable_generation)
     {
         enabled_failpoints.erase(fail_point_name);
         /// Mark disabled and wake any thread that raced into waitForPause or
