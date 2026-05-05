@@ -56,7 +56,6 @@ def scan_file_for_sensitive_data(file_content, file_name):
     raise ValueError(f"Sensitive values found in {file_name}")
 
 
-
 class S3:
     _boto3_client = None
 
@@ -145,12 +144,14 @@ class S3:
         if not s3_full_path.endswith(file_name) and not with_rename:
             s3_full_path = f"{s3_path}/{Path(local_path).name}"
 
-        try:
-            file_content = Path(local_path).read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            print(f"WARNING: Failed to scan file {local_path}, unknown encoding")
-        else:
-            scan_file_for_sensitive_data(file_content, Path(local_path).name)
+        # NOTE (strtgbb): compressed files either come from _upload_file_to_s3, and are already scanned, or are low risk statistics files.
+        if Path(local_path).suffix.lower() not in (".gz", ".zst", ".bz2", ".xz"):
+            try:
+                file_content = Path(local_path).read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                print(f"WARNING: Failed to scan file {local_path}, unknown encoding")
+            else:
+                scan_file_for_sensitive_data(file_content, Path(local_path).name)
 
         # Use boto3 if available, otherwise fall back to AWS CLI
         if BOTO3_AVAILABLE and cls._get_boto3_client():
@@ -465,6 +466,11 @@ class S3:
                     print(
                         f"NOTE: File [{local_file_path}] exceeds threshold [Settings.COMPRESS_THRESHOLD_MB:{Settings.COMPRESS_THRESHOLD_MB}] - compress"
                     )
+                    try:
+                        file_content = Path(local_file_path).read_text(encoding="utf-8")
+                        scan_file_for_sensitive_data(file_content, Path(local_file_path).name)
+                    except UnicodeDecodeError:
+                        print(f"WARNING: Failed to scan file {local_file_path}, unknown encoding")
                     text = False
                     local_file_path = Utils.compress_file(local_file_path)
             html_link = S3.copy_file_to_s3(
