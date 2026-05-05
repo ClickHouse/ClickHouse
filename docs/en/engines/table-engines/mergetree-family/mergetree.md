@@ -1213,13 +1213,13 @@ It is possible to set up non-replicated MergeTree tables with a one-writer, many
 
 Multiple ClickHouse instances sharing a single non-replicated `MergeTree` table on object storage can elect a single leader using the [`leader_election`](/operations/settings/merge-tree-settings.md/#leader_election) setting. Only the leader accepts inserts, merges, mutations, and mutating DDL; the other instances act as read-only followers and will take over automatically when the current leader becomes unavailable. `DROP TABLE` on a follower is permitted as a local-metadata-only operation (see "Behavior on the leader vs. on followers" below). This enables active/standby failover without requiring `ClickHouse Keeper`.
 
-Coordination is implemented using conditional writes (`If-Match` / `If-None-Match`) on a small lease file in the object storage bucket. No external coordination service is needed, and the conditional-write protocol prevents split-brain regardless of clock skew.
+Coordination is implemented using conditional writes (`If-Match` / `If-None-Match`) on a small lease file in the object storage bucket. No external coordination service is needed.
 
 Requirements and constraints:
 
 - Supported backends: `S3` and `Azure` (the only object storages that currently expose conditional writes in ClickHouse).
 - Shared storage: every participating instance must read and write the same bucket and prefix; each instance must have an independent local metadata directory (e.g. via `table_disk = true`, or unique `metadata_path`s per node).
-- Clock synchronization: keep node clocks within `leader_election_session_timeout` of each other (for example, via `NTP`). Excessive skew does not cause split-brain — the conditional-write protocol still prevents two writers — but it can cause unnecessary leadership churn.
+- Clock synchronization: keep node clocks well within `leader_election_heartbeat_interval` of each other (for example, via `NTP`). The conditional-write protocol prevents two writers from extending the lease successively, but skew beyond approximately `session_timeout - 2 * heartbeat_interval` can leave both the old and new leader believing they hold the lease for up to one heartbeat interval, until the old leader's next heartbeat fails the ETag check.
 
 Behavior on the leader vs. on followers:
 

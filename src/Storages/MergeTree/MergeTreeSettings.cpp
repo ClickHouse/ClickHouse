@@ -2185,9 +2185,12 @@ namespace ErrorCodes
     Session timeout in seconds for leader election. If the leader does not renew its lease within this period,
     a follower will assume that the leader is dead and try to claim leadership. Must be at least 3x
     `leader_election_heartbeat_interval`. Only takes effect when `leader_election` is enabled.
-    Participating nodes should keep their clocks synchronized (e.g. via NTP) to within this timeout;
-    excessive clock skew can cause unnecessary leadership churn (split-brain is still prevented by the
-    conditional write protocol).
+    Participating nodes must keep their clocks synchronized (e.g. via NTP) to well within
+    `leader_election_heartbeat_interval`; the conditional-write protocol prevents two writers
+    from extending the lease successively, but skew beyond approximately
+    `session_timeout - 2 * heartbeat_interval` can briefly leave both the old and new
+    leader believing they hold the lease (up to one `leader_election_heartbeat_interval`)
+    until the old leader's next heartbeat fails the ETag check.
     )", BETA) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \

@@ -28,14 +28,18 @@ namespace DB
   * - If a conditional write fails (PreconditionFailed), the writer lost the race and stays a follower.
   *
   * Clock skew assumption:
-  * - The protocol relies on wall-clock timestamps embedded in the lease file. Participating
-  *   nodes must keep their clocks synchronized to within `session_timeout`; otherwise a
-  *   follower with a fast clock can prematurely declare a healthy leader's lease expired
-  *   and try to claim leadership. The conditional write on the next heartbeat will still
-  *   prevent dual-writer states (only one of the two writes can win the ETag race), but
-  *   excessive skew can cause unnecessary leadership churn. Future-dated timestamps
-  *   beyond `session_timeout` are treated as stale to bound the impact in the opposite
-  *   direction. Use NTP or an equivalent time-sync service on all nodes.
+  * - The protocol relies on wall-clock timestamps embedded in the lease file. The maximum
+  *   clock skew tolerated without a dual-writer window is approximately
+  *   `session_timeout - 2 * heartbeat_interval`, which is at least `heartbeat_interval`
+  *   given the enforced `session_timeout >= 3 * heartbeat_interval` rule. Beyond that bound,
+  *   a follower with a fast clock can declare a healthy leader's lease expired and claim
+  *   leadership before the old leader notices via its next heartbeat, opening a brief
+  *   window (up to `heartbeat_interval`) where both nodes consider themselves leaders.
+  *   Outside this window, the conditional ETag protocol prevents both nodes from
+  *   committing successive lease renewals; only one observer wins each round. Use NTP
+  *   or an equivalent time-sync service to keep skew well under `heartbeat_interval`.
+  *   Future-dated timestamps beyond `session_timeout` are treated as stale to bound the
+  *   impact in the opposite direction.
   */
 class MergeTreeLeaderElection
 {
