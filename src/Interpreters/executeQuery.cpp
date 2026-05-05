@@ -387,6 +387,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
         element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
         element.query_views.insert(access_info.views.begin(), access_info.views.end());
+        element.used_row_policies.insert(access_info.row_policies.begin(), access_info.row_policies.end());
     }
 
     /// We copy QueryFactoriesInfo for thread-safety, because it is possible that query context can be modified by some processor even
@@ -478,6 +479,7 @@ QueryLogElement logQueryStart(
             elem.query_partitions = info.partitions;
             elem.query_projections = info.projections;
             elem.query_views = info.views;
+            elem.used_row_policies = info.row_policies;
         }
 
         if (async_insert)
@@ -1504,6 +1506,7 @@ static BlockIO executeQueryImpl(
         bool async_insert_enabled = settings[Setting::async_insert];
 
         /// Resolve database before trying to use async insert feature - to properly hash the query.
+        StoragePtr insert_table;
         if (insert_query)
         {
             if (insert_query->table_id)
@@ -1512,8 +1515,11 @@ static BlockIO executeQueryImpl(
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
 
             if (insert_query->table_id)
-                if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context))
-                    async_insert_enabled |= table->areAsynchronousInsertsEnabled();
+            {
+                insert_table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context);
+                if (insert_table)
+                    async_insert_enabled |= insert_table->areAsynchronousInsertsEnabled();
+            }
         }
 
         if (insert_query && insert_query->select)
@@ -1525,9 +1531,20 @@ static BlockIO executeQueryImpl(
                 insert_query->tryFindInputFunction(input_function);
                 if (input_function)
                 {
-                    StoragePtr storage = context->executeTableFunction(input_function, insert_query->select->as<ASTSelectQuery>());
+                    /// For input('auto'), make sure that Context::insertion_table_info is set.
+                    if (insert_table && !context->hasInsertionTableColumnsDescription())
+                        InterpreterInsertQuery::setInsertContextValues(context, *insert_query, insert_table);
+
+                    const ASTSelectQuery * select_query_hint = insert_query->select->as<ASTSelectQuery>();
+                    if (!select_query_hint)
+                    {
+                        if (const auto * union_query = insert_query->select->as<ASTSelectWithUnionQuery>();
+                            union_query && union_query->list_of_selects->children.size() == 1)
+                            select_query_hint = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
+                    }
+                    StoragePtr storage = context->executeTableFunction(input_function, select_query_hint);
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
-                    auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
+                    auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(context, false);
 
                     auto pipe = getSourceFromASTInsertQuery(
                         out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
@@ -1587,9 +1604,21 @@ static BlockIO executeQueryImpl(
             if (quota)
             {
                 quota_checked = true;
-                quota->used(QuotaType::QUERY_INSERTS, 1);
-                quota->used(QuotaType::QUERIES, 1);
-                quota->checkExceeded(QuotaType::ERRORS);
+                if (quota->isKeyedByNormalizedQueryHash())
+                {
+                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                }
+                else
+                {
+                    quota->used(QuotaType::QUERY_INSERTS, 1);
+                    quota->used(QuotaType::QUERIES, 1);
+                    quota->checkExceeded(QuotaType::ERRORS);
+                }
+
+                /// Track per-normalized-query-hash quota limits (works for all key types).
+                quota->usedPerNormalizedHash(normalized_query_hash);
             }
 
             /// Invoke HTTP 100-Continue callback after async insert quota checks are completed
@@ -1606,7 +1635,11 @@ static BlockIO executeQueryImpl(
                 if (settings[Setting::wait_for_async_insert])
                 {
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
-                    auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
+                    auto source = std::make_shared<WaitForAsyncInsertSource>(
+                        std::move(result.future),
+                        timeout,
+                        context->getProcessListElement(),
+                        context->getProgressCallback());
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
                     res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
                 }
@@ -1744,16 +1777,29 @@ static BlockIO executeQueryImpl(
                     quota = context->getQuota();
                     if (quota)
                     {
-                        if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                        if (quota->isKeyedByNormalizedQueryHash())
                         {
-                            quota->used(QuotaType::QUERY_SELECTS, 1);
+                            /// For NORMALIZED_QUERY_HASH keyed quotas, track all resources
+                            /// against per-hash intervals instead of shared session intervals.
+                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
+                            else if (out_ast->as<ASTInsertQuery>())
+                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
                         }
-                        else if (out_ast->as<ASTInsertQuery>())
+                        else
                         {
-                            quota->used(QuotaType::QUERY_INSERTS, 1);
+                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                                quota->used(QuotaType::QUERY_SELECTS, 1);
+                            else if (out_ast->as<ASTInsertQuery>())
+                                quota->used(QuotaType::QUERY_INSERTS, 1);
+                            quota->used(QuotaType::QUERIES, 1);
+                            quota->checkExceeded(QuotaType::ERRORS);
                         }
-                        quota->used(QuotaType::QUERIES, 1);
-                        quota->checkExceeded(QuotaType::ERRORS);
+
+                        /// Track per-normalized-query-hash quota limits (works for all key types).
+                        quota->usedPerNormalizedHash(normalized_query_hash);
                     }
                 }
 

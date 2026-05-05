@@ -35,7 +35,7 @@ Creating a table:
 Query:
 
 ```sql
-CREATE TABLE test ENGINE = Log AS SELECT * FROM numbers(10);
+CREATE TABLE test ENGINE = MergeTree ORDER BY () AS SELECT * FROM numbers(10);
 SELECT * FROM test;
 ```
 

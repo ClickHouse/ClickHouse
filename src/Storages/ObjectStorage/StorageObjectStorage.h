@@ -85,7 +85,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 

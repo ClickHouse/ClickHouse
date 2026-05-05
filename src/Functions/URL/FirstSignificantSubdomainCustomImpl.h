@@ -3,9 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/StringHelpers.h>
-#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Common/TLDListsHolder.h>
 
 namespace DB
