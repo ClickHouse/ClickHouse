@@ -84,10 +84,28 @@ ColumnsCache::getIntersecting(
 
         /// Collect all intervals that intersect with [row_begin, row_end).
         /// An interval [a, b) intersects if a < row_end AND b > row_begin.
-        /// Since the map is sorted by (row_begin, row_end), we iterate from the start
-        /// and stop once row_begin >= row_end (all subsequent entries also start at or after row_end).
-        for (const auto & [range_key, key] : intervals)
+        /// The map is sorted by (range_begin, range_end). Use lower_bound to skip
+        /// past predecessor intervals whose range_begin is far below row_begin,
+        /// then walk forward and stop once range_begin >= row_end. The immediate
+        /// predecessor is also checked because it can still extend into the query
+        /// range. Cache writers normally cache disjoint task ranges, so at most
+        /// one predecessor can overlap; if rare concurrent writers create deeper
+        /// overlap, only the most recent overlapping predecessor is reused, which
+        /// preserves correctness (additional overlapping entries become stale and
+        /// are evicted by LRU later).
+        auto it = intervals.lower_bound({row_begin, 0});
+        if (it != intervals.begin())
         {
+            auto prev_it = std::prev(it);
+            if (prev_it->second.row_end > row_begin)
+                intersecting_keys.push_back(prev_it->second);
+        }
+
+        for (; it != intervals.end(); ++it)
+        {
+            const auto & range_key = it->first;
+            const auto & key = it->second;
+
             /// Stop if we've gone past the query range
             if (range_key.first >= row_end)
                 break;
