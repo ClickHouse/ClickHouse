@@ -240,7 +240,7 @@ xargs < "$STYLE_TMPDIR/nobase_excluded" rg '(std::mt19937|std::mersenne_twister_
 
 # Require checking return value of close(),
 # since it can hide fd misuse and break other places.
-xargs < "$STYLE_TMPDIR/nobase_excluded" rg -e ' close\(.*fd' -e ' ::close\(' | grep -v = && echo "Return value of close() should be checked"
+xargs < "$STYLE_TMPDIR/nobase_excluded" rg -e ' close\(.*fd' -e ' ::close\(' | grep -v = | grep -vE ':\s*(///?|\*)' && echo "Return value of close() should be checked"
 } > "$O.07b" 2>&1 &
 
 # 08: std containers lint
