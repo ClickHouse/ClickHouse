@@ -447,7 +447,10 @@ Map buildAdditionalTableFiltersForRecursiveStep(
         /// recursive evaluation. Drop the CTE-derived filter when its size
         /// exceeds the budget; the user filter for the same group, if any,
         /// is still preserved by the loop below.
-        if (combined_filter.size() > max_filter_size)
+        ///
+        /// `max_query_size == 0` is the parser's "unlimited" sentinel
+        /// (see `Lexer::nextToken`), so skip the size guard in that case.
+        if (max_filter_size != 0 && combined_filter.size() > max_filter_size)
             continue;
 
         /// Combine with user-specified filter for the same table, if any.
@@ -461,7 +464,8 @@ Map buildAdditionalTableFiltersForRecursiveStep(
             /// drop the CTE-derived part and let the user filter pass through
             /// unchanged via the loop below. This preserves the pre-optimization
             /// behavior for queries that previously worked with just the user filter.
-            if (merged_filter.size() > max_filter_size)
+            /// As above, `max_query_size == 0` means "unlimited".
+            if (max_filter_size != 0 && merged_filter.size() > max_filter_size)
                 continue;
 
             combined_filter = std::move(merged_filter);
