@@ -10,3 +10,8 @@ After truncate, insert, and materialize
         Prewhere info
           Prewhere filter
           Prewhere filter column: and(less(a, 10_UInt8), less(b, 10_UInt8)) (removed)
+NullCount: part 1 has it, part 2 does not (asymmetric)
+all_1_1_0_2	['NullCount']
+all_3_3_0	[]
+NullCount: merged part has it (rebuilt during merge)
+all_1_3_1_2	['NullCount']
