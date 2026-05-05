@@ -481,6 +481,17 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         return;
     }
 
+    /// Enforce explicit limits on auth field sizes. The general frame-size cap
+    /// of 16 MiB is far too permissive for credentials and would let a client
+    /// force expensive auth work or oversized log payloads on failure.
+    static constexpr size_t MAX_AUTH_USER_LENGTH = 256;
+    static constexpr size_t MAX_AUTH_PASSWORD_LENGTH = 1024;
+    if (auth_user.size() > MAX_AUTH_USER_LENGTH || auth_password.size() > MAX_AUTH_PASSWORD_LENGTH)
+    {
+        sendWebSocketClose(socket, 1008, "Auth field too long");
+        return;
+    }
+
     /// Authenticate the user
     /// Note: do not call makeSessionContext() here - it will be called by ClientEmbedded's constructor.
     auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
