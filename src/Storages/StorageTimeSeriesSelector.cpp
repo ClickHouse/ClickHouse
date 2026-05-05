@@ -383,7 +383,7 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
 
-        /// WHERE (id IN (SELECT id FROM (select_query_from_tags_table))) AND (timestamp >= min_time) AND (timestamp <= max_time)
+        /// WHERE (id IN (SELECT timeSeriesStoreTags(id, tags) FROM <select_query_from_tags_table>)) AND (timestamp >= min_time) AND (timestamp <= max_time)
         {
             auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
