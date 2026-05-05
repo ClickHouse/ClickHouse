@@ -16,8 +16,6 @@ ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_t
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
-# shellcheck source=../stateless/attach_gdb.lib
-source /repo/tests/docker_scripts/attach_gdb.lib
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
@@ -346,6 +344,15 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
 #       message together, so real Kafka regressions (auth, protocol, config) that also emit `rdk:FAIL` are
 #       not masked.
+# `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
+#       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
+#       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
+#       upgraded server detaches the renamed-column parts of `02538_alter_rename_sequence`'s `wrong_metadata_wide`
+#       table. Matched via the exact corrupted filename + column name, which is unique to that test and that bug.
+# `wrong_metadata_wide` + `Detaching broken part` + `backward incompatibility` is the follow-up cleanup line for
+#       the same issue: a "Detaching broken part" notice that does not contain the corrupted filename. Filtered
+#       via regex in the secondary pipe below to require all three substrings together, so unrelated broken-part
+#       detach messages are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -414,6 +421,8 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "This engine is deprecated and is not supported in transactions" \
            -e "Prevent converting Nullable type to non-Nullable type inside mutation" \
            -e "e.what() = failed to parse response body" \
+           -e "Tuple element name 'null' is reserved" \
+           -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
@@ -421,6 +430,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
+    | grep -av -e "wrong_metadata_wide.*Detaching broken part.*backward incompatibility" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
@@ -440,5 +450,3 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
-
-collect_core_dumps
