@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <unordered_set>
 #include <Core/Range.h>
 #include <Core/SortDescription.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -73,6 +74,59 @@ void generateManifestList(
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true);
+
+/// Writes a manifest file whose entries are pre-existing data files carried over
+/// from a previous snapshot with status=EXISTING. Used by DROP PARTITION when a
+/// matched manifest contains both files that should be dropped and files that
+/// should survive: the dropped files are simply omitted from the new manifest,
+/// and the survivors are re-emitted here so the new manifest list replaces the
+/// old one. Per Iceberg v2 spec, surviving entries preserve their original
+/// snapshot_id and sequence_number rather than inheriting the new snapshot's.
+void generateExistingManifestFile(
+    Poco::JSON::Object::Ptr metadata,
+    Poco::JSON::Object::Ptr partition_spec,
+    Int64 partition_spec_id,
+    const std::vector<String> & partition_columns,
+    const std::vector<DataTypePtr> & partition_types,
+    const std::vector<Iceberg::ProcessedManifestFileEntryPtr> & entries,
+    WriteBuffer & buf);
+
+/// Writes a manifest list for a snapshot that only removes files (DROP PARTITION).
+/// Entries can be a mix of:
+///   - newly written EXISTING-status manifests (rewrites of partially-matched manifests)
+///   - untouched manifests carried over from the parent snapshot by path
+/// Untouched manifests are copied verbatim from the parent's manifest list (so their
+/// counts, partition summaries, and sequence numbers are preserved); paths in
+/// `skip_manifest_paths` from the parent are dropped entirely.
+struct ManifestListEntryForDelete
+{
+    Iceberg::IcebergPathFromMetadata manifest_path;
+    Int64 manifest_length = 0;
+    /// Smallest sequence number among entries inside this manifest. For a survivor
+    /// rewrite that holds only EXISTING entries, this is the inherited sequence
+    /// number of those entries — not the new DROP snapshot's. The manifest list's
+    /// own `added_snapshot_id` and `sequence_number` (which identify the manifest
+    /// *file*, not its contents) are filled by the writer from the new snapshot.
+    Int64 min_sequence_number = 0;
+    Int32 added_files_count = 0;
+    Int32 existing_files_count = 0;
+    Int32 deleted_files_count = 0;
+    Int32 added_rows_count = 0;
+    Int32 existing_rows_count = 0;
+    Int32 deleted_rows_count = 0;
+    Iceberg::FileContentType content_type = Iceberg::FileContentType::DATA;
+};
+
+void generateManifestListForDelete(
+    const Iceberg::IcebergPathResolver & path_resolver,
+    Poco::JSON::Object::Ptr metadata,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    Poco::JSON::Object::Ptr new_snapshot,
+    const std::vector<ManifestListEntryForDelete> & new_entries,
+    Int64 partition_spec_id,
+    const std::unordered_set<String> & skip_manifest_paths,
+    WriteBuffer & buf);
 
 class IcebergStorageSink final : public SinkToStorage
 {

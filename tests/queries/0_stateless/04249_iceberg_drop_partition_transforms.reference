@@ -1,0 +1,99 @@
+=== identity, scalar literal ===
+--- before drop ---
+1	x
+2	y
+3	z
+--- after drop ---
+1	x
+3	z
+=== identity, tuple-literal form ===
+--- before drop ---
+1	x
+2	y
+3	z
+--- after drop ---
+1	x
+3	z
+=== icebergBucket, expression form ===
+--- before drop ---
+1	apple
+2	banana
+3	cherry
+4	date
+--- after drop ---
+1	apple
+3	cherry
+=== icebergTruncate(3, String), literal form ===
+--- before drop ---
+1	apple
+2	apricot
+3	banana
+4	blueberry
+--- after drop ---
+2	apricot
+3	banana
+4	blueberry
+=== icebergTruncate(3, String), expression form ===
+--- before drop ---
+1	apple
+2	apricot
+3	banana
+4	blueberry
+--- after drop ---
+1	apple
+3	banana
+4	blueberry
+=== toYearNumSinceEpoch(Date) ===
+--- before drop ---
+1	2024-03-15
+2	2024-08-01
+3	2025-01-10
+4	2025-12-31
+--- after drop ---
+3	2025-01-10
+4	2025-12-31
+=== toMonthNumSinceEpoch(Date) ===
+--- before drop ---
+1	2025-01-05
+2	2025-01-29
+3	2025-02-10
+4	2025-03-15
+--- after drop ---
+3	2025-02-10
+4	2025-03-15
+=== toRelativeDayNum(Date) ===
+--- before drop ---
+1	2025-05-01
+2	2025-05-01
+3	2025-05-02
+4	2025-05-03
+--- after drop ---
+3	2025-05-02
+4	2025-05-03
+=== toRelativeHourNum(DateTime) ===
+--- before drop ---
+1	2025-05-19 10:15:00.000000
+2	2025-05-19 10:45:00.000000
+3	2025-05-19 11:00:00.000000
+4	2025-05-19 12:00:00.000000
+--- after drop ---
+3	2025-05-19 11:00:00.000000
+4	2025-05-19 12:00:00.000000
+=== multi-column: identity + icebergBucket ===
+--- before drop ---
+1	apple	p1
+1	banana	p2
+2	apple	p3
+2	banana	p4
+3	cherry	p5
+--- after drop tuple(1, icebergBucket(4, 'apple')) ---
+1	banana	p2
+2	apple	p3
+2	banana	p4
+3	cherry	p5
+--- after drop (2, <bucket of 'banana'>) ---
+1	banana	p2
+2	apple	p3
+3	cherry	p5
+=== arity mismatch is rejected ===
+INVALID_PARTITION_VALUE
