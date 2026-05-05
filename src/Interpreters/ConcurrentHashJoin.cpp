@@ -101,7 +101,12 @@ HashJoin::RightTableDataPtr getData(const std::shared_ptr<ConcurrentHashJoin::In
     return join->data->getJoinedData();
 }
 
-void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollectingParams & stats_collecting_params, size_t slots)
+void reserveSpaceInHashMaps(
+    HashJoin & hash_join,
+    size_t ind,
+    const StatsCollectingParams & stats_collecting_params,
+    size_t slots,
+    size_t external_join_threshold)
 {
     if (auto hint = getSizeHint(stats_collecting_params))
     {
@@ -109,8 +114,16 @@ void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollect
         /// we need to preallocate in all buckets of all hash maps.
         const size_t reserve_size = hint->ht_size;
 
+        /// When a `SpillingHashJoin` wraps us, `external_join_threshold` is the auto-spill memory cap.
+        /// Statistics-driven preallocation can reserve many gigabytes up front based on a previous larger
+        /// query, blowing past that cap before `SpillingHashJoin` ever runs its threshold check. We still
+        /// want preallocation - just bounded by the memory budget. We aim for about half of the threshold
+        /// so that the cap itself plus the live data plus the conversion peak still fit under it. When
+        /// running standalone (`external_join_threshold == 0`), the original full reserve is used.
+
         /// Each `HashJoin` instance will "own" a subset of buckets during the build phase. Because of that
         /// we preallocate space only in the specific buckets of each `HashJoin` instance.
+        size_t actual_reserve_size = reserve_size;
         auto reserve_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
         {
             APPLY_TO_MAP(
@@ -119,14 +132,30 @@ void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollect
                 maps,
                 [&](auto & map)
                 {
+                    using BucketImpl = std::remove_cvref_t<decltype(map.impls[0])>;
+                    constexpr size_t cell_size = sizeof(typename BucketImpl::cell_type);
+
+                    if (external_join_threshold > 0)
+                    {
+                        /// Hash table buffers run at ~0.5 load factor (`maxFill = bufSize / 2`), so each
+                        /// stored entry consumes 2 cells of capacity, and `bufSize` is then rounded up to
+                        /// the next power of two - a factor of up to 4x in the worst case. So each reserved
+                        /// entry occupies up to 4 × cell_size bytes of buffer. We keep total preallocated
+                        /// bytes (summed across all slots and buckets) under `threshold / 2`, leaving
+                        /// headroom for the eventual SpillingHashJoin trigger (also at `threshold / 2`)
+                        /// and for the conversion peak when handing data over to GraceHashJoin.
+                        const size_t budget_entries = external_join_threshold / (8 * cell_size);
+                        actual_reserve_size = std::min(reserve_size, budget_entries);
+                    }
+
                     for (size_t j = idx; j < map.NUM_BUCKETS; j += slots)
-                        map.impls[j].reserve(reserve_size / map.NUM_BUCKETS);
+                        map.impls[j].reserve(actual_reserve_size / map.NUM_BUCKETS);
                 })
         };
 
         const auto & right_data = hash_join.getJoinedData();
         std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, ind); }, right_data->maps.at(0));
-        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size / slots);
+        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, actual_reserve_size / slots);
     }
 }
 
@@ -151,7 +180,8 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     size_t slots_,
     SharedHeader right_sample_block,
     const StatsCollectingParams & stats_collecting_params_,
-    bool any_take_last_row_)
+    bool any_take_last_row_,
+    size_t external_join_threshold_)
     : table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
     , any_take_last_row(any_take_last_row_)
@@ -163,6 +193,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
           /*max_free_threads_*/ 0,
           /*queue_size_*/ slots))
     , stats_collecting_params(stats_collecting_params_)
+    , external_join_threshold(external_join_threshold_)
 {
     hash_joins.resize(slots);
 
@@ -281,7 +312,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
                 if (!hash_join->space_was_preallocated && hash_join->data->twoLevelMapIsUsed())
                 {
-                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params, slots);
+                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params, slots, external_join_threshold);
                     hash_join->space_was_preallocated = true;
                 }
 
