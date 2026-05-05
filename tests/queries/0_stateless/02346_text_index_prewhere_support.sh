@@ -172,15 +172,14 @@ function run()
 {
     query="$1"
     echo "$query"
-    $MY_CLICKHOUSE_CLIENT --use_skip_indexes 0 --query "$query"
-    $MY_CLICKHOUSE_CLIENT --use_skip_indexes 1 --query "$query"
-
-    $MY_CLICKHOUSE_CLIENT --query "
+    $MY_CLICKHOUSE_CLIENT --multiquery --query "
+        $query SETTINGS use_skip_indexes = 0;
+        $query SETTINGS use_skip_indexes = 1;
         SELECT trim(explain) FROM
         (
             EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1, query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1
         )
-        WHERE explain LIKE '%INPUT%\_\_text_index%' OR explain ILIKE '%name: inv_idx%'
+        WHERE explain LIKE '%INPUT%\_\_text_index%' OR explain ILIKE '%name: inv_idx%';
     "
 }
 

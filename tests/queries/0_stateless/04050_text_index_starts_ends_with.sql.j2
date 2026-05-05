@@ -34,31 +34,40 @@ INSERT INTO test_fts VALUES
 
 SET optimize_rewrite_like_perfect_affix = 1;
 
-EXPLAIN indexes = 1
-SELECT id, name
-FROM test_fts
-WHERE name LIKE 'Full%'
-SETTINGS query_plan_remove_unused_columns = 0;
+SELECT explain FROM
+(
+    EXPLAIN indexes = 1
+    SELECT id, name
+    FROM test_fts
+    WHERE name LIKE 'Full%'
+)
+WHERE explain NOT LIKE '  Expression%';
 
 SELECT id, name
 FROM test_fts
 WHERE name LIKE 'Full%';
 
-EXPLAIN indexes = 1
-SELECT id, name
-FROM test_fts
-WHERE startsWith(name, 'Full')
-SETTINGS query_plan_remove_unused_columns = 0;
+SELECT explain FROM
+(
+    EXPLAIN indexes = 1
+    SELECT id, name
+    FROM test_fts
+    WHERE startsWith(name, 'Full')
+)
+WHERE explain NOT LIKE '  Expression%';
 
 SELECT id, name
 FROM test_fts
 WHERE startsWith(name, 'Full');
 
-EXPLAIN indexes = 1
-SELECT id, name
-FROM test_fts
-WHERE endsWith(name, 'analytical database')
-SETTINGS query_plan_remove_unused_columns = 0;
+SELECT explain FROM
+(
+    EXPLAIN indexes = 1
+    SELECT id, name
+    FROM test_fts
+    WHERE endsWith(name, 'analytical database')
+)
+WHERE explain NOT LIKE '  Expression%';
 
 SELECT id, name
 FROM test_fts
