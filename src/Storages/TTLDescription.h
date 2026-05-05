@@ -44,9 +44,6 @@ struct ExpressionAndSets
 {
     ExpressionActionsPtr expression;
     PreparedSetsPtr sets;
-
-    /// Secondary expression with Date/DateTime inputs widened to Date32/DateTime64(0)
-    ExpressionActionsPtr overflow_check_expression;
 };
 
 /// Common struct for TTL record in storage

@@ -37,7 +37,7 @@ static TTLExpressions buildTTLExpressions(
         subqueries_for_sets.insert(subqueries_for_sets.end(), where_expr_queries.begin(), where_expr_queries.end());
     }
 
-    return {expr.expression, where_expr.expression, expr.overflow_check_expression};
+    return {expr.expression, where_expr.expression};
 }
 
 SharedHeader TTLDeleteFilterTransform::transformHeader(const SharedHeader & header)
@@ -193,8 +193,6 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
         /// Phase 1: extract typed TTL column into a flat Int64 timestamp array.
         auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(
             entry.expressions.expression, block, entry.description.result_column);
-        ITTLAlgorithm::checkOverflow(
-            entry.expressions.overflow_check_expression, ttl_column, entry.description.result_column, block);
         extractTimestamps(ttl_column.get(), num_rows);
 
         /// Phase 2: apply TTL expiration and WHERE filter to produce the filter mask.

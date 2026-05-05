@@ -103,7 +103,6 @@ void TTLAggregationAlgorithm::execute(Block & block)
         MutableColumns aggregate_columns = header.cloneEmptyColumns();
 
         auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-        checkOverflow(ttl_expressions.overflow_check_expression, ttl_column, description.result_column, block);
         auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
 
         size_t rows_aggregated = 0;
@@ -186,7 +185,6 @@ void TTLAggregationAlgorithm::execute(Block & block)
     if (some_rows_were_aggregated)
     {
         auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-        checkOverflow(ttl_expressions.overflow_check_expression, ttl_column_after_aggregation, description.result_column, block);
         auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
         for (size_t i = 0; i < block.rows(); ++i)
         {

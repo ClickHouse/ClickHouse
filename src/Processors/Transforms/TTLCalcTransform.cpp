@@ -19,7 +19,7 @@ static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedS
         subqueries_for_sets.insert(subqueries_for_sets.end(), where_expr_queries.begin(), where_expr_queries.end());
     }
 
-    return {expr.expression, where_expr.expression, expr.overflow_check_expression};
+    return {expr.expression, where_expr.expression};
 }
 
 TTLCalcTransform::TTLCalcTransform(

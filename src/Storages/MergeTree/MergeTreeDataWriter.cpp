@@ -321,7 +321,6 @@ void updateTTL(
         subquery->buildSetInplace(context);
 
     auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
-    ITTLAlgorithm::checkOverflow(expr_and_set.overflow_check_expression, ttl_column, ttl_entry.result_column, block);
     /// In some cases block can contain Sparse columns (for example, during direct deserialization into Sparse in input formats).
     ttl_column = ttl_column->convertToFullColumnIfSparse();
     ColumnPtr where_column;

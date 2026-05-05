@@ -20,7 +20,6 @@ void TTLDeleteAlgorithm::execute(Block & block)
         return;
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-    checkOverflow(ttl_expressions.overflow_check_expression, ttl_column, description.result_column, block);
     auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
 
     MutableColumns result_columns;

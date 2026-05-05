@@ -12,7 +12,6 @@ struct TTLExpressions
 {
     ExpressionActionsPtr expression;
     ExpressionActionsPtr where_expression;
-    ExpressionActionsPtr overflow_check_expression;
 };
 
 /**
@@ -41,13 +40,6 @@ public:
       */
     static ColumnPtr executeExpressionAndGetColumn(
         const ExpressionActionsPtr & expression, const Block & block, const String & result_column);
-
-    /// Evaluates `overflow_check_expression` on the same block
-    static void checkOverflow(
-        const ExpressionActionsPtr & overflow_check_expression,
-        const ColumnPtr & original_ttl_column,
-        const String & result_column,
-        const Block & block);
 
 protected:
     bool isTTLExpired(time_t ttl) const;

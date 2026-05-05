@@ -8,6 +8,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
@@ -28,6 +29,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -124,30 +126,85 @@ using FindAggregateFunctionFinderMatcher = OneTypeMatcher<FindAggregateFunctionD
 using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFinderMatcher, true>;
 
 /// Replaces bare column references for Date/DateTime columns with CAST(col, 'WidenedType')
-/// so that overflow-check expressions accept the original narrow column types at runtime
-/// while internally performing arithmetic in a wider type (Date32 / DateTime64).
+/// so that the TTL expression performs arithmetic in a wider type (Date32 / DateTime64)
+/// and cannot silently 16/32-bit wrap on overflow.
+///
+/// Lambda parameter identifiers are not table columns and must not be wrapped, even when
+/// they happen to share a name with a table column (e.g. `arrayExists(day -> ..., arr)`
+/// where the table also has a `day` column). The matcher tracks names bound by enclosing
+/// lambdas in `private_aliases` and skips identifiers that resolve to those bindings.
 struct InjectWidenCastData
 {
-    using TypeToVisit = ASTIdentifier;
     const std::unordered_map<String, String> & cast_targets;
+    std::unordered_set<String> private_aliases;
+};
 
-    void visit(ASTIdentifier & ident, ASTPtr & node) const
+class InjectWidenCastMatcher
+{
+public:
+    using Data = InjectWidenCastData;
+    using Visitor = InDepthNodeVisitor<InjectWidenCastMatcher, /*top_to_bottom=*/false>;
+
+    /// Block auto-descent into a lambda's children — its body is visited manually below
+    /// after masking the parameter names. Visiting the parameter tuple itself would also
+    /// be wrong (those identifiers are declarations, not uses).
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & /*child*/)
     {
-        auto it = cast_targets.find(ident.name());
-        if (it == cast_targets.end())
-            it = cast_targets.find(ident.shortName());
-        if (it != cast_targets.end())
+        if (const auto * f = node->as<ASTFunction>())
+            return Poco::toLower(f->name) != "lambda";
+        return true;
+    }
+
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        if (auto * func = ast->as<ASTFunction>(); func && Poco::toLower(func->name) == "lambda")
         {
-            ASTs args;
-            args.push_back(node);
-            args.push_back(new ASTLiteral(it->second));
-            node = makeASTFunction("CAST", std::move(args));
+            visitLambda(*func, data);
+            return;
         }
+        if (auto * ident = ast->as<ASTIdentifier>())
+            visitIdentifier(ident, ast, data);
+    }
+
+private:
+    static void visitLambda(ASTFunction & node, Data & data)
+    {
+        /// Recurse into the body with each lambda parameter name masked, then restore.
+        std::vector<String> just_added;
+        for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(node))
+            if (data.private_aliases.insert(name).second)
+                just_added.push_back(name);
+
+        Visitor(data).visit(node.arguments->children[1]);
+
+        for (const auto & name : just_added)
+            data.private_aliases.erase(name);
+    }
+
+    static void visitIdentifier(const ASTIdentifier * ident, ASTPtr & node, Data & data)
+    {
+        const auto & name = ident->name();
+        const auto & short_name = ident->shortName();
+        if (data.private_aliases.contains(name) || data.private_aliases.contains(short_name))
+            return;
+
+        auto it = data.cast_targets.find(name);
+        if (it == data.cast_targets.end())
+            it = data.cast_targets.find(short_name);
+        if (it == data.cast_targets.end())
+            return;
+
+        ASTs args;
+        args.push_back(node);
+        args.push_back(new ASTLiteral(it->second));
+        node = makeASTFunction("CAST", std::move(args));
     }
 };
-using InjectWidenCastMatcher = OneTypeMatcher<InjectWidenCastData>;
-/// Bottom-up traversal (false) prevents re-visiting the injected CAST node's children.
-using InjectWidenCastVisitor = InDepthNodeVisitor<InjectWidenCastMatcher, false>;
+
+/// Bottom-up traversal prevents the framework from re-descending into the CAST node we
+/// just injected (its first child is the original identifier — visiting it again would
+/// wrap the literal in another CAST).
+using InjectWidenCastVisitor = InjectWidenCastMatcher::Visitor;
 
 }
 
@@ -205,15 +262,20 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     return * this;
 }
 
-/// Builds an expression that evaluates the TTL expression with `Date`/`DateTime` column
-/// references replaced by `CAST(col, 'Date32')` / `CAST(col, 'DateTime64(0, tz)')`.
-/// The resulting expression accepts the original narrow column types at runtime (no type
-/// mismatch) but performs arithmetic in the wider types, which do not silently wrap.
-/// Returns nullptr when no Date/DateTime columns are present (nothing can overflow).
-static ExpressionActionsPtr buildOverflowCheckExpression(
-    const ASTPtr & original_ast, const NamesAndTypesList & columns, const ContextPtr & context)
+static ExpressionAndSets buildExpressionAndSets(
+    ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
 {
-    /// Map column name -> CAST target type string (e.g. "Date32", "DateTime64(0, 'UTC')").
+    /// Capture the formatted TTL string from the *un-mutated* AST so the alias and
+    /// downstream `result_column` (visible in `system.parts.*_ttl_info.expression`,
+    /// `SHOW CREATE TABLE`, etc.) keep the user's original form rather than the
+    /// internally widened one.
+    auto ttl_string = ast->formatWithSecretsOneLine();
+
+    /// Replace each `Date`/`DateTime` source-column reference with a CAST to the wider
+    /// counterpart (`Date32` / `DateTime64(0, tz)`) so arithmetic in the TTL expression
+    /// runs in a 64-bit domain and cannot silently 16/32-bit wrap on overflow. The result
+    /// type widens accordingly; downstream code (`extractTimestamp`, `updateTTLInfo`,
+    /// `checkTTLExpression`) already accepts the wider temporal types.
     std::unordered_map<String, String> cast_targets;
     for (const auto & col : columns)
     {
@@ -228,61 +290,19 @@ static ExpressionActionsPtr buildOverflowCheckExpression(
         else if (isDateTime(inner))
         {
             /// Preserve the original timezone so calendar-based arithmetic (addMonths,
-            /// addYears) and DST boundaries produce identical results in both evaluations,
-            /// avoiding false-positive overflow detections.
+            /// addYears) and DST boundaries produce identical results.
             const auto & dt = typeid_cast<const DataTypeDateTime &>(*inner);
             const String & tz = dt.getTimeZone().getTimeZone();
             cast_targets[col.name] = tz.empty() ? "DateTime64(0)" : "DateTime64(0, '" + tz + "')";
         }
     }
-
-    if (cast_targets.empty())
-        return nullptr;
-
-    /// Capture the result column name before any AST mutation.
-    auto result_column_name = original_ast->formatWithSecretsOneLine();
-
-    /// Clone so the caller's AST is not affected, then inject CAST nodes.
-    auto ast = original_ast->clone();
-
-    try
+    if (!cast_targets.empty())
     {
-        InjectWidenCastData inject_data{cast_targets};
+        InjectWidenCastData inject_data{cast_targets, {}};
         InjectWidenCastVisitor(inject_data).visit(ast);
-
-        /// Build with the *original* column types - the CAST nodes inside the expression
-        /// handle the widening at evaluation time, so no type mismatch at runtime.
-        auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
-        ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
-        auto dag = analyzer.getActionsDAG(false);
-
-        const auto * col = &dag.findInOutputs(ast->getColumnName());
-        if (col->result_name != result_column_name)
-            col = &dag.addAlias(*col, result_column_name);
-
-        dag.getOutputs() = {col};
-        dag.removeUnusedActions();
-
-        return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
     }
-    catch (Exception & e)
-    {
-        e.addMessage(
-            "while building overflow-check expression for TTL; "
-            "the TTL uses Date or DateTime columns whose widened counterparts (Date32 / DateTime64) "
-            "are not supported by one of the functions in the expression");
-        throw;
-    }
-}
 
-static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
-{
     ExpressionAndSets result;
-    /// Build the overflow-check expression from the unmutated AST before TreeRewriter
-    /// rewrites `ast` in place below.
-    result.overflow_check_expression = buildOverflowCheckExpression(ast, columns, context);
-
-    auto ttl_string = ast->formatWithSecretsOneLine();
     auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
     auto dag = analyzer.getActionsDAG(false);

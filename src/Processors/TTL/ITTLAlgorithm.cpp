@@ -13,13 +13,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_TTL_EXPRESSION;
 }
 
 namespace
 {
-    /// Same type dispatch as ITTLAlgorithm::getTimestampByIndex, but as a free function
-    /// so it can be reused from the static `checkOverflow` helper.
     Int64 extractTimestamp(const IColumn * column, size_t index, const DateLUTImpl & date_lut)
     {
         if (const auto * col_sparse = typeid_cast<const ColumnSparse *>(column))
@@ -93,44 +90,6 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
 Int64 ITTLAlgorithm::getTimestampByIndex(const IColumn * column, size_t index) const
 {
     return extractTimestamp(column, index, date_lut);
-}
-
-void ITTLAlgorithm::checkOverflow(
-    const ExpressionActionsPtr & overflow_check_expression,
-    const ColumnPtr & original_ttl_column,
-    const String & result_column,
-    const Block & block)
-{
-    if (!overflow_check_expression || !original_ttl_column)
-        return;
-
-    const size_t num_rows = block.rows();
-    if (num_rows == 0)
-        return;
-
-    Block block_copy;
-    for (const auto & column_name : overflow_check_expression->getRequiredColumns())
-        block_copy.insert(block.getByName(column_name));
-
-    size_t rows = num_rows;
-    overflow_check_expression->execute(block_copy, rows);
-    auto widened_column = block_copy.getByName(result_column).column;
-
-    const auto & date_lut = DateLUT::instance();
-    for (size_t i = 0; i < num_rows; ++i)
-    {
-        Int64 original_ts = extractTimestamp(original_ttl_column.get(), i, date_lut);
-        Int64 widened_ts = extractTimestamp(widened_column.get(), i, date_lut);
-        if (original_ts != widened_ts)
-        {
-            throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                "TTL expression result overflowed at row {}: narrow evaluation produced {} "
-                "but the widened evaluation produced {}. This indicates the TTL interval "
-                "exceeds the range of the input type. Consider using Date32 or DateTime64 "
-                "for columns referenced by the TTL expression.",
-                i, original_ts, widened_ts);
-        }
-    }
 }
 
 }

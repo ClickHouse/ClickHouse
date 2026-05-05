@@ -59,7 +59,6 @@ void TTLColumnAlgorithm::execute(Block & block)
         default_column = default_column->convertToFullColumnIfConst();
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-    checkOverflow(ttl_expressions.overflow_check_expression, ttl_column, description.result_column, block);
 
     const IColumn * values_column = column_with_type.column.get();
     MutableColumnPtr result_column = values_column->cloneEmpty();
