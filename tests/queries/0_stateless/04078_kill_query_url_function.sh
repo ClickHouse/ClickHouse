@@ -100,9 +100,10 @@ HTTPServer(('127.0.0.1', $HTTP_PORT), Handler).serve_forever()
     wait $CLIENT_PID
 
     # Verify that a cancellation error message is present.
-    # Accept both "Query was cancelled during HTTP request" (cancellation during HTTP phase)
-    # and "killed in pending state" (cancellation before HTTP phase started).
-    if grep -q "Query was cancelled during HTTP request\|killed in pending state" "$log_file"; then
+    # Accept both "Query was cancelled during HTTP request" (cancellation during HTTP retry),
+    # "killed in pending state" (cancellation before HTTP phase started),
+    # and "Query was cancelled" (cancellation detected by query execution framework).
+    if grep -q "Query was cancelled during HTTP request\|killed in pending state\|Query was cancelled" "$log_file"; then
         echo "OK"
     else
         cat "$log_file"

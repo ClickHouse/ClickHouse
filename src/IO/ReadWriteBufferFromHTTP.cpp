@@ -325,7 +325,8 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
     for (size_t attempt = 1; attempt <= read_settings.http_max_tries; ++attempt)
     {
-        if (check_cancelled && check_cancelled())
+        /// Check cancellation since the second attempt to let the original HTTP errors propagate correctly on the first attempt.
+        if (attempt > 1 && check_cancelled && check_cancelled())
         {
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled during HTTP request");
         }
