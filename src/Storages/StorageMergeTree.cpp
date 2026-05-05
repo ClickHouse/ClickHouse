@@ -220,17 +220,27 @@ StorageMergeTree::StorageMergeTree(
 
     if ((*getSettings())[MergeTreeSetting::leader_election])
     {
-        /// Leader election relies on conditional writes (If-Match / If-None-Match) on object storage
-        /// to implement the lease protocol. Only S3 and Azure backends support these operations.
-        /// Other remote backends (HDFS, Web) do not, so we check the storage type explicitly.
-        auto description = getDisks().front()->getDataSourceDescription();
-        if (description.object_storage_type != ObjectStorageType::S3
-            && description.object_storage_type != ObjectStorageType::Azure)
+        /// Leader election relies on conditional writes (`If-Match` / `If-None-Match`) on object
+        /// storage to implement the lease protocol. Only `S3` and `Azure` backends support these
+        /// operations. Other remote backends (`HDFS`, `Web`) and local disks do not.
+        ///
+        /// Validate every disk in the storage policy, not just the primary one. Otherwise a
+        /// multi-volume policy could place parts on a non-shared disk via `TTL`-driven moves
+        /// or a default-volume fallback, and the new leader after a failover would not see
+        /// those parts on a different node — silently breaking correctness.
+        for (const auto & disk : getDisks())
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The `leader_election` setting requires an S3 or Azure object storage disk "
-                "that supports conditional writes, but the primary disk '{}' uses a different backend",
-                getDisks().front()->getName());
+            auto description = disk->getDataSourceDescription();
+            if (description.object_storage_type != ObjectStorageType::S3
+                && description.object_storage_type != ObjectStorageType::Azure)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The `leader_election` setting requires every disk in the storage policy to be"
+                    " an `S3` or `Azure` object storage disk that supports conditional writes, but"
+                    " disk '{}' uses a different backend. Mixed shared and non-shared disks would"
+                    " place parts on a node-local volume that another node cannot see after failover.",
+                    disk->getName());
+            }
         }
     }
 }
