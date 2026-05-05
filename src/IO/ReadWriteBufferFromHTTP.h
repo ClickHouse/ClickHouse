@@ -45,6 +45,7 @@ public:
 
     using OutStreamCallback = std::function<void(std::ostream &)>;
     using NextCallback = std::function<void(size_t)>;
+    using CheckCancelled = std::function<bool()>;
 
 private:
     /// Byte range, including right bound [begin, end].
@@ -108,7 +109,6 @@ private:
 
     LoggerPtr log;
 
-    using CheckCancelled = std::function<bool()>;
     CheckCancelled cancellation_check;
 
     bool withPartialContent() const;
