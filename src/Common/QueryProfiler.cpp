@@ -247,7 +247,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
     /// stack capture. Symbolization happens later in a normal thread context.
 #if !defined(THREAD_SANITIZER)
     if (!hasPHDRCache())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache, that is not available for TSan build");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache in this build");
 #endif
 
     struct sigaction sa{};
