@@ -844,6 +844,25 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     return result;
 }
 
+Strings DatabaseDataLake::getAllTableNames(ContextPtr /*context*/) const
+{
+    Strings result;
+
+    /// Do not throw here, because this is called from the typo-hint path
+    /// (IDatabase::getTable -> TableNameHints -> getAllRegisteredNames) which
+    /// must not fail even when the catalog is temporarily unreachable.
+    try
+    {
+        result = getCatalog()->getTables();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return result;
+}
+
 ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
