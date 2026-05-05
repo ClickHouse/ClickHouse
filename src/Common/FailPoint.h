@@ -71,7 +71,7 @@ public:
         Pauseable = 3,
     };
 
-    /// Snapshot of a single failpoint's registration and runtime state.
+    /// Snapshot of a single failpoint's registration.
     /// Returned by getFailPoints() for introspection (e.g., the system.fail_points table).
     struct FailPointInfo
     {
@@ -80,9 +80,6 @@ public:
 
         /// Category that governs how the failpoint fires (see FailPointType).
         FailPointType type;
-
-        /// Whether the failpoint is currently active (i.e., present in fail_point_wait_channels).
-        bool enabled;
     };
 
     /** Block the calling thread at a pauseable failpoint until notifyFailPoint()
@@ -183,13 +180,8 @@ public:
       */
     static void waitForResume(const String & fail_point_name);
 
-    /** Return a snapshot of every registered failpoint with its type and enabled status.
-      *
-      * Iterates over all four categories declared in APPLY_FOR_FAILPOINTS and checks
-      * fail_point_wait_channels under the mutex to determine whether each failpoint is
-      * currently active. Used by StorageSystemFailPoints to populate system.fail_points.
-      *
-      * Thread-safe: acquires FailPointInjection::mu internally.
+    /** Return a snapshot of every registered failpoint with its name and type.
+      * Used by StorageSystemFailPoints to populate system.fail_points.
       */
     static std::vector<FailPointInfo> getFailPoints();
 

@@ -344,7 +344,6 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
         FailPointInfo{                                  \
             .name = FailPoints::NAME,                   \
             .type = FailPointType::TP,                  \
-            .enabled = fiu_fail(FailPoints::NAME) != 0, \
         });
 #define ADD_ONCE(NAME) SUB_M(NAME, Once)
 #define ADD_REGULAR(NAME) SUB_M(NAME, Regular)
