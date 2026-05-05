@@ -939,7 +939,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 res->instrumentation_handler_name = temporary_identifier->as<ASTIdentifier &>().name();
             else
             {
-                expected.add(pos, "handler name (LOG or PROFILE)");
+                expected.add(pos, "handler name (LOG, SLEEP, or PROFILE)");
                 return false;
             }
 
