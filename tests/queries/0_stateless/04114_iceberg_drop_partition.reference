@@ -1,0 +1,41 @@
+=== Scenario 1: basic drop ===
+--- before drop ---
+1	x
+1	y
+2	z
+3	w
+--- after drop partition 2 ---
+1	x
+1	y
+3	w
+--- after drop partition 99 (no-op) ---
+1	x
+1	y
+3	w
+--- after dropping all partitions ---
+0
+NOT_IMPLEMENTED
+=== Scenario 2: multi-partition drop, then drop again, counts stay sane ===
+--- before any drop ---
+5
+--- after drop partition 'a' ---
+4
+2	b
+3	c
+4	d
+5	e
+--- after drop partition 'b' ---
+3
+=== Scenario 3: multiple files per partition ===
+--- before drop ---
+1	x
+1	y
+1	z
+2	p
+--- after drop partition 1 ---
+2	p
+=== Scenario 4: drop then re-insert ===
+1	new
+2	keep
+=== Scenario 5: drop after DELETE FROM (position-deletes present) ===
+2	keep

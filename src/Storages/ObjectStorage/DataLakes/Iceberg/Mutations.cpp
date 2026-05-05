@@ -10,10 +10,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/AlterDropPartitionExecutor.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTPartition.h>
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -21,6 +24,8 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
@@ -31,6 +36,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/PartitionCommands.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -46,6 +52,7 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
 extern const int NOT_IMPLEMENTED;
+extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -57,6 +64,11 @@ extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 namespace DB::FailPoints
 {
 extern const char iceberg_writes_cleanup[];
+}
+
+namespace DB::Setting
+{
+extern const SettingsBool allow_insert_into_iceberg;
 }
 
 namespace DB::Iceberg
@@ -405,12 +417,15 @@ static bool writeMetadataFiles(
         filename_generator,
         metadata_info.path,
         parent_snapshot,
-        /* added_files */ data_files_count,
-        /* added_records */ data_rows,
-        /* added_files_size */ delete_bytes + data_bytes,
-        /* num_partitions */ static_cast<Int64>(touched_partitions.size()),
-        /* added_delete_files */ delete_files_count,
-        /* num_deleted_rows */ delete_rows);
+        Iceberg::SnapshotSummaryUpdateOverwrite{
+            .added_files = static_cast<UInt64>(data_files_count),
+            .added_records = static_cast<UInt64>(data_rows),
+            .added_files_size = static_cast<UInt64>(delete_bytes + data_bytes),
+            .added_delete_files = static_cast<UInt64>(delete_files_count),
+            .added_position_delete_files = static_cast<UInt64>(delete_files_count),
+            .added_position_deletes = static_cast<UInt64>(delete_rows),
+            .num_partitions = static_cast<UInt64>(touched_partitions.size()),
+        });
     auto new_snapshot = result.snapshot;
     auto storage_manifest_list_name = path_resolver.resolve(result.manifest_list_path);
 
@@ -894,3 +909,61 @@ void alter(
 #endif
 
 }
+
+#if USE_AVRO
+
+namespace DB
+{
+
+Pipe IcebergMetadata::alterPartition(const PartitionCommands & commands, ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Alter iceberg is experimental. "
+            "To allow its usage, enable setting allow_insert_into_iceberg");
+    }
+    if (commands.size() != 1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "ALTER TABLE ... on Iceberg expects exactly one partition command, got {}",
+            commands.size());
+
+    const auto & command = commands.at(0);
+
+    switch (command.type)
+    {
+        case PartitionCommand::Type::DROP_PARTITION: {
+            if (command.part || command.detach)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported by Iceberg", command.typeToString());
+
+            alterPartitionDropImpl(command, context);
+            break;
+        }
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported by Iceberg", command.typeToString());
+    }
+
+    persistent_components.invalidateMetadataCache();
+    return {};
+}
+
+
+void IcebergMetadata::alterPartitionDropImpl(const PartitionCommand & command, ContextPtr context)
+{
+    Iceberg::AlterDropPartitionExecutor executor(
+        command,
+        context,
+        object_storage,
+        persistent_components,
+        data_lake_settings,
+        write_format,
+        log,
+        [this, context]() { return getRelevantState(context, /*force_fetch_latest_metadata=*/true); });
+    executor.run();
+}
+
+}
+
+#endif
