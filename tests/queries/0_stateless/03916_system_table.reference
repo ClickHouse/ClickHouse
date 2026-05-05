@@ -20,3 +20,5 @@ replicated_merge_tree_insert_retry_pause	1
 replicated_merge_tree_insert_retry_pause	1
 replicated_merge_tree_insert_retry_pause	1
 replicated_merge_tree_insert_retry_pause	0
+drop_database_before_exclusive_ddl_lock	1
+drop_database_before_exclusive_ddl_lock	0

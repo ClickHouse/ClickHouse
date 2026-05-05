@@ -82,7 +82,22 @@ public:
         /// Category that governs how the failpoint fires (see FailPointType).
         FailPointType type;
 
-        /// Whether the failpoint is currently active (i.e., present in fail_point_wait_channels).
+        /// Whether the failpoint is currently active.
+        ///
+        /// Semantics by type:
+        ///   Regular / Pauseable: true while SYSTEM ENABLE FAILPOINT is in effect; false
+        ///     after SYSTEM DISABLE FAILPOINT. Always accurate.
+        ///
+        ///   PauseableOnce: true while enabled; automatically reset to false after the
+        ///     failpoint fires and the blocked thread is resumed, so no explicit
+        ///     SYSTEM DISABLE FAILPOINT is needed for accurate reporting.
+        ///
+        ///   Once (non-pauseable): true while SYSTEM ENABLE FAILPOINT is in effect.
+        ///     If the failpoint fires naturally via fiu_do_on before SYSTEM DISABLE is
+        ///     called, this field remains true until SYSTEM DISABLE FAILPOINT is issued.
+        ///     There is no low-cost hook into fiu_do_on's firing site to detect natural
+        ///     consumption, so callers that care about post-fire state should call
+        ///     SYSTEM DISABLE FAILPOINT explicitly after triggering the target code.
         bool enabled;
     };
 

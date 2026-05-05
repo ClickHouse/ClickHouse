@@ -26,7 +26,11 @@ ColumnsDescription StorageSystemFailPoints::getColumnsDescription()
          "'regular' fires every time, "
          "'pauseable_once' blocks execution once, "
          "'pauseable' blocks execution every time until resumed."},
-        {"enabled", std::make_shared<DataTypeUInt8>(), "Whether the failpoint is currently enabled (1) or disabled (0)."},
+        {"enabled", std::make_shared<DataTypeUInt8>(),
+         "Whether the failpoint is currently active (1) or not (0). "
+         "For 'regular' and 'pauseable' types this is always accurate. "
+         "For 'pauseable_once' this resets to 0 automatically after the failpoint fires and the blocked thread resumes. "
+         "For 'once' (non-pauseable) this remains 1 until SYSTEM DISABLE FAILPOINT is called, even if the failpoint has already fired naturally."},
     };
 }
 

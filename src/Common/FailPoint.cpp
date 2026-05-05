@@ -213,6 +213,12 @@ struct FailPointChannel
     /// Set to true by disableFailPoint so that waitForPause can return
     /// even when no thread has paused (pause_epoch <= resume_epoch).
     bool disabled = false;
+
+    /// True for PAUSEABLE_ONCE failpoints (enabled with FIU_ONETIME).
+    /// When set, notifyPauseAndWaitForResume will clean up enabled_failpoints
+    /// and fail_point_wait_channels after the thread is resumed, so that
+    /// system.fail_points correctly reports enabled = 0 after natural firing.
+    bool is_once = false;
 };
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
@@ -231,7 +237,10 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
             std::lock_guard lock(mu);                                                                           \
             enabled_failpoints.insert(FailPoints::NAME);                                                        \
             if (pause)                                                                                          \
-                fail_point_wait_channels.try_emplace(FailPoints::NAME, std::make_shared<FailPointChannel>());   \
+            {                                                                                                   \
+                auto & ch = fail_point_wait_channels.try_emplace(FailPoints::NAME, std::make_shared<FailPointChannel>()).first->second; \
+                ch->is_once = ((flags) & FIU_ONETIME) != 0;                                                     \
+            }                                                                                                   \
         }                                                                                                       \
         return;                                                                                                 \
     }
@@ -299,6 +308,17 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     channel->resume_cv.wait(lock, [&] { return channel->resume_epoch > my_resume_epoch; });
 
     --channel->pause_count;
+
+    /// For PAUSEABLE_ONCE: after natural fire-and-resume, clean up so that
+    /// system.fail_points reports enabled = 0 without waiting for an explicit
+    /// SYSTEM DISABLE FAILPOINT. Skip if disableFailPoint already ran
+    /// (it sets disabled = true and removes both maps entries).
+    if (channel->is_once && !channel->disabled)
+    {
+        enabled_failpoints.erase(fail_point_name);
+        fail_point_wait_channels.erase(fail_point_name);
+        fiu_disable(fail_point_name.c_str());
+    }
 }
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
