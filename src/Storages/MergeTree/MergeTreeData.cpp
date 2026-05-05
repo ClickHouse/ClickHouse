@@ -8683,8 +8683,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             minmax_idx_condition.emplace(
                 inverted_dag, query_context, minmax_columns.getNames(),
                 getMinMaxExpr(partition_key, data_settings, ExpressionActionsSettings(query_context)),
-                /* single_point_ = */ false,
-                /* skip_analysis_ = */ !query_settings[Setting::use_partition_pruning] && !query_settings[Setting::use_skip_indexes]);
+                /*single_point_=*/false,
+                /*skip_analysis_=*/!query_settings[Setting::use_skip_indexes]);
         }
 
         if (metadata_snapshot->hasPartitionKey())
@@ -8696,8 +8696,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 metadata_snapshot,
                 inverted_dag,
                 query_context,
-                false /* strict */,
-                !query_settings[Setting::use_partition_pruning]);
+                /*strict=*/false,
+                /*skip_analysis_=*/!query_settings[Setting::use_partition_pruning]);
         }
 
         const auto * predicate = filter_dag->getOutputs().at(0);
