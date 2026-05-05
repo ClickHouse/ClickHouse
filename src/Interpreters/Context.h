@@ -1383,7 +1383,7 @@ public:
 
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
-    std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
+    std::shared_ptr<UncompressedCache> getIndexUncompressedCache(bool only_if_enabled = true) const;
     void clearIndexUncompressedCache() const;
 
     void setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);

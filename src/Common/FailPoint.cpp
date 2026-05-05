@@ -173,8 +173,7 @@ static struct InitFiu
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
-    ONCE(prepared_sets_build_ordered_set_inplace_fail) \
-    REGULAR(query_metric_log_delay_collect)
+    ONCE(prepared_sets_build_ordered_set_inplace_fail)
 
 namespace FailPoints
 {
