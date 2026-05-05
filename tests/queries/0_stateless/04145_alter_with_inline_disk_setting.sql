@@ -22,6 +22,7 @@ SETTINGS disk = disk(
 
 INSERT INTO t_63019 SELECT number, number * 10 FROM numbers(10);
 SELECT count(), sum(a) FROM t_63019;
+SELECT a, b FROM t_63019 ORDER BY a;
 
 -- ADD COLUMN previously failed with `BAD_GET` because `MergeTreeData::checkAlterIsPossible`
 -- and `MergeTreeData::checkColumnFilenamesForCollision` re-apply `settings_changes` to
@@ -29,21 +30,25 @@ SELECT count(), sum(a) FROM t_63019;
 -- `disk` value.
 ALTER TABLE t_63019 ADD COLUMN c String DEFAULT 'x' AFTER b;
 SELECT count(), sum(a), uniq(c) FROM t_63019;
+SELECT a, b, c FROM t_63019 ORDER BY a;
 
 -- MODIFY COLUMN takes the same path and used to fail too.
 ALTER TABLE t_63019 MODIFY COLUMN b UInt64;
 SELECT count(), sum(a) FROM t_63019;
+SELECT a, b, c FROM t_63019 ORDER BY a;
 
 -- MODIFY SETTING for a non-`disk` setting also re-applies the table's `settings_changes`
 -- through `MergeTreeData::changeSettings`, which used to fail with `BAD_GET` even though the
 -- `disk` value is not being modified by this ALTER.
 ALTER TABLE t_63019 MODIFY SETTING merge_with_ttl_timeout = 60;
 SELECT count(), sum(a) FROM t_63019;
+SELECT a, b, c FROM t_63019 ORDER BY a;
 
 -- INSERT after ALTERs — exercises the actual disk write path and verifies the table is still
 -- functional, not just the metadata transitions.
 INSERT INTO t_63019 SELECT number + 100, number * 100, 'y' FROM numbers(5);
 SELECT count(), sum(a) FROM t_63019;
+SELECT a, b, c FROM t_63019 ORDER BY a;
 
 DROP TABLE t_63019;
 
@@ -64,6 +69,8 @@ SETTINGS disk = disk(
     path = './disks/63019_modify_disk/');
 
 INSERT INTO t_63019_modify_disk SELECT number FROM numbers(5);
+SELECT count(), sum(a) FROM t_63019_modify_disk;
+SELECT a FROM t_63019_modify_disk ORDER BY a;
 
 -- Re-applying the SAME inline disk via `MODIFY SETTING disk = disk(...)` is a no-op for the
 -- storage policy (same disk → same registered policy), but it still goes through
@@ -75,6 +82,7 @@ ALTER TABLE t_63019_modify_disk MODIFY SETTING disk = disk(
     object_storage_type = local_blob_storage,
     path = './disks/63019_modify_disk/');
 SELECT count(), sum(a) FROM t_63019_modify_disk;
+SELECT a FROM t_63019_modify_disk ORDER BY a;
 
 -- @PedroTadim's exact variant: `MODIFY SETTING disk = disk(type = cache, ...)` wrapping the
 -- existing inline disk in a cache layer. Before the fix this threw `BAD_GET` (code 170) at the
@@ -90,5 +98,10 @@ ALTER TABLE t_63019_modify_disk MODIFY SETTING disk = disk(
     disk = '63019_modify_disk',
     path = './filesystem_caches/63019_modify_disk_cache/',
     max_size = '1Mi'); -- { serverError BAD_ARGUMENTS }
+
+-- The rejected ALTER above must not corrupt or alter the table's data — verify both the
+-- aggregate and the row-level read path still work after the rollback.
+SELECT count(), sum(a) FROM t_63019_modify_disk;
+SELECT a FROM t_63019_modify_disk ORDER BY a;
 
 DROP TABLE t_63019_modify_disk;
