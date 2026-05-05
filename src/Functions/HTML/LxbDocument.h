@@ -31,4 +31,4 @@ struct LxbDocument
     LxbDocument & operator=(const LxbDocument &) = delete;
 };
 
-} // namespace DB
+}

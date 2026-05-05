@@ -34,9 +34,9 @@ lxb_status_t serializeToChars(const lxb_char_t * data, size_t len, void * ctx)
     return LXB_STATUS_OK;
 }
 
-} // namespace
+}
 
-class FunctionHtmlParse : public IFunction
+class FunctionHTMLParse : public IFunction
 {
 public:
     static constexpr auto name = "htmlParse";
@@ -47,7 +47,7 @@ public:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "HTML function '{}' is experimental. "
                 "Set `allow_experimental_html_functions` setting to enable it", name);
-        return std::make_shared<FunctionHtmlParse>();
+        return std::make_shared<FunctionHTMLParse>();
     }
 
     String getName() const override { return name; }
@@ -108,9 +108,9 @@ public:
     }
 };
 
-REGISTER_FUNCTION(HtmlParse)
+REGISTER_FUNCTION(HTMLParse)
 {
-    factory.registerFunction<FunctionHtmlParse>(FunctionDocumentation{
+    factory.registerFunction<FunctionHTMLParse>(FunctionDocumentation{
         .description = R"(Parses HTML and serializes it back. Normalizes malformed HTML into valid HTML5.)",
         .syntax = "htmlParse(html)",
         .arguments = {{"html", "HTML string to parse and normalize.", {"String"}}},
@@ -119,4 +119,4 @@ REGISTER_FUNCTION(HtmlParse)
         .category = FunctionDocumentation::Category::Other});
 }
 
-} // namespace DB
+}
