@@ -3,13 +3,14 @@
 #include <chrono>
 #include <iomanip>
 #include <iostream>
-#include <sstream>
 
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/CoordinationSettings.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -278,7 +279,7 @@ void StorageRunner::pushBlocking(QueueT & queue, QueueItem && item)
 {
     while (!shutdown.load(std::memory_order_relaxed))
     {
-        if (queue.tryPush(std::move(item)))
+        if (queue.tryPushL(std::move(item)))
             return;
         std::this_thread::sleep_for(POLL_SLEEP);
     }
@@ -517,14 +518,14 @@ void StorageRunner::report(double period_seconds, bool snapshot_mode_during_peri
         DB::MemoryStatisticsOS mem;
         rss_mb = mem.get().resident / (1024 * 1024);
     }
-    catch (...) // NOLINT(bugprone-empty-catch): best-effort memory readout, ignore if /proc/self/statm is unavailable
+    catch (...) // NOLINT(bugprone-empty-catch): best-effort memory readout, 'Ok' to ignore if /proc/self/statm is unavailable
     {
     }
 #endif
 
     uint64_t znode_count = storage ? storage->getNodesCount() : 0;
 
-    std::ostringstream out;
+    WriteBufferFromOwnString out;
     out << std::fixed << std::setprecision(1);
     out << "\n==== period " << period_seconds << "s ====\n";
     out << "writes/s: " << static_cast<double>(writes) / period_seconds
