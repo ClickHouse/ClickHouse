@@ -35,7 +35,7 @@ TraceCollector::TraceCollector()
     TraceSender::pipe.setNonBlockingWrite();
     TraceSender::pipe.tryIncreaseSize(1 << 20);
 
-    thread = ThreadFromGlobalPool(&TraceCollector::run, this);
+    thread = ThreadFromGlobalPoolWithoutTraceCollector(&TraceCollector::run, this);
 }
 
 void TraceCollector::initialize(std::shared_ptr<TraceLog> trace_log_)
