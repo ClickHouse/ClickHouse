@@ -39,19 +39,12 @@ public:
     /// their respective arrays. Returns a new ColumnArray(String) with updated offsets.
     ColumnPtr processTokensArrayBatch(const ColumnArray * tokens) const;
 
-    /// Returns an ActionsDAG applying the postprocessor to `haystack_column_name` as a whole.
-    /// Symmetric to how the preprocessor transforms the haystack; used when direct index read is off.
-    ActionsDAG getActionsDAGForHaystackColumn(const String & haystack_column_name, const DataTypePtr & haystack_type) const;
-
     bool hasActions() const { return actions.has_value(); }
 
 private:
     std::optional<ExpressionActions> actions;
     /// Cached to avoid repeated make_shared<DataTypeString>() allocations.
     DataTypePtr string_type;
-    /// Saved for getActionsDAGForHaystackColumn.
-    ASTPtr original_expression_ast;
-    String index_column_name;
 };
 
 }

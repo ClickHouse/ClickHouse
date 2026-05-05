@@ -227,9 +227,12 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 
     bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
     bool has_preprocessor = preprocessor && preprocessor->hasActions();
-    bool has_postprocessor = postprocessor && postprocessor->hasActions();
 
-    const bool read_mode_can_be_exact = is_array_tokenizer && !has_preprocessor && !has_postprocessor;
+    /// Exact mode is possible when the array tokenizer is used without a preprocessor.
+    /// A postprocessor is fine: it is applied to both the stored tokens and the needle token
+    /// via stringToTokens, and in Exact mode the virtual column fully replaces the filter so
+    /// no row-level comparison of the postprocessed needle against the original haystack occurs.
+    const bool read_mode_can_be_exact = is_array_tokenizer && !has_preprocessor;
 
     if (function_name == "equals"
         || function_name == "has"
@@ -897,9 +900,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "like")
     {
         const bool has_preprocessor = preprocessor && preprocessor->hasActions();
+        const bool has_postprocessor = postprocessor && postprocessor->hasActions();
         /// Requires explicit opt-in via use_text_index_like_evaluation_by_dictionary_scan because scanning
         /// the index dictionary for pattern-matching tokens has non-trivial overhead.
-        if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor
+        if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor && !has_postprocessor
             && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         {
             /// TODO(ahmadov): Only '%foo%' pattern is eligible for direct read mode. An empty vector means the pattern is too complex.
@@ -935,7 +939,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
     {
         const bool has_preprocessor = preprocessor && preprocessor->hasActions();
+        const bool has_postprocessor = postprocessor && postprocessor->hasActions();
         if (has_preprocessor && !preprocessor->isLowerOrUpper())
+            return false;
+        if (has_postprocessor)
             return false;
 
         auto patterns = stringLikeToPatterns(value_field, true);

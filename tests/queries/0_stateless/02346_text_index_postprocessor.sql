@@ -333,3 +333,33 @@ SELECT count() FROM tab WHERE has(val, 'foo');   -- 1: lower('foo') = lower('Foo
 SELECT count() FROM tab WHERE has(val, 'xyz');   -- 0
 
 DROP TABLE tab;
+
+SELECT '13. String tokenizer + non-commutative postprocessor: row-scan matches index.';
+-- The postprocessor strips the suffix 'ing' from each token (token-level operation).
+-- Applying the postprocessor to the whole haystack string ('running walking') gives
+-- 'running walking' (no match at end), not ['runn', 'walk']. The rewrite to
+-- has(arrayMap(pp, splitByNonAlpha(val)), pp(needle)) ensures correctness on both paths.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = replaceRegexpAll(val, 'ing$', ''))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'running walking'), (2, 'cat dog');
+
+-- 'running' → strip 'ing' → 'runn'; searching 'running' → 'runn' → found in row 1.
+SELECT count() FROM tab WHERE hasToken(val, 'running');  -- 1
+-- 'walking' → strip 'ing' → 'walk'; searching 'walking' → 'walk' → found in row 1.
+SELECT count() FROM tab WHERE hasToken(val, 'walking');  -- 1
+-- 'cat' → no suffix → 'cat'; found in row 2.
+SELECT count() FROM tab WHERE hasToken(val, 'cat');      -- 1
+-- 'run' → no suffix → 'run'; index stores 'runn', not 'run' → not found.
+SELECT count() FROM tab WHERE hasToken(val, 'run');      -- 0
+-- Multi-token: both tokens must match after postprocessor.
+SELECT count() FROM tab WHERE hasAllTokens(val, 'running walking');  -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, 'running cat');      -- 0
+
+DROP TABLE tab;

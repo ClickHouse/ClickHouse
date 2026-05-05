@@ -171,7 +171,7 @@ struct NgramsTokenizer final : public ITokenizerHelper<NgramsTokenizer>
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
-    size_t getN() const { return n; }
+    size_t getN() const noexcept { return n; }
 
     bool supportsStringLike() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
@@ -354,6 +354,7 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
     bool supportsStringLike() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
 private:
     size_t min_gram_length;
     size_t max_gram_length;

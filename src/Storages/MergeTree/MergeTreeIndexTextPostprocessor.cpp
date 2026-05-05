@@ -36,9 +36,6 @@ MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(ASTPtr expressi
 
     chassert(index_description.column_names.size() == 1);
 
-    original_expression_ast = expression_ast->clone(); /// saved for getActionsDAGForHaystackColumn
-    index_column_name = index_description.column_names.front();
-
     /// Replace the index column name with the token placeholder.
     /// The postprocessor always operates on String tokens (not the original column type).
     ASTPtr transformed_ast = expression_ast->clone();
@@ -114,44 +111,6 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensBatch(const ColumnString
     Block block{{ColumnWithTypeAndName(tokens->getPtr(), string_type, postprocessor_token_name)}};
     actions->execute(block, n_rows);
     return block.safeGetByPosition(0).column;
-}
-
-ActionsDAG MergeTreeIndexTextPostprocessor::getActionsDAGForHaystackColumn(const String & haystack_column_name, const DataTypePtr & haystack_type) const
-{
-    if (!original_expression_ast || !actions)
-        return ActionsDAG();
-
-    if (typeid_cast<const DataTypeArray *>(haystack_type.get()))
-    {
-        /// For Array columns (used with the Array tokenizer), the postprocessor is defined
-        /// for individual String elements, not for the whole array. Build:
-        ///   arrayMap(lambda(tuple(__elem__), postprocessor_expr(__elem__)), haystack_col)
-        /// so that each element is postprocessed before comparison, making the predicate
-        /// consistent with what is stored in the index.
-        const String elem_name = "__postprocessor_haystack_elem__";
-
-        ASTPtr elem_ast = original_expression_ast->clone();
-        replaceExpressionToIdentifier(elem_ast, index_column_name, elem_name);
-
-        ASTPtr lambda_ast = makeASTFunction("lambda",
-            makeASTFunction("tuple", make_intrusive<ASTIdentifier>(elem_name)),
-            std::move(elem_ast));
-
-        ASTPtr arraymap_ast = makeASTFunction("arrayMap",
-            std::move(lambda_ast),
-            make_intrusive<ASTIdentifier>(haystack_column_name));
-
-        NamesAndTypesList source_columns{{haystack_column_name, haystack_type}};
-        return buildActionsDAGFromAST(std::move(arraymap_ast), source_columns);
-    }
-
-    /// For String columns (e.g. splitByNonAlpha tokenizer), substitute the index column
-    /// with the haystack name to build the per-row transform DAG.
-    ASTPtr haystack_ast = original_expression_ast->clone();
-    replaceExpressionToIdentifier(haystack_ast, index_column_name, haystack_column_name);
-
-    NamesAndTypesList source_columns{{haystack_column_name, haystack_type}};
-    return buildActionsDAGFromAST(std::move(haystack_ast), source_columns);
 }
 
 ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnArray * tokens) const

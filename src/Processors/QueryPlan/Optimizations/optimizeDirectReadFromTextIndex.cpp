@@ -495,6 +495,8 @@ private:
         const auto * tokenizer = condition_text.getTokenizer();
         auto function_name = replacement.node->function_base->getName();
 
+        const bool will_apply_postprocessor = needApplyPostprocessor(function_name) && postprocessor && postprocessor->hasActions();
+
         if (needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions())
         {
             const auto & preprocessor_dag = preprocessor->getOriginalActionsDAG();
@@ -522,16 +524,7 @@ private:
 
         if (needApplyTokenizer(function_node.function_base->getName()) && tokenizer)
         {
-            auto tokenizer_description = tokenizer->getDescription();
-
-            /// Add argument with tokenizer definition.
-            ColumnWithTypeAndName arg;
-            arg.type = std::make_shared<DataTypeString>();
-            arg.column = arg.type->createColumnConst(1, Field(tokenizer_description));
-            arg.name = quoteString(tokenizer_description);
-            new_children.push_back(&actions_dag.addColumn(std::move(arg)));
-
-            /// Convert needles to array if they are a string by applying a tokenizer.
+            /// Convert needles to array if they are a string by applying the tokenizer.
             /// For hasPhrase the phrase must stay as a string — tokenization is done inside hasPhrase itself.
             if (function_name != "hasPhrase" && needles_field.getType() == Field::Types::String)
             {
@@ -542,9 +535,16 @@ private:
                 needles_field = Array(needles_array.begin(), needles_array.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
+
+            auto tokenizer_description = tokenizer->getDescription();
+            ColumnWithTypeAndName arg;
+            arg.type = std::make_shared<DataTypeString>();
+            arg.column = arg.type->createColumnConst(1, Field(tokenizer_description));
+            arg.name = quoteString(tokenizer_description);
+            new_children.push_back(&actions_dag.addColumn(std::move(arg)));
         }
 
-        if (needApplyPostprocessor(function_name) && postprocessor && postprocessor->hasActions())
+        if (will_apply_postprocessor)
         {
             if (needles_field.getType() == Field::Types::String)
             {
@@ -554,7 +554,7 @@ private:
             }
             else if (needles_field.getType() == Field::Types::Array)
             {
-                /// hasAllTokens/hasAnyTokens case: array of tokens.
+                /// hasAllTokens/hasAnyTokens/has case: array of tokens.
                 const auto & src_array = needles_field.safeGet<Array>();
                 std::vector<String> tokens;
                 for (const auto & element : src_array)
@@ -563,18 +563,6 @@ private:
                 tokens = postprocessor->applyBatch(std::move(tokens));
                 needles_field = Array(tokens.begin(), tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-            }
-
-            /// Apply the postprocessor to the haystack symmetrically with the needle.
-            /// mergeNodes wires it onto any prior preprocessor output via result_name matching.
-            auto haystack_dag = postprocessor->getActionsDAGForHaystackColumn(
-                new_children[0]->result_name, new_children[0]->result_type);
-            if (!haystack_dag.getOutputs().empty())
-            {
-                ActionsDAG::NodeRawConstPtrs merged_outputs;
-                actions_dag.mergeNodes(std::move(haystack_dag), &merged_outputs);
-                if (!merged_outputs.empty())
-                    new_children[0] = merged_outputs.front();
             }
         }
 
