@@ -78,7 +78,7 @@ private:
     /// Which granules contain at least one sampled row.
     boost::dynamic_bitset<> granules_selected;
 
-    /// One checkpoint per mark, for geometric skip replay.
+    /// One checkpoint every `CHECKPOINT_STRIDE` marks, for geometric skip replay.
     std::vector<Checkpoint> checkpoints;
 
     /// Cached log(1 - p) for geometric skip replay.

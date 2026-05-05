@@ -2996,7 +2996,7 @@ ReadFromMergeTree::AnalysisResult & ReadFromMergeTree::getAnalysisResultImpl() c
 
 bool ReadFromMergeTree::isQueryWithSampling() const
 {
-    if (context->getSettingsRef()[Setting::parallel_replicas_count] > 1 && data.getInMemoryMetadataPtr()->hasSamplingKey())
+    if (context->getSettingsRef()[Setting::parallel_replicas_count] > 1 && storage_snapshot->metadata->hasSamplingKey())
         return true;
 
     if (query_info.table_expression_modifiers)
