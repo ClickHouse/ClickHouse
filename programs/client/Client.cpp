@@ -13,7 +13,6 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
-#include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
 #include <Common/config_version.h>
@@ -136,8 +135,9 @@ void Client::showWarnings()
             output_stream << std::endl;
         }
     }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
+        /// Ignore exception
     }
 }
 
@@ -789,10 +789,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("fake-drop", "Ignore all DROP queries, should be used only for testing")
         ("accept-invalid-certificate",
             "Ignore certificate verification errors, equal to config parameters "
-            "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none")
-        ("inline-insert-data",
-            "Send INSERT data as is in the query text instead of converting it to blocks in the native format. "
-            "The server will parse the inline data itself, avoiding the round-trip to receive table structure.");
+            "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none");
 
     /// Commandline options related to external tables.
 
@@ -918,8 +915,6 @@ void Client::processOptions(
         config().setBool("no-server-client-version-message", true);
     if (options.contains("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
-    if (options.contains("inline-insert-data"))
-        config().setBool("inline-insert-data", true);
     if (options.contains("jwt"))
     {
         if (!options["user"].defaulted())
@@ -1000,7 +995,7 @@ void Client::processOptions(
 
     initClientContext(Context::createCopy(global_context));
     /// Initialize query context for the current thread to avoid sharing global context (i.e. for obtaining session_timezone)
-    query_scope = QueryScope::create(client_context);
+    query_scope = CurrentThread::QueryScope::create(client_context);
 
 
     /// Allow to pass-through unknown settings to the server.
@@ -1057,10 +1052,6 @@ void Client::processConfig()
     multiline = config().has("multiline");
     print_stack_trace = config().getBool("stacktrace", false);
     default_database = config().getString("database", "");
-    inline_insert_data = config().getBool("inline-insert-data", false);
-
-    if (inline_insert_data)
-        client_context->setSetting("send_table_structure_on_insert_with_inline_data", false);
 
     setDefaultFormatsAndCompressionFromConfiguration();
 }

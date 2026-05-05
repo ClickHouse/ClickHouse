@@ -1,5 +1,4 @@
 #include <memory>
-#include <DataTypes/DataTypeArray.h>
 #include <mutex>
 
 #include <IO/EmptyReadBuffer.h>
@@ -24,8 +23,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <Interpreters/FileCache/FileCache.h>
-#include <Interpreters/FileCache/WriteBufferToFileSegment.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/WriteBufferToFileSegment.h>
 #include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
@@ -138,7 +137,7 @@ public:
     {
         LOG_TRACE(log, "Creating temporary file in distributed cache: {}", file_key);
 
-        auto context = CurrentThread::tryGetQueryContext();
+        auto context = CurrentThread::getQueryContext();
         if (!context)
             context = Context::getGlobalContextInstance();
         read_settings = context->getReadSettings();
