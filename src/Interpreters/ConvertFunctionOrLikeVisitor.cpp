@@ -98,7 +98,8 @@ struct PatternInfo
 
     /// Returns true if all per-pattern lengths and the total length fit within the hyperscan
     /// regexp size limits. A limit value of 0 means "unlimited".
-    bool fitsHyperscanLimits(size_t max_length, size_t max_total_length) const
+    /// Used by `multiMatchAny` when ClickHouse is built with Vectorscan.
+    [[maybe_unused]] bool fitsHyperscanLimits(size_t max_length, size_t max_total_length) const
     {
         if (max_length == 0 && max_total_length == 0)
             return true;
