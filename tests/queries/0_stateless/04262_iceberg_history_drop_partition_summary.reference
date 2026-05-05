@@ -1,0 +1,10 @@
+=== operations in commit order ===
+APPEND
+DELETE
+=== APPEND counts ===
+2	2	2	2
+=== DELETE counts ===
+1	1	1	1
+=== operation key must not also appear inside summary map ===
+0
+0
