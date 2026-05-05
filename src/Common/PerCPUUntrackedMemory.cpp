@@ -67,10 +67,6 @@ const bool rseq_ready = []
     return rseq_init() == RSEQ_INIT_OK && rseq_size > 0;
 }();
 
-#else
-
-constexpr bool rseq_ready = false;
-
 #endif
 
 inline int currentCPU()
