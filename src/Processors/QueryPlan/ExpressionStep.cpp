@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -100,11 +99,9 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 
 void ExpressionStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, settings.indent_char);
     auto expression = std::make_shared<ExpressionActions>(actions_dag.clone());
-
-    if (!settings.compact)
-        expression->describeActions(settings.out, prefix);
+    expression->describeActions(settings.out, prefix);
 }
 
 void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const

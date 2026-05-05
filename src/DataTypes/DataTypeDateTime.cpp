@@ -37,7 +37,7 @@ bool DataTypeDateTime::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this);
 }
 
-SerializationPtr DataTypeDateTime::doGetSerialization(const SerializationInfoSettings &) const
+SerializationPtr DataTypeDateTime::doGetDefaultSerialization() const
 {
     if (!has_explicit_time_zone)
     {
@@ -47,10 +47,10 @@ SerializationPtr DataTypeDateTime::doGetSerialization(const SerializationInfoSet
         if (&effective_tz != &time_zone)
         {
             TimezoneMixin overridden(effective_tz.getTimeZone());
-            return SerializationDateTime::create(overridden);
+            return std::make_shared<SerializationDateTime>(overridden);
         }
     }
-    return SerializationDateTime::create(*this);
+    return std::make_shared<SerializationDateTime>(*this);
 }
 
 }
