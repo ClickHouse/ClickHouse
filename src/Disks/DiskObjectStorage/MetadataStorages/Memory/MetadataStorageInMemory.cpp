@@ -699,20 +699,24 @@ void MetadataStorageInMemoryTransaction::createMetadataFile(const std::string & 
         auto it = metadata_storage.files.find(path);
         if (it != metadata_storage.files.end())
         {
-            /// If replacing existing file, handle old blob group
-            auto & old_group = it->second.blob_group;
-            old_group->ref_count -= 1;
-            if (old_group->ref_count == 0)
-            {
-                for (const auto & obj : old_group->objects)
-                    objects_to_remove.push_back(obj);
-            }
+            /// Rewriting an existing file must preserve hardlink semantics:
+            /// disk-backed metadata storage shares one inode across hardlinks, so updating
+            /// metadata via any link is observable from every other link (see `TestHardlinkRewrite`
+            /// in `gtest_metadata_local_disk.cpp`). Update the shared `BlobGroup` in place
+            /// instead of replacing the pointer for just this path.
+            auto & blob_group = it->second.blob_group;
+            for (const auto & obj : blob_group->objects)
+                objects_to_remove.push_back(obj);
+            blob_group->objects = objects;
+            blob_group->inline_data.clear();
+            blob_group->last_modified = Poco::Timestamp();
         }
-
-        auto & entry = metadata_storage.files[path];
-        entry.blob_group = std::make_shared<MetadataStorageInMemory::BlobGroup>();
-        entry.blob_group->objects = objects;
-        entry.blob_group->last_modified = Poco::Timestamp();
+        else
+        {
+            auto & entry = metadata_storage.files[path];
+            entry.blob_group->objects = objects;
+            entry.blob_group->last_modified = Poco::Timestamp();
+        }
     });
 }
 
