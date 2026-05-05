@@ -19,10 +19,12 @@
 #include <IO/WriteHelpers.h>
 #include <Planner/PlannerContext.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Analyzer/UnionNode.h>
@@ -37,12 +39,15 @@ namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsUInt64 interactive_delay;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 min_external_table_block_size_rows;
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool enable_add_distinct_to_in_subqueries;
     extern const SettingsInt64 optimize_const_name_size;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ErrorCodes
@@ -50,6 +55,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
 namespace
@@ -397,6 +403,49 @@ void addDistinctRecursively(const QueryTreeNodePtr & node)
     }
 }
 
+/** Enforces `max_rows_to_transfer` / `max_bytes_to_transfer` while a `GLOBAL IN`
+  * or `GLOBAL JOIN` subquery is being materialized for transfer to remote shards.
+  *
+  * The old analyzer enforces these limits via `CreatingSetsTransform` (which is
+  * built from `prepared_sets->getSubqueries()` inside `DelayedCreatingSetsStep`).
+  * The new analyzer materializes the same subqueries here in
+  * `buildQueryTreeForShard` and never goes through that path, so the limits
+  * were silently ignored. This transform restores parity with the old analyzer:
+  * it counts cumulative rows and bytes of every chunk written to the temporary
+  * table and applies `network_transfer_limits` with the same error code, the
+  * same `"IN/JOIN external table"` reason string, and the same overflow-mode
+  * semantics (`THROW` raises `SET_SIZE_LIMIT_EXCEEDED`; `BREAK` stops reading).
+  */
+class GlobalSubqueryTransferLimitsCheckingTransform : public ISimpleTransform
+{
+public:
+    GlobalSubqueryTransferLimitsCheckingTransform(SharedHeader header_, SizeLimits limits_)
+        : ISimpleTransform(header_, header_, false)
+        , limits(std::move(limits_))
+    {
+    }
+
+    String getName() const override { return "GlobalSubqueryTransferLimitsCheckingTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        if (!chunk)
+            return;
+
+        rows_transferred += chunk.getNumRows();
+        bytes_transferred += chunk.bytes();
+
+        if (!limits.check(rows_transferred, bytes_transferred, "IN/JOIN external table", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+            stopReading();
+    }
+
+private:
+    SizeLimits limits;
+    UInt64 rows_transferred = 0;
+    UInt64 bytes_transferred = 0;
+};
+
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
@@ -465,6 +514,23 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     builder->resize(1);
     builder->addTransform(std::move(squashing));
+
+    /// Enforce `max_rows_to_transfer` / `max_bytes_to_transfer` while materializing
+    /// the `GLOBAL IN` / `GLOBAL JOIN` subquery — see Issue #103333. The old analyzer
+    /// installs the same limits inside `CreatingSetsTransform`; without this transform
+    /// the new analyzer would silently ignore them.
+    const auto & subquery_settings = mutable_context->getSettingsRef();
+    SizeLimits network_transfer_limits(
+        subquery_settings[Setting::max_rows_to_transfer],
+        subquery_settings[Setting::max_bytes_to_transfer],
+        subquery_settings[Setting::transfer_overflow_mode]);
+
+    if (network_transfer_limits.hasLimits())
+    {
+        auto limits_transform = std::make_shared<GlobalSubqueryTransferLimitsCheckingTransform>(
+            builder->getSharedHeader(), network_transfer_limits);
+        builder->addTransform(std::move(limits_transform));
+    }
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
