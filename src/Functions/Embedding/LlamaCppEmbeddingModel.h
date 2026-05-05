@@ -55,4 +55,4 @@ private:
     mutable InferenceStats stats;
 };
 
-} // namespace DB
+}

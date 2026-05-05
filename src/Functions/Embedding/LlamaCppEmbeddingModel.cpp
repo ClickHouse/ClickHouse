@@ -44,7 +44,7 @@ struct LlamaCppEmbeddingModel::Impl
 
     static constexpr int32_t kMaxBatchSeqs = 16;
 
-    struct ContextDeleter
+    struct LlamaCtxDeleter
     {
         void operator()(struct llama_context * ctx) const noexcept
         {
@@ -52,16 +52,16 @@ struct LlamaCppEmbeddingModel::Impl
                 llama_free(ctx);
         }
     };
-    using ContextPtr = std::unique_ptr<struct llama_context, ContextDeleter>;
+    using LlamaCtxPtr = std::unique_ptr<struct llama_context, LlamaCtxDeleter>;
 
     /// Thread-local context reused across calls. ~300MB per thread.
-    /// The ContextPtr's destructor fires on thread exit, so contexts don't leak
+    /// The unique_ptr's destructor fires on thread exit, so contexts don't leak
     /// when worker threads are torn down. The (tl_model != model) check
     /// invalidates the cache if this Impl's model pointer changes, though in
     /// practice Impl instances aren't reused across different underlying models.
     struct llama_context * getContext() const
     {
-        thread_local ContextPtr tl_ctx;
+        thread_local LlamaCtxPtr tl_ctx;
         thread_local struct llama_model * tl_model = nullptr;
 
         if (tl_ctx && tl_model != model)
@@ -119,7 +119,7 @@ void truncateAndNormalize(std::vector<float> & vec, size_t dims)
     }
 }
 
-} // namespace
+}
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -442,4 +442,4 @@ std::string LlamaCppEmbeddingModel::getStatsJSON() const
         stats.total_time_us.load(std::memory_order_relaxed));
 }
 
-} // namespace DB
+}

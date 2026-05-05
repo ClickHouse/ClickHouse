@@ -187,4 +187,4 @@ std::vector<std::pair<std::string, EmbeddingModelRegistry::ModelEntry>> Embeddin
     return result;
 }
 
-} // namespace DB
+}

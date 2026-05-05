@@ -56,4 +56,4 @@ float IEmbeddingModel::cosineSimilarity(std::span<const float> a, std::span<cons
     #endif
 }
 
-} // namespace DB
+}

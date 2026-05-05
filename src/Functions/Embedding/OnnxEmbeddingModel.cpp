@@ -10,6 +10,8 @@
 #include <rapidjson/filereadstream.h>
 
 #include <Common/Exception.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 
 // ONNX protobuf for model introspection (generated during ORT build)
 #include <onnx/onnx-ml.pb.h>
@@ -19,7 +21,6 @@
 #include <set>
 #include <fstream>
 #include <cstdio>
-#include <sstream>
 #include <unordered_map>
 
 namespace DB
@@ -28,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int INCORRECT_DATA;
 }
@@ -257,11 +257,10 @@ struct Tokenizer
 
 std::string readFile(const std::string & path)
 {
-    std::ifstream f(path);
-    if (!f) throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot open file: {}", path);
-    std::ostringstream ss;
-    ss << f.rdbuf();
-    return ss.str();
+    ReadBufferFromFile in(path);
+    String contents;
+    readStringUntilEOF(contents, in);
+    return contents;
 }
 
 Tokenizer loadTokenizer(const std::string & tokenizer_path)
@@ -410,6 +409,8 @@ void OnnxEmbeddingModel::init(const std::string & model_path, const std::string 
         auto metadata = impl->session->GetModelMetadata();
         impl->producer = metadata.GetProducerNameAllocated(alloc).get();
         impl->domain = metadata.GetDomainAllocated(alloc).get();
+        /// Ok: GetOpset is best-effort metadata; if unsupported or throws, fall back to 0
+        /// and let the proto-parsing block below recover it from opset_import.
         try { impl->opset_version = impl->session->GetOpset(""); } catch (...) { impl->opset_version = 0; }
     }
 
@@ -632,6 +633,82 @@ std::vector<std::string> OnnxEmbeddingModel::tokenizeToStrings(std::string_view 
     return result;
 }
 
+
+template <typename T>
+std::vector<std::vector<float>> OnnxEmbeddingModel::extractEmbeddings(
+    const std::vector<Ort::Value> & outputs,
+    size_t batch,
+    size_t max_len,
+    const std::vector<std::vector<int64_t>> & all_ids,
+    size_t dims) const
+    requires(std::is_same_v<T, Ort::Float16_t> || std::is_same_v<T, float>)
+{
+    const T * out_data = outputs[0].GetTensorData<T>();
+    const size_t model_dims = impl->output_dims;
+    std::vector<std::vector<float>> result(batch);
+
+    auto to_float = [](T v) -> float
+    {
+        if constexpr (std::is_same_v<T, Ort::Float16_t>)
+            return v.ToFloat();
+        else
+            return v;
+    };
+
+    if (impl->output_rank == 3)
+    {
+        // Per-token output [batch, seq, dims] — need mean pooling over non-padded tokens
+        for (size_t i = 0; i < batch; ++i)
+        {
+            const T * token_embs = out_data + i * max_len * model_dims;
+            const size_t seq_len = all_ids[i].size(); // actual (non-padded) length
+
+            // Mean pool: sum embeddings of real tokens, divide by count
+            result[i].assign(dims, 0.0f);
+            for (size_t t = 0; t < seq_len; ++t)
+                for (size_t d = 0; d < dims; ++d)
+                    result[i][d] += to_float(token_embs[t * model_dims + d]);
+
+            float inv_count = seq_len > 0 ? 1.0f / static_cast<float>(seq_len) : 0.0f;
+            for (size_t d = 0; d < dims; ++d)
+                result[i][d] *= inv_count;
+
+            // L2 normalize
+            float norm_sq = 0.0f;
+            for (size_t d = 0; d < dims; ++d)
+                norm_sq += result[i][d] * result[i][d];
+            float inv = norm_sq > 0.0f ? 1.0f / std::sqrt(norm_sq) : 0.0f;
+            for (size_t d = 0; d < dims; ++d)
+                result[i][d] *= inv;
+        }
+    }
+    else
+    {
+        // Already pooled [batch, dims] — just truncate and normalize
+        for (size_t i = 0; i < batch; ++i)
+        {
+            const T * row = out_data + i * model_dims;
+            result[i].resize(dims);
+            for (size_t d = 0; d < dims; ++d)
+                result[i][d] = to_float(row[d]);
+
+            float norm_sq = 0.0f;
+            for (size_t d = 0; d < dims; ++d)
+                norm_sq += result[i][d] * result[i][d];
+            float inv = norm_sq > 0.0f ? 1.0f / std::sqrt(norm_sq) : 0.0f;
+            for (size_t d = 0; d < dims; ++d)
+                result[i][d] *= inv;
+        }
+    }
+
+    return result;
+}
+
+template std::vector<std::vector<float>> OnnxEmbeddingModel::extractEmbeddings<float>(
+    const std::vector<Ort::Value> &, size_t, size_t, const std::vector<std::vector<int64_t>> &, size_t) const;
+template std::vector<std::vector<float>> OnnxEmbeddingModel::extractEmbeddings<Ort::Float16_t>(
+    const std::vector<Ort::Value> &, size_t, size_t, const std::vector<std::vector<int64_t>> &, size_t) const;
+
 std::vector<std::vector<float>> OnnxEmbeddingModel::embedBatch(
     const std::vector<std::string_view> & texts, size_t dims) const
 {
@@ -684,7 +761,8 @@ std::vector<std::vector<float>> OnnxEmbeddingModel::embedBatch(
     std::vector<Ort::Value> inputs;
     inputs.reserve(impl->input_names.size());
 
-    // Storage for int32 or int64 — only one set is used
+    /// Storage for int32 or int64 — only one set is used. The vectors must outlive
+    /// session->Run because Ort::Value tensors below are non-owning views over them.
     std::vector<int32_t> ids_i32;
     std::vector<int32_t> mask_i32;
     std::vector<int32_t> ttype_i32;
@@ -692,15 +770,15 @@ std::vector<std::vector<float>> OnnxEmbeddingModel::embedBatch(
     std::vector<int64_t> mask_i64;
     std::vector<int64_t> ttype_i64;
 
-    if (impl->inputs_are_int32)
+    auto prepare = [&]<typename I>(std::vector<I> & ids, std::vector<I> & mask, std::vector<I> & ttype)
     {
-        ids_i32.resize(flat_size, impl->tokenizer.pad_id);
-        mask_i32.resize(flat_size, 0);
+        ids.resize(flat_size, static_cast<I>(impl->tokenizer.pad_id));
+        mask.resize(flat_size, 0);
         for (size_t i = 0; i < batch; ++i)
             for (size_t j = 0; j < all_ids[i].size(); ++j)
             {
-                ids_i32[i * max_len + j] = static_cast<int32_t>(all_ids[i][j]);
-                mask_i32[i * max_len + j] = 1;
+                ids[i * max_len + j] = static_cast<I>(all_ids[i][j]);
+                mask[i * max_len + j] = 1;
             }
 
         // Build tensors in model's input order
@@ -708,39 +786,20 @@ std::vector<std::vector<float>> OnnxEmbeddingModel::embedBatch(
         {
             if (name == "token_type_ids")
             {
-                ttype_i32.resize(flat_size, 0);
-                inputs.push_back(Ort::Value::CreateTensor<int32_t>(mem, ttype_i32.data(), flat_size, shape.data(), 2));
+                ttype.resize(flat_size, 0);
+                inputs.push_back(Ort::Value::CreateTensor<I>(mem, ttype.data(), flat_size, shape.data(), 2));
             }
             else if (name.find("mask") != std::string::npos)
-                inputs.push_back(Ort::Value::CreateTensor<int32_t>(mem, mask_i32.data(), flat_size, shape.data(), 2));
+                inputs.push_back(Ort::Value::CreateTensor<I>(mem, mask.data(), flat_size, shape.data(), 2));
             else
-                inputs.push_back(Ort::Value::CreateTensor<int32_t>(mem, ids_i32.data(), flat_size, shape.data(), 2));
+                inputs.push_back(Ort::Value::CreateTensor<I>(mem, ids.data(), flat_size, shape.data(), 2));
         }
-    }
-    else
-    {
-        ids_i64.resize(flat_size, impl->tokenizer.pad_id);
-        mask_i64.resize(flat_size, 0);
-        for (size_t i = 0; i < batch; ++i)
-            for (size_t j = 0; j < all_ids[i].size(); ++j)
-            {
-                ids_i64[i * max_len + j] = all_ids[i][j];
-                mask_i64[i * max_len + j] = 1;
-            }
+    };
 
-        for (const auto & name : impl->input_names)
-        {
-            if (name == "token_type_ids")
-            {
-                ttype_i64.resize(flat_size, 0);
-                inputs.push_back(Ort::Value::CreateTensor<int64_t>(mem, ttype_i64.data(), flat_size, shape.data(), 2));
-            }
-            else if (name.find("mask") != std::string::npos)
-                inputs.push_back(Ort::Value::CreateTensor<int64_t>(mem, mask_i64.data(), flat_size, shape.data(), 2));
-            else
-                inputs.push_back(Ort::Value::CreateTensor<int64_t>(mem, ids_i64.data(), flat_size, shape.data(), 2));
-        }
-    }
+    if (impl->inputs_are_int32)
+        prepare(ids_i32, mask_i32, ttype_i32);
+    else
+        prepare(ids_i64, mask_i64, ttype_i64);
 
     const char * output_names[] = {impl->output_name.c_str()};
 
@@ -751,55 +810,22 @@ std::vector<std::vector<float>> OnnxEmbeddingModel::embedBatch(
     auto t3 = Clock::now();
 
     // Extract embeddings, handling both pooled [batch, dims] and per-token [batch, seq, dims] output
-    const float * out_data = outputs[0].GetTensorData<float>();
-    const size_t model_dims = impl->output_dims;
-    std::vector<std::vector<float>> result(batch);
-
-    if (impl->output_rank == 3)
-    {
-        // Per-token output [batch, seq, dims] — need mean pooling over non-padded tokens
-        for (size_t i = 0; i < batch; ++i)
-        {
-            const float * token_embs = out_data + i * max_len * model_dims;
-            const size_t seq_len = all_ids[i].size(); // actual (non-padded) length
-
-            // Mean pool: sum embeddings of real tokens, divide by count
-            result[i].resize(dims, 0.0f);
-            for (size_t t = 0; t < seq_len; ++t)
-                for (size_t d = 0; d < dims; ++d)
-                    result[i][d] += token_embs[t * model_dims + d];
-
-            float inv_count = seq_len > 0 ? 1.0f / static_cast<float>(seq_len) : 0.0f;
-            for (size_t d = 0; d < dims; ++d)
-                result[i][d] *= inv_count;
-
-            // L2 normalize
-            float norm_sq = 0.0f;
-            for (size_t d = 0; d < dims; ++d) norm_sq += result[i][d] * result[i][d];
-            float inv = norm_sq > 0.0f ? 1.0f / std::sqrt(norm_sq) : 0.0f;
-            for (size_t d = 0; d < dims; ++d) result[i][d] *= inv;
-        }
-    }
+    auto type_info = impl->session->GetOutputTypeInfo(0);
+    auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
+    auto elem_type = tensor_info.GetElementType();
+    std::vector<std::vector<float>> result;
+    if (elem_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16)
+        result = extractEmbeddings<Ort::Float16_t>(outputs, batch, max_len, all_ids, dims);
+    else if (elem_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT)
+        result = extractEmbeddings<float>(outputs, batch, max_len, all_ids, dims);
     else
-    {
-        // Already pooled [batch, dims] — just truncate and normalize
-        for (size_t i = 0; i < batch; ++i)
-        {
-            const float * row = out_data + i * model_dims;
-            float norm_sq = 0.0f;
-            for (size_t d = 0; d < dims; ++d) norm_sq += row[d] * row[d];
-            float inv = norm_sq > 0.0f ? 1.0f / std::sqrt(norm_sq) : 0.0f;
-
-            result[i].resize(dims);
-            for (size_t d = 0; d < dims; ++d) result[i][d] = row[d] * inv;
-        }
-    }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported output element type: {}", static_cast<int>(elem_type));
 
     auto t4 = Clock::now();
     LoggerPtr log = getLogger("OnnxEmbeddingModel");
     auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(t4 - t0).count();
     LOG_DEBUG(log, "embedBatch batch={} max_seq={} model_dims={} req_dims={} rank={} | tokenize={}ms prepare={}ms run={}ms extract={}ms total={}ms",
-        batch, max_len, model_dims, dims, impl->output_rank, ts(t0,t1), ts(t1,t2), ts(t2,t3), ts(t3,t4), ts(t0,t4));
+        batch, max_len, impl->output_dims, dims, impl->output_rank, ts(t0,t1), ts(t1,t2), ts(t2,t3), ts(t3,t4), ts(t0,t4));
 
     // Update inference stats
     size_t total_tokens = 0;
@@ -867,5 +893,5 @@ std::vector<float> OnnxEmbeddingModel::embedText(std::string_view text, size_t d
     return batch.empty() ? std::vector<float>(validateDims(dims), 0.0f) : std::move(batch[0]);
 }
 
-} // namespace DB
+}
 #endif

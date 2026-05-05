@@ -69,4 +69,4 @@ public:
     static float cosineSimilarity(std::span<const float> a, std::span<const float> b);
 };
 
-} // namespace DB
+}

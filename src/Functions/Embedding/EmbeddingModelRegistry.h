@@ -68,4 +68,4 @@ private:
     mutable SharedMutex mutex;
 };
 
-} // namespace DB
+}

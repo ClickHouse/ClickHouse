@@ -148,4 +148,4 @@ prefix dimension without retraining.
         {description, syntax, args, {}, ret, {}, {26, 4}, cat});
 }
 
-} // namespace DB
+}

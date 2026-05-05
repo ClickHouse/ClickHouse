@@ -4,12 +4,15 @@
 
 #include <Functions/Embedding/IEmbeddingModel.h>
 
+#include <onnxruntime_cxx_api.h>
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace DB
@@ -99,7 +102,17 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl;
     mutable InferenceStats stats;
+
+
+    template <typename T>
+    std::vector<std::vector<float>> extractEmbeddings(
+        const std::vector<Ort::Value> & outputs,
+        size_t batch,
+        size_t max_len,
+        const std::vector<std::vector<int64_t>> & all_ids,
+        size_t dims) const
+        requires(std::is_same_v<T, Ort::Float16_t> || std::is_same_v<T, float>);
 };
 
-} // namespace DB
+}
 #endif
