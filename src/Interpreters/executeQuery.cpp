@@ -1200,11 +1200,6 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         std::erase_if(data.tables, [&](const StorageID & id) { return !seen.insert(id).second; });
     }
 
-    /// Keep old settings, because they may be changed
-    /// during execution of ATTACH/DETACH queries.
-    auto old_settings = context->getSettingsCopy();
-    SCOPE_EXIT({ context->setSettings(old_settings); });
-
     for (const auto & table_id : data.tables)
     {
         if (table_id.getDatabaseName() == "system")
@@ -1259,18 +1254,32 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         auto detach_query = fmt::format("DETACH TABLE {} SYNC", quoted_name);
         auto attach_query = fmt::format("ATTACH TABLE {}", quoted_name);
 
+        /// The outer query is already registered in the process list with its `query_id`.
+        /// Internal `DETACH`/`ATTACH` queries must use a fresh context with their own
+        /// `query_id`, otherwise `ProcessList::insert` will reject them with
+        /// `QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING`.
+        auto make_internal_context = [&]
+        {
+            auto internal_context = Context::createCopy(context);
+            internal_context->makeQueryContext();
+            internal_context->setCurrentQueryId({});
+            return internal_context;
+        };
+
         bool detached = false;
         try
         {
             {
-                auto detach = executeQuery(detach_query, context, QueryFlags{.internal = true}).second;
-                executeTrivialBlockIO(detach, context);
+                auto internal_context = make_internal_context();
+                auto detach = executeQuery(detach_query, internal_context, QueryFlags{.internal = true}).second;
+                executeTrivialBlockIO(detach, internal_context);
                 detached = true;
             }
 
             {
-                auto attach = executeQuery(attach_query, context, QueryFlags{.internal = true}).second;
-                executeTrivialBlockIO(attach, context);
+                auto internal_context = make_internal_context();
+                auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true}).second;
+                executeTrivialBlockIO(attach, internal_context);
             }
         }
         catch (...)
@@ -1283,8 +1292,9 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             {
                 try
                 {
-                    auto attach = executeQuery(attach_query, context, QueryFlags{.internal = true}).second;
-                    executeTrivialBlockIO(attach, context);
+                    auto internal_context = make_internal_context();
+                    auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true}).second;
+                    executeTrivialBlockIO(attach, internal_context);
                 }
                 catch (...)
                 {
