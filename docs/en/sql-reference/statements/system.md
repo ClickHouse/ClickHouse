@@ -716,13 +716,32 @@ SYSTEM STOP VIEWS
 
 Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
 
-If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`.
+If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`. `START VIEW` also undoes the effect of `PAUSE VIEW`.
 
 ```sql
 SYSTEM START VIEW [db.]name
 ```
 ```sql
 SYSTEM START VIEWS
+```
+
+### SYSTEM PAUSE VIEW, PAUSE VIEWS {#pause-view-pause-views}
+
+Disable periodic refreshing of the given view or all refreshable views.
+Unlike `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEW` does not interrupt a refresh that is already in progress: the running refresh is allowed to finish, and only subsequent refreshes are prevented.
+
+Undo with `SYSTEM START VIEW` or `SYSTEM START VIEWS`.
+
+:::note
+The paused state does not persist across server restarts. After a restart, views will resume their configured refresh schedules.
+In Replicated or Shared databases, `SYSTEM PAUSE VIEW` only affects the current replica.
+:::
+
+```sql
+SYSTEM PAUSE VIEW [db.]name
+```
+```sql
+SYSTEM PAUSE VIEWS
 ```
 
 ### SYSTEM REFRESH VIEW {#refresh-view}
