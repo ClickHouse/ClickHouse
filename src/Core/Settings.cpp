@@ -4583,6 +4583,9 @@ Replace 'multiIf' with only one condition to 'if'.
     DECLARE(Bool, optimize_if_transform_strings_to_enum, false, R"(
 Replaces string-type arguments in If and Transform to enum. Disabled by default cause it could make inconsistent change in distributed query that would lead to its fail.
 )", 0) \
+    DECLARE(Bool, optimize_remove_redundant_semi_join, true, R"(
+Remove redundant SEMI/ANTI JOINs when one right-hand side is a provable subset of another.
+)", 0) \
     DECLARE(Bool, optimize_functions_to_subcolumns, true, R"(
 Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read.
 
