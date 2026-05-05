@@ -421,6 +421,8 @@ enum class AccessType : uint8_t
     M(KAFKA, "", GLOBAL, ALL) \
     M(NATS, "", GLOBAL, ALL) \
     M(RABBITMQ, "", GLOBAL, ALL) \
+    M(YTSAURUS, "", GLOBAL, ALL) \
+    M(ARROW_FLIGHT, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
     \
     /* Consts */ \
