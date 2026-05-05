@@ -45,6 +45,7 @@ public:
 
     using OutStreamCallback = std::function<void(std::ostream &)>;
     using NextCallback = std::function<void(size_t)>;
+    using CheckCancelled = std::function<bool()>;
 
 private:
     /// Byte range, including right bound [begin, end].
@@ -108,11 +109,14 @@ private:
 
     LoggerPtr log;
 
+    CheckCancelled cancellation_check;
+
     bool withPartialContent() const;
 
     void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
 
-    void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false) const;
+    void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false,
+        CheckCancelled check_cancelled = nullptr) const;
 
     CallResult  callImpl(
         Poco::Net::HTTPResponse & response,
@@ -185,6 +189,10 @@ public:
     /// NOTE: parameter on each call is not incremental -- it's all bytes count
     /// passed through the buffer
     void setNextCallback(NextCallback next_callback_);
+
+    /// Set function to check for query cancellation during HTTP retries.
+    /// If set, it will be called between retry attempts to allow faster cancellation.
+    void setCancellationCheck(CheckCancelled check_cancelled_);
 
     const std::string & getCompressionMethod() const;
 
