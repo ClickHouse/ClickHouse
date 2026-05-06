@@ -49,8 +49,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_compliant_nested_types", true, true, "Obsolete setting, the custom encoder always uses compliant nested types."},
             {"output_format_parquet_unsupported_types_as_binary", false, false, "Obsolete setting, the native writer always throws UNKNOWN_TYPE for unsupported types."},
             {"input_format_parquet_use_native_reader_v3", true, true, "Obsolete setting, the native reader v3 is now always used."},
-            {"max_bytes_before_external_join", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."},
             {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
+            {"url_base", "", "", "New setting to specify the base URL for resolving relative URLs in the url table function and URL table engine."},
             {"max_threads_min_free_memory_per_thread", 0, 1073741824, "New setting to limit the number of threads based on available free memory"},
             {"max_insert_threads_min_free_memory_per_thread", 0, 4294967296, "New setting to limit the number of insert threads based on available free memory"},
             {"enable_blob_storage_log_for_read_operations", false, false, "New setting to log blob storage read operations to system.blob_storage_log"},
@@ -60,6 +60,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
+            {"max_bytes_before_external_join", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."},
             {"allow_iceberg_remove_orphan_files", false, false, "New setting to gate Iceberg orphan file removal"},
             {"iceberg_orphan_files_older_than_seconds", 259200, 259200, "New setting for default orphan file age threshold"},
             {"output_format_arrow_unsupported_types_as_binary", false, true, "New setting to convert unsupported CH types to arrow binary instead of UNKNOWN_TYPE exception."},
