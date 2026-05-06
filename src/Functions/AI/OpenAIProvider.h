@@ -22,10 +22,10 @@ namespace DB
   *
   * Embedding request:
   *   POST /v1/embeddings
-  *   {"model": "text-embedding-3-small", "input": ["text 1", "text 2"], "dimensions": 256}
+  *   {"model": "text-embedding-3-small", "input": ["text 1", "text 2", ...], "dimensions": 256}
   *
   * Embedding response:
-  *   {"data": [{"embedding": [0.1, ...], "index": 0}, {"embedding": [0.2, ...], "index": 1}],
+  *   {"data": [{"embedding": [0.1, ...], "index": 0}, {"embedding": [0.2, ...], "index": 1}, ...],
   *    "usage": {"prompt_tokens": 8}}
   */
 class OpenAIProvider : public IAIProvider

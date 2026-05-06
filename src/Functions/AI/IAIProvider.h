@@ -102,7 +102,7 @@ public:
     /// Send a chat completion request and return the parsed response.
     virtual AIResponse call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts) = 0;
 
-    /// Send an embedding request. Default implementation throws `NOT_IMPLEMENTED` for providers without embedding support.
+    /// Send an embedding request.
     virtual AIEmbeddingResponse embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts);
 };
 
