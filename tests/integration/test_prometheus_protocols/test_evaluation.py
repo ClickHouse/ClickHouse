@@ -1491,6 +1491,30 @@ def test_conversion_functions():
         ],
     )
 
+    do_query_test(
+        "vector(scalar(nonexistent_metric))[40:10]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "NaN"], [160, "NaN"], [170, "NaN"], [180, "NaN"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',nan),('1970-01-01 00:02:40.000',nan),('1970-01-01 00:02:50.000',nan),('1970-01-01 00:03:00.000',nan)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "vector(scalar({__name__=~'foo|bar'}))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "NaN"], [120, "NaN"], [130, "NaN"], [140, "NaN"], [150, "NaN"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:50.000',nan),('1970-01-01 00:02:00.000',nan),('1970-01-01 00:02:10.000',nan),('1970-01-01 00:02:20.000',nan),('1970-01-01 00:02:30.000',nan)]",
+            ]
+        ],
+    )
+
 
 def test_date_time_functions():
     do_query_test(
