@@ -47,7 +47,7 @@ TCPServer::TCPServer(TCPServerConnectionFactory::Ptr pFactory, Poco::UInt16 port
     _socket(ServerSocket(portNumber)),
     _thread(threadName(_socket)),
     _stopped(true)
-{    
+{
     Poco::ThreadPool& pool = Poco::ThreadPool::defaultPool();
     if (pParams)
     {
@@ -55,7 +55,7 @@ TCPServer::TCPServer(TCPServerConnectionFactory::Ptr pFactory, Poco::UInt16 port
         if (toAdd > 0) pool.addCapacity(toAdd);
     }
     _pDispatcher = new TCPServerDispatcher(pFactory, pool, pParams);
-    
+
 }
 
 
@@ -111,7 +111,7 @@ void TCPServer::start()
     _thread.start(*this);
 }
 
-    
+
 void TCPServer::stop()
 {
     if (!_stopped)
@@ -135,7 +135,7 @@ void TCPServer::run()
                 try
                 {
                     StreamSocket ss = _socket.acceptConnection();
-                    
+
                     if (!_pConnectionFilter || _pConnectionFilter->accept(ss))
                     {
                         // enable nodelay per default: OSX really needs that
@@ -143,7 +143,7 @@ void TCPServer::run()
                         if (ss.address().family() != AddressFamily::UNIX_LOCAL)
 #endif
                         {
-                            ss.setNoDelay(true);
+                            ss.setNoDelay(_pDispatcher->params().getNoDelay());
                         }
                         _pDispatcher->enqueue(ss);
                     }
@@ -151,6 +151,11 @@ void TCPServer::run()
                     {
                         ErrorHandler::logMessage(Message::PRIO_WARNING, "Filtered out connection from " + ss.peerAddress().toString());
                     }
+                }
+                // Termination request
+                catch (Poco::InvalidArgumentException&)
+                {
+                    break;
                 }
                 catch (Poco::Exception& exc)
                 {
@@ -171,7 +176,7 @@ void TCPServer::run()
             ErrorHandler::handle(exc);
             // possibly a resource issue since poll() failed;
             // give some time to recover before trying again
-            Poco::Thread::sleep(50); 
+            Poco::Thread::sleep(50);
         }
     }
 }
@@ -188,7 +193,7 @@ int TCPServer::maxThreads() const
     return _pDispatcher->maxThreads();
 }
 
-    
+
 int TCPServer::totalConnections() const
 {
     return _pDispatcher->totalConnections();
@@ -206,7 +211,7 @@ int TCPServer::maxConcurrentConnections() const
     return _pDispatcher->maxConcurrentConnections();
 }
 
-    
+
 int TCPServer::queuedConnections() const
 {
     return _pDispatcher->queuedConnections();

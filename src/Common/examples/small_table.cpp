@@ -5,7 +5,7 @@
 #include <Common/HashTable/SmallTable.h>
 
 
-int main(int, char **)
+int mainEntryExampleSmallTable(int, char **)
 {
     {
         using Cont = SmallSet<int, 16>;

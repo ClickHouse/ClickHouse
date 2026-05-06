@@ -13,8 +13,8 @@ namespace ErrorCodes
 
 IMergingTransformBase::IMergingTransformBase(
     size_t num_inputs,
-    const Block & input_header,
-    const Block & output_header,
+    SharedHeader & input_header,
+    SharedHeader & output_header,
     bool have_all_inputs_,
     UInt64 limit_hint_,
     bool always_read_till_end_)
@@ -30,7 +30,7 @@ OutputPort & IMergingTransformBase::getOutputPort()
     return outputs.front();
 }
 
-static InputPorts createPorts(const Blocks & blocks)
+static InputPorts createPorts(const SharedHeaders & blocks)
 {
     InputPorts ports;
     for (const auto & block : blocks)
@@ -39,8 +39,8 @@ static InputPorts createPorts(const Blocks & blocks)
 }
 
 IMergingTransformBase::IMergingTransformBase(
-    const Blocks & input_headers,
-    const Block & output_header,
+    SharedHeaders & input_headers,
+    SharedHeader & output_header,
     bool have_all_inputs_,
     UInt64 limit_hint_,
     bool always_read_till_end_)
@@ -215,7 +215,8 @@ IProcessor::Status IMergingTransformBase::prepare()
                 return Status::NeedData;
 
             state.input_chunk.set(input.pull());
-            if (!state.input_chunk.chunk.hasRows() && !input.isFinished())
+            const auto & input_chunk = state.input_chunk.chunk;
+            if (!input_chunk.hasRows() && !isVirtualRow(input_chunk) && !input.isFinished())
                 return Status::NeedData;
 
             state.has_input = true;

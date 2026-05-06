@@ -1,8 +1,9 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/OpenTelemetryTracingContext.h>
 
+#include <time.h>
 
 namespace Poco::Net
 {
@@ -36,6 +37,8 @@ public:
         LOCAL = 6,
         TCP_INTERSERVER = 7,
         PROMETHEUS = 8,
+        BACKGROUND = 9, // e.g. queries from refreshable materialized views
+        ARROW_FLIGHT = 10,
     };
 
     enum class HTTPMethod : uint8_t
@@ -57,10 +60,15 @@ public:
 
     QueryKind query_kind = QueryKind::NO_QUERY;
 
+    std::shared_ptr<Poco::Net::SocketAddress> connection_address;
+
     /// Current values are not serialized, because it is passed separately.
     String current_user;
     String current_query_id;
     std::shared_ptr<Poco::Net::SocketAddress> current_address;
+
+    /// For IMPERSONATEd session, stores the original authenticated user
+    String authenticated_user;
 
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
@@ -108,6 +116,9 @@ public:
     /// For mysql and postgresql
     UInt64 connection_id = 0;
 
+    /// For interserver in case initial query transport was authenticated via JWT.
+    String jwt;
+
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.
     /// The element can be trusted only if you trust the corresponding proxy.
@@ -122,21 +133,12 @@ public:
     UInt64 distributed_depth = 0;
 
     bool is_replicated_database_internal = false;
+    bool is_shared_catalog_internal = false;
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};
     UInt64 obsolete_count_participating_replicas{0};
     UInt64 number_of_current_replica{0};
-
-    enum class BackgroundOperationType : uint8_t
-    {
-        NOT_A_BACKGROUND_OPERATION = 0,
-        MERGE = 1,
-        MUTATION = 2,
-    };
-
-    /// It's ClientInfo and context created for background operation (not real query)
-    BackgroundOperationType background_operation_type{BackgroundOperationType::NOT_A_BACKGROUND_OPERATION};
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 

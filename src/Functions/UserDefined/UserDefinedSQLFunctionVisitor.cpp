@@ -1,18 +1,23 @@
-#include "UserDefinedSQLFunctionVisitor.h"
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
+#include <stack>
 #include <unordered_map>
 #include <unordered_set>
-#include <stack>
 
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <Core/Settings.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 
 
@@ -25,20 +30,13 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int UNSUPPORTED_METHOD;
+extern const int BAD_ARGUMENTS;
+extern const int UNSUPPORTED_METHOD;
 }
 
 void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 {
     chassert(ast);
-
-    if (const auto * function = ast->template as<ASTFunction>())
-    {
-        std::unordered_set<std::string> udf_in_replace_process;
-        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
-        if (replace_result)
-            ast = replace_result;
-    }
 
     for (auto & child : ast->children)
     {
@@ -64,18 +62,18 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
     }
 }
 
-void UserDefinedSQLFunctionVisitor::visit(IAST * ast, ContextPtr context_)
+namespace
 {
-    if (!ast)
-        return;
-
-    for (auto & child : ast->children)
-        visit(child, context_);
+bool isVariadic(const ASTPtr & arg)
+{
+    return arg->as<ASTAsterisk>() || arg->as<ASTQualifiedAsterisk>() || arg->as<ASTColumnsRegexpMatcher>()
+        || arg->as<ASTColumnsListMatcher>() || arg->as<ASTQualifiedColumnsRegexpMatcher>() || arg->as<ASTQualifiedColumnsListMatcher>();
+}
 }
 
 ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_)
 {
-    if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
+    if (udf_in_replace_process.contains(function.name))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Recursive function call detected during function call {}",
             function.name);
@@ -87,7 +85,12 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     const auto & function_arguments_list = function.children.at(0)->as<ASTExpressionList>();
     auto & function_arguments = function_arguments_list->children;
 
-    const auto & create_function_query = user_defined_function->as<ASTCreateFunctionQuery>();
+    auto * create_function_query = user_defined_function->as<ASTCreateSQLFunctionQuery>();
+
+    if (!create_function_query)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "The function '{}' is not a SQL defined function and is not supported when 'enable_analyzer' is set to false", function.formatForErrorMessage());
+
     auto & function_core_expression = create_function_query->function_core->children.at(0);
 
     const auto & identifiers_expression_list = function_core_expression->children.at(0)->children.at(0)->as<ASTExpressionList>();
@@ -99,6 +102,23 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
             create_function_query->getFunctionName(),
             identifiers_raw.size(),
             function_arguments.size());
+
+    for (const auto & arg : function_arguments)
+    {
+        if (isVariadic(arg))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "It is not possible to replace a variadic argument '{}' in UDF {}",
+                arg->getColumnName(),
+                function.name);
+    }
+
+    if (isVariadic(function_core_expression->children.at(1)))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "It is not possible to replace a variadic argument '{}' in UDF {}",
+            function_core_expression->children.at(1)->getColumnName(),
+            function.name);
 
     std::unordered_map<std::string, ASTPtr> identifier_name_to_function_argument;
 
@@ -125,11 +145,11 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         MarkTableIdentifiersVisitor(identifiers_data).visit(function_body_to_update);
 
         /// Common subexpression elimination. Rewrite rules.
-        QueryNormalizer::Data normalizer_data(aliases, {}, true, context_->getSettingsRef(), true, false);
+        QueryNormalizer::Data normalizer_data(aliases, {}, true, QueryNormalizer::ExtractedSettings(context_->getSettingsRef()), true, false);
         QueryNormalizer(normalizer_data).visit(function_body_to_update);
     }
 
-    auto expression_list = std::make_shared<ASTExpressionList>();
+    auto expression_list = make_intrusive<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));
 
     std::stack<ASTPtr> ast_nodes_to_update;

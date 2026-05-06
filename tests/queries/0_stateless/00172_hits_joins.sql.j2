@@ -1,5 +1,5 @@
--- Tags: stateful, no-parallel-replicas, no-s3-storage
--- no-s3-storage: https://github.com/ClickHouse/ClickHouse/issues/74943
+-- Tags: stateful, no-parallel-replicas, no-object-storage, long
+-- no-object-storage: https://github.com/ClickHouse/ClickHouse/issues/74943
 {% for join_algorithm in ['hash', 'parallel_hash', 'full_sorting_merge', 'grace_hash'] -%}
 
 SET max_rows_in_join = '{% if join_algorithm == 'grace_hash' %}10K{% else %}0{% endif %}';

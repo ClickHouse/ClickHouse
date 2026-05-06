@@ -6,11 +6,12 @@
 
 #include <Interpreters/ActionsDAG.h>
 
-#include <Planner/PlannerContext.h>
 #include <Planner/PlannerAggregation.h>
-#include <Planner/PlannerWindowFunctions.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
-#include "Core/NamesAndTypes.h"
+#include <Core/NamesAndTypes.h>
+#include <Planner/PlannerWindowFunctions.h>
 
 namespace DB
 {
@@ -18,6 +19,7 @@ namespace DB
 struct ProjectionAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr projection_actions;
+    CorrelatedSubtrees correlated_subtrees;
     Names projection_column_names;
     NamesWithAliases projection_column_names_with_display_aliases;
     ActionsAndProjectInputsFlagPtr project_names_actions;
@@ -26,23 +28,15 @@ struct ProjectionAnalysisResult
 struct FilterAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr filter_actions;
+    CorrelatedSubtrees correlated_subtrees;
     std::string filter_column_name;
     bool remove_filter_column = false;
 };
 
 struct AggregationAnalysisResult
 {
-    Names getAggregationKeyNames() const
-    {
-        Names result;
-        result.reserve(aggregation_keys.size());
-        for (const auto & key : aggregation_keys)
-            result.push_back(key.name);
-        return result;
-    }
-
     ActionsAndProjectInputsFlagPtr before_aggregation_actions;
-    NamesAndTypes aggregation_keys;
+    Names aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
@@ -58,6 +52,7 @@ struct SortAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
+    ActionsAndProjectInputsFlagPtr before_interpolate_actions;
 };
 
 struct LimitByAnalysisResult

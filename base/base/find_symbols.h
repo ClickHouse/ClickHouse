@@ -49,12 +49,12 @@ struct SearchSymbols
     explicit SearchSymbols(std::string in)
         : str(std::move(in))
     {
-#if defined(__SSE4_2__)
         if (str.size() > BUFFER_SIZE)
         {
             throw std::runtime_error("SearchSymbols may contain at most " + std::to_string(BUFFER_SIZE) + " symbols but " + std::to_string(str.size()) + " symbols were provided");
         }
 
+#if defined(__SSE4_2__)
         char tmp_safety_buffer[BUFFER_SIZE] = {0};
 
         memcpy(tmp_safety_buffer, str.data(), str.size());
@@ -149,7 +149,7 @@ constexpr uint16_t maybe_negate(uint16_t x)
     if constexpr (positive)
         return x;
     else
-        return ~x;
+        return static_cast<uint16_t>(~x);
 }
 
 enum class ReturnMode : uint8_t
@@ -274,7 +274,7 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
     const char * pos = begin;
 
 #if defined(__SSE4_2__)
-    constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
+    constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;  // NOLINT(misc-redundant-expression)
 
     __m128i set = _mm_setr_epi8(c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13, c14, c15, c16);
 

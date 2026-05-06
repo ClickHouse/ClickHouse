@@ -1,6 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <AggregateFunctions/AggregateFunctionAvg.h>
 
@@ -44,6 +46,25 @@ public:
     }
 
     String getName() const final { return "sumCount"; }
+
+    /// Keep the legacy nullable behavior/state layout for sumCount.
+    /// After `Nullable(Tuple)` was introduced, for Nullable arguments in the
+    /// generic Null-combinator path it started using `AggregateFunctionNullUnary<true, true>`
+    /// instead of `AggregateFunctionNullUnary<false, false>` for sumCount.
+    /// This adds a leading null-flag byte during serialization and expects that
+    /// byte during deserialization, which breaks compatibility with previously
+    /// serialized sumCount states.
+    /// So we force the legacy adapter for sumCount to preserve compatibility.
+    /// The extra null-flag is also redundant for sumCount: "has non-NULL rows"
+    /// can be inferred from `count` (`count > 0` means at least one row was seen).
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function,
+        const DataTypes & arguments,
+        const Array & params,
+        const AggregateFunctionProperties & /*properties*/) const final
+    {
+        return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
+    }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -101,7 +122,42 @@ createAggregateFunctionSumCount(const std::string & name, const DataTypes & argu
 
 void registerAggregateFunctionSumCount(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sumCount", createAggregateFunctionSumCount);
+    FunctionDocumentation::Description description_sumCount = R"(
+Calculates the sum of the numbers and counts the number of rows at the same time. The function is used by ClickHouse query optimizer: if there are multiple `sum`, `count` or `avg` functions in a query, they can be replaced to single `sumCount` function to reuse the calculations. The function is rarely needed to use explicitly.
+
+**See also**
+
+- [`optimize_syntax_fuse_functions`](../../../operations/settings/settings.md#optimize_syntax_fuse_functions) setting.
+    )";
+    FunctionDocumentation::Syntax syntax_sumCount = R"(
+sumCount(x)
+    )";
+    FunctionDocumentation::Parameters parameters_sumCount = {};
+    FunctionDocumentation::Arguments arguments_sumCount = {
+        {"x", "Input value.", {"(U)Int*", "Float", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_sumCount = {"Returns a tuple `(sum, count)`, where `sum` is the sum of numbers and `count` is the number of rows with not-NULL values.", {"Tuple"}};
+    FunctionDocumentation::Examples examples_sumCount = {
+    {
+        "Basic usage",
+        R"(
+CREATE TABLE s_table (x Int8) ENGINE = Log;
+INSERT INTO s_table SELECT number FROM numbers(0, 20);
+INSERT INTO s_table VALUES (NULL);
+SELECT sumCount(x) FROM s_table;
+        )",
+        R"(
+┌─sumCount(x)─┐
+│ (190,20)    │
+└─────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_sumCount = {21, 6};
+    FunctionDocumentation::Category category_sumCount = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_sumCount = {description_sumCount, syntax_sumCount, arguments_sumCount, parameters_sumCount, returned_value_sumCount, examples_sumCount, introduced_in_sumCount, category_sumCount};
+
+    factory.registerFunction("sumCount", {createAggregateFunctionSumCount, documentation_sumCount});
 }
 
 }

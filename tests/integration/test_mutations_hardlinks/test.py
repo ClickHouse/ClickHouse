@@ -9,7 +9,11 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance("node1", main_configs=["configs/wide_parts_only.xml"])
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/wide_parts_only.xml"],
+    with_remote_database_disk=False,  # The test checks hardlinks in the local disk
+)
 
 
 @pytest.fixture(scope="module")
@@ -45,6 +49,7 @@ def check_exists(table, part_path, column_file):
 
 
 def test_update_mutation(started_cluster):
+    node1.query("DROP TABLE IF EXISTS table_for_update")
     node1.query(
         "CREATE TABLE table_for_update(key UInt64, value1 UInt64, value2 String) ENGINE MergeTree() ORDER BY tuple()"
     )
@@ -82,8 +87,11 @@ def test_update_mutation(started_cluster):
     check_hardlinks("table_for_update", "all_1_1_0_3", "value1.bin", 1)
     check_hardlinks("table_for_update", "all_1_1_0_3", "value2.bin", 1)
 
+    node1.query("DROP TABLE table_for_update")
+
 
 def test_modify_mutation(started_cluster):
+    node1.query("DROP TABLE IF EXISTS table_for_modify")
     node1.query(
         "CREATE TABLE table_for_modify(key UInt64, value1 UInt64, value2 String) ENGINE MergeTree() ORDER BY tuple()"
     )
@@ -109,8 +117,11 @@ def test_modify_mutation(started_cluster):
     check_hardlinks("table_for_modify", "all_1_1_0_2", "value1.bin", 2)
     check_hardlinks("table_for_modify", "all_1_1_0_2", "value2.bin", 1)
 
+    node1.query("DROP TABLE table_for_modify")
+
 
 def test_drop_mutation(started_cluster):
+    node1.query("DROP TABLE IF EXISTS table_for_drop")
     node1.query(
         "CREATE TABLE table_for_drop(key UInt64, value1 UInt64, value2 String) ENGINE MergeTree() ORDER BY tuple()"
     )
@@ -136,8 +147,11 @@ def test_drop_mutation(started_cluster):
     with pytest.raises(Exception):
         check_exists("table_for_drop", "all_1_1_0_2", "value2.mrk")
 
+    node1.query("DROP TABLE table_for_drop")
+
 
 def test_delete_and_drop_mutation(started_cluster):
+    node1.query("DROP TABLE IF EXISTS table_for_delete_and_drop")
     node1.query(
         "CREATE TABLE table_for_delete_and_drop(key UInt64, value1 UInt64, value2 String) ENGINE MergeTree() ORDER BY tuple()"
     )
@@ -188,3 +202,5 @@ def test_delete_and_drop_mutation(started_cluster):
         check_exists("table_for_delete_and_drop", "all_1_1_0_3", "value2.bin")
     with pytest.raises(Exception):
         check_exists("table_for_delete_and_drop", "all_1_1_0_3", "value2.mrk")
+
+    node1.query("DROP TABLE table_for_delete_and_drop")

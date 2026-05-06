@@ -1,18 +1,21 @@
 ---
-slug: /en/sql-reference/aggregate-functions/parametric-functions
+description: 'Documentation for Parametric Aggregate Functions'
+sidebar_label: 'Parametric'
 sidebar_position: 38
-sidebar_label: Parametric
+slug: /sql-reference/aggregate-functions/parametric-functions
+title: 'Parametric Aggregate Functions'
+doc_type: 'reference'
 ---
 
-# Parametric Aggregate Functions
+# Parametric aggregate functions
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
-## histogram
+## histogram {#histogram}
 
 Calculates an adaptive histogram. It does not guarantee precise results.
 
-``` sql
+```sql
 histogram(number_of_bins)(values)
 ```
 
@@ -20,7 +23,7 @@ The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.or
 
 **Arguments**
 
-`values` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in input values.
+`values` — [Expression](/sql-reference/syntax#expressions) resulting in input values.
 
 **Parameters**
 
@@ -40,7 +43,7 @@ The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.or
 
 **Example**
 
-``` sql
+```sql
 SELECT histogram(5)(number + 1)
 FROM (
     SELECT *
@@ -49,15 +52,15 @@ FROM (
 )
 ```
 
-``` text
+```text
 ┌─histogram(5)(plus(number, 1))───────────────────────────────────────────┐
 │ [(1,4.5,4),(4.5,8.5,4),(8.5,12.75,4.125),(12.75,17,4.625),(17,20,3.25)] │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-You can visualize a histogram with the [bar](../../sql-reference/functions/other-functions.md#function-bar) function, for example:
+You can visualize a histogram with the [bar](/sql-reference/functions/other-functions#bar) function, for example:
 
-``` sql
+```sql
 WITH histogram(5)(rand() % 100) AS hist
 SELECT
     arrayJoin(hist).3 AS height,
@@ -70,7 +73,7 @@ FROM
 )
 ```
 
-``` text
+```text
 ┌─height─┬─bar───┐
 │  2.125 │ █▋    │
 │   3.25 │ ██▌   │
@@ -82,13 +85,13 @@ FROM
 
 In this case, you should remember that you do not know the histogram bin borders.
 
-## sequenceMatch
+## sequenceMatch {#sequencematch}
 
 Checks whether the sequence contains an event chain that matches the pattern.
 
 **Syntax**
 
-``` sql
+```sql
 sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
@@ -113,7 +116,7 @@ Events that occur at the same second may lay in the sequence in an undefined ord
 
 Type: `UInt8`.
 
-#### Pattern syntax
+#### Pattern syntax {#pattern-syntax}
 
 - `(?N)` — Matches the condition argument at position `N`. Conditions are numbered in the `[1, 32]` range. For example, `(?1)` matches the argument passed to the `cond1` parameter.
 
@@ -125,7 +128,7 @@ Type: `UInt8`.
 
 Consider data in the `t` table:
 
-``` text
+```text
 ┌─time─┬─number─┐
 │    1 │      1 │
 │    2 │      3 │
@@ -135,11 +138,11 @@ Consider data in the `t` table:
 
 Perform the query:
 
-``` sql
+```sql
 SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2) FROM t
 ```
 
-``` text
+```text
 ┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2))─┐
 │                                                                     1 │
 └───────────────────────────────────────────────────────────────────────┘
@@ -147,11 +150,11 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2) FROM t
 
 The function found the event chain where number 2 follows number 1. It skipped number 3 between them, because the number is not described as an event. If we want to take this number into account when searching for the event chain given in the example, we should make a condition for it.
 
-``` sql
+```sql
 SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM t
 ```
 
-``` text
+```text
 ┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2), equals(number, 3))─┐
 │                                                                                        0 │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
@@ -159,11 +162,11 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM 
 
 In this case, the function couldn't find the event chain matching the pattern, because the event for number 3 occurred between 1 and 2. If in the same case we checked the condition for number 4, the sequence would match the pattern.
 
-``` sql
+```sql
 SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM t
 ```
 
-``` text
+```text
 ┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2), equals(number, 4))─┐
 │                                                                                        1 │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
@@ -173,7 +176,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 - [sequenceCount](#sequencecount)
 
-## sequenceCount
+## sequenceCount {#sequencecount}
 
 Counts the number of event chains that matched the pattern. The function searches event chains that do not overlap. It starts to search for the next chain after the current chain is matched.
 
@@ -183,7 +186,7 @@ Events that occur at the same second may lay in the sequence in an undefined ord
 
 **Syntax**
 
-``` sql
+```sql
 sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 ```
 
@@ -207,7 +210,7 @@ Type: `UInt64`.
 
 Consider data in the `t` table:
 
-``` text
+```text
 ┌─time─┬─number─┐
 │    1 │      1 │
 │    2 │      3 │
@@ -220,17 +223,17 @@ Consider data in the `t` table:
 
 Count how many times the number 2 occurs after the number 1 with any amount of other numbers between them:
 
-``` sql
+```sql
 SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 ```
 
-``` text
+```text
 ┌─sequenceCount('(?1).*(?2)')(time, equals(number, 1), equals(number, 2))─┐
 │                                                                       2 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## sequenceMatchEvents
+## sequenceMatchEvents {#sequencematchevents}
 
 Return event timestamps of longest event chains that matched the pattern.
 
@@ -240,7 +243,7 @@ Events that occur at the same second may lay in the sequence in an undefined ord
 
 **Syntax**
 
-``` sql
+```sql
 sequenceMatchEvents(pattern)(timestamp, cond1, cond2, ...)
 ```
 
@@ -264,7 +267,7 @@ Type: Array.
 
 Consider data in the `t` table:
 
-``` text
+```text
 ┌─time─┬─number─┐
 │    1 │      1 │
 │    2 │      3 │
@@ -277,11 +280,11 @@ Consider data in the `t` table:
 
 Return timestamps of events for longest chain 
 
-``` sql
+```sql
 SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2, number = 4) FROM t
 ```
 
-``` text
+```text
 ┌─sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, equals(number, 1), equals(number, 2), equals(number, 4))─┐
 │ [1,3,4]                                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -291,7 +294,7 @@ SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2,
 
 - [sequenceMatch](#sequencematch)
 
-## windowFunnel
+## windowFunnel {#windowfunnel}
 
 Searches for event chains in a sliding time window and calculates the maximum number of events that occurred from the chain.
 
@@ -305,23 +308,24 @@ The function works according to the algorithm:
 
 **Syntax**
 
-``` sql
+```sql
 windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 ```
 
 **Arguments**
 
-- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it's value can't exceed the Int64 maximum, which is 2^63 - 1).
+- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](/sql-reference/data-types/datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it's value can't exceed the Int64 maximum, which is 2^63 - 1).
 - `cond` — Conditions or data describing the chain of events. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Parameters**
 
 - `window` — Length of the sliding window, it is the time interval between the first and the last condition. The unit of `window` depends on the `timestamp` itself and varies. Determined using the expression `timestamp of cond1 <= timestamp of cond2 <= ... <= timestamp of condN <= timestamp of cond1 + window`.
 - `mode` — It is an optional argument. One or more modes can be set.
-    - `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing. Note: it may work unexpectedly if several conditions hold for the same event.
-    - `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
-    - `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
-    - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times
+  - `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing. Note: it may work unexpectedly if several conditions hold for the same event.
+  - `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
+  - `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
+  - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times.
+  - `'allow_reentry'` — Ignore events that violate the strict order. E.g. in the case of A->A->B->C, it finds A->B->C by ignoring the redundant A and the max event level is 3.
 
 **Returned value**
 
@@ -343,7 +347,7 @@ Set the following chain of events:
 
 Input table:
 
-``` text
+```text
 ┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
 │ 2019-01-28 │       1 │ 2019-01-29 10:00:00 │    1003 │ phone   │
 └────────────┴─────────┴─────────────────────┴─────────┴─────────┘
@@ -362,7 +366,7 @@ Find out how far the user `user_id` could get through the chain in a period in J
 
 Query:
 
-``` sql
+```sql
 SELECT
     level,
     count() AS c
@@ -381,22 +385,53 @@ ORDER BY level ASC;
 
 Result:
 
-``` text
+```text
 ┌─level─┬─c─┐
 │     4 │ 1 │
 └───────┴───┘
 ```
 
-## retention
+**Example with allow_reentry mode**
+
+This example demonstrates how `allow_reentry` mode works with user reentry patterns:
+
+```sql
+-- Sample data: user visits checkout -> product detail -> checkout again -> payment
+-- Without allow_reentry: stops at level 2 (product detail page)
+-- With allow_reentry: reaches level 4 (payment completion)
+
+SELECT
+    level,
+    count() AS users
+FROM
+(
+    SELECT
+        user_id,
+        windowFunnel(3600, 'strict_order', 'allow_reentry')(
+            timestamp,
+            action = 'begin_checkout',      -- Step 1: Begin checkout
+            action = 'view_product_detail', -- Step 2: View product detail  
+            action = 'begin_checkout',      -- Step 3: Begin checkout again (reentry)
+            action = 'complete_payment'     -- Step 4: Complete payment
+        ) AS level
+    FROM user_events
+    WHERE event_date = today()
+    GROUP BY user_id
+)
+GROUP BY level
+ORDER BY level ASC;
+```
+
+## retention {#retention}
 
 The function takes as arguments a set of conditions from 1 to 32 arguments of type `UInt8` that indicate whether a certain condition was met for the event.
-Any condition can be specified as an argument (as in [WHERE](../../sql-reference/statements/select/where.md#select-where)).
+Any condition can be specified as an argument (as in [WHERE](/sql-reference/statements/select/where)).
 
 The conditions, except the first, apply in pairs: the result of the second will be true if the first and second are true, of the third if the first and third are true, etc.
 
 **Syntax**
 
-``` sql
+```sql
 retention(cond1, cond2, ..., cond32);
 ```
 
@@ -419,7 +454,7 @@ Let's consider an example of calculating the `retention` function to determine s
 
 **1.** Create a table to illustrate an example.
 
-``` sql
+```sql
 CREATE TABLE retention_test(date Date, uid Int32) ENGINE = Memory;
 
 INSERT INTO retention_test SELECT '2020-01-01', number FROM numbers(5);
@@ -431,13 +466,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM retention_test
 ```
 
 Result:
 
-``` text
+```text
 ┌───────date─┬─uid─┐
 │ 2020-01-01 │   0 │
 │ 2020-01-01 │   1 │
@@ -480,7 +515,7 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT
     uid,
     retention(date = '2020-01-01', date = '2020-01-02', date = '2020-01-03') AS r
@@ -492,7 +527,7 @@ ORDER BY uid ASC
 
 Result:
 
-``` text
+```text
 ┌─uid─┬─r───────┐
 │   0 │ [1,1,1] │
 │   1 │ [1,1,1] │
@@ -516,7 +551,7 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT
     sum(r[1]) AS r1,
     sum(r[2]) AS r2,
@@ -534,7 +569,7 @@ FROM
 
 Result:
 
-``` text
+```text
 ┌─r1─┬─r2─┬─r3─┐
 │  5 │  5 │  5 │
 └────┴────┴────┘
@@ -546,7 +581,7 @@ Where:
 - `r2`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-02 (`cond1` and `cond2` conditions).
 - `r3`- the number of unique visitors who visited the site during a specific time period on 2020-01-01 and 2020-01-03 (`cond1` and `cond3` conditions).
 
-## uniqUpTo(N)(x)
+## uniqUpTo(N)(x) {#uniquptonx}
 
 Calculates the number of different values of the argument up to a specified limit, `N`. If the number of different argument values is greater than `N`, this function returns `N` + 1, otherwise it calculates the exact value.
 
@@ -566,9 +601,9 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 `uniqUpTo(4)(UserID)` calculates the number of unique `UserID` values for each `SearchPhrase`, but it only counts up to 4 unique values. If there are more than 4 unique `UserID` values for a `SearchPhrase`, the function returns 5 (4 + 1). The `HAVING` clause then filters out the `SearchPhrase` values for which the number of unique `UserID` values is less than 5. This will give you a list of search keywords that were used by at least 5 unique users.
 
-## sumMapFiltered
+## sumMapFiltered {#summapfiltered}
 
-This function behaves the same as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys.
+This function behaves the same as [sumMap](/sql-reference/aggregate-functions/reference/summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys.
 
 **Syntax**
 
@@ -616,9 +651,9 @@ Result:
    └─────────────────────────────────────────────────────────────────┘
 ```
 
-## sumMapFilteredWithOverflow
+## sumMapFilteredWithOverflow {#summapfilteredwithoverflow}
 
-This function behaves the same as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys. It differs from the [sumMapFiltered](#summapfiltered) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
+This function behaves the same as [sumMap](/sql-reference/aggregate-functions/reference/summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys. It differs from the [sumMapFiltered](#summapfiltered) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
 
 **Syntax**
 
@@ -678,7 +713,7 @@ Result:
    └──────────────────────┴────────────────────────────────────┘
 ```
 
-## sequenceNextNode
+## sequenceNextNode {#sequencenextnode}
 
 Returns a value of the next event that matched an event chain.
 
@@ -686,25 +721,25 @@ _Experimental function, `SET allow_experimental_funnel_functions = 1` to enable 
 
 **Syntax**
 
-``` sql
+```sql
 sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event1, event2, event3, ...)
 ```
 
 **Parameters**
 
 - `direction` — Used to navigate to directions.
-    - forward — Moving forward.
-    - backward — Moving backward.
+  - forward — Moving forward.
+  - backward — Moving backward.
 
 - `base` — Used to set the base point.
-    - head — Set the base point to the first event.
-    - tail — Set the base point to the last event.
-    - first_match — Set the base point to the first matched `event1`.
-    - last_match — Set the base point to the last matched `event1`.
+  - head — Set the base point to the first event.
+  - tail — Set the base point to the last event.
+  - first_match — Set the base point to the first matched `event1`.
+  - last_match — Set the base point to the last matched `event1`.
 
 **Arguments**
 
-- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types.
+- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](/sql-reference/data-types/datetime) and other unsigned integer types.
 - `event_column` — Name of the column containing the value of the next event to be returned. Data types supported: [String](../../sql-reference/data-types/string.md) and [Nullable(String)](../../sql-reference/data-types/nullable.md).
 - `base_condition` — Condition that the base point must fulfill.
 - `event1`, `event2`, ... — Conditions describing the chain of events. [UInt8](../../sql-reference/data-types/int-uint.md).
@@ -722,7 +757,7 @@ It can be used when events are A->B->C->D->E and you want to know the event foll
 
 The query statement searching the event following A->B:
 
-``` sql
+```sql
 CREATE TABLE test_flow (
     dt DateTime,
     id int,
@@ -738,7 +773,7 @@ SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'A', page = 'A',
 
 Result:
 
-``` text
+```text
 ┌─id─┬─next_flow─┐
 │  1 │ C         │
 └────┴───────────┘
@@ -746,7 +781,7 @@ Result:
 
 **Behavior for `forward` and `head`**
 
-``` sql
+```sql
 ALTER TABLE test_flow DELETE WHERE 1 = 1 settings mutations_sync = 1;
 
 INSERT INTO test_flow VALUES (1, 1, 'Home') (2, 1, 'Gift') (3, 1, 'Exit');
@@ -754,7 +789,7 @@ INSERT INTO test_flow VALUES (1, 2, 'Home') (2, 2, 'Home') (3, 2, 'Gift') (4, 2,
 INSERT INTO test_flow VALUES (1, 3, 'Gift') (2, 3, 'Home') (3, 3, 'Gift') (4, 3, 'Basket');
 ```
 
-``` sql
+```sql
 SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'Home', page = 'Home', page = 'Gift') FROM test_flow GROUP BY id;
 
                   dt   id   page
@@ -775,7 +810,7 @@ SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'Home', page = '
 
 **Behavior for `backward` and `tail`**
 
-``` sql
+```sql
 SELECT id, sequenceNextNode('backward', 'tail')(dt, page, page = 'Basket', page = 'Basket', page = 'Gift') FROM test_flow GROUP BY id;
 
                  dt   id   page
@@ -794,10 +829,9 @@ SELECT id, sequenceNextNode('backward', 'tail')(dt, page, page = 'Basket', page 
 1970-01-01 09:00:04    3   Basket // Base point, Matched with Basket
 ```
 
-
 **Behavior for `forward` and `first_match`**
 
-``` sql
+```sql
 SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
 
                  dt   id   page
@@ -816,7 +850,7 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:04    3   Basket
 ```
 
-``` sql
+```sql
 SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
 
                  dt   id   page
@@ -835,10 +869,9 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:04    3   Basket
 ```
 
-
 **Behavior for `backward` and `last_match`**
 
-``` sql
+```sql
 SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
 
                  dt   id   page
@@ -857,7 +890,7 @@ SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:04    3   Basket
 ```
 
-``` sql
+```sql
 SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
 
                  dt   id   page
@@ -876,10 +909,9 @@ SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:04    3   Basket
 ```
 
-
 **Behavior for `base_condition`**
 
-``` sql
+```sql
 CREATE TABLE test_flow_basecond
 (
     `dt` DateTime,
@@ -894,7 +926,7 @@ ORDER BY id;
 INSERT INTO test_flow_basecond VALUES (1, 1, 'A', 'ref4') (2, 1, 'A', 'ref3') (3, 1, 'B', 'ref2') (4, 1, 'B', 'ref1');
 ```
 
-``` sql
+```sql
 SELECT id, sequenceNextNode('forward', 'head')(dt, page, ref = 'ref1', page = 'A') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref
@@ -904,7 +936,7 @@ SELECT id, sequenceNextNode('forward', 'head')(dt, page, ref = 'ref1', page = 'A
  1970-01-01 09:00:04    1   B      ref1
  ```
 
-``` sql
+```sql
 SELECT id, sequenceNextNode('backward', 'tail')(dt, page, ref = 'ref4', page = 'B') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref
@@ -914,7 +946,7 @@ SELECT id, sequenceNextNode('backward', 'tail')(dt, page, ref = 'ref4', page = '
  1970-01-01 09:00:04    1   B      ref1 // The tail can not be base point because the ref column of the tail unmatched with 'ref4'.
 ```
 
-``` sql
+```sql
 SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, ref = 'ref3', page = 'A') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref
@@ -924,7 +956,7 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, ref = 'ref3', pa
  1970-01-01 09:00:04    1   B      ref1
 ```
 
-``` sql
+```sql
 SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, ref = 'ref2', page = 'B') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref

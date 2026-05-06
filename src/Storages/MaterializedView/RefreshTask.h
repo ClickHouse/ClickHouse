@@ -3,8 +3,10 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/StopToken.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <IO/Progress.h>
 
 #include <random>
 
@@ -39,7 +41,7 @@ public:
     struct Info;
 
     /// Never call it manually, public for shared_ptr construction only
-    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty);
+    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup);
 
     /// If !attach, creates coordination znodes if needed.
     static OwnedRefreshTask create(
@@ -48,12 +50,14 @@ public:
         const DB::ASTRefreshStrategy & strategy,
         bool attach,
         bool coordinated,
-        bool empty);
+        bool empty,
+        bool is_restore_from_backup);
 
     /// Called at most once.
     void startup();
+    void finalizeRestoreFromBackup();
     /// Permanently disable task scheduling and remove this table from RefreshSet.
-    /// Ok to call multiple times, but not in parallel.
+    /// Ok to call multiple times, including in parallel.
     /// Ok to call even if startup() wasn't called or failed.
     void shutdown();
     /// Call when dropping the table, after shutdown(). Removes coordination znodes if needed.
@@ -65,11 +69,21 @@ public:
     void alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy);
 
     Info getInfo() const;
+    String getCoordinationPath() const { return coordination.path; }
 
-    /// Enable task scheduling
+    bool canCreateOrDropOtherTables() const;
+
+    /// Methods to pause/unpause refreshing on this replica or all replicas.
+    /// The per-replica pause and global pause are two separate flags; if either of them is set,
+    /// no refreshes will run.
     void start();
-    /// Disable task scheduling
     void stop();
+    /// Like `stop`, but does not interrupt the currently running refresh; only prevents future
+    /// refreshes from starting. Resumed by `start`.
+    void pause();
+    void startReplicated();
+    void stopReplicated(const String & reason);
+
     /// Schedule task immediately
     void run();
     /// Cancel task execution
@@ -85,8 +99,14 @@ public:
     /// Returns false if `deadline` was reached before the work completed. Used by server shutdown.
     bool tryJoinBackgroundTask(std::chrono::steady_clock::time_point deadline);
 
-    /// A measure of how far this view has progressed. Used by dependent views.
-    std::chrono::sys_seconds getNextRefreshTimeslot() const;
+    struct DependencyRefreshInfo
+    {
+        std::chrono::sys_seconds next_refresh_timeslot;
+        String last_refresh_replica;
+    };
+
+    /// Used information needed for views that depend on this one.
+    DependencyRefreshInfo getDependencyInfo() const;
 
     /// Called when refresh scheduling needs to be reconsidered, e.g. after a refresh happens in
     /// any task that this task depends on.
@@ -114,7 +134,7 @@ public:
 
         /// Time when the latest successful refresh started.
         std::chrono::sys_seconds last_success_time;
-        std::chrono::milliseconds last_success_duration;
+        std::chrono::milliseconds last_success_duration{0};
         /// Note that this may not match the DB if a refresh managed to EXCHANGE tables, then failed to write to keeper.
         /// That can only happen if last_attempt_succeeded = false.
         UUID last_success_table_uuid;
@@ -154,8 +174,10 @@ public:
         RefreshState state;
         std::chrono::system_clock::time_point next_refresh_time;
         CoordinationZnode znode;
+        String replica_name;
         bool refresh_running;
         ProgressValues progress;
+        std::optional<String> unexpected_error; // refreshing is stopped because of unexpected error
     };
 
 private:
@@ -168,7 +190,8 @@ private:
         /// │   ├── name1
         /// │   ├── name2
         /// │   └── name3
-        /// └── ["running"] (RunningZnode, ephemeral)
+        /// ├── ["running"] (ephemeral)
+        /// └── ["paused"]
 
         struct WatchState
         {
@@ -179,6 +202,7 @@ private:
 
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
+        bool paused_znode_exists = false;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
         /// Whether we use Keeper to coordinate refresh across replicas. If false, we don't write to Keeper,
@@ -208,13 +232,20 @@ private:
     {
         /// Refreshes are stopped, e.g. by SYSTEM STOP VIEW.
         bool stop_requested = false;
+        /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
+        std::optional<String> unexpected_error;
         /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
         bool out_of_schedule_refresh_requested = false;
 
+        bool should_recalculate_dependencies = true;
+
         /// Timestamp representing the progress of refreshable views we depend on. We're allowed to do
         /// refreshes for timeslots <= dependencies_satisfied_until without waiting for dependencies.
-        /// If negative, we should recalculate this value.
-        std::chrono::sys_seconds dependencies_satisfied_until {std::chrono::seconds(-1)};
+        std::chrono::sys_seconds dependencies_satisfied_until {};
+
+        /// If set, we should wait until this time before considering dependencies satisfied.
+        /// Used for giving higher-priority replicas a chance to start the refresh before us.
+        std::optional<std::chrono::system_clock::time_point> dependencies_delay;
 
         /// Used in tests. If not INT64_MIN, we pretend that this is the current time, instead of calling system_clock::now().
         std::atomic<Int64> fake_clock {INT64_MIN};
@@ -237,6 +268,7 @@ private:
 
     /// Calls refreshTask() from background thread.
     BackgroundSchedulePoolTaskHolder refresh_task;
+    Coordination::WatchCallbackPtr refresh_task_watch_callback;
 
     CoordinationState coordination;
     ExecutionState execution;
@@ -261,8 +293,8 @@ private:
     void refreshTask();
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
-    /// Mutex must be unlocked. Called only from refresh_task.
-    UUID executeRefreshUnlocked(bool append, int32_t root_znode_version);
+    /// Mutex must be unlocked. Called only from refresh_task. Doesn't throw.
+    std::optional<UUID> executeRefreshUnlocked(bool append, int32_t root_znode_version, std::chrono::system_clock::time_point start_time, const Stopwatch & stopwatch, const String & log_comment, String & out_error_message);
 
     /// Assigns dependencies_satisfied_until.
     void updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock);
@@ -275,6 +307,7 @@ private:
     void removeRunningZnodeIfMine(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
+    void scheduleRefresh(std::lock_guard<std::mutex> & lock);
     void interruptExecution();
     std::chrono::system_clock::time_point currentTime() const;
 };
@@ -297,5 +330,4 @@ struct OwnedRefreshTask
     RefreshTask& operator*() const { return *ptr; }
     explicit operator bool() const { return ptr != nullptr; }
 };
-
 }

@@ -1,5 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Exception.h>
@@ -16,7 +17,7 @@ using namespace DB;
 /// This test is useful for assessing the performance of getting the numbers of all currently committing
 /// blocks from ZooKeeper. This is needed to select merges without checking that all block numbers between
 /// parts have been abandoned (see DB::ReplicatedMergeTreeMergePredicate for details).
-int main(int argc, char ** argv)
+int mainEntryExampleGetCurrentInsertsInReplicated(int argc, char ** argv)
 try
 {
     if (argc != 3)
@@ -29,7 +30,8 @@ try
     auto config = processor.loadConfig().configuration;
     String zookeeper_path = argv[2];
 
-    auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(*config, zkutil::getZooKeeperConfigName(*config), nullptr);
+    zkutil::ZooKeeperArgs args(*config, zkutil::getZooKeeperConfigName(*config));
+    auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(args), nullptr);
 
     std::unordered_map<String, std::set<Int64>> current_inserts;
 

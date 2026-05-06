@@ -1,4 +1,4 @@
-#include "Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h"
+#include <Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h>
 
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h>
@@ -18,12 +18,11 @@
 
 #include <Interpreters/Context.h>
 
+#include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Logger.h>
 
 #include <filesystem>
 
@@ -203,13 +202,15 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     if (fs::exists(file_path))
     {
         if (throw_if_exists)
-            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined function '{}' already exists", object_name);
+            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "File {} for user-defined function '{}' already exists", file_path, object_name);
+
         if (!replace_if_exists)
             return false;
     }
 
     WriteBufferFromOwnString create_statement_buf;
-    formatAST(*create_object_query, create_statement_buf, false);
+    IAST::FormatSettings format_settings(/*one_line=*/false);
+    create_object_query->format(create_statement_buf, format_settings);
     writeChar('\n', create_statement_buf);
     String create_statement = create_statement_buf.str();
 

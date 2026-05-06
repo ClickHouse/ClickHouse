@@ -26,7 +26,7 @@ SELECT count() FROM bftest WHERE hasAll(x, []) FORMAT Null;
 SELECT count() FROM bftest WHERE hasAll(x, [1]) FORMAT Null;
 
 -- can't use bloom_filter with `hasAll` on non-constant arguments (just like `has`)
-SELECT count() FROM bftest WHERE hasAll(x, materialize([1,2,3])) FORMAT Null; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM bftest WHERE hasAll(x, [1,2,k]) FORMAT Null; -- { serverError INDEX_NOT_USED }
 
 -- NULLs are not Ok
 SELECT count() FROM bftest WHERE hasAll(x, [NULL,-42]) FORMAT Null; -- { serverError INDEX_NOT_USED }

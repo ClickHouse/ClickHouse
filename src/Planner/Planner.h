@@ -1,6 +1,9 @@
 #pragma once
 
 #include <optional>
+
+#include <Common/Logger.h>
+
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
@@ -11,6 +14,7 @@
 namespace DB
 {
 
+class ActionsDAG;
 class QueryNode;
 
 class GlobalPlannerContext;
@@ -26,8 +30,8 @@ public:
     Planner(
         const QueryTreeNodePtr & query_tree_,
         SelectQueryOptions & select_query_options_,
-        bool qualify_column_names = true
-    );
+        const ActionsDAG * post_filter_ = nullptr,
+        bool qualify_column_names = true);
 
     /// Initialize planner with query tree after query analysis phase and global planner context
     Planner(const QueryTreeNodePtr & query_tree_,
@@ -61,8 +65,6 @@ public:
         return std::move(query_plan);
     }
 
-    SelectQueryInfo buildSelectQueryInfo() const;
-
     void addStorageLimits(const StorageLimitsList & limits);
 
     PlannerContextPtr getPlannerContext() const
@@ -77,10 +79,13 @@ public:
     const PlannerExpressionsAnalysisResult & getExpressionAnalysisResult() const { return expression_analysis_result.value(); }
 
 private:
+    SelectQueryInfo buildSelectQueryInfo() const;
+
     void buildPlanForUnionNode();
 
     void buildPlanForQueryNode();
 
+    LoggerPtr log = getLogger("Planner");
     QueryTreeNodePtr query_tree;
     SelectQueryOptions & select_query_options;
     PlannerContextPtr planner_context;

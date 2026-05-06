@@ -5,7 +5,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -15,9 +14,7 @@ namespace DB
 
 struct ReplicatedMergeTreeQuorumAddedParts
 {
-    using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
     using PartitionIdToPartName = std::unordered_map<String, String>;
-
     PartitionIdToPartName added_parts;
 
     MergeTreeDataFormatVersion format_version;
@@ -75,7 +72,7 @@ struct ReplicatedMergeTreeQuorumAddedParts
         readText(part_name, in);
 
         auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-        parts_in_quorum[part_info.partition_id] = part_name;
+        parts_in_quorum[part_info.getPartitionId()] = part_name;
 
         return parts_in_quorum;
     }

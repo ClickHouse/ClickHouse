@@ -13,7 +13,7 @@ function wait_until()
 {
     local q=$1 && shift
     while [ "$($CLICKHOUSE_CLIENT -m -q "$q")" != "1" ]; do
-        sleep 0.5
+        sleep 1
     done
 }
 
@@ -33,21 +33,24 @@ $CLICKHOUSE_CLIENT -m -q "
     optimize table rmt_master final settings alter_sync=1, optimize_throw_if_noop=1;
 "
 
-$CLICKHOUSE_CLIENT -m -q "
-    system flush logs;
-    select 'before';
-    select table, event_type, error>0, countIf(error=0) from system.part_log where database = currentDatabase() group by 1, 2, 3 order by 1, 2, 3;
-
-    system start replicated sends rmt_master;
+# wait until rmt_slave will try to fetch the part and reflect this error in system.part_log
+wait_until "
+    system flush logs part_log;
+    select count()>0 from system.part_log where event_date >= yesterday() AND event_time >= now() - 600 AND table = 'rmt_slave' and database = '$CLICKHOUSE_DATABASE' and error > 0;
 "
-# wait until rmt_slave will fetch the part and reflect this error in system.part_log
-wait_until "select count()>0 from system.part_log where table = 'rmt_slave' and database = '$CLICKHOUSE_DATABASE' and error > 0"
+
 $CLICKHOUSE_CLIENT -m -q "
+    select 'before';
+    select table, event_type, error>0, countIf(error=0) from system.part_log where event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() group by 1, 2, 3 order by 1, 2, 3;
+"
+
+$CLICKHOUSE_CLIENT -m -q "
+    system start replicated sends rmt_master;
     system sync replica rmt_slave;
 
-    system flush logs;
+    system flush logs part_log;
     select 'after';
-    select table, event_type, error>0, countIf(error=0) from system.part_log where database = currentDatabase() group by 1, 2, 3 order by 1, 2, 3;
+    select table, event_type, error>0, countIf(error=0) from system.part_log where event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() group by 1, 2, 3 order by 1, 2, 3;
 
     drop table rmt_master;
     drop table rmt_slave;

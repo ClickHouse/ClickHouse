@@ -2,18 +2,19 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
 
-struct OpenTelemetrySpanLogElement : public OpenTelemetry::Span
+struct OpenTelemetrySpanLogElement
 {
+    OpenTelemetry::Span span;
+
     OpenTelemetrySpanLogElement() = default;
-    explicit OpenTelemetrySpanLogElement(const OpenTelemetry::Span & span)
-        : OpenTelemetry::Span(span) {}
+    explicit OpenTelemetrySpanLogElement(OpenTelemetry::Span span_)
+        : span(std::move(span_)) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
 
@@ -30,7 +31,7 @@ public:
     using SystemLog<OpenTelemetrySpanLogElement>::SystemLog;
 
     static const char * getDefaultPartitionBy() { return "toYYYYMM(finish_date)"; }
-    static const char * getDefaultOrderBy() { return "finish_date, finish_time_us, trace_id"; }
+    static const char * getDefaultOrderBy() { return "finish_date, finish_time_us"; }
 };
 
 }

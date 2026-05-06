@@ -9,7 +9,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/sort.h>
 #include <boost/algorithm/hex.hpp>
@@ -18,6 +17,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 
@@ -46,19 +46,6 @@ static const std::string named_collections_storage_config_path = "named_collecti
 
 namespace
 {
-    MutableNamedCollectionPtr createNamedCollectionFromAST(const ASTCreateNamedCollectionQuery & query)
-    {
-        const auto & collection_name = query.collection_name;
-        const auto config = NamedCollectionConfiguration::createConfiguration(collection_name, query.changes, query.overridability);
-
-        std::set<std::string, std::less<>> keys;
-        for (const auto & [name, _] : query.changes)
-            keys.insert(name);
-
-        return NamedCollection::create(
-            *config, collection_name, "", keys, NamedCollection::SourceId::SQL, /* is_mutable */true);
-    }
-
     std::string getFileName(const std::string & collection_name)
     {
         return escapeForFileName(collection_name) + ".sql";
@@ -225,7 +212,7 @@ class NamedCollectionsMetadataStorage::ZooKeeperStorage : public INamedCollectio
 private:
     std::string root_path;
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
-    mutable zkutil::EventPtr wait_event;
+    mutable Coordination::EventPtr wait_event;
     mutable Int32 collections_node_cversion = 0;
 
 public:
@@ -233,6 +220,7 @@ public:
         : WithContext(context_)
         , root_path(path_)
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::ZooKeeperStorage");
         if (root_path.empty())
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Collections path cannot be empty");
 
@@ -256,6 +244,7 @@ public:
     /// Return true if children changed.
     bool waitUpdate(size_t timeout) override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::waitUpdate");
         if (!wait_event)
         {
             /// We did not yet made any list() attempt, so do that.
@@ -284,6 +273,7 @@ public:
 
     std::vector<std::string> list() const override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::list");
         if (!wait_event)
             wait_event = std::make_shared<Poco::Event>();
 
@@ -295,11 +285,13 @@ public:
 
     bool exists(const std::string & file_name) const override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::exists");
         return getClient()->exists(getPath(file_name));
     }
 
     std::string read(const std::string & file_name) const override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::read");
         auto data = getClient()->get(getPath(file_name));
         return readHook(data);
     }
@@ -311,6 +303,7 @@ public:
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::write");
         auto write_data = writeHook(data);
         if (replace)
         {
@@ -337,11 +330,13 @@ public:
 
     void remove(const std::string & file_name) override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::remove");
         getClient()->remove(getPath(file_name));
     }
 
     bool removeIfExists(const std::string & file_name) override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::removeIfExists");
         auto code = getClient()->tryRemove(getPath(file_name));
         if (code == Coordination::Error::ZOK)
             return true;
@@ -398,7 +393,6 @@ public:
     std::string readHook(const std::string & data) const override
     {
         ReadBufferFromString in(data);
-        Memory<> encrypted_buffer(data.length());
 
         FileEncryption::Header header;
         try
@@ -411,6 +405,7 @@ public:
             throw;
         }
 
+        Memory<> encrypted_buffer(in.available());
         size_t bytes_read = 0;
         while (bytes_read < encrypted_buffer.size() && !in.eof())
         {
@@ -469,7 +464,7 @@ NamedCollectionsMetadataStorage::NamedCollectionsMetadataStorage(
 MutableNamedCollectionPtr NamedCollectionsMetadataStorage::get(const std::string & collection_name) const
 {
     const auto query = readCreateQuery(collection_name);
-    return createNamedCollectionFromAST(query);
+    return NamedCollectionFromSQL::create(query);
 }
 
 NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
@@ -484,15 +479,31 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
                 "Found duplicate named collection `{}`",
                 collection_name);
         }
-        result.emplace(collection_name, get(collection_name));
+        try
+        {
+            result.emplace(collection_name, get(collection_name));
+        }
+        catch (const Coordination::Exception & e)
+        {
+            /// A concurrent update may have removed the collection between listing and reading.
+            /// This is expected in a replicated setup - the next refresh cycle will handle it.
+            if (e.code == Coordination::Error::ZNONODE)
+            {
+                LOG_DEBUG(getLogger("NamedCollectionsMetadataStorage"),
+                    "Collection '{}' was removed while reading, skipping", collection_name);
+                continue;
+            }
+            throw;
+        }
     }
     return result;
 }
 
-MutableNamedCollectionPtr NamedCollectionsMetadataStorage::create(const ASTCreateNamedCollectionQuery & query)
+MutableNamedCollectionPtr NamedCollectionsMetadataStorage::create(const ASTCreateNamedCollectionQuery & create_query)
 {
-    writeCreateQuery(query);
-    return createNamedCollectionFromAST(query);
+    auto collection_ptr = NamedCollectionFromSQL::create(create_query);
+    writeCreateQuery(create_query.collection_name, collection_ptr->getCreateStatement(true));
+    return collection_ptr;
 }
 
 void NamedCollectionsMetadataStorage::remove(const std::string & collection_name)
@@ -505,62 +516,14 @@ bool NamedCollectionsMetadataStorage::removeIfExists(const std::string & collect
     return storage->removeIfExists(getFileName(collection_name));
 }
 
-void NamedCollectionsMetadataStorage::update(const ASTAlterNamedCollectionQuery & query)
+MutableNamedCollectionPtr NamedCollectionsMetadataStorage::update(const ASTAlterNamedCollectionQuery & query)
 {
     auto create_query = readCreateQuery(query.collection_name);
+    auto collection_ptr = NamedCollectionFromSQL::create(create_query);
+    collection_ptr->update(query);
+    writeCreateQuery(query.collection_name, collection_ptr->getCreateStatement(true), true);
 
-    std::unordered_map<std::string, Field> result_changes_map;
-    for (const auto & [name, value] : query.changes)
-    {
-        auto [it, inserted] = result_changes_map.emplace(name, value);
-        if (!inserted)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Value with key `{}` is used twice in the SET query (collection name: {})",
-                name, query.collection_name);
-        }
-    }
-
-    for (const auto & [name, value] : create_query.changes)
-        result_changes_map.emplace(name, value);
-
-    std::unordered_map<std::string, bool> result_overridability_map;
-    for (const auto & [name, value] : query.overridability)
-        result_overridability_map.emplace(name, value);
-    for (const auto & [name, value] : create_query.overridability)
-        result_overridability_map.emplace(name, value);
-
-    for (const auto & delete_key : query.delete_keys)
-    {
-        auto it = result_changes_map.find(delete_key);
-        if (it == result_changes_map.end())
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot delete key `{}` because it does not exist in collection",
-                delete_key);
-        }
-
-        result_changes_map.erase(it);
-        auto it_override = result_overridability_map.find(delete_key);
-        if (it_override != result_overridability_map.end())
-            result_overridability_map.erase(it_override);
-    }
-
-    create_query.changes.clear();
-    for (const auto & [name, value] : result_changes_map)
-        create_query.changes.emplace_back(name, value);
-    create_query.overridability = std::move(result_overridability_map);
-
-    if (create_query.changes.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Named collection cannot be empty (collection name: {})",
-            query.collection_name);
-
-    chassert(create_query.collection_name == query.collection_name);
-    writeCreateQuery(create_query, true);
+    return collection_ptr;
 }
 
 std::vector<std::string> NamedCollectionsMetadataStorage::listCollections() const
@@ -585,15 +548,9 @@ ASTCreateNamedCollectionQuery NamedCollectionsMetadataStorage::readCreateQuery(c
     return create_query;
 }
 
-void NamedCollectionsMetadataStorage::writeCreateQuery(const ASTCreateNamedCollectionQuery & query, bool replace)
+void NamedCollectionsMetadataStorage::writeCreateQuery(const String & collection_name, const String & create_statement, bool replace)
 {
-    auto normalized_query = query.clone();
-    auto & changes = typeid_cast<ASTCreateNamedCollectionQuery *>(normalized_query.get())->changes;
-    ::sort(
-        changes.begin(), changes.end(),
-        [](const SettingChange & lhs, const SettingChange & rhs) { return lhs.name < rhs.name; });
-
-    storage->write(getFileName(query.collection_name), serializeAST(*normalized_query), replace);
+    storage->write(getFileName(collection_name), create_statement, replace);
 }
 
 bool NamedCollectionsMetadataStorage::isReplicated() const

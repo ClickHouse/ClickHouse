@@ -35,6 +35,8 @@ public:
 
     virtual void closeServerDescriptors() = 0;
 
+    virtual void closeStdIn() = 0;
+
     virtual ~IClientDescriptorSet() = default;
 };
 

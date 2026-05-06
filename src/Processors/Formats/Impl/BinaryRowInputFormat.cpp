@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/BinaryRowInputFormat.h>
@@ -5,6 +6,7 @@
 #include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Core/Field.h>
 
 namespace DB
 {
@@ -15,7 +17,7 @@ namespace ErrorCodes
 }
 
 template <bool with_defaults>
-BinaryRowInputFormat<with_defaults>::BinaryRowInputFormat(ReadBuffer & in_, const Block & header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+BinaryRowInputFormat<with_defaults>::BinaryRowInputFormat(ReadBuffer & in_, SharedHeader header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
     : RowInputFormatWithNamesAndTypes<BinaryFormatReader<with_defaults>>(
         header,
         in_,
@@ -188,7 +190,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
             const IRowInputFormat::Params & params,
             const FormatSettings & settings)
         {
-            return std::make_shared<BinaryRowInputFormat<false>>(buf, sample, params, with_names, with_types, settings);
+            return std::make_shared<BinaryRowInputFormat<false>>(buf, std::make_shared<const Block>(sample), params, with_names, with_types, settings);
         });
     };
 
@@ -201,7 +203,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
          const IRowInputFormat::Params & params,
          const FormatSettings & settings)
     {
-        return std::make_shared<BinaryRowInputFormat<true>>(buf, sample, params, false, false, settings);
+        return std::make_shared<BinaryRowInputFormat<true>>(buf, std::make_shared<const Block>(sample), params, false, false, settings);
     });
 }
 

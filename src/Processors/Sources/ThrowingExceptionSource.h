@@ -13,7 +13,7 @@ public:
 
     using CallBack = std::function<Exception()>;
 
-    explicit ThrowingExceptionSource(Block header, CallBack callback_)
+    explicit ThrowingExceptionSource(SharedHeader header, CallBack callback_)
         : ISource(std::move(header))
         , callback(std::move(callback_))
     {}

@@ -1,10 +1,13 @@
 #include <Storages/StorageTimeSeries.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -72,7 +75,7 @@ namespace
                 /// If it's not an ATTACH request then
                 /// check that the specified target table has all the required columns.
                 auto target_table = DatabaseCatalog::instance().getTable(target_table_id, context);
-                auto target_metadata = target_table->getInMemoryMetadataPtr();
+                auto target_metadata = target_table->getInMemoryMetadataPtr(context, false);
                 const auto & target_columns = target_metadata->columns;
                 TimeSeriesColumnsValidator validator{time_series_storage_id, time_series_settings};
                 validator.validateTargetColumns(kind, target_table_id, target_columns);
@@ -93,7 +96,7 @@ namespace
             {
                 /// Create the inner target table.
                 auto inner_table_engine = target_info ? target_info->inner_engine : nullptr;
-                target_table_id = inner_tables_creator.createInnerTable(kind, inner_uuid, inner_table_engine);
+                target_table_id = inner_tables_creator.createInnerTable(kind, inner_uuid, inner_table_engine->as<ASTStorage>());
             }
         }
 
@@ -108,11 +111,11 @@ void StorageTimeSeries::normalizeTableDefinition(ASTCreateQuery & create_query, 
     TimeSeriesSettings time_series_settings;
     if (create_query.storage)
         time_series_settings.loadFromQuery(*create_query.storage);
-    std::shared_ptr<const ASTCreateQuery> as_create_query;
+    boost::intrusive_ptr<const ASTCreateQuery> as_create_query;
     if (!create_query.as_table.empty())
     {
         auto as_database = local_context->resolveDatabase(create_query.as_database);
-        as_create_query = typeid_cast<std::shared_ptr<const ASTCreateQuery>>(
+        as_create_query = boost::static_pointer_cast<const ASTCreateQuery>(
             DatabaseCatalog::instance().getDatabase(as_database)->getCreateTableQuery(create_query.as_table, local_context));
     }
     TimeSeriesDefinitionNormalizer normalizer{time_series_storage_id, time_series_settings, as_create_query.get()};
@@ -127,7 +130,7 @@ StorageTimeSeries::StorageTimeSeries(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns,
     const String & comment)
-    : IStorage(table_id)
+    : StorageWithCommonVirtualColumns(table_id)
     , WithContext(local_context->getGlobalContext())
 {
     if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_time_series_table])
@@ -149,6 +152,7 @@ StorageTimeSeries::StorageTimeSeries(
     storage_metadata.setColumns(columns);
     if (!comment.empty())
         storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     has_inner_tables = false;
@@ -164,7 +168,7 @@ StorageTimeSeries::StorageTimeSeries(
         if (target_kind == ViewTarget::Metrics && !target.is_inner_table)
         {
             auto table = DatabaseCatalog::instance().tryGetTable(target.table_id, getContext());
-            auto metadata = table->getInMemoryMetadataPtr();
+            auto metadata = table->getInMemoryMetadataPtr(getContext(), false);
 
             for (const auto & column : metadata->columns)
                 if (column.type->lowCardinality())
@@ -183,15 +187,6 @@ const TimeSeriesSettings & StorageTimeSeries::getStorageSettings() const
 {
     return *storage_settings;
 }
-
-void StorageTimeSeries::startup()
-{
-}
-
-void StorageTimeSeries::shutdown(bool)
-{
-}
-
 
 void StorageTimeSeries::drop()
 {
@@ -254,7 +249,7 @@ StoragePtr StorageTimeSeries::tryGetTargetTable(ViewTarget::Kind target_kind, co
 }
 
 
-std::optional<UInt64> StorageTimeSeries::totalRows(const Settings & settings) const
+std::optional<UInt64> StorageTimeSeries::totalRows(ContextPtr query_context) const
 {
     UInt64 total_rows = 0;
     if (has_inner_tables)
@@ -267,7 +262,7 @@ std::optional<UInt64> StorageTimeSeries::totalRows(const Settings & settings) co
                 if (!inner_table)
                     return std::nullopt;
 
-                auto total_rows_in_inner_table = inner_table->totalRows(settings);
+                auto total_rows_in_inner_table = inner_table->totalRows(query_context);
                 if (!total_rows_in_inner_table)
                     return std::nullopt;
 
@@ -278,7 +273,7 @@ std::optional<UInt64> StorageTimeSeries::totalRows(const Settings & settings) co
     return total_rows;
 }
 
-std::optional<UInt64> StorageTimeSeries::totalBytes(const Settings & settings) const
+std::optional<UInt64> StorageTimeSeries::totalBytes(ContextPtr query_context) const
 {
     UInt64 total_bytes = 0;
     if (has_inner_tables)
@@ -291,7 +286,7 @@ std::optional<UInt64> StorageTimeSeries::totalBytes(const Settings & settings) c
                 if (!inner_table)
                     return std::nullopt;
 
-                auto total_bytes_in_inner_table = inner_table->totalBytes(settings);
+                auto total_bytes_in_inner_table = inner_table->totalBytes(query_context);
                 if (!total_bytes_in_inner_table)
                     return std::nullopt;
 
@@ -363,7 +358,7 @@ bool StorageTimeSeries::optimize(
         if (target.is_inner_table)
         {
             auto inner_table = DatabaseCatalog::instance().getTable(target.table_id, local_context);
-            optimized |= inner_table->optimize(query, inner_table->getInMemoryMetadataPtr(), partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
+            optimized |= inner_table->optimize(query, inner_table->getInMemoryMetadataPtr(local_context, false), partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
         }
     }
 
@@ -418,8 +413,15 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
     }
 }
 
+VirtualColumnsDescription StorageTimeSeries::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
 
-void StorageTimeSeries::read(
+void StorageTimeSeries::readImpl(
     QueryPlan & /* query_plan */,
     const Names & /* column_names */,
     const StorageSnapshotPtr & /* storage_snapshot */,

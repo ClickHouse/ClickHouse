@@ -3,7 +3,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
 #include <DataTypes/DataTypeFunction.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -25,7 +24,7 @@ struct LambdaCapture
     NamesAndTypesList lambda_arguments;
     String return_name;
     DataTypePtr return_type;
-    bool allow_constant_folding;
+    bool allow_constant_folding = false;
 };
 
 using LambdaCapturePtr = std::shared_ptr<LambdaCapture>;
@@ -198,6 +197,9 @@ public:
             return ColumnFunction::create(input_rows_count, std::move(function), arguments);
         }
     }
+
+    const ExpressionActionsPtr & getActions() const { return expression_actions; }
+    const LambdaCapturePtr & getCapture() const { return capture; }
 
 private:
     ExpressionActionsPtr expression_actions;

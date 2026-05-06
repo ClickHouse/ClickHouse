@@ -4,11 +4,9 @@
 #include <DataTypes/NumberTraits.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <base/map.h>
 
 namespace DB
 {

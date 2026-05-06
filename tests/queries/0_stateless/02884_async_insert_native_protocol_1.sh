@@ -30,11 +30,11 @@ $CLICKHOUSE_CLIENT -q "
 
     SELECT * FROM t_async_insert_native_1 ORDER BY id;
 
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS asynchronous_insert_log;
 
     SELECT status, rows, data_kind, format
     FROM system.asynchronous_insert_log
-    WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_1'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_1'
     ORDER BY event_time_microseconds;
 
     DROP TABLE t_async_insert_native_1;

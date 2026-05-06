@@ -1,5 +1,5 @@
 SET max_block_size = 10, max_threads = 1;
-
+-- { echoOn }
 -- Take the following example:
 SELECT 1 UNION ALL SELECT 2 FORMAT TSV;
 

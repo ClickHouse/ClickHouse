@@ -18,6 +18,7 @@ node1 = cluster.add_instance(
     main_configs=["configs/storage_conf.xml"],
     with_zookeeper=True,
     with_minio=True,
+    with_remote_database_disk=False,  # The tests stop Keeper connections, some queries will not work with the remote disk.
 )
 
 

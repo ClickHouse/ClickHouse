@@ -7,6 +7,10 @@
 #include <base/types.h>
 #include <IO/S3/Client.h>
 
+namespace DB
+{
+using ObjectAttributes = std::map<std::string, std::string>;
+}
 
 namespace DB::S3
 {
@@ -14,11 +18,22 @@ namespace DB::S3
 struct ObjectInfo
 {
     size_t size = 0;
+    /// Checks if Content-Length was present in the HEAD response and we can rely on its result
+    bool is_size_known = true;
     time_t last_modification_time = 0;
     String etag;
-
-    std::map<String, String> metadata = {}; /// Set only if getObjectInfo() is called with `with_metadata = true`.
+    ObjectAttributes tags; // Set only if getObjectInfo() is called with `with_tags = true`
+    ObjectAttributes metadata = {}; /// Set only if getObjectInfo() is called with `with_metadata = true`.
 };
+
+/// Ignore if object does not exist
+ObjectInfo getObjectInfoIfExists(
+    const S3::Client & client,
+    const String & bucket,
+    const String & key,
+    const String & version_id = {},
+    bool with_metadata = false,
+    bool with_tags = false);
 
 ObjectInfo getObjectInfo(
     const S3::Client & client,
@@ -26,14 +41,19 @@ ObjectInfo getObjectInfo(
     const String & key,
     const String & version_id = {},
     bool with_metadata = false,
-    bool throw_on_error = true);
+    bool with_tags = false);
+
+ObjectAttributes getObjectTags(
+    const S3::Client & client,
+    const String & bucket,
+    const String & key,
+    const String & version_id = {});
 
 size_t getObjectSize(
     const S3::Client & client,
     const String & bucket,
     const String & key,
-    const String & version_id = {},
-    bool throw_on_error = true);
+    const String & version_id = {});
 
 bool objectExists(
     const S3::Client & client,
@@ -50,6 +70,7 @@ void checkObjectExists(
     std::string_view description = {});
 
 bool isNotFoundError(Aws::S3::S3Errors error);
+bool isAuthenticationError(Aws::S3::S3Errors error);
 
 }
 

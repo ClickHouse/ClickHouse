@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from contextlib import contextmanager
 from multiprocessing import Pool, cpu_count
+from time import sleep
 from typing import Any, List, Literal, Optional
 
 import __main__
@@ -126,11 +127,19 @@ def unshallow(thin: bool = True) -> None:
     )
 
 
-def checkout_submodule(name: str) -> None:
+def checkout_submodule(name: str, retry: int = 3) -> None:
     """checkout the single submodule by its name"""
-    Shell.check(
-        f"git submodule update --depth=1 --single-branch {name}", cwd=git_runner.cwd
-    )
+    start_sleep = 5
+    for n in range(retry):
+        if Shell.check(
+            f"git submodule update --depth=1 --single-branch {name}", cwd=git_runner.cwd
+        ):
+            return
+        if n < retry - 1:
+            # progressive sleep before retry
+            sleep(start_sleep * (n + 1))
+
+    raise subprocess.SubprocessError(f"Unable to retrieve submodule {name}")
 
 
 def checkout_submodules() -> None:
@@ -248,7 +257,7 @@ class Git:
         self.latest_tag = self.run("git describe --tags --abbrev=0", stderr=stderr)
         # Format should be: {latest_tag}-{commits_since_tag}-g{sha_short}
         self.commits_since_latest = int(
-            self.run(f"git rev-list {self.latest_tag}..HEAD --count")
+            self.run(f"git rev-list {self.latest_tag}..HEAD --first-parent --count")
         )
         if self.latest_tag.endswith("-new"):
             # We won't change the behaviour of the the "latest_tag"
@@ -259,7 +268,7 @@ class Git:
                 stderr=stderr,
             )
             self.commits_since_new = int(
-                self.run(f"git rev-list {self.new_tag}..HEAD --count")
+                self.run(f"git rev-list {self.new_tag}..HEAD --first-parent --count")
             )
 
     @staticmethod

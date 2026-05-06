@@ -1,14 +1,12 @@
 #pragma once
 
-#include <Common/Exception.h>
-
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-
+#include <base/types.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
+
+class ASTFunction;
 
 std::pair<String, ASTPtr> getKeyValueMongoDBArgument(const ASTFunction * ast_func);
 

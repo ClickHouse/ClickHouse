@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageURL.h>

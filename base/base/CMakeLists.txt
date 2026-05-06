@@ -18,6 +18,7 @@ set (SRCS
     getPageSize.cpp
     getThreadId.cpp
     int8_to_string.cpp
+    IPv4andIPv6.cpp
     itoa.cpp
     JSON.cpp
     mremap.cpp
@@ -27,11 +28,9 @@ set (SRCS
     sleep.cpp
     terminalColors.cpp
     errnoToString.cpp
-    StringRef.cpp
     safeExit.cpp
     throwError.cpp
     Numa.cpp
-    ask.cpp
     GitHash.generated.cpp
     wide_integer_to_string.cpp
 )
@@ -42,6 +41,12 @@ if (WITH_COVERAGE)
     target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
 else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
+endif ()
+
+if (WITH_COVERAGE_DEPTH)
+    target_compile_definitions(common PUBLIC WITH_COVERAGE_DEPTH=1)
+else ()
+    target_compile_definitions(common PUBLIC WITH_COVERAGE_DEPTH=0)
 endif ()
 
 if (TARGET ch_contrib::crc32_s390x)

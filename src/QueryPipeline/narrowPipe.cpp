@@ -41,11 +41,10 @@ void narrowPipe(Pipe & pipe, size_t width)
             partitions[distribution[i]].emplace_back(ports[i]);
 
         Processors concats;
-        concats.reserve(width);
 
         for (size_t i = 0; i < width; ++i)
         {
-           auto concat = std::make_shared<ConcatProcessor>(partitions[i].at(0)->getHeader(),
+           auto concat = std::make_shared<ConcatProcessor>(partitions[i].at(0)->getSharedHeader(),
                                                            partitions[i].size());
            size_t next_port = 0;
            for (auto & port : concat->getInputs())

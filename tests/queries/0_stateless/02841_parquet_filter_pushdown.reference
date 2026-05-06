@@ -1,26 +1,27 @@
-number	Nullable(UInt64)					
-u8	Nullable(UInt8)					
-u16	Nullable(UInt16)					
-u32	Nullable(UInt32)					
-u64	Nullable(UInt64)					
-i8	Nullable(Int8)					
-i16	Nullable(Int16)					
-i32	Nullable(Int32)					
-i64	Nullable(Int64)					
-date32	Nullable(Date32)					
-dt64_ms	Nullable(DateTime64(3, \'UTC\'))					
-dt64_us	Nullable(DateTime64(6, \'UTC\'))					
-dt64_ns	Nullable(DateTime64(9, \'UTC\'))					
-dt64_s	Nullable(DateTime64(3, \'UTC\'))					
-dt64_cs	Nullable(DateTime64(3, \'UTC\'))					
-f32	Nullable(Float32)					
-f64	Nullable(Float64)					
-s	Nullable(String)					
-fs	Nullable(FixedString(9))					
-d32	Nullable(Decimal(9, 3))					
-d64	Nullable(Decimal(18, 10))					
-d128	Nullable(Decimal(38, 20))					
-d256	Nullable(Decimal(76, 40))					
+number	UInt64					
+u8	UInt8					
+u16	UInt16					
+u32	UInt32					
+u64	UInt64					
+i8	Int8					
+i16	Int16					
+i32	Int32					
+i64	Int64					
+date32	Date32					
+dt64_ms	DateTime64(3, \'UTC\')					
+dt64_us	DateTime64(6, \'UTC\')					
+dt64_ns	DateTime64(9, \'UTC\')					
+dt64_s	DateTime64(3, \'UTC\')					
+dt64_cs	DateTime64(3, \'UTC\')					
+f32	Float32					
+f64	Float64					
+s	String					
+fs	FixedString(9)					
+d32	Decimal(9, 3)					
+d64	Decimal(18, 10)					
+d128	Decimal(38, 20)					
+d256	Decimal(76, 40)					
+# Go over all types individually
 800	3959600
 1000	4999500
 1800	6479100
@@ -43,15 +44,25 @@ d256	Nullable(Decimal(76, 40))
 200	999900
 200	999900
 200	999900
-0	\N
+# Some random other cases
+0	0
 400	1709800
-0	\N
+0	0
 10000	49995000
-0	\N
+0	0
 200	909900
 10000	49995000
-0	\N
+0	0
+# Very long string, which makes the Parquet encoder omit the corresponding min/max stat
 2
+# Nullable and LowCardinality
+number	UInt64					
+sometimes_null	Nullable(UInt64)					
+never_null	Nullable(UInt64)					
+mostly_null	Nullable(String)					
+sometimes_null_lc	Nullable(UInt64)					
+never_null_lc	Nullable(UInt64)					
+mostly_null_lc	Nullable(String)					
 500	244750
 500	244750
 300	104850
@@ -64,12 +75,14 @@ d256	Nullable(Decimal(76, 40))
 200	19900
 600	259700
 600	259700
+# Settings that affect the table schema or contents
 500	244750
 500	244750
-0	\N
+0	0
 500	244750
 500	244750
 500	244750
 500	244750
+# Bad type conversions
 42
 100

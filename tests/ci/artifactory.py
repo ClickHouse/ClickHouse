@@ -1,7 +1,7 @@
 import argparse
 import time
 from pathlib import Path
-from shutil import copy2
+from shutil import copy2, rmtree
 from typing import Optional
 
 from ci_utils import Shell, WithIter
@@ -148,13 +148,13 @@ class DebianArtifactory:
             cmd = f"{REPREPRO_CMD_PREFIX} copy {RepoCodenames.STABLE} {RepoCodenames.LTS} {' '.join(packages_with_version)}"
             print("Running copy command:")
             print(f"  {cmd}")
-            Shell.check(cmd, strict=True)
+            Shell.check(cmd, strict=True, verbose=True)
             Shell.check("sync")
         time.sleep(10)
-        Shell.check("lsof +D R2MountPoint.MOUNT_POINT", verbose=True)
+        Shell.check(f"lsof +D {R2MountPoint.MOUNT_POINT}", verbose=True)
 
     def test_packages(self):
-        Shell.check("docker pull ubuntu:latest", strict=True)
+        Shell.check("docker pull ubuntu:latest", strict=True, verbose=True)
         print(f"Test packages installation, version [{self.version}]")
         debian_command = (
             f"echo 'deb {self.repo_url} stable main' | "
@@ -167,7 +167,7 @@ class DebianArtifactory:
         )
         print("Running test command:")
         print(f"  {cmd}")
-        assert Shell.check(cmd)
+        assert Shell.check(cmd, verbose=True)
         print("Test packages installation, version [latest]")
         debian_command_2 = (
             f"echo 'deb {self.repo_url} stable main' | "
@@ -179,7 +179,7 @@ class DebianArtifactory:
         )
         print("Running test command:")
         print(f"  {cmd}")
-        assert Shell.check(cmd)
+        assert Shell.check(cmd, verbose=True)
         self.release_info.debian = debian_command
         self.release_info.dump()
 
@@ -230,6 +230,13 @@ class RpmArtifactory:
         for package in paths:
             _copy_if_not_exists(Path(package), dest_dir)
 
+        # Remove stale temp repodata directory left by a previous interrupted run; createrepo_c
+        # refuses to start when it already exists, mistaking it for a concurrent process.
+        stale_repodata = dest_dir / ".repodata"
+        if stale_repodata.exists():
+            print(f"Removing stale temp repodata directory: {stale_repodata}")
+            rmtree(stale_repodata)
+
         # switching between different fuse providers invalidates --update option (apparently some fuse(s) can mess around with mtime)
         #   add --skip-stat to skip mtime check
         commands = (
@@ -250,19 +257,19 @@ class RpmArtifactory:
         Shell.check("sync")
 
     def test_packages(self):
-        Shell.check(f"docker pull fedora:{self.FEDORA_VERSION}", strict=True)
+        Shell.check(f"docker pull fedora:{self.FEDORA_VERSION}", strict=True, verbose=True)
         print(f"Test package installation, version [{self.version}]")
         rpm_command = f"dnf config-manager --add-repo={self.repo_url} && dnf makecache && dnf -y install clickhouse-client-{self.version}-1"
         cmd = f'docker run --rm fedora:{self.FEDORA_VERSION} /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command}"'
         print("Running test command:")
         print(f"  {cmd}")
-        assert Shell.check(cmd)
+        assert Shell.check(cmd, verbose=True)
         print("Test package installation, version [latest]")
         rpm_command_2 = f"dnf config-manager --add-repo={self.repo_url} && dnf makecache && dnf -y install clickhouse-client"
         cmd = f'docker run --rm fedora:{self.FEDORA_VERSION} /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command_2}"'
         print("Running test command:")
         print(f"  {cmd}")
-        assert Shell.check(cmd)
+        assert Shell.check(cmd, verbose=True)
         self.release_info.rpm = rpm_command
         self.release_info.dump()
 

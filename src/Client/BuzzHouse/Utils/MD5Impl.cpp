@@ -14,17 +14,17 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
-void MD5Impl::hashFile(const String & file_path, Poco::DigestEngine::Digest & res)
+void MD5Impl::hashFile(const String & filePath, Poco::DigestEngine::Digest & res)
 {
-    std::ifstream file(file_path, std::ios::binary);
+    std::ifstream file(filePath, std::ios::binary);
 
     if (!file)
     {
-        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Could not open file: {}", file_path);
+        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Could not open file: {}", filePath);
     }
-    while (file.read(reinterpret_cast<char *>(input_buffer), input_buffer_size) || file.gcount() > 0)
+    while (file.read(reinterpret_cast<char *>(inputBuffer), inputBufferSize) || file.gcount() > 0)
     {
-        ctx.update(reinterpret_cast<const uint8_t *>(input_buffer), file.gcount());
+        ctx.update(reinterpret_cast<const uint8_t *>(inputBuffer), file.gcount());
     }
     res = ctx.digest();
 }

@@ -61,39 +61,39 @@ $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'CSVWithNames')"
 echo "JSONCompactEachRow"
 
 echo -e "[42.42, [[1, \"String\"], [2, \"abcd\"]], {\"key\" : 42, \"key2\" : 24}, true]" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0, input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0, input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
 
 echo -e "[null, [[1, \"String\"], [2, null]], {\"key1\" : null, \"key2\" : 24}, null]
 [32, [[2, \"String 2\"], [3, \"hello\"]], {\"key1\" : 4242, \"key2\" : 2424}, true]"  > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0, input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0, input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
 
 echo "JSONCompactEachRowWithNames"
 
 echo -e "[\"a\", \"b\", \"c\", \"d\"]
 [42.42, [[1, \"String\"], [2, \"abcd\"]], {\"key\" : 42, \"key2\" : 24}, true]" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRowWithNames') settings input_format_json_read_numbers_as_strings=0"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRowWithNames') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRowWithNames') settings input_format_json_read_numbers_as_strings=0, input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRowWithNames') settings input_format_json_read_numbers_as_strings=0, input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
 
 
 echo "JSONEachRow"
 echo -e '{"a" : 42.42, "b" : [[1, "String"], [2, "abcd"]], "c" : {"key" : 42, "key2" : 24}, "d" : true}' > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0, input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0, input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
 
 echo -e '{"a" : null, "b" : [[1, "String"], [2, null]], "c" : {"key1" : null, "key2" : 24}, "d" : null}
 {"a" : 32, "b" : [[2, "String 2"], [3, "hello"]], "c" : {"key1" : 4242, "key2" : 2424}, "d" : true}'  > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0, input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0, input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
 
 echo -e '{"a" : 1, "b" : "s1", "c" : null}
 {"c" : [2], "a" : 2, "b" : null}
 {}
 {"a" : null}
 {"c" : [3], "a" : null}'  > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0, input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0, input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
 
 
 echo "TSKV"
@@ -147,8 +147,8 @@ $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Regexp') settings forma
 echo "Line: value_1=42, value_2=\"Some string 1\", value_3=[[[1, 2, 3], \"String 1\"], [[1], \"String 1\"]]
 Line: value_1=52, value_2=\"Some string 2\", value_3=[[[], \"String 2\"], [[1], \"String 2\"]]
 Line: value_1=24, value_2=\"Some string 3\", value_3=[[[1, 2, 3], \"String 3\"], [[1], \"String 3\"]]" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Regexp') settings format_regexp='$REGEXP', format_regexp_escaping_rule='JSON'"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Regexp') settings format_regexp='$REGEXP', format_regexp_escaping_rule='JSON'"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Regexp') settings format_regexp='$REGEXP', format_regexp_escaping_rule='JSON', input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Regexp') settings format_regexp='$REGEXP', format_regexp_escaping_rule='JSON', input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
 
 
 echo "CustomSeparated"
@@ -185,18 +185,18 @@ echo -e "<result_before_delimiter>
 <row_before_delimiter>null<field_delimiter>\"Some string 3\"<field_delimiter>[[[1, 2, 3], \"String 3\"], [[1], \"String 3\"]]<row_after_delimiter>
 <result_after_delimiter>" > $DATA_FILE
 
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'CustomSeparated') $CUSTOM_SETTINGS, format_custom_escaping_rule='JSON'"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'CustomSeparated') $CUSTOM_SETTINGS, format_custom_escaping_rule='JSON'"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'CustomSeparated') $CUSTOM_SETTINGS, format_custom_escaping_rule='JSON', input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'CustomSeparated') $CUSTOM_SETTINGS, format_custom_escaping_rule='JSON', input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
 
 
 echo "Template"
 
 echo -e "<result_before_delimiter>
-\${data}<result_after_delimiter>" > $SCHEMADIR/resultset_format_02149
+\${data}<result_after_delimiter>" > $SCHEMADIR/resultset_format_$CLICKHOUSE_TEST_UNIQUE_NAME
 
-echo -e "<row_before_delimiter>\${column_1:CSV}<field_delimiter_1>\${column_2:CSV}<field_delimiter_2>\${column_3:CSV}<row_after_delimiter>" > $SCHEMADIR/row_format_02149
+echo -e "<row_before_delimiter>\${column_1:CSV}<field_delimiter_1>\${column_2:CSV}<field_delimiter_2>\${column_3:CSV}<row_after_delimiter>" > $SCHEMADIR/row_format_$CLICKHOUSE_TEST_UNIQUE_NAME
 
-TEMPLATE_SETTINGS="SETTINGS format_template_rows_between_delimiter='<row_between_delimiter>\n', format_template_row='row_format_02149', format_template_resultset='resultset_format_02149'"
+TEMPLATE_SETTINGS="SETTINGS format_template_rows_between_delimiter='<row_between_delimiter>\n', format_template_row='row_format_$CLICKHOUSE_TEST_UNIQUE_NAME', format_template_resultset='resultset_format_$CLICKHOUSE_TEST_UNIQUE_NAME', input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
 
 echo -e "<result_before_delimiter>
 <row_before_delimiter>42.42<field_delimiter_1>\"Some string 1\"<field_delimiter_2>\"[([1, 2, 3], 'String 1'), ([1], 'String 1')]\"<row_after_delimiter>
@@ -209,7 +209,7 @@ echo -e "<result_before_delimiter>
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Template') $TEMPLATE_SETTINGS"
 $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Template') $TEMPLATE_SETTINGS"
 
-echo -e "<row_before_delimiter>\${column_1:Quoted}<field_delimiter_1>\${column_2:Quoted}<field_delimiter_2>\${column_3:Quoted}<row_after_delimiter>" > $SCHEMADIR/row_format_02149
+echo -e "<row_before_delimiter>\${column_1:Quoted}<field_delimiter_1>\${column_2:Quoted}<field_delimiter_2>\${column_3:Quoted}<row_after_delimiter>" > $SCHEMADIR/row_format_$CLICKHOUSE_TEST_UNIQUE_NAME
 
 echo -e "<result_before_delimiter>
 <row_before_delimiter>42.42<field_delimiter_1>'Some string 1'<field_delimiter_2>[([1, 2, 3], 'String 1'), ([1], 'String 1')]<row_after_delimiter>
@@ -222,7 +222,7 @@ echo -e "<result_before_delimiter>
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Template') $TEMPLATE_SETTINGS"
 $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Template') $TEMPLATE_SETTINGS"
 
-echo -e "<row_before_delimiter>\${column_1:JSON}<field_delimiter_1>\${column_2:JSON}<field_delimiter_2>\${column_3:JSON}<row_after_delimiter>" > $SCHEMADIR/row_format_02149
+echo -e "<row_before_delimiter>\${column_1:JSON}<field_delimiter_1>\${column_2:JSON}<field_delimiter_2>\${column_3:JSON}<row_after_delimiter>" > $SCHEMADIR/row_format_$CLICKHOUSE_TEST_UNIQUE_NAME
 
 echo -e "<result_before_delimiter>
 <row_before_delimiter>42.42<field_delimiter_1>\"Some string 1\"<field_delimiter_2>[[[1, 2, 3], \"String 1\"], [[1], \"String 1\"]]<row_after_delimiter>
@@ -244,5 +244,5 @@ $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'MsgPack') settings input_format_
 $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'MsgPack') settings input_format_msgpack_number_of_columns=6"
 
 
-rm $SCHEMADIR/resultset_format_02149 $SCHEMADIR/row_format_02149
+rm $SCHEMADIR/resultset_format_$CLICKHOUSE_TEST_UNIQUE_NAME $SCHEMADIR/row_format_$CLICKHOUSE_TEST_UNIQUE_NAME
 rm $DATA_FILE

@@ -7,6 +7,8 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
+#include <fmt/ranges.h>
+
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
@@ -16,8 +18,7 @@ namespace DB::ErrorCodes
 namespace DB
 {
 
-TestHint::TestHint(const String & query_)
-    : query(query_)
+TestHint::TestHint(const std::string_view & query)
 {
     // Don't parse error hints in leading comments, because it feels weird.
     // Leading 'echo' hint is OK.

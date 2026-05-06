@@ -1,6 +1,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
+#include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -10,8 +12,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
-#include <boost/range/adaptor/map.hpp>
-#include "Formats/FormatSettings.h"
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -35,7 +36,7 @@ static void checkForCarriageReturn(ReadBuffer & in)
 }
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     ReadBuffer & in_,
     const Params & params_,
     bool with_names_,
@@ -47,7 +48,7 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
 }
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::unique_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
@@ -287,7 +288,11 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
 void TabSeparatedFormatReader::skipPrefixBeforeHeader()
 {
     for (size_t i = 0; i != format_settings.tsv.skip_first_lines; ++i)
+    {
+        if (buf->eof())
+            break;
         readRow();
+    }
 }
 
 void TabSeparatedRowInputFormat::syncAfterError()
@@ -410,7 +415,7 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
             {
-                return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, std::move(params), with_names, with_types, is_raw, settings);
+                return std::make_shared<TabSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, std::move(params), with_names, with_types, is_raw, settings);
             });
         };
 

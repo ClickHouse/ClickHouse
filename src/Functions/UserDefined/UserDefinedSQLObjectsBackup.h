@@ -3,6 +3,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <base/types.h>
 
+#include <vector>
+
 
 namespace DB
 {
