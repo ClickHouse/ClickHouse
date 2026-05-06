@@ -42,6 +42,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_hyperscan;
+    extern const SettingsBool reject_expensive_hyperscan_regexps;
     extern const SettingsBool convert_query_to_cnf;
     extern const SettingsBool enable_positional_arguments;
     extern const SettingsUInt64 max_hyperscan_regexp_length;
@@ -582,6 +583,7 @@ void optimizeOrLikeChain(ASTPtr & query, const Settings & settings)
     data.allow_hyperscan = settings[Setting::allow_hyperscan];
     data.max_hyperscan_regexp_length = settings[Setting::max_hyperscan_regexp_length];
     data.max_hyperscan_regexp_total_length = settings[Setting::max_hyperscan_regexp_total_length];
+    data.reject_expensive_hyperscan_regexps = settings[Setting::reject_expensive_hyperscan_regexps];
     ConvertFunctionOrLikeVisitor(data).visit(query);
 }
 

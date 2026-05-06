@@ -30,6 +30,7 @@ public:
     bool allow_hyperscan = true;
     size_t max_hyperscan_regexp_length = 0;
     size_t max_hyperscan_regexp_total_length = 0;
+    bool reject_expensive_hyperscan_regexps = true;
 
     void visit(ASTFunction & function, ASTPtr & ast) const;
 };

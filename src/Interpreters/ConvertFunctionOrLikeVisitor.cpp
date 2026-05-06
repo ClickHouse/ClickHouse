@@ -1,4 +1,5 @@
 #include <Interpreters/ConvertFunctionOrLikeVisitor.h>
+#include <Functions/checkHyperscanRegexp.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -113,6 +114,20 @@ struct PatternInfo
         }
         return max_total_length == 0 || total <= max_total_length;
     }
+
+    /// Returns true if any pattern would be rejected at runtime by the `multiMatchAny` slow-regexp
+    /// guard (`SlowWithHyperscanChecker`). Used to pre-check `reject_expensive_hyperscan_regexps`
+    /// so the rewrite cannot turn a previously-working query into a `HYPERSCAN_CANNOT_SCAN_TEXT`
+    /// failure: if any pattern is "slow", we fall back to plain `match` instead of `multiMatchAny`.
+    /// Used by `multiMatchAny` when ClickHouse is built with Vectorscan.
+    [[maybe_unused]] bool hasExpensiveRegexp() const
+    {
+        SlowWithHyperscanChecker checker;
+        for (const auto & p : patterns)
+            if (checker.isSlow(p.regexp))
+                return true;
+        return false;
+    }
 };
 
 }
@@ -223,7 +238,8 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                 {
 #if USE_VECTORSCAN
                     const bool can_use_multi_match = allow_hyperscan
-                        && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+                        && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length)
+                        && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp());
 #else
                     constexpr bool can_use_multi_match = false;
 #endif
@@ -231,9 +247,10 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                     {
                         /// Use `multiMatchAny` for non-substring patterns. It is significantly faster
                         /// than `match` with alternation in RE2 because it can leverage
-                        /// Vectorscan/Hyperscan. We pre-check `max_hyperscan_regexp_length` /
-                        /// `max_hyperscan_regexp_total_length` so a query that previously worked as
-                        /// `OR LIKE` cannot be turned into a `BAD_ARGUMENTS` failure by this rewrite.
+                        /// Vectorscan/Hyperscan. We pre-check `max_hyperscan_regexp_length`,
+                        /// `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`,
+                        /// so a query that previously worked as `OR LIKE` cannot be turned into a
+                        /// `BAD_ARGUMENTS` / `HYPERSCAN_CANNOT_SCAN_TEXT` failure by this rewrite.
                         match_fn = makeASTFunction("multiMatchAny", identifier_ast, make_intrusive<ASTLiteral>(Field{info.getRegexps()}));
                     }
                     else

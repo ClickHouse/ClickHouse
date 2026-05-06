@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/checkHyperscanRegexp.h>
 #include <Functions/logical.h>
 
 #include <Interpreters/Context.h>
@@ -34,6 +35,7 @@ namespace Setting
     extern const SettingsUInt64 max_hyperscan_regexp_length;
     extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool optimize_or_like_chain;
+    extern const SettingsBool reject_expensive_hyperscan_regexps;
 }
 
 namespace
@@ -131,6 +133,19 @@ struct PatternInfo
             total += p.regexp.size();
         }
         return max_total_length == 0 || total <= max_total_length;
+    }
+
+    /// Returns true if any pattern would be rejected at runtime by the `multiMatchAny` slow-regexp
+    /// guard (`SlowWithHyperscanChecker`). Used to pre-check `reject_expensive_hyperscan_regexps`
+    /// so the rewrite cannot turn a previously-working query into a `HYPERSCAN_CANNOT_SCAN_TEXT`
+    /// failure: if any pattern is "slow", we fall back to plain `match` instead of `multiMatchAny`.
+    bool hasExpensiveRegexp() const
+    {
+        SlowWithHyperscanChecker checker;
+        for (const auto & p : patterns)
+            if (checker.isSlow(p.regexp))
+                return true;
+        return false;
     }
 };
 
@@ -271,6 +286,7 @@ public:
 #endif
         const size_t max_hyperscan_regexp_length = context->getSettingsRef()[Setting::max_hyperscan_regexp_length];
         const size_t max_hyperscan_regexp_total_length = context->getSettingsRef()[Setting::max_hyperscan_regexp_total_length];
+        const bool reject_expensive_hyperscan_regexps = context->getSettingsRef()[Setting::reject_expensive_hyperscan_regexps];
 
         /// `indexHint(A) AND expr` restricts index analysis to ranges satisfying `A`, so wrapping the
         /// optimized chain in `indexHint(<LIKE subset>)` is only safe when every OR branch was a
@@ -323,15 +339,19 @@ public:
                 auto resolver = FunctionFactory::instance().get(func_name, context);
                 match_function->resolveAsFunction(resolver);
             }
-            else if (allow_hyperscan && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
+            else if (allow_hyperscan
+                && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length)
+                && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp()))
             {
                 /// Use `multiMatchAny` for non-substring patterns. It is significantly faster than
                 /// `match` with alternation because it can leverage Vectorscan/Hyperscan when available
                 /// and falls back to RE2 alternation otherwise.
-                /// `multiMatchAny` enforces `max_hyperscan_regexp_length` and
-                /// `max_hyperscan_regexp_total_length` at execution time, so we pre-check those
-                /// limits and fall back to plain `match` when they would be exceeded; that way the
-                /// rewrite cannot turn a previously-working query into a `BAD_ARGUMENTS` failure.
+                /// `multiMatchAny` enforces `max_hyperscan_regexp_length`,
+                /// `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`
+                /// at execution time, so we pre-check those guards and fall back to plain `match`
+                /// when they would be triggered; that way the rewrite cannot turn a
+                /// previously-working query into a `BAD_ARGUMENTS` / `HYPERSCAN_CANNOT_SCAN_TEXT`
+                /// failure.
                 match_function = std::make_shared<FunctionNode>("multiMatchAny");
                 match_function->getArguments().getNodes().push_back(key);
                 match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getRegexps()}));
