@@ -1,0 +1,78 @@
+1. English stem: different conjugations share the same posting list entry.
+3
+3
+3
+2
+2
+2
+2
+0
+0
+5
+4
+2. Spanish stem: verb conjugations (trabajar / hablar).
+3
+3
+3
+3
+3
+0
+0
+6
+3. Russian stem: verb conjugations (читать / писать), all-lowercase Cyrillic.
+4
+4
+4
+3
+3
+0
+0
+7
+4. Multi-word phrases: hasAllTokens requires all stems in the same row.
+3
+4
+1
+1
+2
+1
+0
+5
+5. Irregular English verbs: Snowball does not always unify all forms.
+2
+2
+1
+1
+1
+2
+1
+5
+6. Irregular Spanish verb tener: only some forms share a stem.
+3
+3
+1
+1
+3
+3
+8
+7. Array(String) column: postprocessor stems each array element.
+2
+2
+2
+1
+0
+1
+0
+3
+0
+8. Nullable(String) column: NULL values are skipped by the index.
+1
+1
+1
+1
+0
+0
+2
+9. Index inspection: the index stores only stemmed tokens, not original words.
+collect	1
+run	3
+studi	1
