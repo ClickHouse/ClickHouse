@@ -272,14 +272,17 @@ COMPLIANCE_TEST_CASES = [
     ('label_replace(demo_num_cpus, "job", "value-$1", "instance", "non-matching-regex")', [], False),
     ('label_replace(demo_num_cpus, "job", "", "dst", ".*")', [], False),
     ('label_replace(demo_num_cpus, "job", "value-$1", "src", "(.*")', [], True),
-    ('label_replace(demo_num_cpus, "~invalid", "", "src", "(.*)")', [], True),
-    ('label_replace(demo_num_cpus, "instance", "", "", "")', [], True),
+    ('label_replace(demo_num_cpus, "~valid_utf8", "", "src", "(.*)")', [], False),
+    ('label_replace(demo_num_cpus, "", "", "src", "(.*)")', [], True),
+    ('label_replace(demo_num_cpus, "instance", "", "", "")', [], False),
 
     # label_join
     ('label_join(demo_num_cpus, "new_label", "-", "instance", "job")', [], False),
     ('label_join(demo_num_cpus, "job", "-", "instance", "job")', [], False),
     ('label_join(demo_num_cpus, "job", "-", "instance")', [], False),
-    ('label_join(demo_num_cpus, "~invalid", "-", "instance")', [], True),
+    ('label_join(demo_num_cpus, "~valid_utf8", "-", "instance")', [], False),
+    ('label_join(demo_num_cpus, "", "-", "instance")', [], True),
+    ('label_join(demo_num_cpus, "new_label", "-", "")', [], True),
 
     # Date functions
     ("{{.dateFunc}}()", ["dateFunc"], False),
