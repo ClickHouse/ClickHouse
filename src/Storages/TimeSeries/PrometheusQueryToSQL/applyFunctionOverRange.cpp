@@ -10,6 +10,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
+#include <cmath>
 
 
 namespace DB::ErrorCodes
@@ -59,6 +60,35 @@ namespace
         Stdvar,
         Present,
     };
+
+    void checkPredictLinearArgumentTypes(const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    {
+        std::string_view function_name = "predict_linear";
+        if (arguments.size() != 2)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects 2 arguments, but was called with {} arguments",
+                            function_name, arguments.size());
+        }
+
+        const auto & range_arg = arguments[0];
+        if (range_arg.type != ResultType::RANGE_VECTOR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects first argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::RANGE_VECTOR,
+                            getPromQLText(range_arg, context), range_arg.type);
+        }
+
+        const auto & scalar_arg = arguments[1];
+        if (scalar_arg.type != ResultType::SCALAR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects second argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::SCALAR,
+                            getPromQLText(scalar_arg, context), scalar_arg.type);
+        }
+    }
 
     void checkQuantileOverTimeArgumentTypes(const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
@@ -122,6 +152,7 @@ namespace
     {
         None,
         Increase,
+        Deriv,
     };
 
     struct ImplInfo
@@ -334,9 +365,15 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"deriv",
+             {
+                 "timeSeriesDerivToGrid",
+                 /* drop_metric_name = */ true,
+                 SimpleOverTimeFunction::None,
+                 PostProcessFunction::Deriv,
+             }},
+
             /// TODO:
-            /// predict_linear
-            /// deriv
             /// quantile_over_time
             /// absent_over_time
             /// mad_over_time
@@ -358,7 +395,7 @@ namespace
 
 bool isFunctionOverRange(std::string_view function_name)
 {
-    return (function_name == "quantile_over_time") || (getImplInfo(function_name) != nullptr);
+    return (function_name == "quantile_over_time") || (function_name == "predict_linear") || (getImplInfo(function_name) != nullptr);
 }
 
 
@@ -377,7 +414,8 @@ SQLQueryPiece applyFunctionOverRange(
 {
     const auto * impl_info = getImplInfo(function_name);
     const bool is_quantile_over_time = function_name == "quantile_over_time";
-    chassert(impl_info || is_quantile_over_time);
+    const bool is_predict_linear = function_name == "predict_linear";
+    chassert(impl_info || is_quantile_over_time || is_predict_linear);
 
     std::string_view ch_function_name;
     bool drop_metric_name = true;
@@ -389,6 +427,12 @@ SQLQueryPiece applyFunctionOverRange(
         checkQuantileOverTimeArgumentTypes(arguments, context);
         ch_function_name = "timeSeriesQuantileToGrid";
         range_argument_index = 1;
+    }
+    else if (is_predict_linear)
+    {
+        checkPredictLinearArgumentTypes(arguments, context);
+        ch_function_name = "timeSeriesPredictLinearToGrid";
+        range_argument_index = 0;
     }
     else
     {
@@ -407,6 +451,13 @@ SQLQueryPiece applyFunctionOverRange(
             return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
 
         extra_parameter = getScalarParameter(std::move(arguments[0]), function_name, context);
+    }
+    else if (is_predict_linear)
+    {
+        if (arguments[0].store_method == StoreMethod::EMPTY || arguments[1].store_method == StoreMethod::EMPTY)
+            return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+
+        extra_parameter = getScalarParameter(std::move(arguments[1]), function_name, context);
     }
 
     auto start_time = node_range.start_time;
@@ -577,10 +628,21 @@ SQLQueryPiece applyFunctionOverRange(
         }
     }
 
-    if (impl_info && impl_info->post_process_function == PostProcessFunction::Increase)
+    if (impl_info && impl_info->post_process_function != PostProcessFunction::None)
     {
-        /// timeSeriesRateToGrid already implements Prometheus counter extrapolation;
-        /// increase() is that per-second rate scaled back to the requested range length.
+        ASTPtr factor;
+        if (impl_info->post_process_function == PostProcessFunction::Increase)
+        {
+            /// timeSeriesRateToGrid already implements Prometheus counter extrapolation;
+            /// increase() is that per-second rate scaled back to the requested range length.
+            factor = toFloat64(timeSeriesDurationToAST(window, context.timestamp_data_type));
+        }
+        else
+        {
+            /// timeSeriesDerivToGrid returns a slope per timestamp unit; PromQL deriv reports per-second slope.
+            factor = make_intrusive<ASTLiteral>(std::pow(10.0, context.timestamp_scale));
+        }
+
         result_values = makeASTFunction(
             "arrayMap",
             makeASTLambda(
@@ -592,7 +654,7 @@ SQLQueryPiece applyFunctionOverRange(
                     makeASTFunction(
                         "multiply",
                         make_intrusive<ASTIdentifier>("x"),
-                        toFloat64(timeSeriesDurationToAST(window, context.timestamp_data_type))))),
+                        std::move(factor)))),
             std::move(result_values));
     }
 
