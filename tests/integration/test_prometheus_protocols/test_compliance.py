@@ -469,12 +469,62 @@ def _run_range_query(host, port, path, query):
 
 # ── Compliance result tracking ───────────────────────────────────────────────
 
+IMPLEMENTED_WRONG_RESULTS = "implemented wrong results"
+IMPLEMENTED_UNEXPECTED_ERRORS = "implemented unexpected errors"
+UNSUPPORTED_DEFERRED = "unsupported/deferred categories"
+EXPECTATION_MISMATCHES = "reference or should-fail mismatches"
+
+
+def _feature_category(query):
+    query_lower = query.lower()
+    if "histogram_quantile" in query_lower or "_bucket" in query_lower:
+        return "histogram"
+    if "label_replace" in query_lower or "label_join" in query_lower:
+        return "label functions"
+    if "count_values" in query_lower:
+        return "count_values"
+    if "absent" in query_lower:
+        return "absent functions"
+    if "offset" in query_lower or " @ " in query_lower or "[" in query_lower and ":" in query_lower:
+        return "time/range/subquery"
+    if "topk" in query_lower or "bottomk" in query_lower or "quantile" in query_lower:
+        return "ordered/quantile aggregations"
+    if "over_time" in query_lower or "rate(" in query_lower or "delta(" in query_lower or "increase(" in query_lower:
+        return "range functions"
+    if " on(" in query_lower or " group_left" in query_lower or " group_right" in query_lower:
+        return "vector matching"
+    if any(op in query_lower for op in ("+", "-", "*", "/", "%", "^", "==", "!=", "<=", ">=")):
+        return "scalar/vector binary operators"
+    return "scalar/vector general"
+
+
+def _unsupported_category(query):
+    feature = _feature_category(query)
+    if feature == "histogram":
+        return "deferred: histogram"
+    return f"unsupported: {feature}"
+
+
 class ComplianceResult:
     def __init__(self):
         self.passed = 0
-        self.failed = 0
-        self.unsupported = 0
+        self.implemented_wrong_results = 0
+        self.implemented_unexpected_errors = 0
+        self.unsupported_deferred = 0
+        self.expectation_mismatches = 0
         self.failures = []
+
+    @property
+    def failed(self):
+        return (
+            self.implemented_wrong_results
+            + self.implemented_unexpected_errors
+            + self.expectation_mismatches
+        )
+
+    @property
+    def unsupported(self):
+        return self.unsupported_deferred
 
     @property
     def total(self):
@@ -484,16 +534,36 @@ class ComplianceResult:
     def score(self):
         return (self.passed / self.total * 100) if self.total > 0 else 0
 
+    @property
+    def implemented_blockers(self):
+        return self.implemented_wrong_results + self.implemented_unexpected_errors + self.expectation_mismatches
+
     def record_pass(self):
         self.passed += 1
 
-    def record_fail(self, query, reason):
-        self.failed += 1
-        self.failures.append((query, reason))
+    def _record_failure(self, query, kind, category, reason):
+        self.failures.append({
+            "query": query,
+            "kind": kind,
+            "category": category,
+            "reason": reason,
+        })
+
+    def record_wrong_result(self, query, reason):
+        self.implemented_wrong_results += 1
+        self._record_failure(query, IMPLEMENTED_WRONG_RESULTS, _feature_category(query), reason)
+
+    def record_unexpected_error(self, query, reason):
+        self.implemented_unexpected_errors += 1
+        self._record_failure(query, IMPLEMENTED_UNEXPECTED_ERRORS, _feature_category(query), reason)
 
     def record_unsupported(self, query, reason):
-        self.unsupported += 1
-        self.failures.append((query, f"UNSUPPORTED: {reason}"))
+        self.unsupported_deferred += 1
+        self._record_failure(query, UNSUPPORTED_DEFERRED, _unsupported_category(query), reason)
+
+    def record_expectation_mismatch(self, query, reason):
+        self.expectation_mismatches += 1
+        self._record_failure(query, EXPECTATION_MISMATCHES, _feature_category(query), reason)
 
 
 # ── Fixtures and test ────────────────────────────────────────────────────────
@@ -540,30 +610,30 @@ def test_promql_compliance():
         # Reference behaviour doesn't match expectation — skip.
         if ref_failed != should_fail:
             if ref_failed:
-                result.record_fail(query, f"reference unexpectedly failed: {ref_err}")
+                result.record_expectation_mismatch(query, f"reference unexpectedly failed: {ref_err}")
             else:
-                result.record_fail(query, "reference unexpectedly succeeded (expected failure)")
+                result.record_expectation_mismatch(query, "reference unexpectedly succeeded (expected failure)")
             continue
 
         if should_fail:
             if test_failed:
                 result.record_pass()
             else:
-                result.record_fail(query, "expected failure but ClickHouse succeeded")
+                result.record_expectation_mismatch(query, "expected failure but ClickHouse succeeded")
             continue
 
         if test_failed:
             if "not implemented" in (test_err or "").lower() or "501" in (test_err or ""):
                 result.record_unsupported(query, test_err)
             else:
-                result.record_fail(query, f"ClickHouse error: {test_err}")
+                result.record_unexpected_error(query, f"ClickHouse error: {test_err}")
             continue
 
         match, diff = compare_results(ref_data, test_data)
         if match:
             result.record_pass()
         else:
-            result.record_fail(query, diff)
+            result.record_wrong_result(query, diff)
 
     # ── Print compliance report ──────────────────────────────────────────
     print("\n" + "=" * 80)
@@ -577,48 +647,46 @@ def test_promql_compliance():
     print(f"             {result.passed} / {result.total} passed")
     print("=" * 80)
 
+    print("\nSELF-ASSURANCE STATUS")
+    print("-" * 80)
+    print(f"Implemented wrong results:        {result.implemented_wrong_results}")
+    print(f"Implemented unexpected errors:    {result.implemented_unexpected_errors}")
+    print(f"Unsupported/deferred categories:  {result.unsupported_deferred}")
+    print(f"Reference/should-fail mismatches: {result.expectation_mismatches}")
+    if result.implemented_blockers == 0:
+        print("Scalar/vector implemented status: no wrong-result/error/expectation blockers")
+    else:
+        print("Scalar/vector implemented status: needs attention before review")
+    if result.unsupported_deferred:
+        print("Unsupported/deferred categories remain visible in the breakdown below")
+
     if result.failures:
-        import re as _re
-        categories = {}  # key -> [(query, reason)]
-        for query, reason in result.failures:
-            if "UNSUPPORTED:" in reason:
-                m = _re.search(r"(Function \S+ is not implemented|"
-                               r"Aggregation operator '\S+' is not implemented|"
-                               r"Prometheus query node type \S+ is not implemented|"
-                               r"\S+ is not implemented)", reason)
-                key = m.group(1) if m else "other unsupported"
-            elif "expected failure but ClickHouse succeeded" in reason:
-                key = "should_fail mismatch (ClickHouse should reject but accepts)"
-            elif "reference unexpectedly" in reason:
-                key = "reference mismatch (Prometheus behaves differently than expected)"
-            elif "Number of values (0)" in reason:
-                key = "aggregation on nonexistent metric errors instead of returning empty"
-            elif "Quantile level is out of range" in reason:
-                key = "quantile out-of-range phi rejected (Prometheus accepts)"
-            elif "value mismatch" in reason or "series count mismatch" in reason:
-                key = "result value/count mismatch"
-            else:
-                key = "other"
-            categories.setdefault(key, []).append((query, reason))
+        categories = {}  # (kind, category) -> [failure]
+        for failure in result.failures:
+            categories.setdefault((failure["kind"], failure["category"]), []).append(failure)
 
         print(f"\n{'─' * 80}")
-        print("FAILURE BREAKDOWN BY CATEGORY")
+        print("SELF-ASSURANCE BREAKDOWN BY CLASS AND CATEGORY")
         print(f"{'─' * 80}")
-        for cat in sorted(categories, key=lambda c: -len(categories[c])):
-            entries = categories[cat]
-            print(f"\n  [{len(entries):3d}]  {cat}")
-            for q, r in entries[:3]:
-                q_short = q if len(q) <= 72 else q[:69] + "..."
-                print(f"           e.g. {q_short}")
+        for key in sorted(categories, key=lambda c: (-len(categories[c]), c[0], c[1])):
+            kind, category = key
+            entries = categories[key]
+            print(f"\n  [{len(entries):3d}]  {kind}: {category}")
+            for failure in entries[:3]:
+                query = failure["query"]
+                query_short = query if len(query) <= 72 else query[:69] + "..."
+                print(f"           e.g. {query_short}")
             if len(entries) > 3:
                 print(f"           ... and {len(entries) - 3} more")
 
-            if "other" in cat or "reference" in cat or "mismatch" in cat.split("(")[0].strip():
-                print(f"           Details:")
-                for q, r in entries:
-                    q_short = q if len(q) <= 60 else q[:57] + "..."
-                    r_short = r if len(r) <= 100 else r[:97] + "..."
-                    print(f"             {q_short}")
-                    print(f"               → {r_short}")
+            if kind != UNSUPPORTED_DEFERRED:
+                print("           Details:")
+                for failure in entries:
+                    query = failure["query"]
+                    reason = failure["reason"]
+                    query_short = query if len(query) <= 60 else query[:57] + "..."
+                    reason_short = reason if len(reason) <= 100 else reason[:97] + "..."
+                    print(f"             {query_short}")
+                    print(f"               → {reason_short}")
 
     print()
