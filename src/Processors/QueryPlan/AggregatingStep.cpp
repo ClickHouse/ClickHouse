@@ -512,9 +512,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         if (!storage_has_evenly_distributed_read && !skip_merging)
         {
             /// Use gradual resize only when there are GROUP BY keys.
-            /// For global aggregates (no keys), each AggregatingTransform produces exactly 1 row,
-            /// so merging overhead is trivial regardless of parallelism. Gradual resize would only
-            /// serialize the expensive upstream scan/filter work without any benefit.
+            /// For global aggregates (no keys) the number of partial states is one per stream
+            /// regardless of cardinality, so reducing parallelism would not save any merging work
+            /// proportional to the result; it would only serialize the upstream scan/filter and
+            /// lose parallel-scan throughput.
             bool use_gradual_resize = !params.keys.empty()
                 && (settings.min_rows_per_stream_for_gradual_resize || settings.min_bytes_per_stream_for_gradual_resize);
 
