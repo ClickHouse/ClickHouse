@@ -34,6 +34,8 @@ namespace
 
     String makePrometheusRegex(std::string_view regex)
     {
+        /// Prometheus applies label_replace() regexes in DOTALL mode; anchoring is supplied
+        /// by ContextTimeSeriesTagsCollector's RE2::ANCHOR_BOTH match.
         String result;
         result.reserve(regex.size() + strlen("(?s:)"));
         result += "(?s:";
@@ -259,6 +261,8 @@ SQLQueryPiece applyLabelFunction(const PQT::Function * function_node, std::vecto
         builder.from_table = context.subqueries.back().name;
 
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+        /// label_replace()/label_join() can collapse different inputs to the same label set.
+        /// PromQL treats that as an invalid result vector instead of choosing a sample.
         builder.having = makeASTFunction(
             "equals",
             makeASTFunction(

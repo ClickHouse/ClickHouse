@@ -54,6 +54,7 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForGroup(name, arguments, 0);
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstTagName(name, arguments, 1);
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstString(name, arguments, 2);
+        /// label_replace() permits an empty or missing source label; only the destination is a new tag name.
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstString(name, arguments, 3);
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstString(name, arguments, 4);
     }

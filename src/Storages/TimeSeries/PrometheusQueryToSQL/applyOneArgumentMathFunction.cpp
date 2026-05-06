@@ -43,6 +43,8 @@ namespace
         }
     }
 
+    /// Most entries are direct ClickHouse calls, but PromQL round() needs an expression
+    /// to preserve its default nearest-1 and tie-round-up semantics.
     using TransformASTFunc = ASTPtr (*)(ASTPtr x);
 
     struct ImplInfo

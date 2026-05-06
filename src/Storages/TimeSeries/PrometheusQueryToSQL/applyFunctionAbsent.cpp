@@ -85,6 +85,7 @@ Labels getLabelsForAbsentFunction(const Node * argument_node)
         return labels;
 
     std::unordered_map<String, bool> has;
+    /// Prometheus copies only unambiguous equality matchers into the synthetic absent() series.
     for (const auto & matcher : *matchers)
     {
         if (matcher.label_name == kMetricName)
@@ -263,6 +264,8 @@ buildPresenceGridForRangeArgument(SQLQueryPiece && argument, const NodeEvaluatio
     SelectQueryBuilder builder;
     builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
+    /// absent_over_time() needs one presence bit per evaluation step; the sample value itself
+    /// is discarded later by countForEach(), so lastToGrid is only a presence probe.
     builder.select_list.push_back(addParametersToAggregateFunction(
         makeASTFunction("timeSeriesLastToGrid", std::move(timestamps), std::move(values)),
         timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),

@@ -99,6 +99,7 @@ ASTPtr makeFormattedValueLabel(ASTPtr value)
 
 ASTPtr makeGroupWithValueLabel(ASTPtr group, const String & value_label_name, ASTPtr value_label)
 {
+    /// count_values() overwrites any existing label with the generated value label before by/without grouping.
     auto group_as_uint64 = makeASTFunction("CAST", std::move(group), make_intrusive<ASTLiteral>("UInt64"));
     return makeASTFunction(
         "timeSeriesTagsToGroup",

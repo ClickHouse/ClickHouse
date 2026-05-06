@@ -147,6 +147,8 @@ prepareSide(const PQT::BinaryOperator * operator_node, SQLQueryPiece && argument
 
 ASTPtr selectPresenceByJoinGroup(const String & table_name)
 {
+    /// Packed vector grids need per-step presence. A group that exists on the right
+    /// at one timestamp must not make set matching succeed at every timestamp.
     SelectQueryBuilder builder;
     builder.from_table = table_name;
     builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
@@ -251,6 +253,8 @@ ASTPtr selectAnd(const String & left, const String & right, ConverterContext & c
 
 ASTPtr selectUnless(const String & left, const String & right, ConverterContext & context)
 {
+    /// `unless` keeps left samples when the right match key is absent at that evaluation step,
+    /// so matched groups can still contribute sparse per-step holes.
     String right_presence = materializeTable(selectPresenceByJoinGroup(right), context);
     ASTPtr unmatched_groups = selectLeftByMissingGroup(left, right_presence);
     ASTPtr unmatched_steps = selectLeftMaskedByPresence(left, right_presence, /* keep_when_present = */ false, context);
@@ -259,6 +263,8 @@ ASTPtr selectUnless(const String & left, const String & right, ConverterContext 
 
 ASTPtr selectOr(const String & left, const String & right, ConverterContext & context)
 {
+    /// `or` returns all left samples and only those right samples that do not have
+    /// a left match at the same evaluation step.
     String left_presence = materializeTable(selectPresenceByJoinGroup(left), context);
     ASTPtr left_all = selectOriginalSeries(left);
     ASTPtr right_unmatched_groups = selectLeftByMissingGroup(right, left_presence);

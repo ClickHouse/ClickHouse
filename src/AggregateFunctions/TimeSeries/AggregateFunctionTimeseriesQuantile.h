@@ -118,6 +118,8 @@ public:
 private:
     static bool valueLess(ValueType lhs, ValueType rhs)
     {
+        /// Prometheus sorts NaN before numeric samples before quantile interpolation.
+        /// Plain operator< would leave NaNs unordered.
         const bool lhs_nan = std::isnan(lhs);
         const bool rhs_nan = std::isnan(rhs);
         if (lhs_nan || rhs_nan)
