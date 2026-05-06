@@ -215,6 +215,15 @@ else ()
     message(STATUS "Not using USearch")
 endif ()
 
+option(ENABLE_SCANN "Enable ScaNN vector index" ${ENABLE_LIBRARIES})
+if (ENABLE_SCANN)
+    add_contrib (highway-cmake highway)
+    add_contrib (eigen-cmake eigen)
+    add_contrib (scann-cmake scann)     # requires: highway, eigen, abseil-cpp, protobuf
+else ()
+    message(STATUS "Not using ScaNN")
+endif ()
+
 add_contrib (xxHash-cmake xxHash)
 
 add_contrib (libbcrypt-cmake libbcrypt)

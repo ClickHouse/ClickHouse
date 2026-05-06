@@ -396,3 +396,12 @@
 [submodule "contrib/silk"]
 	path = contrib/silk
 	url = https://github.com/ClickHouse/silk.git
+[submodule "contrib/scann"]
+	path = contrib/scann
+	url = https://github.com/lvzhipin03/scann.git
+[submodule "contrib/highway"]
+	path = contrib/highway
+	url = https://github.com/google/highway.git
+[submodule "contrib/eigen"]
+	path = contrib/eigen
+	url = https://gitlab.com/libeigen/eigen.git
