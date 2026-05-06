@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/IndicesDescription.h>
+#include <DataTypes/IDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -245,12 +246,60 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     }
 }
 
-ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
+ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseRaw(const String & s)
 {
     ReplicatedMergeTreeTableMetadata metadata;
     ReadBufferFromString buf(s);
     metadata.read(buf);
     return metadata;
+}
+
+ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+    const String & s,
+    const ColumnsDescription & columns,
+    bool add_minmax_index_for_numeric_columns,
+    bool add_minmax_index_for_string_columns,
+    ContextPtr context)
+{
+    auto result = parseRaw(s);
+
+    /// Backward compatibility: older replicas (before 25.12) stored implicit indices in Keeper
+    /// metadata. Newer replicas only store explicit indices. Strip implicit indices from the
+    /// parsed metadata so that all downstream comparisons work against the new format.
+    if (result.skip_indices.empty()
+        || (!add_minmax_index_for_numeric_columns && !add_minmax_index_for_string_columns))
+        return result;
+
+    constexpr bool escape_index_filenames = true; /// Does not matter here, we re-serialize the parsed result
+    auto parsed = IndicesDescription::parse(result.skip_indices, columns, escape_index_filenames, context);
+
+    bool has_implicit = false;
+    for (auto & index : parsed)
+    {
+        if (!index.name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+            continue;
+
+        String column_name = index.name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
+        if (!columns.has(column_name))
+            continue;
+
+        const auto & col_type = columns.get(column_name).type;
+
+        /// Only `add_minmax_index_for_numeric_columns` and `add_minmax_index_for_string_columns`
+        /// need to be checked here. The temporal setting (`add_minmax_index_for_temporal_columns`)
+        /// was introduced in 26.2 and never stored implicit indices in Keeper metadata.
+        if ((add_minmax_index_for_numeric_columns && isNumber(col_type))
+            || (add_minmax_index_for_string_columns && isString(col_type)))
+        {
+            index.is_implicitly_created = true;
+            has_implicit = true;
+        }
+    }
+
+    if (has_implicit)
+        result.skip_indices = parsed.explicitToString();
+
+    return result;
 }
 
 static void handleTableMetadataMismatch(
@@ -283,6 +332,7 @@ static void handleTableMetadataMismatch(
 void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
     const ReplicatedMergeTreeTableMetadata & from_zk,
     const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
     const std::string & table_name_for_error_message,
     ContextPtr context,
     bool check_index_granularity) const
@@ -324,14 +374,14 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
 
     /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
     ///    in formatAST code.
-    String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, context, true).getOriginalExpressionList());
+    String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, virtuals, context, true).getOriginalExpressionList());
     if (primary_key != parsed_zk_primary_key)
         handleTableMetadataMismatch(table_name_for_error_message, "primary key", from_zk.primary_key, parsed_zk_primary_key, primary_key);
 
     if (data_format_version != from_zk.data_format_version)
         handleTableMetadataMismatch(table_name_for_error_message, "data format version", DB::toString(from_zk.data_format_version.toUnderType()), "", DB::toString(data_format_version.toUnderType()));
 
-    String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, context, false).expression_list_ast);
+    String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, virtuals, context, false).expression_list_ast);
     if (partition_key != parsed_zk_partition_key)
         handleTableMetadataMismatch(table_name_for_error_message, "partition key expression", from_zk.partition_key, parsed_zk_partition_key, partition_key);
 }
@@ -339,6 +389,7 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
 bool ReplicatedMergeTreeTableMetadata::checkEquals(
     const ReplicatedMergeTreeTableMetadata & from_zk,
     const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
     const std::string & table_name_for_error_message,
     ContextPtr context,
     bool check_index_granularity,
@@ -346,23 +397,23 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
     LoggerPtr logger) const
 {
     bool is_equal = true;
-    checkImmutableFieldsEquals(from_zk, columns, table_name_for_error_message, context, check_index_granularity);
+    checkImmutableFieldsEquals(from_zk, columns, virtuals, table_name_for_error_message, context, check_index_granularity);
 
-    String parsed_zk_sampling_expression = formattedAST(KeyDescription::parse(from_zk.sampling_expression, columns, context, false).definition_ast);
+    String parsed_zk_sampling_expression = formattedAST(KeyDescription::parse(from_zk.sampling_expression, columns, virtuals, context, false).definition_ast);
     if (sampling_expression != parsed_zk_sampling_expression)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "sampling expression", from_zk.sampling_expression, parsed_zk_sampling_expression, sampling_expression, strict_check, logger);
         is_equal = false;
     }
 
-    String parsed_zk_sorting_key = formattedAST(extractKeyExpressionList(KeyDescription::parse(from_zk.sorting_key, columns, context, true).definition_ast));
+    String parsed_zk_sorting_key = formattedAST(extractKeyExpressionList(KeyDescription::parse(from_zk.sorting_key, columns, virtuals, context, true).definition_ast));
     if (sorting_key != parsed_zk_sorting_key)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "sorting key expression", from_zk.sorting_key, parsed_zk_sorting_key, sorting_key, strict_check, logger);
         is_equal = false;
     }
 
-    auto parsed_primary_key = KeyDescription::parse(primary_key, columns, context, true);
+    auto parsed_primary_key = KeyDescription::parse(primary_key, columns, virtuals, context, true);
     // Strict checking of suspicious TTL is not needed here
     String parsed_zk_ttl_table = formattedAST(
         TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_attach = */ true).definition_ast);
@@ -372,21 +423,17 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
         is_equal = false;
     }
 
+    /// Implicit indices are stripped from Keeper metadata during `parseAndNormalize`,
+    /// so at this point `from_zk.skip_indices` only contains explicit indices.
     constexpr bool escape_index_filenames = true; /// It doesn't matter here, as we compare parsed strings
-    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).explicitToString();
+    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).allToString();
     if (skip_indices != parsed_zk_skip_indices)
     {
-        String all_parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).allToString();
-        // Backward compatibility: older replicas included implicit indices in metadata,
-        // while newer ones exclude them. This check allows comparison between both formats.
-        if (skip_indices != all_parsed_zk_skip_indices)
-        {
-            handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
-            is_equal = false;
-        }
+        handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
+        is_equal = false;
     }
 
-    String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, context).toString();
+    String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, nullptr, context).toString();
     if (projections != parsed_zk_projections)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections, projections, strict_check, logger);
@@ -413,11 +460,12 @@ ReplicatedMergeTreeTableMetadata::Diff
 ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
     const ReplicatedMergeTreeTableMetadata & from_zk,
     const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
     const std::string & table_name_for_error_message,
     ContextPtr context,
     bool check_index_granularity) const
 {
-    checkImmutableFieldsEquals(from_zk, columns, table_name_for_error_message, context, check_index_granularity);
+    checkImmutableFieldsEquals(from_zk, columns, virtuals, table_name_for_error_message, context, check_index_granularity);
 
     Diff diff;
 
@@ -460,7 +508,7 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
     return diff;
 }
 
-StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(const ColumnsDescription & new_columns, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const
+StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(const ColumnsDescription & new_columns, const VirtualColumnsDescription & virtuals, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const
 {
     StorageInMemoryMetadata new_metadata = old_metadata;
     new_metadata.columns = new_columns;
@@ -488,15 +536,13 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         {
             auto order_by_ast = parse_key_expr(new_sorting_key);
 
-            new_metadata.sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, context);
+            new_metadata.sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, virtuals, context);
 
             if (new_metadata.primary_key.definition_ast == nullptr)
             {
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
-                auto old_sorting_key_ast = old_metadata.getSortingKey().definition_ast;
-                new_metadata.primary_key = KeyDescription::getKeyFromAST(
-                    old_sorting_key_ast, new_metadata.columns, context);
+                new_metadata.primary_key = KeyDescription::getKeyFromAST(old_metadata.sorting_key.definition_ast, new_metadata.columns, virtuals, context);
             }
         }
 
@@ -505,7 +551,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             if (!new_sampling_expression.empty())
             {
                 auto sample_by_ast = parse_key_expr(new_sampling_expression);
-                new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, context);
+                new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, virtuals, context);
             }
             else /// SAMPLE BY was removed
             {
@@ -520,7 +566,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             new_metadata.constraints = ConstraintsDescription::parse(new_constraints);
 
         if (projections_changed)
-            new_metadata.projections = ProjectionsDescription::parse(new_projections, new_columns, context);
+            new_metadata.projections = ProjectionsDescription::parse(new_projections, new_columns, &new_metadata.partition_key, context);
 
         if (ttl_table_changed)
         {
@@ -547,24 +593,40 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     }
 
     if (new_metadata.partition_key.definition_ast != nullptr)
-        new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, context);
+    {
+        auto old_partition_key_sample_block = new_metadata.partition_key.sample_block;
+        new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
+
+        /// If partition key expression structure changed we must rebuild minmax_count_projection,
+        /// otherwise it retains stale column types (e.g. plain Int8 instead of LowCardinality(Int8))
+        /// and the aggregation engine hits a type mismatch. See #100175.
+        if (new_metadata.minmax_count_projection
+            && !blocksHaveEqualStructure(new_metadata.partition_key.sample_block, old_partition_key_sample_block))
+        {
+            auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
+            auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
+            FunctionNameNormalizer::visit(partition_key_ast.get());
+            new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+                new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
+        }
+    }
 
     if (!sorting_key_changed) /// otherwise already updated
-        new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, context);
+        new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
 
     /// Primary key is special, it exists even if not defined
     if (new_metadata.primary_key.definition_ast != nullptr)
     {
-        new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, context);
+        new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
     }
     else
     {
-        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, context);
+        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, virtuals, context);
         new_metadata.primary_key.definition_ast = nullptr;
     }
 
     if (!sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
-        new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, context);
+        new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
 
     if (!skip_indices_changed) /// otherwise already updated
     {
@@ -597,7 +659,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     {
         ProjectionsDescription recalculated_projections;
         for (const auto & projection : new_metadata.projections)
-            recalculated_projections.add(ProjectionDescription::getProjectionFromAST(projection.definition_ast, new_metadata.columns, context));
+            recalculated_projections.add(ProjectionDescription::getProjectionFromAST(projection.definition_ast, new_metadata.columns, &new_metadata.partition_key, context));
         new_metadata.projections = std::move(recalculated_projections);
     }
 

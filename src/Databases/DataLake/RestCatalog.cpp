@@ -22,6 +22,7 @@
 #include <Common/checkStackSize.h>
 
 #include <IO/ConnectionTimeouts.h>
+#include <IO/GCPOAuth.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
@@ -42,6 +43,7 @@
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/StreamCopier.h>
+#include <Common/FailPoint.h>
 
 
 namespace DB::ErrorCodes
@@ -49,6 +51,12 @@ namespace DB::ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace DB::FailPoints
+{
+    extern const char check_database_datalake_negative[];
 }
 
 namespace DataLake
@@ -216,6 +224,11 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
 
 DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
 {
+    fiu_do_on(DB::FailPoints::check_database_datalake_negative,
+    {
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database");
+    });
+
     /// Option 1: user specified auth header manually.
     /// Header has format: 'Authorization: <scheme> <token>'.
     if (auth_header.has_value())
@@ -342,7 +355,9 @@ AccessToken RestCatalog::retrieveAccessToken() const
     if (object->has("expires_in"))
     {
         Int64 expires_in = object->getValue<Int64>("expires_in");
-        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in - 300); /// 5 minutes buffer
+        /// Use 90% of the token lifetime as the validity window so that short-lived tokens
+        /// (e.g. expires_in=300) still get a sensible buffer instead of going non-positive.
+        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
     }
 
     return token;
@@ -412,103 +427,18 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(bool update_token) const
 
 AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() const
 {
-    static constexpr auto GOOGLE_OAUTH2_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
-
     if (google_adc_client_id.empty() || google_adc_client_secret.empty() || google_adc_refresh_token.empty())
-    {
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
             "Invalid ADC credentials: client_id, client_secret, and refresh_token are required");
-    }
-
-    Poco::URI url(GOOGLE_OAUTH2_TOKEN_ENDPOINT);
-
-    String encoded_refresh_token;
-    String encoded_client_id;
-    String encoded_client_secret;
-    Poco::URI::encode(google_adc_refresh_token, google_adc_refresh_token, encoded_refresh_token);
-    Poco::URI::encode(google_adc_client_id, google_adc_client_id, encoded_client_id);
-    Poco::URI::encode(google_adc_client_secret, google_adc_client_secret, encoded_client_secret);
-    String body = fmt::format(
-        "grant_type=refresh_token&client_id={}&client_secret={}&refresh_token={}",
-        encoded_client_id, encoded_client_secret, encoded_refresh_token
-    );
 
     const auto & context = getContext();
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
-    DB::HTTPSessionPtr session;
-
-    /// For some reason session can be not initialized after first time, so we need to do retries
-    for (size_t i = 0; i < 5; ++i)
-    {
-        try
-        {
-            session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
-            break;
-        }
-        catch (...)
-        {
-            DB::tryLogCurrentException(log);
-        }
-    }
-    if (!session)
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Session for big lake catalog is not initialized");
-
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, url.getPathAndQuery(),
-                                    Poco::Net::HTTPMessage::HTTP_1_1);
-    request.setContentType("application/x-www-form-urlencoded");
-    request.setContentLength(body.size());
-    request.set("Accept", "application/json");
-
-    LOG_DEBUG(log, "Token endpoint host={} path={}", url.getHost(), url.getPathAndQuery());
-
-    std::ostream & os = session->sendRequest(request);
-    os << body;
-
-    Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
-
-    String token_json_raw;
-    Poco::StreamCopier::copyToString(rs, token_json_raw);
-
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Failed to request Google Cloud access token using refresh token: {} (status: {})",
-            response.getReason(),
-            static_cast<int>(response.getStatus()));
-    }
-
-    Poco::JSON::Parser parser;
-    auto object = parser.parse(token_json_raw).extract<Poco::JSON::Object::Ptr>();
-
-    if (!object->has("access_token") || !object->has("token_type"))
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Unexpected structure of Google Cloud token response. Response should have fields: 'access_token', 'token_type'");
-    }
-
-    auto token_type = object->getValue<String>("token_type");
-    if (token_type != "Bearer")
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Unexpected token type in Google Cloud response. Expected Bearer token, got {}",
-            token_type);
-    }
+    auto result = fetchGCPOAuthToken(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, timeouts);
 
     AccessToken token;
-    token.token = object->getValue<String>("access_token");
-
-    /// Cache token expiration if provided (typically 3600 seconds for refresh token flow)
-    if (object->has("expires_in"))
-    {
-        Int64 expires_in = object->getValue<Int64>("expires_in");
-        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in - 300); /// 5 minutes buffer
-    }
-
+    token.token = std::move(result.access_token);
+    token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(result.expires_in * 9 / 10);
     return token;
 }
 
@@ -587,12 +517,10 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
     AccessToken token;
     token.token = object->getValue<String>("access_token");
 
-    /// For refresh token flow, tokens typically expire in 1 hour
-    /// We'll cache for 55 minutes to be safe
     if (object->has("expires_in"))
     {
         Int64 expires_in = object->getValue<Int64>("expires_in");
-        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in - 300);
+        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
     }
 
     return token;
@@ -810,8 +738,11 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
             const int idx = static_cast<int>(current_namespace_array->size()) - 1;
             const auto current_namespace = current_namespace_array->get(idx).extract<String>();
-            /// Biglake for some unknown reason can return `base_namespace` as child of `base_namespace`
-            if (getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE && !base_namespace.empty() && current_namespace == base_namespace)
+            /// BigLake does not support multi-level namespaces. When asked for sub-namespaces of
+            /// a non-empty parent (via ?parent=X), BigLake ignores the filter and returns other
+            /// top-level namespaces instead. Skip all sub-namespace results to avoid constructing
+            /// fake multi-level paths like "ns1.ns2" that BigLake will reject with HTTP 400.
+            if (getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE && !base_namespace.empty())
             {
                 continue;
             }
@@ -1052,7 +983,7 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
 
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
-    const std::string endpoint = fmt::format("{}/namespaces", base_url);
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
@@ -1080,7 +1011,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 {
     createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
 
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables", base_url, namespace_name);
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("name", table_name);
@@ -1117,7 +1048,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}", base_url, namespace_name, table_name);
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
@@ -1202,10 +1133,18 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
     {
         case StorageType::S3:
         {
+            static constexpr auto gcs_token_str = "gcs.oauth2.token";
             static constexpr auto access_key_id_str = "s3.access-key-id";
             static constexpr auto secret_access_key_str = "s3.secret-access-key";
             static constexpr auto session_token_str = "s3.session-token";
             static constexpr auto storage_endpoint_str = "s3.endpoint";
+
+            if (object->has(gcs_token_str))
+            {
+                auto gcs_token = object->get(gcs_token_str).extract<String>();
+                LOG_DEBUG(log, "Using GCS OAuth2 token for location {}", location);
+                return {std::make_shared<GCSCredentials>(gcs_token), ""};
+            }
 
             std::string access_key_id;
             std::string secret_access_key;
@@ -1281,18 +1220,28 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         Poco::Dynamic::Var json = parser.parse(json_str);
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-        auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
-        std::string location;
+        if (!object->has("config"))
         {
-            if (object->has("metadata-location"))
-            {
-                location = object->get("metadata-location").extract<String>();
-                LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
-            }
-            else
-            {
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot read table {}, because no 'location' in response", table_name);
-            }
+            LOG_DEBUG(log, "No 'config' in response for table {} – catalog does not support credential vending", table_name);
+            return nullptr;
+        }
+
+        auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
+        if (!config_object)
+        {
+            LOG_DEBUG(log, "Empty 'config' in response for table {}", table_name);
+            return nullptr;
+        }
+
+        std::string location;
+        if (object->has("metadata-location"))
+        {
+            location = object->get("metadata-location").extract<String>();
+            LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
+        }
+        else
+        {
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot read table {}, because no 'metadata-location' in response", table_name);
         }
 
         auto [new_credentials, _] = getCredentialsAndEndpoint(config_object, location);

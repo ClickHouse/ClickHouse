@@ -1,4 +1,5 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Common/CurrentThread.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/RestorerFromBackup.h>
@@ -12,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -23,6 +25,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsBool log_queries;
 }
@@ -100,8 +104,14 @@ ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const Co
         query->or_replace = false;
         FunctionNameNormalizer::visit(query->function_core.get());
 
-        NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
-        NormalizeSelectWithUnionQueryVisitor{data}.visit(query->function_core);
+        {
+            SelectIntersectExceptQueryVisitor::Data data{context->getSettingsRef()[Setting::intersect_default_mode], context->getSettingsRef()[Setting::except_default_mode]};
+            SelectIntersectExceptQueryVisitor{data}.visit(query->function_core);
+        }
+        {
+            NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(query->function_core);
+        }
     }
 
     if (auto * query = typeid_cast<ASTCreateWasmFunctionQuery *>(ptr.get()))
@@ -219,7 +229,7 @@ ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
 
     if (ast && CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
     }
@@ -233,7 +243,7 @@ ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) 
 
     if (ast && CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
     }

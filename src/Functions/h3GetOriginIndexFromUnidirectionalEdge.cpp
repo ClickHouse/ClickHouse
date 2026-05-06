@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -11,8 +11,6 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
-#include <constants.h>
-#include <h3api.h>
 
 
 namespace DB
@@ -31,7 +29,11 @@ class FunctionH3GetOriginIndexFromUnidirectionalEdge : public IFunction
 public:
     static constexpr auto name = "h3GetOriginIndexFromUnidirectionalEdge";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetOriginIndexFromUnidirectionalEdge>(); }
+    H3Validator validator;
+
+    explicit FunctionH3GetOriginIndexFromUnidirectionalEdge(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetOriginIndexFromUnidirectionalEdge>(context); }
 
     std::string getName() const override { return name; }
 
@@ -80,7 +82,13 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 edge = data_hindex_edge[row];
-            const UInt64 res = getDirectedEdgeOrigin(edge);
+            UInt64 res = 0;
+            if (validator.validateEdge(edge))
+            {
+                H3Index origin = 0;
+                getDirectedEdgeOrigin(edge, &origin);
+                res = origin;
+            }
             dst_data[row] = res;
         }
 
@@ -100,7 +108,7 @@ Returns the origin hexagon index from the unidirectional edge [H3](#h3-index).
         {"edge", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the origin hexagon index from the unidirectional edge.",
+        "Returns the origin hexagon index from the unidirectional edge. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting).",
         {"UInt64"}
     };
     FunctionDocumentation::Examples examples = {

@@ -45,6 +45,7 @@ namespace Setting
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_s3;
     extern const SettingsBool compatibility_s3_presigned_url_query_in_path;
+    extern const SettingsS3UriStyle s3_uri_style;
 }
 
 namespace S3AuthSetting
@@ -62,6 +63,9 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
+    extern const S3AuthSettingsString google_adc_client_id;
+    extern const S3AuthSettingsString google_adc_client_secret;
+    extern const S3AuthSettingsString google_adc_refresh_token;
 }
 
 namespace S3RequestSetting
@@ -194,12 +198,14 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         url = S3::URI(
             std::filesystem::path(collection.get<String>("url")) / filename,
             settings[Setting::allow_archive_path_syntax],
-            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path]);
+            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
+            /*uri_style*/ settings[Setting::s3_uri_style]);
     else
         url = S3::URI(
             collection.get<String>("url"),
             settings[Setting::allow_archive_path_syntax],
-            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path]);
+            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
+            /*uri_style*/ settings[Setting::s3_uri_style]);
 
     const auto & config = context->getConfigRef();
 
@@ -597,7 +603,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     url = S3::URI(
         checkAndGetLiteralArgument<String>(args[0], "url"),
         context->getSettingsRef()[Setting::allow_archive_path_syntax],
-        /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path]);
+        /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path],
+        /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
 
     s3_settings = std::make_unique<S3Settings>();
     s3_settings->loadFromConfigForObjectStorage(
@@ -610,6 +617,12 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
+
+    /// Re-apply user/profile/query-level settings on top, so they take priority over the global <s3> config section.
+    s3_settings->request_settings.updateFromSettings(
+        context->getSettingsRef(),
+        /* if_changed */ true,
+        context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     if (auto format_value = getFromPositionOrKeyValue<String>("format", args, engine_args_to_idx, key_value_args);
         format_value.has_value())
@@ -1007,6 +1020,13 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
     assert(s3_settings != nullptr);
+    if (!biglake_adc_client_id.empty())
+    {
+        s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
+        s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = biglake_adc_client_id;
+        s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = biglake_adc_client_secret;
+        s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = biglake_adc_refresh_token;
+    }
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
         || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
 }

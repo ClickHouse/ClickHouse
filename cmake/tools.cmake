@@ -41,7 +41,7 @@ if (NOT LINKER_NAME)
     if (OS_LINUX AND NOT ARCH_S390X)
         ch_find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     elseif (OS_DARWIN)
-        ch_find_program (LLD_PATH NAMES "ld")
+        ch_find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld" "ld")
         # Duplicate libraries passed to the linker is not a problem.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_warn_duplicate_libraries")
     endif ()

@@ -2,6 +2,9 @@ SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = 0;
 SET enable_join_runtime_filters = 0;
+SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False, preventing LEFT/RIGHT ANY → SEMI conversion that this test validates
 
 CREATE TABLE users (uid UInt64, name String, age Int16) ENGINE=MergeTree ORDER BY uid;
 

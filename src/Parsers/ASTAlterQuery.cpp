@@ -263,7 +263,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << quoteString(snapshot_name);
         if (snapshot_desc != nullptr)
         {
-            ostr << "FROM ";
+            ostr << " FROM ";
             snapshot_desc->format(ostr, settings, state, frame);
         }
     }
@@ -505,9 +505,24 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
-        ostr << "MODIFY QUERY" << settings.nl_or_ws
-                     ;
-        select->format(ostr, settings, state, frame);
+        ostr << "MODIFY QUERY" << settings.nl_or_ws;
+
+        /// When the ALTER query has trailing SETTINGS (inherited from ASTQueryWithOutput),
+        /// we must wrap the MODIFY QUERY select in parentheses. Otherwise the trailing
+        /// SETTINGS clause would be consumed by `ParserSelectQuery` as part of the
+        /// last SELECT during re-parsing, instead of remaining on the ALTER query.
+        /// Clear the flags to prevent inner nodes from adding redundant parentheses.
+        if (frame.parent_has_trailing_settings)
+        {
+            ostr << "(";
+            frame.parent_has_trailing_settings = false;
+            select->format(ostr, settings, state, frame);
+            ostr << ")";
+        }
+        else
+        {
+            select->format(ostr, settings, state, frame);
+        }
     }
     else if (type == ASTAlterCommand::MODIFY_REFRESH)
     {
@@ -672,6 +687,9 @@ ASTPtr ASTAlterQuery::clone() const
 
     if (command_list)
         res->set(res->command_list, command_list->clone());
+
+    cloneOutputOptions(*res);
+    cloneTableOptions(*res);
 
     return res;
 }

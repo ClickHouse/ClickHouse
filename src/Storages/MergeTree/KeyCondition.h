@@ -5,7 +5,6 @@
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 
-#include <DataTypes/Serializations/ISerialization.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TreeRewriter.h>
@@ -21,7 +20,6 @@ namespace DB
 
 class ASTFunction;
 class Context;
-class IFunction;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;

@@ -4,9 +4,14 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
+#include <city.h>
+#include <Core/Settings.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PredicateStatisticsLog.h>
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -58,6 +63,11 @@ extern const Event ParallelReplicasReadRequestMicroseconds;
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 predicate_statistics_sample_rate;
+}
+
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
@@ -68,8 +78,11 @@ ParallelReadingExtension::ParallelReadingExtension(
     MergeTreeAllRangesCallback all_callback_,
     MergeTreeReadTaskCallback callback_,
     size_t number_of_current_replica_,
-    size_t total_nodes_count_)
-    : number_of_current_replica(number_of_current_replica_), total_nodes_count(total_nodes_count_)
+    size_t total_nodes_count_,
+    String stream_id_)
+    : number_of_current_replica(number_of_current_replica_)
+    , total_nodes_count(total_nodes_count_)
+    , stream_id(std::move(stream_id_))
 {
     all_callback = TelemetryWrapper<MergeTreeAllRangesCallback>{
         std::move(all_callback_), ProfileEvents::ParallelReplicasAnnouncementMicroseconds, "ParallelReplicasAnnouncement"};
@@ -78,15 +91,17 @@ ParallelReadingExtension::ParallelReadingExtension(
         std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
 }
 
-void ParallelReadingExtension::sendInitialRequest(CoordinationMode mode, const RangesInDataParts & ranges, size_t mark_segment_size) const
+void ParallelReadingExtension::sendInitialRequest(
+    CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
 {
-    all_callback(InitialAllRangesAnnouncement{mode, ranges.getDescriptions(), number_of_current_replica, mark_segment_size});
+    all_callback(InitialAllRangesAnnouncement{
+        mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id});
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
-    CoordinationMode mode, size_t min_number_of_marks, const RangesInDataPartsDescription & description) const
+    CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const
 {
-    return callback(ParallelReadRequest{mode, number_of_current_replica, min_number_of_marks, description});
+    return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, description, stream_id});
 }
 
 MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
@@ -244,6 +259,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
         auto chunk = Chunk(ordered_columns, res.row_count);
         const auto & data_part = current_task.getInfo().data_part;
+
         if (add_part_level)
             chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
 
@@ -260,17 +276,81 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
         }
 
         return ChunkAndProgress{
-            .chunk = std::move(chunk), .num_read_rows = res.num_read_rows, .num_read_bytes = res.num_read_bytes, .is_finished = false};
+            .chunk = std::move(chunk), .num_read_rows = res.num_read_rows, .num_read_bytes = res.num_read_bytes,
+            .is_finished = false, .read_mark_ranges = std::move(res.read_mark_ranges)};
     }
 
     if (reader_settings.use_query_condition_cache && prewhere_info)
         current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
 
-    return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
+    return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
+}
+
+void MergeTreeSelectProcessor::setVirtualRowConversions(
+    ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_)
+{
+    virtual_row_conversions = std::move(virtual_row_conversions_);
+    pk_block_header = std::move(pk_block_header_);
+    read_in_reverse_order = read_in_reverse_order_;
+}
+
+ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
+    const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges) const
+{
+    if (!virtual_row_conversions || read_mark_ranges.empty())
+        return {};
+
+    const auto & data_part = current_task.getInfo().data_part;
+    const auto & index = data_part->getIndex();
+
+    /// Forward order: the source will next produce data starting at back().end.
+    /// Reverse order: MergeTreeInReverseOrderSelectAlgorithm returns chunks in reverse.
+    /// After returning a chunk from marks [a, b), the next chunk covers earlier marks ending at a.
+    /// So front().begin is the boundary of the next output.
+    size_t next_mark = read_in_reverse_order
+        ? read_mark_ranges.front().begin
+        : read_mark_ranges.back().end;
+
+    size_t num_pk_columns = pk_block_header.columns();
+    if (index->size() < num_pk_columns)
+        return {};
+
+    bool has_value = std::ranges::all_of(*index, [&](const auto & col) { return col->size() > next_mark; });
+    if (!has_value)
+        return {};
+
+    ColumnsWithTypeAndName pk_columns;
+    pk_columns.reserve(num_pk_columns);
+    for (size_t j = 0; j < num_pk_columns; ++j)
+    {
+        const auto & header_col = pk_block_header.getByPosition(j);
+        auto column = header_col.column->cloneEmpty();
+        column->insert((*(*index)[j])[next_mark]);
+        pk_columns.push_back({std::move(column), header_col.type, header_col.name});
+    }
+    Block pk_block(std::move(pk_columns));
+
+    Columns empty_columns;
+    empty_columns.reserve(result_header.columns());
+    for (size_t i = 0; i < result_header.columns(); ++i)
+        empty_columns.push_back(result_header.getByPosition(i).type->createColumn()->cloneEmpty());
+
+    Chunk chunk(std::move(empty_columns), 0);
+    auto part_level = data_part->info.level;
+    chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(part_level, pk_block, virtual_row_conversions));
+
+    return {std::move(chunk), 0, 0, false, {}};
 }
 
 ChunkAndProgress MergeTreeSelectProcessor::read()
 {
+    if (pending_virtual_row)
+    {
+        auto result = std::move(*pending_virtual_row);
+        pending_virtual_row.reset();
+        return result;
+    }
+
     while (!is_cancelled)
     {
         try
@@ -312,6 +392,12 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
             if (!task)
                 break;
+
+            if (storage_id.empty())
+            {
+                storage_id = task->getInfo().data_part->storage.getStorageID();
+                prewhere_step_offset = task->getInfo().mutation_steps.size();
+            }
         }
         catch (const Exception & e)
         {
@@ -320,10 +406,23 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             throw;
         }
 
-        return readCurrentTask(*task, *algorithm);
+        auto result = readCurrentTask(*task, *algorithm);
+
+        /// Emit a virtual row update after each block, carrying the next mark's PK boundary.
+        /// This allows MergingSortedTransform to reprioritize sources when:
+        /// - PREWHERE filters all rows (merge gets updated position without actual data)
+        /// - A downstream filter (WHERE, JOIN) removes all rows (virtual row passes through filters)
+        if (virtual_row_conversions && !result.is_finished)
+        {
+            auto vrow = buildVirtualRowFromIndex(*task, result.read_mark_ranges);
+            if (vrow.chunk)
+                pending_virtual_row.emplace(std::move(vrow));
+        }
+
+        return result;
     }
 
-    return {Chunk(), 0, 0, true};
+    return {Chunk(), 0, 0, true, {}};
 }
 
 /// Cancels all internal operations for this select processor, including cancelling any ongoing index reads.
@@ -354,16 +453,105 @@ static String dumpStatistics(const ReadStepsPerformanceCounters & counters)
     const auto & all_counters = counters.getCounters();
     for (size_t i = 0; i < all_counters.size(); ++i)
     {
-        out << fmt::format("step {} rows_read: {}", i, all_counters[i]->rows_read.load());
+        out << fmt::format("step {} rows_read: {} rows_passed: {}", i,
+            all_counters[i]->rows_read.load(), all_counters[i]->rows_passed_filter.load());
         if (i + 1 < all_counters.size())
             out << ", ";
     }
     return out.str();
 }
 
+void MergeTreeSelectProcessor::logPredicateStatistics() const
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    if (!query_context)
+        return;
+
+    UInt64 sample_rate = query_context->getSettingsRef()[Setting::predicate_statistics_sample_rate];
+    if (sample_rate == 0)
+        return;
+
+    if (sample_rate > 1)
+    {
+        auto qid = CurrentThread::getQueryId();
+        if (CityHash_v1_0_2::CityHash64(qid.data(), qid.size()) % sample_rate != 0)
+            return;
+    }
+
+    auto predicate_stats_log = query_context->getPredicateStatisticsLog();
+    if (!predicate_stats_log)
+        return;
+
+    if (storage_id.database_name.empty())
+        return;
+
+    const auto & counters = read_steps_performance_counters.getCounters();
+    std::vector<size_t> filter_step_indices;
+    for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
+    {
+        const auto & step = *prewhere_actions.steps[i];
+        if (step.type == PrewhereExprStep::Filter && !step.filter_column_name.empty() && step.actions)
+            filter_step_indices.push_back(i);
+    }
+
+    if (filter_step_indices.empty())
+        return;
+
+    size_t first = prewhere_step_offset + filter_step_indices.front();
+    size_t last = prewhere_step_offset + filter_step_indices.back();
+
+    if (last >= counters.size() || !counters[first] || !counters[last])
+        return;
+
+    UInt64 whole_input = counters[first]->rows_read;
+    UInt64 whole_passed = counters[last]->rows_passed_filter;
+
+    if (whole_input == 0)
+        return;
+
+    Float64 whole_selectivity = static_cast<Float64>(whole_passed) / static_cast<Float64>(whole_input);
+
+    time_t now = time(nullptr);
+    UInt16 today = static_cast<UInt16>(DateLUT::instance().toDayNum(now));
+    String query_id(CurrentThread::getQueryId());
+
+    for (size_t step_i : filter_step_indices)
+    {
+        const auto & step = prewhere_actions.steps[step_i];
+        size_t counter_i = prewhere_step_offset + step_i;
+
+        if (counter_i >= counters.size() || !counters[counter_i] || !step->actions)
+            continue;
+
+        UInt64 input_rows = counters[counter_i]->rows_read.load();
+        UInt64 passed_rows = counters[counter_i]->rows_passed_filter.load();
+
+        if (input_rows == 0)
+            continue;
+
+        Float64 step_selectivity = static_cast<Float64>(passed_rows) / static_cast<Float64>(input_rows);
+
+        PredicateStatisticsLogElement elem;
+        elem.event_date = today;
+        elem.event_time = now;
+        elem.database = storage_id.database_name;
+        elem.table = storage_id.table_name;
+        elem.query_id = query_id;
+        elem.predicate_expression = step->actions->getActionsDAG().dumpDAG();
+        elem.input_rows = input_rows;
+        elem.passed_rows = passed_rows;
+        elem.filter_selectivity = step_selectivity;
+        elem.total_input_rows = whole_input;
+        elem.total_passed_rows = whole_passed;
+        elem.total_selectivity = whole_selectivity;
+        predicate_stats_log->add(std::move(elem));
+    }
+}
+
 void MergeTreeSelectProcessor::onFinish() const
 {
     LOG_TEST(log, "Read steps statistics: {}", dumpStatistics(read_steps_performance_counters));
+    logPredicateStatistics();
 }
 
 }
