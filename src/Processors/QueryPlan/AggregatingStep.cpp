@@ -581,7 +581,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             [&, sharded_payload_header](OutputPortRawPtrs ports)
             {
                 Processors scatters;
-                scatters.reserve(ports.size());
                 for (auto * port : ports)
                 {
                     auto scatter = std::make_shared<ScatterByHashTransform>(
@@ -599,7 +598,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             {
                 chassert(ports.size() == num_streams * num_shards);
                 Processors resize_processors;
-                resize_processors.reserve(num_shards);
 
                 for (size_t shard = 0; shard < num_shards; ++shard)
                 {

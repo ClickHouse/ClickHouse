@@ -31,6 +31,7 @@ extern const SettingsUInt64 group_by_two_level_threshold_bytes;
 extern const SettingsNonZeroUInt64 max_block_size;
 extern const SettingsMaxThreads max_threads;
 extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
+extern const SettingsBool optimize_aggregation_by_sharding;
 }
 
 LazyReadReplacingFinalSource::LazyReadReplacingFinalSource(
@@ -284,7 +285,8 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*group_by_sort_description_=*/SortDescription{},
             /*should_produce_results_in_order_of_bucket_number_=*/false,
             /*memory_bound_merging_of_aggregation_results_enabled_=*/false,
-            /*explicit_sorting_required_for_aggregation_in_order_=*/false);
+            /*explicit_sorting_required_for_aggregation_in_order_=*/false,
+            /*optimize_aggregation_by_sharding_=*/settings[Setting::optimize_aggregation_by_sharding]);
         plan.addStep(std::move(aggregating_step));
 
         /// Rename aggregate columns back to original names and project only needed columns.
