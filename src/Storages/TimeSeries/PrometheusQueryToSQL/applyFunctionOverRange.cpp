@@ -118,11 +118,18 @@ namespace
         }
     }
 
+    enum class PostProcessFunction
+    {
+        None,
+        Increase,
+    };
+
     struct ImplInfo
     {
         std::string_view ch_function_name;
         bool drop_metric_name = true;
         SimpleOverTimeFunction simple_over_time_function = SimpleOverTimeFunction::None;
+        PostProcessFunction post_process_function = PostProcessFunction::None;
     };
 
     ASTPtr toFloat64(ASTPtr && x)
@@ -237,6 +244,14 @@ namespace
              {
                  "timeSeriesDeltaToGrid",
                  /* drop_metric_name = */ true,
+             }},
+
+            {"increase",
+             {
+                 "timeSeriesRateToGrid",
+                 /* drop_metric_name = */ true,
+                 SimpleOverTimeFunction::None,
+                 PostProcessFunction::Increase,
              }},
 
             {"idelta",
@@ -524,9 +539,10 @@ SQLQueryPiece applyFunctionOverRange(
     if (has_group)
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
+    ASTPtr result_values;
     if (impl_info && impl_info->simple_over_time_function != SimpleOverTimeFunction::None)
     {
-        builder.select_list.push_back(buildSimpleOverTimeValues(
+        result_values = buildSimpleOverTimeValues(
             impl_info->simple_over_time_function,
             std::move(timestamps),
             std::move(values),
@@ -534,7 +550,7 @@ SQLQueryPiece applyFunctionOverRange(
             end_time,
             step,
             window,
-            context));
+            context);
     }
     else
     {
@@ -542,25 +558,45 @@ SQLQueryPiece applyFunctionOverRange(
         auto aggregate_function = makeASTFunction(ch_function_name, std::move(timestamps), std::move(values));
         if (extra_parameter)
         {
-            builder.select_list.push_back(addParametersToAggregateFunction(
+            result_values = addParametersToAggregateFunction(
                 std::move(aggregate_function),
                 timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
                 timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
                 timeSeriesDurationToAST(step, context.timestamp_data_type),
                 timeSeriesDurationToAST(window, context.timestamp_data_type),
-                std::move(extra_parameter)));
+                std::move(extra_parameter));
         }
         else
         {
-            builder.select_list.push_back(addParametersToAggregateFunction(
+            result_values = addParametersToAggregateFunction(
                 std::move(aggregate_function),
                 timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
                 timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
                 timeSeriesDurationToAST(step, context.timestamp_data_type),
-                timeSeriesDurationToAST(window, context.timestamp_data_type)));
+                timeSeriesDurationToAST(window, context.timestamp_data_type));
         }
     }
 
+    if (impl_info && impl_info->post_process_function == PostProcessFunction::Increase)
+    {
+        /// timeSeriesRateToGrid already implements Prometheus counter extrapolation;
+        /// increase() is that per-second rate scaled back to the requested range length.
+        result_values = makeASTFunction(
+            "arrayMap",
+            makeASTLambda(
+                {"x"},
+                makeASTFunction(
+                    "if",
+                    makeASTFunction("isNull", make_intrusive<ASTIdentifier>("x")),
+                    make_intrusive<ASTLiteral>(Field{}),
+                    makeASTFunction(
+                        "multiply",
+                        make_intrusive<ASTIdentifier>("x"),
+                        toFloat64(timeSeriesDurationToAST(window, context.timestamp_data_type))))),
+            std::move(result_values));
+    }
+
+    builder.select_list.push_back(std::move(result_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     if (group_by_group)
