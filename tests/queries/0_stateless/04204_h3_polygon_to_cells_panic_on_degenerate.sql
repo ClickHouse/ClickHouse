@@ -21,4 +21,7 @@ FORMAT Null;
 -- A few more degenerate inputs that exercise the same code path.
 SELECT length(h3PolygonToCells([(0.0, 0.0), (0.0, 0.0), (0.0, 0.0)], 5)) >= 0 FORMAT Null;
 SELECT length(h3PolygonToCells([(1e300, 1e300), (-1e300, -1e300), (1e300, -1e300)], 7)) >= 0 FORMAT Null;
-SELECT length(h3PolygonToCells([(nan, nan), (nan, nan), (nan, nan)], 3)) >= 0 FORMAT Null;
+
+-- NaN coordinates are rejected by the geometry input validator with a
+-- controlled exception (not a panic), so this case never reaches `h3o`.
+SELECT length(h3PolygonToCells([(nan, nan), (nan, nan), (nan, nan)], 3)) >= 0 FORMAT Null; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
