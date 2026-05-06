@@ -81,6 +81,12 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
         res.hits += hash_join_stats->hits;
         res.misses += hash_join_stats->misses;
     }
+    if (auto sharded_stats = getHashTablesStatistics<ShardedAggregationEntry>().getCacheStats())
+    {
+        res.entries += sharded_stats->entries;
+        res.hits += sharded_stats->hits;
+        res.misses += sharded_stats->misses;
+    }
     return res;
 }
 
@@ -138,4 +144,5 @@ std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats
 
 template class HashTablesStatistics<AggregationEntry>;
 template class HashTablesStatistics<HashJoinEntry>;
+template class HashTablesStatistics<ShardedAggregationEntry>;
 }

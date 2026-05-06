@@ -170,6 +170,48 @@ public:
         }
     }
 
+    void addBatchForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        for (size_t j = 0; j < num_rows; ++j)
+        {
+            auto * place = places[j] + place_offset;
+            if constexpr (isMin)
+            {
+                if (this->data(place).value().setIfSmaller(*columns[1], row_indices[j], arena))
+                    this->data(place).result().set(*columns[0], row_indices[j], arena);
+            }
+            else
+            {
+                if (this->data(place).value().setIfGreater(*columns[1], row_indices[j], arena))
+                    this->data(place).result().set(*columns[0], row_indices[j], arena);
+            }
+        }
+    }
+
+    void addBatchSinglePlaceForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        /// Find the row with the extreme value in one pass, then update once.
+        std::optional<size_t> idx;
+        if constexpr (isMin)
+            idx = this->data(place).value().getSmallestIndexForRows(*columns[1], row_indices, num_rows);
+        else
+            idx = this->data(place).value().getGreatestIndexForRows(*columns[1], row_indices, num_rows);
+
+        if (idx)
+            add(place, columns, *idx, arena);
+    }
+
     void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
     {
         add(place, columns, 0, arena);

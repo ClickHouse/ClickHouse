@@ -176,6 +176,13 @@ public:
         dispatch(*this, key_holder, typename Impl::EmplaceCallable{it, inserted});
     }
 
+    template <typename KeyHolder>
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted, size_t hash_value)
+    {
+        size_t buck = getBucketFromHash(hash_value);
+        impls[buck].emplace(std::forward<KeyHolder>(key_holder), it, inserted, hash_value);
+    }
+
     LookupResult ALWAYS_INLINE find(const Key x)
     {
         return dispatch(*this, x, typename Impl::FindCallable{});

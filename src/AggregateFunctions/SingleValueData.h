@@ -42,6 +42,8 @@ struct SingleValueDataBase
     /// Used to implement batch min/max
     virtual void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena);
     virtual void setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena);
+    virtual void setSmallestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena);
+    virtual void setGreatestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena);
     virtual void setSmallestNotNullIf(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *);
     virtual void setGreatestNotNullIf(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *);
 
@@ -50,6 +52,8 @@ struct SingleValueDataBase
     /// There are used to implement argMin / argMax
     virtual std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
     virtual std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
+    virtual std::optional<size_t> getSmallestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const;
+    virtual std::optional<size_t> getGreatestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const;
     virtual std::optional<size_t> getSmallestIndexNotNullIf(
         const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const;
     virtual std::optional<size_t> getGreatestIndexNotNullIf(
@@ -110,6 +114,8 @@ struct SingleValueDataFixed
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena);
     void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena *);
     void setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena *);
+    void setSmallestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena *);
+    void setGreatestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena *);
     void setSmallestNotNullIf(
         const IColumn & column,
         const UInt8 * __restrict null_map,
@@ -127,6 +133,8 @@ struct SingleValueDataFixed
 
     std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
     std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
+    std::optional<size_t> getSmallestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const;
+    std::optional<size_t> getGreatestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const;
     std::optional<size_t> getSmallestIndexNotNullIf(
         const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const;
     std::optional<size_t> getGreatestIndexNotNullIf(
@@ -220,6 +228,8 @@ public:
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena) override;
     void setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena) override;
+    void setSmallestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena) override;
+    void setGreatestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena) override;
     void setSmallestNotNullIf(
         const IColumn & column,
         const UInt8 * __restrict null_map,
@@ -237,6 +247,8 @@ public:
 
     std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const override;
     std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const override;
+    std::optional<size_t> getSmallestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const override;
+    std::optional<size_t> getGreatestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const override;
     std::optional<size_t> getSmallestIndexNotNullIf(
         const IColumn & column,
         const UInt8 * __restrict null_map,

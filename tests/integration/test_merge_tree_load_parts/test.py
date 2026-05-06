@@ -186,7 +186,8 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
         node1.query(
             f"""
             SELECT pk, count() FROM {table}
-            GROUP BY pk ORDER BY pk"""
+            GROUP BY pk ORDER BY pk
+            SETTINGS optimize_aggregation_by_sharding = 0 -- TODO: remove once sharded aggregation supports external aggregation (spill to disk)."""
         )
         == "111\t3\n222\t3\n333\t3\n"
     )
@@ -195,7 +196,8 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
             f"""
             SELECT partition, count()
             FROM system.parts WHERE table = '{table}' AND active
-            GROUP BY partition ORDER BY partition"""
+            GROUP BY partition ORDER BY partition
+            SETTINGS optimize_aggregation_by_sharding = 0 -- TODO: remove once sharded aggregation supports external aggregation (spill to disk)."""
         )
         == "111\t1\n222\t1\n333\t1\n"
     )

@@ -277,6 +277,44 @@ std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start
     return std::nullopt;
 }
 
+template <typename T, class Comparator>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+std::optional<T> findExtremeForRows(const T * __restrict ptr, const UInt64 * row_indices, size_t num_rows)
+{
+    if (num_rows == 0)
+        return std::nullopt;
+
+    size_t j = 0;
+    T best = ptr[row_indices[j]];
+
+    /// For floats, skip NaN during initialisation so the accumulator starts with a non-NaN value.
+    /// std::min/max never replace a NaN accumulator (NaN < x is always false), so a NaN start would stick through the loop.
+    /// If all values are NaN, best will hold the last NaN seen, which is correct.
+    if constexpr (is_floating_point<T>)
+    {
+        while (isNaN(best) && ++j < num_rows)
+            best = ptr[row_indices[j]];
+    }
+
+    for (++j; j < num_rows; ++j)
+        best = Comparator::cmp(best, ptr[row_indices[j]]);
+    return best;
+}
+
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+std::optional<T> findExtremeMinForRows(const T * __restrict ptr, const UInt64 * row_indices, size_t num_rows)
+{
+    return findExtremeForRows<T, MinComparator<T>>(ptr, row_indices, num_rows);
+}
+
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+std::optional<T> findExtremeMaxForRows(const T * __restrict ptr, const UInt64 * row_indices, size_t num_rows)
+{
+    return findExtremeForRows<T, MaxComparator<T>>(ptr, row_indices, num_rows);
+}
+
 #define INSTANTIATION(T) \
     template std::optional<T> findExtremeMin(const T * __restrict ptr, size_t start, size_t end); \
     template std::optional<T> findExtremeMinNotNull( \
@@ -289,7 +327,9 @@ std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start
     template std::optional<T> findExtremeMaxIf( \
         const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
     template std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start, size_t end); \
-    template std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start, size_t end);
+    template std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start, size_t end); \
+    template std::optional<T> findExtremeMinForRows(const T * __restrict ptr, const UInt64 * row_indices, size_t num_rows); \
+    template std::optional<T> findExtremeMaxForRows(const T * __restrict ptr, const UInt64 * row_indices, size_t num_rows);
 
 FOR_BASIC_NUMERIC_TYPES(INSTANTIATION)
 

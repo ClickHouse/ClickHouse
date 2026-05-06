@@ -313,6 +313,27 @@ public:
         const IColumn ** columns,
         Arena * arena) const = 0;
 
+    /** Like addBatch, but processes only rows at positions given by row_indices[0..num_rows-1].
+      * `places` is a dense array: places[j] is the aggregate state for row_indices[j].
+      */
+    virtual void addBatchForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const = 0;
+
+    /** Like addBatchSinglePlace, but processes only rows at positions given by row_indices[0..num_rows-1].
+      * All rows are aggregated into a single place.
+      */
+    virtual void addBatchSinglePlaceForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const = 0;
+
     virtual void mergeBatch(
         size_t row_begin,
         size_t row_end,
@@ -361,6 +382,20 @@ public:
     virtual void addBatchArray(
         size_t row_begin,
         size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        const UInt64 * offsets,
+        Arena * arena) const = 0;
+
+    /** Like addBatchArray, but processes only rows at positions given by row_indices[0..num_rows-1].
+      * places is a dense array: places[j] is the aggregate state for row_indices[j].
+      * columns are the pre-unwrapped inner data columns from the array.
+      * offsets are the array offset boundaries.
+      */
+    virtual void addBatchArrayForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
         AggregateDataPtr * places,
         size_t place_offset,
         const IColumn ** columns,
@@ -572,6 +607,29 @@ public:
                                                         &values, offset_it.getValueIndex(), arena);
     }
 
+    void addBatchForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        for (size_t j = 0; j < num_rows; ++j)
+            static_cast<const Derived *>(this)->add(places[j] + place_offset, columns, row_indices[j], arena);
+    }
+
+    void addBatchSinglePlaceForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        for (size_t j = 0; j < num_rows; ++j)
+            static_cast<const Derived *>(this)->add(place, columns, row_indices[j], arena);
+    }
+
     void mergeBatch(
         size_t row_begin,
         size_t row_end,
@@ -695,6 +753,26 @@ public:
                 if (places[i])
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
+        }
+    }
+
+    void addBatchArrayForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        const UInt64 * offsets,
+        Arena * arena)
+        const override
+    {
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            size_t row = row_indices[i];
+            size_t current_offset = offsets[static_cast<ssize_t>(row) - 1];
+            size_t next_offset = offsets[row];
+            for (size_t j = current_offset; j < next_offset; ++j)
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
         }
     }
 

@@ -1,4 +1,4 @@
--- Tags: stateful
+-- Tags: stateful, long
 -- Optimize: filter to top-10 CounterIDs to avoid maintaining DDSketch states
 -- for thousands of groups. The test verifies quantileDD correctness and
 -- distributed merge — not full-table aggregation performance.

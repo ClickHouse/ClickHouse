@@ -23,6 +23,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/Transforms/ScatterByHashTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
@@ -657,7 +658,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             is_simple_count = true;
     }
 
-    method_chosen = chooseAggregationMethod(header_);
+    method_chosen = setupAggregationMethod(header_);
 
     /// TODO(ab): HashMethodSingleLowCardinalityColumn uses a hardcoded internal cache,
     /// which interferes with inline aggregation (e.g. for COUNT). This needs to be
@@ -765,19 +766,19 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
 
 #endif
 
-AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & header)
+AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & header, const Names & keys, size_t keys_size)
 {
     /// If no keys. All aggregating to single row.
-    if (params.keys_size == 0)
+    if (keys_size == 0)
         return AggregatedDataVariants::Type::without_key;
 
     /// Check if at least one of the specified keys is nullable.
     DataTypes types_removed_nullable;
-    types_removed_nullable.reserve(params.keys.size());
+    types_removed_nullable.reserve(keys.size());
     bool has_nullable_key = false;
     bool has_low_cardinality = false;
 
-    for (const auto & key : params.keys)
+    for (const auto & key : keys)
     {
         DataTypePtr type = header.getByName(key).type;
 
@@ -803,22 +804,20 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
     size_t keys_bytes = 0;
     size_t num_fixed_contiguous_keys = 0;
 
-    key_sizes.resize(params.keys_size);
-    for (size_t j = 0; j < params.keys_size; ++j)
+    for (size_t j = 0; j < keys_size; ++j)
     {
         if (types_removed_nullable[j]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
         {
             if (types_removed_nullable[j]->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
             {
                 ++num_fixed_contiguous_keys;
-                key_sizes[j] = types_removed_nullable[j]->getSizeOfValueInMemory();
-                keys_bytes += key_sizes[j];
+                keys_bytes += types_removed_nullable[j]->getSizeOfValueInMemory();
             }
         }
     }
 
     bool all_keys_are_numbers_or_strings = true;
-    for (size_t j = 0; j < params.keys_size; ++j)
+    for (size_t j = 0; j < keys_size; ++j)
     {
         if (!types_removed_nullable[j]->isValueRepresentedByNumber() && !isString(types_removed_nullable[j])
             && !isFixedString(types_removed_nullable[j]))
@@ -831,7 +830,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
     if (has_nullable_key)
     {
         /// Optimization for one key
-        if (params.keys_size == 1 && !has_low_cardinality)
+        if (keys_size == 1 && !has_low_cardinality)
         {
             if (types_removed_nullable[0]->isValueRepresentedByNumber())
             {
@@ -855,7 +854,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
             }
         }
 
-        if (params.keys_size == num_fixed_contiguous_keys && !has_low_cardinality)
+        if (keys_size == num_fixed_contiguous_keys && !has_low_cardinality)
         {
             /// Pack if possible all the keys along with information about which key values are nulls
             /// into a fixed 16- or 32-byte blob.
@@ -865,7 +864,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
                 return AggregatedDataVariants::Type::nullable_keys256;
         }
 
-        if (has_low_cardinality && params.keys_size == 1)
+        if (has_low_cardinality && keys_size == 1)
         {
             if (types_removed_nullable[0]->isValueRepresentedByNumber())
             {
@@ -886,7 +885,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
                 return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
         }
 
-        if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
+        if (keys_size > 1 && all_keys_are_numbers_or_strings)
             return AggregatedDataVariants::Type::nullable_prealloc_serialized;
 
         /// Fallback case.
@@ -896,7 +895,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
     /// No key has been found to be nullable.
 
     /// Single numeric key.
-    if (params.keys_size == 1 && types_removed_nullable[0]->isValueRepresentedByNumber())
+    if (keys_size == 1 && types_removed_nullable[0]->isValueRepresentedByNumber())
     {
         size_t size_of_field = types_removed_nullable[0]->getSizeOfValueInMemory();
 
@@ -932,7 +931,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
     }
 
-    if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
+    if (keys_size == 1 && isFixedString(types_removed_nullable[0]))
     {
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
@@ -940,7 +939,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
     }
 
     /// If all keys fits in N bits, will use hash table with all keys packed (placed contiguously) to single N-bit key.
-    if (params.keys_size == num_fixed_contiguous_keys)
+    if (keys_size == num_fixed_contiguous_keys)
     {
         if (has_low_cardinality)
         {
@@ -963,17 +962,40 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
     }
 
     /// If single string key - will use hash table with references to it. Strings itself are stored separately in Arena.
-    if (params.keys_size == 1 && isString(types_removed_nullable[0]))
+    if (keys_size == 1 && isString(types_removed_nullable[0]))
     {
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_string;
         return AggregatedDataVariants::Type::key_string;
     }
 
-    if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
+    if (keys_size > 1 && all_keys_are_numbers_or_strings)
         return AggregatedDataVariants::Type::prealloc_serialized;
 
     return AggregatedDataVariants::Type::serialized;
+}
+
+AggregatedDataVariants::Type Aggregator::setupAggregationMethod(const Block & header)
+{
+    auto type = chooseAggregationMethod(header, params.keys, params.keys_size);
+
+    /// Compute key_sizes needed by the Aggregator for packed-key methods.
+    key_sizes.resize(params.keys_size);
+    for (size_t j = 0; j < params.keys_size; ++j)
+    {
+        DataTypePtr col_type = header.getByName(params.keys[j]).type;
+        if (col_type->lowCardinality())
+            col_type = removeLowCardinality(col_type);
+        if (col_type->isNullable())
+            col_type = removeNullable(col_type);
+        if (col_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+        {
+            if (col_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                key_sizes[j] = col_type->getSizeOfValueInMemory();
+        }
+    }
+
+    return type;
 }
 
 template <bool skip_compiled_aggregate_functions>
@@ -1880,6 +1902,538 @@ bool Aggregator::executeOnBlock(Columns columns,
     }
 
     return true;
+}
+
+
+template <typename Method>
+static void computeHashesForShardingImpl(
+    Method & method,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    const HashMethodContextPtr & aggregation_state_cache,
+    size_t row_count,
+    PaddedPODArray<size_t> & result_hashes)
+{
+    Arena pool;
+
+    /// Since we only need the hash, we do not need the consecutive keys cache optimization.
+    typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+    result_hashes.resize_exact(row_count);
+    for (size_t i = 0; i < row_count; ++i)
+        result_hashes[i] = state.getHash(method.data, i, pool);
+}
+
+/// For Serialized methods: batch-serialize all keys, then hash the serialized bytes,
+/// and keep the serialized buffer for reuse during aggregation to avoid re-serialization.
+template <typename Method>
+static void serializeAndHashForShardingImpl(
+    Method & method,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    const HashMethodContextPtr & aggregation_state_cache,
+    size_t row_count,
+    PaddedPODArray<size_t> & result_hashes,
+    SerializedKeyBuffer & serialized_keys_out)
+{
+    /// Since we only need the hash, we do not need the consecutive keys cache optimization.
+    typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+
+    /// Build SerializedKeyBuffer — either move from batch-serialized state (if available) or serialize manually.
+    serialized_keys_out.offsets.resize_exact(row_count + 1);
+
+    if (state.use_batch_serialize)
+    {
+        serialized_keys_out.data = std::move(state.serialized_buffer);
+        UInt64 offset = 0;
+        for (size_t i = 0; i < row_count; ++i)
+        {
+            serialized_keys_out.offsets[i] = offset;
+            offset += state.row_sizes[i];
+        }
+        serialized_keys_out.offsets[row_count] = offset;
+    }
+    else
+    {
+        /// Sharded aggregation requires prealloc serialized methods which compute `row_sizes`
+        /// upfront. Non-prealloc methods should be excluded by the `chooseAggregationMethod`
+        /// check in `AggregatingStep`.
+        if (state.row_sizes.empty() && row_count > 0)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Sharded aggregation requires prealloc serialized methods, but row_sizes is empty. "
+                "Sharded aggregation should be avoided for non-prealloc methods should be in AggregatingStep");
+
+        /// Non-batch fallback: serialize into SerializedKeyBuffer once.
+        size_t total_size = 0;
+        for (auto sz : state.row_sizes)
+            total_size += sz;
+        serialized_keys_out.data.resize_exact(total_size);
+
+        char * ptr = serialized_keys_out.data.data();
+        for (size_t i = 0; i < row_count; ++i)
+        {
+            serialized_keys_out.offsets[i] = ptr - serialized_keys_out.data.data();
+            for (const auto * key_column : key_columns)
+                ptr = key_column->serializeValueIntoMemory(i, ptr, &state.serialization_settings);
+        }
+        serialized_keys_out.offsets[row_count] = ptr - serialized_keys_out.data.data();
+    }
+
+    /// Hash from the serialized buffer
+    result_hashes.resize_exact(row_count);
+    for (size_t i = 0; i < row_count; ++i)
+        result_hashes[i] = method.data.hash(serialized_keys_out.getKey(i));
+}
+
+
+void Aggregator::prepareHashesAndKeysForSharding(
+    AggregatedDataVariants & cached_variants,
+    const ColumnRawPtrs & key_columns,
+    size_t row_count,
+    PaddedPODArray<size_t> & result_hashes,
+    SerializedKeyBufferPtr & serialized_keys_out) const
+{
+    chassert(params.keys_size >= 1);
+    chassert(method_chosen != AggregatedDataVariants::Type::without_key);
+
+    if (cached_variants.empty())
+    {
+        cached_variants.init(method_chosen);
+        cached_variants.keys_size = params.keys_size;
+        cached_variants.key_sizes = key_sizes;
+    }
+
+    if (AggregatedDataVariants::usesSerializedKeys(method_chosen))
+    {
+        /// For Serialized methods, serialize keys once and keep the buffer.
+        /// This avoids re-serialization during aggregation.
+        auto buffer = std::make_shared<SerializedKeyBuffer>();
+
+        #define M(NAME) \
+            else if (cached_variants.type == AggregatedDataVariants::Type::NAME) \
+                serializeAndHashForShardingImpl(*cached_variants.NAME, key_columns, key_sizes, aggregation_state_cache, row_count, result_hashes, *buffer);
+
+        if (false) {} // NOLINT
+        APPLY_FOR_VARIANTS_WITH_SERIALIZED_KEYS(M)
+        #undef M
+
+        serialized_keys_out = std::move(buffer);
+        return;
+    }
+
+    serialized_keys_out = nullptr;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        else if (cached_variants.type == AggregatedDataVariants::Type::NAME) \
+            computeHashesForShardingImpl(*cached_variants.NAME, key_columns, key_sizes, aggregation_state_cache, row_count, result_hashes);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+}
+
+
+Aggregator::ShardedPayload
+Aggregator::prepareColumnsForSharding(const Columns & columns, size_t row_count, AggregatedDataVariants & cached_hash_variants) const
+{
+    chassert(method_chosen != AggregatedDataVariants::Type::without_key);
+
+    Columns payload_columns;
+
+    /// To avoid vector reallocation
+    size_t num_payload_columns = params.keys_size;
+    for (const auto & aggregate : params.aggregates)
+        num_payload_columns += aggregate.argument_names.size();
+    payload_columns.reserve(num_payload_columns);
+
+    ColumnRawPtrs key_columns(params.keys_size);
+    for (size_t i = 0; i < params.keys_size; ++i)
+    {
+        auto key_column = removeSpecialRepresentations(columns.at(keys_positions[i]))->convertToFullColumnIfConst();
+        key_column = recursiveRemoveLowCardinality(key_column);
+
+        payload_columns.push_back(std::move(key_column));
+        key_columns[i] = payload_columns.back().get();
+    }
+
+    /// Cache materialized columns by position so that multiple aggregate functions
+    /// sharing the same argument column (e.g., sum(x), avg(x), min(x)) only materialize once.
+    std::unordered_map<size_t, ColumnPtr> materialized_by_position;
+
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        for (auto pos : aggregates_positions[i])
+        {
+            auto it = materialized_by_position.find(pos);
+            if (it == materialized_by_position.end())
+            {
+                /// TODO: `addBatchForRows` reads columns by original row index and cannot
+                /// handle sparse encoding. Materializing here until we add sparse-aware execution.
+                auto argument_column = removeSpecialRepresentations(columns.at(pos)->convertToFullColumnIfConst());
+                argument_column = recursiveRemoveLowCardinality(argument_column);
+                it = materialized_by_position.emplace(pos, std::move(argument_column)).first;
+            }
+            payload_columns.push_back(it->second);
+        }
+    }
+
+    auto key_hashes = std::make_shared<PaddedPODArray<size_t>>();
+    SerializedKeyBufferPtr serialized_keys;
+    prepareHashesAndKeysForSharding(cached_hash_variants, key_columns, row_count, *key_hashes, serialized_keys);
+
+    return {std::move(payload_columns), std::move(key_hashes), std::move(serialized_keys)};
+}
+
+
+Block Aggregator::getShardedPayloadHeader() const
+{
+    Block payload_header;
+
+    for (size_t i = 0; i < params.keys_size; ++i)
+    {
+        payload_header.insert(
+            {recursiveRemoveLowCardinality(key_types[i]), "__sharded_key_" + toString(i)});
+    }
+
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        for (size_t j = 0; j < params.aggregates[i].argument_names.size(); ++j)
+        {
+            payload_header.insert({
+                recursiveRemoveLowCardinality(aggregate_functions[i]->getArgumentTypes()[j]),
+                "__sharded_agg_" + toString(i) + "_arg_" + toString(j)});
+        }
+    }
+
+    return payload_header;
+}
+
+
+void Aggregator::prepareInstructionsForSharding(
+    const Columns & payload_columns, AggregateColumns & aggregate_columns_holder, AggregateFunctionInstructions & instructions) const
+{
+    /// One-time setup: allocate and fill all immutable fields.
+    /// aggregate_columns_holder[i] will hold raw pointers to argument columns for agg func i.
+    if (instructions.empty())
+    {
+        aggregate_columns_holder.resize(params.aggregates_size);
+        instructions.resize(params.aggregates_size + 1);
+        instructions[params.aggregates_size].that = nullptr;
+
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+        {
+            aggregate_columns_holder[i].resize(params.aggregates[i].argument_names.size());
+
+            auto & instruction = instructions[i];
+            instruction.that = aggregate_functions[i];
+            instruction.state_offset = offsets_of_aggregate_states[i];
+
+            /// Unnest consecutive trailing -State combinators so batch calls
+            /// go directly to the inner function.
+            const auto * batch_that = aggregate_functions[i];
+            while (const auto * func = typeid_cast<const AggregateFunctionState *>(batch_that))
+                batch_that = func->getNestedFunction().get();
+
+            /// Unnest -Array combinator: extract the inner function for batch calls.
+            /// The actual column unwrapping (nested data + offsets) happens per-chunk below.
+            if (const auto * func = typeid_cast<const AggregateFunctionArray *>(batch_that))
+            {
+                batch_that = func->getNestedFunction().get();
+                /// Unnest -State inside -Array (e.g., sumStateArrayState -> State(Array(State(sum))))
+                while (const auto * state_func = typeid_cast<const AggregateFunctionState *>(batch_that))
+                    batch_that = state_func->getNestedFunction().get();
+                instruction.has_array_combinator = true;
+            }
+
+            instruction.offsets = nullptr;
+
+            instruction.batch_that = batch_that;
+
+            /// TODO: We currently materialize sparse argument columns and do not support sparse-aware execution
+            instruction.has_sparse_arguments = false;
+
+            instruction.can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();
+            /// arguments/batch_arguments are set below per chunk and point into aggregate_columns_holder[i]
+        }
+    }
+
+    /// Per-chunk: update the raw column pointers.
+    size_t offset = params.keys_size;
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        const auto arg_count = params.aggregates[i].argument_names.size();
+        for (size_t j = 0; j < arg_count; ++j)
+            aggregate_columns_holder[i][j] = payload_columns[offset + j].get();
+
+        instructions[i].arguments = aggregate_columns_holder[i].data();
+
+        if (instructions[i].has_array_combinator)
+        {
+            /// -Array combinator: unwrap array columns to get nested data + offsets.
+            auto [nested_columns, array_offsets] = checkAndGetNestedArrayOffset(
+                aggregate_columns_holder[i].data(), instructions[i].batch_that->getArgumentTypes().size());
+            /// Store unwrapped nested columns back into the holder so pointers remain valid.
+            for (size_t j = 0; j < nested_columns.size(); ++j)
+                aggregate_columns_holder[i][j] = nested_columns[j];
+            instructions[i].offsets = array_offsets;
+        }
+
+        instructions[i].batch_arguments = aggregate_columns_holder[i].data();
+
+        offset += arg_count;
+    }
+}
+
+
+void Aggregator::executeForRows(
+    AggregatedDataVariants & result,
+    const IColumn::Selector & row_indices,
+    const size_t * key_hashes,
+    const ColumnRawPtrs & key_columns,
+    const AggregateFunctionInstruction * aggregate_instructions,
+    std::optional<size_t> size_hint,
+    const SerializedKeyBuffer * serialized_keys) const
+{
+    chassert(!row_indices.empty());
+    chassert(key_hashes);
+
+    result.aggregator = this;
+
+    if (result.empty())
+    {
+        result.init(method_chosen, size_hint);
+        result.keys_size = params.keys_size;
+        result.key_sizes = key_sizes;
+        LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
+    }
+
+    executeImplForRows(result, row_indices, key_hashes, key_columns, aggregate_instructions, serialized_keys);
+}
+
+
+void Aggregator::executeImplForRows(
+    AggregatedDataVariants & result,
+    const IColumn::Selector & row_indices,
+    const size_t * key_hashes,
+    const ColumnRawPtrs & key_columns,
+    const AggregateFunctionInstruction * aggregate_instructions,
+    const SerializedKeyBuffer * serialized_keys) const
+{
+    #define M(NAME, IS_TWO_LEVEL) \
+        else if (result.type == AggregatedDataVariants::Type::NAME) \
+            executeImplForRows(*result.NAME, result.aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions, serialized_keys);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+}
+
+template <typename Method>
+void NO_INLINE Aggregator::executeImplForRows(
+    Method & method,
+    Arena * aggregates_pool,
+    const IColumn::Selector & row_indices,
+    const size_t * key_hashes,
+    const ColumnRawPtrs & key_columns,
+    const AggregateFunctionInstruction * aggregate_instructions,
+    const SerializedKeyBuffer * serialized_keys) const
+{
+    const size_t chunk_num_rows = key_columns[0]->size();
+
+    /// Helper to construct a State, passing pre-serialized keys to Serialized methods
+    /// so the constructor skips batch serialization (already done during scatter).
+    auto make_state = [&]<typename StateType>()
+    {
+        if constexpr (requires { std::declval<StateType>().external_serialized_keys; })
+            return StateType(key_columns, key_sizes, aggregation_state_cache, serialized_keys);
+        else
+            return StateType(key_columns, key_sizes, aggregation_state_cache);
+    };
+
+    if (is_simple_count)
+    {
+        auto state = make_state.template operator()<typename Method::StateNoCache>();
+        executeImplBatchForRows<false>(method, state, aggregates_pool, row_indices, key_hashes, chunk_num_rows, aggregate_instructions);
+        return;
+    }
+
+    auto state = make_state.template operator()<typename Method::State>();
+
+    const bool do_prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+        && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+
+    if (do_prefetch)
+        executeImplBatchForRows<true>(method, state, aggregates_pool, row_indices, key_hashes,
+            chunk_num_rows, aggregate_instructions);
+    else
+        executeImplBatchForRows<false>(method, state, aggregates_pool, row_indices, key_hashes,
+            chunk_num_rows, aggregate_instructions);
+}
+
+
+template <bool prefetch, typename Method, typename State>
+void NO_INLINE Aggregator::executeImplBatchForRows(
+    Method & method,
+    State & state,
+    Arena * aggregates_pool,
+    const IColumn::Selector & row_indices,
+    const size_t * key_hashes,
+    size_t chunk_num_rows,
+    const AggregateFunctionInstruction * aggregate_instructions) const
+{
+    const size_t num_indices = row_indices.size();
+    chassert(num_indices > 0);
+    chassert(key_hashes);
+
+    /// No aggregate functions — just insert keys.
+    if (params.aggregates_size == 0)
+    {
+        /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
+        AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
+        for (size_t j = 0; j < num_indices; ++j)
+        {
+            const size_t i = row_indices[j];
+            auto emplace_result = state.emplaceKeyWithHash(method.data, i, *aggregates_pool, key_hashes[i]);
+            emplace_result.setMapped(place);
+        }
+        return;
+    }
+
+    /// Simple count — inline counter, no aggregate state allocation.
+    if (is_simple_count)
+    {
+        for (size_t j = 0; j < num_indices; ++j)
+        {
+            const size_t i = row_indices[j];
+            auto emplace_result = state.emplaceKeyWithHash(method.data, i, *aggregates_pool, key_hashes[i]);
+            if (emplace_result.isInserted())
+                getInlineCountState(emplace_result.getMapped()) = 1;
+            else
+                ++getInlineCountState(emplace_result.getMapped());
+        }
+        return;
+    }
+
+    /// Dense places array: places[j] corresponds to row_indices[j].
+    AllocatorWithMemoryTracking<AggregateDataPtr> allocator;
+    auto places_deleter = [&allocator, &num_indices](auto * ptr)
+    {
+        if (ptr) [[likely]]
+            allocator.deallocate(ptr, num_indices);
+    };
+    std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(num_indices), places_deleter);
+
+    PrefetchingHelper prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+
+    for (size_t j = 0; j < num_indices; ++j)
+    {
+        const size_t i = row_indices[j];
+        AggregateDataPtr aggregate_data = nullptr;
+
+        using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
+        /// Is prefetching enabled and the method supports it?
+        if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+        {
+            if (j == PrefetchingHelper::iterationsToMeasure())
+                prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+            if (j + prefetch_look_ahead < num_indices)
+            {
+                auto && key_holder = state.getKeyHolder(row_indices[j + prefetch_look_ahead], *aggregates_pool);
+                method.data.prefetch(std::move(key_holder));
+            }
+        }
+
+        auto emplace_result = state.emplaceKeyWithHash(method.data, i, *aggregates_pool, key_hashes[i]);
+
+        if (emplace_result.isInserted())
+        {
+            emplace_result.setMapped(nullptr);
+            aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+            createAggregateStates(aggregate_data);
+            emplace_result.setMapped(aggregate_data);
+        }
+        else
+            aggregate_data = emplace_result.getMapped();
+
+        chassert(aggregate_data != nullptr);
+        places[j] = aggregate_data;
+    }
+
+    const bool has_only_one_key = state.hasOnlyOneValueSinceLastReset();
+    /// When this shard received all rows from the chunk (num_indices == chunk_num_rows),
+    /// the row_indices are [0, 1, ..., N-1] — a contiguous range. In that case we can
+    /// use the standard addBatch/addBatchSinglePlace which may have optimized (SIMD) implementations.
+    const bool has_all_chunk_rows = (num_indices == chunk_num_rows);
+    executeAggregateInstructionsForRows(
+        aggregates_pool, row_indices.data(), num_indices, aggregate_instructions, places.get(),
+        has_only_one_key, has_all_chunk_rows);
+}
+
+
+void Aggregator::executeAggregateInstructionsForRows(
+    Arena * aggregates_pool,
+    const UInt64 * row_indices,
+    size_t num_rows,
+    const AggregateFunctionInstruction * aggregate_instructions,
+    AggregateDataPtr * places,
+    bool has_only_one_key,
+    bool has_all_chunk_rows) const
+{
+    for (size_t i = 0; i < aggregate_functions.size(); ++i)
+    {
+        const AggregateFunctionInstruction * instruction = aggregate_instructions + i;
+
+        if (instruction->offsets)
+        {
+            /// -Array combinator: use array-aware batch methods with pre-unwrapped columns.
+            if (has_all_chunk_rows)
+            {
+                instruction->batch_that->addBatchArray(
+                    0, num_rows, places, instruction->state_offset, instruction->batch_arguments, instruction->offsets, aggregates_pool);
+            }
+            else
+            {
+                instruction->batch_that->addBatchArrayForRows(
+                    row_indices,
+                    num_rows,
+                    places,
+                    instruction->state_offset,
+                    instruction->batch_arguments,
+                    instruction->offsets,
+                    aggregates_pool);
+            }
+        }
+        else if (has_only_one_key && instruction->can_optimize_equal_keys_ranges)
+        {
+            if (has_all_chunk_rows)
+            {
+                /// All rows in the chunk belong to this shard and share one key.
+                /// Use the standard addBatchSinglePlace with contiguous range — this
+                /// has optimized (SIMD) implementations in many aggregate functions.
+                instruction->batch_that->addBatchSinglePlace(
+                    0, num_rows, places[0] + instruction->state_offset, instruction->batch_arguments, aggregates_pool);
+            }
+            else
+            {
+                instruction->batch_that->addBatchSinglePlaceForRows(
+                    row_indices, num_rows, places[0] + instruction->state_offset, instruction->batch_arguments, aggregates_pool);
+            }
+        }
+        else if (has_all_chunk_rows)
+        {
+            /// All rows in the chunk belong to this shard but have different keys.
+            /// Use the standard addBatch with contiguous range.
+            instruction->batch_that->addBatch(
+                0, num_rows, places, instruction->state_offset, instruction->batch_arguments, aggregates_pool);
+        }
+        else
+        {
+            instruction->batch_that->addBatchForRows(
+                row_indices, num_rows, places, instruction->state_offset, instruction->batch_arguments, aggregates_pool);
+        }
+    }
 }
 
 

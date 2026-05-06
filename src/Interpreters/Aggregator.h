@@ -34,6 +34,9 @@ class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using Arenas = std::vector<ArenaPtr>;
 
+struct SerializedKeyBuffer;
+using SerializedKeyBufferPtr = std::shared_ptr<const SerializedKeyBuffer>;
+
 using ColumnsHashing::HashMethodContext;
 using ColumnsHashing::HashMethodContextPtr;
 using ColumnsHashing::LastElementCacheStats;
@@ -193,6 +196,18 @@ public:
 
     const Params & getParams() const { return params; }
 
+    /// Used by Sharded Aggregation
+    /// Compute per-row hashes using the aggregation method's hash function.
+    /// Used for shard routing; the hash is reused during `emplaceKeyWithHash`.
+    /// For Serialized methods, also populates `serialized_keys_out` with the
+    /// serialized keys to avoid re-serialization during aggregation.
+    void prepareHashesAndKeysForSharding(
+        AggregatedDataVariants & cached_variants,
+        const ColumnRawPtrs & key_columns,
+        size_t row_count,
+        PaddedPODArray<size_t> & result_hashes,
+        SerializedKeyBufferPtr & serialized_keys_out) const;
+
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(Columns columns,
         size_t row_begin, size_t row_end,
@@ -216,7 +231,51 @@ public:
         const UInt64 * offsets{};
         bool has_sparse_arguments = false;
         bool can_optimize_equal_keys_ranges = true;
+        bool has_array_combinator = false;
     };
+
+    using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
+
+    /// Internal payload header for the sharded aggregation pipeline.
+    /// Matches the payload columns returned by `prepareColumnsForSharding`.
+    Block getShardedPayloadHeader() const;
+
+    /// Used by Sharded Aggregation
+    /// Prepare key and argument columns for sharded aggregation and compute per-row hashes.
+    /// Returns payload columns [keys..., aggregate arguments...], shared hashes,
+    /// and optionally serialized keys (for Serialized method only, nullptr otherwise).
+    struct ShardedPayload
+    {
+        Columns payload_columns;
+        std::shared_ptr<PaddedPODArray<size_t>> key_hashes;
+        SerializedKeyBufferPtr serialized_keys; /// nullptr for non-Serialized methods
+    };
+
+    ShardedPayload prepareColumnsForSharding(
+            const Columns & columns,
+            size_t row_count,
+            AggregatedDataVariants & cached_hash_variants) const;
+
+    /// Used by Sharded Aggregation
+    /// Build aggregate function instructions for pre-materialized sharded payload columns.
+    /// On first call (when instructions is empty): allocates and fills all immutable fields.
+    /// On subsequent calls: updates only the column raw pointers.
+    void prepareInstructionsForSharding(
+        const Columns & payload_columns,
+        AggregateColumns & aggregate_columns_holder,
+        AggregateFunctionInstructions & instructions) const;
+
+    /// Used by Sharded Aggregation
+    /// Aggregate a subset of rows (identified by row_indices) using precomputed hashes.
+    /// If size_hint is provided, uses it to preallocate the hash table on first call.
+    void executeForRows(
+        AggregatedDataVariants & result,
+        const IColumn::Selector & row_indices,
+        const size_t * key_hashes,
+        const ColumnRawPtrs & key_columns,
+        const AggregateFunctionInstruction * aggregate_instructions,
+        std::optional<size_t> size_hint,
+        const SerializedKeyBuffer * serialized_keys = nullptr) const;
 
     /// Used for optimize_aggregation_in_order:
     /// - No two-level aggregation
@@ -293,6 +352,9 @@ public:
     const ColumnNumbers & getKeysPositions() const { return keys_positions; }
     const DataTypes & getKeyTypes() const { return key_types; }
 
+    /// Select the aggregation method based on the number and types of keys.
+    static AggregatedDataVariants::Type chooseAggregationMethod(const Block & header, const Names & keys, size_t keys_size);
+
 private:
 
     friend struct AggregatedDataVariants;
@@ -318,9 +380,6 @@ private:
     HashMethodContextPtr aggregation_state_cache;
 
     AggregateFunctionsPlainPtrs aggregate_functions;
-
-    using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
-    using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
@@ -362,8 +421,8 @@ private:
       */
     void compileAggregateFunctionsIfNeeded();
 
-    /** Select the aggregation method based on the number and types of keys. */
-    AggregatedDataVariants::Type chooseAggregationMethod(const Block & header);
+    /** Select the aggregation method and compute key_sizes for the Aggregator. */
+    AggregatedDataVariants::Type setupAggregationMethod(const Block & header);
 
     /** Create states of aggregate functions for one key.
       */
@@ -424,6 +483,44 @@ private:
         bool all_keys_are_const,
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
+
+    /// Row-indices variants for sharded aggregation (processes only specified rows).
+    void executeImplForRows(
+        AggregatedDataVariants & result,
+        const IColumn::Selector & row_indices,
+        const size_t * key_hashes,
+        const ColumnRawPtrs & key_columns,
+        const AggregateFunctionInstruction * aggregate_instructions,
+        const SerializedKeyBuffer * serialized_keys) const;
+
+    template <typename Method>
+    void executeImplForRows(
+        Method & method,
+        Arena * aggregates_pool,
+        const IColumn::Selector & row_indices,
+        const size_t * key_hashes,
+        const ColumnRawPtrs & key_columns,
+        const AggregateFunctionInstruction * aggregate_instructions,
+        const SerializedKeyBuffer * serialized_keys) const;
+
+    template <bool prefetch, typename Method, typename State>
+    void executeImplBatchForRows(
+        Method & method,
+        State & state,
+        Arena * aggregates_pool,
+        const IColumn::Selector & row_indices,
+        const size_t * key_hashes,
+        size_t chunk_num_rows,
+        const AggregateFunctionInstruction * aggregate_instructions) const;
+
+    void executeAggregateInstructionsForRows(
+        Arena * aggregates_pool,
+        const UInt64 * row_indices,
+        size_t num_rows,
+        const AggregateFunctionInstruction * aggregate_instructions,
+        AggregateDataPtr * places,
+        bool has_only_one_key,
+        bool has_all_chunk_rows) const;
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,
@@ -665,6 +762,8 @@ private:
     /// Check if data variants use fixed-size hash tables (key8/key16) suitable for parallel merge
     /// at single level.
     bool isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const;
+
+    using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
 
     void prepareAggregateInstructions(
         Columns columns,

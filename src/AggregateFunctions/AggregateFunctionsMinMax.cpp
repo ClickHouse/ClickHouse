@@ -59,6 +59,36 @@ public:
             this->data(place).setIfGreater(*columns[0], row_num, arena);
     }
 
+    void addBatchForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        for (size_t j = 0; j < num_rows; ++j)
+        {
+            if constexpr (isMin)
+                this->data(places[j] + place_offset).setIfSmaller(*columns[0], row_indices[j], arena);
+            else
+                this->data(places[j] + place_offset).setIfGreater(*columns[0], row_indices[j], arena);
+        }
+    }
+
+    void addBatchSinglePlaceForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        if constexpr (isMin)
+            this->data(place).setSmallestForRows(*columns[0], row_indices, num_rows, arena);
+        else
+            this->data(place).setGreatestForRows(*columns[0], row_indices, num_rows, arena);
+    }
+
     void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
     {
         add(place, columns, 0, arena);

@@ -139,6 +139,44 @@ void SingleValueDataBase::setGreatest(const IColumn & column, size_t row_begin, 
         setIfGreater(column, *index, arena);
 }
 
+void SingleValueDataBase::setSmallestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena)
+{
+    for (size_t j = 0; j < num_rows; ++j)
+        setIfSmaller(column, row_indices[j], arena);
+}
+
+void SingleValueDataBase::setGreatestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena)
+{
+    for (size_t j = 0; j < num_rows; ++j)
+        setIfGreater(column, row_indices[j], arena);
+}
+
+std::optional<size_t> SingleValueDataBase::getSmallestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const
+{
+    static constexpr int nan_null_direction_hint = 1;
+    if (num_rows == 0)
+        return std::nullopt;
+
+    size_t best_j = 0;
+    for (size_t j = 1; j < num_rows; ++j)
+        if (column.compareAt(row_indices[j], row_indices[best_j], column, nan_null_direction_hint) < 0)
+            best_j = j;
+    return row_indices[best_j];
+}
+
+std::optional<size_t> SingleValueDataBase::getGreatestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const
+{
+    static constexpr int nan_null_direction_hint = -1;
+    if (num_rows == 0)
+        return std::nullopt;
+
+    size_t best_j = 0;
+    for (size_t j = 1; j < num_rows; ++j)
+        if (column.compareAt(row_indices[j], row_indices[best_j], column, nan_null_direction_hint) > 0)
+            best_j = j;
+    return row_indices[best_j];
+}
+
 void SingleValueDataBase::setSmallestNotNullIf(
     const IColumn & column,
     const UInt8 * __restrict null_map,
@@ -398,6 +436,96 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
         for (size_t i = row_begin; i < row_end; i++)
             setIfGreater(column, i, arena);
     }
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::setSmallestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena)
+{
+    if (num_rows == 0)
+        return;
+
+    const auto & vec = assert_cast<const ColVecType &>(column);
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    {
+        std::optional<T> opt = findExtremeMinForRows(vec.getData().data(), row_indices, num_rows);
+        if (opt.has_value())
+            setIfSmaller(*opt);
+    }
+    else
+    {
+        for (size_t j = 0; j < num_rows; ++j)
+            setIfSmaller(column, row_indices[j], arena);
+    }
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::setGreatestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena)
+{
+    if (num_rows == 0)
+        return;
+
+    const auto & vec = assert_cast<const ColVecType &>(column);
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    {
+        std::optional<T> opt = findExtremeMaxForRows(vec.getData().data(), row_indices, num_rows);
+        if (opt.has_value())
+            setIfGreater(*opt);
+    }
+    else
+    {
+        for (size_t j = 0; j < num_rows; ++j)
+            setIfGreater(column, row_indices[j], arena);
+    }
+}
+
+template <typename T>
+std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const
+{
+    if (num_rows == 0)
+        return std::nullopt;
+
+    const auto & vec = assert_cast<const ColVecType &>(column);
+    const auto * data = vec.getData().data();
+
+    /// For floats, skip NaN during initialisation so the accumulator starts with a non-NaN value.
+    /// std::min/max never replace a NaN accumulator (NaN < x is always false), so a NaN start would stick through the loop.
+    /// If all values are NaN, best will hold the last NaN seen, which is correct.
+    size_t best_j = 0;
+    if constexpr (is_floating_point<T>)
+    {
+        while (isNaN(data[row_indices[best_j]]) && best_j + 1 < num_rows)
+            ++best_j;
+    }
+
+    for (size_t j = best_j + 1; j < num_rows; ++j)
+        if (data[row_indices[j]] < data[row_indices[best_j]])
+            best_j = j;
+    return row_indices[best_j];
+}
+
+template <typename T>
+std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const
+{
+    if (num_rows == 0)
+        return std::nullopt;
+
+    const auto & vec = assert_cast<const ColVecType &>(column);
+    const auto * data = vec.getData().data();
+
+    /// For floats, skip NaN during initialisation so the accumulator starts with a non-NaN value.
+    /// std::min/max never replace a NaN accumulator (NaN < x is always false), so a NaN start would stick through the loop.
+    /// If all values are NaN, best will hold the last NaN seen, which is correct.
+    size_t best_j = 0;
+    if constexpr (is_floating_point<T>)
+    {
+        while (isNaN(data[row_indices[best_j]]) && best_j + 1 < num_rows)
+            ++best_j;
+    }
+
+    for (size_t j = best_j + 1; j < num_rows; ++j)
+        if (data[row_indices[j]] > data[row_indices[best_j]])
+            best_j = j;
+    return row_indices[best_j];
 }
 
 template <typename T>
@@ -1186,6 +1314,18 @@ void SingleValueDataNumeric<T>::setGreatest(const IColumn & column, size_t row_b
 }
 
 template <typename T>
+void SingleValueDataNumeric<T>::setSmallestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena)
+{
+    return memory.get().setSmallestForRows(column, row_indices, num_rows, arena);
+}
+
+template <typename T>
+void SingleValueDataNumeric<T>::setGreatestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena)
+{
+    return memory.get().setGreatestForRows(column, row_indices, num_rows, arena);
+}
+
+template <typename T>
 void SingleValueDataNumeric<T>::setSmallestNotNullIf(
     const IColumn & column,
     const UInt8 * __restrict null_map,
@@ -1219,6 +1359,18 @@ template <typename T>
 std::optional<size_t> SingleValueDataNumeric<T>::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const
 {
     return memory.get().getGreatestIndex(column, row_begin, row_end);
+}
+
+template <typename T>
+std::optional<size_t> SingleValueDataNumeric<T>::getSmallestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const
+{
+    return memory.get().getSmallestIndexForRows(column, row_indices, num_rows);
+}
+
+template <typename T>
+std::optional<size_t> SingleValueDataNumeric<T>::getGreatestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const
+{
+    return memory.get().getGreatestIndexForRows(column, row_indices, num_rows);
 }
 
 template <typename T>

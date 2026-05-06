@@ -72,10 +72,14 @@ template <typename Value>
 struct LastElementCache<Value, true> : public LastElementCacheBase
 {
     Value value{};
+    size_t saved_hash = 0;
     bool is_null = false;
 
     template <typename Key>
     bool check(const Key & key) const { return !is_null && value.first == key; }
+
+    template <typename Key>
+    bool checkWithHash(const Key & key, size_t hash_value) const { return !is_null && saved_hash == hash_value && value.first == key; }
 
     bool check(const Value & rhs) const { return !is_null && value == rhs; }
 };
@@ -84,9 +88,13 @@ template <typename Value>
 struct LastElementCache<Value, false> : public LastElementCacheBase
 {
     Value value{};
+    size_t saved_hash = 0;
 
     template <typename Key>
     bool check(const Key & key) const { return value.first == key; }
+
+    template <typename Key>
+    bool checkWithHash(const Key & key, size_t hash_value) const { return saved_hash == hash_value && value.first == key; }
 
     bool check(const Value & rhs) const { return value == rhs; }
 };
@@ -217,6 +225,41 @@ public:
         return emplaceImpl(key_holder, data);
     }
 
+    /// Like emplaceKey, but uses a pre-computed hash to skip hash recomputation.
+    /// Used by sharded aggregation where the hash was already computed for shard routing.
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKeyWithHash(Data & data, size_t row, Arena & pool, size_t hash_value)
+    {
+        /// Verify the precomputed hash matches what we would compute for this row.
+        /// chassert(hash_value == getHash(data, row, pool));
+
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                if constexpr (consecutive_keys_optimization)
+                {
+                    if (!cache.is_null)
+                    {
+                        cache.onNewValue(true);
+                        cache.is_null = true;
+                    }
+                }
+
+                bool has_null_key = data.hasNullKeyData();
+                data.hasNullKeyData() = true;
+
+                if constexpr (has_mapped)
+                    return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+                else
+                    return EmplaceResult(!has_null_key);
+            }
+        }
+
+        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+        return emplaceImplWithHash(key_holder, data, hash_value);
+    }
+
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
     {
@@ -264,6 +307,11 @@ public:
     template <typename Data>
     ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
     {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+                return 0;
+        }
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return data.hash(keyHolderGetKey(key_holder));
     }
@@ -361,6 +409,72 @@ protected:
         if constexpr (consecutive_keys_optimization)
         {
             cache.onNewValue(true);
+
+            if constexpr (nullable)
+                cache.is_null = false;
+
+            if constexpr (has_mapped)
+            {
+                cache.value.first = it->getKey();
+                cache.value.second = it->getMapped();
+                cached = &cache.value.second;
+            }
+            else
+            {
+                cache.value = it->getKey();
+            }
+        }
+
+        if constexpr (has_mapped)
+            return EmplaceResult(it->getMapped(), *cached, inserted);
+        else
+            return EmplaceResult(inserted);
+    }
+
+    template <typename Data, typename KeyHolder>
+    ALWAYS_INLINE EmplaceResult emplaceImplWithHash(KeyHolder & key_holder, Data & data, size_t hash_value)
+    {
+        if constexpr (consecutive_keys_optimization)
+        {
+            /// For small fixed-size keys (e.g., OneNumber with UInt16/UInt32/UInt64),
+            /// the key comparison is a single integer ==, so the hash pre-check adds
+            /// no benefit. For larger keys (String, FixedString, Serialized), the hash
+            /// comparison short-circuits the more expensive key comparison on cache miss.
+            using KeyType = std::decay_t<decltype(keyHolderGetKey(key_holder))>;
+            bool hit;
+            if constexpr (std::is_arithmetic_v<KeyType> || sizeof(KeyType) <= 8)
+                hit = cache.found && cache.check(keyHolderGetKey(key_holder));
+            else
+                hit = cache.found && cache.checkWithHash(keyHolderGetKey(key_holder), hash_value);
+
+            if (hit)
+            {
+                if constexpr (has_mapped)
+                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                else
+                    return EmplaceResult(false);
+            }
+        }
+
+        typename Data::LookupResult it;
+        bool inserted = false;
+
+        data.emplace(key_holder, it, inserted, hash_value);
+
+        [[maybe_unused]] Mapped * cached = nullptr;
+        if constexpr (has_mapped)
+            cached = &it->getMapped();
+
+        if constexpr (has_mapped)
+        {
+            if (inserted)
+                new (&it->getMapped()) Mapped();
+        }
+
+        if constexpr (consecutive_keys_optimization)
+        {
+            cache.onNewValue(true);
+            cache.saved_hash = hash_value;
 
             if constexpr (nullable)
                 cache.is_null = false;
