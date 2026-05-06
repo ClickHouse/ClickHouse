@@ -36,7 +36,6 @@ private:
     /// Profiling the trace collector's own thread is also pointless.
     ThreadFromGlobalPoolWithoutTraceCollector thread;
 
-    void tryClosePipe();
     void run();
 };
 

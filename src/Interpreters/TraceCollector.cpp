@@ -56,18 +56,6 @@ std::shared_ptr<TraceLog> TraceCollector::getTraceLog()
     return trace_log_ptr;
 }
 
-void TraceCollector::tryClosePipe()
-{
-    try
-    {
-        TraceSender::pipe.close();
-    }
-    catch (...)
-    {
-        tryLogCurrentException("TraceCollector");
-    }
-}
-
 TraceCollector::~TraceCollector()
 {
     // Pipes could be already closed due to exception in TraceCollector::run.
@@ -96,9 +84,13 @@ TraceCollector::~TraceCollector()
     else
         LOG_ERROR(getLogger("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
 
-    /// Close the pipe only after the worker has exited, so its read() does not
-    /// race with our close() on the same fd.
-    tryClosePipe();
+    /// We deliberately do NOT close the pipe here. `TraceSender::pipe` is a
+    /// static `LazyPipeFDs` whose destructor will close it at process exit.
+    /// Closing it from this thread races with profiler signal handlers on
+    /// other threads that are still allowed to call `TraceSender::send` —
+    /// after the worker exits no one reads the pipe, so any further writes
+    /// fill the kernel buffer and are then silently dropped by
+    /// `WriteBufferFromFileDescriptorDiscardOnFailure`.
 }
 
 
@@ -221,7 +213,6 @@ void TraceCollector::run()
     catch (...)
     {
         tryLogCurrentException("TraceCollector");
-        tryClosePipe();
         throw;
     }
 }
