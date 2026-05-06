@@ -51,3 +51,30 @@ TEST(WebIndexOriginComparison, BuildsRelativePathAcrossDefaultPortVariants)
         DB::WebIndexPage::getRelativePathWithQueryAndFragment(candidate, base),
         "data/2025/part1.tsv?download=1#frag");
 }
+
+
+TEST(WebIndexOriginComparison, RejectsPercentEncodedParentDirectoryInListingPrefix)
+{
+    Poco::URI listing("http://example.com/data/2025/", false);
+    Poco::URI candidate("http://example.com/data/2025/%2e%2e/secret.tsv", false);
+
+    ASSERT_FALSE(DB::WebIndexPage::hasPathPrefix(candidate, listing));
+}
+
+
+TEST(WebIndexOriginComparison, RejectsPercentEncodedSlashParentDirectoryInListingPrefix)
+{
+    Poco::URI listing("http://example.com/data/2025/", false);
+    Poco::URI candidate("http://example.com/data/2025/..%2fsecret.tsv", false);
+
+    ASSERT_FALSE(DB::WebIndexPage::hasPathPrefix(candidate, listing));
+}
+
+
+TEST(WebIndexOriginComparison, AcceptsPercentEncodedOrdinaryPathSegmentInListingPrefix)
+{
+    Poco::URI listing("http://example.com/data/2025/", false);
+    Poco::URI candidate("http://example.com/data/2025/partition%3D1/data.tsv", false);
+
+    ASSERT_TRUE(DB::WebIndexPage::hasPathPrefix(candidate, listing));
+}
