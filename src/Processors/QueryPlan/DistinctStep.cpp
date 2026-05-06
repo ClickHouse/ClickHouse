@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -145,7 +144,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
 void DistinctStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
     settings.out << prefix << "Columns: ";
 
     if (columns.empty())
@@ -159,7 +158,7 @@ void DistinctStep::describeActions(FormatSettings & settings) const
                 settings.out << ", ";
             first = false;
 
-            settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
+            settings.out << column;
         }
     }
 

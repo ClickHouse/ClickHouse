@@ -50,8 +50,8 @@ std::string DataTypeDateTime64::doGetName() const
 void DataTypeDateTime64::updateHashImpl(SipHash & hash) const
 {
     Base::updateHashImpl(hash);
-    /// Do not include timezone in hash: equals() considers types with different
-    /// timezones as equal (only scale matters), and hash must be consistent with equality.
+    if (has_explicit_time_zone)
+        hash.update(getDateLUTTimeZone(time_zone));
 }
 
 bool DataTypeDateTime64::equals(const IDataType & rhs) const
@@ -61,7 +61,7 @@ bool DataTypeDateTime64::equals(const IDataType & rhs) const
     return false;
 }
 
-SerializationPtr DataTypeDateTime64::doGetSerialization(const SerializationInfoSettings &) const
+SerializationPtr DataTypeDateTime64::doGetDefaultSerialization() const
 {
     if (!has_explicit_time_zone)
     {
@@ -69,10 +69,10 @@ SerializationPtr DataTypeDateTime64::doGetSerialization(const SerializationInfoS
         if (&effective_tz != &time_zone)
         {
             TimezoneMixin overridden(effective_tz.getTimeZone());
-            return SerializationDateTime64::create(scale, overridden);
+            return std::make_shared<SerializationDateTime64>(scale, overridden);
         }
     }
-    return SerializationDateTime64::create(scale, *this);
+    return std::make_shared<SerializationDateTime64>(scale, *this);
 }
 
 std::string getDateTimeTimezone(const IDataType & data_type)
