@@ -6,9 +6,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/OptimizedRegularExpression.h>
 
 namespace DB
 {
