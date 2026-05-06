@@ -12,6 +12,7 @@
 #    pragma clang diagnostic pop
 
 #    include <cmath>
+#    include <limits>
 #    include <Columns/ColumnArray.h>
 #    include <Columns/ColumnsNumber.h>
 #    include <DataTypes/DataTypeArray.h>
@@ -117,7 +118,7 @@ public:
         size_t len = end - start;
         if (len < 4)
         {
-            period = NAN; // At least four data points are required to detect period
+            period = std::numeric_limits<Float64>::quiet_NaN(); // At least four data points are required to detect period
             return true;
         }
 

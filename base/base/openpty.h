@@ -14,7 +14,9 @@
  * as close as possible to the original one.
  */
 // NOLINTBEGIN
-static int openpty(int *pm, int *ps, char *name, const struct termios *tio, const struct winsize *ws)
+namespace
+{
+int openpty(int *pm, int *ps, char *name, const struct termios *tio, const struct winsize *ws)
 {
 	int m, s, n=0, cs;
 	char buf[20];
@@ -44,5 +46,6 @@ fail:
 	close(m);
 	pthread_setcancelstate(cs, nullptr);
 	return -1;
+}
 }
 // NOLINTEND

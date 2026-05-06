@@ -13,9 +13,6 @@
 #include <cmath>
 #include <string>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 namespace ErrorCodes
@@ -185,7 +182,7 @@ public:
         long double val = rank_count[size - 1];
         for (int i = size - 2; i >= 0; --i)
         {
-            val /= 2.0;
+            val /= 2.0L;
             val += rank_count[i];
         }
         return static_cast<DenominatorType>(val);
@@ -593,5 +590,3 @@ using HLL12 = HyperLogLogCounter<
     HyperLogLogMode::FullFeatured,
     DenominatorMode::Compact
 >;
-
-#pragma clang diagnostic pop
