@@ -97,17 +97,9 @@ ActionsDAG createActionsDAGForPreprocessor(
         return ActionsDAG();
 
     auto actions_dag = buildActionsDAGFromAST(expression_ast, source_columns);
+    validateTransformActionsDAG(actions_dag, "preprocessor", source_name);
 
     const ActionsDAG::NodeRawConstPtrs & outputs = actions_dag.getOutputs();
-    if (outputs.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must return a single column. Got {} output columns", outputs.size());
-
-    if (outputs.front()->type != ActionsDAG::ActionType::FUNCTION)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must be a function. Got '{}' action type", outputs.front()->type);
-
-    if (outputs.front()->result_name == source_name)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor must have at least one expression on top of the source column. Got '{}'", outputs.front()->result_name);
-
     auto output_type = outputs.front()->result_type;
     auto nested_type = MergeTreeIndexText::getNestedDataType(output_type);
     WhichDataType which_data_type(nested_type);
@@ -124,12 +116,6 @@ ActionsDAG createActionsDAGForPreprocessor(
 
     if (get_array_dimensions(source_type) != get_array_dimensions(output_type))
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must not change the array dimensions of the source column. Source type: '{}', preprocessor result type: '{}'", source_type->getName(), output_type->getName());
-
-    if (actions_dag.hasNonDeterministic())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must not contain non-deterministic functions");
-
-    if (actions_dag.hasArrayJoin())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must not contain arrayJoin");
 
     return actions_dag;
 }
@@ -187,9 +173,7 @@ std::pair<ColumnPtr, size_t> MergeTreeIndexTextPreprocessor::processColumn(const
     if (start_row != 0 || n_rows != index_column->size())
         index_column = index_column->cut(start_row, n_rows);
 
-    Block block({ColumnWithTypeAndName(index_column, index_column_type, preprocessor_column_name)});
-    actions_for_index_column.execute(block, n_rows);
-    return {block.safeGetByPosition(0).column, 0};
+    return {executeUnaryExpressionActions(actions_for_index_column, index_column, index_column_type, preprocessor_column_name, n_rows), 0};
 }
 
 String MergeTreeIndexTextPreprocessor::processConstant(const String & input) const
@@ -199,11 +183,8 @@ String MergeTreeIndexTextPreprocessor::processConstant(const String & input) con
 
     auto input_type = std::make_shared<DataTypeString>();
     auto input_column = input_type->createColumnConst(1, Field(input));
-    Block block{{ColumnWithTypeAndName(input_column, input_type, preprocessor_column_name)}};
-
-    size_t n_rows = 1;
-    actions_for_constant.execute(block, n_rows);
-    return String{block.safeGetByPosition(0).column->getDataAt(0)};
+    ColumnPtr output_column = executeUnaryExpressionActions(actions_for_constant, input_column, input_type, preprocessor_column_name, 1);
+    return String{output_column->getDataAt(0)};
 }
 
 }

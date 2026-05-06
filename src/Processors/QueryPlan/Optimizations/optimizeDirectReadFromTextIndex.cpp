@@ -542,7 +542,7 @@ private:
             if (needles_field.getType() == Field::Types::String)
             {
                 /// hasToken case: single token string.
-                auto tokens = postprocessor->applyBatch({needles_field.safeGet<String>()});
+                auto tokens = postprocessor->processTokens({needles_field.safeGet<String>()});
                 needles_field = tokens.empty() ? String{} : tokens.front();
             }
             else if (needles_field.getType() == Field::Types::Array)
@@ -553,7 +553,7 @@ private:
                 for (const auto & element : src_array)
                     if (element.getType() == Field::Types::String)
                         tokens.push_back(element.safeGet<String>());
-                tokens = postprocessor->applyBatch(std::move(tokens));
+                tokens = postprocessor->processTokens(std::move(tokens));
                 needles_field = Array(tokens.begin(), tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }

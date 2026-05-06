@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 
-#include <Core/ColumnWithTypeAndName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -44,42 +43,19 @@ MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(ASTPtr expressi
     /// Build ActionsDAG treating the input as a plain String token.
     NamesAndTypesList source_columns{{postprocessor_token_name, string_type}};
     ActionsDAG actions_dag = buildActionsDAGFromAST(transformed_ast, source_columns);
+    validateTransformActionsDAG(actions_dag, "postprocessor", postprocessor_token_name);
 
     const ActionsDAG::NodeRawConstPtrs & outputs = actions_dag.getOutputs();
-    if (outputs.size() != 1)
-        throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
-            "The postprocessor expression must return a single column. Got {} output columns",
-            outputs.size());
-
-    if (outputs.front()->type != ActionsDAG::ActionType::FUNCTION)
-        throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
-            "The postprocessor expression must be a function. Got '{}' action type",
-            outputs.front()->type);
-
-    if (outputs.front()->result_name == postprocessor_token_name)
-        throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
-            "The postprocessor must have at least one expression on top of the token. Got '{}'",
-            outputs.front()->result_name);
-
     if (!outputs.front()->result_type->equals(*string_type))
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
             "The postprocessor expression must return String type. Got '{}'",
             outputs.front()->result_type->getName());
 
-    if (actions_dag.hasNonDeterministic())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The postprocessor expression must not contain non-deterministic functions");
-
-    if (actions_dag.hasArrayJoin())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The postprocessor expression must not contain arrayJoin");
-
     actions.emplace(std::move(actions_dag));
 }
 
-std::vector<String> MergeTreeIndexTextPostprocessor::applyBatch(std::vector<String> tokens) const
+std::vector<String> MergeTreeIndexTextPostprocessor::processTokens(std::vector<String> tokens) const
 {
     if (!actions || tokens.empty())
         return tokens;
@@ -107,10 +83,7 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensBatch(const ColumnString
     if (!actions)
         return tokens->getPtr();
 
-    size_t n_rows = tokens->size();
-    Block block{{ColumnWithTypeAndName(tokens->getPtr(), string_type, postprocessor_token_name)}};
-    actions->execute(block, n_rows);
-    return block.safeGetByPosition(0).column;
+    return executeUnaryExpressionActions(*actions, tokens->getPtr(), string_type, postprocessor_token_name, tokens->size());
 }
 
 ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnArray * tokens) const

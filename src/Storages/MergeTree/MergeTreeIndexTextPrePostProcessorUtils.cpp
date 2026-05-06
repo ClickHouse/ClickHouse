@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPrePostProcessorUtils.h>
 
+#include <Core/ColumnWithTypeAndName.h>
+#include <Interpreters/Block.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -8,6 +10,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_QUERY;
+}
 
 void replaceExpressionToIdentifier(ASTPtr & ast, const String & expression_name, const String & identifier_name)
 {
@@ -35,6 +42,37 @@ ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList
     actions_dag.removeUnusedActions();
 
     return actions_dag;
+}
+
+void validateTransformActionsDAG(const ActionsDAG & actions_dag, const String & transform_name, const String & source_name)
+{
+    const ActionsDAG::NodeRawConstPtrs & outputs = actions_dag.getOutputs();
+    if (outputs.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The {} expression must return a single column. Got {} output columns", transform_name, outputs.size());
+
+    if (outputs.front()->type != ActionsDAG::ActionType::FUNCTION)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The {} expression must be a function. Got '{}' action type", transform_name, outputs.front()->type);
+
+    if (outputs.front()->result_name == source_name)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The {} must have at least one expression on top of the source column. Got '{}'", transform_name, outputs.front()->result_name);
+
+    if (actions_dag.hasNonDeterministic())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The {} expression must not contain non-deterministic functions", transform_name);
+
+    if (actions_dag.hasArrayJoin())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The {} expression must not contain arrayJoin", transform_name);
+}
+
+ColumnPtr executeUnaryExpressionActions(
+    const ExpressionActions & actions,
+    ColumnPtr column,
+    const DataTypePtr & type,
+    const String & column_name,
+    size_t n_rows)
+{
+    Block block({ColumnWithTypeAndName(column, type, column_name)});
+    actions.execute(block, n_rows);
+    return block.safeGetByPosition(0).column;
 }
 
 }

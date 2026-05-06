@@ -25,7 +25,7 @@ public:
     /// Applies the postprocessor to all tokens in one batch execution.
     /// Tokens mapped to an empty string are removed.
     /// If no expression was provided, returns the tokens unchanged.
-    std::vector<String> applyBatch(std::vector<String> tokens) const;
+    std::vector<String> processTokens(std::vector<String> tokens) const;
 
     /// Processes a flat ColumnString of tokens in one vectorized ExpressionActions execution.
     /// Returns a new column of transformed tokens. Preferred over processToken for

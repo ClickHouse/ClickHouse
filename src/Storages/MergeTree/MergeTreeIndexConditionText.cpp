@@ -527,7 +527,7 @@ std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & fi
     const String value = apply_preprocessor ? preprocessor->processConstant(raw) : raw;
     tokenizer->stringToTokens(value.data(), value.size(), tokens);
     tokens = tokenizer->compactTokens(tokens);
-    return apply_postprocessor ? postprocessor->applyBatch(std::move(tokens)) : tokens;
+    return apply_postprocessor ? postprocessor->processTokens(std::move(tokens)) : tokens;
 }
 
 std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix, bool apply_preprocessor, bool apply_postprocessor) const
@@ -537,7 +537,7 @@ std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field &
     const String value = apply_preprocessor ? preprocessor->processConstant(raw) : raw;
     tokenizer->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
     tokens = tokenizer->compactTokens(tokens);
-    return apply_postprocessor ? postprocessor->applyBatch(std::move(tokens)) : tokens;
+    return apply_postprocessor ? postprocessor->processTokens(std::move(tokens)) : tokens;
 }
 
 std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field, bool apply_preprocessor, bool apply_postprocessor) const
@@ -547,7 +547,7 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
     const String value = apply_preprocessor ? preprocessor->processConstant(raw) : raw;
     tokenizer->stringLikeToTokens(value.data(), value.size(), tokens);
     tokens = tokenizer->compactTokens(tokens);
-    return apply_postprocessor ? postprocessor->applyBatch(std::move(tokens)) : tokens;
+    return apply_postprocessor ? postprocessor->processTokens(std::move(tokens)) : tokens;
 }
 
 std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const
@@ -760,7 +760,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             /// Array needles are tokens as-is; apply postprocessor only for non-array tokenizers
             /// (array tokenizer stores raw elements and must be compared raw).
             if (!typeid_cast<const ArrayTokenizer *>(tokenizer))
-                search_tokens = postprocessor->applyBatch(std::move(search_tokens));
+                search_tokens = postprocessor->processTokens(std::move(search_tokens));
         }
 
         if (function_name == "hasAnyTokens")
@@ -878,7 +878,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
         else
         {
-            tokens = postprocessor->applyBatch(std::move(tokens));
+            tokens = postprocessor->processTokens(std::move(tokens));
             /// The postprocessor may map the token to nothing (e.g. a stop-word filter).
             /// Use a sentinel that is never stored in the index so the condition evaluates to false.
             if (tokens.empty())
