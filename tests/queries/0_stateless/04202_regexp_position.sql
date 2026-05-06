@@ -46,6 +46,10 @@ SELECT REGEXP_INSTR('hello world', 'WORLD', 1, 1, 0, 'i');
 -- Vectorized over a column.
 SELECT regexpPosition(s, 'b+') FROM (SELECT arrayJoin(['abc', 'aaabbb', 'xyz', 'bbbbbb']) AS s) ORDER BY s;
 
+-- Constant haystack with vector numeric arguments (regression: previously read past end of const column).
+SELECT regexpPosition('abc', 'a', number + 1) FROM numbers(3);
+SELECT regexpPosition('aXbXcXd', 'X', 1, number + 1) FROM numbers(4);
+
 -- Errors.
 SELECT regexpPosition('abc', 'a', 0); -- { serverError BAD_ARGUMENTS }
 SELECT regexpPosition('abc', 'a', 1, 0); -- { serverError BAD_ARGUMENTS }

@@ -114,12 +114,12 @@ public:
         const OptimizedRegularExpression regexp(prepared_pattern, OptimizedRegularExpression::RE_DOT_NL);
         const unsigned num_captures = regexp.getNumberOfSubpatterns();
 
-        const ColumnString * col_haystack = nullptr;
-        const ColumnConst * col_haystack_const = checkAndGetColumnConst<ColumnString>(column_haystack.get());
-        if (col_haystack_const)
-            col_haystack = checkAndGetColumn<ColumnString>(&col_haystack_const->getDataColumn());
-        else
-            col_haystack = checkAndGetColumn<ColumnString>(column_haystack.get());
+        /// Materialize a constant haystack so the per-row loop below can index it uniformly.
+        /// When all arguments are constant, the framework already short-circuits to a single
+        /// row via `useDefaultImplementationForConstants`; this path matters for mixed
+        /// const haystack + vector numeric arguments.
+        ColumnPtr column_haystack_full = column_haystack->convertToFullColumnIfConst();
+        const ColumnString * col_haystack = checkAndGetColumn<ColumnString>(column_haystack_full.get());
         if (!col_haystack)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", column_haystack->getName(), getName());
