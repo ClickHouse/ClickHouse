@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
@@ -51,6 +52,25 @@ namespace
     {
         TransformASTFunc transform_ast;
     };
+
+    ASTPtr makeEmptyNullableValuesArray(const SQLQueryPiece & argument, const ConverterContext & context)
+    {
+        auto nullable_type = fmt::format("Nullable({})", context.scalar_data_type->getName());
+        return makeASTFunction(
+            "arrayResize",
+            makeASTFunction("CAST", make_intrusive<ASTLiteral>(Array{}), make_intrusive<ASTLiteral>(fmt::format("Array({})", nullable_type))),
+            make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(argument.start_time, argument.end_time, argument.step)),
+            makeASTFunction("CAST", make_intrusive<ASTLiteral>(Field{} /* NULL */), make_intrusive<ASTLiteral>(std::move(nullable_type))));
+    }
+
+    ASTPtr resizeEmptyAggregateValues(ASTPtr values, const SQLQueryPiece & argument, const ConverterContext & context)
+    {
+        return makeASTFunction(
+            "if",
+            makeASTFunction("empty", values->clone()),
+            makeEmptyNullableValuesArray(argument, context),
+            std::move(values));
+    }
 
     const ImplInfo * getImplInfo(std::string_view operator_name)
     {
@@ -177,7 +197,8 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
         builder.select_list.push_back(std::move(new_group));
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-        builder.select_list.push_back(impl_info->transform_ast(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type));
+        builder.select_list.push_back(resizeEmptyAggregateValues(
+            impl_info->transform_ast(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type), argument, context));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         if (operator_node->by || operator_node->without)
