@@ -93,7 +93,7 @@
 1
 2
 0
-16. Legacy predicates (hasPhrase / startsWith / endsWith) must bypass the index when a postprocessor is configured.
+16. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.
 1
 1
 1

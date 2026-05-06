@@ -907,10 +907,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
 
-        /// hasPhrase performs exact positional matching at the row level, so the postprocessor
-        /// must not be applied to the needle (it could change token identity or drop stop words,
-        /// making the phrase lookup inconsistent with the row-level evaluation).
-        auto tokens = stringToTokens(value_field, true, false);
+        /// Apply both preprocessor and postprocessor so the lookup tokens match what was stored in
+        /// the index. In Hint mode any false positives are resolved by the row-level filter.
+        auto tokens = stringToTokens(value_field, true, true);
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;

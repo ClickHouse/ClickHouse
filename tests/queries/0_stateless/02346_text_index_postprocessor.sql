@@ -418,7 +418,7 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');      -- 0
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '16. Legacy predicates (hasPhrase / startsWith / endsWith) must bypass the index when a postprocessor is configured.';
+SELECT '16. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.';
 
 CREATE TABLE tab
 (
@@ -430,16 +430,10 @@ ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (1, 'running walking'), (2, 'cat dog');
 
--- Raw row-level semantics still hold.
+-- Row-level semantics hold and the index is used in Hint mode.
 SELECT count() FROM tab WHERE hasPhrase(val, 'running walking');  -- 1
 SELECT count() FROM tab WHERE startsWith(val, 'running');         -- 1
 SELECT count() FROM tab WHERE endsWith(val, 'walking');           -- 1
-
--- These predicates must not use the text index when a postprocessor is configured,
--- otherwise the normalized index tokens would disagree with row-level evaluation.
-SELECT count() FROM tab WHERE hasPhrase(val, 'running walking') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
-SELECT count() FROM tab WHERE startsWith(val, 'running') SETTINGS force_data_skipping_indices = 'idx';        -- { serverError INDEX_NOT_USED }
-SELECT count() FROM tab WHERE endsWith(val, 'walking') SETTINGS force_data_skipping_indices = 'idx';          -- { serverError INDEX_NOT_USED }
 
 DROP TABLE tab;
 

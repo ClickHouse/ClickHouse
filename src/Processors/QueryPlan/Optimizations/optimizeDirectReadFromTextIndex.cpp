@@ -368,14 +368,11 @@ private:
         return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
     }
 
-    static bool needApplyPreprocessor(const String & function_name)
+    /// Returns true for functions that require applying the preprocessor to the haystack and/or
+    /// the postprocessor to the needle. has/hasAll/hasAny bypass both transforms.
+    static bool needApplyPreOrPostProcessors(const String & function_name)
     {
         return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
-    }
-
-    static bool needApplyPostprocessor(const String & function_name)
-    {
-        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
     }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
@@ -431,7 +428,7 @@ private:
             return replacement;
 
         auto function_name = function_node.function_base->getName();
-        bool need_transform_function = needApplyTokenizer(function_name) || needApplyPreprocessor(function_name) || needApplyPostprocessor(function_name);
+        bool need_transform_function = needApplyTokenizer(function_name) || needApplyPreOrPostProcessors(function_name);
 
         /// Early exit if there is nothig to process.
         if (!need_transform_function && !direct_read_from_text_index)
@@ -486,7 +483,7 @@ private:
         const auto * tokenizer = condition_text.getTokenizer();
         auto function_name = replacement.node->function_base->getName();
 
-        if (needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions())
+        if (needApplyPreOrPostProcessors(function_name) && preprocessor && preprocessor->hasActions())
         {
             const auto & preprocessor_dag = preprocessor->getOriginalActionsDAG();
             chassert(preprocessor_dag.getOutputs().size() == 1);
@@ -533,7 +530,9 @@ private:
             new_children.push_back(&actions_dag.addColumn(std::move(arg)));
         }
 
-        if (needApplyPostprocessor(function_name) && postprocessor && postprocessor->hasActions())
+        /// hasPhrase keeps its needle as an unsplit phrase string — applying the postprocessor per-token
+        /// would be incorrect here; the postprocessor is applied per-token only for single-token functions.
+        if (needApplyPreOrPostProcessors(function_name) && function_name != "hasPhrase" && postprocessor && postprocessor->hasActions())
         {
             if (needles_field.getType() == Field::Types::String)
             {
