@@ -1,0 +1,18 @@
+# Generated datasets.
+*.tsv
+*.tsv.gz
+data_*
+
+# Generated key lists.
+keys_*
+*_keys.txt
+*.keys
+
+# Generated benchmark results.
+*.csv
+results/*
+!results/.gitkeep
+
+# Python bytecode.
+__pycache__/
+*.pyc

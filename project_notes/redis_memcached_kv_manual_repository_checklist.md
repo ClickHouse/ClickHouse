@@ -206,3 +206,48 @@ git diff --name-only | rg "\\.(h|hpp|cpp|c|cc|cmake)$|(^|/)CMakeLists\\.txt$|(^|
 ```
 
 Expected result: no output for this analysis-only phase.
+
+## Baseline Benchmark Checklist
+
+Verify benchmark files exist:
+
+```bash
+find benchmark/kv_baseline -maxdepth 2 -type f -print
+```
+
+Check Python script help:
+
+```bash
+python3 benchmark/kv_baseline/generate_dataset.py --help
+python3 benchmark/kv_baseline/bench_clickhouse_http.py --help
+python3 benchmark/kv_baseline/load_redis.py --help
+python3 benchmark/kv_baseline/bench_redis.py --help
+```
+
+Generate a tiny smoke dataset:
+
+```bash
+mkdir -p /tmp/kv_baseline
+python3 benchmark/kv_baseline/generate_dataset.py --rows 10 --value-size 64 --output /tmp/kv_baseline/data.tsv --keys-output /tmp/kv_baseline/keys.txt
+```
+
+Inspect generated files:
+
+```bash
+head /tmp/kv_baseline/data.tsv
+head /tmp/kv_baseline/keys.txt
+```
+
+Verify no generated benchmark data is staged:
+
+```bash
+git status --short
+git diff --cached --name-only | rg "\.tsv$|\.csv$|keys.*\.txt$"
+```
+
+Suggested commit check for this phase:
+
+```bash
+git diff --cached --stat
+git diff --cached --name-only
+```
