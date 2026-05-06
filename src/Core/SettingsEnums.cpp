@@ -188,7 +188,8 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql},
-     {"promql", Dialect::promql}})
+     {"promql", Dialect::promql},
+     {"polyglot", Dialect::polyglot}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -301,6 +302,11 @@ IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
      {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
      {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
 
+IMPLEMENT_SETTING_ENUM(InputFormatColumnMatchingCaseSensitivity, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", FormatSettings::InputFormatColumnMatchingCaseSensitivity::AUTO},
+     {"ignore_case", FormatSettings::InputFormatColumnMatchingCaseSensitivity::IGNORE_CASE},
+     {"match_case", FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE}})
+
 IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
     {{"DEFINER", SQLSecurityType::DEFINER},
      {"INVOKER", SQLSecurityType::INVOKER},
@@ -394,6 +400,19 @@ IMPLEMENT_SETTING_ENUM(
      {"v3", MergeTreeObjectSerializationVersion::V3}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeTreeMapSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"basic", MergeTreeMapSerializationVersion::BASIC},
+     {"with_buckets", MergeTreeMapSerializationVersion::WITH_BUCKETS}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeMapBucketsStrategy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"constant", MergeTreeMapBucketsStrategy::CONSTANT},
+     {"sqrt", MergeTreeMapBucketsStrategy::SQRT},
+     {"linear", MergeTreeMapBucketsStrategy::LINEAR}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSharedDataSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"map", MergeTreeObjectSharedDataSerializationVersion::MAP},
@@ -460,5 +479,10 @@ IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"raw", JemallocProfileFormat::Raw},
      {"symbolized", JemallocProfileFormat::Symbolized},
      {"collapsed", JemallocProfileFormat::Collapsed}})
+
+IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", S3UriStyle::AUTO},
+     {"path", S3UriStyle::PATH},
+     {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
 
 }

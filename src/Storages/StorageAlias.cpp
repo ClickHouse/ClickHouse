@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 StorageAlias::StorageAlias(
@@ -77,6 +78,7 @@ public:
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , WithContext(context_)
         , storage(storage_)
+        , non_materialized_header(metadata_snapshot_->getSampleBlockNonMaterialized())
     {
     }
 
@@ -88,6 +90,10 @@ public:
             return;
 
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
+
+        Block non_materialized_block;
+        for (const auto & col : non_materialized_header)
+            non_materialized_block.insert(block.getByName(col.name));
 
         StoragePtr target = storage.getTargetTable();
         StorageID target_id = target->getStorageID();
@@ -110,12 +116,13 @@ public:
         BlockIO block_io = interpreter.execute();
         PushingPipelineExecutor executor(block_io.pipeline);
         executor.start();
-        executor.push(std::move(block));
+        executor.push(std::move(non_materialized_block));
         executor.finish();
     }
 
 private:
     StorageAlias & storage;
+    Block non_materialized_header;
 };
 
 void StorageAlias::read(
@@ -133,7 +140,7 @@ void StorageAlias::read(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
 
     target_storage->read(
@@ -157,7 +164,7 @@ SinkToStoragePtr StorageAlias::write(
     bool /*async_insert*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::INSERT});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
 
     /// Use AliasSink which executes full INSERT pipeline on target
     /// Therefore it will trigger the MV on the target
@@ -170,6 +177,26 @@ void StorageAlias::alter(
     AlterLockHolder & table_lock_holder)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
+
+    /// ALTER through alias on a table in a Replicated database is not supported
+    /// when the alias and target are in different databases. This is because the
+    /// DDL worker path is bypassed and metadata changes won't be replicated to
+    /// other replicas in ZooKeeper. If both are in the same Replicated database,
+    /// the DDL worker handles the ALTER correctly.
+    auto target_storage_id = target_storage->getStorageID();
+    if (getStorageID().database_name != target_storage_id.database_name)
+    {
+        auto target_db = DatabaseCatalog::instance().tryGetDatabase(target_storage_id.database_name);
+        if (target_db && target_db->getEngineName() == "Replicated")
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "ALTER through alias is not supported when the target table is in a different Replicated database. "
+                "Execute the ALTER directly on the target table: {}",
+                target_storage_id.getNameForLogs());
+        }
+    }
+
     target_storage->alter(params, local_context, table_lock_holder);
 }
 
@@ -180,7 +207,7 @@ void StorageAlias::truncate(
     TableExclusiveLockHolder & table_lock_holder)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
 }
 
@@ -195,7 +222,7 @@ bool StorageAlias::optimize(
     ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::OPTIMIZE});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     return target_storage->optimize(query, target_metadata, partition, final, deduplicate,
                                     deduplicate_by_columns, cleanup, local_context);
 }
@@ -206,7 +233,7 @@ Pipe StorageAlias::alterPartition(
     ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     return target_storage->alterPartition(target_metadata, commands, local_context);
 }
 
@@ -217,7 +244,7 @@ void StorageAlias::checkAlterPartitionIsPossible(
     ContextPtr local_context) const
 {
     auto target_storage = getTargetTable();
-    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     target_storage->checkAlterPartitionIsPossible(commands, target_metadata, settings, local_context);
 }
 
@@ -286,7 +313,7 @@ QueryProcessingStage::Enum StorageAlias::getQueryProcessingStage(
     SelectQueryInfo & query_info) const
 {
     auto target_storage = getTargetTable();
-    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
     return target_storage->getQueryProcessingStage(local_context, to_stage, target_snapshot, query_info);
 }
@@ -321,8 +348,8 @@ void registerStorageAlias(StorageFactory & factory)
         else if (args.engine_args.size() == 1)
         {
             // Syntax: ENGINE = Alias(table_name) or ENGINE = Alias(db.table_name)
-            auto evaluated_arg = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            String table_arg = checkAndGetLiteralArgument<String>(evaluated_arg, "table_name");
+            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
+            String table_arg = checkAndGetLiteralArgument<String>(args.engine_args[0], "table_name");
 
             auto dot_pos = table_arg.find('.');
             if (dot_pos != String::npos)
@@ -339,10 +366,10 @@ void registerStorageAlias(StorageFactory & factory)
         else if (args.engine_args.size() == 2)
         {
             // Syntax: ENGINE = Alias(database_name, table_name)
-            auto evaluated_db = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            auto evaluated_table = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[1], local_context);
-            target_database = checkAndGetLiteralArgument<String>(evaluated_db, "database_name");
-            target_table = checkAndGetLiteralArgument<String>(evaluated_table, "table_name");
+            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
+            args.engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[1], local_context);
+            target_database = checkAndGetLiteralArgument<String>(args.engine_args[0], "database_name");
+            target_table = checkAndGetLiteralArgument<String>(args.engine_args[1], "table_name");
         }
         else
         {

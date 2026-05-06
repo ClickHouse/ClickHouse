@@ -64,79 +64,10 @@ constexpr size_t MAX_ARRAY_SIZE = 1000000;
 /// large width × depth (e.g. Tuple(Tuple(...) x 999999) x 10000) that does not trigger stack overflow or MAX_ARRAY_SIZE check.
 inline ALWAYS_INLINE size_t getMaxTypeDecodingComplexity()
 {
-    if (auto query_context = CurrentThread::getQueryContext())
+    if (auto query_context = CurrentThread::tryGetQueryContext())
         return query_context->getSettingsRef()[Setting::input_format_binary_max_type_complexity];
     return 1000; /// Default value that matches the default input_format_binary_max_type_complexity setting
 }
-
-enum class BinaryTypeIndex : uint8_t
-{
-    Nothing = 0x00,
-    UInt8 = 0x01,
-    UInt16 = 0x02,
-    UInt32 = 0x03,
-    UInt64 = 0x04,
-    UInt128 = 0x05,
-    UInt256 = 0x06,
-    Int8 = 0x07,
-    Int16 = 0x08,
-    Int32 = 0x09,
-    Int64 = 0x0A,
-    Int128 = 0x0B,
-    Int256 = 0x0C,
-    Float32 = 0x0D,
-    Float64 = 0x0E,
-    Date = 0x0F,
-    Date32 = 0x10,
-    DateTimeUTC = 0x11,
-    DateTimeWithTimezone = 0x12,
-    DateTime64UTC = 0x13,
-    DateTime64WithTimezone = 0x14,
-    String = 0x15,
-    FixedString = 0x16,
-    Enum8 = 0x17,
-    Enum16 = 0x18,
-    Decimal32 = 0x19,
-    Decimal64 = 0x1A,
-    Decimal128 = 0x1B,
-    Decimal256 = 0x1C,
-    UUID = 0x1D,
-    Array = 0x1E,
-    UnnamedTuple = 0x1F,
-    NamedTuple = 0x20,
-    Set = 0x21,
-    Interval = 0x22,
-    Nullable = 0x23,
-    Function = 0x24,
-    AggregateFunction = 0x25,
-    LowCardinality = 0x26,
-    Map = 0x27,
-    IPv4 = 0x28,
-    IPv6 = 0x29,
-    Variant = 0x2A,
-    Dynamic = 0x2B,
-    Custom = 0x2C,
-    Bool = 0x2D,
-    SimpleAggregateFunction = 0x2E,
-    Nested = 0x2F,
-    JSON = 0x30,
-    BFloat16 = 0x31,
-    Time = 0x32,
-    /* The reason behind putting Time64 to 0x34 instead of 0x33 is following:
-    Originally, there were Time and Time64 with (and without) timezones, which were making the following indexing:
-    TimeUTC = 0x32
-    TimeWithTimezone = 0x33
-    Time64UTC = 0x34
-    Time64WithTimezone = 0x35
-
-    After that timezones became forbidden for Time[64] types, so we removed those types from here.
-    But we need to make the indexing consistent to ensure backwards compatibility.
-
-    Please don't use 0x33 and 0x35, because older client might try to serialise data as TimeWithTimezone/Time64WithTimezone, and newer server would deserialise them as incorrect types. */
-    Time64 = 0x34,
-    /// reserved = 0x35
-    QBit = 0x36
-};
 
 /// In future we can introduce more arguments in the JSON data type definition.
 /// To support such changes, use versioning in the serialization of JSON type.
@@ -277,6 +208,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             }
         }
     }
+
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Type {} is not supported for binary encoding", type->getName());
 }
 
 template <typename T>
@@ -635,46 +568,34 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
 
     UInt8 type;
     readBinary(type, buf);
-    switch (BinaryTypeIndex(type))
+    auto binary_type_index = static_cast<BinaryTypeIndex>(type);
+
+    switch (binary_type_index)
     {
         case BinaryTypeIndex::Nothing:
-            return getDataTypesCache().getType("Nothing");
         case BinaryTypeIndex::UInt8:
-            return getDataTypesCache().getType("UInt8");
         case BinaryTypeIndex::Bool:
-            return getDataTypesCache().getType("Bool");
         case BinaryTypeIndex::UInt16:
-            return getDataTypesCache().getType("UInt16");
         case BinaryTypeIndex::UInt32:
-            return getDataTypesCache().getType("UInt32");
         case BinaryTypeIndex::UInt64:
-            return getDataTypesCache().getType("UInt64");
         case BinaryTypeIndex::UInt128:
-            return getDataTypesCache().getType("UInt128");
         case BinaryTypeIndex::UInt256:
-            return getDataTypesCache().getType("UInt256");
         case BinaryTypeIndex::Int8:
-            return getDataTypesCache().getType("Int8");
         case BinaryTypeIndex::Int16:
-            return getDataTypesCache().getType("Int16");
         case BinaryTypeIndex::Int32:
-            return getDataTypesCache().getType("Int32");
         case BinaryTypeIndex::Int64:
-            return getDataTypesCache().getType("Int64");
         case BinaryTypeIndex::Int128:
-            return getDataTypesCache().getType("Int128");
         case BinaryTypeIndex::Int256:
-            return getDataTypesCache().getType("Int256");
         case BinaryTypeIndex::BFloat16:
-            return getDataTypesCache().getType("BFloat16");
         case BinaryTypeIndex::Float32:
-            return getDataTypesCache().getType("Float32");
         case BinaryTypeIndex::Float64:
-            return getDataTypesCache().getType("Float64");
         case BinaryTypeIndex::Date:
-            return getDataTypesCache().getType("Date");
         case BinaryTypeIndex::Date32:
-            return getDataTypesCache().getType("Date32");
+        case BinaryTypeIndex::String:
+        case BinaryTypeIndex::UUID:
+        case BinaryTypeIndex::IPv4:
+        case BinaryTypeIndex::IPv6:
+            return getSimpleDataTypesCache().getType(binary_type_index);
         case BinaryTypeIndex::DateTimeUTC:
             return std::make_shared<DataTypeDateTime>();
         case BinaryTypeIndex::DateTimeWithTimezone:
@@ -705,8 +626,6 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             readBinary(scale, buf);
             return std::make_shared<DataTypeTime64>(scale);
         }
-        case BinaryTypeIndex::String:
-            return getDataTypesCache().getType("String");
         case BinaryTypeIndex::FixedString:
         {
             UInt64 size;
@@ -725,8 +644,6 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             return decodeDecimal<Decimal128>(buf);
         case BinaryTypeIndex::Decimal256:
             return decodeDecimal<Decimal256>(buf);
-        case BinaryTypeIndex::UUID:
-            return getDataTypesCache().getType("UUID");
         case BinaryTypeIndex::Array:
             return std::make_shared<DataTypeArray>(decodeDataType(buf, complexity));
         case BinaryTypeIndex::NamedTuple:
@@ -801,10 +718,6 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             auto value_type = decodeDataType(buf, complexity);
             return std::make_shared<DataTypeMap>(key_type, value_type);
         }
-        case BinaryTypeIndex::IPv4:
-            return getDataTypesCache().getType("IPv4");
-        case BinaryTypeIndex::IPv6:
-            return getDataTypesCache().getType("IPv6");
         case BinaryTypeIndex::Variant:
         {
             size_t size;

@@ -200,6 +200,74 @@ class GH:
                 except Exception:
                     pass
 
+    '''
+    TODO: @maxknv
+    The fact that a comment can get lost is also an issue for other CI automated comments. 
+    I think it makes sense to make this the default behavior for post_updateable_comment() and avoid introducing another method.
+    '''
+    @classmethod
+    def post_fresh_comment(
+        cls,
+        tag: str,
+        body: str,
+        pr=None,
+        repo=None,
+        verbose=True,
+    ):
+        """Delete any existing comment with the given tag and post a new one at the bottom.
+
+        Unlike post_updateable_comment, this always creates a fresh comment so it
+        appears as the most recent comment (next to the merge button).
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        TAG_START = f"<!-- CI automatic comment start :{tag}: -->"
+        TAG_END = f"<!-- CI automatic comment end :{tag}: -->"
+
+        # Fetch all comments and delete those carrying our tag.
+        cmd_list = (
+            f'gh api -H "Accept: application/vnd.github.v3+json" '
+            f'"/repos/{repo}/issues/{pr}/comments" '
+            f"--jq '[.[] | {{id: .id, body: .body}}]' --paginate"
+        )
+        output = Shell.get_output(cmd_list, verbose=verbose)
+        if output:
+            try:
+                for comment in json.loads(output):
+                    if TAG_START in comment["body"] and TAG_END in comment["body"]:
+                        comment_id = comment["id"]
+                        if verbose:
+                            print(f"Deleting old coverage comment [{comment_id}]")
+                        Shell.run(
+                            f'gh api -X DELETE '
+                            f'-H "Accept: application/vnd.github.v3+json" '
+                            f'"/repos/{repo}/issues/comments/{comment_id}"',
+                            verbose=verbose,
+                        )
+            except Exception as e:
+                print(f"WARNING: Failed to delete old comment: {e}")
+
+        # Post a new comment at the bottom.
+        full_body = f"{TAG_START}\n{body}\n{TAG_END}\n"
+        temp_file_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", delete=False, suffix=".txt", encoding="utf-8"
+            ) as temp_file:
+                temp_file.write(full_body)
+                temp_file_path = temp_file.name
+            cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
+            return cls.do_command_with_retries(cmd)
+        finally:
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except Exception:
+                    pass
+
     @classmethod
     def post_updateable_comment(
         cls,
@@ -256,7 +324,8 @@ class GH:
                     rex = re.compile(
                         f"{re.escape(start_tag)}.*{re.escape(end_tag)}", re.DOTALL
                     )
-                    body, _ = rex.subn(f"{start_tag}\n{tag_body}\n{end_tag}", body)
+                    replacement = f"{start_tag}\n{tag_body}\n{end_tag}"
+                    body, _ = rex.subn(lambda _: replacement, body)
                     if verbose:
                         print(
                             f"Updated existing comment [{id_to_update}] tag [{tag}] with [{tag_body}], new [{body}]"
@@ -552,23 +621,29 @@ class GH:
                 os.unlink(temp_file_path)
         return None
 
+    _STATUS_TO_GH = {
+        Result.Status.OK: Result.GHStatus.SUCCESS,
+        Result.Status.FAIL: Result.GHStatus.FAILURE,
+        Result.Status.ERROR: Result.GHStatus.ERROR,
+        Result.Status.SKIPPED: Result.GHStatus.SUCCESS,
+        Result.Status.PENDING: Result.GHStatus.PENDING,
+        Result.Status.RUNNING: Result.GHStatus.PENDING,
+        Result.Status.DROPPED: Result.GHStatus.ERROR,
+        Result.Status.UNKNOWN: Result.GHStatus.FAILURE,
+        Result.Status.XFAIL: Result.GHStatus.SUCCESS,
+        Result.Status.XPASS: Result.GHStatus.FAILURE,
+    }
+
     @classmethod
     def convert_to_gh_status(cls, status):
-        if status in (
-            Result.Status.PENDING,
-            Result.Status.SUCCESS,
-            Result.Status.FAILED,
-            Result.Status.ERROR,
-        ):
-            return status
-        if status in Result.Status.RUNNING:
-            return Result.Status.PENDING
-        elif status in Result.Status.DROPPED:
-            return Result.Status.ERROR
-        else:
-            assert (
-                False
-            ), f"Invalid status [{status}] to be set as GH commit status.state"
+        """Map Result.Status value to GitHub commit status API string."""
+        gh = cls._STATUS_TO_GH.get(status)
+        if gh is not None:
+            return gh
+        # Already a GH status string — pass through for idempotency
+        _GH_VALUES = set(cls._STATUS_TO_GH.values())
+        assert status in _GH_VALUES, f"Invalid status [{status}] for GH commit status"
+        return status
 
     @classmethod
     def print_log_in_group(cls, group_name: str, lines: Union[str, List[str]]):
@@ -599,6 +674,7 @@ class GH:
         )
         info: str = ""
         comment: str = ""
+        extra_links: List[tuple] = dataclasses.field(default_factory=list)
 
         @classmethod
         def from_result(cls, result: Result, sha=""):
@@ -612,22 +688,36 @@ class GH:
                     else:
                         yield from flatten_results(r.results)
 
-            def extract_hlabels_info(res: Result) -> str:
+            def extract_label_links_md(res: Result) -> str:
+                """Render labels with links as markdown ``[name](link)`` chips.
+                Reads the unified ``ext['labels']`` and falls back to legacy
+                ``ext['hlabels']`` for results stored before the unification.
+                """
                 try:
-                    hlabels = (
-                        res.ext.get("hlabels", [])
-                        if hasattr(res, "ext") and isinstance(res.ext, dict)
-                        else []
-                    )
+                    if not (hasattr(res, "ext") and isinstance(res.ext, dict)):
+                        return ""
                     links = []
-                    for item in hlabels:
+                    for item in res.ext.get("labels", []) or []:
+                        if isinstance(item, dict) and item.get("name") and item.get("link"):
+                            links.append(f"[{item['name']}]({item['link']})")
+                    for item in res.ext.get("hlabels", []) or []:
                         if isinstance(item, (list, tuple)) and len(item) >= 2:
                             text, href = item[0], item[1]
-                        if text and href:
-                            links.append(f"[{text}]({href})")
+                            if text and href:
+                                links.append(f"[{text}]({href})")
                     return ", ".join(links)
                 except Exception:
                     return ""
+
+            def has_label_links(res: Result) -> bool:
+                if not (hasattr(res, "ext") and isinstance(res.ext, dict)):
+                    return False
+                if any(
+                    isinstance(it, dict) and it.get("link")
+                    for it in res.ext.get("labels", []) or []
+                ):
+                    return True
+                return bool(res.ext.get("hlabels"))
 
             summary = cls(
                 name=result.name,
@@ -636,14 +726,14 @@ class GH:
                 start_time=result.start_time,
                 duration=result.duration,
                 failed_results=[],
-                info=extract_hlabels_info(result),
+                info=extract_label_links_md(result),
                 comment=result.ext.get("comment", ""),
             )
 
             # Filter and sort failed/error subresults by priority
-            # Priority: FAILED (0) > ERROR (1) > others (2)
+            # Priority: FAIL (0) > ERROR (1) > others (2)
             def get_status_priority(r):
-                if r.status == Result.Status.FAILED:
+                if r.status == Result.Status.FAIL:
                     return 0
                 elif r.status == Result.Status.ERROR:
                     return 1
@@ -659,14 +749,14 @@ class GH:
                 failed_result = cls(
                     name=sub_result.name,
                     status=sub_result.status,
-                    info=extract_hlabels_info(sub_result),
+                    info=extract_label_links_md(sub_result),
                     comment=sub_result.ext.get("comment", ""),
                 )
                 failed_result.failed_results = [
                     cls(
                         name=r.name,
                         status=r.status,
-                        info=extract_hlabels_info(r),
+                        info=extract_label_links_md(r),
                         comment=r.ext.get("comment", ""),
                     )
                     for r in flatten_results(sub_result.results)
@@ -686,22 +776,31 @@ class GH:
                 remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
                 summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]
                 print(f"NOTE: {remaining} more jobs not shown in PR comment")
+            # Collect links from jobs that have labels with links (e.g. keeper-stress Grafana links).
+            # Include regardless of success/failure so Grafana links always appear when keeper-stress runs.
+            for job_result in getattr(result, "results", []) or []:
+                if has_label_links(job_result):
+                    links_md = extract_label_links_md(job_result)
+                    if links_md:
+                        summary.extra_links.append((job_result.name, links_md))
             return summary
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
             def escape_pipes(text):
-                """Escape pipe characters for markdown tables"""
-                return str(text).replace("|", "\\|")
+                """Escape special markdown characters for table cells"""
+                return str(text).replace("|", "\\|").replace("#", "\\#")
 
-            if self.status == Result.Status.SUCCESS:
+            if self.status == Result.Status.OK:
                 symbol = "✅"  # Green check mark
-            elif self.status == Result.Status.FAILED:
+            elif self.status == Result.Status.FAIL:
                 symbol = "❌"  # Red cross mark
             else:
                 symbol = "⏳"  # Hourglass (in progress)
 
             body = f"**Summary:** {symbol}\n"
-
+            if self.extra_links:
+                for job_name, links_md in self.extra_links:
+                    body += f"**{job_name}:** {links_md}\n"
             if self.failed_results:
                 if len(self.failed_results) > 15:
                     body += (
@@ -736,22 +835,61 @@ class GH:
                         for sub_failed_result in failed_result.failed_results:
                             body += "|{}|{}|{}|{}|{}|\n".format(
                                 "",
-                                # Logical erros might have | that break comment formatting
                                 escape_pipes(sub_failed_result.name),
                                 sub_failed_result.status,
-                                sub_failed_result.info or "",
-                                sub_failed_result.comment or "",
+                                escape_pipes(sub_failed_result.info or ""),
+                                escape_pipes(sub_failed_result.comment or ""),
                             )
             return body
 
 
 if __name__ == "__main__":
-    # test
-    GH.post_updateable_comment(
-        comment_tags_and_bodies={
-            "test": "foobar4",
-            "test3": "foobar33",
-        },
-        pr=81471,
-        repo="ClickHouse/ClickHouse",
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="GitHub PR comment helper")
+    subparsers = parser.add_subparsers(dest="command")
+
+    post_parser = subparsers.add_parser(
+        "post-or-update",
+        help="Post a new PR comment or update an existing one with the given tag",
     )
+    post_parser.add_argument(
+        "--tag",
+        required=True,
+        help="Tag identifying the comment section (e.g. 'review')",
+    )
+    post_parser.add_argument(
+        "--file",
+        required=True,
+        dest="body_file",
+        help="Path to file containing the comment body",
+    )
+    post_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    post_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+    post_parser.add_argument(
+        "--only-update",
+        action="store_true",
+        help="Only update an existing comment; do not create a new one",
+    )
+
+    args = parser.parse_args()
+
+    if args.command == "post-or-update":
+        with open(args.body_file, "r", encoding="utf-8") as f:
+            body = f.read()
+        kwargs = dict(
+            comment_tags_and_bodies={args.tag: body},
+            only_update=args.only_update,
+        )
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        ok = GH.post_updateable_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    else:
+        parser.print_help()
+        sys.exit(1)

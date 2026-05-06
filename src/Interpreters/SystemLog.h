@@ -10,6 +10,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/CommonParsers.h>
 
+#include <Interpreters/SystemLogFlushPolicy.h>
 #include <boost/noncopyable.hpp>
 
 #define LIST_OF_ALL_SYSTEM_LOGS(M) \
@@ -43,6 +44,8 @@
     M(AggregatedZooKeeperLog, aggregated_zookeeper_log, "Contains statistics (number of operations, latencies, errors) of ZooKeeper operations grouped by session_id, parent_path and operation. Periodically flushed to disk.") \
     M(IcebergMetadataLog,    iceberg_metadata_log, "Contains content of Iceberg metadata files.") \
     M(DeltaMetadataLog,    delta_lake_metadata_log, "Contains content of Delta metadata files.") \
+    M(PredicateStatisticsLog, predicate_statistics_log, "Contains sampled per-predicate selectivity statistics collected during query execution. Sampling is controlled by predicate_statistics_sample_rate; lower values increase overhead and should be tuned with care.") \
+    M(HistogramMetricLog,    histogram_metric_log, "Contains periodic snapshots of histogram metrics. Each row stores histogram bucket counts of one metric and label-combination.") \
 
 #define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
     M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
@@ -143,6 +146,10 @@ LIST_OF_ALL_SYSTEM_LOGS(FORWARD_DECLARATION)
 #undef FORWARD_DECLARATION
 /// NOLINTEND(bugprone-macro-parentheses)
 
+/// Returns `true` if the configuration contains any system log section
+/// (e.g. `query_log`, `processors_profile_log`).
+bool hasAnySystemLogConfigured(const Poco::Util::AbstractConfiguration & config);
+
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 class SystemLogs
@@ -186,6 +193,7 @@ class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, 
 public:
     using Self = SystemLog;
     using Base = SystemLogBase<LogElement>;
+    using Element = LogElement;
 
     /** Parameter: table name where to write log.
       * If table is not exists, then it get created with specified engine.
@@ -199,6 +207,13 @@ public:
               const SystemLogSettings & settings_,
               std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
 
+    /// Join the saving thread before any derived state (`log`, `flush_policy`, `table_id`, ...)
+    /// is destroyed. `savingThreadFunction` is overridden here and reads those members, so the
+    /// join must happen at this level rather than in `~SystemLogBase`. Required for paths that
+    /// bypass `shutdown` (for example, when an exception escaped `flushAndShutdown` and left
+    /// the saving threads running until `~ContextSharedPart`).
+    ~SystemLog() override;
+
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
       */
@@ -211,7 +226,14 @@ public:
       */
     void prepareTable() override;
 
-    const StorageID & getTableID() { return table_id; }
+    const StorageID & getTableID() const { return table_id; }
+
+    ISystemLogFlushPolicy & getFlushPolicy() { return *flush_policy; }
+
+    void setManualFlushTargetIndex(ISystemLog::Index target_index) override
+    {
+        flush_policy->prepareManualFlush(target_index);
+    }
 
 protected:
     LoggerPtr log;
@@ -227,7 +249,8 @@ private:
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;
-    const String create_query;
+    std::unique_ptr<ISystemLogFlushPolicy> flush_policy;
+    String create_query;
     String old_create_query;
     bool is_prepared = false;
 

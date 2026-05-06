@@ -2,11 +2,13 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
@@ -53,6 +55,7 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
 
 void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageSystemClusters::fillData");
     for (const auto & name_and_cluster : context->getClusters())
         writeCluster(res_columns, columns_mask, name_and_cluster, /* replicas_info_getter= */ {});
 

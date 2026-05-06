@@ -1,7 +1,6 @@
 #pragma once
 
 #include <unordered_map>
-#include <Columns/IColumn.h>
 #include <Core/Range.h>
 #include <Core/SortDescription.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -50,7 +49,7 @@ void generateManifestFile(
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
     const std::vector<DataTypePtr> & partition_types,
-    const std::vector<String> & data_file_names,
+    const std::vector<Iceberg::IcebergPathFromMetadata> & data_file_names,
     const std::optional<DataFileStatistics> & data_file_statistics,
     SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
@@ -61,13 +60,13 @@ void generateManifestFile(
     Iceberg::FileContentType content_type);
 
 void generateManifestList(
-    const FileNamesGenerator & filename_generator,
+    const Iceberg::IcebergPathResolver & path_resolver,
     Poco::JSON::Object::Ptr metadata,
     ObjectStoragePtr object_storage,
     ContextPtr context,
-    const Strings & manifest_entry_names,
+    const std::vector<Iceberg::IcebergPathFromMetadata> & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
-    Int64 manifest_length,
+    const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true);
@@ -85,7 +84,8 @@ public:
         const Iceberg::PersistentTableComponents & persistent_table_components_,
         const StorageID & table_id_);
 
-    ~IcebergStorageSink() override = default;
+    ~IcebergStorageSink() override;
+
 
     String getName() const override { return "IcebergStorageSink"; }
 
@@ -126,8 +126,6 @@ private:
     Iceberg::PersistentTableComponents persistent_table_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
-    const String blob_storage_type_name;
-    const String blob_storage_namespace_name;
 
 };
 

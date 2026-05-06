@@ -195,9 +195,6 @@ When reading Parquet files, skip whole row groups based on the WHERE expressions
     DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
 When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_use_native_reader_v3, true, R"(
-Use Parquet reader v3.
-)", 0) \
     DECLARE(UInt64, input_format_parquet_memory_low_watermark, 2ul << 20, R"(
 Schedule prefetches more aggressively if memory usage is below than threshold. Potentially useful e.g. if there are many small bloom filters to read over network.
 )", 0) \
@@ -562,7 +559,7 @@ Possible values:
     DECLARE(Bool, type_json_skip_duplicated_paths, false, R"(
 When enabled, during parsing JSON object into JSON type duplicated paths will be ignored and only the first one will be inserted instead of an exception
 )", 0) \
-    DECLARE(Bool, type_json_allow_duplicated_key_with_literal_and_nested_object, false, R"(
+    DECLARE(Bool, type_json_allow_duplicated_key_with_literal_and_nested_object, true, R"(
 When enabled, JSONs like `{"a" : 42, "a" : {"b" : 42}}` where some key is duplicated but one of them is a nested object are allowed to be parsed.
 )", 0) \
     DECLARE(Bool, type_json_use_partial_match_to_skip_paths_by_regexp, true, R"(
@@ -1152,20 +1149,11 @@ Use Parquet String type instead of Binary for String columns.
     DECLARE(Bool, output_format_parquet_fixed_string_as_fixed_byte_array, true, R"(
 Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.
 )", 0) \
-    DECLARE(ParquetVersion, output_format_parquet_version, "2.latest", R"(
-Parquet format version for output format. Supported versions: 1.0, 2.4, 2.6 and 2.latest (default)
-)", 0) \
     DECLARE(ParquetCompression, output_format_parquet_compression_method, "zstd", R"(
 Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)
 )", 0) \
-    DECLARE(Bool, output_format_parquet_compliant_nested_types, true, R"(
-In parquet file schema, use name 'element' instead of 'item' for list elements. This is a historical artifact of Arrow library implementation. Generally increases compatibility, except perhaps with some old versions of Arrow.
-)", 0) \
-    DECLARE(Bool, output_format_parquet_use_custom_encoder, true, R"(
-Use a faster Parquet encoder implementation.
-)", 0) \
     DECLARE(Bool, output_format_parquet_parallel_encoding, true, R"(
-Do Parquet encoding in multiple threads. Requires output_format_parquet_use_custom_encoder.
+Do Parquet encoding in multiple threads.
 )", 0) \
     DECLARE(UInt64, output_format_parquet_data_page_size, 1024 * 1024, R"(
 Target page size in bytes, before compression.
@@ -1177,7 +1165,7 @@ Check page size every this many rows. Consider decreasing if you have columns wi
 Write column index and offset index (i.e. statistics about each data page, which may be used for filter pushdown on read) into parquet files.
 )", 0) \
     DECLARE(Bool, output_format_parquet_write_bloom_filter, true, R"(
-Write bloom filters in parquet files. Requires output_format_parquet_use_custom_encoder = true.
+Write bloom filters in parquet files.
 )", 0) \
     DECLARE(Double, output_format_parquet_bloom_filter_bits_per_value, 10.5, R"(
 Approximate number of bits to use for each distinct value in parquet bloom filters. Estimated false positive rates:
@@ -1233,6 +1221,9 @@ Custom NULL representation in TSV format
 Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.23.
 
 Disabled by default.
+)", 0) \
+    DECLARE(Bool, output_format_trim_fixed_string, false, R"(
+Trim trailing null bytes from FixedString values in text output formats. E.g. `toFixedString('John', 8)` is printed as `John` instead of `John\0\0\0\0`.
 )", 0) \
     \
     DECLARE(UInt64, input_format_allow_errors_num, 0, R"(
@@ -1405,6 +1396,9 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
     DECLARE(Bool, output_format_arrow_date_as_uint16, false, R"(
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0) \
+    DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
+Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
+)", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
@@ -1524,6 +1518,25 @@ Limits the maximum time in milliseconds to wait before emitting a block during p
 :::note
 This option only works if `input_format_connection_handling` is enabled. Setting a value also disables parallel parsing and makes deduplication impossible.
 :::
+
+:::note
+For streaming inserts, you must also set `min_insert_block_size_rows=0` and `min_insert_block_size_bytes=0`. Otherwise, parsed blocks may still be accumulated in memory by the block squashing stage until those thresholds are reached, preventing timely inserts.
+:::
+
+**Example: streaming Wikipedia recent changes into ClickHouse**
+
+```bash
+clickhouse-client --query 'CREATE TABLE wikipedia_edits (data JSON)'
+
+curl -sS --globoff -H 'Accept: application/json' --no-buffer \
+  'https://stream.wikimedia.org/v2/stream/recentchange' \
+  | clickhouse-client \
+      --query 'INSERT INTO wikipedia_edits FORMAT JSONAsObject' \
+      --input_format_max_block_wait_ms 1000 \
+      --input_format_connection_handling 1 \
+      --min_insert_block_size_rows 0 \
+      --min_insert_block_size_bytes 0
+```
 )", 0) \
     DECLARE(Bool, input_format_connection_handling, false, R"(
     When this option is enabled, if the connection closes unexpectedly, any remaining data in the buffer will be parsed and processed instead of being treated as an error
@@ -1544,6 +1557,13 @@ Allow to write information about geo columns in parquet metadata and encode colu
     DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
 Automatically create parent directories when using INTO OUTFILE if they do not already exists.
 )", 0) \
+    DECLARE(InputFormatColumnMatchingCaseSensitivity, input_format_column_name_matching_mode, FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE, R"(
+Defines the column name matching mode when ingesting data through various formats (including but not limited to JSONEachRow, CSVWithNames, JSONColumns, BSONEachRow, RowBinaryWithNames).
+Supported modes:
+    - match_case: match case-sensitively
+    - ignore_case: match case-insensitively
+    - auto: first tries to match case-sensitively, if fails, tries to match case-insensitively.
+)", 0) \
 
 
 // End of FORMAT_FACTORY_SETTINGS
@@ -1555,6 +1575,11 @@ Automatically create parent directories when using INTO OUTFILE if they do not a
     MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader, false) \
+    MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader_v3, true) \
+    MAKE_OBSOLETE(M, Bool, output_format_parquet_use_custom_encoder, true) \
+    MAKE_OBSOLETE(M, ParquetVersion, output_format_parquet_version, "2.latest") \
+    MAKE_OBSOLETE(M, Bool, output_format_parquet_compliant_nested_types, true) \
+    MAKE_OBSOLETE(M, Bool, output_format_parquet_unsupported_types_as_binary, false) \
 
 #endif // __CLION_IDE__
 

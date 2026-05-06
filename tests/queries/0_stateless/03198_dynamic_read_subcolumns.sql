@@ -16,7 +16,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['FileOpen']
 FROM system.query_log
-WHERE (type = 2) AND (query LIKE 'SELECT d.String %test_dynamic%') AND (current_database = currentDatabase())
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (type = 2) AND (query LIKE 'SELECT d.String %test_dynamic%') AND (current_database = currentDatabase())
 ORDER BY event_time_microseconds DESC
 LIMIT 2;
 

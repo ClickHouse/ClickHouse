@@ -1,9 +1,8 @@
-#ifdef OS_LINUX /// Because of 'rt_tgsigqueueinfo' functions and RT signals.
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <poll.h>
 
 #include <mutex>
-#include <filesystem>
 #include <unordered_map>
 #include <memory>
 
@@ -13,19 +12,21 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromFile.h>
 #include <Common/PipeFDs.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/logger_useful.h>
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
-#include <Common/SymbolIndex.h>
 #include <Common/ErrnoException.h>
+
+#include <Common/SymbolIndex.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -35,7 +36,17 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+
+#ifdef OS_LINUX
+#include <filesystem>
+#include <IO/ReadBufferFromFile.h>
 #include <sys/syscall.h>
+#endif
+
+#ifdef OS_DARWIN
+#include <mach/mach.h>
+#include <pthread.h>
+#endif
 
 
 namespace DB
@@ -51,7 +62,9 @@ namespace ErrorCodes
     extern const int CANNOT_MANIPULATE_SIGSET;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+#ifdef OS_LINUX
     extern const int FILE_DOESNT_EXIST;
+#endif
     extern const int LOGICAL_ERROR;
 }
 
@@ -61,11 +74,16 @@ namespace
 
 // Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
 std::atomic<pid_t> server_pid;
-const int STACK_TRACE_SERVICE_SIGNAL = SIGRTMIN;
 
 std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
 std::atomic<int> data_ready_num = 0;
 std::atomic<bool> signal_latch = false;   /// Only need for thread sanitizer.
+
+#ifdef OS_DARWIN
+/// On macOS we cannot pass data via signals to specific threads (no rt_tgsigqueueinfo),
+/// so we identify the expected responding thread via pthread_self().
+std::atomic<uintptr_t> expected_responding_thread = 0;
+#endif
 
 /** Notes:
   * Only one query from the table can be processed at the moment of time.
@@ -83,18 +101,23 @@ constexpr size_t max_query_id_size = 128;
 char query_id_data[max_query_id_size];
 size_t query_id_size = 0;
 
+Int64 untracked_memory_data = 0;
+
 LazyPipeFDs notification_pipe;
 
+#ifdef OS_LINUX
 int rt_tgsigqueueinfo(pid_t tgid, pid_t tid, int sig, siginfo_t *info)
 {
     return static_cast<int>(syscall(__NR_rt_tgsigqueueinfo, tgid, tid, sig, info));
 }
+#endif
 
 void signalHandler(int, siginfo_t * info, void * context)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
+#ifdef OS_LINUX
     /// In case malicious user is sending signals manually (for unknown reason).
     /// If we don't check - it may break our synchronization.
     if (info->si_pid != server_pid)
@@ -104,10 +127,31 @@ void signalHandler(int, siginfo_t * info, void * context)
     int notification_num = info->si_value.sival_int;
     if (notification_num != sequence_num.load(std::memory_order_acquire))
         return;
+#else
+    UNUSED(info);
+    /// On macOS, we verify the expected responding thread instead of signal payload,
+    /// because pthread_kill does not allow passing data with the signal.
+    if (reinterpret_cast<uintptr_t>(pthread_self()) != expected_responding_thread.load(std::memory_order_acquire))
+        return;
+#endif
 
     bool expected = false;
     if (!signal_latch.compare_exchange_strong(expected, true, std::memory_order_acquire))
         return;
+
+#ifdef OS_DARWIN
+    /// Re-verify after acquiring the latch. This closes the race window where
+    /// expected_responding_thread or sequence_num could change between the
+    /// pre-check above and latch acquisition (e.g. if this handler was delayed
+    /// past the wait timeout and the main thread moved on to another thread).
+    if (reinterpret_cast<uintptr_t>(pthread_self()) != expected_responding_thread.load(std::memory_order_acquire))
+    {
+        signal_latch.store(false, std::memory_order_release);
+        errno = saved_errno;
+        return;
+    }
+    int notification_num = sequence_num.load(std::memory_order_acquire);
+#endif
 
     /// All these methods are signal-safe.
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
@@ -117,6 +161,8 @@ void signalHandler(int, siginfo_t * info, void * context)
     query_id_size = std::min(query_id.size(), max_query_id_size);
     if (!query_id.empty())
         memcpy(query_id_data, query_id.data(), query_id_size);
+
+    untracked_memory_data = current_thread ? current_thread->untracked_memory : 0;
 
     /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
     data_ready_num.store(notification_num, std::memory_order_release);
@@ -178,6 +224,8 @@ bool wait(int timeout_ms)
 }
 
 using ThreadIdToName = std::unordered_map<UInt64, String, DefaultHash<UInt64>>;
+
+#ifdef OS_LINUX
 ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, ContextPtr context, const PaddedPODArray<UInt64> & thread_ids, LoggerPtr log)
 {
     ThreadIdToName tid_to_name;
@@ -261,7 +309,7 @@ bool isSignalBlocked(UInt64 tid, int signal)
 
         UInt64 sig_blk;
         if (parseHexNumber(line, sig_blk))
-            return sig_blk & signal;
+            return sig_blk & (1ULL << (signal - 1));
     }
     catch (const Exception & e)
     {
@@ -272,6 +320,58 @@ bool isSignalBlocked(UInt64 tid, int signal)
 
     return false;
 }
+#endif
+
+#ifdef OS_DARWIN
+ThreadIdToName getFilteredThreadNames(
+    const ActionsDAG::Node * predicate,
+    ContextPtr context,
+    const PaddedPODArray<UInt64> & thread_ids,
+    const std::unordered_map<UInt64, pthread_t, DefaultHash<UInt64>> & tid_to_pthread,
+    LoggerPtr log)
+{
+    ThreadIdToName tid_to_name;
+    MutableColumnPtr all_thread_names = ColumnString::create();
+
+    Stopwatch watch;
+    for (UInt64 tid : thread_ids)
+    {
+        auto it = tid_to_pthread.find(tid);
+        if (it == tid_to_pthread.end())
+            continue;
+
+        char name_buf[256];
+        if (pthread_getname_np(it->second, name_buf, sizeof(name_buf)) != 0)
+            continue;
+
+        String thread_name(name_buf);
+        tid_to_name[tid] = thread_name;
+        all_thread_names->insert(thread_name);
+    }
+    LOG_TRACE(log, "Read {} thread names for {} threads, took {} ms", tid_to_name.size(), thread_ids.size(), watch.elapsedMilliseconds());
+
+    Block block { ColumnWithTypeAndName(std::move(all_thread_names), std::make_shared<DataTypeString>(), "thread_name") };
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
+    ColumnPtr thread_names = std::move(block.getByPosition(0).column);
+
+    std::unordered_set<String> filtered_thread_names;
+    for (size_t i = 0; i != thread_names->size(); ++i)
+    {
+        const auto & thread_name = thread_names->getDataAt(i);
+        filtered_thread_names.emplace(thread_name);
+    }
+
+    for (auto it = tid_to_name.begin(); it != tid_to_name.end();)
+    {
+        if (!filtered_thread_names.contains(it->second))
+            it = tid_to_name.erase(it);
+        else
+            ++it;
+    }
+
+    return tid_to_name;
+}
+#endif
 
 /// Send a signal to every thread and wait for result.
 /// We must wait for every thread one by one sequentially,
@@ -296,15 +396,21 @@ public:
         , pipe_read_timeout_ms(
               static_cast<int>(context->getSettingsRef()[Setting::storage_system_stack_trace_pipe_read_timeout_ms].totalMilliseconds()))
         , log(log_)
+#ifdef OS_LINUX
         , proc_it("/proc/self/task")
+#endif
         /// It shouldn't be possible to do concurrent reads from this table.
         , lock(mutex)
         , signal_str(strsignal(STACK_TRACE_SERVICE_SIGNAL)) /// NOLINT(concurrency-mt-unsafe) // not thread-safe but ok in this context
     {
         /// Create a mask of what columns are needed in the result.
         NameSet names_set(column_names.begin(), column_names.end());
-        send_signal = names_set.contains("trace") || names_set.contains("query_id");
+        send_signal = names_set.contains("trace") || names_set.contains("query_id") || names_set.contains("untracked_memory");
         read_thread_names = names_set.contains("thread_name");
+
+#ifdef OS_DARWIN
+        enumerateThreads();
+#endif
     }
 
     String getName() const override { return "StackTrace"; }
@@ -312,7 +418,9 @@ public:
 protected:
     Chunk generate() override
     {
+#ifdef OS_LINUX
         const SymbolIndex & symbol_index = SymbolIndex::instance();
+#endif
         MutableColumns res_columns = header->cloneEmptyColumns();
 
         ColumnPtr thread_ids;
@@ -329,7 +437,13 @@ protected:
         /// NOTE: This is racy, so you may get incorrect thread_name.
         ThreadIdToName thread_names;
         if (read_thread_names)
+        {
+#ifdef OS_LINUX
             thread_names = getFilteredThreadNames(predicate, context, thread_ids_data, log);
+#else
+            thread_names = getFilteredThreadNames(predicate, context, thread_ids_data, tid_to_pthread, log);
+#endif
+        }
 
         for (UInt64 tid : thread_ids_data)
         {
@@ -350,9 +464,11 @@ protected:
                 res_columns[res_index++]->insert(tid);
                 res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
+                res_columns[res_index++]->insertDefault();
             }
             else
             {
+#ifdef OS_LINUX
                 /// NOTE: This check is racy (thread can be
                 /// destroyed/replaced/...), but it is OK, since only the
                 /// following could happen:
@@ -361,6 +477,9 @@ protected:
                 /// - it will incorrectly detect that the signal is not blocked
                 ///   then it will wait storage_system_stack_trace_pipe_read_timeout_ms
                 bool signal_blocked = isSignalBlocked(tid, STACK_TRACE_SERVICE_SIGNAL);
+#else
+                bool signal_blocked = false;
+#endif
                 if (!signal_blocked)
                 {
                     ++signals_sent;
@@ -375,6 +494,7 @@ protected:
                         ++sequence_num;
                     });
 
+#ifdef OS_LINUX
                     siginfo_t sig_info{};
                     sig_info.si_code = SI_QUEUE; /// sigqueue()
                     sig_info.si_pid = server_pid;
@@ -391,6 +511,37 @@ protected:
 
                     /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
                     if (wait(pipe_read_timeout_ms) && sig_info.si_value.sival_int == data_ready_num.load(std::memory_order_acquire))
+#else
+                    auto pt_it = tid_to_pthread.find(tid);
+                    if (pt_it == tid_to_pthread.end())
+                        continue;
+
+                    expected_responding_thread.store(reinterpret_cast<uintptr_t>(pt_it->second), std::memory_order_release);
+
+                    /// pthread_kill returns error codes directly (not via errno).
+                    int err = pthread_kill(pt_it->second, STACK_TRACE_SERVICE_SIGNAL);
+                    if (err != 0)
+                    {
+                        /// The thread may have been already finished.
+                        if (err == ESRCH)
+                            continue;
+
+                        errno = err;
+                        throw ErrnoException(ErrorCodes::CANNOT_SIGQUEUE, "Cannot send a signal");
+                    }
+
+                    /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
+                    bool got_response = wait(pipe_read_timeout_ms)
+                        && sequence_num.load(std::memory_order_acquire) == data_ready_num.load(std::memory_order_acquire);
+
+                    /// Reset expected_responding_thread immediately after wait to close the race window:
+                    /// a delayed signal handler from this thread must not pass the pthread_self() check
+                    /// after the SCOPE_EXIT increments sequence_num (which would let it write the new
+                    /// sequence number to the pipe and have its response misattributed to the next thread).
+                    expected_responding_thread.store(0, std::memory_order_release);
+
+                    if (got_response)
+#endif
                     {
                         size_t stack_trace_size = stack_trace.getSize();
                         size_t stack_trace_offset = stack_trace.getOffset();
@@ -401,9 +552,15 @@ protected:
                         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
                         {
                             const void * virtual_addr = frame_pointers[i];
+#ifdef OS_LINUX
                             const auto * object = symbol_index.findObject(virtual_addr);
                             uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
                             uintptr_t physical_addr = uintptr_t(virtual_addr) - virtual_offset;
+#else
+                            /// On macOS, SymbolIndex uses absolute virtual addresses for symbols,
+                            /// so we store virtual addresses directly in the trace column.
+                            uintptr_t physical_addr = uintptr_t(virtual_addr);
+#endif
                             arr.emplace_back(physical_addr);
                         }
 
@@ -411,6 +568,7 @@ protected:
                         res_columns[res_index++]->insert(tid);
                         res_columns[res_index++]->insertData(query_id_data, query_id_size);
                         res_columns[res_index++]->insert(arr);
+                        res_columns[res_index++]->insert(untracked_memory_data);
 
                         continue;
                     }
@@ -423,6 +581,7 @@ protected:
 
                 res_columns[res_index++]->insert(thread_name);
                 res_columns[res_index++]->insert(tid);
+                res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
             }
@@ -447,8 +606,41 @@ private:
 
     LoggerPtr log;
 
+#ifdef OS_LINUX
     std::filesystem::directory_iterator proc_it;
     std::filesystem::directory_iterator end;
+#elif defined(OS_DARWIN)
+    std::unordered_map<UInt64, pthread_t, DefaultHash<UInt64>> tid_to_pthread;
+    PaddedPODArray<UInt64> enumerated_tids;
+    size_t tid_index = 0;
+
+    void enumerateThreads()
+    {
+        thread_act_array_t thread_list;
+        mach_msg_type_number_t thread_count;
+        kern_return_t kr = task_threads(mach_task_self(), &thread_list, &thread_count);
+        if (kr != KERN_SUCCESS)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "task_threads failed: {}", mach_error_string(kr));
+
+        SCOPE_EXIT({
+            for (mach_msg_type_number_t i = 0; i < thread_count; ++i)
+                mach_port_deallocate(mach_task_self(), thread_list[i]);
+            vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(thread_list), sizeof(thread_act_t) * thread_count);
+        });
+
+        for (mach_msg_type_number_t i = 0; i < thread_count; ++i)
+        {
+            pthread_t pt = pthread_from_mach_thread_np(thread_list[i]);
+            if (!pt)
+                continue;
+            uint64_t tid = 0;
+            if (pthread_threadid_np(pt, &tid) != 0)
+                continue;
+            tid_to_pthread[tid] = pt;
+            enumerated_tids.push_back(tid);
+        }
+    }
+#endif
 
     size_t signals_sent = 0;
     size_t signals_sent_ms = 0;
@@ -460,6 +652,7 @@ private:
     {
         MutableColumnPtr all_thread_ids = ColumnUInt64::create();
 
+#ifdef OS_LINUX
         size_t i = 0;
         /// There is no better way to enumerate threads in a process other than looking into procfs.
         for (; i < max_block_size && proc_it != end; ++proc_it, ++i)
@@ -467,6 +660,13 @@ private:
             pid_t tid = parse<pid_t>(proc_it->path().filename());
             all_thread_ids->insert(tid);
         }
+#elif defined(OS_DARWIN)
+        size_t i = 0;
+        for (; i < max_block_size && tid_index < enumerated_tids.size(); ++tid_index, ++i)
+        {
+            all_thread_ids->insert(enumerated_tids[tid_index]);
+        }
+#endif
 
         Block block { ColumnWithTypeAndName(std::move(all_thread_ids), std::make_shared<DataTypeUInt64>(), "thread_id") };
         VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
@@ -517,7 +717,7 @@ private:
 
 
 StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , log(getLogger("StorageSystemStackTrace"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -526,7 +726,9 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
+        {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread atomic-less counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     notification_pipe.open();
@@ -537,18 +739,30 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     sa.sa_sigaction = signalHandler;
     sa.sa_flags = SA_SIGINFO;
 
+    /// On macOS, sigemptyset and sigaddset are macros that always return 0.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
     if (sigemptyset(&sa.sa_mask))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
 
     if (sigaddset(&sa.sa_mask, STACK_TRACE_SERVICE_SIGNAL))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
+#pragma clang diagnostic pop
 
     if (sigaction(STACK_TRACE_SERVICE_SIGNAL, &sa, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
 }
 
 
-void StorageSystemStackTrace::read(
+VirtualColumnsDescription StorageSystemStackTrace::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemStackTrace::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

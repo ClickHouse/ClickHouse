@@ -9,16 +9,20 @@
 namespace DB
 {
 
+class ActionsDAG;
 class QueryPlan;
 
 class InterpreterSelectQueryAnalyzer : public IInterpreter
 {
 public:
-    /// Initialize interpreter with query AST
+    /** Initialize interpreter with query AST.
+      * Optional post_filter is an outer filter pushed down from the caller (e.g. StorageView, to support skip unused shards)
+      */
     InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options_,
-        const Names & column_names = {});
+        const Names & column_names = {},
+        const ActionsDAG * post_filter_ = nullptr);
 
     /** Initialize interpreter with query AST and storage.
       * After query tree is built left most table expression is replaced with table node that
@@ -67,8 +71,6 @@ public:
     QueryPipelineBuilder buildQueryPipeline();
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
-
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const override;
 
     bool supportsTransactions() const override { return true; }
 

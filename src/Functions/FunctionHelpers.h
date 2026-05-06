@@ -7,7 +7,6 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
@@ -211,6 +210,7 @@ struct NullPresence
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
 
 bool isDecimalOrNullableDecimal(const DataTypePtr & type);
+bool isLowCardinalityType(const IDataType & type);
 
 void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
 }

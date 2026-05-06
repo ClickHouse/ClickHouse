@@ -3,6 +3,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 
+#include <Common/EquivalenceClasses.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
@@ -118,73 +119,6 @@ CorrelatedPlanStepMap buildCorrelatedPlanStepMap(QueryPlan & correlated_query_pl
     return result;
 }
 
-struct EquivalenceClasses
-{
-    void add(const String & a, const String & b)
-    {
-        auto & class_a = member_to_class[a];
-        auto & class_b = member_to_class[b];
-
-        if (!class_a && class_b)
-        {
-            /// Add A to existing class B
-            class_a = class_b;
-            class_b->push_back(a);
-        }
-        else if (class_a && !class_b)
-        {
-            /// Add B to existing class A
-            class_b = class_a;
-            class_a->push_back(b);
-        }
-        else if (!class_a && !class_b)
-        {
-            /// Both A and B are new, create a class for them
-            auto new_class = std::make_shared<std::list<String>>();
-            new_class->push_back(a);
-            class_a = new_class;
-            if (a != b)
-            {
-                new_class->push_back(b);
-                class_b = new_class;
-            }
-        }
-        else
-        {
-            /// A and B already belong to the same class?
-            if (class_a == class_b)
-                return;
-
-            /// Merge class of smaller size into bigger one
-            if (class_a->size() < class_b->size())
-                mergeFromTo(class_a, class_b);
-            else
-                mergeFromTo(class_b, class_a);
-        }
-    }
-
-    std::shared_ptr<const std::list<String>> getClass(const String & name) const
-    {
-        auto it = member_to_class.find(name);
-        if (it == member_to_class.end())
-            return {};
-        return it->second;
-    }
-
-private:
-    void mergeFromTo(std::shared_ptr<std::list<String>> class_from, std::shared_ptr<std::list<String>> class_to)
-    {
-        /// For all existing members of class From set their class to To
-        for (const auto & member_from : *class_from)
-            member_to_class[member_from] = class_to;
-        /// Add all elements from class From to class To
-        class_to->splice(class_to->end(), *class_from);
-    }
-
-    /// Elements that belong to the same class will point to the same list of all elements of this class
-    std::unordered_map<String, std::shared_ptr<std::list<String>>> member_to_class;
-};
-
 struct DecorrelationContext
 {
     const CorrelatedSubquery & correlated_subquery;
@@ -192,9 +126,9 @@ struct DecorrelationContext
     QueryPlan query_plan; // LHS plan
     QueryPlan correlated_query_plan;
     CorrelatedPlanStepMap correlated_plan_steps;
-    /// Equivalence classes stack for subqeiries. Equivalence classes should not be propagated
+    /// Equivalence classes stack for subqueries. Equivalence classes should not be propagated
     /// to the subqueries of the JOIN or UNION steps.
-    std::vector<EquivalenceClasses> equivalence_class_stack;
+    std::vector<EquivalenceClasses<String>> equivalence_class_stack;
     /// Whether the input subplan is referenced during decorrelation.
     /// This is necessary to identify if in-memory buffer would be used.
     bool referenced_input_subplan = false;
@@ -619,7 +553,7 @@ Planner buildPlannerForCorrelatedSubquery(
 )
 {
     auto subquery_options = select_query_options.subquery();
-    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     /// Register table expression data for correlated columns sources in the global context.
     /// Table expression data would be reused because it can't be initialized
     /// during plan construction for correlated subquery.
@@ -721,13 +655,19 @@ void buildQueryPlanForCorrelatedSubquery(
             /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
 
+            auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
+            /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
+            /// so they stay alive after decorrelation destroys the correlated plan.
+            for (const auto & ctx : correlated_plan.getInterpretersContexts())
+                query_plan.addInterpreterContext(ctx);
+
             DecorrelationContext context{
                 .correlated_subquery = correlated_subquery,
                 .planner_context = planner_context,
                 .query_plan = std::move(query_plan),
-                .correlated_query_plan = std::move(subquery_planner).extractQueryPlan(),
+                .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
-                .equivalence_class_stack = { EquivalenceClasses{} }
+                .equivalence_class_stack = { EquivalenceClasses<String>{} }
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
@@ -763,13 +703,19 @@ void buildQueryPlanForCorrelatedSubquery(
             /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
 
+            auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
+            /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
+            /// so they stay alive after decorrelation destroys the correlated plan.
+            for (const auto & ctx : correlated_plan.getInterpretersContexts())
+                query_plan.addInterpreterContext(ctx);
+
             DecorrelationContext context{
                 .correlated_subquery = correlated_subquery,
                 .planner_context = planner_context,
                 .query_plan = std::move(query_plan),
-                .correlated_query_plan = std::move(subquery_planner).extractQueryPlan(),
+                .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
-                .equivalence_class_stack = { EquivalenceClasses{} }
+                .equivalence_class_stack = { EquivalenceClasses<String>{} }
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());

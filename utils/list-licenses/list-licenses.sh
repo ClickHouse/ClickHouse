@@ -17,6 +17,23 @@ fi
 
 LIBS_PATH="${ROOT_PATH}/contrib"
 
+# Convert absolute paths under ROOT_PATH to repository-relative paths.
+# Unnested example:
+#   /workspace/clickhouse/contrib/zstd/LICENSE -> /contrib/zstd/LICENSE
+# Nested contrib example:
+#   /workspace/clickhouse/contrib/rapidjson/contrib/natvis/README.md
+#   -> /contrib/rapidjson/contrib/natvis/README.md
+# Keeping the full suffix avoids truncation when a dependency contains its own
+# nested "contrib/" subtree.
+to_relative_path() {
+    local input_path="$1"
+    if [[ "${input_path}" == "${ROOT_PATH}/"* ]]; then
+        echo "${input_path#${ROOT_PATH}}"
+    else
+        echo "${input_path}"
+    fi
+}
+
 # Function to process a single C/C++ library
 process_library() {
     local LIB="$1"
@@ -96,7 +113,7 @@ process_library() {
             exit 1
         fi
 
-        RELATIVE_PATH=$(echo "$LIB_LICENSE" | sed -r -e 's!^.+/(contrib|base)/!/\1/!')
+        RELATIVE_PATH=$(to_relative_path "$LIB_LICENSE")
 
         echo -e "$LIB_NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
     fi
@@ -154,9 +171,11 @@ process_rust_crate() {
            [ "$LICENSE_TYPE" == "MIT OR Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "MIT/Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR LGPL-2.1-or-later" ] ||
-           [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Zlib OR Apache-2.0 OR MIT" ] ||
-           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ];
+           [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
+           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ] ||
+           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception" ] ||
+           [ "$LICENSE_TYPE" == "Apache-2.0/MIT" ];
         then
             LICENSE_PATH="/utils/list-licenses/Apache-2.0.txt"
         elif [ "$LICENSE_TYPE" == "BSL-1.0" ]
@@ -166,12 +185,16 @@ process_rust_crate() {
         elif [ "$LICENSE_TYPE" == "MIT" ]
         then
             LICENSE_PATH="/utils/list-licenses/MIT.txt"
-        elif [ "$LICENSE_TYPE" == "MPL-2.0" ]
+        elif [ "$LICENSE_TYPE" == "MPL-2.0" ] || [ "$LICENSE_TYPE" == "MPL-2.0+" ];
         then
             LICENSE_PATH="/utils/list-licenses/MPL-2.0.txt"
-        elif [ "$LICENSE_TYPE" == "BSD-3-Clause" ]
+        elif [ "$LICENSE_TYPE" == "BSD-3-Clause" ] ||
+             [ "$LICENSE_TYPE" == "GPL-2.0-only OR BSD-3-Clause" ];
         then
             LICENSE_PATH="/utils/list-licenses/BSD-3-Clause.txt"
+        elif [ "$LICENSE_TYPE" == "ISC" ]
+        then
+            LICENSE_PATH="/utils/list-licenses/ISC.txt"
         else
             echo "Could not find a valid license file for \"${LICENSE_TYPE}\" in $FOLDER" >&2
             ls "$FOLDER" >&2
@@ -179,12 +202,12 @@ process_rust_crate() {
         fi
     fi
 
-    RELATIVE_PATH=$(echo "$LICENSE_PATH" | sed -r -e 's!^.+/(contrib|base)/!/\1/!')
+    RELATIVE_PATH=$(to_relative_path "$LICENSE_PATH")
     echo -e "$NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
 }
 
 # Export functions and variables for parallel execution
-export -f process_library process_rust_crate
+export -f to_relative_path process_library process_rust_crate
 export GREP_CMD FIND_CMD ROOT_PATH LIBS_PATH
 
 # Process C/C++ libraries in parallel
@@ -193,8 +216,25 @@ libs=$(echo "${ROOT_PATH}/base/poco"; (${FIND_CMD} "${LIBS_PATH}" -mindepth 1 -m
 # Use xargs for parallel processing (fall back to 4 jobs if nproc not available)
 JOBS=$(nproc 2>/dev/null || echo 4)
 
-# Process in parallel (output order is non-deterministic)
-echo "$libs" | tr ' ' '\n' | xargs -P ${JOBS} -I {} bash -c 'process_library "$@"' _ {}
+# Process in parallel and preserve deterministic output.
+c_cpp_output=$(printf '%s\n' "$libs" | xargs -P "${JOBS}" -I {} bash -c 'process_library "$@"' _ {})
+c_cpp_status=$?
+if [ "${c_cpp_status}" -ne 0 ]
+then
+    exit "${c_cpp_status}"
+fi
+if [ -n "${c_cpp_output}" ]
+then
+    printf '%s\n' "${c_cpp_output}" | LC_ALL=C sort
+fi
 
-${FIND_CMD} "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | \
-    xargs -P ${JOBS} -I {} bash -c 'process_rust_crate "$@"' _ {}
+rust_output=$(${FIND_CMD} "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs -P "${JOBS}" -I {} bash -c 'process_rust_crate "$@"' _ {})
+rust_status=$?
+if [ "${rust_status}" -ne 0 ]
+then
+    exit "${rust_status}"
+fi
+if [ -n "${rust_output}" ]
+then
+    printf '%s\n' "${rust_output}" | LC_ALL=C sort
+fi

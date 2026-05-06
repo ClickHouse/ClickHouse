@@ -4,24 +4,18 @@
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
-#include <Columns/ColumnArray.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
-#include <Core/Settings.h>
 #include <Core/callOnTypeIndex.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -32,11 +26,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Functions/ComparisonNames.h>
 #include <type_traits>
 
 #if USE_EMBEDDED_COMPILER
@@ -48,13 +41,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool validate_enum_literals_in_operators;
-    extern const SettingsBool use_variant_default_implementation_for_comparisons;
-    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
-}
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 
@@ -687,13 +673,6 @@ template <> struct CompileOp<GreaterOrEqualsOp>
 
 #endif
 
-struct NameEquals          { static constexpr auto name = "equals"; };
-struct NameNotEquals       { static constexpr auto name = "notEquals"; };
-struct NameLess            { static constexpr auto name = "less"; };
-struct NameGreater         { static constexpr auto name = "greater"; };
-struct NameLessOrEquals    { static constexpr auto name = "lessOrEquals"; };
-struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
-
 struct ComparisonParams
 {
     bool check_decimal_overflow = false;
@@ -701,14 +680,7 @@ struct ComparisonParams
     bool use_variant_default_implementation = true;
     FormatSettings format_settings;
 
-    explicit ComparisonParams(const ContextPtr & context)
-        : check_decimal_overflow(decimalCheckComparisonOverflow(context))
-        , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
-        , use_variant_default_implementation(context->getSettingsRef()[Setting::use_variant_default_implementation_for_comparisons])
-        , format_settings(getFormatSettings(context))
-    {
-        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
-    }
+    explicit ComparisonParams(const ContextPtr & context);
 
     ComparisonParams() = default;
 };
@@ -1027,6 +999,25 @@ private:
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
+        /// When any tuple element has Nothing or Nullable(Nothing) type, element-wise
+        /// comparisons would produce ColumnNothing which doesn't match the declared
+        /// Nullable(UInt8) return type. Return all-NULL column of the correct type.
+        /// Skip this for null-safe comparison mode because NULL <=> NULL should return 1,
+        /// and the element-wise null-safe comparison handles Nothing types correctly.
+        if constexpr (!is_null_safe_cmp_mode)
+        {
+            const auto & left_elems = typeid_cast<const DataTypeTuple &>(*c0.type).getElements();
+            const auto & right_elems = typeid_cast<const DataTypeTuple &>(*c1.type).getElements();
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                if (left_elems[i]->onlyNull() || isNothing(left_elems[i])
+                    || right_elems[i]->onlyNull() || isNothing(right_elems[i]))
+                {
+                    return result_type->createColumnConstWithDefaultValue(input_rows_count);
+                }
+            }
+        }
+
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
@@ -1297,16 +1288,16 @@ public:
                 has_nothing = has_nothing || isNothing(element_type);
             }
 
-            if (has_nothing)
-                return std::make_shared<DataTypeNothing>();
-
-            // In null-safe cmp mode, return DataTypeUInt8
+            // In null-safe cmp mode, return DataTypeUInt8 (null-safe comparison always produces a definite result)
             if (is_null_safe_cmp_mode)
                 return std::make_shared<DataTypeUInt8>();
+
+            if (has_nothing)
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
             /// If any element comparison is nullable, return type will also be nullable.
             /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
             if (has_null)
-                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
             if (has_nullable)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
         }
@@ -1442,8 +1433,8 @@ public:
         }
         if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
-            // Comparing Date/Date32 and DateTime64 requires implicit conversion,
-            if (date_and_time_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
+            /// Comparing different date/time types requires implicit conversion to a common type
+            if (date_and_time_datetime)
             {
                 DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
                 ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
@@ -1505,7 +1496,14 @@ public:
                 continue;
 
             if (column->isNullAt(0))
+            {
+                /// If the result type cannot hold NULL values (e.g. LowCardinality(UInt8) when
+                /// comparing with a Variant column that contains NULL but is not Nullable itself),
+                /// don't constant-fold — let the runtime execution path handle NULL correctly.
+                if (!canContainNull(*result_type))
+                    return nullptr;
                 return result_type->createColumnConst(1, Null());
+            }
         }
 
         return nullptr;

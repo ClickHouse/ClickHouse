@@ -1,23 +1,13 @@
 #pragma once
 
+#include <cstdlib>
 #include <new>
 #include <base/defines.h>
 
 #include <Common/AllocationInterceptors.h>
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
-#include <Common/ProfileEvents.h>
-
-#include "config.h"
-
-#if USE_JEMALLOC
-#    include <jemalloc/jemalloc.h>
-#endif
-
-#if !USE_JEMALLOC
-#    include <cstdlib>
-#endif
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 
 #if defined(OS_LINUX)
 #    include <malloc.h>
@@ -48,23 +38,6 @@ inline ALWAYS_INLINE size_t alignUp(size_t size, size_t align) noexcept
     return (size + align - 1) / align * align;
 }
 
-template <std::same_as<std::align_val_t>... TAlign>
-requires DB::OptionalArgument<TAlign...>
-inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
-{
-    void * ptr = nullptr;
-    if constexpr (sizeof...(TAlign) == 1)
-        ptr = __real_aligned_alloc(alignToSizeT(align...), alignUp(size, alignToSizeT(align...)));
-    else
-        ptr = __real_malloc(size);
-
-    if (likely(ptr != nullptr))
-        return ptr;
-
-    /// @note no std::get_new_handler logic implemented
-    throw std::bad_alloc{};
-}
-
 inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
 {
     return __real_malloc(size);
@@ -86,13 +59,13 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size, TAlign... align) noexcept
 {
-    if (unlikely(ptr == nullptr))
+    if (ptr == nullptr) [[unlikely]]
         return;
 
     if constexpr (sizeof...(TAlign) == 1)
-        sdallocx(ptr, size, MALLOCX_ALIGN(alignToSizeT(align...)));
+        je_sdallocx(ptr, size, MALLOCX_ALIGN(alignToSizeT(align...)));
     else
-        sdallocx(ptr, size, 0);
+        je_sdallocx(ptr, size, 0);
 }
 
 #else
@@ -115,12 +88,17 @@ inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align
 #if USE_JEMALLOC
     /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
     /// @note je_mallocx() != je_malloc(). It's expected they don't differ much in allocation logic.
-    if (likely(size != 0))
+    size_t size_for_nallocx = size;
+    if (size_for_nallocx == 0) [[unlikely]]
+        size_for_nallocx = 1;
+
+    if constexpr (sizeof...(TAlign) == 1)
     {
-        if constexpr (sizeof...(TAlign) == 1)
-            actual_size = nallocx(size, MALLOCX_ALIGN(alignToSizeT(align...)));
-        else
-            actual_size = nallocx(size, 0);
+        actual_size = je_nallocx(size_for_nallocx, MALLOCX_ALIGN(alignToSizeT(align...)));
+    }
+    else
+    {
+        actual_size = je_nallocx(size_for_nallocx, 0);
     }
 #endif
 
@@ -141,7 +119,7 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE size_t trackMemoryFromC(std::size_t size, AllocationTrace & trace, TAlign... align)
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
     std::size_t actual_size = getActualAllocationSize(size, align...);
     trace = CurrentMemoryTracker::allocNoThrow(actual_size);
     return actual_size;
@@ -158,12 +136,12 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
 #if USE_JEMALLOC
 
         /// @note It's also possible to use je_malloc_usable_size() here.
-        if (likely(ptr != nullptr))
+        if (ptr != nullptr) [[likely]]
         {
             if constexpr (sizeof...(TAlign) == 1)
-                actual_size = sallocx(ptr, MALLOCX_ALIGN(alignToSizeT(align...)));
+                actual_size = je_sallocx(ptr, MALLOCX_ALIGN(alignToSizeT(align...)));
             else
-                actual_size = sallocx(ptr, 0);
+                actual_size = je_sallocx(ptr, 0);
         }
 #else
         if (size)
@@ -179,7 +157,7 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
 #endif
         trace = CurrentMemoryTracker::free(actual_size);
     }
-    catch (...) /// NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch) Ok: operator delete must not throw
     {
     }
 
