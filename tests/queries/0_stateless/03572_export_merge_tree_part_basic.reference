@@ -1,0 +1,35 @@
+---- Export 1: Export 2020_1_1_0 and 2021_2_2_0
+---- Export 2: Export 2022_3_3_0 and 2023_4_4_0 to wildcard table
+---- Export 3: Export 2020_1_1_0 and 2021_2_2_0 to wildcard table with partition expression with function
+---- Export 4: Export the same part again, it should be idempotent
+---- Export 5: Export the same part again to wildcard, it should be idempotent
+---- Verify Export 1: Both data parts should appear
+1	2020
+2	2020
+3	2020
+4	2021
+---- Verify Export 4: Export the same part again, it should be idempotent
+1	2020
+2	2020
+3	2020
+4	2021
+---- Verify: Data in roundtrip MergeTree table (should match s3_table)
+1	2020
+2	2020
+3	2020
+4	2021
+---- Verify Export 2: Both data parts should appear (2022_3_3_0 and 2023_4_4_0)
+5	2022
+6	2022
+7	2023
+8	2023
+---- Verify Export 5: Export the same part again, it should be idempotent
+5	2022
+6	2022
+7	2023
+8	2023
+---- Verify Export 3: Both data parts should appear
+1	2020
+2	2020
+3	2020
+4	2021

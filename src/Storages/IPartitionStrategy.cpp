@@ -103,8 +103,11 @@ namespace
         const IPartitionStrategy & partition_strategy,
         BuildAST && build_ast)
     {
+<<<<<<< HEAD
         /// The cache write happens in the cacheDeterministicActions function, which is called from the constructor of the partition strategy.
         /// If the actions are not deterministic, it will not be cached.
+=======
+>>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
         if (cached_result)
             return *cached_result;
 
@@ -312,17 +315,15 @@ ColumnPtr WildcardPartitionStrategy::computePartitionKey(const Chunk & chunk) co
     return block_with_partition_by_expr.getByName(actions_with_column.column_name).column;
 }
 
-std::string WildcardPartitionStrategy::getPathForRead(
-    const std::string & prefix)
+ColumnPtr WildcardPartitionStrategy::computePartitionKey(Block & block) const
 {
-    return prefix;
-}
+    auto actions_with_column = getCachedOrBuildActions(
+        cached_result,
+        *this,
+        [&] { return buildToStringPartitionAST(partition_key_description.definition_ast); });
 
-std::string WildcardPartitionStrategy::getPathForWrite(
-    const std::string & prefix,
-    const std::string & partition_key)
-{
-    return PartitionedSink::replaceWildcards(prefix, partition_key);
+    actions_with_column.actions->execute(block);
+    return block.getByName(actions_with_column.column_name).column;
 }
 
 HiveStylePartitionStrategy::HiveStylePartitionStrategy(
@@ -350,8 +351,9 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     cacheDeterministicActions(cached_result, actions_with_column);
 }
 
-std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefix)
+ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk) const
 {
+<<<<<<< HEAD
     return prefix + "**." + Poco::toLower(file_format);
 }
 
@@ -387,6 +389,8 @@ std::string HiveStylePartitionStrategy::getPathForWrite(
 
 ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk) const
 {
+=======
+>>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
     auto actions_with_column = getCachedOrBuildActions(
         cached_result,
         *this,
@@ -397,6 +401,17 @@ ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk) c
     actions_with_column.actions->execute(block_with_partition_by_expr);
 
     return block_with_partition_by_expr.getByName(actions_with_column.column_name).column;
+}
+
+ColumnPtr HiveStylePartitionStrategy::computePartitionKey(Block & block) const
+{
+    auto actions_with_column = getCachedOrBuildActions(
+        cached_result,
+        *this,
+        [&] { return buildHivePartitionAST(partition_key_description.definition_ast, getPartitionColumns()); });
+
+    actions_with_column.actions->execute(block);
+    return block.getByName(actions_with_column.column_name).column;
 }
 
 ColumnRawPtrs HiveStylePartitionStrategy::getFormatChunkColumns(const Chunk & chunk)

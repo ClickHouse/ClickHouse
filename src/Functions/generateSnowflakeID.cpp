@@ -155,7 +155,16 @@ uint64_t generateSnowflakeID()
     return fromSnowflakeId(snowflake_id);
 }
 
+<<<<<<< HEAD
 class FunctionGenerateSnowflakeID final : public IFunction
+=======
+std::string generateSnowflakeIDString()
+{
+    return std::to_string(generateSnowflakeID());
+}
+
+class FunctionGenerateSnowflakeID : public IFunction
+>>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 {
 public:
     static constexpr auto name = "generateSnowflakeID";

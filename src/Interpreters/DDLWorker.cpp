@@ -840,7 +840,11 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
             alter->isUnlockSnapshot() ||
             alter->isMovePartitionToDiskOrVolumeAlter() ||
             alter->isCommentAlter() ||
+<<<<<<< HEAD
             alter->isSettingsOrCommentAlter())
+=======
+            alter->isExportPartOrExportPartitionAlter())
+>>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
             return false;
     }
 

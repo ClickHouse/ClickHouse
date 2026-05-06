@@ -8,6 +8,8 @@ namespace DB
 {
 class StorageObjectStorageSink final : public SinkToStorage
 {
+friend class StorageObjectStorageImporterSink;
+
 public:
     StorageObjectStorageSink(
         const std::string & path_,
@@ -28,6 +30,8 @@ public:
 
     const String & getPath() const { return path; }
 
+    size_t getWrittenBytes() const;
+
     size_t getFileSize() const;
 
 private:
@@ -42,7 +46,11 @@ private:
     void cancelBuffers();
 };
 
+<<<<<<< HEAD
 class PartitionedStorageObjectStorageSink final : public PartitionedSink
+=======
+class PartitionedStorageObjectStorageSink : public PartitionedSink::SinkCreator
+>>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 {
 public:
     PartitionedStorageObjectStorageSink(

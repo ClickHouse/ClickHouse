@@ -18,7 +18,11 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <optional>
 #include <Databases/DataLake/StorageCredentials.h>
+<<<<<<< HEAD
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
+=======
+#include <Storages/ObjectStorage/ObjectStorageFilePathGenerator.h>
+>>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
 namespace DB
 {
@@ -79,6 +83,7 @@ public:
         bool hasPartitionWildcard() const;
         bool hasSchemaHashWildcard() const;
         bool hasGlobsIgnorePlaceholders() const;
+        bool hasExportFilenameWildcard() const;
         bool hasGlobs() const;
         std::string cutGlobs(bool supports_partial_prefix) const;
     };
@@ -111,8 +116,10 @@ public:
     virtual const String & getRawURI() const = 0;
 
     const Path & getPathForRead() const;
+
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;
+    Path getPathForWrite(const std::string & partition_id, const std::string & filename_override) const;
 
     void setPathForRead(const Path & path)
     {
@@ -314,15 +321,20 @@ public:
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
+
     PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
+    std::shared_ptr<IPartitionStrategy> partition_strategy;
     /// Whether partition column values are contained in the actual data.
     /// And alternative is with hive partitioning, when they are contained in file path.
     bool partition_columns_in_data_file = true;
+<<<<<<< HEAD
     /// Tracks whether `partition_columns_in_data_file` was explicitly provided by the user.
     /// When false, `initPartitionStrategy` recomputes the default once the effective strategy is known
     /// (which may have been chosen implicitly via `file_like_engine_default_partition_strategy`).
     bool partition_columns_in_data_file_was_set = false;
     std::shared_ptr<IPartitionStrategy> partition_strategy;
+=======
+>>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
 protected:
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
@@ -342,6 +354,8 @@ private:
     // Path used for reading, by default it is the same as `getRawPath`
     // When using `partition_strategy=hive`, a recursive reading pattern will be appended `'table_root/**.parquet'
     Path read_path;
+
+    std::shared_ptr<ObjectStorageFilePathGenerator> file_path_generator;
 };
 
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;

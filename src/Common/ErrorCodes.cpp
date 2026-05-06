@@ -671,10 +671,14 @@
     M(1002, UNKNOWN_EXCEPTION) \
     M(1003, SSH_EXCEPTION) \
     M(1004, STARTUP_SCRIPTS_ERROR) \
+<<<<<<< HEAD
     M(1005, STALE_VERSION) \
     M(1006, INVALID_CURSOR_LOOKUP) \
     M(1007, ILLEGAL_STREAM) \
     M(1008, TEMPORARY_DATA_NOT_IN_CACHE) \
+=======
+    M(1005, PENDING_MUTATIONS_NOT_ALLOWED) \
+>>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -691,7 +695,11 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
+<<<<<<< HEAD
     constexpr ErrorCode END = 1008;
+=======
+    constexpr ErrorCode END = 1005;
+>>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames

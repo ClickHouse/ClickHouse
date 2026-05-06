@@ -1,11 +1,12 @@
 #include <Storages/System/StorageSystemKeywords.h>
+#include <Storages/System/StorageSystemReplicatedPartitionExports.h>
 #include "config.h"
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/IDatabase.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachSystemTablesImpl.h>
-
+#include <Core/ServerSettings.h>
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <Storages/System/StorageSystemAsyncLoader.h>
@@ -40,6 +41,7 @@
 #include <Storages/System/StorageSystemMacros.h>
 #include <Storages/System/StorageSystemMerges.h>
 #include <Storages/System/StorageSystemMoves.h>
+#include <Storages/System/StorageSystemExports.h>
 #include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Storages/System/StorageSystemHistogramMetrics.h>
@@ -134,6 +136,7 @@
 #   include <Storages/System/StorageSystemUnicode.h>
 #endif
 #include <Storages/System/StorageSystemWasmModules.h>
+#include <Storages/System/StorageSystemExports.h>
 
 #include <Interpreters/Context.h>
 
@@ -159,7 +162,16 @@
 namespace DB
 {
 
+<<<<<<< HEAD
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
+=======
+namespace ServerSetting
+{
+    extern const ServerSettingsBool allow_experimental_export_merge_tree_partition;
+}
+
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
+>>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 {
     auto component_guard = Coordination::setCurrentComponent("attachSystemTablesServer");
     attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
@@ -253,6 +265,11 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemDimensionalMetrics>(context, system_database, "dimensional_metrics", "Contains dimensional metrics, which have multiple dimensions (labels) to provide more granular information. For example, counting failed merges by their error code. This table is always up to date.");
     attach<StorageSystemMerges>(context, system_database, "merges", "Contains a list of merges currently executing merges of MergeTree tables and their progress. Each merge operation is represented by a single row.");
     attach<StorageSystemMoves>(context, system_database, "moves", "Contains information about in-progress data part moves of MergeTree tables. Each data part movement is represented by a single row.");
+    attach<StorageSystemExports>(context, system_database, "exports", "Contains a list of exports currently executing exports of MergeTree tables and their progress. Each export operation is represented by a single row.");
+    if (context->getServerSettings()[ServerSetting::allow_experimental_export_merge_tree_partition])
+    {
+        attach<StorageSystemReplicatedPartitionExports>(context, system_database, "replicated_partition_exports", "Contains a list of partition exports of ReplicatedMergeTree tables and their progress. Each export operation is represented by a single row.");
+    }
     attach<StorageSystemMutations>(context, system_database, "mutations", "Contains a list of mutations and their progress. Each mutation command is represented by a single row.");
     attachNoDescription<StorageSystemReplicas>(context, system_database, "replicas", "Contains information and status of all table replicas on current server. Each replica is represented by a single row.");
     attachNoDescription<StorageSystemDatabaseReplicas>(context, system_database, "database_replicas", "Contains information and status of all database replicas on current server. Each database replica is represented by a single row.");

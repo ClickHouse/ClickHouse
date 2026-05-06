@@ -584,6 +584,7 @@ enum class JemallocProfileFormat : uint8_t
 
 DECLARE_SETTING_ENUM(JemallocProfileFormat)
 
+<<<<<<< HEAD
 enum class S3UriStyle : uint8_t
 {
     AUTO,
@@ -599,5 +600,16 @@ enum class FileLikeEngineDefaultPartitionStrategy : uint8_t
     HIVE,
 };
 DECLARE_SETTING_ENUM(FileLikeEngineDefaultPartitionStrategy)
+=======
+enum class MergeTreePartExportFileAlreadyExistsPolicy : uint8_t
+{
+    skip,
+    error,
+    overwrite,
+};
+
+DECLARE_SETTING_ENUM(MergeTreePartExportFileAlreadyExistsPolicy)
+
+>>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
 }
