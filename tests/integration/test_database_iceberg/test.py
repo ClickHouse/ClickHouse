@@ -11,18 +11,24 @@ import pytest
 import requests
 import pytz
 from pyiceberg.catalog import load_catalog
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.partitioning import PartitionField, PartitionSpec, UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     DoubleType,
+<<<<<<< HEAD
+=======
+    LongType,
+    FloatType,
+>>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
     NestedField,
     StringType,
     StructType,
     TimestampType,
     TimestamptzType
 )
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
@@ -199,6 +205,7 @@ def started_cluster():
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
+            with_zookeeper=True,
         )
 
         logging.info("Starting cluster...")
@@ -1143,6 +1150,7 @@ def test_gcs(started_cluster):
         assert "Google cloud storage converts to S3" in str(err.value)
 
 
+<<<<<<< HEAD
 def test_invalid_auth_header_format(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1179,11 +1187,23 @@ def test_iceberg_file_progress_callback(started_cluster):
 
     test_ref = f"test_progress_callback_{uuid.uuid4().hex[:8]}"
     table_name = f"{test_ref}_table"
+=======
+# TODO - turn on after merge alternative syntax
+def _test_cluster_joins(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_join_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    table_name_2 = f"{test_ref}_table_2"
+    table_name_local = f"{test_ref}_table_local"
+
+>>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
     root_namespace = f"{test_ref}_namespace"
 
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(root_namespace)
 
+<<<<<<< HEAD
     table = create_table(
         catalog,
         root_namespace,
@@ -1238,3 +1258,130 @@ def test_iceberg_file_progress_callback(started_cluster):
         f"`IcebergIterator::next` did not invoke the file-progress callback "
         f"(regression of PR #105413 wiring)."
     )
+=======
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="tag",
+            field_type=LongType(),
+            required=False
+        ),
+        NestedField(
+            field_id=2,
+            name="name",
+            field_type=StringType(),
+            required=False,
+        ),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema,
+                         partition_spec=UNPARTITIONED_PARTITION_SPEC, sort_order=UNSORTED_SORT_ORDER)
+    data = [{"tag": 1, "name": "John"}, {"tag": 2, "name": "Jack"}]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    schema2 = Schema(
+        NestedField(
+            field_id=1,
+            name="id",
+            field_type=LongType(),
+            required=False
+        ),
+        NestedField(
+            field_id=2,
+            name="second_name",
+            field_type=StringType(),
+            required=False,
+        ),
+    )
+    table2 = create_table(catalog, root_namespace, table_name_2, schema2,
+                          partition_spec=UNPARTITIONED_PARTITION_SPEC, sort_order=UNSORTED_SORT_ORDER)
+    data = [{"id": 1, "second_name": "Dow"}, {"id": 2, "second_name": "Sparrow"}]
+    df = pa.Table.from_pylist(data)
+    table2.append(df)
+
+    node.query(f"CREATE TABLE `{table_name_local}` (id Int64, second_name String) ENGINE = Memory()")
+    node.query(f"INSERT INTO `{table_name_local}` VALUES (1, 'Silver'), (2, 'Black')")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    res = node.query(
+        f"""
+            SELECT t1.name,t2.second_name
+            FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` AS t1
+                JOIN {CATALOG_NAME}.`{root_namespace}.{table_name_2}` AS t2
+                ON t1.tag=t2.id
+            WHERE t1.tag < 10 AND t2.id < 20
+            ORDER BY ALL
+            SETTINGS
+                object_storage_cluster='cluster_simple',
+                object_storage_cluster_join_mode='local'
+        """
+    )
+
+    assert res == "Jack\tSparrow\nJohn\tDow\n"
+
+    res = node.query(
+        f"""
+            SELECT name
+            FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
+            WHERE tag in (
+                SELECT id
+                FROM {CATALOG_NAME}.`{root_namespace}.{table_name_2}`
+            )
+            ORDER BY ALL
+            SETTINGS
+                object_storage_cluster='cluster_simple',
+                object_storage_cluster_join_mode='local'
+        """
+    )
+
+    assert res == "Jack\nJohn\n"
+
+    res = node.query(
+        f"""
+            SELECT t1.name,t2.second_name
+            FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` AS t1
+                JOIN `{table_name_local}` AS t2
+                ON t1.tag=t2.id
+            WHERE t1.tag < 10 AND t2.id < 20
+            ORDER BY ALL
+            SETTINGS
+                object_storage_cluster='cluster_simple',
+                object_storage_cluster_join_mode='local'
+        """
+    )
+
+    assert res == "Jack\tBlack\nJohn\tSilver\n"
+
+    res = node.query(
+        f"""
+            SELECT name
+            FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
+            WHERE tag in (
+                SELECT id
+                FROM `{table_name_local}`
+            )
+            ORDER BY ALL
+            SETTINGS
+                object_storage_cluster='cluster_simple',
+                object_storage_cluster_join_mode='local'
+        """
+    )
+
+    assert res == "Jack\nJohn\n"
+
+    res = node.query(
+        f"""
+            SELECT t1.name,t2.second_name
+            FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` AS t1
+                CROSS JOIN `{table_name_local}` AS t2
+            WHERE t1.tag < 10 AND t2.id < 20
+            ORDER BY ALL
+            SETTINGS
+                object_storage_cluster='cluster_simple',
+                object_storage_cluster_join_mode='local'
+        """
+    )
+
+    assert res == "Jack\tBlack\nJack\tSilver\nJohn\tBlack\nJohn\tSilver\n"
+>>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)

@@ -15,7 +15,11 @@ namespace ErrorCodes
 }
 
 ObjectFilterStep::ObjectFilterStep(
+<<<<<<< HEAD
     const SharedHeader & input_header_,
+=======
+    SharedHeader input_header_,
+>>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
     ActionsDAG actions_dag_,
     String filter_column_name_)
     : actions_dag(std::move(actions_dag_))
@@ -55,7 +59,10 @@ std::unique_ptr<IQueryPlanStep> ObjectFilterStep::deserialize(Deserialization & 
     return std::make_unique<ObjectFilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name));
 }
 
+<<<<<<< HEAD
 void registerObjectFilterStep(QueryPlanStepRegistry & registry);
+=======
+>>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
 void registerObjectFilterStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ObjectFilter", ObjectFilterStep::deserialize);

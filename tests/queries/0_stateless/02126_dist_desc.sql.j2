@@ -10,7 +10,7 @@ select * from remote('{{host}}', {{args}}) format Null;
 {% endfor -%}
 
 system flush logs query_log;
-select anyIf(query, is_initial_query), groupArrayIf(query, query_kind = 'Describe' and not is_initial_query) from system.query_log
+select anyIf(query, initial_query_id == query_id), groupArrayIf(query, query_kind = 'Describe' and initial_query_id != query_id) from system.query_log
 where
     event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish' and

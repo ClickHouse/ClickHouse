@@ -57,12 +57,22 @@ public:
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}
     virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
+    void updateQueryWithJoinToSendIfNeeded(ASTPtr & query_to_send, QueryTreeNodePtr query_tree, const ContextPtr & context);
 
     virtual void updateConfigurationIfNeeded(ContextPtr /* context */) {}
 
 private:
     LoggerPtr log;
     String cluster_name;
+
+    struct QueryTreeInfo
+    {
+        bool has_join = false;
+        bool has_cross_join = false;
+        bool has_local_columns_in_where = false;
+    };
+
+    static QueryTreeInfo getQueryTreeInfo(QueryTreeNodePtr query_tree, ContextPtr context);
 };
 
 
