@@ -486,8 +486,10 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view modu
 
     // Cranelift's ISLE-generated `constructor_simplify` is a monolithic function
     // whose stack frame (~64 KB in release builds) multiplied by REWRITE_LIMIT=5
-    // recursion levels overflows the default 512 KB TCPHandler thread stack on
-    // aarch64-apple-darwin, causing SIGILL via the OS stack guard page.
+    // recursion levels can overflow small user-space thread stacks (e.g. 512 KB on
+    // aarch64-apple-darwin), causing SIGILL via the OS stack guard page.
+    // `compileModule` can be called from any thread (query threads, pipeline executor
+    // threads, etc.), so the overflow is not limited to any particular thread type.
     //
     // Root cause: in release builds the ISLE compiler emits one large function body
     // without splitting match arms into closures. Cranelift's `isle-split-match`
@@ -506,8 +508,9 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view modu
         std::span<uint8_t> bytes;
         std::optional<wasmtime::Module> result;
         std::string error;
+        std::exception_ptr exception;
     };
-    CompileTask task{impl->engine, bytes, std::nullopt, {}};
+    CompileTask task{impl->engine, bytes, std::nullopt, {}, nullptr};
 
     pthread_attr_t attr;
     if (int rc = pthread_attr_init(&attr); rc != 0)
@@ -530,7 +533,7 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view modu
         }
         catch (...)
         {
-            t.error = getCurrentExceptionMessage(false);
+            t.exception = std::current_exception();
         }
         return nullptr;
     };
@@ -541,6 +544,9 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view modu
 
     if (int rc = pthread_join(thread, nullptr); rc != 0)
         throw Exception(ErrorCodes::WASM_ERROR, "pthread_join failed: {}", rc);
+
+    if (task.exception)
+        std::rethrow_exception(task.exception);
 
     if (!task.result)
         throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code: {}", task.error);
