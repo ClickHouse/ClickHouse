@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -179,6 +181,22 @@ def send_test_data():
                     500: 0.5,
                     600: 1,
                     700: 2,
+                },
+            ),
+        ]
+    )
+
+    send_data(
+        [
+            (
+                {"__name__": "quantile_special", "case": "nan-inf"},
+                {
+                    100: 1,
+                    110: math.nan,
+                    120: math.nan,
+                    130: math.inf,
+                    140: math.inf,
+                    150: -math.inf,
                 },
             ),
         ]
@@ -486,6 +504,93 @@ def test_function_over_time():
                 "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',3),('1970-01-01 00:02:30.000',4),('1970-01-01 00:02:45.000',4),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',8)]",
             ]
         ],
+    )
+
+    do_query_test(
+        "quantile_over_time(0.5, test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [150, "2"], [165, "3.5"], [180, "4"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',2),('1970-01-01 00:02:45.000',3.5),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "quantile_over_time(-1, test[45s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [150, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:02:30.000", "-inf"]],
+    )
+
+    do_query_test(
+        "quantile_over_time(2, test[45s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [150, "+Inf"]}]}',
+        [["[]", "1970-01-01 00:02:30.000", "inf"]],
+    )
+
+    do_query_test(
+        "quantile_over_time(NaN, test[45s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [150, "NaN"]}]}',
+        [["[]", "1970-01-01 00:02:30.000", "nan"]],
+    )
+
+    do_query_test(
+        "quantile_over_time(0.5, test[5s])",
+        180,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    do_query_test(
+        "quantile_over_time(0.5, quantile_special[60s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"case": "nan-inf"}, "value": [150, "-Inf"]}]}',
+        [["[('case','nan-inf')]", "1970-01-01 00:02:30.000", "-inf"]],
+    )
+
+    do_query_test(
+        "quantile_over_time(1, quantile_special[60s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"case": "nan-inf"}, "value": [150, "NaN"]}]}',
+        [["[('case','nan-inf')]", "1970-01-01 00:02:30.000", "nan"]],
+    )
+
+    do_query_test(
+        "quantile_over_time(scalar(vector(0.5)), test[45s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [150, "2"]}]}',
+        [["[]", "1970-01-01 00:02:30.000", 2]],
+    )
+
+    do_range_query_test(
+        "quantile_over_time(0.5, test[45s])",
+        120,
+        210,
+        15,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [150, "2"], [165, "3.5"], [180, "4"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',2),('1970-01-01 00:02:45.000',3.5),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
+    )
+
+    expected_error = "Function 'quantile_over_time' with a non-constant scalar parameter is not supported"
+    assert expected_error in execute_query_in_clickhouse_sql(
+        "quantile_over_time(time() / 200, test[45s])[60s:15s]",
+        150,
+        expect_error=True,
+    )
+    assert expected_error in execute_query_in_clickhouse_http_api(
+        "quantile_over_time(time() / 200, test[45s])[60s:15s]",
+        150,
+        expect_error=True,
     )
 
     do_query_test(
