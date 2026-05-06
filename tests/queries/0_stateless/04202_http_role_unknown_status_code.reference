@@ -1,0 +1,4 @@
+### UNKNOWN_ROLE returns HTTP 404
+404
+### Without role param HTTP 200
+200
