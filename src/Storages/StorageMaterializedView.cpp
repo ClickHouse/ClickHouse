@@ -78,6 +78,7 @@ namespace ErrorCodes
 namespace ActionLocks
 {
     extern const StorageActionBlockType ViewRefresh;
+    extern const StorageActionBlockType ViewRefreshPause;
 }
 
 /// Remove columns from target_header that does not exist in src_header
@@ -142,6 +143,7 @@ StorageMaterializedView::StorageMaterializedView(
     if (to_table_engine && to_table_engine->primary_key)
         storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->primary_key->ptr(),
                                                                      storage_metadata.columns,
+                                                                     {},
                                                                      local_context->getGlobalContext());
     /// Use the database where the materialized view is created to resolve nested views
     ContextMutablePtr mv_db_context = Context::createCopy(local_context);
@@ -330,24 +332,30 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     const StorageSnapshotPtr &,
     SelectQueryInfo & query_info) const
 {
-    const auto & target_metadata = getTargetTable()->getInMemoryMetadataPtr(local_context, false);
+    const auto target_metadata = getTargetTable()->getInMemoryMetadataPtr(local_context, false);
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
 }
 
-StorageSnapshotPtr StorageMaterializedView::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
+StorageMetadataPtr StorageMaterializedView::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
+    auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+
+    auto target = tryGetTargetTable();
+    if (!target)
+        return base_metadata;
+
     /// Override _table and _database to be materialized at the Plan level
     /// by StorageWithCommonVirtualColumns, not by the target storage's reader.
-    auto virtuals = std::make_shared<VirtualColumnsDescription>();
-    for (auto desc : *getTargetTable()->getVirtualsPtr())
+    VirtualColumnsDescription virtuals_desc;
+    for (auto desc : target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache)->virtuals)
     {
         if (desc.name == "_table" || desc.name == "_database")
             desc.place = VirtualsMaterializationPlace::Plan;
 
-        virtuals->add(std::move(desc));
+        virtuals_desc.add(std::move(desc));
     }
 
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(virtuals));
+    return std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(std::move(virtuals_desc)));
 }
 
 void StorageMaterializedView::readImpl(
@@ -787,7 +795,6 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 {
     auto old_table_id = getStorageID();
     auto inner_table_id = getTargetTableId();
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     bool from_atomic_to_atomic_database = old_table_id.hasUUID() && new_table_id.hasUUID();
 
     if (!from_atomic_to_atomic_database && has_inner_table && tryGetTargetTable())
@@ -941,6 +948,10 @@ ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
     if (type == ActionLocks::ViewRefresh && refresher)
         refresher->stop();
+    /// `SYSTEM PAUSE VIEW` prevents future refreshes but does not interrupt the currently running
+    /// refresh. `SYSTEM START VIEW` undoes it by clearing `stop_requested` via `onActionLockRemove`.
+    else if (type == ActionLocks::ViewRefreshPause && refresher)
+        refresher->pause();
     if (has_inner_table)
     {
         if (auto target_table = tryGetTargetTable())
@@ -958,7 +969,7 @@ bool StorageMaterializedView::isRemote() const
 
 void StorageMaterializedView::onActionLockRemove(StorageActionBlockType action_type)
 {
-    if (action_type == ActionLocks::ViewRefresh && refresher)
+    if ((action_type == ActionLocks::ViewRefresh || action_type == ActionLocks::ViewRefreshPause) && refresher)
         refresher->start();
 }
 

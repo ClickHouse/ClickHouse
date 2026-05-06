@@ -48,8 +48,8 @@ StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
          std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
          "Projection settings."},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemProjections::createVirtuals()

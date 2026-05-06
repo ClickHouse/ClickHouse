@@ -51,6 +51,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
+#include <Storages/MergeTree/OverlappingPartCovering.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
@@ -106,6 +107,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/SelectQueryOptions.h>
 
@@ -1717,7 +1719,7 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
         metadata_snapshot->add_minmax_index_for_numeric_columns,
         metadata_snapshot->add_minmax_index_for_string_columns,
         getContext());
-    bool is_metadata_equal = old_metadata.checkEquals(metadata_from_zk, metadata_snapshot->getColumns(), getStorageID().getNameForLogs(), getContext(), /*check_index_granularity*/ true, strict_check, log.load());
+    bool is_metadata_equal = old_metadata.checkEquals(metadata_from_zk, metadata_snapshot->columns, metadata_snapshot->virtuals, getStorageID().getNameForLogs(), getContext(), /*check_index_granularity*/ true, strict_check, log.load());
 
     if (metadata_version)
         *metadata_version = metadata_stat.version;
@@ -1747,13 +1749,13 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
 {
     StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
 
-    StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, local_context, old_metadata);
+    StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, old_metadata.virtuals, local_context, old_metadata);
     new_metadata.setMetadataVersion(new_metadata_version);
 
     /// Implicit statistics (auto_statistics_types) are not serialized to ZooKeeper,
     /// so we need to re-add them after loading metadata from ZK.
     auto settings = getSettings();
-    auto [auto_stats_types, _] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *settings);
+    auto [auto_stats_types, _] = getNewImplicitStatisticsTypes(new_metadata, *settings);
     addImplicitStatistics(new_metadata.columns, auto_stats_types);
 
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
@@ -1899,17 +1901,42 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 
     waitForUnexpectedPartsToBeLoaded();
 
-    ActiveDataPartSet set_of_empty_unexpected_parts(format_version);
+    /// Two empty unexpected parts on disk can have block ranges that intersect without one fully
+    /// containing the other (for example, `all_0_5_2` and `all_2_11_3`). The `uncovered` flag is
+    /// computed in `MergeTreeData::loadDataParts` as "no other unexpected part contains me", but
+    /// containment is strict — two parts can both be uncovered and still share blocks. Adding the
+    /// second one to a plain `ActiveDataPartSet` aborts startup with `LOGICAL_ERROR` (STID
+    /// `2352-49be`).
+    ///
+    /// Use `OverlappingPartCovering`: it stores the non-overlapping markers in a fast lookup
+    /// structure and keeps the rest in an auxiliary list, but `getContainingPart` consults both,
+    /// so an unexpected part that is covered only by an overlapping marker is still classified as
+    /// covered downstream. This avoids the related `TOO_MANY_UNEXPECTED_DATA_PARTS` regression
+    /// that a naive "skip the second marker" fix would introduce.
+    OverlappingPartCovering set_of_empty_unexpected_parts(format_version);
     for (const auto & load_state : unexpected_data_parts)
     {
         if (load_state.is_broken || load_state.part->rows_count || !load_state.uncovered)
             continue;
 
-        set_of_empty_unexpected_parts.add(load_state.part->name);
+        String overlapping_reason;
+        set_of_empty_unexpected_parts.add(load_state.part->info, load_state.part->name, &overlapping_reason);
+        if (!overlapping_reason.empty())
+            LOG_WARNING(
+                log,
+                "Empty unexpected part {} overlaps another empty unexpected part without containment: {}; "
+                "keeping it as a covering candidate via the auxiliary index",
+                load_state.part->name,
+                overlapping_reason);
     }
     if (auto empty_count = set_of_empty_unexpected_parts.size())
+    {
         LOG_WARNING(log, "Found {} empty unexpected parts (probably some dropped parts were not cleaned up before restart): [{}]",
                  empty_count, fmt::join(set_of_empty_unexpected_parts.getParts(), ", "));
+        if (auto overlapping_parts = set_of_empty_unexpected_parts.getOverlappingParts(); !overlapping_parts.empty())
+            LOG_WARNING(log, "Of those, {} have block ranges that intersect another empty unexpected part without containment: [{}]",
+                     overlapping_parts.size(), fmt::join(overlapping_parts, ", "));
+    }
 
     /** To check the adequacy, for the parts that are in the FS, but not in ZK, we will only consider not the most recent parts.
       * Because unexpected new parts usually arise only because they did not have time to enroll in ZK with a rough restart of the server.
@@ -1939,7 +1966,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
             continue;
         }
 
-        String covering_empty_part = set_of_empty_unexpected_parts.getContainingPart(load_state.part->name);
+        String covering_empty_part = set_of_empty_unexpected_parts.getContainingPart(load_state.part->info);
         if (!covering_empty_part.empty())
         {
             LOG_INFO(log, "Unexpected part {} is covered by empty part {}, assuming it has been dropped just before restart",
@@ -2447,7 +2474,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
             Transaction transaction(*this, NO_TRANSACTION_RAW);
 
-            part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+            part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
             renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
             transaction.renameParts();
             checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
@@ -6565,12 +6592,11 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
-        const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, getInMemoryMetadataPtr(getContext(), false));
-        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, getInMemoryMetadataPtr(getContext(), false)->getColumns(), getStorageID().getNameForLogs(), getContext());
+        const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
+        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
         setTableStructure(table_id, alter_context, std::move(columns_from_entry), metadata_diff, entry.alter_version);
 
-        current_metadata = getInMemoryMetadataPtr(getContext(), false);
-        LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", current_metadata->getMetadataVersion());
+        LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", getInMemoryMetadataPtr(getContext(), true)->getMetadataVersion());
     }
 
     {
@@ -6647,7 +6673,7 @@ void StorageReplicatedMergeTree::alter(
     commands.apply(future_metadata, query_context);
 
     auto old_settings = getSettings();
-    auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(future_metadata, *old_settings);
+    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
 
     if (commands.isSettingsAlter())
@@ -8441,11 +8467,6 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
     chassert(!pipeline.completed());
     pipeline.complete(std::move(sink));
     return pipeline;
-}
-
-bool StorageReplicatedMergeTree::hasLightweightDeletedMask() const
-{
-    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
 }
 
 size_t StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
@@ -11419,8 +11440,8 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
             current_metadata->add_minmax_index_for_string_columns,
             getContext());
         const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
-        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getStorageID().getNameForLogs(), getContext());
-        auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
+        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
+        auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, current_metadata->virtuals, getContext(), *current_metadata);
         applyMetadataChangesToCreateQuery(create_query, adjusted_metadata, getContext(), false);
     }
     catch (...)

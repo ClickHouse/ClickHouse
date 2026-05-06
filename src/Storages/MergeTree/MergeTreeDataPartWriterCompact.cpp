@@ -5,6 +5,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -17,6 +18,12 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char compact_part_writer_fail_in_add_streams[];
 }
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
@@ -28,7 +35,6 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const VirtualsDescriptionPtr & virtual_columns_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -37,7 +43,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     : MergeTreeDataPartWriterOnDisk(
         data_part_name_, logger_name_, serializations_,
         data_part_storage_, index_granularity_info_, storage_settings_,
-        columns_list_, metadata_snapshot_, virtual_columns_,
+        columns_list_, metadata_snapshot_,
         indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, std::move(index_granularity_),
         static_cast<WrittenOffsetSubstreams *>(nullptr))
@@ -89,11 +95,18 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
         UInt64 codec_id = compression_codec->getHash();
-        auto & stream = streams_by_codec[codec_id];
-        if (!stream)
-            stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec);
+        /// Exception safety: if `make_shared` throws, the map is not modified, avoiding null entries in `cancel`.
+        auto it = streams_by_codec.find(codec_id);
+        if (it == streams_by_codec.end())
+        {
+            fiu_do_on(FailPoints::compact_part_writer_fail_in_add_streams,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Compact part writer addStreams");
+            });
+            it = streams_by_codec.emplace(codec_id, std::make_shared<CompressedStream>(plain_hashing, compression_codec)).first;
+        }
 
-        compressed_streams.emplace(stream_name, stream);
+        compressed_streams.emplace(stream_name, it->second);
     };
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;

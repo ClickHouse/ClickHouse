@@ -18,6 +18,10 @@
 
 namespace fs = std::filesystem;
 
+/// Keys that belong to the disk configuration layer (IDisk), not to the cache layer.
+/// They must be skipped when loading cache settings to avoid UNKNOWN_SETTING errors.
+static const std::set<std::string> non_cache_keys = {"type", "disk", "name", "data_background_cleanup", "thread_pool_size"};
+
 namespace DB
 {
 
@@ -181,10 +185,9 @@ void FileCacheSettings::loadFromConfig(
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_prefix, config_keys);
 
-    std::set<std::string> ignore_keys = {"type", "disk", "name", "data_background_cleanup"};
     for (const std::string & key : config_keys)
     {
-        if (ignore_keys.contains(key))
+        if (non_cache_keys.contains(key))
             continue;
         impl->set(key, config.getString(config_prefix + "." + key));
     }
@@ -214,6 +217,8 @@ void FileCacheSettings::loadFromCollection(
 {
     for (const auto & key : collection.getKeys())
     {
+        if (non_cache_keys.contains(key))
+            continue;
         impl->set(key, collection.get<String>(key));
     }
 

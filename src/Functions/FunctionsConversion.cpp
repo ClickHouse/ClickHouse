@@ -237,7 +237,19 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     {
         /// In case when converting to Nullable type, we apply different parsing rule,
         /// that will not throw an exception but return NULL in case of malformed input.
-        FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionCastName, ConvertFromStringExceptionMode::Null>::createFromSettings(settings);
+        FunctionPtr function;
+        switch (settings.cast_string_to_date_time_mode)
+        {
+            case FormatSettings::DateTimeInputFormat::Basic:
+                function = FunctionConvertFromString<ToDataType, FunctionCastName, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Basic>::createFromSettings(settings);
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffort:
+                function = FunctionConvertFromString<ToDataType, FunctionCastName, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>::createFromSettings(settings);
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffortUS:
+                function = FunctionConvertFromString<ToDataType, FunctionCastName, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffortUS>::createFromSettings(settings);
+                break;
+        }
         return createFunctionAdaptor(function, from_type);
     }
     else if (!can_apply_accurate_cast)
@@ -568,6 +580,35 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
                         "Illegal column {} for function CAST AS AggregateFunction",
                         argument_column.column->getName());
                 }
+            };
+        }
+
+        /// Different state variants (e.g. Window vs Aggregation) of the same aggregate function
+        /// can be converted by merging the source state into a fresh target state.
+        if (to_type->getFunction()->canMergeStateFromDifferentVariant(*agg_type->getFunction()))
+        {
+            return [function = to_type->getFunction(), from_function = agg_type->getFunction()](
+                       ColumnsWithTypeAndName & arguments,
+                       const DataTypePtr & /* result_type */,
+                       const ColumnNullable * /* nullable_source */,
+                       size_t /*input_rows_count*/) -> ColumnPtr
+            {
+                const auto & argument_column = arguments.front();
+                const auto * col_agg = checkAndGetColumn<ColumnAggregateFunction>(argument_column.column.get());
+                if (!col_agg)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Illegal column {} for function CAST AS AggregateFunction",
+                        argument_column.column->getName());
+
+                auto res = ColumnAggregateFunction::create(function);
+
+                for (const auto * src_state : col_agg->getData())
+                {
+                    res->insertDefault();
+                    function->mergeStateFromDifferentVariant(res->getData().back(), *from_function, src_state, &res->createOrGetArena());
+                }
+                return res;
             };
         }
     }
@@ -1192,7 +1233,7 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
     if (checkAndGetDataType<DataTypeTuple>(from_type.get())
         || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
     {
-        return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+        return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
             auto json_string = ColumnString::create();
             ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
@@ -1208,6 +1249,9 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             write_helper.finalize();
 
             ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
+            if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
+                return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, settings);
+
             return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, settings);
         };
     }

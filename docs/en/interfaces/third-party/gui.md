@@ -500,3 +500,18 @@ Features:
 - Provides cluster node monitoring and zookeeper monitoring
 - Monitor the status of tables and partitions, and monitor slow SQL statements
 - Provides an easy-to-use SQL execution page
+
+### 1bench {#1bench}
+
+[1bench](https://1bench.dev) is a native desktop GUI for multiple databases with first-class ClickHouse support — spanning server overview, schema management, vector search, and large result-set browsing.
+
+Features:
+
+- Server overview on connect — version, uptime, running queries, active merges, parts and storage sizes, replica status, clusters and nodes at a glance.
+- Visual query builder (column pickers, filters, sort, limit) alongside a Monaco SQL editor with syntax highlighting and query history per connection.
+- Visual `CREATE TABLE` wizard supporting `MergeTree` variants, `ORDER BY`, `PARTITION BY`, `SETTINGS`, and `Nullable()` auto-wrapping.
+- Native ClickHouse type handling — `Nullable`, `Array`, `LowCardinality`, nested objects.
+- Vector search support — `Array(Float32)` embedding columns rendered as compact vector cells, 2D embedding visualization, and Find Similar via `cosineDistance`.
+- Inline data editing in result tables with batched save, plus CSV/JSON/SQL export and import using ClickHouse's native formats.
+- Connection options: HTTP/HTTPS, SSH tunnel for private clusters behind a firewall, optional read-only mode for safe production browsing.
+- Works with ClickHouse Cloud and self-hosted.
