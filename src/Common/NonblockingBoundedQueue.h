@@ -108,12 +108,6 @@ public:
         }
     }
 
-    /// Avoid "'item' used after it was moved" compiler warning when using value after tryPush returned false.
-    bool tryPushL(T & value)
-    {
-        tryPush(std::move(value));
-    }
-
     bool tryPop(T & out_value)
     {
         chassert(mask);

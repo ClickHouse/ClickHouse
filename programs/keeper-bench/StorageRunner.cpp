@@ -3,13 +3,13 @@
 #include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/CoordinationSettings.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
@@ -279,7 +279,7 @@ void StorageRunner::pushBlocking(QueueT & queue, QueueItem && item)
 {
     while (!shutdown.load(std::memory_order_relaxed))
     {
-        if (queue.tryPushL(std::move(item)))
+        if (queue.tryPush(std::move(item))) // NOLINT(bugprone-use-after-move)
             return;
         std::this_thread::sleep_for(POLL_SLEEP);
     }
@@ -525,7 +525,7 @@ void StorageRunner::report(double period_seconds, bool snapshot_mode_during_peri
 
     uint64_t znode_count = storage ? storage->getNodesCount() : 0;
 
-    WriteBufferFromOwnString out;
+    std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     out << std::fixed << std::setprecision(1);
     out << "\n==== period " << period_seconds << "s ====\n";
     out << "writes/s: " << static_cast<double>(writes) / period_seconds
