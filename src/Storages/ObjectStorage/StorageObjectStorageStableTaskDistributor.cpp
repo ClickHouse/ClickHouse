@@ -138,11 +138,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t
         auto next_file = files.back();
         files.pop_back();
 
-<<<<<<< HEAD
-        auto file_identifier = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getIdentifier();
-=======
         auto file_identifier = getFileIdentifier(next_file);
->>>>>>> d078d53df2f (Merge pull request #1493 from Altinity/bugfix/antalya-26.1/task_reschedule_fix)
         auto it = unprocessed_files.find(file_identifier);
         if (it == unprocessed_files.end())
             continue;
@@ -187,22 +183,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
             }
         }
 
-<<<<<<< HEAD
-        String file_identifier;
-        if (send_over_whole_archive && object_info->isArchive())
-        {
-            file_identifier = object_info->getPathOrPathToArchiveIfArchive();
-            LOG_TEST(log, "Will send over the whole archive {} to replicas. "
-                     "This will be suboptimal, consider turning on "
-                     "cluster_function_process_archive_on_multiple_nodes setting", file_identifier);
-        }
-        else
-        {
-            file_identifier = object_info->getIdentifier();
-        }
-=======
         String file_identifier = getFileIdentifier(object_info, true);
->>>>>>> d078d53df2f (Merge pull request #1493 from Altinity/bugfix/antalya-26.1/task_reschedule_fix)
 
         if (iceberg_read_optimization_enabled)
         {
@@ -277,11 +258,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
                 auto next_file = it->second.first;
                 unprocessed_files.erase(it);
 
-<<<<<<< HEAD
-                auto file_path = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getPath();
-=======
                 auto file_path = getFileIdentifier(next_file);
->>>>>>> d078d53df2f (Merge pull request #1493 from Altinity/bugfix/antalya-26.1/task_reschedule_fix)
                 LOG_TRACE(
                     log,
                     "Iterator exhausted. Assigning unprocessed file {} to replica {} from matched replica {}",
@@ -364,7 +341,7 @@ String StorageObjectStorageStableTaskDistributor::getFileIdentifier(ObjectInfoPt
         }
         return file_identifier;
     }
-    return getAbsolutePathFromObjectInfo(file_object).value_or(file_object->getIdentifier());
+    return file_object->getIdentifier();
 }
 
 }
