@@ -1,8 +1,11 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
 #include <Core/Settings.h>
+#include <Columns/ColumnConst.h>
+#include <Common/FieldVisitorToString.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -1586,29 +1589,55 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
     return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor);
 }
 
-/// Builds an analyzer-independent name from a DAG node
-static String getCanonicalDAGName(const ActionsDAG::Node * node)
+/// Builds an analyzer-independent canonical name from a DAG node.
+static String getCanonicalDAGName(const ActionsDAG::Node * node, bool planner_style_constants = false)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
         node = node->children[0];
 
-    bool is_old_lambda = node->type == ActionsDAG::ActionType::FUNCTION
-        && node->function_base && node->function_base->getName().starts_with("Capture[");
-    bool is_new_lambda = node->type == ActionsDAG::ActionType::COLUMN
-        && node->result_type && typeid_cast<const DataTypeFunction *>(node->result_type.get());
-    if (is_old_lambda || is_new_lambda)
-        return "<lambda>";
-
+    /// Old analyzer lambda (FunctionCapture): recurse into body DAG with Planner-style
+    /// constant naming to produce a string matching the Planner's lambda result_name.
     if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
     {
+        const auto * capture = typeid_cast<const FunctionCapture *>(node->function_base.get());
+        if (capture)
+        {
+            const auto & args = capture->getCapture().lambda_arguments;
+            String result;
+            for (auto it = args.begin(); it != args.end(); ++it)
+            {
+                if (it != args.begin())
+                    result += ", ";
+                result += it->name + " " + it->type->getName();
+            }
+            result += " -> ";
+            result += getCanonicalDAGName(capture->getAcionsDAG().getOutputs().at(0), /*planner_style_constants=*/true);
+            return result;
+        }
+
         String result = node->function_base->getName() + "(";
         for (size_t i = 0; i < node->children.size(); ++i)
         {
             if (i)
                 result += ", ";
-            result += getCanonicalDAGName(node->children[i]);
+            result += getCanonicalDAGName(node->children[i], planner_style_constants);
         }
         return result + ")";
+    }
+
+    /// New analyzer lambda (Planner): opaque COLUMN node whose result_name already
+    /// encodes args + body in Planner style. Use it as-is.
+    if (node->type == ActionsDAG::ActionType::COLUMN && node->result_type
+        && typeid_cast<const DataTypeFunction *>(node->result_type.get()))
+        return node->result_name;
+
+    /// Constants: inside lambda bodies, format as `value_Type` to match Planner naming.
+    /// In the old analyzer's lambda body DAG, captured constants may be INPUT nodes with a column attached.
+    if (planner_style_constants && node->column)
+    {
+        const auto * col_const = typeid_cast<const ColumnConst *>(node->column.get());
+        if (col_const && node->result_type)
+            return applyVisitor(FieldVisitorToString(), col_const->getField()) + "_" + node->result_type->getName();
     }
 
     return node->result_name;
