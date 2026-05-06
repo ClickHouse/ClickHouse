@@ -403,31 +403,7 @@ SELECT '-- aiGenerateEmbedding: batch size setting default';
 SELECT default FROM system.settings WHERE name = 'ai_function_embedding_max_batch_size';
 
 -- =============================================================================
--- 18. aiGenerateSQL
--- =============================================================================
-
-SELECT '-- aiGenerateSQL: registered';
-SELECT name FROM system.functions WHERE name = 'aiGenerateSQL';
-
-SELECT '-- aiGenerateSQL: too few arguments';
-SELECT aiGenerateSQL('ai_credentials'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-
-SELECT '-- aiGenerateSQL: too many arguments';
-SELECT aiGenerateSQL('ai_credentials', 'q', 0.1, 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-
-SELECT '-- aiGenerateSQL: return type';
-DROP TABLE IF EXISTS _03300_ret_sql;
-CREATE TABLE _03300_ret_sql ENGINE = Memory AS
-    SELECT aiGenerateSQL('ai_credentials', x) AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_sql';
-DROP TABLE IF EXISTS _03300_ret_sql;
-
-SELECT '-- aiGenerateSQL: with temperature';
-SELECT count() FROM (SELECT aiGenerateSQL('ai_credentials', x, 0.1) AS result FROM tab);
-
--- =============================================================================
--- 19. Re-disable the setting mid-session
+-- 18. Re-disable the setting mid-session
 -- =============================================================================
 
 SET allow_experimental_ai_functions = 0;

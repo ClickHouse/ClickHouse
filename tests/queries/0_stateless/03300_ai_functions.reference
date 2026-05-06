@@ -101,12 +101,4 @@ result	Array(Float32)
 -- aiGenerateEmbedding: nonexistent named collection
 -- aiGenerateEmbedding: batch size setting default
 100
--- aiGenerateSQL: registered
-aiGenerateSQL
--- aiGenerateSQL: too few arguments
--- aiGenerateSQL: too many arguments
--- aiGenerateSQL: return type
-result	String
--- aiGenerateSQL: with temperature
-0
 -- Re-disabled blocks function
