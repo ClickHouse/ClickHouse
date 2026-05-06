@@ -240,4 +240,55 @@ TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointVirtualHostedD
     EXPECT_EQ(location, "https://my.dotted.bucket.s3.mycompany.com/path/to/table/");
 }
 
+/// Regression coverage for PR #104120: `constructLocation` Azure branch was changed from
+/// `location.ends_with(bucket)` to `location.find("/" + bucket) != npos`. The latter
+/// can match inside the URL host (the second '/' of `//` followed by a host component
+/// that begins with the bucket name), incorrectly concluding that the container is
+/// already present in the URL and dropping it from the constructed path.
+///
+/// The non-Azure branch on line 201 still uses the safer `ends_with`. This test pins
+/// the expected behaviour for the Azure branch: the container must always be included
+/// between host and path when it is not already there.
+TEST_F(AzureAbfssParsingTest, TableMetadataAzureBucketIsHostnamePrefixDoesNotDropContainer)
+{
+    /// Container "data" is a strict prefix of the host "datalake.dfs.core.windows.net".
+    /// `find("/data")` matches inside the host (the second '/' of '//datalake'), so
+    /// the buggy branch returns location without the container segment.
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfss://data@datalake.dfs.core.windows.net/some/path");
+    metadata.setEndpoint("https://datalake.dfs.core.windows.net");
+
+    EXPECT_EQ(
+        metadata.getLocation(),
+        "https://datalake.dfs.core.windows.net/data/some/path/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataAzureBucketIsHostnamePrefixDoesNotDropContainerVariant)
+{
+    /// Same regression with a different host/container pair where the container name
+    /// ("my") is a strict prefix of the host component ("mycompany").
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfss://my@mycompany.dfs.core.windows.net/tables/t1");
+    metadata.setEndpoint("https://mycompany.dfs.core.windows.net");
+
+    EXPECT_EQ(
+        metadata.getLocation(),
+        "https://mycompany.dfs.core.windows.net/my/tables/t1/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataAzureBucketIsHostnamePrefixGetLocationWithEndpoint)
+{
+    /// Same scenario routed through `getLocationWithEndpoint` (the explicit-endpoint
+    /// entrypoint used by callers like DatabaseDataLake::tryGetTableImpl when stripping
+    /// to an HTTPS URL). The container must still appear after the host.
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfss://acc@account.dfs.core.windows.net/p/t");
+
+    std::string url = metadata.getLocationWithEndpoint("https://account.dfs.core.windows.net");
+    EXPECT_EQ(url, "https://account.dfs.core.windows.net/acc/p/t/");
+}
+
 }
