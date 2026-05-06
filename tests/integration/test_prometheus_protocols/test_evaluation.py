@@ -590,6 +590,13 @@ def test_function_over_time():
         [["[]", "1970-01-01 00:02:30.000", 2]],
     )
 
+    do_query_test(
+        "quantile_over_time(0.5, test[45s:15s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [150, "3"]}]}',
+        [["[]", "1970-01-01 00:02:30.000", 3]],
+    )
+
     do_range_query_test(
         "quantile_over_time(0.5, test[45s])",
         120,
