@@ -136,8 +136,13 @@ const ASTSelectQuery & getSingleSelectQuery(const StorageMetadataPtr & metadata,
 }
 
 /// Validates the view's SELECT query is simple enough for INSERTs.
-void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID & view_id)
+void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID & view_id, ContextPtr context)
 {
+    if (select.prewhere())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains PREWHERE",
+            view_id.getFullTableName());
+
     if (select.distinct)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot INSERT into view {} because its query contains DISTINCT",
@@ -184,10 +189,11 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
 
         if (!has_asterisk)
         {
-            const auto idents = IdentifiersCollector::collect(select.where());
-            for (const auto * id : idents)
+            NameSet where_columns;
+            IdentifierSemantic::collectIdentifierNames(select.where(), where_columns, context);
+            for (const auto & col : where_columns)
             {
-                if (!projected_target_columns.contains(id->name()))
+                if (!projected_target_columns.contains(col))
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Cannot INSERT into view {} because its WHERE clause references "
                         "column `{}` that is not projected by the SELECT list",
@@ -536,7 +542,7 @@ SinkToStoragePtr StorageView::write(
             "Cannot INSERT into parameterized view {}", getStorageID().getFullTableName());
 
     const auto & select = getSingleSelectQuery(metadata_snapshot, getStorageID());
-    validateViewSelectForInsert(select, getStorageID());
+    validateViewSelectForInsert(select, getStorageID(), local_context);
     auto column_mapping = extractColumnMapping(select, getStorageID());
 
     /// Use the view's SQL security context for accessing the target table.

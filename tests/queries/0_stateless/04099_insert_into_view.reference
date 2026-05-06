@@ -1,0 +1,24 @@
+1	hello	0.5
+1	hello	0.5
+2	world	0.5
+1	hello	0.5
+2	world	0.5
+3	alias	0.5
+1	hello	0.5
+2	world	0.5
+3	alias	0.5
+4	ok	0.5
+Code: 473. DB::Exception: View `default.v_positive` violated constraint, because row with values (a = -1, b = 'fail') does not match the view's WHERE condition `a > 0`. (VIOLATED_CONSTRAINT)
+1	hello	0.5
+2	world	0.5
+3	alias	0.5
+4	ok	0.5
+5	fine	0.5
+Code: 48. DB::Exception: Cannot INSERT into view `default.v_prewhere` because its query contains PREWHERE. (NOT_IMPLEMENTED)
+1	hello	0.5
+2	world	0.5
+3	alias	0.5
+4	ok	0.5
+5	fine	0.5
+6	lambda	0.5
+Code: 48. DB::Exception: Cannot INSERT into view `default.v_unprojected` because its WHERE clause references column `b` that is not projected by the SELECT list. (NOT_IMPLEMENTED)
