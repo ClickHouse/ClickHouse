@@ -248,8 +248,19 @@ namespace
                  SimpleOverTimeFunction::Present,
              }},
 
+            {"changes",
+             {
+                 "timeSeriesChangesToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"resets",
+             {
+                 "timeSeriesResetsToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
-            /// resets
             /// predict_linear
             /// deriv
             /// quantile_over_time
