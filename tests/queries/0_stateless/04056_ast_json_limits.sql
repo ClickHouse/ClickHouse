@@ -37,3 +37,7 @@ SELECT formatQueryFromJSON('{"type":"ExpressionList","children":[null]}'); -- { 
 -- ASTOrderByElement: only direction values -1 and 1 are valid; reject others.
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT a FROM t ORDER BY a ASC'), '"direction":1', '"direction":0')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT a FROM t ORDER BY a ASC'), '"nulls_direction":1', '"nulls_direction":2')); -- { serverError BAD_ARGUMENTS }
+
+-- Field value must be a JSON object: malformed shape (e.g. string instead of object) must be rejected
+-- instead of silently becoming NULL.
+SELECT formatQueryFromJSON('{"type":"Literal","value":"oops"}'); -- { serverError BAD_ARGUMENTS }

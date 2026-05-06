@@ -105,13 +105,17 @@ public:
     }
 
     /// Read a Field value from a nested JSON object.
+    /// Returns a default `Field` when the key is absent.
+    /// Throws `BAD_ARGUMENTS` when the key exists but its value is not a JSON object,
+    /// to avoid silently turning malformed input (e.g. a string) into `Null`.
     Field readField(const char * key) const
     {
         if (!obj.has(key))
             return Field();
         auto field_obj = obj.getObject(key);
         if (!field_obj)
-            return Field();
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected JSON object for key '{}' (Field value) during AST JSON deserialization", key);
         return readFieldFromObject(*field_obj);
     }
 
