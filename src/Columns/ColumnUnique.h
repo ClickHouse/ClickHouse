@@ -224,7 +224,12 @@ private:
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
     size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
 
-    ColumnType * getRawColumnPtr() { return assert_cast<ColumnType *>(column_holder.get()); }
+    /// `column_holder` is intentionally shared with `nested_column_nullable` for `is_nullable`
+    /// dictionaries (see `createNullMask`), so its `use_count` is normally `>= 2`. The
+    /// non-const overload of `chameleon_ptr::get` would route through `assumeMutableRef`
+    /// and trip `chassert(use_count() == 1)`. Bypass via the const overload + `const_cast`
+    /// — `ColumnUnique` keeps strong ownership of `column_holder` and is the sole writer.
+    ColumnType * getRawColumnPtr() { return const_cast<ColumnType *>(std::as_const(*this).getRawColumnPtr()); }
     const ColumnType * getRawColumnPtr() const { return assert_cast<const ColumnType *>(column_holder.get()); }
 
     template <typename IndexType>
@@ -260,11 +265,7 @@ ColumnUnique<ColumnType>::ColumnUnique(const ColumnUnique & other)
     , size_of_value_if_fixed(other.size_of_value_if_fixed)
     , reverse_index(numSpecialValues(is_nullable), 0)
 {
-    /// `column_holder` is shared with `other`, so the non-const `getRawColumnPtr`
-    /// would go through `assumeMutableRef` and trip `chassert(use_count() == 1)`.
-    /// Use the const overload and `const_cast` — `ReverseIndex::setColumn` needs
-    /// a non-const pointer to update the dictionary later via the COW protocol.
-    reverse_index.setColumn(const_cast<ColumnType *>(std::as_const(*this).getRawColumnPtr()));
+    reverse_index.setColumn(getRawColumnPtr());
     createNullMask();
 }
 
