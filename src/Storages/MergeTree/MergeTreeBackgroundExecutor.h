@@ -331,6 +331,8 @@ public:
     /// can lead only to some postponing, not logical error.
     size_t getMaxTasksCount() const;
 
+    size_t getAvailableSlots() const;
+
     bool trySchedule(ExecutableTaskPtr task);
     void removeTasksCorrespondingToStorage(StorageID id);
     void wait();

@@ -150,6 +150,12 @@ size_t MergeTreeBackgroundExecutor<Queue>::getMaxTasksCount() const
 }
 
 template <class Queue>
+size_t MergeTreeBackgroundExecutor<Queue>::getAvailableSlots() const
+{
+    return getMaxTasksCount() - CurrentMetrics::values[metric].load(std::memory_order_relaxed);
+}
+
+template <class Queue>
 bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
 {
     LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);

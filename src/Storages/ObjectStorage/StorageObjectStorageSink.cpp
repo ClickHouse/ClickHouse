@@ -136,14 +136,20 @@ size_t StorageObjectStorageSink::getFileSize() const
     return *result_file_size;
 }
 
+size_t StorageObjectStorageSink::getWrittenBytes() const
+{
+    if (!write_buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer must be initialized before requesting written bytes");
+    return write_buf->count();
+}
+
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_)
-    : PartitionedSink(configuration_->getPartitionStrategy(), context_, sample_block_)
-    , object_storage(object_storage_)
+    : object_storage(object_storage_)
     , configuration(configuration_)
     , query_settings(configuration_->getQuerySettings(context_))
     , format_settings(format_settings_)
@@ -175,10 +181,11 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         file_path,
         object_storage,
         format_settings,
-        std::make_shared<Block>(partition_strategy->getFormatHeader()),
+        std::make_shared<Block>(configuration->partition_strategy->getFormatHeader()),
         context,
         configuration->getFormat(),
-        configuration->getCompressionMethod());
+        configuration->getCompressionMethod()
+    );
 }
 
 }

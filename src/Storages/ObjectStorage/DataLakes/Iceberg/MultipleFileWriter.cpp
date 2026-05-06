@@ -19,29 +19,39 @@ MultipleFileWriter::MultipleFileWriter(
     ContextPtr context_,
     const std::optional<FormatSettings> & format_settings_,
     const String & write_format_,
-    SharedHeader sample_block_)
+    SharedHeader sample_block_,
+    std::function<void(const std::string &)> new_file_path_callback_)
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
-    , stats(schema)
+    , aggregate_stats(schema)
+    , current_file_stats(schema)
     , filename_generator(filename_generator_)
     , object_storage(object_storage_)
     , context(context_)
     , format_settings(format_settings_)
     , write_format(std::move(write_format_))
     , sample_block(sample_block_)
+    , schema_fields_json(schema)
+    , new_file_path_callback(std::move(new_file_path_callback_))
 {
 }
 
 void MultipleFileWriter::startNewFile()
 {
     if (buffer)
+    {
         finalize();
+        current_file_stats = DataFileStatistics(schema_fields_json);
+    }
 
     current_file_num_rows = 0;
     current_file_num_bytes = 0;
     auto filename = filename_generator.generateDataFileName();
 
     data_file_names.push_back(filename.path_in_storage);
+    if (new_file_path_callback)
+        new_file_path_callback(filename.path_in_storage);
+
     buffer = object_storage->writeObject(
         StoredObject(filename.path_in_storage), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
@@ -65,7 +75,8 @@ void MultipleFileWriter::consume(const Chunk & chunk)
     output_format->flush();
     *current_file_num_rows += chunk.getNumRows();
     *current_file_num_bytes += chunk.bytes();
-    stats.update(chunk);
+    aggregate_stats.update(chunk);
+    current_file_stats.update(chunk);
 }
 
 void MultipleFileWriter::finalize()
@@ -73,7 +84,29 @@ void MultipleFileWriter::finalize()
     output_format->flush();
     output_format->finalize();
     buffer->finalize();
-    total_bytes += buffer->count();
+    const UInt64 file_bytes = buffer->count();
+    total_bytes += file_bytes;
+    per_file_record_counts.push_back(static_cast<Int64>(*current_file_num_rows));
+    per_file_byte_sizes.push_back(static_cast<Int64>(file_bytes));
+    per_file_stats_list.push_back(current_file_stats);
+}
+
+std::vector<IcebergDataFileEntry> MultipleFileWriter::getDataFileEntries() const
+{
+    chassert(data_file_names.size() == per_file_record_counts.size());
+    chassert(data_file_names.size() == per_file_stats_list.size());
+
+    std::vector<IcebergDataFileEntry> entries;
+    entries.reserve(data_file_names.size());
+
+    for (size_t i = 0; i < data_file_names.size(); ++i)
+        entries.emplace_back(
+            data_file_names[i],
+            per_file_record_counts[i],
+            per_file_byte_sizes[i],
+            per_file_stats_list[i]);
+
+    return entries;
 }
 
 void MultipleFileWriter::release()

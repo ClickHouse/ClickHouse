@@ -84,6 +84,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_forget_partition(Keyword::FORGET_PARTITION);
     ParserKeyword s_move_partition(Keyword::MOVE_PARTITION);
     ParserKeyword s_move_part(Keyword::MOVE_PART);
+    ParserKeyword s_export_part(Keyword::EXPORT_PART);
+    ParserKeyword s_export_partition(Keyword::EXPORT_PARTITION);
     ParserKeyword s_drop_detached_partition(Keyword::DROP_DETACHED_PARTITION);
     ParserKeyword s_drop_detached_part(Keyword::DROP_DETACHED_PART);
     ParserKeyword s_fetch_partition(Keyword::FETCH_PARTITION);
@@ -93,6 +95,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_unfreeze(Keyword::UNFREEZE);
     ParserKeyword s_unlock_snapshot(Keyword::UNLOCK_SNAPSHOT);
     ParserKeyword s_partition(Keyword::PARTITION);
+    ParserKeyword s_partition_by(Keyword::PARTITION_BY);
 
     ParserKeyword s_first(Keyword::FIRST);
     ParserKeyword s_after(Keyword::AFTER);
@@ -107,6 +110,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_to_volume(Keyword::TO_VOLUME);
     ParserKeyword s_to_table(Keyword::TO_TABLE);
     ParserKeyword s_to_shard(Keyword::TO_SHARD);
+    ParserKeyword s_function(Keyword::FUNCTION);
 
     ParserKeyword s_delete(Keyword::DELETE);
     ParserKeyword s_update(Keyword::UPDATE);
@@ -178,6 +182,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_rename_to;
     ASTPtr command_sql_security;
     ASTPtr command_snapshot_desc;
+    ASTPtr export_table_function;
+    ASTPtr export_table_function_partition_by_expr;
 
     if (with_round_bracket)
     {
@@ -541,6 +547,57 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->move_destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<String>();
+            }
+            else if (s_export_part.ignore(pos, expected))
+            {
+                if (!parser_string_and_substituion.parse(pos, command_partition, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::EXPORT_PART;
+                command->part = true;
+
+                if (!s_to_table.ignore(pos, expected))
+                {
+                    return false;
+                }
+
+                if (s_function.ignore(pos, expected))
+                {
+                    ParserFunction table_function_parser(/*allow_function_parameters=*/true, /*is_table_function=*/true);
+
+                    if (!table_function_parser.parse(pos, export_table_function, expected))
+                        return false;
+
+                    if (s_partition_by.ignore(pos, expected))
+                        if (!parser_exp_elem.parse(pos, export_table_function_partition_by_expr, expected))
+                            return false;
+
+                    command->to_table_function = export_table_function.get();
+                    command->partition_by_expr = export_table_function_partition_by_expr.get();
+                    command->move_destination_type = DataDestinationType::TABLE;
+                }
+                else
+                {
+                    if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
+                        return false;
+                    command->move_destination_type = DataDestinationType::TABLE;
+                }
+            }
+            else if (s_export_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command_partition, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::EXPORT_PARTITION;
+
+                if (!s_to_table.ignore(pos, expected))
+                {
+                    return false;
+                }
+
+                if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
+                    return false;
+                command->move_destination_type = DataDestinationType::TABLE;
             }
             else if (s_move_partition.ignore(pos, expected))
             {
@@ -1114,6 +1171,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->rename_to = command->children.emplace_back(std::move(command_rename_to)).get();
     if (command_snapshot_desc)
         command->snapshot_desc = command->children.emplace_back(std::move(command_snapshot_desc)).get();
+    if (export_table_function)
+        command->to_table_function = command->children.emplace_back(std::move(export_table_function)).get();
+    if (export_table_function_partition_by_expr)
+        command->partition_by_expr = command->children.emplace_back(std::move(export_table_function_partition_by_expr)).get();
 
     return true;
 }

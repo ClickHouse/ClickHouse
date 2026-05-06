@@ -7504,6 +7504,59 @@ Possible values:
 
 Default value is empty.
 )", 0) \
+    DECLARE(Bool, export_merge_tree_part_overwrite_file_if_exists, false, R"(
+Overwrite file if it already exists when exporting a merge tree part
+)", 0) \
+    DECLARE(Bool, export_merge_tree_partition_force_export, false, R"(
+Ignore existing partition export and overwrite the zookeeper entry
+)", 0) \
+    DECLARE(UInt64, export_merge_tree_partition_max_retries, 3, R"(
+Maximum number of retries for exporting a merge tree part in an export partition task
+)", 0) \
+    DECLARE(UInt64, export_merge_tree_partition_manifest_ttl, 86400, R"(
+Determines how long the manifest will live in ZooKeeper. It prevents the same partition from being exported twice to the same destination.
+This setting does not affect / delete in progress tasks. It'll only cleanup the completed ones.
+)", 0) \
+    DECLARE(UInt64, export_merge_tree_partition_task_timeout_seconds, 3600, R"(
+Maximum wall-clock duration (in seconds) an export partition task is allowed to remain in the PENDING state before it is auto-killed by the background cleanup loop.
+The timeout is measured from the manifest's create_time. Set to 0 to disable the timeout.
+When the timeout is exceeded the task transitions to KILLED (same terminal state as `KILL QUERY ... EXPORT PARTITION`), and `last_exception` is populated with a timeout reason.
+
+Notes:
+- Enforcement is best-effort: actual kill latency is bounded by one manifest-updater poll cycle (~30s) plus ZooKeeper watch propagation.
+- Since both this timeout and `export_merge_tree_partition_manifest_ttl` are measured from `create_time`, keep `export_merge_tree_partition_manifest_ttl` greater than `export_merge_tree_partition_task_timeout_seconds` if you want the KILLED entry to remain visible in `system.replicated_partition_exports` after the timeout fires.
+)", 0) \
+    DECLARE(MergeTreePartExportFileAlreadyExistsPolicy, export_merge_tree_part_file_already_exists_policy, MergeTreePartExportFileAlreadyExistsPolicy::skip, R"(
+Possible values:
+- skip - Skip the file if it already exists.
+- error - Throw an error if the file already exists.
+- overwrite - Overwrite the file.
+)", 0) \
+    DECLARE(UInt64, export_merge_tree_part_max_bytes_per_file, 0, R"(
+Maximum number of bytes to write to a single file when exporting a merge tree part. 0 means no limit.
+This is not a hard limit, and it highly depends on the output format granularity and input source chunk size.
+)", 0) \
+    DECLARE(UInt64, export_merge_tree_part_max_rows_per_file, 0, R"(
+Maximum number of rows to write to a single file when exporting a merge tree part. 0 means no limit.
+This is not a hard limit, and it highly depends on the output format granularity and input source chunk size.
+)", 0) \
+    DECLARE(Bool, export_merge_tree_part_throw_on_pending_mutations, true, R"(
+Throw an error if there are pending mutations when exporting a merge tree part.
+)", 0) \
+    DECLARE(Bool, export_merge_tree_part_throw_on_pending_patch_parts, true, R"(
+Throw an error if there are pending patch parts when exporting a merge tree part.
+)", 0) \
+    DECLARE(Bool, export_merge_tree_partition_lock_inside_the_task, false, R"(
+Only lock a part when the task is already running. This might help with busy waiting where the scheduler locks a part, but the task ends in the pending list.
+On the other hand, there is a chance once the task executes that part has already been locked by another replica and the task will simply early exit.
+)", 0) \
+    DECLARE(Bool, export_merge_tree_partition_system_table_prefer_remote_information, false, R"(
+Controls whether the system.replicated_partition_exports will prefer to query ZooKeeper to get the most up to date information or use the local information.
+Querying ZooKeeper is expensive, and only available if the ZooKeeper feature flag MULTI_READ is enabled.
+)", 0) \
+    DECLARE(String, export_merge_tree_part_filename_pattern, "{part_name}_{checksum}", R"(
+Pattern for the filename of the exported merge tree part. The `part_name` and `checksum` are calculated and replaced on the fly. Additional macros are supported.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -7689,6 +7742,9 @@ Write full paths (including s3://) into iceberg metadata files.
     DECLARE(String, iceberg_metadata_compression_method, "", R"(
 Method to compress `.metadata.json` file.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, use_object_storage_list_objects_cache, false, R"(
+Cache the list of objects returned by list objects calls in object storage
+)", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 )", EXPERIMENTAL) \
@@ -7779,6 +7835,9 @@ Allow Iceberg read optimization based on Iceberg metadata.
     DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
 Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
 )", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
+    DECLARE(Bool, allow_experimental_export_merge_tree_part, true, R"(
+Experimental export merge tree part.
+)", EXPERIMENTAL) \
     \
     DECLARE(String, promql_database, "", R"(
 Specifies the database name used by the 'promql' dialect. Empty string means the current database.

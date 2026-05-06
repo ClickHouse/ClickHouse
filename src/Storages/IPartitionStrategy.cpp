@@ -22,6 +22,8 @@ extern const int BAD_ARGUMENTS;
 
 namespace
 {
+    using PartitionExpressionActionsAndColumnName = IPartitionStrategy::PartitionExpressionActionsAndColumnName;
+
     /// Builds AST for hive partition path format
     ///  `partition_column_1=toString(partition_value_expr_1)/ ... /partition_column_N=toString(partition_value_expr_N)/`
     /// for given partition columns list and a partition by AST.
@@ -87,6 +89,33 @@ namespace
         }
 
         return result;
+    }
+
+    ASTPtr buildToStringPartitionAST(ASTPtr partition_by)
+    {
+        ASTs arguments(1, partition_by);
+        return makeASTFunction("toString", std::move(arguments));
+    }
+
+    template <typename BuildAST>
+    PartitionExpressionActionsAndColumnName getCachedOrBuildActions(
+        const std::optional<PartitionExpressionActionsAndColumnName> & cached_result,
+        const IPartitionStrategy & partition_strategy,
+        BuildAST && build_ast)
+    {
+        if (cached_result)
+            return *cached_result;
+
+        auto expression_ast = build_ast();
+        return partition_strategy.getPartitionExpressionActions(expression_ast);
+    }
+
+    void cacheDeterministicActions(
+        std::optional<PartitionExpressionActionsAndColumnName> & cached_result,
+        const PartitionExpressionActionsAndColumnName & actions_with_column)
+    {
+        if (!actions_with_column.actions->getActionsDAG().hasNonDeterministic())
+            cached_result = actions_with_column;
     }
 
     std::shared_ptr<IPartitionStrategy> createHivePartitionStrategy(
@@ -197,11 +226,8 @@ const KeyDescription & IPartitionStrategy::getPartitionKeyDescription() const
 }
 
 IPartitionStrategy::PartitionExpressionActionsAndColumnName
-IPartitionStrategy::getPartitionExpressionActions(ASTPtr & expression_ast)
+IPartitionStrategy::getPartitionExpressionActions(ASTPtr & expression_ast) const
 {
-    if (cached_result)
-        return *cached_result;
-
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, sample_block.getNamesAndTypesList());
     auto actions_dag = ExpressionAnalyzer(expression_ast, syntax_result, context).getActionsDAG(false);
 
@@ -209,9 +235,6 @@ IPartitionStrategy::getPartitionExpressionActions(ASTPtr & expression_ast)
     result.actions = std::make_shared<ExpressionActions>(
         std::move(actions_dag), ExpressionActionsSettings(context), false);
     result.column_name = expression_ast->getColumnName();
-
-    if (!result.actions->getActionsDAG().hasNonDeterministic())
-        cached_result = result;
 
     return result;
 }
@@ -266,13 +289,19 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
 WildcardPartitionStrategy::WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_)
     : IPartitionStrategy(partition_key_description_, sample_block_, context_)
 {
+    auto actions_with_column = getCachedOrBuildActions(
+        cached_result,
+        *this,
+        [&] { return buildToStringPartitionAST(partition_key_description.definition_ast); });
+    cacheDeterministicActions(cached_result, actions_with_column);
 }
 
-ColumnPtr WildcardPartitionStrategy::computePartitionKey(const Chunk & chunk)
+ColumnPtr WildcardPartitionStrategy::computePartitionKey(const Chunk & chunk) const
 {
-    ASTs arguments(1, partition_key_description.definition_ast);
-    ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
-    auto actions_with_column = getPartitionExpressionActions(partition_by_string);
+    auto actions_with_column = getCachedOrBuildActions(
+        cached_result,
+        *this,
+        [&] { return buildToStringPartitionAST(partition_key_description.definition_ast); });
 
     Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
     block_with_partition_by_expr.setColumns(chunk.getColumns());
@@ -281,17 +310,15 @@ ColumnPtr WildcardPartitionStrategy::computePartitionKey(const Chunk & chunk)
     return block_with_partition_by_expr.getByName(actions_with_column.column_name).column;
 }
 
-std::string WildcardPartitionStrategy::getPathForRead(
-    const std::string & prefix)
+ColumnPtr WildcardPartitionStrategy::computePartitionKey(Block & block) const
 {
-    return prefix;
-}
+    auto actions_with_column = getCachedOrBuildActions(
+        cached_result,
+        *this,
+        [&] { return buildToStringPartitionAST(partition_key_description.definition_ast); });
 
-std::string WildcardPartitionStrategy::getPathForWrite(
-    const std::string & prefix,
-    const std::string & partition_key)
-{
-    return PartitionedSink::replaceWildcards(prefix, partition_key);
+    actions_with_column.actions->execute(block);
+    return block.getByName(actions_with_column.column_name).column;
 }
 
 HiveStylePartitionStrategy::HiveStylePartitionStrategy(
@@ -311,53 +338,37 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     }
 
     block_without_partition_columns = buildBlockWithoutPartitionColumns(sample_block, partition_columns_name_set);
+
+    auto actions_with_column = getCachedOrBuildActions(
+        cached_result,
+        *this,
+        [&] { return buildHivePartitionAST(partition_key_description.definition_ast, getPartitionColumns()); });
+    cacheDeterministicActions(cached_result, actions_with_column);
 }
 
-std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefix)
+ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk) const
 {
-    return prefix + "**." + Poco::toLower(file_format);
-}
-
-std::string HiveStylePartitionStrategy::getPathForWrite(
-    const std::string & prefix,
-    const std::string & partition_key)
-{
-    std::string path;
-
-    if (!prefix.empty())
-    {
-        path += prefix;
-        if (path.back() != '/')
-        {
-            path += '/';
-        }
-    }
-
-    /// Not adding '/' because buildExpressionHive() always adds a trailing '/'
-    path += partition_key;
-
-    /*
-     * File extension is toLower(format)
-     * This isn't ideal, but I guess multiple formats can be specified and introduced.
-     * So I think it is simpler to keep it this way.
-     *
-     * Or perhaps implement something like `IInputFormat::getFileExtension()`
-     */
-    path += std::to_string(generateSnowflakeID()) + "." + Poco::toLower(file_format);
-
-    return path;
-}
-
-ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk)
-{
-    auto hive_ast = buildHivePartitionAST(partition_key_description.definition_ast, getPartitionColumns());
-    auto actions_with_column = getPartitionExpressionActions(hive_ast);
+    auto actions_with_column = getCachedOrBuildActions(
+        cached_result,
+        *this,
+        [&] { return buildHivePartitionAST(partition_key_description.definition_ast, getPartitionColumns()); });
 
     Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
     block_with_partition_by_expr.setColumns(chunk.getColumns());
     actions_with_column.actions->execute(block_with_partition_by_expr);
 
     return block_with_partition_by_expr.getByName(actions_with_column.column_name).column;
+}
+
+ColumnPtr HiveStylePartitionStrategy::computePartitionKey(Block & block) const
+{
+    auto actions_with_column = getCachedOrBuildActions(
+        cached_result,
+        *this,
+        [&] { return buildHivePartitionAST(partition_key_description.definition_ast, getPartitionColumns()); });
+
+    actions_with_column.actions->execute(block);
+    return block.getByName(actions_with_column.column_name).column;
 }
 
 ColumnRawPtrs HiveStylePartitionStrategy::getFormatChunkColumns(const Chunk & chunk)
