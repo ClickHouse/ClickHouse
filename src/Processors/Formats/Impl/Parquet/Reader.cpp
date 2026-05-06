@@ -33,7 +33,6 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int CHECKSUM_DOESNT_MATCH;
 }
 
 namespace ProfileEvents
@@ -1543,7 +1542,7 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
     {
         uint32_t crc = arrow::internal::crc32(0, page_data.data(), page_data.size());
         if (crc != uint32_t(header.crc))
-            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Page CRC checksum verification failed");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Page CRC checksum verification failed");
     }
 
     return {header, page_data};

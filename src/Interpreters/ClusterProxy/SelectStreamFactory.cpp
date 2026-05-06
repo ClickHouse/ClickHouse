@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool serialize_query_plan;
+    extern const SettingsBool skip_unavailable_shards;
     extern const SettingsUInt64 distributed_group_by_no_merge;
 }
 
@@ -123,7 +124,8 @@ void SelectStreamFactory::createForShard(
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator)
+    AdditionalShardFilterGenerator shard_filter_generator,
+    const UnavailableShardTrackerPtr & unavailable_shard_tracker)
 {
     createForShardImpl(
         shard_info,
@@ -136,7 +138,8 @@ void SelectStreamFactory::createForShard(
         remote_shards,
         shard_count,
         parallel_replicas_enabled,
-        std::move(shard_filter_generator));
+        std::move(shard_filter_generator),
+        unavailable_shard_tracker);
 }
 
 void SelectStreamFactory::createForShardImpl(
@@ -150,7 +153,8 @@ void SelectStreamFactory::createForShardImpl(
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator) const
+    AdditionalShardFilterGenerator shard_filter_generator,
+    const UnavailableShardTrackerPtr & unavailable_shard_tracker) const
 {
     auto emplace_local_stream = [&]()
     {
@@ -234,6 +238,14 @@ void SelectStreamFactory::createForShardImpl(
                     main_table.getNameForLogs(), shard_info.shard_num);
                 emplace_remote_stream();
             }
+            else if (settings[Setting::skip_unavailable_shards])
+            {
+                LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
+                    "There is no table {} on local replica of shard {}, and no remote replicas configured. Skipping.",
+                    main_table.getNameForLogs(), shard_info.shard_num);
+                if (unavailable_shard_tracker)
+                    unavailable_shard_tracker->onShardSkipped();
+            }
             else
                 emplace_local_stream();  /// Let it fail the usual way.
 
@@ -310,7 +322,8 @@ void SelectStreamFactory::createForShard(
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator)
+    AdditionalShardFilterGenerator shard_filter_generator,
+    const UnavailableShardTrackerPtr & unavailable_shard_tracker)
 {
     /// Convert grouping function specializations (e.g. groupingForGroupingSets -> grouping)
     /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
@@ -330,7 +343,8 @@ void SelectStreamFactory::createForShard(
         remote_shards,
         shard_count,
         parallel_replicas_enabled,
-        std::move(shard_filter_generator));
+        std::move(shard_filter_generator),
+        unavailable_shard_tracker);
 }
 
 

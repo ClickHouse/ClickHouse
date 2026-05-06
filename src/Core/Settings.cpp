@@ -6382,6 +6382,11 @@ On userspace page cache miss, read up to this many consecutive blocks at once fr
 
 A higher value is good for high-throughput queries, while low-latency point queries will work better without readahead.
 )", 0) \
+    DECLARE(UInt64, page_cache_max_coalesced_bytes, 16777216, R"(
+When `readBigAt` populates the userspace page cache, consecutive cache misses are coalesced into a single read from the underlying storage. This setting bounds the size of one coalesced read in bytes; longer miss runs are split into multiple reads. It limits transient memory usage of the temporary buffer under parallel cold reads.
+
+A higher value reduces the number of HTTP requests for cold scans on object storage; a lower value reduces peak transient memory.
+)", 0) \
     \
     DECLARE(Bool, load_marks_asynchronously, false, R"(
 Load MergeTree marks asynchronously

@@ -1567,6 +1567,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "min_joined_block_size_bytes",
            "output_format_parquet_row_group_size_bytes",
            "page_cache_block_size",
+           "page_cache_max_coalesced_bytes",
            "partial_merge_join_left_table_buffer_bytes",
            "prefer_external_sort_block_bytes",
            "preferred_block_size_bytes",

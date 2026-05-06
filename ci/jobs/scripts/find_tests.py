@@ -62,6 +62,39 @@ class Targeting:
         else:
             self.job_type = None
 
+    # Keep in sync with TEST_FILE_EXTENSIONS in tests/clickhouse-test.
+    _TEST_FILE_EXTENSIONS = (".sql.j2", ".sql", ".sh", ".py", ".expect")
+
+    @classmethod
+    def _derive_test_name(cls, fpath: str):
+        """Map a changed file under `tests/queries/0_stateless/` to a test name.
+
+        Returns the test base name (without extension) suitable for `clickhouse-test --test`,
+        or `None` if the file does not correspond to a real test (e.g. a data file like
+        `02995_settings_26_4_1.tsv`, which is consumed by `02995_new_settings_history.sh`
+        but has no test of its own).
+        """
+        fname = os.path.basename(fpath)
+
+        # Direct hit: the changed file is itself a test source file.
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            if fname.endswith(ext):
+                return fname[: -len(ext)]
+
+        # Supporting file (`.reference`, `.reference.j2`, `.tsv`, ...). Walk the
+        # extensions one at a time looking for a sibling test source file with
+        # the same base name. This catches reference updates like
+        # `00172_hits_joins.reference.j2` → `00172_hits_joins.sql.j2` while
+        # rejecting orphan data files like `02995_settings_26_4_1.tsv`.
+        test_dir = Path("tests/queries/0_stateless")
+        candidate = fname
+        while "." in candidate:
+            candidate = candidate.rsplit(".", 1)[0]
+            for ext in cls._TEST_FILE_EXTENSIONS:
+                if (test_dir / f"{candidate}{ext}").is_file():
+                    return candidate
+        return None
+
     def get_changed_tests(self):
         # TODO: add support for integration tests
         result = set()
@@ -87,13 +120,19 @@ class Targeting:
                     print(f"File '{fpath}' was removed — skipping")
                     continue
 
-                print(f"Detected changed test file: '{fpath}'")
+                test_base_name = self._derive_test_name(fpath)
+                if test_base_name is None:
+                    # Avoid emitting a regex like `02995_settings_26_4_1.` that
+                    # matches no test — clickhouse-test exits with code 1 when
+                    # "no tests were run", failing the flaky check.
+                    print(
+                        f"File '{fpath}' is not a test source and has no sibling test — skipping"
+                    )
+                    continue
 
-                fname = os.path.basename(fpath)
-                fname_without_ext = os.path.splitext(fname)[0]
-
+                print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
                 # Add '.' suffix to precisely match this test only
-                result.add(f"{fname_without_ext}.")
+                result.add(f"{test_base_name}.")
 
             elif fpath.startswith("tests/queries/"):
                 # Log any other changed file under tests/queries for future debugging
