@@ -347,15 +347,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
         }
 
-        if ((which_type.isDate() || which_type.isDateTime()) && src.getType() == Field::Types::UInt64)
+        if (which_type.isDate() && src.getType() == Field::Types::UInt64)
         {
-            /// We don't need any conversion UInt64 is under type of Date and DateTime
-            return src;
+            /// Date is UInt16 under the hood; range-check so out-of-range integers
+            /// don't get silently truncated by the Date serializer downstream.
+            return convertNumericType<UInt16>(src, type);
         }
 
-        if ((which_type.isDate() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
+        if ((which_type.isDateTime() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
         {
-            /// We don't need any conversion UInt64 is under type of Date and Time
+            /// We don't need any conversion UInt64 is under type of DateTime and Time
             return src;
         }
 
