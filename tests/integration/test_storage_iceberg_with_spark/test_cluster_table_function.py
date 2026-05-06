@@ -132,6 +132,24 @@ def test_cluster_table_function(started_cluster_iceberg_with_spark, format_versi
     # write 3 times
     assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster}")) == 100 * 3
 
+
+    # Cluster Query with node1 as coordinator
+    table_function_expr_cluster = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        table_function=True,
+        run_on_cluster=True,
+    )
+    select_remote_cluster = (
+        instance.query(f"SELECT * FROM remote('node2',{table_function_expr_cluster})")
+        .strip()
+        .split()
+    )
+    assert len(select_remote_cluster) == 600
+    assert select_remote_cluster == select_regular
+
+
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
 def test_writes_cluster_table_function(started_cluster_iceberg_with_spark, format_version, storage_type):

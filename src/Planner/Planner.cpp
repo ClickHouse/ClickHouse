@@ -37,6 +37,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
+#include <Processors/QueryPlan/ObjectFilterStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -52,6 +53,7 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageView.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/IStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -144,6 +146,7 @@ namespace Setting
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 namespace ServerSetting
@@ -580,6 +583,21 @@ ALWAYS_INLINE void addFilterStep(
         filter_analysis_result.filter_column_name,
         filter_analysis_result.remove_filter_column);
     appendSetsFromActionsDAG(where_step->getExpression(), useful_sets);
+    where_step->setStepDescription(step_description);
+    query_plan.addStep(std::move(where_step));
+}
+
+template <size_t size>
+ALWAYS_INLINE void addObjectFilterStep(
+    QueryPlan & query_plan,
+    FilterAnalysisResult & filter_analysis_result,
+    const char (&step_description)[size])
+{
+    auto actions = std::move(filter_analysis_result.filter_actions->dag);
+
+    auto where_step = std::make_unique<ObjectFilterStep>(query_plan.getCurrentHeader(),
+        std::move(actions),
+        filter_analysis_result.filter_column_name);
     where_step->setStepDescription(step_description);
     query_plan.addStep(std::move(where_step));
 }
@@ -2183,6 +2201,16 @@ void Planner::buildPlanForQueryNode()
 
     if (query_processing_info.isSecondStage() || query_processing_info.isFromAggregationState())
     {
+        if (settings[Setting::use_hive_partitioning]
+            && !query_processing_info.isFirstStage()
+            && expression_analysis_result.hasWhere())
+        {
+            if (typeid_cast<ReadFromCluster *>(query_plan.getRootNode()->step.get()))
+            {
+                addObjectFilterStep(query_plan, expression_analysis_result.getWhere(), "WHERE");
+            }
+        }
+
         if (query_processing_info.isFromAggregationState())
         {
             /// Aggregation was performed on remote shards

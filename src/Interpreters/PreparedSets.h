@@ -176,6 +176,11 @@ public:
     QueryPlan * getQueryPlan() { return source.get(); }
 
 private:
+    SetPtr get_unsafe() const;
+    std::unique_ptr<QueryPlan> build_unsafe(
+        const SizeLimits & network_transfer_limits,
+        const PreparedSetsCachePtr & prepared_sets_cache);
+
     Hash hash;
     ASTPtr ast;
     SetAndKeyPtr set_and_key;
@@ -183,6 +188,8 @@ private:
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
+
+    mutable std::mutex mutex;
 };
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
