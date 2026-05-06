@@ -520,7 +520,9 @@ pub unsafe extern "C" fn stringToH3(str_ptr: *const c_char, out: *mut H3Index) -
     if count == 0 && !had_prefix {
         return E_FAILED;
     }
-    if negate {
+    // After ERANGE saturation glibc `sscanf` returns `UINT64_MAX` regardless of
+    // sign, so do not apply unsigned negation to an already-saturated value.
+    if negate && !overflow {
         result = result.wrapping_neg();
     }
     *out = result;
