@@ -19,10 +19,6 @@ namespace
 
 FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const ActionsDAG & filter_dag, const String & filter_column_name)
 {
-    /// If either DAG contains IN subquery sets that are not yet built we cannot evaluate the filter result
-    if (dagContainsNonReadySet(filter_dag) || dagContainsNonReadySet(pre_actions_dag))
-        return FilterResult::UNKNOWN;
-
     auto combined_dag = ActionsDAG::merge(std::move(pre_actions_dag), filter_dag.clone());
     ActionsDAG::IntermediateExecutionResult combined_dag_input;
 
