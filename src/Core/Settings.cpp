@@ -7337,6 +7337,9 @@ Force to resolve identifier in JOIN USING from projection (for example, in `SELE
     DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
 Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
     )", 0) \
+    DECLARE(Bool, analyzer_compatibility_allow_non_aggregate_in_having, false, R"(
+When enabled, the new analyzer mimics the legacy behavior of moving non-aggregate AND-conjuncts from `HAVING` to `WHERE` instead of raising `NOT_AN_AGGREGATE`. The standard-compliant rejection is the default; this is a migration aid for queries that were silently accepted by the old analyzer (`enable_analyzer = 0`). Conjuncts containing aggregate, window, `grouping`, stateful, or non-deterministic functions are not moved. The setting is also ignored when `GROUP BY` uses `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, or `GROUPING SETS`.
+)", 0) \
     \
     DECLARE(Timezone, session_timezone, "", R"(
 Sets the implicit time zone of the current session or query.
