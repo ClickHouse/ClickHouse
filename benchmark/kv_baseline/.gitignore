@@ -7,9 +7,11 @@ data_*
 keys_*
 *_keys.txt
 *.keys
+*.txt
 
 # Generated benchmark results.
 *.csv
+results/*.csv
 results/*
 !results/.gitkeep
 
