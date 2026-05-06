@@ -522,7 +522,9 @@ SQLQueryPiece applyFunctionOverRange(
             /// FROM <vector_grid>
             /// GROUP BY group
             has_group = true;
-            group_by_group = (impl_info->simple_over_time_function == SimpleOverTimeFunction::None);
+            /// Quantile, regression, and aggregate-state range functions still aggregate after unpacking the grid.
+            /// Inline simple reducers map each row's packed grid in place and must not add GROUP BY.
+            group_by_group = !impl_info || (impl_info->simple_over_time_function == SimpleOverTimeFunction::None);
 
             /// (timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS time_series).1
             ASTPtr ts = makeASTFunction(
