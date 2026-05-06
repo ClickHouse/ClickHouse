@@ -15,9 +15,9 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include "Core/Defines.h"
-#include "IO/ReadBuffer.h"
-#include "base/types.h"
+#include <Core/Defines.h>
+#include <IO/ReadBuffer.h>
+#include <base/types.h>
 #include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -58,11 +58,11 @@ void checkMagic(const UInt8 * p, const char * context)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin magic ({})", context);
 }
 
-std::vector<PuffinBlob> parseFooterJson(const String & footer_json, size_t data_size)
+std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_size)
 {
     Poco::JSON::Parser parser;
     auto root = parser.parse(footer_json);
-    auto obj = root.extract<Poco::JSON::Object::Ptr>();
+    const auto & obj = root.extract<Poco::JSON::Object::Ptr>();
     auto blobs_arr = obj->getArray("blobs");
 
     std::vector<PuffinBlob> blobs;
@@ -126,7 +126,7 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf)
         seekable->seek(static_cast<off_t>(file_size - 8 - footer_length), SEEK_SET);
         seekable->readStrict(footer_json.data(), footer_length);
 
-        result.blobs = parseFooterJson(footer_json, file_size);
+        result.blobs = parseFooterJSON(footer_json, file_size);
     }
     else
     {
@@ -157,7 +157,7 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf)
         const size_t footer_start = data.size() - 8 - footer_length;
         String footer_json(reinterpret_cast<const char *>(data.data() + footer_start), footer_length);
 
-        result.blobs = parseFooterJson(footer_json, data.size());
+        result.blobs = parseFooterJSON(footer_json, data.size());
     }
 
     return result;
