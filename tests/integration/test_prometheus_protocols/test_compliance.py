@@ -321,6 +321,11 @@ COMPLIANCE_TEST_CASES = [
     # absent
     ("absent(demo_memory_usage_bytes)", [], False),
     ("absent(nonexistent_metric_name)", [], False),
+    ('absent(demo_memory_usage_bytes{type="missing"})', [], False),
+    ('absent(demo_memory_usage_bytes{type=~"missing"})', [], False),
+    ('absent(nonexistent_metric_name{type!="free"})', [], False),
+    ('absent_over_time(demo_memory_usage_bytes{type="missing"}[5m])', [], False),
+    ('absent_over_time(demo_memory_usage_bytes{type=~"missing"}[5m])', [], False),
 
     # Subqueries
     ("max_over_time((time() - max(demo_batch_last_success_timestamp_seconds) < 1000)[5m:10s] offset 5m)", [], False),

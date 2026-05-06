@@ -1159,6 +1159,106 @@ def test_function_over_time():
     )
 
 
+def test_absent_functions():
+    do_query_test(
+        "absent(test)",
+        130,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    do_query_test(
+        "absent(nonexistent_metric)",
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
+        'absent(foo{shape="hexagon", size="xl"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "hexagon", "size": "xl"}, "value": [130, "1"]}]}',
+        [["[('shape','hexagon'),('size','xl')]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
+        'absent(foo{shape=~"hex.*"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
+        'absent(nonexistent_metric{shape!="square"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
+        'sum(absent(foo{shape="hexagon"}))',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_range_query_test(
+        'absent(foo{shape="hexagon"})',
+        110,
+        130,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "hexagon"}, "values": [[110, "1"], [120, "1"], [130, "1"]]}]}',
+        [
+            [
+                "[('shape','hexagon')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',1)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "absent_over_time(test[20s])",
+        140,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    do_query_test(
+        "absent_over_time(test[20s])",
+        170,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [170, "1"]}]}',
+        [["[]", "1970-01-01 00:02:50.000", 1]],
+    )
+
+    do_query_test(
+        'absent_over_time(test{job="missing"}[20s])',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"job": "missing"}, "value": [130, "1"]}]}',
+        [["[('job','missing')]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
+        'absent_over_time(test{job=~"missing"}[20s])',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_range_query_test(
+        "absent_over_time(test[20s])",
+        130,
+        190,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[160, "1"], [170, "1"], [180, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:40.000',1),('1970-01-01 00:02:50.000',1),('1970-01-01 00:03:00.000',1)]",
+            ]
+        ],
+    )
+
+
 def test_literals():
     timestamp = 250
     do_query_test(
