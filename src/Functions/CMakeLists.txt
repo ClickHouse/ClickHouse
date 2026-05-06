@@ -134,8 +134,6 @@ endif()
 
 if (TARGET ch_rust::h3o)
     list (APPEND PRIVATE_LIBS ch_rust::h3o)
-elseif (TARGET ch_contrib::h3)
-    list (APPEND PRIVATE_LIBS ch_contrib::h3)
 endif()
 
 if (TARGET ch_contrib::vectorscan)
