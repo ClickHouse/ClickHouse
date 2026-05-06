@@ -627,6 +627,11 @@ public:
         RangesInDataPartsPtr parts;
 
         MutationsSnapshotPtr mutations_snapshot;
+
+        /// Selective replication: partition_id → assigned replicas.
+        /// Populated during snapshot creation when replication_factor > 0.
+        /// Empty map = no selective replication or assignment data unavailable.
+        std::unordered_map<String, Strings> selective_assignment_map;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -1408,6 +1413,9 @@ protected:
     friend class VersionMetadataOnKeeper; // for access to log
     friend class MutationsState; // for access to log
 
+    virtual StorageSnapshotPtr
+    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
+
     bool require_part_metadata;
 
     /// Relative path data, changes during rename for ordinary databases use
@@ -2007,9 +2015,6 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
-
-    StorageSnapshotPtr
-    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 
     bool isReadonlySetting(const std::string & setting_name) const;
 

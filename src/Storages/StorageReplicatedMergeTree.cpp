@@ -18,6 +18,8 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
+#include <Common/isLocalAddress.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/randomDelay.h>
@@ -34,6 +36,8 @@
 #include <base/sleep.h>
 #include <base/sort.h>
 
+#include <Storages/RemoteQueryCommon.h>
+#include <Storages/MergeTree/SelectiveReplication/InsertForwarder.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
@@ -47,6 +51,10 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Client/ConnectionPool.h>
+#include <Common/ThreadPool.h>
+
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -59,6 +67,11 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/ReplicatedMergeTreePartsCollector.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Storages/MergeTree/SelectiveReplication/KeeperAssignment.h>
+#include <Storages/MergeTree/SelectiveReplication/Constants.h>
+#include <Storages/MergeTree/SelectiveReplication/Router.h>
+#include <Storages/MergeTree/SelectiveReplication/OptimizeForwarder.h>
+#include <Storages/MergeTree/SelectiveReplication/MigrationMonitor.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
@@ -80,15 +93,30 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
+#include <DataTypes/DataTypeString.h>
+
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sinks/EmptySink.h>
+
+#include <Analyzer/TableNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/ListNode.h>
+#include <Storages/StorageDummy.h>
 
 #include <Planner/Utils.h>
 
@@ -111,6 +139,8 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/SelectQueryOptions.h>
 
+#include <Storages/Distributed/DistributedSettings.h>
+
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
@@ -121,6 +151,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/quoteString.h>
 #include <IO/SharedThreadPools.h>
 
 #include <base/types.h>
@@ -135,6 +166,8 @@
 #include <numeric>
 #include <future>
 #include <vector>
+
+#include <DataTypes/DataTypesNumber.h>
 
 
 namespace fs = std::filesystem;
@@ -163,6 +196,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
@@ -178,6 +212,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_distributed_depth;
+    extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_fetch_partition_retries_count;
     extern const SettingsUInt64 max_partitions_per_insert_block;
     extern const SettingsBool materialize_ttl_after_modify;
@@ -187,7 +222,9 @@ namespace Setting
     extern const SettingsSeconds receive_timeout;
     extern const SettingsInt64 replication_wait_for_inactive_replica_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
+    extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool update_sequential_consistency;
+    extern const SettingsMap additional_table_filters;
 }
 
 
@@ -229,6 +266,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window_for_async_inserts;
     extern const MergeTreeSettingsFloat replicated_max_ratio_of_wrong_parts;
+    extern const MergeTreeSettingsUInt64 replication_factor;
+    extern const MergeTreeSettingsUInt64 selective_replication_assignment_cache_ttl_seconds;
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
@@ -317,6 +356,7 @@ namespace ActionLocks
 static const auto QUEUE_UPDATE_ERROR_SLEEP_MS        = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
+
 
 void StorageReplicatedMergeTree::setZooKeeper()
 {
@@ -443,6 +483,22 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReplicatedMergeTree doesn't work with 's3_with_keeper' disk type");
     }
 
+    /// Initialize selective replication assignment.
+    {
+        const auto settings = getSettings();
+        UInt64 local_rf = (*settings)[MergeTreeSetting::replication_factor];
+
+        if (local_rf > 0)
+        {
+            UInt64 cache_ttl = (*settings)[MergeTreeSetting::selective_replication_assignment_cache_ttl_seconds];
+            replica_assignment = std::make_shared<KeeperReplicaAssignment>(zookeeper_path, cache_ttl);
+            selective_router = std::make_unique<SelectiveReplication::Router>(*this);
+            selective_optimizer = std::make_unique<SelectiveReplication::OptimizeForwarder>(*this);
+            selective_migration_monitor = std::make_unique<SelectiveReplication::MigrationMonitor>(*this);
+            selective_insert_forwarder = std::make_unique<SelectiveReplication::InsertForwarder>(*this);
+        }
+    }
+
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
     /// We create and deactivate all tasks for consistency.
@@ -471,6 +527,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     /// This can lead to redundant exceptions during startup.
     /// Will be activated by restarting thread.
     mutations_finalizing_task->deactivate();
+
+    if (isSelectiveReplicationEnabled())
+    {
+        migration_monitor_task = getContext()->getSchedulePool().createTask(
+            getStorageID(), getStorageID().getFullTableName() + " (migration_monitor)", [this] { selective_migration_monitor->run(); });
+        migration_monitor_task->deactivate();
+    }
 
     bool has_zookeeper = getContext()->hasZooKeeper() || getContext()->hasAuxiliaryZooKeeper(zookeeper_info.zookeeper_name);
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::StorageReplicatedMergeTree");
@@ -954,6 +1017,11 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodesAttempt() const
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lightweight_updates", String(), zkutil::CreateMode::Persistent));
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lightweight_updates/in_progress", String(), zkutil::CreateMode::Persistent));
 
+    /// Selective replication: create assignment subtree.
+    if ((*settings)[MergeTreeSetting::replication_factor] > 0)
+        KeeperReplicaAssignment::asyncCreateSelectiveNodes(
+            zookeeper, zookeeper_path, (*settings)[MergeTreeSetting::replication_factor], futures);
+
     for (auto & future : futures)
     {
         auto res = future.get();
@@ -1073,6 +1141,14 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/mutations", "",
             zkutil::CreateMode::Persistent));
+
+        /// Selective replication: create assignment subtree.
+        {
+            const auto settings = getSettings();
+            if ((*settings)[MergeTreeSetting::replication_factor] > 0)
+                KeeperReplicaAssignment::appendCreateSelectiveOps(
+                    ops, zookeeper_path, (*settings)[MergeTreeSetting::replication_factor]);
+        }
 
         /// And create first replica atomically. See also "createReplica" method that is used to create not the first replicas.
 
@@ -1241,6 +1317,13 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
         /// It is not the first replica, we will mark it as "lost", to immediately repair (clone) from existing replica.
         /// By the way, it's possible that the replica will be first, if all previous replicas were removed concurrently.
         const String is_lost_value = replicas_stat.numChildren ? "1" : "0";
+
+        /// Validate replication_factor consistency with existing replicas.
+        const auto settings = getSettings();
+        const auto local_rf = static_cast<UInt64>((*settings)[MergeTreeSetting::replication_factor]);
+
+        KeeperReplicaAssignment::validateReplicationFactorConsistency(
+            zookeeper, zookeeper_path, local_rf, replicas_stat.numChildren);
 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, "",
@@ -2428,6 +2511,15 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     if (entry.fault_injected)
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for log entry {}", entry.getDescriptionForLogs(format_version));
 
+    /// Selective replication: skip entries for unassigned partitions.
+    if (queue.shouldSkipForSelectiveReplication(entry))
+    {
+        LOG_DEBUG(log, "Removing log entry {} of type {} for part {} from queue: "
+            "this replica is not assigned to the partition (selective replication)",
+            entry.znode_name, entry.typeToString(), entry.new_part_name);
+        return true;
+    }
+
     if (entry.type == LogEntry::DROP_RANGE || entry.type == LogEntry::DROP_PART)
     {
         executeDropRange(entry);
@@ -2894,6 +2986,19 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     /// Forcibly remove parts from ZooKeeper
     removePartsFromZooKeeperWithRetries(parts_to_remove);
     paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry.new_part_name, *this);
+
+    /// Clean up selective replication assignment on full partition drop.
+    if (isSelectiveReplicationEnabled() && drop_range_info.isFakeDropRangePart())
+    {
+        try
+        {
+            replica_assignment->removePartition(getZooKeeper(), drop_range_info.getPartitionId());
+        }
+        catch (const DB::Exception &)
+        {
+            tryLogCurrentException(log, fmt::format("Failed to remove selective replication assignment for partition {}", drop_range_info.getPartitionId()));
+        }
+    }
 
     if (entry.detach)
         LOG_DEBUG(log, "Detached {} parts inside {}.", parts_to_remove.size(), entry.new_part_name);
@@ -3429,6 +3534,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
 
 void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::cloneReplica");
     String source_path = fs::path(zookeeper_path) / "replicas" / source_replica;
 
     /// The order of the following three actions is important.
@@ -3576,9 +3682,19 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     /// We should do it after copying queue, because some ALTER_METADATA entries can be lost otherwise.
     cloneMetadataIfNeeded(source_replica, source_path, zookeeper);
 
+    /// Selective replication: read current partition assignments from ZK so that we only
+    /// clone parts that belong to this replica.  We do a fresh ZK read here (not the cache)
+    /// to get a consistent view at clone time.  An empty assignment map means selective
+    /// replication is disabled and all parts should be cloned as usual.
+    std::unordered_map<String, KeeperReplicaAssignment::CachedEntry> selective_assignments;
+    if (isSelectiveReplicationEnabled())
+        selective_assignments = replica_assignment->getAssignments(zookeeper, {}, /*force_refresh=*/true);
+
     /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
     Strings source_replica_parts = zookeeper->getChildren(fs::path(source_path) / "parts");
-    for (const auto & active_part : source_replica_parts)
+    Strings filtered_parts = KeeperReplicaAssignment::filterPartsForClone(
+        selective_assignments, source_replica_parts, format_version, replica_name, log.load());
+    for (const auto & active_part : filtered_parts)
         get_part_set.add(active_part);
 
     Strings active_parts = get_part_set.getParts();
@@ -4035,6 +4151,7 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
         }
 
         queue.pullLogsToQueue(zookeeper, queue_updating_task->getWatchCallback(), ReplicatedMergeTreeQueue::UPDATE);
+
         last_queue_update_finish_time.store(time(nullptr));
         queue_update_in_progress = false;
     }
@@ -4529,6 +4646,25 @@ void StorageReplicatedMergeTree::mutationsFinalizingTask()
         /// killed mutations, which are also considered as undone.
         mutations_finalizing_task->scheduleAfter(MUTATIONS_FINALIZING_IDLE_SLEEP_MS);
     }
+}
+
+
+void StorageReplicatedMergeTree::triggerSelectiveRebalance()
+{
+    if (!selective_migration_monitor)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SYSTEM START SELECTIVE REBALANCE is only supported for tables with selective replication "
+            "(replication_factor > 0)");
+    selective_migration_monitor->triggerRebalance();
+}
+
+bool StorageReplicatedMergeTree::waitForSelectiveMigrationsComplete(UInt64 timeout_ms)
+{
+    if (!selective_migration_monitor)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SYSTEM SYNC SELECTIVE MIGRATIONS is only supported for tables with selective replication "
+            "(replication_factor > 0)");
+    return selective_migration_monitor->waitForMigrationsComplete(timeout_ms);
 }
 
 
@@ -5751,6 +5887,9 @@ void StorageReplicatedMergeTree::startup()
 {
     LOG_TRACE(log, "Starting up table");
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::startup");
+
+    /// replication_factor consistency is validated in `tryStartup` to tolerate transient ZK outages.
+
     startOutdatedAndUnexpectedDataPartsLoadingTask();
     startStatisticsCache();
     if (attach_thread)
@@ -5925,6 +6064,8 @@ void StorageReplicatedMergeTree::partialShutdown()
     queue_updating_task->deactivate();
     mutations_updating_task->deactivate();
     mutations_finalizing_task->deactivate();
+    if (migration_monitor_task)
+        migration_monitor_task->deactivate();
 
     cleanup_thread.stop();
     deduplication_hashes_cache.stop();
@@ -6069,6 +6210,43 @@ PartitionIdToMaxBlock StorageReplicatedMergeTree::getMaxAddedBlocks() const
 }
 
 
+bool StorageReplicatedMergeTree::supportsTrivialCountOptimization(
+    const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// Selective replication: disable trivial count — local parts may be incomplete.
+    if (isSelectiveReplicationEnabled())
+        return false;
+
+    return MergeTreeData::supportsTrivialCountOptimization(storage_snapshot, query_context);
+}
+
+StorageSnapshotPtr StorageReplicatedMergeTree::createStorageSnapshot(
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr query_context,
+    bool without_data) const
+{
+    auto snapshot = MergeTreeData::createStorageSnapshot(metadata_snapshot, query_context, without_data);
+
+    if (!without_data && isSelectiveReplicationEnabled())
+        selective_router->enrichSnapshotWithAssignments(snapshot);
+
+    return snapshot;
+}
+
+QueryProcessingStage::Enum StorageReplicatedMergeTree::getQueryProcessingStage(
+    ContextPtr query_context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info) const
+{
+    if (isSelectiveReplicationEnabled())
+    {
+        if (auto stage = selective_router->resolveQueryProcessingStage(query_context, to_stage, storage_snapshot, query_info))
+            return *stage;
+    }
+    return MergeTreeData::getQueryProcessingStage(query_context, to_stage, storage_snapshot, query_info);
+}
+
 void StorageReplicatedMergeTree::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -6122,6 +6300,38 @@ void StorageReplicatedMergeTree::read(
             "Parallel replicas with custom key will not be used because cluster defined by 'cluster_for_parallel_replicas' ('{}') has "
             "multiple shards",
             cluster->getName());
+    }
+
+    /// Selective replication: route reads to replicas assigned to each partition.
+    /// Disabled when parallel_replicas is enabled to avoid conflicting routing.
+    if (isSelectiveReplicationEnabled()
+        && !local_context->canUseParallelReplicasCustomKey()
+        && !local_context->canUseTaskBasedParallelReplicas())
+    {
+        const int depth = static_cast<int>(local_context->getClientInfo().distributed_depth);
+
+        if (depth == 0 && processed_stage == QueryProcessingStage::WithMergeableState)
+        {
+            selective_router->readWithSelectiveRouting(query_plan, column_names, storage_snapshot, query_info,
+                                     local_context, processed_stage, max_block_size, num_streams);
+            return;
+        }
+
+        if (depth > 0)
+        {
+            /// The query arrived via selective routing from a parent replica whose cache
+            /// may be stale. Verify each partition against the local cache and re-route
+            /// misplaced partitions. Bounded by MAX_FORWARDING_DEPTH, symmetric with the
+            /// INSERT Phase 2 re-forwarding loop.
+            selective_router->reEnterSelectiveRoutingAtDepth(query_plan, column_names, storage_snapshot,
+                                           query_info, local_context, processed_stage,
+                                           max_block_size, num_streams);
+            return;
+        }
+
+        /// depth==0 but processed_stage != WithMergeableState: all-local fast path
+        /// (getQueryProcessingStage returned the default because every partition is
+        /// local). Fall through to readLocalImpl below.
     }
 
     readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
@@ -6305,8 +6515,6 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
         query_settings[Setting::insert_quorum].is_auto,
         local_context);
 }
-
-
 bool StorageReplicatedMergeTree::optimize(
     const ASTPtr &,
     const StorageMetadataPtr &,
@@ -6351,6 +6559,31 @@ bool StorageReplicatedMergeTree::optimize(
             throw Exception(std::move(message), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
         return false;
     };
+
+    if (isSelectiveReplicationEnabled())
+    {
+        const int distributed_depth = static_cast<int>(query_context->getClientInfo().distributed_depth);
+
+        /// Only the originating replica (depth == 0) performs selective routing,
+        /// i.e. classifies partitions as local vs remote and forwards OPTIMIZE to
+        /// the assigned replica. A forwarded OPTIMIZE (depth > 0) has already
+        /// been routed — the receiving replica must handle it locally, otherwise
+        /// it would re-enter selective routing, re-classify the partition as
+        /// remote (because `storage.replica_name` may differ from the assigned
+        /// replica name), and forward again, creating an infinite loop that
+        /// triggers "exceeded max forwarding depth".
+        if (distributed_depth == 0)
+        {
+            return selective_optimizer->optimizeWithSelectiveRouting(
+                partition, final, deduplicate, deduplicate_by_columns, cleanup,
+                query_context, handle_noop);
+        }
+
+        /// depth > 0: fall through to the normal OPTIMIZE path below, which
+        /// handles the specified partition locally on this replica.
+        LOG_DEBUG(log, "Selective replication: OPTIMIZE arrived at distributed_depth={}, "
+            "executing locally without re-routing", distributed_depth);
+    }
 
     auto zookeeper = getZooKeeperAndAssertNotReadonly();
     const auto storage_settings_ptr = getSettings();
@@ -7237,6 +7470,35 @@ void StorageReplicatedMergeTree::truncate(
 }
 
 
+bool StorageReplicatedMergeTree::ensurePartitionAssignment(const ZooKeeperPtr & zookeeper, const String & partition_id, const String & operation_name)
+{
+    if (!isSelectiveReplicationEnabled())
+        return false;
+
+    const auto settings = getSettings();
+    UInt64 rf = (*settings)[MergeTreeSetting::replication_factor];
+    if (rf == 0)
+        return false;
+
+    auto all_replicas = selective_router->getActiveReplicaNames(zookeeper);
+    return replica_assignment->ensurePartitionAssignment(zookeeper, partition_id, all_replicas, rf, log.load(), operation_name);
+}
+
+void StorageReplicatedMergeTree::ensurePartitionAssignments(const ZooKeeperPtr & zookeeper, const std::vector<String> & partition_ids, const String & operation_name)
+{
+    if (!isSelectiveReplicationEnabled())
+        return;
+
+    const auto settings = getSettings();
+    UInt64 rf = (*settings)[MergeTreeSetting::replication_factor];
+    if (rf == 0)
+        return;
+
+    auto all_replicas = selective_router->getActiveReplicaNames(zookeeper);
+    replica_assignment->ensurePartitionAssignments(zookeeper, partition_ids, all_replicas, rf, log.load(), operation_name);
+}
+
+
 PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context)
 {
@@ -7248,6 +7510,24 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, query_context, renamed_parts);
+
+    /// Selective replication: ensure each partition has an assignment before attaching parts.
+    /// Without this, commitPart's CAS check fails because selective/assignments/{partition_id}
+    /// does not exist in ZK (e.g., after DROP PARTITION removed it).
+    if (isSelectiveReplicationEnabled())
+    {
+        /// During restore, the replica is still readonly — use getZooKeeper() without readonly assertion.
+        zkutil::ZooKeeperPtr zookeeper = are_restoring_replica ? getZooKeeper() : getZooKeeperAndAssertNotReadonly();
+        std::unordered_set<String> seen;
+        std::vector<String> partition_ids;
+        for (const auto & part : loaded_parts)
+        {
+            String partition_id = part->info.isPatch() ? part->info.getOriginalPartitionId() : part->info.getPartitionId();
+            if (seen.insert(partition_id).second)
+                partition_ids.push_back(partition_id);
+        }
+        ensurePartitionAssignments(zookeeper, partition_ids, "ATTACH PARTITION");
+    }
 
     /// TODO Allow to use quorum here.
     ReplicatedMergeTreeSink output(
@@ -8923,6 +9203,11 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     assertNoPatchesForParts(src_all_parts, src_patch_parts, "REPLACE PARTITION " + partition_id + " FROM");
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
+    /// Selective replication: ensure the partition has an assignment before writing any data.
+    /// DROP PARTITION may have removed the assignment; without it, shouldSkipForSelectiveReplication
+    /// sees assigned=[] and does not skip, causing all replicas to execute REPLACE_RANGE.
+    bool selective_replication_active = ensurePartitionAssignment(zookeeper, partition_id, "REPLACE PARTITION");
+
     std::optional<ZooKeeperMetadataTransaction> txn;
     if (auto query_txn = query_context->getZooKeeperMetadataTransaction())
         txn.emplace(query_txn->getZooKeeper(),
@@ -8942,6 +9227,16 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         String alter_partition_version_path = zookeeper_path + "/alter_partition_version";
         Coordination::Stat alter_partition_version_stat;
         zookeeper->get(alter_partition_version_path, &alter_partition_version_stat);
+
+        /// Selective replication: re-read assignment with version for CAS validation on each retry.
+        bool this_replica_is_assigned = true;
+        int32_t assignment_cas_version = -1;
+        if (selective_replication_active)
+        {
+            auto cas_guard = selective_router->buildReplacePartitionCASGuard(zookeeper, partition_id);
+            this_replica_is_assigned = cas_guard.this_replica_is_assigned;
+            assignment_cas_version = cas_guard.assignment_cas_version;
+        }
 
         /// Firstly, generate last block number and compute drop_range
         /// NOTE: Even if we make ATTACH PARTITION instead of REPLACE PARTITION drop_range will not be empty, it will contain a block.
@@ -9094,10 +9389,13 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         try
         {
             Coordination::Requests ops;
-            for (size_t i = 0; i < dst_parts.size(); ++i)
+            if (this_replica_is_assigned)
             {
-                getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
-                ephemeral_locks[i].getUnlockOp(ops);
+                for (size_t i = 0; i < dst_parts.size(); ++i)
+                {
+                    getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
+                    ephemeral_locks[i].getUnlockOp(ops);
+                }
             }
 
             if (txn)
@@ -9106,20 +9404,32 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             delimiting_block_lock->getUnlockOp(ops);
             /// Check and update version to avoid race with DROP_RANGE
             ops.emplace_back(zkutil::makeSetRequest(alter_partition_version_path, "", alter_partition_version_stat.version));
+
+            /// Selective replication: CAS check on assignment version to prevent TOCTOU.
+            /// If a concurrent migration SWITCH changed the assignment between our read and this commit,
+            /// the multi-op will fail with ZBADVERSION and we retry with the fresh assignment.
+            if (selective_replication_active && assignment_cas_version >= 0)
+            {
+                ops.emplace_back(zkutil::makeCheckRequest(
+                    zookeeper_path + "/selective/assignments/" + partition_id,
+                    assignment_cas_version));
+            }
+
             /// Just update version, because merges assignment relies on it
             ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
             ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry->toString(), zkutil::CreateMode::PersistentSequential));
 
             Transaction transaction(*this, NO_TRANSACTION_RAW);
+            if (this_replica_is_assigned)
             {
                 auto data_parts_lock = lockParts();
                 for (auto & part : dst_parts)
                     renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ true);
-            }
-            transaction.renameParts();
+                transaction.renameParts();
 
-            for (const auto & dst_part : dst_parts)
-                lockSharedData(*dst_part, false, /*hardlinked_files*/ {});
+                for (const auto & dst_part : dst_parts)
+                    lockSharedData(*dst_part, false, /*hardlinked_files*/ {});
+            }
 
             Coordination::Error code = zookeeper->tryMulti(ops, op_results);
             if (code == Coordination::Error::ZOK)
@@ -9131,11 +9441,26 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                     throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER,
                                     "Cannot execute alter, because alter partition version was suddenly changed due "
                                     "to concurrent alter");
+
+                /// Log if assignment version changed (helps diagnose selective replication races).
+                if (selective_replication_active && assignment_cas_version >= 0)
+                {
+                    auto failed_op_idx = zkutil::getFailedOpIndex(code, op_results);
+                    String failed_op_path = ops[failed_op_idx]->getPath();
+                    if (failed_op_path.contains("/selective/assignments/"))
+                    {
+                        LOG_INFO(log, "Selective replication: assignment version changed for partition {} "
+                            "during REPLACE PARTITION (CAS version: {}), retrying",
+                            partition_id, assignment_cas_version);
+                    }
+                }
+
                 continue;
             }
             else
                 zkutil::KeeperMultiException::check(code, ops, op_results);
 
+            if (this_replica_is_assigned)
             {
                 auto data_parts_lock = lockParts();
                 transaction.commit(data_parts_lock);
@@ -9147,11 +9472,13 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                 }
             }
 
-            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+            if (this_replica_is_assigned)
+                PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
         }
         catch (...)
         {
-            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed()), ExecutionStatus::fromCurrentException("", true));
+            if (this_replica_is_assigned)
+                PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed()), ExecutionStatus::fromCurrentException("", true));
             for (const auto & dst_part : dst_parts)
                 unlockSharedData(*dst_part);
 
@@ -9214,6 +9541,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     /// A range for log entry to remove parts from the source table (myself).
     auto zookeeper = getZooKeeper();
+    bool selective_replication_active = dest_table_storage->ensurePartitionAssignment(zookeeper, partition_id, "MOVE PARTITION TO TABLE");
     /// Retry if alter_partition_version changes
     for (size_t retry = 0; retry < 1000; ++retry)
     {
@@ -9279,6 +9607,16 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         String dest_alter_partition_version_path = dest_table_storage->zookeeper_path + "/alter_partition_version";
         Coordination::Stat dest_alter_partition_version_stat;
         zookeeper->get(dest_alter_partition_version_path, &dest_alter_partition_version_stat);
+
+        bool this_replica_is_assigned = true;
+        int32_t assignment_cas_version = -1;
+        if (selective_replication_active)
+        {
+            auto cas_guard = dest_table_storage->selective_router->buildReplacePartitionCASGuard(zookeeper, partition_id);
+            this_replica_is_assigned = cas_guard.this_replica_is_assigned;
+            assignment_cas_version = cas_guard.assignment_cas_version;
+        }
+
         std::vector<scope_guard> temporary_parts_locks;
 
         for (const auto & src_part : src_all_parts)
@@ -9375,14 +9713,23 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         try
         {
             Coordination::Requests ops;
-            for (size_t i = 0; i < dst_parts.size(); ++i)
+            if (this_replica_is_assigned)
             {
-                dest_table_storage->getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
-                ephemeral_locks[i].getUnlockOp(ops);
+                for (size_t i = 0; i < dst_parts.size(); ++i)
+                {
+                    dest_table_storage->getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
+                    ephemeral_locks[i].getUnlockOp(ops);
+                }
             }
 
             /// Check and update version to avoid race with DROP_RANGE
             ops.emplace_back(zkutil::makeSetRequest(dest_alter_partition_version_path, "", dest_alter_partition_version_stat.version));
+            if (selective_replication_active && assignment_cas_version >= 0)
+            {
+                ops.emplace_back(zkutil::makeCheckRequest(
+                    dest_table_storage->zookeeper_path + "/selective/assignments/" + partition_id,
+                    assignment_cas_version));
+            }
             /// Just update version, because merges assignment relies on it
             ops.emplace_back(zkutil::makeSetRequest(fs::path(dest_table_storage->zookeeper_path) / "log", "", -1));
             ops.emplace_back(zkutil::makeCreateRequest(fs::path(dest_table_storage->zookeeper_path) / "log/log-",
@@ -9394,29 +9741,49 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 auto src_data_parts_lock = lockParts();
                 auto dest_data_parts_lock = dest_table_storage->lockParts();
 
-                for (auto & part : dst_parts)
-                    dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock, /*rename_in_transaction=*/ false);
+                if (this_replica_is_assigned)
+                {
+                    for (auto & part : dst_parts)
+                        dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock, /*rename_in_transaction=*/ false);
 
-                for (const auto & dst_part : dst_parts)
-                    dest_table_storage->lockSharedData(*dst_part, false, /*hardlinked_files*/ {});
+                    for (const auto & dst_part : dst_parts)
+                        dest_table_storage->lockSharedData(*dst_part, false, /*hardlinked_files*/ {});
+                }
 
                 Coordination::Error code = zookeeper->tryMulti(ops, op_results);
                 if (code == Coordination::Error::ZBADVERSION)
+                {
+                    if (selective_replication_active && assignment_cas_version >= 0)
+                    {
+                        auto failed_op_idx = zkutil::getFailedOpIndex(code, op_results);
+                        String failed_op_path = ops[failed_op_idx]->getPath();
+                        if (failed_op_path.contains("/selective/assignments/"))
+                        {
+                            LOG_INFO(log, "Selective replication: assignment version changed for partition {} during MOVE PARTITION TO TABLE (CAS version: {}), retrying",
+                                partition_id, assignment_cas_version);
+                        }
+                    }
                     continue;
+                }
                 zkutil::KeeperMultiException::check(code, ops, op_results);
 
-                parts_holder = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, drop_range.getPartitionId(), src_data_parts_lock);
-                /// We ignore the list of parts returned from the function below because we cannot remove them from zk
-                /// because we have not created the DROP_RANGE yet. Yes, MOVE PARTITION is trash.
-                removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
-                transaction.commit(src_data_parts_lock);
+                if (this_replica_is_assigned)
+                {
+                    parts_holder = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, drop_range.getPartitionId(), src_data_parts_lock);
+                    /// We ignore the list of parts returned from the function below because we cannot remove them from zk
+                    /// because we have not created the DROP_RANGE yet. Yes, MOVE PARTITION is trash.
+                    removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
+                    transaction.commit(src_data_parts_lock);
+                }
             }
 
-            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+            if (this_replica_is_assigned)
+                PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
         }
         catch (...)
         {
-            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed()), ExecutionStatus::fromCurrentException("", true));
+            if (this_replica_is_assigned)
+                PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed()), ExecutionStatus::fromCurrentException("", true));
 
             for (const auto & dst_part : dst_parts)
                 dest_table_storage->unlockSharedData(*dst_part);

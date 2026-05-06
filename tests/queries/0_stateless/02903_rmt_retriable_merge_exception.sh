@@ -20,8 +20,8 @@ $CLICKHOUSE_CLIENT -m --distributed_ddl_output_mode=none -q "
     drop table if exists rmt1;
     drop table if exists rmt2;
 
-    create table rmt1 (key Int) engine=ReplicatedMergeTree('/clickhouse/{database}', '1') order by key settings always_fetch_merged_part=1;
-    create table rmt2 (key Int) engine=ReplicatedMergeTree('/clickhouse/{database}', '2') order by key settings always_fetch_merged_part=0;
+    create table rmt1 (key Int) engine=ReplicatedMergeTree('/clickhouse/{database}', '1') order by key settings always_fetch_merged_part=1, replication_factor=0;
+    create table rmt2 (key Int) engine=ReplicatedMergeTree('/clickhouse/{database}', '2') order by key settings always_fetch_merged_part=0, replication_factor=0;
 
     insert into rmt1 values (1);
     insert into rmt1 values (2);

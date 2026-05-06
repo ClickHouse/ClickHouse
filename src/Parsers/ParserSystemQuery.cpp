@@ -580,6 +580,42 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
             break;
 
+        case Type::START_SELECTIVE_REBALANCE:
+        case Type::SYNC_SELECTIVE_MIGRATIONS:
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                return false;
+            break;
+
+        case Type::MIGRATE_PARTITION:
+        {
+            /// MIGRATE PARTITION <string_literal> OF <qualified_table_name> TO REPLICA <string_literal>
+            ASTPtr partition_ast;
+            if (!ParserStringLiteral{}.parse(pos, partition_ast, expected))
+                return false;
+            res->partition_id = partition_ast->as<ASTLiteral &>().value.safeGet<String>();
+
+            if (!ParserKeyword{Keyword::OF}.ignore(pos, expected))
+                return false;
+
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                return false;
+
+            if (!ParserKeyword{Keyword::TO}.ignore(pos, expected))
+                return false;
+
+            if (!ParserKeyword{Keyword::REPLICA}.ignore(pos, expected))
+                return false;
+
+            ASTPtr replica_ast;
+            if (!ParserStringLiteral{}.parse(pos, replica_ast, expected))
+                return false;
+            res->target_replica = replica_ast->as<ASTLiteral &>().value.safeGet<String>();
+
+            break;
+        }
+
         case Type::REFRESH_VIEW:
         case Type::WAIT_VIEW:
         case Type::START_VIEW:

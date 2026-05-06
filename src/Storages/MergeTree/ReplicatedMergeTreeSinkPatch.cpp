@@ -9,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ALL_REPLICAS_ARE_STALE;
 }
 
 ReplicatedMergeTreeSinkPatch::ReplicatedMergeTreeSinkPatch(
@@ -29,6 +30,7 @@ ReplicatedMergeTreeSinkPatch::ReplicatedMergeTreeSinkPatch(
     , update_holder(std::move(update_holder_))
 {
     deduplicate = false;
+    is_patch_sink = true;
 }
 
 ReplicatedMergeTreeSinkPatch::~ReplicatedMergeTreeSinkPatch()
@@ -37,7 +39,7 @@ ReplicatedMergeTreeSinkPatch::~ReplicatedMergeTreeSinkPatch()
     update_holder.reset();
 }
 
-void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper)
+void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper, std::vector<AssignmentFailure> * /*assignment_failures*/)
 {
     if (delayed_parts.empty())
         return;
@@ -56,12 +58,20 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
         try
         {
             auto conflicts = commitPart(zookeeper, part, deduplication_hashes, deduplication_blocks_ids);
+
             if (!conflicts.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), deduplication_blocks_ids, ExecutionStatus(0));
             StorageReplicatedMergeTree::incrementInsertedPartsProfileEvent(part->getType());
+        }
+        catch (const AssignmentChangedException & e)
+        {
+            partition.temp_part->cancel();
+            throw Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE,
+                "Selective replication: assignment changed for partition {} during patch commit. {}",
+                e.partition_id, e.message());
         }
         catch (...)
         {

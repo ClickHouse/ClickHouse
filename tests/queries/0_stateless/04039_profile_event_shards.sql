@@ -1,4 +1,4 @@
--- Tags: shard
+-- Tags: no-fasttest, shard
 
 SET send_logs_level = 'fatal';
 

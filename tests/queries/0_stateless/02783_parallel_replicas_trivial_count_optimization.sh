@@ -82,6 +82,7 @@ $CLICKHOUSE_CLIENT --query "
     )
     ENGINE=ReplicatedMergeTree('/clickhouse/tables/{database}/replicated_numbers', 'r1')
     ORDER BY (number)
+    SETTINGS replication_factor=0
     AS SELECT number FROM numbers(100000);
 "
 

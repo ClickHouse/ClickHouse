@@ -88,6 +88,7 @@
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <Storages/RemoteQueryCommon.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/IStorageCluster.h>
 
@@ -749,32 +750,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 namespace
 {
 
-class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
-{
-    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
-    {
-        const auto * column_node = node->as<ColumnNode>();
-        if (!column_node || !column_node->hasExpression())
-            return nullptr;
-
-        const auto & column_source = column_node->getColumnSourceOrNull();
-        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-            return nullptr;
-
-        auto column_expression = column_node->getExpression();
-        column_expression->setAlias(column_node->getColumnName());
-        return column_expression;
-    }
-
-public:
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto column_expression = getColumnNodeAliasExpression(node))
-            node = column_expression;
-    }
-};
 
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
 {
@@ -925,7 +900,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-    ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
+    ReplaceAliasColumnsVisitor replace_alias_columns_visitor;
     replace_alias_columns_visitor.visit(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();

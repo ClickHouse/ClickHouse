@@ -13,10 +13,11 @@ ${CLICKHOUSE_CLIENT} --query="
     DROP TABLE IF EXISTS fetches_r1 SYNC;
     DROP TABLE IF EXISTS fetches_r2 SYNC"
 
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE fetches_r1(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/fetches', 'r1') ORDER BY x"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE fetches_r1(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/fetches', 'r1') ORDER BY x SETTINGS replication_factor=0"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE fetches_r2(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/fetches', 'r2') ORDER BY x \
     SETTINGS prefer_fetch_merged_part_time_threshold=0, \
-             prefer_fetch_merged_part_size_threshold=0"
+             prefer_fetch_merged_part_size_threshold=0, \
+             replication_factor=0"
 
 ${CLICKHOUSE_CLIENT} --query="
     SET insert_keeper_fault_injection_probability=0;

@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageView.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
@@ -54,6 +55,16 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
     /// Parallel replicas not supported with FINAL.
     if (table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
         return false;
+
+    /// Parallel replicas are not supported on tables with selective replication
+    /// (replication_factor > 0). Each replica holds only a subset of partitions,
+    /// which violates PR's assumption that every replica can read every part.
+    /// The query falls through to the table's selective-routing path instead.
+    if (const auto * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
+    {
+        if (replicated->isSelectiveReplicationEnabled())
+            return false;
+    }
 
     return true;
 }

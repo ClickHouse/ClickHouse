@@ -2,11 +2,16 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/SelectiveReplication/KeeperAssignment.h>
 
+
+#include <Common/logger_useful.h>
+#include <Common/Exception.h>
 #include <base/types.h>
 #include <base/sort.h>
 #include <optional>
 #include <mutex>
+#include <unordered_set>
 #include <city.h>
 #include <algorithm>
 #include <atomic>
@@ -20,6 +25,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsSeconds execute_merges_on_single_replica_time_threshold;
     extern const MergeTreeSettingsSeconds remote_fs_execute_merges_on_single_replica_time_threshold;
+    extern const MergeTreeSettingsUInt64 replication_factor;
 }
 
 /// minimum interval (seconds) between checks if chosen replica finished the merge.
@@ -80,19 +86,54 @@ std::optional<String> ReplicatedMergeTreeMergeStrategyPicker::pickReplicaToExecu
 
     auto hash = getEntryHash(entry);
 
+    /// Selective replication: pre-compute target replicas outside the lock.
+    const auto settings = storage.getSettings();
+    UInt64 rf = (*settings)[MergeTreeSetting::replication_factor];
+    Strings selective_target_replicas = KeeperReplicaAssignment::getTargetReplicasForMerge(
+        storage.replica_assignment, storage.format_version, entry, rf, storage.log.load());
+
     std::lock_guard lock(mutex);
 
-    auto num_replicas = active_replicas.size();
+    /// Apply selective replication filtering.
+    auto active_replicas_for_merge = active_replicas;
+    int current_replica_index_for_merge = current_replica_index;
+
+    if (!selective_target_replicas.empty())
+    {
+        /// Target replicas may carry a `:cloning` suffix, but `active_replicas` from ZK never do.
+        std::unordered_set<String> target_set;
+        target_set.reserve(selective_target_replicas.size());
+        for (const auto & r : selective_target_replicas)
+            target_set.insert(KeeperReplicaAssignment::stripCloningSuffix(r));
+
+        Strings filtered;
+        for (const auto & r : active_replicas)
+        {
+            if (target_set.contains(r))
+                filtered.push_back(r);
+        }
+        /// No assigned replica is active — postpone until one comes back.
+        if (filtered.empty())
+            return std::nullopt;
+
+        active_replicas_for_merge = std::move(filtered);
+        auto it = std::find(active_replicas_for_merge.begin(), active_replicas_for_merge.end(), storage.replica_name);
+        current_replica_index_for_merge = (it != active_replicas_for_merge.end())
+            ? static_cast<int>(std::distance(active_replicas_for_merge.begin(), it))
+            : -1;
+    }
+
+    auto num_replicas = active_replicas_for_merge.size();
 
     if (num_replicas == 0)
         return std::nullopt;
 
     auto replica_index = static_cast<int>(hash % num_replicas);
 
-    if (replica_index == current_replica_index)
+    if (replica_index == current_replica_index_for_merge)
         return std::nullopt;
 
-    return active_replicas.at(replica_index);
+    return active_replicas_for_merge.at(replica_index);
 }
 
 

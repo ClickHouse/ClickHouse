@@ -32,14 +32,14 @@ $CH_CLIENT --query "
         SETTINGS min_replicated_logs_to_keep=1, max_replicated_logs_to_keep=2,
         max_cleanup_delay_period=1, cleanup_delay_period=0, cleanup_delay_period_random_add=1,
         cleanup_thread_preferred_points_per_iteration=0, old_parts_lifetime=0, max_parts_to_merge_at_once=4,
-        merge_selecting_sleep_ms=1000, max_merge_selecting_sleep_ms=2000"
+        merge_selecting_sleep_ms=1000, max_merge_selecting_sleep_ms=2000, replication_factor=0"
 
 $CH_CLIENT --query "
     CREATE TABLE rmt2 (n int) ENGINE=ReplicatedMergeTree('/test/02448/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', '2') ORDER BY tuple()
         SETTINGS min_replicated_logs_to_keep=1, max_replicated_logs_to_keep=2,
         max_cleanup_delay_period=1, cleanup_delay_period=0, cleanup_delay_period_random_add=1,
         cleanup_thread_preferred_points_per_iteration=0, old_parts_lifetime=0, max_parts_to_merge_at_once=4,
-        merge_selecting_sleep_ms=1000, max_merge_selecting_sleep_ms=2000"
+        merge_selecting_sleep_ms=1000, max_merge_selecting_sleep_ms=2000, replication_factor=0"
 
 # insert part only on one replica
 $CH_CLIENT --query "SYSTEM STOP REPLICATED SENDS rmt1"

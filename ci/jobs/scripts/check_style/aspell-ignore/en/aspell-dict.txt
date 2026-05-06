@@ -1163,6 +1163,7 @@ Rabl
 RangeHashed
 Raphson
 RawBLOB
+rebalancing
 RawSum
 RawWithNames
 RawWithNamesAndTypes

@@ -29,6 +29,7 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 
@@ -637,28 +638,7 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
 
     auto const & storage_id = storage->getStorageID();
 
-    for (const auto & additional_filter : additional_filters)
-    {
-        const auto & tuple = additional_filter.safeGet<Tuple>();
-        auto const & table = tuple.at(0).safeGet<String>();
-        auto const & filter = tuple.at(1).safeGet<String>();
-
-        if (table == table_expression_alias ||
-            (table == storage_id.getTableName() && query_context->getCurrentDatabase() == storage_id.getDatabaseName()) ||
-            (table == storage_id.getFullNameNotQuoted()))
-        {
-            ParserExpression parser;
-            table_expression_query_info.additional_filter_ast = parseQuery(
-                parser,
-                filter.data(),
-                filter.data() + filter.size(),
-                "additional filter",
-                settings[Setting::max_query_size],
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks]);
-            return;
-        }
-    }
+    table_expression_query_info.additional_filter_ast = parseAdditionalTableFilterAST(storage_id, table_expression_alias, query_context);
 }
 
 /// Apply filters from additional_table_filters setting. Expects
@@ -1184,6 +1164,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                     if (!table_ptr->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
                         return false;
+
+                    /// Parallel replicas are incompatible with selective replication:
+                    /// each replica holds only a subset of partitions, so distributing
+                    /// reads across replicas would produce duplicates or missing data.
+                    if (const auto * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(table_ptr))
+                    {
+                        if (replicated->isSelectiveReplicationEnabled())
+                            return false;
+                    }
 
                     return true;
                 };

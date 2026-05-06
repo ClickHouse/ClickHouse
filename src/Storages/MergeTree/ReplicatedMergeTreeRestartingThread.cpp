@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Storages/MergeTree/SelectiveReplication/KeeperAssignment.h>
 #include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -32,6 +33,7 @@ namespace ServerSetting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsSeconds zookeeper_session_expiration_check_period;
+    extern const MergeTreeSettingsUInt64 replication_factor;
 }
 
 namespace ErrorCodes
@@ -183,6 +185,9 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
 
+    if (storage.migration_monitor_task)
+        storage.migration_monitor_task->activateAndSchedule();
+
     if (storage.getContext()->getServerSettings()[ServerSetting::insert_deduplication_version].value != InsertDeduplicationVersions::OLD_SEPARATE_HASHES)
         storage.deduplication_hashes_cache.start();
 
@@ -201,6 +206,13 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         const auto & zookeeper = storage.getZooKeeper();
         const auto storage_settings = storage.getSettings();
+
+        /// Validate replication_factor against ZK. Done here so transient ZK errors flow into
+        /// the readonly/retry path below instead of failing the load job.
+        KeeperReplicaAssignment::validateReplicationFactorOnStartup(
+            zookeeper,
+            storage.zookeeper_path,
+            (*storage_settings)[MergeTreeSetting::replication_factor]);
 
         storage.cloneReplicaIfNeeded(zookeeper);
 

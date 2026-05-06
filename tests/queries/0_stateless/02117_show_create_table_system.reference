@@ -1006,7 +1006,10 @@ CREATE TABLE system.replication_queue
     `num_postponed` UInt32,
     `postpone_reason` String,
     `last_postpone_time` DateTime,
-    `merge_type` String
+    `merge_type` String,
+    `selective_partition_id` String,
+    `selective_assigned_replicas` Array(String),
+    `selective_is_assigned` UInt8
 )
 ENGINE = SystemReplicationQueue
 COMMENT 'Contains information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for each table replica.'

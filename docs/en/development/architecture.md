@@ -294,6 +294,8 @@ Metadata for replication is stored in ZooKeeper. There is a replication log that
 
 Replication is physical: only compressed parts are transferred between nodes, not queries. Merges are processed on each replica independently in most cases to lower the network costs by avoiding network amplification. Large merged parts are sent over the network only in cases of significant replication lag.
 
+With [selective replication](/engines/table-engines/mergetree-family/replication.md/#selective-replication) (enabled by setting `replication_factor > 0`), each partition is stored on only a subset of replicas instead of all replicas. Non-assigned replicas skip downloading that partition's data from the replication queue. `SELECT` queries are automatically routed to the replicas that hold the requested partitions using the query analyzer.
+
 Besides, each replica stores its state in ZooKeeper as the set of parts and its checksums. When the state on the local filesystem diverges from the reference state in ZooKeeper, the replica restores its consistency by downloading missing and broken parts from other replicas. When there is some unexpected or broken data in the local filesystem, ClickHouse does not remove it, but moves it to a separate directory and forgets it.
 
 :::note

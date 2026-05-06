@@ -118,6 +118,10 @@ If ZooKeeper is not set in the config file, you can't create replicated tables, 
 
 ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](/operations/settings/settings.md/#max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](/operations/settings/settings.md/#fallback_to_stale_replicas_for_distributed_queries).
 
+:::note
+With [selective replication](#selective-replication) enabled (`replication_factor > 0`), `SELECT` queries are routed to the replicas that store the requested partition data, using ClickHouse Keeper for partition-to-replica assignment lookup.
+:::
+
 For each `INSERT` query, approximately ten entries are added to ZooKeeper through several transactions. (To be more precise, this is for each inserted block of data; an INSERT query contains one block or one block per `max_insert_block_size = 1048576` rows.) This leads to slightly longer latencies for `INSERT` compared to non-replicated tables. But if you follow the recommendations to insert data in batches of no more than one `INSERT` per second, it does not create any problems. The entire ClickHouse cluster used for coordinating one ZooKeeper cluster has a total of several hundred `INSERTs` per second. The throughput on data inserts (the number of rows per second) is just as high as for non-replicated data.
 
 For very large clusters, you can use different ZooKeeper clusters for different shards. However, from our experience this has not proven necessary based on production clusters with approximately 300 servers.
@@ -336,6 +340,80 @@ After this, you can launch the server, create a `MergeTree` table, move the data
 ## Recovery when metadata in the ClickHouse Keeper cluster is lost or damaged {#recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged}
 
 If the data in ClickHouse Keeper was lost or damaged, you can save data by moving it to an unreplicated table as described above.
+
+## Selective Replication {#selective-replication}
+
+By default, every replica in a `ReplicatedMergeTree` shard stores a full copy of all data. Selective replication allows you to control how many replicas store each partition's data, saving storage space while maintaining read availability.
+
+When selective replication is enabled, each partition is assigned to a subset of replicas (determined by the `replication_factor` setting). Only the assigned replicas store the partition data. `SELECT` queries are automatically routed to the replicas that hold the requested partitions.
+
+### Enabling Selective Replication {#selective-replication-enabling}
+
+Set the `replication_factor` table setting to a value greater than `0` and less than the total number of replicas in the shard:
+
+```sql
+CREATE TABLE events
+(
+    event_date DateTime,
+    event_type UInt32,
+    user_id UInt32
+)
+ENGINE = ReplicatedMergeTree
+PARTITION BY (toYYYYMM(event_date), user_id % 16)
+ORDER BY (event_type, event_date, user_id)
+SETTINGS replication_factor = 2;
+```
+
+The `replication_factor` specifies the number of replicas that store each partition. If a shard has 3 replicas and `replication_factor = 2`, each partition is stored on exactly 2 of the 3 replicas.
+
+:::note
+`replication_factor` is a read-only setting. It can only be specified at table creation time (`CREATE TABLE ... SETTINGS replication_factor = N`) and cannot be changed with `ALTER TABLE ... MODIFY SETTING`.
+:::
+
+:::note
+The query analyzer must be enabled (`enable_analyzer = 1`) for `SELECT` query routing to work with selective replication. Without the analyzer, `SELECT` queries on tables with `replication_factor > 0` will raise an exception.
+:::
+
+### How It Works {#selective-replication-how-it-works}
+
+**INSERT:** When data is inserted, the replica that receives the `INSERT` query assigns each partition to `replication_factor` replicas using a least-loaded-first strategy. The assignment is recorded in ClickHouse Keeper at `{zookeeper_path}/selective/assignments/{partition_id}` and cached locally on each replica for fast lookup (3–30s TTL). Non-assigned replicas skip downloading that partition.
+
+**SELECT:** When a `SELECT` query runs, the query analyzer inspects the partition-to-replica assignment and routes each partition's data read to the replicas that store it. If a query involves partitions spread across multiple replicas, ClickHouse sends sub-queries to the relevant replicas and merges the results.
+
+**Auto-rebalance:** A background monitor detects new replicas added to the shard and automatically triggers partition migrations to restore the configured `replication_factor`. Partitions are cloned from source replicas to target replicas, then the assignment is atomically switched. Data is automatically redistributed when replicas are added or removed, so no manual intervention is needed.
+
+### Partition Key and Assignment {#selective-replication-partition-key}
+
+The full result of the `PARTITION BY` expression is used as the partition identifier for assignment lookup. For example, with `PARTITION BY (toYYYYMM(event_date), user_id % 16)`, a row with `event_date = '2024-01-15'` and `user_id = 123` produces the partition ID `"202401-11"`. This means the partition key effectively acts as a sharding key within the shard — different partition values distribute data across different subsets of replicas.
+
+When choosing a `PARTITION BY` expression for selective replication, consider using a multi-column key that provides both data management granularity (e.g., time-based partitioning) and sufficient cardinality for even distribution across replicas (e.g., a hash bucket column).
+
+### Monitoring {#selective-replication-monitoring}
+
+Use the following system tables to monitor selective replication:
+
+- [system.selective_assignments](/operations/system-tables/selective_assignments.md) — Current partition-to-replica assignments.
+- [system.selective_migrations](/operations/system-tables/selective_migrations.md) — Active and completed partition migrations.
+- [system.replication_queue](/operations/system-tables/replication_queue.md) — The `selective_partition_id`, `selective_assigned_replicas`, and `selective_is_assigned` columns show per-entry assignment info. When selective replication is disabled, `selective_is_assigned` is `1` for all entries (all replicas participate).
+
+### Settings {#selective-replication-settings}
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `replication_factor` | 0 | Number of replicas that store each partition. 0 disables selective replication. Read-only (set at `CREATE TABLE` only). |
+| `selective_replication_assignment_cache_ttl_seconds` | 60 | Maximum age (seconds) of cached partition-to-replica assignments from Keeper. Lower values give fresher routing at the cost of increased Keeper load. |
+| `max_concurrent_partition_migrations` | 4 | Maximum number of partitions that can be migrated simultaneously during automatic rebalancing. |
+| `migration_timeout_seconds` | 3600 | Timeout (seconds) for the CLONE phase of a partition migration. If the target replica does not complete fetching within this time, the migration is rolled back. |
+| `migration_coordinator_timeout` | 60 | Time (seconds) after which a migration coordinator is considered dead and another replica can take over the migration. |
+| `enable_auto_rebalance` | true | Whether the background monitor automatically starts partition migrations to balance assignments. When false, manual migrations via `SYSTEM MIGRATE PARTITION` still work. |
+
+### Limitations {#selective-replication-limitations}
+
+- Requires `ReplicatedMergeTree` family engines.
+- Requires the query analyzer (`enable_analyzer = 1`) for `SELECT` routing.
+- `replication_factor` must be between `1` and the total number of replicas in the shard.
+- `SELECT` queries through a `Distributed` table that wraps a selective replication table will not use partition-aware routing and may return incomplete results. Query the `ReplicatedMergeTree` table directly instead.
+- When `SELECT` routing involves multiple replicas (some partitions are remote), parallel replicas acceleration is disabled for that query. When all queried partitions are local to the current replica, parallel replicas acceleration can still apply.
 
 **See Also**
 

@@ -1,0 +1,45 @@
+partition_detail
+0	8
+1	6
+2	6
+replica_count_ok
+1
+total_rows_multiple_ok
+1
+insert_via_remote_depth1
+insert_via_remote_total_rows
+1
+async_insert_basic
+async_insert_rows_ok
+6
+async_insert_each_partition_rf2
+1
+batch_insert_10_partitions
+partition_count
+10
+each_partition_has_2_replicas
+1
+total_rows_ok
+200
+second_batch_reuses_assignments
+total_rows_after_second_insert
+400
+patch_parts_basic
+patch_parts_exist
+1
+assignments_no_patch_prefix
+1
+read_after_patch
+1
+parse_unknown_format_version
+insert_failed_on_bad_version
+1
+multi_partition_assignment_consistency
+partition_assignment_verified
+1
+multiple_partitions_synced
+3
+all_assignments_consistent
+1
+new_partition_assigned
+1

@@ -183,6 +183,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_VIRTUAL_PARTS_UPDATE:
         case Type::STOP_REDUCE_BLOCKING_PARTS:
         case Type::START_REDUCE_BLOCKING_PARTS:
+        case Type::START_SELECTIVE_REBALANCE:
+        case Type::SYNC_SELECTIVE_MIGRATIONS:
         {
             if (table)
             {
@@ -193,6 +195,16 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 print_on_volume();
             }
+            break;
+        }
+        case Type::MIGRATE_PARTITION:
+        {
+            ostr << ' ';
+            ostr << quoteString(partition_id);
+            print_keyword(" OF ");
+            print_database_table();
+            print_keyword(" TO REPLICA ");
+            ostr << quoteString(target_replica);
             break;
         }
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:

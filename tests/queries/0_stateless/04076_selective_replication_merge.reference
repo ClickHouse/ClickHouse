@@ -1,0 +1,21 @@
+before_optimize_parts_in_partition_1
+3
+after_optimize_parts_in_partition_1
+1
+after_optimize_rows_preserved
+10
+before_table_final_rows
+14
+after_table_final_rows
+14
+optimize_unassigned_noop_error
+CANNOT_ASSIGN_OPTIMIZE
+optimize_unassigned_noop_silent
+silent_ok
+rf2_single_log_entry
+partition_0_assigned_replicas
+r1
+r2
+merged_parts_on_assigned_replicas
+data_r1	1
+data_r2	1

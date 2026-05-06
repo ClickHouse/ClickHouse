@@ -156,6 +156,9 @@ struct ReplicatedMergeTreeLogEntryData
         return type == MUTATE_PART && alter_version != -1;
     }
 
+    /// Extract the partition ID from the entry.
+    String getPartitionId(MergeTreeDataFormatVersion format_version) const;
+
     void updateLastExeption(std::exception_ptr _exception)
     {
         last_exception_time_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000ull;

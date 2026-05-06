@@ -5,9 +5,9 @@ drop table if exists tab1 sync;
 drop table if exists tab2 sync;
 drop table if exists tab3 sync;
 
-create table tab1 (x UInt32, y UInt32, shard UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/{database}/test_02967/tab1', 'r1') order by shard SETTINGS add_minmax_index_for_numeric_columns=0;
-create table tab2 (y UInt32, z UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/{database}/test_02967/tab2', 'r1') order by tuple();
-create table tab3 (z UInt32, a UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/{database}/test_02967/tab3', 'r1') order by tuple();
+create table tab1 (x UInt32, y UInt32, shard UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/{database}/test_02967/tab1', 'r1') order by shard SETTINGS add_minmax_index_for_numeric_columns=0, replication_factor=0;
+create table tab2 (y UInt32, z UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/{database}/test_02967/tab2', 'r1') order by tuple() SETTINGS replication_factor=0;
+create table tab3 (z UInt32, a UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/{database}/test_02967/tab3', 'r1') order by tuple() SETTINGS replication_factor=0;
 
 insert into tab1 select number, number, number from numbers(16);
 insert into tab2 select number * 2, number * 2 from numbers(8);

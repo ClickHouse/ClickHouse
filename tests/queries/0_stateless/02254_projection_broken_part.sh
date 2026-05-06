@@ -10,11 +10,11 @@ $CLICKHOUSE_CLIENT -q "drop table if exists projection_broken_parts_1 sync;"
 
 $CLICKHOUSE_CLIENT -q "create table projection_broken_parts_1 (a int, b int, projection ab (select a, sum(b) group by a))
     engine = ReplicatedMergeTree('/test/02254/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', 'r1')
-    order by a settings index_granularity = 1;"
+    order by a settings index_granularity = 1, replication_factor=0;"
 
 $CLICKHOUSE_CLIENT -q "create table projection_broken_parts_2 (a int, b int, projection ab (select a, sum(b) group by a))
     engine = ReplicatedMergeTree('/test/02254/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', 'r2')
-    order by a settings index_granularity = 1;"
+    order by a settings index_granularity = 1, replication_factor=0;"
 
 $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into projection_broken_parts_1 values (1, 1), (1, 2), (1, 3);"
 $CLICKHOUSE_CLIENT -q "system sync replica projection_broken_parts_2;"

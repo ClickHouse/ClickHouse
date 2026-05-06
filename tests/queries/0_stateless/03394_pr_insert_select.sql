@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS t_mt_source;
 DROP TABLE IF EXISTS t_rmt_target SYNC;
 
 CREATE TABLE t_mt_source (k UInt64, v String) ENGINE = MergeTree() ORDER BY k;
-CREATE TABLE t_rmt_target (k UInt64, v String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_rmt_target', 'r1') ORDER BY ();
+CREATE TABLE t_rmt_target (k UInt64, v String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_rmt_target', 'r1') ORDER BY () SETTINGS replication_factor=0;
 
 INSERT INTO t_mt_source SELECT number as k, toString(number) as v FROM system.numbers LIMIT 1e6;
 select 'mt source table count()', count() from t_mt_source;

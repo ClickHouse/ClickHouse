@@ -21,11 +21,23 @@ namespace zkutil
 
 namespace DB
 {
+
+/// Thrown by commitPart when selective replication assignment changes during the ZK CAS check.
+struct AssignmentChangedException : public Exception
+{
+    AssignmentChangedException(const String & partition_id_, const String & error_message_);
+
+    String partition_id;
+};
+
+class IConnectionPool;
+using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
 enum class InsertDeduplicationVersions : uint8_t;
 
 
 class StorageReplicatedMergeTree;
 struct BlockWithPartition;
+using BlocksWithPartition = std::vector<BlockWithPartition>;
 
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
@@ -81,7 +93,22 @@ public:
     bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
 
 protected:
-    virtual void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper);
+    struct AssignmentFailure
+    {
+        BlockWithPartition block_with_partition;
+        String partition_id;
+    };
+
+    /// Run the full local commit loop on an explicit set of parts.
+    /// The caller manages the lifetime of `parts` — this method does NOT clear or move them.
+    /// If `assignment_failures` is non-null, assignment races are collected; otherwise they throw.
+    void finishParts(
+        std::vector<DelayedPartInPartition> & parts,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        std::vector<AssignmentFailure> * assignment_failures = nullptr);
+
+    virtual void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper, std::vector<AssignmentFailure> * assignment_failures = nullptr);
+
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
 
     ZooKeeperWithFaultInjectionPtr createKeeper(String name);
@@ -91,9 +118,8 @@ protected:
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;
 
-
     /// Rename temporary part and commit to ZooKeeper.
-    /// Returns a map of conflicting blocks and its actual part names if block has to be deduplicated.
+    /// Returns conflict deduplication hashes on success, or throws on failure.
     std::vector<DeduplicationHash> commitPart(
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
@@ -142,6 +168,7 @@ protected:
     bool allow_attach_while_readonly = false;
     bool quorum_parallel = false;
     bool deduplicate = true;
+    bool is_patch_sink = false; /// Set to true in ReplicatedMergeTreeSinkPatch
     UInt64 num_blocks_processed = 0;
 
     LoggerPtr log;

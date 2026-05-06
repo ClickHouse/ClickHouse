@@ -9,10 +9,10 @@ $CLICKHOUSE_CLIENT -q "drop table if exists rmt1 sync;"
 $CLICKHOUSE_CLIENT -q "drop table if exists rmt2 sync;"
 
 $CLICKHOUSE_CLIENT -q "create table rmt1 (a int, b int)
-    engine = ReplicatedMergeTree('/test/02255/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', 'r1') order by a settings old_parts_lifetime=100500;"
+    engine = ReplicatedMergeTree('/test/02255/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', 'r1') order by a settings old_parts_lifetime=100500, replication_factor=0;"
 
 $CLICKHOUSE_CLIENT -q "create table rmt2 (a int, b int)
-    engine = ReplicatedMergeTree('/test/02255/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', 'r2') order by a settings old_parts_lifetime=100500;"
+    engine = ReplicatedMergeTree('/test/02255/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', 'r2') order by a settings old_parts_lifetime=100500, replication_factor=0;"
 
 $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into rmt1 values (1, 1), (1, 2), (1, 3);"
 $CLICKHOUSE_CLIENT -q "alter table rmt1 update b = b*10 where 1 settings mutations_sync=1"

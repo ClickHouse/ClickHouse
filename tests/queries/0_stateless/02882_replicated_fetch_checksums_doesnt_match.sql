@@ -4,11 +4,11 @@ DROP TABLE IF EXISTS checksums_r3;
 DROP TABLE IF EXISTS checksums_r2;
 DROP TABLE IF EXISTS checksums_r1;
 
-CREATE TABLE checksums_r1 (column1 UInt32, column2 String) Engine = ReplicatedMergeTree('/tables/{database}/checksums_table', 'r1') ORDER BY tuple();
+CREATE TABLE checksums_r1 (column1 UInt32, column2 String) Engine = ReplicatedMergeTree('/tables/{database}/checksums_table', 'r1') ORDER BY tuple() SETTINGS replication_factor=0;
 
-CREATE TABLE checksums_r2 (column1 UInt32, column2 String) Engine = ReplicatedMergeTree('/tables/{database}/checksums_table', 'r2') ORDER BY tuple();
+CREATE TABLE checksums_r2 (column1 UInt32, column2 String) Engine = ReplicatedMergeTree('/tables/{database}/checksums_table', 'r2') ORDER BY tuple() SETTINGS replication_factor=0;
 
-CREATE TABLE checksums_r3 (column1 UInt32, column2 String) Engine = ReplicatedMergeTree('/tables/{database}/checksums_table', 'r3') ORDER BY tuple();
+CREATE TABLE checksums_r3 (column1 UInt32, column2 String) Engine = ReplicatedMergeTree('/tables/{database}/checksums_table', 'r3') ORDER BY tuple() SETTINGS replication_factor=0;
 
 SYSTEM STOP REPLICATION QUEUES checksums_r2;
 SYSTEM STOP REPLICATION QUEUES checksums_r3;

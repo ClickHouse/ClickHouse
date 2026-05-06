@@ -30,7 +30,8 @@ CREATE TABLE part_header_r1(x UInt32, y UInt32)
              cleanup_delay_period = 0,
              cleanup_delay_period_random_add = 0,
              cleanup_thread_preferred_points_per_iteration=0,
-             cache_populated_by_fetch=0;
+             cache_populated_by_fetch=0,
+             replication_factor=0;
 CREATE TABLE part_header_r2(x UInt32, y UInt32)
     ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/{shard}', '2{replica}') ORDER BY x
     SETTINGS use_minimalistic_part_header_in_zookeeper = 1,
@@ -38,7 +39,8 @@ CREATE TABLE part_header_r2(x UInt32, y UInt32)
              cleanup_delay_period = 0,
              cleanup_delay_period_random_add = 0,
              cleanup_thread_preferred_points_per_iteration=0,
-             cache_populated_by_fetch=0;
+             cache_populated_by_fetch=0,
+             replication_factor=0;
 
 SELECT '*** Test fetches ***';
 INSERT INTO part_header_r1 VALUES (1, 1);

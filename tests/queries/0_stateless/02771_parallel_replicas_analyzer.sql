@@ -11,7 +11,7 @@ CREATE TABLE join_inner_table__fuzz_146_replicated
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/join_inner_table__fuzz_146_replicated', '{replica}')
 ORDER BY (id, number, key)
-SETTINGS index_granularity = 8192;
+SETTINGS index_granularity = 8192, replication_factor = 0;
 
 INSERT INTO join_inner_table__fuzz_146_replicated
     SELECT CAST('833c9e22-c245-4eb5-8745-117a9a1f26b1', 'UUID') AS id, CAST(rowNumberInAllBlocks(), 'String') AS key, *

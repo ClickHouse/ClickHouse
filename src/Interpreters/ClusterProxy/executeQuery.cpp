@@ -1,7 +1,6 @@
 #include <Common/ProfileEvents.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -28,6 +27,7 @@
 #include <QueryPipeline/UnavailableShardTracker.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Storages/RemoteQueryCommon.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/buildQueryTreeForShard.h>
@@ -401,7 +401,10 @@ void executeQuery(
             // decide for each shard if parallel reading from replicas should be enabled
             // according to settings and number of replicas declared per shard
             const auto & addresses = cluster->getShardsAddresses().at(i);
-            const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
+            const bool parallel_replicas_enabled = addresses.size() > 1
+                && new_context->canUseTaskBasedParallelReplicas();
+            const bool use_parallel_replicas_custom_key = addresses.size() > 1
+                && new_context->canUseParallelReplicasCustomKey();
 
             stream_factory.createForShard(
                 shard_info,
@@ -413,6 +416,7 @@ void executeQuery(
                 remote_shards,
                 static_cast<UInt32>(shards),
                 parallel_replicas_enabled,
+                use_parallel_replicas_custom_key,
                 shard_filter_generator);
         }
     }
@@ -440,7 +444,10 @@ void executeQuery(
             // decide for each shard if parallel reading from replicas should be enabled
             // according to settings and number of replicas declared per shard
             const auto & addresses = cluster->getShardsAddresses().at(i);
-            bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseTaskBasedParallelReplicas();
+            bool parallel_replicas_enabled = addresses.size() > 1
+                && context->canUseTaskBasedParallelReplicas();
+            bool use_parallel_replicas_custom_key = addresses.size() > 1
+                && context->canUseParallelReplicasCustomKey();
 
             stream_factory.createForShard(
                 shard_info,
@@ -452,17 +459,13 @@ void executeQuery(
                 remote_shards,
                 static_cast<UInt32>(shards),
                 parallel_replicas_enabled,
+                use_parallel_replicas_custom_key,
                 shard_filter_generator);
         }
     }
 
     if (!remote_shards.empty())
     {
-        Scalars scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
-        scalars.emplace(
-            "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
-        auto external_tables = context->getExternalTables();
-
         UnavailableShardTrackerPtr unavailable_shard_tracker;
         const auto & new_settings_ref = new_context->getSettingsRef();
         if (new_settings_ref[Setting::skip_unavailable_shards])
@@ -473,45 +476,27 @@ void executeQuery(
                 unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
         }
 
-        auto plan = std::make_unique<QueryPlan>();
-        auto read_from_remote = std::make_unique<ReadFromRemote>(
+        plans.emplace_back(createReadFromRemotePlan(
             std::move(remote_shards),
             header,
             processed_stage,
             main_table,
             table_func_ptr,
             new_context,
-            getThrottler(context),
-            std::move(scalars),
-            std::move(external_tables),
+            context,
             log,
-            shards,
+            static_cast<UInt32>(shards),
             query_info.storage_limits,
             not_optimized_cluster->getName(),
-            std::move(unavailable_shard_tracker));
-
-        read_from_remote->setStepDescription("Read from remote replica");
-        plan->addStep(std::move(read_from_remote));
-        plan->addInterpreterContext(new_context);
-        plans.emplace_back(std::move(plan));
+            "Read from remote replica",
+            getThrottler(context),
+            std::move(unavailable_shard_tracker)));
     }
 
     if (plans.empty())
         return;
 
-    if (plans.size() == 1)
-    {
-        query_plan = std::move(*plans.front());
-        return;
-    }
-
-    SharedHeaders input_headers;
-    input_headers.reserve(plans.size());
-    for (auto & plan : plans)
-        input_headers.emplace_back(plan->getCurrentHeader());
-
-    auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
-    query_plan.unitePlans(std::move(union_step), std::move(plans));
+    unitePlanList(query_plan, std::move(plans));
 }
 
 static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const UInt64 & shard_num)

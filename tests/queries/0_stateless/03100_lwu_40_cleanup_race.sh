@@ -22,7 +22,8 @@ $CLICKHOUSE_CLIENT --query "
         enable_block_offset_column = 1,
         cleanup_delay_period = 1,
         max_cleanup_delay_period = 1,
-        cleanup_delay_period_random_add = 0;
+        cleanup_delay_period_random_add = 0,
+        replication_factor=0;
 
     CREATE TABLE t_lwu_cleanup_2 (k UInt64, v String)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_lwu_cleanup', '2')
@@ -32,7 +33,8 @@ $CLICKHOUSE_CLIENT --query "
         enable_block_offset_column = 1,
         cleanup_delay_period = 1,
         max_cleanup_delay_period = 1,
-        cleanup_delay_period_random_add = 0;
+        cleanup_delay_period_random_add = 0,
+        replication_factor=0;
 
     -- Stop cleanup on both replicas to prevent premature patch part removal.
     -- SYSTEM STOP MERGES does not stop the cleanup thread, which can race

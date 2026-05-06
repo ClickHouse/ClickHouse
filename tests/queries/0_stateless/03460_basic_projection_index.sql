@@ -161,7 +161,7 @@ CREATE TABLE t_repl
     PROJECTION region_proj INDEX region TYPE basic
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test/proj', 'r1')
-ORDER BY id;
+ORDER BY id SETTINGS replication_factor=0;
 
 INSERT INTO t_repl VALUES (1, 'eu'), (2, 'us'), (3, 'eu');
 
@@ -172,7 +172,7 @@ CREATE TABLE t_repl2
     PROJECTION region_proj INDEX region TYPE basic
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test/proj', 'r2')
-ORDER BY id;
+ORDER BY id SETTINGS replication_factor=0;
 
 SYSTEM SYNC REPLICA t_repl2;
 
