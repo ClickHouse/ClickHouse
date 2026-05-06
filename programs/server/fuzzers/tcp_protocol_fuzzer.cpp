@@ -14,17 +14,20 @@
 
 int mainEntryClickHouseServer(int argc, char ** argv);
 
-static std::string clickhouse("clickhouse-server");
-static std::vector<char *> args{clickhouse.data()};
-static std::future<int> main_app;
+namespace
+{
 
-static std::string s_host("0.0.0.0");
-static char * host = s_host.data();
-static int64_t port = 9000;
+std::string clickhouse("clickhouse-server");
+std::vector<char *> args{clickhouse.data()};
+std::future<int> main_app;
+
+std::string s_host("0.0.0.0");
+char * host = s_host.data();
+int64_t port = 9000;
 
 using namespace std::chrono_literals;
 
-static bool isMerge(int argc, const char * const * argv)
+bool isMerge(int argc, const char * const * argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -37,10 +40,12 @@ static bool isMerge(int argc, const char * const * argv)
     return false;
 }
 
-static void on_exit()
+void on_exit()
 {
     BaseDaemon::terminate();
     main_app.wait();
+}
+
 }
 
 extern "C" int LLVMFuzzerInitialize(int * argc, char ***argv);

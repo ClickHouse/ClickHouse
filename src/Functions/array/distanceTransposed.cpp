@@ -24,9 +24,6 @@
 #    include <simsimd/simsimd.h>
 #endif
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 namespace ErrorCodes
@@ -78,7 +75,7 @@ struct L2DistanceTransposed
             AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
             d2 += (xi - yi) * (xi - yi);
         }
-        *result = static_cast<Float64>(sqrt(d2));
+        *result = static_cast<Float64>(std::sqrt(d2));
     }
 };
 
@@ -132,7 +129,7 @@ struct CosineDistanceTransposed
         }
         else
         {
-            const auto unclipped_result = AccumulatorType(1) - ab / (sqrt(a2) * sqrt(b2));
+            const auto unclipped_result = AccumulatorType(1) - ab / (std::sqrt(a2) * std::sqrt(b2));
             *result = unclipped_result > 0 ? unclipped_result : 0;
         }
     }
@@ -513,5 +510,3 @@ FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_)
     return FunctionArrayDistance<CosineDistanceTransposed>::create(context_);
 }
 }
-
-#pragma clang diagnostic pop

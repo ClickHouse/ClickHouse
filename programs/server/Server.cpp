@@ -544,7 +544,10 @@ enum StartupScriptsExecutionState : CurrentMetrics::Value
 };
 
 
-static std::string getCanonicalPath(std::string && path, const std::string & base = {})
+namespace
+{
+
+std::string getCanonicalPath(std::string && path, const std::string & base = {})
 {
     Poco::trimInPlace(path);
     if (path.empty())
@@ -556,11 +559,13 @@ static std::string getCanonicalPath(std::string && path, const std::string & bas
     return std::move(path);
 }
 
-static Poco::Net::TCPServerParams::Ptr makeServerParams(const ServerSettings & server_settings)
+Poco::Net::TCPServerParams::Ptr makeServerParams(const ServerSettings & server_settings)
 {
     Poco::Net::TCPServerParams::Ptr params = new Poco::Net::TCPServerParams();
     params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
     return params;
+}
+
 }
 
 Poco::Net::SocketAddress Server::socketBindListen(
@@ -584,7 +589,10 @@ Poco::Net::SocketAddress Server::socketBindListen(
     return address;
 }
 
-static Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
+namespace
+{
+
+Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
 {
     auto listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
     if (listen_hosts.empty())
@@ -595,7 +603,7 @@ static Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
     return listen_hosts;
 }
 
-static Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & config)
+Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & config)
 {
     auto interserver_listen_hosts = DB::getMultipleValuesFromConfig(config, "", "interserver_listen_host");
     if (!interserver_listen_hosts.empty())
@@ -605,7 +613,7 @@ static Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration
     return getListenHosts(config);
 }
 
-static bool getListenTry(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings)
+bool getListenTry(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings)
 {
     bool listen_try = server_settings[ServerSetting::listen_try];
     if (!listen_try)
@@ -620,6 +628,8 @@ static bool getListenTry(const Poco::Util::AbstractConfiguration & config, const
             });
     }
     return listen_try;
+}
+
 }
 
 
@@ -1012,7 +1022,10 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
 }
 
-static void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings, ContextMutablePtr context, Poco::Logger * log)
+namespace
+{
+
+void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings, ContextMutablePtr context, Poco::Logger * log)
 {
     try
     {
@@ -1114,7 +1127,7 @@ static void loadStartupScripts(const Poco::Util::AbstractConfiguration & config,
     }
 }
 
-static void initializeAzureSDKLogger(
+void initializeAzureSDKLogger(
     [[ maybe_unused ]] const ServerSettings & server_settings,
     [[ maybe_unused ]] int server_logs_level)
 {
@@ -1153,8 +1166,12 @@ static void initializeAzureSDKLogger(
 #endif
 }
 
+}
+
 #if defined(SANITIZER)
-static std::vector<String> getSanitizerNames()
+namespace
+{
+std::vector<String> getSanitizerNames()
 {
     std::vector<String> names;
 
@@ -1172,6 +1189,7 @@ static std::vector<String> getSanitizerNames()
 #endif
 
     return names;
+}
 }
 #endif
 

@@ -16,9 +16,6 @@
 
 #include <random>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 
@@ -288,7 +285,7 @@ public:
         DistributionLimits limits_
         {
             .max_trials = context->getSettingsRef()[Setting::max_rand_distribution_trials],
-            .max_parameter = context->getSettingsRef()[Setting::max_rand_distribution_parameter],
+            .max_parameter = static_cast<double>(context->getSettingsRef()[Setting::max_rand_distribution_parameter]),
         };
         return std::make_shared<FunctionRandomDistribution<Distribution>>(limits_);
     }
@@ -671,5 +668,3 @@ Returns a random Float64 number drawn from a [Poisson distribution](https://en.w
 }
 
 }
-
-#pragma clang diagnostic pop

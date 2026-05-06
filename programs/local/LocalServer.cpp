@@ -186,7 +186,10 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-static void applySettingsOverridesForLocal(ContextMutablePtr context)
+namespace
+{
+
+void applySettingsOverridesForLocal(ContextMutablePtr context)
 {
     Settings settings = context->getSettingsCopy();
 
@@ -195,6 +198,8 @@ static void applySettingsOverridesForLocal(ContextMutablePtr context)
     settings[Setting::implicit_select] = true;
 
     context->setSettings(settings);
+}
+
 }
 
 Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()

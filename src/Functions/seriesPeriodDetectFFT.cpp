@@ -20,9 +20,6 @@
 #    include <Functions/FunctionHelpers.h>
 #    include <Functions/IFunction.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 namespace ErrorCodes
@@ -124,7 +121,10 @@ public:
             return true;
         }
 
-        std::vector<Float64> src((src_vec.begin() + start), (src_vec.begin() + end));
+        std::vector<Float64> src;
+        src.reserve(len);
+        for (size_t i = start; i < end; ++i)
+            src.push_back(static_cast<Float64>(src_vec[i]));
         std::vector<std::complex<double>> out((len / 2) + 1);
 
         pocketfft::shape_t shape{len};
@@ -206,7 +206,5 @@ Finds the period of the given series data using FFT - [Fast Fourier transform](h
     factory.registerFunction<FunctionSeriesPeriodDetectFFT>(documentation);
 }
 }
-
-#pragma clang diagnostic pop
 
 #endif

@@ -15,9 +15,6 @@
 
 #include <Functions/array/FunctionArrayMapped.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 
@@ -337,7 +334,7 @@ struct ArrayAggregateImpl
                 if constexpr (aggregate_operation == AggregateOperation::sum ||
                             aggregate_operation == AggregateOperation::average)
                 {
-                    aggregate_value += element;
+                    aggregate_value += static_cast<AggregationType>(element);
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
                 {
@@ -352,7 +349,7 @@ struct ArrayAggregateImpl
                     }
                     else
                     {
-                        aggregate_value *= element;
+                        aggregate_value *= static_cast<AggregationType>(element);
                     }
                 }
 
@@ -560,5 +557,3 @@ If a lambda function `func` is specified, returns the product of elements of the
 }
 
 }
-
-#pragma clang diagnostic pop
