@@ -6,6 +6,7 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesToGridSparse.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesChanges.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesQuantile.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
@@ -280,6 +281,99 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
             res = createWithValueType<is_rate_or_resets, is_predict, true, Float32, FunctionTraits, Function>(name, argument_types, parameters);
         else
             res = createWithValueType<is_rate_or_resets, is_predict, false, Float32, FunctionTraits, Function>(name, argument_types, parameters);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of 2nd argument (value) for aggregate function {}", value_type->getName(), name);
+    }
+
+    return res;
+}
+
+template <bool array_arguments, typename ValueType>
+AggregateFunctionPtr createQuantileWithValueType(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+{
+    const auto & timestamp_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[0].get())->getNestedType() : argument_types[0];
+
+    if (parameters.size() != 5)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {} requires 5 parameters: start_timestamp, end_timestamp, step, window, phi", name);
+
+    const Field & start_timestamp_param = parameters[0];
+    const Field & end_timestamp_param = parameters[1];
+    const Field & step_param = parameters[2];
+    const Field & window_param = parameters[3];
+    const Field & phi_param = parameters[4];
+
+    AggregateFunctionPtr res;
+    if (isDateTime64(timestamp_type))
+    {
+        /// Convert start, end, step and staleness parameters to the scale of the timestamp column.
+        auto timestamp_decimal = std::dynamic_pointer_cast<const DataTypeDateTime64>(timestamp_type);
+        auto target_scale = timestamp_decimal->getScale();
+
+        DateTime64 start_timestamp = normalizeParameter(name, "start", start_timestamp_param, target_scale);
+        DateTime64 end_timestamp = normalizeParameter(name, "end", end_timestamp_param, target_scale);
+        DateTime64 step = normalizeParameter(name, "step", step_param, target_scale);
+        DateTime64 window = normalizeParameter(name, "window", window_param, target_scale);
+        Float64 phi = extractFloatParameter(name, "phi", phi_param);
+
+        res = std::make_shared<AggregateFunctionTimeseriesQuantile<AggregateFunctionTimeseriesQuantileTraits<array_arguments, DateTime64, Int64, ValueType>>>(
+            argument_types, start_timestamp, end_timestamp, step, window, target_scale, phi);
+    }
+    else if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
+    {
+        UInt64 start_timestamp = extractIntParameter(name, "start", start_timestamp_param);
+        UInt64 end_timestamp = extractIntParameter(name, "end", end_timestamp_param);
+        Int64 step = extractIntParameter(name, "step", step_param);
+        Int64 window = extractIntParameter(name, "window", window_param);
+        Float64 phi = extractFloatParameter(name, "phi", phi_param);
+
+        res = std::make_shared<AggregateFunctionTimeseriesQuantile<AggregateFunctionTimeseriesQuantileTraits<array_arguments, UInt32, Int32, ValueType>>>(
+            argument_types, start_timestamp, end_timestamp, step, window, 0, phi);
+    }
+
+    if (!res)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 1st argument (timestamp) for aggregate function {}",
+            timestamp_type->getName(), name);
+
+    return res;
+}
+
+AggregateFunctionPtr createAggregateFunctionTimeseriesQuantile(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+{
+    if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0 && (*settings)[Setting::allow_experimental_time_series_table] == 0)
+        throw Exception(
+            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+            "Aggregate function {} is experimental and disabled by default. Enable it with setting allow_experimental_time_series_aggregate_functions",
+            name);
+
+    assertBinary(name, argument_types);
+
+    if ((argument_types[0]->getTypeId() == TypeIndex::Array) != (argument_types[1]->getTypeId() == TypeIndex::Array))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal combination of argument type {} and {} for aggregate function {}, expected both arguments to be arrays or not arrays",
+            argument_types[0]->getName(), argument_types[1]->getName(), name);
+
+    const bool array_arguments = argument_types[1]->getTypeId() == TypeIndex::Array;
+    const auto & value_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[1].get())->getNestedType() : argument_types[1];
+
+    AggregateFunctionPtr res;
+    if (value_type->getTypeId() == TypeIndex::Float64)
+    {
+        if (array_arguments)
+            res = createQuantileWithValueType<true, Float64>(name, argument_types, parameters);
+        else
+            res = createQuantileWithValueType<false, Float64>(name, argument_types, parameters);
+    }
+    else if (value_type->getTypeId() == TypeIndex::Float32)
+    {
+        if (array_arguments)
+            res = createQuantileWithValueType<true, Float32>(name, argument_types, parameters);
+        else
+            res = createQuantileWithValueType<false, Float32>(name, argument_types, parameters);
     }
     else
     {
@@ -907,6 +1001,82 @@ SELECT timeSeriesResetsToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
 
     factory.registerFunction("timeSeriesResetsToGrid",
         {createAggregateFunctionTimeseries<true, false, AggregateFunctionTimeseriesChangesTraits, AggregateFunctionTimeseriesChanges>, documentation_timeSeriesResetsToGrid});
+
+    /// timeSeriesQuantileToGrid documentation
+    FunctionDocumentation::Description description_timeSeriesQuantileToGrid = R"(
+Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like quantile_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#aggregation_over_time) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `quantile_over_time` are considered within the specified time window.
+
+:::note
+This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_timeSeriesQuantileToGrid = R"(
+timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness, phi)(timestamp, value)
+    )";
+    FunctionDocumentation::Parameters parameters_timeSeriesQuantileToGrid = {
+        {"start_timestamp", "Specifies start of the grid.", {}},
+        {"end_timestamp", "Specifies end of the grid.", {}},
+        {"grid_step", "Specifies step of the grid in seconds.", {}},
+        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples.", {}},
+        {"phi", "Specifies the quantile to calculate.", {}}
+    };
+    FunctionDocumentation::Arguments arguments_timeSeriesQuantileToGrid = {
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesQuantileToGrid = {"`quantile_over_time` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window to calculate the quantile for a particular grid point.", {}};
+    FunctionDocumentation::Examples examples_timeSeriesQuantileToGrid = {
+    {
+        "Calculate quantile values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210]",
+        R"(
+WITH
+    [110, 120, 130, 140, 190, 200, 210]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8]::Array(Float32) AS values,
+    90 AS start_ts,
+    90 + 120 AS end_ts,
+    15 AS step_seconds,
+    45 AS window_seconds,
+    0.5 AS phi
+SELECT timeSeriesQuantileToGrid(start_ts, end_ts, step_seconds, window_seconds, phi)(timestamp, value)
+FROM
+(
+    SELECT
+        arrayJoin(arrayZip(timestamps, values)) AS ts_and_val,
+        ts_and_val.1 AS timestamp,
+        ts_and_val.2 AS value
+);
+        )",
+        R"(
+┌─timeSeriesQuantileToGrid(start_ts, end_ts, step_seconds, window_seconds, phi)(timestamp, value)─┐
+│ [NULL,NULL,1,1,2,3.5,4,5,5]                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Same query with array arguments",
+        R"(
+WITH
+    [110, 120, 130, 140, 190, 200, 210]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8]::Array(Float32) AS values,
+    90 AS start_ts,
+    90 + 120 AS end_ts,
+    15 AS step_seconds,
+    45 AS window_seconds,
+    0.5 AS phi
+SELECT timeSeriesQuantileToGrid(start_ts, end_ts, step_seconds, window_seconds, phi)(timestamps, values);
+        )",
+        R"(
+┌─timeSeriesQuantileToGrid(start_ts, end_ts, step_seconds, window_seconds, phi)(timestamp, value)─┐
+│ [NULL,NULL,1,1,2,3.5,4,5,5]                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesQuantileToGrid = {25, 6};
+    FunctionDocumentation::Category category_timeSeriesQuantileToGrid = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_timeSeriesQuantileToGrid = {description_timeSeriesQuantileToGrid, syntax_timeSeriesQuantileToGrid, arguments_timeSeriesQuantileToGrid, parameters_timeSeriesQuantileToGrid, returned_value_timeSeriesQuantileToGrid, examples_timeSeriesQuantileToGrid, introduced_in_timeSeriesQuantileToGrid, category_timeSeriesQuantileToGrid};
+
+    factory.registerFunction("timeSeriesQuantileToGrid", {createAggregateFunctionTimeseriesQuantile, documentation_timeSeriesQuantileToGrid});
 
     /// timeSeriesResampleToGridWithStaleness documentation
     FunctionDocumentation::Description description_timeSeriesResampleToGridWithStaleness = R"(
