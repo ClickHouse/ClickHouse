@@ -92,7 +92,7 @@ private:
     enum class LeaseParseStatus
     {
         Ok,
-        ParseError,        /// Unparseable / out-of-range timestamp — treat as a stale lease and self-heal.
+        ParseError,        /// Unparsable / out-of-range timestamp — treat as a stale lease and self-heal.
         UnknownVersion,    /// Valid JSON, version not understood — fail closed: stay a follower.
     };
 
