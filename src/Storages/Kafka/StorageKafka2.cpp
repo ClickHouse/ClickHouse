@@ -415,13 +415,6 @@ private:
 
         ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
 
-        /// Use the actual number of created consumers, not the configured num_consumers.
-        /// Some consumers may have failed to create during startup; iterating over the
-        /// configured count would cause acquireConsumer to throw for missing indices.
-        auto actual_consumers = kafka_storage.num_created_consumers;
-        if (actual_consumers == 0)
-            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "No Kafka consumers available for direct read");
-
         /// Reject direct reads whenever a materialized view is attached, even if no streamer is
         /// currently running. Between consecutive `threadFunc` invocations (reschedule gaps),
         /// `active_mv_streamers` is 0 while the MV is still attached, so checking the streamer
@@ -429,15 +422,28 @@ private:
         if (!DatabaseCatalog::instance().getDependentViews(kafka_storage.getStorageID()).empty())
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
 
-        /// Atomically check that no MV streamer is active and register all direct readers.
-        /// This is done under consumers_mutex to prevent a TOCTOU race with threadFunc,
-        /// which performs the symmetric check (active_direct_readers == 0) before starting
+        /// Atomically check that no MV streamer is active, collect indices of consumers that were
+        /// successfully created (some slots may be empty if creation failed in `startup`), and
+        /// register all direct readers.
+        ///
+        /// This is done under `consumers_mutex` to prevent a TOCTOU race with `threadFunc`,
+        /// which performs the symmetric check (`active_direct_readers == 0`) before starting
         /// MV streaming. Without the mutex, both sides could pass their checks simultaneously.
+        std::vector<size_t> valid_consumer_indices;
         {
             std::lock_guard lock(kafka_storage.consumers_mutex);
             if (kafka_storage.active_mv_streamers.load() > 0)
                 throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
-            kafka_storage.active_direct_readers.fetch_add(actual_consumers);
+
+            valid_consumer_indices.reserve(kafka_storage.consumers.size());
+            for (size_t i = 0; i < kafka_storage.consumers.size(); ++i)
+                if (kafka_storage.consumers[i])
+                    valid_consumer_indices.push_back(i);
+
+            if (valid_consumer_indices.empty())
+                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "No Kafka consumers available for direct read");
+
+            kafka_storage.active_direct_readers.fetch_add(valid_consumer_indices.size());
         }
 
         /// If source creation fails partway, undo the count for sources that were never created.
@@ -445,16 +451,16 @@ private:
         size_t sources_created = 0;
         SCOPE_EXIT(
         {
-            if (sources_created < actual_consumers)
-                kafka_storage.active_direct_readers.fetch_sub(actual_consumers - sources_created);
+            if (sources_created < valid_consumer_indices.size())
+                kafka_storage.active_direct_readers.fetch_sub(valid_consumer_indices.size() - sources_created);
         });
 
         Pipes pipes;
-        pipes.reserve(actual_consumers);
+        pipes.reserve(valid_consumer_indices.size());
         auto modified_context = Context::createCopy(getContext());
         modified_context->applySettingsChanges(kafka_storage.settings_adjustments);
 
-        for (size_t i = 0; i < actual_consumers; ++i)
+        for (auto consumer_index : valid_consumer_indices)
         {
             /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
             auto source = std::make_shared<Kafka2Source>(
@@ -464,7 +470,7 @@ private:
                 column_names,
                 kafka_storage.log,
                 1,
-                i,
+                consumer_index,
                 (*kafka_storage.kafka_settings)[KafkaSetting::kafka_commit_on_select]);
             ++sources_created;
             pipes.emplace_back(std::move(source));
@@ -546,12 +552,16 @@ void StorageKafka2::startup()
     const auto replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
     {
         std::lock_guard lock(consumers_mutex);
+        /// Pre-size to `num_consumers` so consumer slots are addressable by their original index even
+        /// when individual creations fail. Compacting via `push_back` would shift indices and break
+        /// the per-slot streaming task in `threadFunc`, which is scheduled by the configured slot index.
+        consumers.resize(num_consumers);
         for (size_t i = 0; i < num_consumers; ++i)
         {
             try
             {
-                consumers.push_back(
-                    std::make_shared<KeeperHandlingConsumer>(createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log));
+                consumers[i] = std::make_shared<KeeperHandlingConsumer>(
+                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log);
                 ++num_created_consumers;
             }
             catch (const cppkafka::Exception &)
@@ -1133,6 +1143,16 @@ void StorageKafka2::threadFunc(size_t idx)
 {
     chassert(idx < tasks.size());
     auto task = tasks[idx];
+
+    /// Tasks are created up front for every configured slot, but consumer creation in `startup`
+    /// may fail for some slots. Skip work for empty slots without rescheduling, otherwise the
+    /// task would repeatedly enter and bail out on every reschedule for the storage's lifetime.
+    {
+        std::lock_guard lock(consumers_mutex);
+        if (idx >= consumers.size() || !consumers[idx])
+            return;
+    }
+
     std::optional<StallKind> maybe_stall_reason;
     bool incremented_mv_streamers = false;
     try
@@ -1277,7 +1297,7 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
 StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t idx)
 {
     UniqueLock lock(consumers_mutex);
-    if (idx >= consumers.size())
+    if (idx >= consumers.size() || !consumers[idx])
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid consumer index: {}, number of consumers is {}", idx, consumers.size());
 
     /// Wait until the consumer is free, with a timeout to prevent deadlocks.
@@ -1344,7 +1364,7 @@ void StorageKafka2::cleanConsumers()
             std::chrono::seconds(KAFKA_CONSUMER_CLOSE_TIMEOUT_S),
             [&, this]() TSA_NO_THREAD_SAFETY_ANALYSIS
             {
-                auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr) { return ptr->isInUse(); });
+                auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr) { return ptr && ptr->isInUse(); });
                 return it == consumers.end();
             }))
         {
@@ -1354,7 +1374,7 @@ void StorageKafka2::cleanConsumers()
         size_t skipped = 0;
         for (const auto & consumer : consumers)
         {
-            if (!consumer->hasConsumer())
+            if (!consumer || !consumer->hasConsumer())
                 continue;
             if (consumer->isInUse())
             {
