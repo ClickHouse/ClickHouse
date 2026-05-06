@@ -8,7 +8,15 @@ services:
       - nessie.catalog.default-warehouse=warehouse
       - nessie.catalog.warehouses.warehouse.location=s3://warehouse-rest/
       - nessie.catalog.service.s3.default-options.endpoint=http://minio1:9001/
-      - nessie.catalog.service.s3.default-options.external-endpoint=http://minio1:9001/
+      # external-endpoint is what Nessie vends to clients in the REST `loadTable`
+      # response. The pytest `pyiceberg` client runs on the host network and
+      # cannot resolve the Docker hostname `minio1`, so we vend the standard
+      # MinIO container's IP (set from `cluster.py` via `MINIO_IP`). The IP is
+      # routable from the host (Docker default bridge) and from other
+      # containers on the same network, so it works for both pytest and the
+      # ClickHouse server. Falls back to `minio1` if `MINIO_IP` is unset
+      # (so the compose file stays usable for ad-hoc invocations).
+      - nessie.catalog.service.s3.default-options.external-endpoint=http://${MINIO_IP:-minio1}:9001/
       - nessie.catalog.service.s3.default-options.access-key=urn:nessie-secret:quarkus:nessie.catalog.secrets.access-key
       - nessie.catalog.service.s3.default-options.path-style-access=true
       - nessie.catalog.service.s3.default-options.auth-type=STATIC

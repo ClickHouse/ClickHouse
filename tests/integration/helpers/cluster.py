@@ -3969,6 +3969,18 @@ class ClickHouseCluster:
                     catalog_buckets.extend(["warehouse-rest", "iceberg-data"])
                 self.create_minio_buckets(catalog_buckets, set_public_policy=True)
 
+                # Some catalogs (Nessie) vend an S3 endpoint to clients via the
+                # REST `loadTable` response. The hostname `minio1` is only
+                # resolvable inside the Docker network, so the host-side
+                # `pyiceberg` client cannot reach it. Re-export the env file
+                # with `MINIO_IP` set to the standard MinIO container's IP
+                # (resolvable from both the host and from other containers in
+                # the same Docker bridge network) so catalog compose files can
+                # vend a host-reachable URL.
+                if self.minio_ip:
+                    self.env_variables["MINIO_IP"] = self.minio_ip
+                    _create_env_file(self.env_file, self.env_variables)
+
             if self.with_glue_catalog and self.base_glue_catalog_cmd:
                 logging.info("Starting Glue catalog...")
                 subprocess_check_call(self.base_glue_catalog_cmd + common_opts)
