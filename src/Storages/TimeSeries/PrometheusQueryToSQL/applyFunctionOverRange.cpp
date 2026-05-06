@@ -46,11 +46,116 @@ namespace
         }
     }
 
+    enum class SimpleOverTimeFunction
+    {
+        None,
+        Sum,
+        Avg,
+        Min,
+        Max,
+        Count,
+        Stddev,
+        Stdvar,
+        Present,
+    };
+
     struct ImplInfo
     {
         std::string_view ch_function_name;
         bool drop_metric_name = true;
+        SimpleOverTimeFunction simple_over_time_function = SimpleOverTimeFunction::None;
     };
+
+    ASTPtr toFloat64(ASTPtr && x)
+    {
+        return makeASTFunction("toFloat64", std::move(x));
+    }
+
+    ASTPtr getTupleElement(ASTPtr && tuple, UInt64 index)
+    {
+        return makeASTFunction("tupleElement", std::move(tuple), make_intrusive<ASTLiteral>(index));
+    }
+
+    ASTPtr buildWindowSamples(ASTPtr grid_timestamp, ASTPtr timestamps, ASTPtr values, ASTPtr window)
+    {
+        auto sample_timestamp = [] { return getTupleElement(make_intrusive<ASTIdentifier>("p"), 1); };
+        auto sample_value = [] { return getTupleElement(make_intrusive<ASTIdentifier>("p"), 2); };
+
+        auto filter_condition = makeASTFunction(
+            "and",
+            makeASTFunction(
+                "greater",
+                toFloat64(sample_timestamp()),
+                makeASTFunction("minus", toFloat64(grid_timestamp->clone()), toFloat64(window->clone()))),
+            makeASTFunction("lessOrEquals", toFloat64(sample_timestamp()), toFloat64(std::move(grid_timestamp))),
+            makeASTFunction("isNotNull", sample_value()));
+
+        auto filtered_samples = makeASTFunction(
+            "arrayFilter",
+            makeASTLambda({"p"}, std::move(filter_condition)),
+            makeASTFunction("arrayZip", std::move(timestamps), std::move(values)));
+
+        return makeASTFunction(
+            "arrayMap",
+            makeASTLambda({"p"}, makeASTFunction("assumeNotNull", sample_value())),
+            std::move(filtered_samples));
+    }
+
+    ASTPtr buildSimpleOverTimeValue(SimpleOverTimeFunction function, ASTPtr samples, const ConverterContext & context)
+    {
+        switch (function)
+        {
+            case SimpleOverTimeFunction::Sum:
+                return makeASTFunction("arraySum", std::move(samples));
+            case SimpleOverTimeFunction::Avg:
+                return makeASTFunction("arrayAvg", std::move(samples));
+            case SimpleOverTimeFunction::Min:
+                return makeASTFunction("arrayMin", std::move(samples));
+            case SimpleOverTimeFunction::Max:
+                return makeASTFunction("arrayMax", std::move(samples));
+            case SimpleOverTimeFunction::Count:
+                return makeASTFunction("toFloat64", makeASTFunction("length", std::move(samples)));
+            case SimpleOverTimeFunction::Stddev:
+                return makeASTFunction("arrayReduce", make_intrusive<ASTLiteral>("stddevPop"), std::move(samples));
+            case SimpleOverTimeFunction::Stdvar:
+                return makeASTFunction("arrayReduce", make_intrusive<ASTLiteral>("varPop"), std::move(samples));
+            case SimpleOverTimeFunction::Present:
+                return timeSeriesScalarToAST(1, context.scalar_data_type);
+            case SimpleOverTimeFunction::None:
+                break;
+        }
+
+        UNREACHABLE();
+    }
+
+    ASTPtr buildSimpleOverTimeValues(
+        SimpleOverTimeFunction function,
+        ASTPtr timestamps,
+        ASTPtr values,
+        TimestampType start_time,
+        TimestampType end_time,
+        DurationType step,
+        DurationType window,
+        const ConverterContext & context)
+    {
+        auto grid_timestamp = make_intrusive<ASTIdentifier>("t");
+        auto window_ast = timeSeriesDurationToAST(window, context.timestamp_data_type);
+        auto samples = buildWindowSamples(grid_timestamp->clone(), timestamps->clone(), values->clone(), window_ast->clone());
+        auto value = makeASTFunction(
+            "if",
+            makeASTFunction("empty", samples->clone()),
+            make_intrusive<ASTLiteral>(Field{}),
+            buildSimpleOverTimeValue(function, std::move(samples), context));
+
+        return makeASTFunction(
+            "arrayMap",
+            makeASTLambda({"t"}, std::move(value)),
+            makeASTFunction(
+                "timeSeriesRange",
+                timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
+                timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
+                timeSeriesDurationToAST(step, context.timestamp_data_type)));
+    }
 
     /// Returns information about how the specified prometheus function is implemented.
     /// Returns nullptr if not found.
@@ -87,19 +192,67 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
+            {"avg_over_time",
+             {
+                 "",
+                 /* drop_metric_name = */ true,
+                 SimpleOverTimeFunction::Avg,
+             }},
+
+            {"min_over_time",
+             {
+                 "",
+                 /* drop_metric_name = */ true,
+                 SimpleOverTimeFunction::Min,
+             }},
+
+            {"max_over_time",
+             {
+                 "",
+                 /* drop_metric_name = */ true,
+                 SimpleOverTimeFunction::Max,
+             }},
+
+            {"sum_over_time",
+             {
+                 "",
+                 /* drop_metric_name = */ true,
+                 SimpleOverTimeFunction::Sum,
+             }},
+
+            {"count_over_time",
+             {
+                 "",
+                 /* drop_metric_name = */ true,
+                 SimpleOverTimeFunction::Count,
+             }},
+
+            {"stddev_over_time",
+             {
+                 "",
+                 /* drop_metric_name = */ true,
+                 SimpleOverTimeFunction::Stddev,
+             }},
+
+            {"stdvar_over_time",
+             {
+                 "",
+                 /* drop_metric_name = */ true,
+                 SimpleOverTimeFunction::Stdvar,
+             }},
+
+            {"present_over_time",
+             {
+                 "",
+                 /* drop_metric_name = */ true,
+                 SimpleOverTimeFunction::Present,
+             }},
+
             /// TODO:
             /// resets
             /// predict_linear
             /// deriv
-            /// avg_over_time
-            /// min_over_time
-            /// max_over_time
-            /// sum_over_time
-            /// count_over_time
             /// quantile_over_time
-            /// stddev_over_time"
-            /// stdvar_over_time
-            /// present_over_time
             /// absent_over_time
             /// mad_over_time
             /// ts_of_min_over_time
@@ -158,6 +311,7 @@ SQLQueryPiece applyFunctionOverRange(
     res.type = ResultType::INSTANT_VECTOR;
 
     bool has_group = false;
+    bool group_by_group = false;
     ASTPtr timestamps;
     ASTPtr values;
 
@@ -207,6 +361,7 @@ SQLQueryPiece applyFunctionOverRange(
             /// FROM <vector_grid>
             /// GROUP BY group
             has_group = true;
+            group_by_group = (impl_info->simple_over_time_function == SimpleOverTimeFunction::None);
 
             /// (timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS time_series).1
             ASTPtr ts = makeASTFunction(
@@ -232,9 +387,18 @@ SQLQueryPiece applyFunctionOverRange(
             /// FROM <raw_data>
             /// GROUP BY group
             has_group = true;
+            group_by_group = true;
 
-            timestamps = make_intrusive<ASTIdentifier>(ColumnNames::Timestamp);
-            values = make_intrusive<ASTIdentifier>(ColumnNames::Value);
+            if (impl_info->simple_over_time_function != SimpleOverTimeFunction::None)
+            {
+                timestamps = makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+                values = makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(ColumnNames::Value));
+            }
+            else
+            {
+                timestamps = make_intrusive<ASTIdentifier>(ColumnNames::Timestamp);
+                values = make_intrusive<ASTIdentifier>(ColumnNames::Value);
+            }
             res.store_method = StoreMethod::VECTOR_GRID;
 
             break;
@@ -265,17 +429,32 @@ SQLQueryPiece applyFunctionOverRange(
     if (has_group)
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
-    /// <aggregate_function>(<timestamps>, <values>) AS values
-    builder.select_list.push_back(addParametersToAggregateFunction(
-        makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
-        timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type)));
+    if (impl_info->simple_over_time_function != SimpleOverTimeFunction::None)
+    {
+        builder.select_list.push_back(buildSimpleOverTimeValues(
+            impl_info->simple_over_time_function,
+            std::move(timestamps),
+            std::move(values),
+            start_time,
+            end_time,
+            step,
+            window,
+            context));
+    }
+    else
+    {
+        /// <aggregate_function>(<timestamps>, <values>) AS values
+        builder.select_list.push_back(addParametersToAggregateFunction(
+            makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
+            timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(step, context.timestamp_data_type),
+            timeSeriesDurationToAST(window, context.timestamp_data_type)));
+    }
 
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
-    if (has_group)
+    if (group_by_group)
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     if (argument.select_query)
