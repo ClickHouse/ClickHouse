@@ -186,11 +186,16 @@ std::unordered_map<String, String> extractColumnMapping(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "View {} has no SELECT expression list", view_id.getFullTableName());
 
+    bool has_asterisk = false;
+
+    // First pass: check for asterisk and validate all items
     for (const auto & expr : select.select()->children)
     {
-        /// Asterisk — all columns map 1:1.
         if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
-            return {};
+        {
+            has_asterisk = true;
+            continue;
+        }
 
         /// Must be a simple column reference (possibly with alias).
         const auto * identifier = expr->as<ASTIdentifier>();
@@ -198,6 +203,12 @@ std::unordered_map<String, String> extractColumnMapping(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot INSERT into view {} because its SELECT list contains "
                 "expressions that are not simple column references",
+                view_id.getFullTableName());
+
+        // Cannot mix asterisk with explicit column references
+        if (has_asterisk)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot INSERT into view {} because its SELECT list mixes * with explicit columns",
                 view_id.getFullTableName());
 
         String target_col = identifier->name();
@@ -208,6 +219,10 @@ std::unordered_map<String, String> extractColumnMapping(
         if (view_col != target_col)
             mapping[view_col] = target_col;
     }
+
+    // If we have asterisk alone, return empty mapping
+    if (has_asterisk)
+        return {};
 
     return mapping;
 }
