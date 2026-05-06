@@ -253,6 +253,23 @@ const char * getInsertData(const ASTPtr & ast)
 }
 
 
+/** Try to parse a single query from a (possibly multi-statement) input range.
+  *
+  * Error-message scoping for multi-statement input:
+  *   When the input contains several semicolon-separated statements and one
+  *   of them is malformed, the formatted error message must reference only
+  *   that single statement, not the entire remaining input. The error paths
+  *   below all clamp the highlighted range to the current statement boundary
+  *   (next semicolon or end-of-stream):
+  *     1. Early-lookahead lexical error  (see the `lookahead->isError()` branch)
+  *     2. Post-parse lexical error       (see the `last_token.isError()` branch)
+  *     3. Unmatched parentheses          (see `checkUnmatchedParentheses` branch)
+  *     4. Generic parse error            (uses `this_query_end_pos`, not `all_queries_end`)
+  *     5. Excessive input after parse    (also uses `this_query_end_pos`)
+  *   Without this scoping, a `clickhouse-local --ignore-error` run over many
+  *   malformed statements would echo every subsequent statement inside each
+  *   error message, producing O(N^2) output for an N-statement script.
+  */
 ASTPtr tryParseQuery(
     IParser & parser,
     const char * & _out_query_end, /* also query begin as input parameter */
