@@ -220,7 +220,8 @@ public:
         Poco::Net::HTTPBasicCredentials & credentials,
         const HTTPHeaderEntries & headers,
         bool glob_url,
-        bool delay_initialization);
+        bool delay_initialization,
+        ReadWriteBufferFromHTTP::CheckCancelled check_cancelled = nullptr);
 
 private:
     void addNumRowsToCache(const String & uri, size_t num_rows);
@@ -238,6 +239,7 @@ private:
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
     std::optional<size_t> current_file_size;
+    std::optional<time_t> current_file_last_modified;
     String format;
     const std::optional<FormatSettings> & format_settings;
     FormatParserSharedResourcesPtr parser_shared_resources;

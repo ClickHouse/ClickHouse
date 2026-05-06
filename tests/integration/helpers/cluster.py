@@ -1562,6 +1562,17 @@ class ClickHouseCluster:
         env_variables["SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT"] = str(
             self.schema_registry_auth_port
         )
+        if is_arm():
+            env_variables["KAFKA_IMAGE_TAG"] = "7.9.0"
+            env_variables["KAFKA_SCHEMA_REGISTRY_IMAGE_TAG"] = "7.9.0"
+            env_variables["KAFKA_ZOOKEEPER_IMAGE_TAG"] = "3.8"
+            # The `zookeeper:3.4.9` image put `clientPort=2181` into zoo.cfg itself,
+            # but starting from 3.5 the only way to set it is the `;<port>` suffix in
+            # ZOO_SERVERS. Without it the client port is not bound and Kafka cannot
+            # connect.
+            env_variables["KAFKA_ZOOKEEPER_SERVERS"] = (
+                "server.1=kafka_zookeeper:2888:3888;2181"
+            )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka.yml")]
         )
@@ -3052,20 +3063,6 @@ class ClickHouseCluster:
 
         raise RuntimeError("Cannot wait RabbitMQ container")
 
-    @contextmanager
-    def pause_rabbitmq(self, timeout=120):
-        run_rabbitmqctl(
-            self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
-        )
-
-        try:
-            yield
-        finally:
-            run_rabbitmqctl(
-                self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
-            )
-            self.wait_rabbitmq_to_start(timeout)
-
     def reset_rabbitmq(self, timeout=120):
         try:
             resp = requests.get(f"http://{self.rabbitmq_ip}:{self.rabbitmq_management_port}/api/overview",
@@ -4248,11 +4245,24 @@ class ClickHouseCluster:
         with cluster.pause_container(name):
             useful_stuff()
         """
-        self._pause_container(instance_name)
+        used_signal = False
+        try:
+            self._pause_container(instance_name)
+        except Exception as e:
+            logging.warning(
+                "docker compose pause failed for %s: %s, falling back to SIGSTOP",
+                instance_name,
+                e,
+            )
+            self._pause_container_using_signal(instance_name)
+            used_signal = True
         try:
             yield
         finally:
-            self._unpause_container(instance_name)
+            if used_signal:
+                self._unpause_container_using_signal(instance_name)
+            else:
+                self._unpause_container(instance_name)
 
     @contextmanager
     def pause_container_using_signal(self, instance_name):
@@ -6219,4 +6229,4 @@ class ClickHouseKiller(object):
 
 @cache
 def is_arm():
-    return any(arch in platform.processor().lower() for arch in ("arm, aarch"))
+    return platform.machine().lower() in ("arm64", "aarch64")

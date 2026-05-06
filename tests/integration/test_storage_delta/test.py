@@ -1,4 +1,5 @@
 import glob
+import io
 import json
 import logging
 import os
@@ -1361,8 +1362,6 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
     # (it reads last 64kb for parquet metadata unconditionally
     # assuming most of it will be metadata, see Reader::readFileMetaData)
     # So we end up reading the same data two times here with parquet reader v3.
-    # We cannot disable input_format_parquet_use_native_reader_v3 because
-    # this setting is deprecated.
     # So we cannot check count == CachedReadBufferReadFromCacheBytes,
     # but instead check that CachedReadBufferReadFromCacheBytes is no more than 2 times more :(
     assert count * 2 > int(
@@ -2395,7 +2394,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_1"
     sum = int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
+            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1",
             query_id=query_id,
         )
     )
@@ -2411,7 +2410,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1, use_parquet_metadata_cache=0",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0",
             query_id=query_id,
         )
     )
@@ -5081,3 +5080,105 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
         )
     )
     assert filtered >= 2
+
+
+@pytest.mark.parametrize(
+    "use_delta_kernel",
+    ["0", "1"],
+)
+def test_azure_url_encoded_partition_path(started_cluster, use_delta_kernel):
+    instance = get_node(started_cluster, use_delta_kernel)
+    TABLE_NAME = randomize_table_name("test_azure_url_encoded")
+
+    container_client = started_cluster.blob_service_client.get_container_client(
+        started_cluster.azure_container_name
+    )
+
+    # Upload the parquet file at the on-disk (decoded-once) blob path.
+    # Partition value "@INTERNAL@" → directory "org=%40INTERNAL%40" (@ → %40).
+    partition_dir = "org=%40INTERNAL%40"
+    parquet_blob = f"{TABLE_NAME}/{partition_dir}/part-0.parquet"
+
+    schema = pa.schema([
+        pa.field("id", pa.int32()),
+        pa.field("org", pa.string()),
+    ])
+    table_data = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int32()),
+            "org": pa.array(["@INTERNAL@"] * 3, type=pa.string()),
+        },
+        schema=schema,
+    )
+    buf = io.BytesIO()
+    pq.write_table(table_data, buf, compression=None)
+    parquet_bytes = buf.getvalue()
+    container_client.upload_blob(parquet_blob, parquet_bytes, overwrite=True)
+
+    # Build the Delta log manually. add.path is URI-encoded per the Delta protocol:
+    # '%' in the on-disk name (%40) is encoded to '%25', producing %2540.
+    add_path = "org=%2540INTERNAL%2540/part-0.parquet"
+
+    protocol = '{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}'
+    metadata = json.dumps(
+        {
+            "metaData": {
+                "id": str(uuid.uuid4()),
+                "format": {"provider": "parquet", "options": {}},
+                "schemaString": json.dumps(
+                    {
+                        "type": "struct",
+                        "fields": [
+                            {
+                                "name": "id",
+                                "type": "integer",
+                                "nullable": True,
+                                "metadata": {},
+                            },
+                            {
+                                "name": "org",
+                                "type": "string",
+                                "nullable": True,
+                                "metadata": {},
+                            },
+                        ],
+                    }
+                ),
+                "partitionColumns": ["org"],
+                "configuration": {},
+                "createdTime": 1600000000000,
+            }
+        }
+    )
+    add = json.dumps(
+        {
+            "add": {
+                "path": add_path,
+                "partitionValues": {"org": "@INTERNAL@"},
+                "size": len(parquet_bytes),
+                "modificationTime": 1600000000000,
+                "dataChange": True,
+                "stats": json.dumps({"numRecords": 3}),
+            }
+        }
+    )
+
+    log_content = "\n".join([protocol, metadata, add])
+    container_client.upload_blob(
+        f"{TABLE_NAME}/_delta_log/00000000000000000000.json",
+        log_content.encode(),
+        overwrite=True,
+    )
+
+    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE = DeltaLakeAzure('{connection_string}', '{started_cluster.azure_container_name}', '{TABLE_NAME}', Parquet)
+        """
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 3
+
+    instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")

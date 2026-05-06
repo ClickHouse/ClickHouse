@@ -55,7 +55,7 @@ namespace ErrorCodes
 }
 namespace
 {
-void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
+void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescription & virtuals, ContextPtr context)
 {
     /// First validate that the query can be parsed
     const auto serialized_query = query.formatWithSecretsOneLine();
@@ -126,13 +126,13 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     std::optional<KeyDescription> primary_key;
     /// First get the key description from order by, so if there is no primary key we will use that
     if (storage.order_by)
-        primary_key = KeyDescription::getKeyFromAST(storage.order_by->ptr(), columns_desc, context);
+        primary_key = KeyDescription::getKeyFromAST(storage.order_by->ptr(), columns_desc, virtuals, context);
     if (storage.primary_key)
-        primary_key = KeyDescription::getKeyFromAST(storage.primary_key->ptr(), columns_desc, context);
+        primary_key = KeyDescription::getKeyFromAST(storage.primary_key->ptr(), columns_desc, virtuals, context);
     if (storage.partition_by)
-        KeyDescription::getKeyFromAST(storage.partition_by->ptr(), columns_desc, context);
+        KeyDescription::getKeyFromAST(storage.partition_by->ptr(), columns_desc, virtuals, context);
     if (storage.sample_by)
-        KeyDescription::getKeyFromAST(storage.sample_by->ptr(), columns_desc, context);
+        KeyDescription::getKeyFromAST(storage.sample_by->ptr(), columns_desc, virtuals, context);
     if (storage.ttl_table && primary_key.has_value())
         TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, true);
 }
@@ -205,12 +205,12 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.sampling_key.definition_ast)
                 storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
             else if (storage_ast.sample_by != nullptr) /// SAMPLE BY was removed
-                storage_ast.sample_by = nullptr;
+                storage_ast.reset(storage_ast.sample_by);
 
             if (metadata.table_ttl.definition_ast)
                 storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
             else if (storage_ast.ttl_table != nullptr) /// TTL was removed
-                storage_ast.ttl_table = nullptr;
+                storage_ast.reset(storage_ast.ttl_table);
 
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
@@ -229,7 +229,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(metadata.comment));
 
     if (validate_new_create_query)
-        validateCreateQuery(ast_create_query, context);
+        validateCreateQuery(ast_create_query, metadata.virtuals, context);
 }
 
 
@@ -313,10 +313,10 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
     if (!query.isView())
-        query.select = nullptr;
+        query.reset(query.select);
 
-    query.format_ast = nullptr;
-    query.out_file = nullptr;
+    query.reset(query.format_ast);
+    query.reset(query.out_file);
 }
 
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path)
