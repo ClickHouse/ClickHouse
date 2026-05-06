@@ -65,8 +65,6 @@ DISABLED_WORKFLOWS = [
     "nightly_jepsen.py",
     "nightly_statistics.py",
     "VectorSearchStress.py",
-    "release_builds.py", # FIXME (strtgbb): workflow still needs to be updated for this version
-    "pull_request_community.py", # FIXME (strtgbb): workflow still needs to be updated for this version
 ]
 
 DEFAULT_LOCAL_TEST_WORKFLOW = "pull_request.py"

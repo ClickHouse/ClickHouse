@@ -19,6 +19,10 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
     )
 ]
 
+STYLE_AND_FAST_TESTS = [
+    JobNames.FAST_TEST,
+]
+
 PLAIN_FUNCTIONAL_TEST_JOB = [
     j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
 ][0]
@@ -30,13 +34,13 @@ workflow = Workflow.Config(
     if_condition="github.repository != github.event.pull_request.head.repo.full_name",
     jobs=[
         JobConfigs.fast_test,
-        *[job.set_dependency([JobNames.FAST_TEST]) for job in JobConfigs.build_jobs],
+        *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
         *[
-            job.set_dependency([JobNames.FAST_TEST])
+            job.set_dependency(STYLE_AND_FAST_TESTS)
             for job in JobConfigs.extra_validation_build_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_dependency(STYLE_AND_FAST_TESTS)
             for job in JobConfigs.release_build_jobs
         ],
         # *[
@@ -94,6 +98,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
+        ArtifactConfigs.parser_memory_profiler,
     ],
     dockers=DOCKERS,
     disable_dockers_build=True,
@@ -119,7 +124,10 @@ workflow = Workflow.Config(
         "integration": JobConfigs.integration_test_jobs_non_required[
             0
         ].name,  # plain integration test job, no old analyzer, no dist plan
+        "fast": "Fast test",
         "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
+        "build_debug": "Build (amd_debug)",
+        "build": "Build (amd_binary)",
     },
 )
 

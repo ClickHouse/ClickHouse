@@ -1,8 +1,15 @@
 from praktika import Workflow
 
-from ci.defs.defs import DOCKERS, SECRETS, ArtifactConfigs
+from ci.defs.defs import BINARIES_WITH_LONG_RETENTION, DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
+
+# Add long retention tags to subset of artifacts
+clickhouse_binaries_with_tags = []
+for artifact in ArtifactConfigs.clickhouse_binaries + ArtifactConfigs.clickhouse_stripped_binaries:
+    if artifact.name in BINARIES_WITH_LONG_RETENTION:
+        artifact = artifact.add_tags({"retention": "long"})
+    clickhouse_binaries_with_tags.append(artifact)
 
 builds_for_release_branch = [
     job.unset_provides("unittest")
@@ -41,14 +48,15 @@ workflow = Workflow.Config(
     ],
     additional_jobs=["GrypeScan", "SignRelease", "CIReport", "SourceUpload"],
     artifacts=[
-        *ArtifactConfigs.clickhouse_binaries,
-        *ArtifactConfigs.clickhouse_stripped_binaries,
+        *clickhouse_binaries_with_tags,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
+        ArtifactConfigs.parser_memory_profiler,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
+    set_latest_for_docker_merged_manifest=True,
     secrets=SECRETS,
     enable_job_filtering_by_changes=False,
     enable_cache=False,
@@ -62,6 +70,7 @@ workflow = Workflow.Config(
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/parse_ci_tags.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],

@@ -128,6 +128,7 @@ common_stress_job_config = Job.Config(
             "./tests/config",
             "./tests/*.txt",
             "./tests/docker_scripts/",
+            "./tests/integration/",  # NOTE (strtgbb): integration tests are gated by fast test, so need to include them
             "./ci/docker/stress-test",
             "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/log_parser.py",
@@ -167,20 +168,20 @@ class JobConfigs:
         allow_merge_on_failure=True,
         enable_gh_auth=True,
     )
-    #code_review = Job.Config(
+    # code_review = Job.Config(
     #    name=JobNames.CODE_REVIEW,
     #    runs_on=RunnerLabels.STYLE_CHECK_ARM,
     #    command="python3 ./ci/jobs/copilot_review_job.py --pre",
     #    allow_merge_on_failure=True,
     #    enable_gh_auth=True,
-    #)
-    #ci_results_review = Job.Config(
+    # )
+    # ci_results_review = Job.Config(
     #    name=JobNames.CI_RESULTS_REVIEW,
     #    runs_on=RunnerLabels.STYLE_CHECK_ARM,
     #    command="python3 ./ci/jobs/copilot_review_job.py --post",
     #    allow_merge_on_failure=True,
     #    enable_gh_auth=True,
-    #)
+    # )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.AMD_LARGE,
@@ -718,11 +719,16 @@ class JobConfigs:
             for total_batches in (4,)
             for batch in range(1, total_batches + 1)
         ],
-        Job.ParamSet(
-            parameter="arm_asan, azure, sequential",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_ASAN],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"arm_asan, azure, sequential, {batch}/{total_batches}",
+                runs_on=RunnerLabels.FUNC_TESTER_ARM,
+                requires=[ArtifactNames.CH_ARM_ASAN],
+                timeout=3600 * 4,
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
     )
     bugfix_validation_it_job = (
         common_integration_test_job_config.set_name(JobNames.BUGFIX_VALIDATE_IT)
