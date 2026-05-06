@@ -15,9 +15,6 @@
 #include <Common/thread_local_rng.h>
 #include <csignal>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-
 namespace CurrentMetrics
 {
     extern const Metric CreatedTimersInQueryProfiler;
@@ -248,11 +245,14 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
     sa.sa_sigaction = ProfilerImpl::signalHandler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     if (sigemptyset(&sa.sa_mask))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to clean signal mask for query profiler");
 
     if (sigaddset(&sa.sa_mask, pause_signal))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add signal to mask for query profiler");
+#pragma clang diagnostic pop
 
     if (sigaction(pause_signal, &sa, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for query profiler");
@@ -338,5 +338,3 @@ void QueryProfilerCPU::signalHandler(int sig, siginfo_t * info, void * context)
 }
 
 }
-
-#pragma clang diagnostic pop

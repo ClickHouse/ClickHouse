@@ -12,9 +12,6 @@
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 namespace Setting
@@ -64,7 +61,7 @@ private:
 
         /// It is possible to SIMD optimize this loop. By no need for that in practice.
 
-        Src prev{};
+        Dst prev{};
         bool has_prev_value = false;
 
         for (size_t i = 0; i < size; ++i)
@@ -78,14 +75,14 @@ private:
             if (!has_prev_value)
             {
                 dst[i] = is_first_line_zero ? static_cast<Dst>(0) : static_cast<Dst>(src[i]);
-                prev = src[i];
+                prev = static_cast<Dst>(src[i]);
                 has_prev_value = true;
             }
             else
             {
-                auto cur = src[i];
+                auto cur = static_cast<Dst>(src[i]);
                 /// Overflow is Ok.
-                dst[i] = static_cast<Dst>(cur) - prev;
+                dst[i] = cur - prev;
                 prev = cur;
             }
         }
@@ -231,5 +228,3 @@ public:
 };
 
 }
-
-#pragma clang diagnostic pop

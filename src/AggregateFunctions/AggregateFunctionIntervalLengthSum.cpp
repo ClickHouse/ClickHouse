@@ -14,9 +14,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 
@@ -166,7 +163,7 @@ private:
             /// Check if current interval intersects with next one then add length, otherwise advance interval end.
             if (curr_segment.second < next_segment.first)
             {
-                res += length(curr_segment);
+                res += static_cast<TResult>(length(curr_segment));
                 curr_segment = next_segment;
             }
             else if (next_segment.second > curr_segment.second)
@@ -174,7 +171,7 @@ private:
                 curr_segment.second = next_segment.second;
             }
         }
-        res += length(curr_segment);
+        res += static_cast<TResult>(length(curr_segment));
 
         return res;
     }
@@ -344,5 +341,3 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
 }
 
 }
-
-#pragma clang diagnostic pop

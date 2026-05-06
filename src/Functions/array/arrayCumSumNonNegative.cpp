@@ -6,9 +6,6 @@
 
 #include <Functions/array/FunctionArrayMapped.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 
@@ -81,7 +78,7 @@ struct ArrayCumSumNonNegativeImpl
             Dst accumulated{};
             for (; pos < offset; ++pos)
             {
-                accumulated += src_values[pos];
+                accumulated += static_cast<Dst>(src_values[pos]);
                 if (accumulated < Dst{})
                     accumulated = {};
                 res_values[pos] = accumulated;
@@ -164,5 +161,3 @@ REGISTER_FUNCTION(ArrayCumSumNonNegative)
 }
 
 }
-
-#pragma clang diagnostic pop

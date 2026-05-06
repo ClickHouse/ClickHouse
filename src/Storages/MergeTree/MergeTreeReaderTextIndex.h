@@ -111,4 +111,10 @@ private:
     PostingsSerialization postings_serialization;
 };
 
+MergeTreeReaderPtr createMergeTreeReaderTextIndex(
+    const IMergeTreeReader * main_reader,
+    const MergeTreeIndexWithCondition & index,
+    const NamesAndTypesList & columns_to_read,
+    MergeTreeIndexGranulePtr index_granule);
+
 }
