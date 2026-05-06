@@ -35,6 +35,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/filesystemHelpers.h>
@@ -79,6 +80,7 @@ extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ROCKSDB_ERROR;
 extern const int NOT_IMPLEMENTED;
+extern const int TABLE_IS_DROPPED;
 extern const int TYPE_MISMATCH;
 }
 
@@ -368,9 +370,14 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
                     throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
             }
 
-            auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
-            if (!status.ok())
-                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+            {
+                SharedLockGuard lock(rocksdb_ptr_mx);
+                if (!rocksdb_ptr)
+                    throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
+                auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
+                if (!status.ok())
+                    throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+            }
         }
 
         return;
@@ -431,7 +438,9 @@ bool StorageEmbeddedRocksDB::optimize(
     if (cleanup)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type EmbeddedRocksDB");
 
-    std::shared_lock lock(rocksdb_ptr_mx);
+    SharedLockGuard lock(rocksdb_ptr_mx);
+    if (!rocksdb_ptr)
+        return true;
     rocksdb::CompactRangeOptions compact_options;
     auto status = rocksdb_ptr->CompactRange(compact_options, nullptr, nullptr);
     if (!status.ok())
@@ -716,7 +725,16 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
     const auto & sample_block = getOutputHeader();
     if (all_scan)
     {
-        auto iterator = std::unique_ptr<rocksdb::Iterator>(storage.rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
+        std::unique_ptr<rocksdb::Iterator> iterator;
+        {
+            SharedLockGuard lock(storage.rocksdb_ptr_mx);
+            if (!storage.rocksdb_ptr)
+            {
+                pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
+                return;
+            }
+            iterator.reset(storage.rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
+        }
         iterator->SeekToFirst();
         auto source = std::make_shared<EmbeddedRocksDBSource>(storage, storage_snapshot, sample_block, std::move(iterator), max_block_size);
         source->setStorageLimits(query_info.storage_limits);
@@ -865,7 +883,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
 {
-    std::shared_lock lock(rocksdb_ptr_mx);
+    SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return nullptr;
     return rocksdb_ptr->GetOptions().statistics;
@@ -874,7 +892,7 @@ std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistic
 std::vector<rocksdb::Status>
 StorageEmbeddedRocksDB::multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const
 {
-    std::shared_lock lock(rocksdb_ptr_mx);
+    SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
     return rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
@@ -992,7 +1010,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
 {
     if (!query_context->getSettingsRef()[Setting::optimize_trivial_approximate_count_query])
         return {};
-    std::shared_lock lock(rocksdb_ptr_mx);
+    SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
     UInt64 estimated_rows;
@@ -1003,7 +1021,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
 
 std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
 {
-    std::shared_lock lock(rocksdb_ptr_mx);
+    SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
     UInt64 estimated_bytes;

@@ -34,19 +34,20 @@ namespace ErrorCodes
 
 template class CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, PageCacheWeightFunction>;
 
-UInt128 PageCacheKey::hash() const
+SipHash PageCacheFile::baseHash() const
 {
-    SipHash hash(offset);
-    hash.update(size);
-    hash.update(path.data(), path.size());
-    hash.update("\0", 1);
-    hash.update(file_version.data(), file_version.size());
-    return hash.get128();
+    SipHash h;
+    h.update(path.data(), path.size());
+    h.update("\0", 1);
+    h.update(file_version.data(), file_version.size());
+    return h;
 }
 
-std::string PageCacheKey::toString() const
+UInt128 PageCacheByteRange::hash(SipHash base) const
 {
-    return fmt::format("{}:{}:{}{}{}", path, offset, size, file_version.empty() ? "" : ":", file_version);
+    base.update(offset);
+    base.update(size);
+    return base.get128();
 }
 
 PageCache::PageCache(
@@ -72,12 +73,11 @@ PageCache::PageCache(
     }
 }
 
-PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load)
+PageCache::MappedPtr PageCache::getOrSet(const PageCacheFile & file, const PageCacheByteRange & range, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load, std::optional<UInt128> key_hash_opt)
 {
-    /// Prevent MemoryTracker from calling autoResize while we may be holding the mutex.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
 
-    Key key_hash = key.hash();
+    Key key_hash = key_hash_opt.has_value() ? *key_hash_opt : range.hash(file.baseHash());
 
     Shard & shard = *shards[getShardIdx(key_hash)];
 
@@ -94,7 +94,7 @@ PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached
             blocker.reset(); // allow throwing out-of-memory exception when allocating or loading cell
 
             miss = true;
-            result = std::make_shared<PageCacheCell>(key, /*temporary*/ true);
+            result = std::make_shared<PageCacheCell>(file, range, /*temporary*/ true);
             load(result);
         }
     }
@@ -109,7 +109,7 @@ PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached
             MappedPtr cell;
             try
             {
-                cell = std::make_shared<PageCacheCell>(key, /*temporary*/ false);
+                cell = std::make_shared<PageCacheCell>(file, range, /*temporary*/ false);
                 load(cell);
             }
             catch (...)
@@ -132,26 +132,24 @@ PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached
     return result;
 }
 
-PageCache::MappedPtr PageCache::get(const PageCacheKey & key, bool inject_eviction)
+PageCache::MappedPtr PageCache::get(UInt128 key_hash, bool inject_eviction)
 {
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
 
     if (inject_eviction && thread_local_rng() % 10 == 0)
         return nullptr;
 
-    Key key_hash = key.hash();
     Shard & shard = *shards[getShardIdx(key_hash)];
 
     const auto result = shard.get(key_hash);
 
-    /// Count only hits. On miss, the caller would normally call getOrSet, which will count the miss.
     if (result)
         ProfileEvents::increment(ProfileEvents::PageCacheHits);
 
     return result;
 }
 
-bool PageCache::contains(const PageCacheKey & key, bool inject_eviction) const
+bool PageCache::contains(UInt128 key_hash, bool inject_eviction) const
 {
     /// Avoid deadlock if MemoryTracker calls PageCache::autoResize.
     /// (If you're here because it turned out that CacheBase::contains actually needs to allocate,
@@ -160,7 +158,6 @@ bool PageCache::contains(const PageCacheKey & key, bool inject_eviction) const
 
     if (inject_eviction && thread_local_rng() % 10 == 0)
         return false;
-    Key key_hash = key.hash();
     const Shard & shard = *shards[getShardIdx(key_hash)];
     return shard.contains(key_hash);
 }
@@ -253,7 +250,7 @@ size_t PageCache::maxSizeInBytes() const
     return sum;
 }
 
-PageCacheCell::PageCacheCell(PageCacheKey key_, bool temporary) : key(std::move(key_)), m_size(key.size), m_temporary(temporary)
+PageCacheCell::PageCacheCell(PageCacheFile file_, PageCacheByteRange range_, bool temporary) : file(std::move(file_)), range(range_), m_size(range.size), m_temporary(temporary)
 {
     /// Don't attribute page cache memory to the query that happened to allocate it.
     std::optional<MemoryTrackerBlockerInThread> blocker;

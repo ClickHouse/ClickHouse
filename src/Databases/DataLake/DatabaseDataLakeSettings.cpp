@@ -45,7 +45,7 @@ namespace ErrorCodes
     DECLARE(String, google_adc_credentials_file, "", "Deprecated setting, will throw an exception if used", 0) \
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
-    DECLARE(Bool, polaris_style_paths, true, "Enable Polaris/ADLS Gen2 path convention: the container name is prepended to the path in ABFSS locations (e.g. abfss://c@account/c/actual/path). When enabled, the redundant container prefix is stripped when building Azure HTTPS URLs. Disable if a real directory inside the container has the same name as the container itself.", 0) \
+    DECLARE(Bool, force_add_bucket, false, "Add bucket name to the metadata path", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \

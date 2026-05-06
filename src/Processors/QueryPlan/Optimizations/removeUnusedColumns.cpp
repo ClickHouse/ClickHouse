@@ -72,6 +72,11 @@ bool addDiscardingExpressionStepIfNeeded(QueryPlan::Nodes & nodes, QueryPlan::No
 
     auto discarding_step = std::make_unique<ExpressionStep>(output_header, std::move(discarding_dag));
     discarding_step->setStepDescription("Discarding unused columns");
+    /// The discarding step intentionally consumes (and drops) columns that the child cannot
+    /// reduce away. Subsequent passes must not strip these inputs, otherwise the next
+    /// optimization pass would re-create the discarding step and loop forever (e.g. when
+    /// `mergeExpressions` collapses this step into a parent ExpressionStep).
+    discarding_step->setPreventInputRemoval();
 
     auto & discarding_node = nodes.emplace_back();
     discarding_node.step = std::move(discarding_step);

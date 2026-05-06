@@ -52,6 +52,7 @@ public:
     /// Used when extra columns were absorbed from a child step that cannot reduce its output
     /// (e.g., ReadFromMergeTree with FINAL must keep sort key columns).
     void setPreventInputRemoval() { prevent_input_removal = true; }
+    bool isInputRemovalPrevented() const { return prevent_input_removal; }
 
 private:
     void updateOutputHeader() override;

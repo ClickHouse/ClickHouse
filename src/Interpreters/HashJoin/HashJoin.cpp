@@ -2080,10 +2080,10 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
         Key k = it->getKey();
         if constexpr (is_signed)
         {
-            SignedKey sk = static_cast<SignedKey>(k);
-            if (sk < static_cast<SignedKey>(min_key))
+            SignedKey signed_key = static_cast<SignedKey>(k);
+            if (signed_key < static_cast<SignedKey>(min_key))
                 min_key = k;
-            if (sk > static_cast<SignedKey>(max_key))
+            if (signed_key > static_cast<SignedKey>(max_key))
                 max_key = k;
         }
         else
