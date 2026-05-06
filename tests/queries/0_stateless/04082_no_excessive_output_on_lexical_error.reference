@@ -1,3 +1,4 @@
 early-lookahead-lexical 10
 post-parse-lexical 10
 unmatched-parentheses 10
+no-false-positives 0

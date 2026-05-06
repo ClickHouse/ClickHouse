@@ -36,3 +36,9 @@ echo "post-parse-lexical $(repeat10 'INSERT INTO t SELECT 1 !;' | ${CLICKHOUSE_L
 
 # Path 3: unmatched parentheses (parseQuery.cpp `checkUnmatchedParentheses`).
 echo "unmatched-parentheses $(repeat10 'SELECT (1;' | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -cF 'SELECT')"
+
+# Sanity check (no false positives): 10 *valid* queries must not produce any
+# error lines. This guards against the fix accidentally rejecting good input
+# (e.g., a regression that misidentifies a non-error token as an error).
+# `^Code:` is the prefix used by clickhouse-local for every reported error.
+echo "no-false-positives $(repeat10 'SELECT 1;' | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -cE '^Code:')"
