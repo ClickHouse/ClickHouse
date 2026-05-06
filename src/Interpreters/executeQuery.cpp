@@ -1175,14 +1175,33 @@ public:
             data.addTableIfNotEmpty(table.database, table.table);
     }
 
-    /// Pre-pass: collect names of all CTEs declared anywhere in the query so that
+    /// Pre-pass: collect names of all CTEs and WITH-clause aliases declared anywhere in the query so that
     /// unqualified references matching them are not treated as real tables.
+    /// Handles both forms:
+    ///   `WITH name AS (subquery)` — parsed as `ASTWithElement` with `name` field;
+    ///   `WITH expr AS alias`      — parsed as an expression node (e.g. `ASTSubquery`) with `alias` set
+    ///                               via the `ASTWithAlias` base class.
     static void collectCteNames(const ASTPtr & ast, Data & data)
     {
         if (!ast)
             return;
         if (const auto * with_element = ast->as<ASTWithElement>())
             data.cte_names.insert(with_element->name);
+        else if (const auto * select = ast->as<ASTSelectQuery>())
+        {
+            if (auto with = select->with())
+            {
+                for (const auto & with_child : with->children)
+                {
+                    if (with_child && !with_child->as<ASTWithElement>())
+                    {
+                        const String alias = with_child->tryGetAlias();
+                        if (!alias.empty())
+                            data.cte_names.insert(alias);
+                    }
+                }
+            }
+        }
         for (const auto & child : ast->children)
             collectCteNames(child, data);
     }
