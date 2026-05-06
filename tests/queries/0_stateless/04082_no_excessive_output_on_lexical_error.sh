@@ -20,17 +20,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Generate exactly 10 copies of a query (avoid `yes` which can produce unbounded data in pipe buffers).
 repeat10() { for _ in {1..10}; do printf '%s\n' "$1"; done; }
 
+# Each line below prints "<path-label> <count>". Labelling the output makes
+# CI failure diffs immediately show which of the three error paths regressed
+# (otherwise three identical "10"s would all look the same on failure).
+# Expected count per path: 10 (one error per query); buggy count: 55 = 10+9+...+1.
+
 # Path 1: early-lookahead lexical error (parseQuery.cpp `if (lookahead->isError())`).
 # `!` is an invalid character that is detected before the main parser runs.
-# Expected: 10 (one error per query); buggy output would be 55 = 10+9+...+1.
-repeat10 'SELECT 1 !;' | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -cF 'SELECT 1'
+echo "early-lookahead-lexical $(repeat10 'SELECT 1 !;' | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -cF 'SELECT 1')"
 
 # Path 2: post-parse lexical error (parseQuery.cpp `if (last_token.isError())`).
 # INSERT-prefix queries bypass the early lookahead, so the lexical error is
 # only surfaced after the main parser has run.
-# Expected: 10 (one error per query); buggy output would be 55 = 10+9+...+1.
-repeat10 'INSERT INTO t SELECT 1 !;' | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -cF 'INSERT'
+echo "post-parse-lexical $(repeat10 'INSERT INTO t SELECT 1 !;' | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -cF 'INSERT')"
 
 # Path 3: unmatched parentheses (parseQuery.cpp `checkUnmatchedParentheses`).
-# Expected: 10 (one error per query); buggy output would be 55 = 10+9+...+1.
-repeat10 'SELECT (1;' | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -cF 'SELECT'
+echo "unmatched-parentheses $(repeat10 'SELECT (1;' | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -cF 'SELECT')"
