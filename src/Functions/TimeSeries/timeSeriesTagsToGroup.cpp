@@ -30,7 +30,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    /// Function timeSeriesRemoveTag uses information stored in the query context, it's deterministic in the scope of the current query.
+    /// Function timeSeriesTagsToGroup uses information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 

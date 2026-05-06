@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+
 -- Regression test for the PromQL binary-operator path where ClickHouse query optimization
 -- could push `timeSeriesIdToGroup(id)` ahead of the matching `timeSeriesStoreTags(...)` call,
 -- resulting in `BAD_ARGUMENTS` ("Unknown identifier"). Fixed by marking
