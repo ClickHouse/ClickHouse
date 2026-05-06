@@ -1,0 +1,67 @@
+--- system.iceberg_files schema ---
+database	String
+table	String
+snapshot_id	Int64
+content	Enum8(\'DATA\' = 0, \'POSITION_DELETE\' = 1, \'EQUALITY_DELETE\' = 2)
+file_path	String
+file_format	String
+record_count	Int64
+file_size_in_bytes	Int64
+partition	String
+schema_id	Int32
+sequence_number	Int64
+sort_order_id	Nullable(Int32)
+null_value_counts	Map(Int32, Int64)
+column_sizes	Map(Int32, Int64)
+value_counts	Map(Int32, Int64)
+equality_ids	Array(Int32)
+--- per-file columns ---
+Row 1:
+──────
+table:                       t0
+snapshot_id_nonzero:         1
+content:                     DATA
+file_path_ends_with_parquet: 1
+file_format:                 Parquet
+record_count:                3
+file_size_positive:          1
+partition:                   {'eu', 1}
+schema_id:                   0
+sequence_number:             1
+sort_order_id:               ᴺᵁᴸᴸ
+null_value_counts:           {1:0,2:0,3:0,4:0}
+value_counts:                {}
+column_sizes_keys:           [1,2,3,4]
+column_sizes_all_positive:   1
+equality_ids:                []
+
+Row 2:
+──────
+table:                       t0
+snapshot_id_nonzero:         1
+content:                     DATA
+file_path_ends_with_parquet: 1
+file_format:                 Parquet
+record_count:                3
+file_size_positive:          1
+partition:                   {'us', 0}
+schema_id:                   0
+sequence_number:             1
+sort_order_id:               ᴺᵁᴸᴸ
+null_value_counts:           {1:0,2:0,3:1,4:0}
+value_counts:                {}
+column_sizes_keys:           [1,2,3,4]
+column_sizes_all_positive:   1
+equality_ids:                []
+--- per-file columns for files added by the delete ---
+Row 1:
+──────
+table:                        t0
+content:                      POSITION_DELETE
+file_path_is_position_delete: 1
+file_format:                  Parquet
+record_count:                 1
+file_size_positive:           1
+partition:                    {'us', 0}
+sequence_number:              2
+equality_ids:                 []

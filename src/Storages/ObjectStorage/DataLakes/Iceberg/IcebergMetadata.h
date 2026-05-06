@@ -32,10 +32,29 @@
 namespace DB
 {
 
+struct IcebergFileRecord
+{
+    Int64 snapshot_id;
+    Iceberg::FileContentType content;
+    String file_path;
+    String file_format;
+    Int64 record_count;
+    Int64 file_size_in_bytes;
+    String partition;
+    Int32 schema_id;
+    Int64 sequence_number;
+    std::optional<Int32> sort_order_id;
+    std::map<Int32, Int64> null_value_counts;
+    std::map<Int32, Int64> column_sizes;
+    std::map<Int32, Int64> value_counts;
+    std::optional<std::vector<Int32>> equality_ids;
+};
+
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
     using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
+    using IcebergFiles = std::vector<IcebergFileRecord>;
 
     static constexpr auto name = "Iceberg";
 
@@ -87,6 +106,8 @@ public:
     bool supportsParallelInsert() const override { return true; }
 
     IcebergHistory getHistory(ContextPtr local_context) const;
+
+    IcebergFiles getFiles(ContextPtr local_context) const;
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return true; }
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;

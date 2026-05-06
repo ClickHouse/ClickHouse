@@ -78,6 +78,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
+#include <Common/FieldVisitorToString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
@@ -909,6 +910,82 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     }
 
     return iceberg_history;
+}
+
+namespace
+{
+
+String formatPartitionKeyValue(const DB::Row & partition_key_value)
+{
+    if (partition_key_value.empty())
+        return "{}";
+
+    String result = "{";
+    for (size_t i = 0; i < partition_key_value.size(); ++i)
+    {
+        if (i)
+            result += ", ";
+        result += applyVisitor(FieldVisitorToString(), partition_key_value[i]);
+    }
+    result += "}";
+    return result;
+}
+
+IcebergFileRecord buildIcebergFileRecord(
+    const Iceberg::ProcessedManifestFileEntryPtr & processed,
+    Int64 inherited_snapshot_id,
+    const Iceberg::IcebergPathResolver & path_resolver)
+{
+    const auto & parsed = *processed->parsed_entry;
+
+    IcebergFileRecord record;
+    record.snapshot_id = parsed.parsed_snapshot_id.value_or(inherited_snapshot_id);
+    record.content = parsed.content_type;
+    record.file_path = path_resolver.resolve(parsed.file_path_key);
+    record.file_format = parsed.file_format;
+    record.record_count = parsed.record_count;
+    record.file_size_in_bytes = parsed.file_size_in_bytes;
+    record.partition = formatPartitionKeyValue(parsed.partition_key_value);
+    record.schema_id = processed->resolved_schema_id;
+    record.sequence_number = processed->sequence_number;
+    record.sort_order_id = parsed.sort_order_id;
+
+    for (const auto & [column_id, info] : parsed.columns_infos)
+    {
+        if (info.bytes_size.has_value())
+            record.column_sizes.emplace(column_id, *info.bytes_size);
+        if (info.rows_count.has_value())
+            record.value_counts.emplace(column_id, *info.rows_count);
+        if (info.nulls_count.has_value())
+            record.null_value_counts.emplace(column_id, *info.nulls_count);
+    }
+
+    record.equality_ids = parsed.equality_ids;
+
+    return record;
+}
+
+}
+
+IcebergMetadata::IcebergFiles IcebergMetadata::getFiles(ContextPtr local_context) const
+{
+    auto [data_snapshot, table_state] = getRelevantState(local_context);
+    if (!data_snapshot)
+        return {};
+
+    IcebergFiles result;
+    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+    {
+        auto handle = getManifestFileEntriesHandle(
+            object_storage, persistent_components, local_context, log, manifest_list_entry, table_state.schema_id);
+
+        for (auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
+        {
+            for (const auto & processed : handle.getFilesWithoutDeleted(content_type))
+                result.push_back(buildIcebergFileRecord(processed, manifest_list_entry.added_snapshot_id, persistent_components.path_resolver));
+        }
+    }
+    return result;
 }
 
 bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
