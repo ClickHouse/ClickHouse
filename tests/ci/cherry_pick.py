@@ -52,6 +52,58 @@ from ssh import SSHKey
 from synchronizer_utils import SYNC_PR_PREFIX
 
 
+# Login prefixes (lowercased) of automated accounts. They are typed as regular
+# users by GitHub, not "Bot", so we have to match them by login. `robot-` is
+# broad on purpose — it covers `robot-clickhouse`, `robot-clickhouse-ci-1`,
+# and any other `robot-…` machine account.
+_AUTOMATED_LOGIN_PREFIXES = ("robot-", "clickhouse-gh")
+
+# Explicit allowlist of automated AI agent accounts that register as regular
+# GitHub users (no `[bot]` suffix and `type` != "Bot"). Add new accounts here
+# as they appear; do not match by suffix because that would treat human
+# usernames such as `kai` as bots and silently skip required backports.
+_AUTOMATED_LOGINS = frozenset({"groeneai", "clickgapai"})
+
+
+def _is_bot_actor(actor) -> bool:
+    """Return True if `actor` is a GitHub App, a known automated account, or
+    has unknown identity. Fail closed: if we cannot attribute the action to a
+    human, do not let the label drive a backport — treat it as non-human.
+    """
+    if actor is None:
+        return True
+    if getattr(actor, "type", None) == "Bot":
+        return True
+    login = (getattr(actor, "login", "") or "").lower()
+    if not login:
+        return True
+    if login.endswith("[bot]"):
+        return True
+    if login in _AUTOMATED_LOGINS:
+        return True
+    return any(login.startswith(prefix) for prefix in _AUTOMATED_LOGIN_PREFIXES)
+
+
+def _bot_added_labels(pr: PullRequest, labels_of_interest: Iterable[str]) -> set:
+    """Return the subset of `labels_of_interest` whose most recent `labeled`
+    event on `pr` was performed by a bot. Errors fetching events are not
+    swallowed: the caller must fail closed (skip backporting this PR) rather
+    than silently treat labels as human-added.
+    """
+    labels_of_interest = set(labels_of_interest)
+    if not labels_of_interest:
+        return set()
+    last_actor = {}
+    for event in pr.as_issue().get_events():
+        if event.event != "labeled":
+            continue
+        label = getattr(event, "label", None)
+        if label is None or label.name not in labels_of_interest:
+            continue
+        last_actor[label.name] = event.actor
+    return {name for name, actor in last_actor.items() if _is_bot_actor(actor)}
+
+
 class BackportException(Exception):
     pass
 
@@ -713,6 +765,38 @@ class BackportPRs:
 
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
+
+        # Drop `must-backport*` labels that were applied by a bot. We only want
+        # to act on explicit human intent; automated label propagation (for
+        # example, `pr-must-backport` auto-added based on the changelog
+        # category) should not trigger backports on its own.
+        backport_trigger_labels = (
+            {Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_FORCE}
+            | set(self.labels_to_backport)
+        )
+        bot_added = _bot_added_labels(
+            pr, backport_trigger_labels.intersection(pr_labels)
+        )
+        if bot_added:
+            logging.info(
+                "PR #%s: ignoring bot-added must-backport labels: %s",
+                pr.number,
+                ", ".join(sorted(bot_added)),
+            )
+            pr_labels = [l for l in pr_labels if l not in bot_added]
+
+        has_backport_trigger = (
+            Labels.MUST_BACKPORT in pr_labels
+            or Labels.MUST_BACKPORT_FORCE in pr_labels
+            or any(l in self.labels_to_backport for l in pr_labels)
+            or bool(Labels.AUTO_BACKPORT & set(pr_labels))
+        )
+        if not has_backport_trigger:
+            logging.info(
+                "PR #%s: all must-backport* labels were bot-added, skipping",
+                pr.number,
+            )
+            return
 
         is_force_backport = Labels.MUST_BACKPORT_FORCE in pr_labels
         is_general_backport = is_force_backport or Labels.MUST_BACKPORT in pr_labels or bool(
