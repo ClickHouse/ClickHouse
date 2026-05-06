@@ -39,7 +39,11 @@ public:
         String stream_id_
     );
 
-    void sendInitialRequest(CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const;
+    InitialAllRangesAnnouncementResponse sendInitialRequest(
+        CoordinationMode mode,
+        RangesInDataPartsDescription description,
+        size_t mark_segment_size,
+        size_t min_marks_per_request) const;
 
     std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request) const;
 

@@ -63,6 +63,7 @@
 #include <iterator>
 #include <memory>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -3511,7 +3512,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 : CoordinationMode::ReverseOrder;
         };
         // This code is executed only if there is no parts to read, so the parameter values don't really matter
-        extension.sendInitialRequest(
+        std::ignore = extension.sendInitialRequest(
             get_coordination_mode(), result.parts_with_ranges.getDescriptions(), /*mark_segment_size=*/1, /*min_marks_per_request=*/1);
     }
 

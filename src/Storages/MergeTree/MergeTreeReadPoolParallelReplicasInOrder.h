@@ -1,6 +1,10 @@
 #pragma once
+
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+
+#include <set>
 
 namespace DB
 {
@@ -45,6 +49,15 @@ private:
 
     /// See the comment in MergeTreeReadPoolParallelReplicas::getTask method.
     bool failed_to_get_task{false};
+
+    /// Authoritative parts for this stream as reported by the coordinator in the announcement
+    /// response. Consumers whose part is not in this set finish immediately. Used to skip
+    /// phantom consumers on followers (their pool was constructed over all local parts, but
+    /// the coordinator's stream only owns a subset assigned by the snapshot replica).
+    /// Only consulted if `authoritative_parts_received` is true; otherwise the initiator is on
+    /// an older protocol and didn't send a response — fall back to the pre-existing behavior.
+    bool authoritative_parts_received{false};
+    std::set<MergeTreePartInfo> authoritative_parts;
 
     mutable std::mutex mutex;
     std::vector<size_t> per_part_marks_in_range;

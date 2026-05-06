@@ -1149,13 +1149,17 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
 }
 
 
-void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+InitialAllRangesAnnouncementResponse
+ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
 
+    InitialAllRangesAnnouncementResponse response;
+    response.stream_id = announcement.stream_id;
+
     if (is_reading_completed)
-        return;
+        return response;
 
     std::lock_guard lock(mutex);
 
@@ -1175,7 +1179,8 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
 
     /// If the snapshot replica was pinned explicitly via setSnapshotReplicaNum,
     /// only that replica can create a new stream coordinator. Announcements from
-    /// non-snapshot replicas for streams that don't exist yet are dropped.
+    /// non-snapshot replicas for streams that don't exist yet are dropped (we return
+    /// an empty parts list so the announcing replica's pool can finish immediately).
     /// If the snapshot replica wasn't pinned, fall back to the first announcement.
     if (snapshot_replica_num)
     {
@@ -1187,7 +1192,7 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
                 "Ignoring announcement from non-snapshot replica {} for unknown stream {}",
                 announcement.replica_num,
                 announcement.stream_id);
-            return;
+            return response;
         }
     }
     else
@@ -1195,12 +1200,24 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
         snapshot_replica_num = announcement.replica_num;
     }
 
+    /// On the very first (snapshot replica's) announcement for a stream, capture its parts
+    /// list as the authoritative set; subsequent announcements (from followers) get this
+    /// echoed back in their response so they can prune their per-part state.
+    const bool first_announcement_for_stream = !stream_to_coordinator.contains(announcement.stream_id);
+    if (first_announcement_for_stream)
+        stream_to_registered_parts[announcement.stream_id] = announcement.description;
+
     auto coordinator = getOrCreateCoordinator(announcement.stream_id, announcement.mode);
 
     if (is_reading_completed)
-        return;
+        return response;
 
     coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
+
+    if (auto it = stream_to_registered_parts.find(response.stream_id); it != stream_to_registered_parts.end())
+        response.parts = it->second;
+
+    return response;
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
@@ -1230,19 +1247,15 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
         auto coordinator = getCoordinator(request.stream_id);
         if (!coordinator)
-        {
-            /// TODO(nickitat): respond to announcements with actual parts set for each stream (including empty for streams non-existing on the initiator).
-            /// Then this situation will be impossible, and we will throw a logical error here.
-            ///
-            /// The requesting replica has a stream that the snapshot replica didn't create
-            /// (e.g., it computed more in-order splits locally). Return an empty/finished response.
-            LOG_DEBUG(
-                getLogger("ParallelReplicasReadingCoordinator"),
-                "Read request from replica {} for unknown stream {}; returning empty response",
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Got read request from replica {} for unknown stream {}. "
+                "The announcement response carries the authoritative parts list for each stream, "
+                "and over-announced streams report an empty set so the follower's pool finishes immediately "
+                "without ever issuing a read request. Hitting this branch means a follower is on a protocol older "
+                "than DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE, or the follower's pool ignored the response.",
                 request.replica_num,
                 request.stream_id);
-            return response;
-        }
 
         if (request.mode != coordinator->getCoordinationMode())
             throw Exception(

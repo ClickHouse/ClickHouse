@@ -156,7 +156,10 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
     for (size_t i = 0; i < descriptions.size(); ++i)
         descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
 
-    extension.sendInitialRequest(coordination_mode, std::move(descriptions), mark_segment_size, min_marks_per_request);
+    /// Default pool ignores the announcement response: it doesn't have phantom consumers
+    /// (one consumer total, not per-part), and `DefaultCoordinator::handleRequest` doesn't
+    /// consult the request's part list anyway.
+    std::ignore = extension.sendInitialRequest(coordination_mode, std::move(descriptions), mark_segment_size, min_marks_per_request);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_idx*/, MergeTreeReadTask * previous_task)

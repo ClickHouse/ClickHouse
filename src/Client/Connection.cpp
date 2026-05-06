@@ -1122,6 +1122,19 @@ void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & resp
     out->next();
 }
 
+void Connection::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
+{
+    /// Skip if the remote replica doesn't speak the new protocol — it doesn't expect this packet
+    /// and would treat it as unknown. Phantom-consumer pruning won't apply on older followers.
+    if (server_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+        return;
+
+    writeVarUInt(Protocol::Client::MergeTreeAllRangesAnnouncementResponse, *out);
+    response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
+    out->finishChunk();
+    out->next();
+}
+
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).

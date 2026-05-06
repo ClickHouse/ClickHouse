@@ -23,7 +23,7 @@ public:
     explicit ParallelReplicasReadingCoordinator(size_t replicas_count_);
     ~ParallelReplicasReadingCoordinator();
 
-    void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement);
+    InitialAllRangesAnnouncementResponse handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement);
     ParallelReadResponse handleRequest(ParallelReadRequest request);
 
     /// Called when some replica is unavailable and we skipped it.
@@ -63,6 +63,11 @@ private:
 
     /// Per-table coordinators. Each table gets its own ImplInterface instance.
     std::unordered_map<String, std::shared_ptr<ImplInterface>> stream_to_coordinator;
+
+    /// Authoritative parts for each stream, captured from the snapshot replica's announcement.
+    /// Returned to follower replicas in their announcement responses so they can prune phantom
+    /// per-part state (consumers for parts that the stream's coordinator doesn't actually own).
+    std::unordered_map<String, RangesInDataPartsDescription> stream_to_registered_parts;
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;

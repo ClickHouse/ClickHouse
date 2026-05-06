@@ -75,7 +75,20 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     chassert(descriptions.size() == per_part_infos.size());
     for (size_t i = 0; i < descriptions.size(); ++i)
         descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
-    extension.sendInitialRequest(mode, std::move(descriptions), /*mark_segment_size=*/0, min_marks_per_request);
+
+    auto response = extension.sendInitialRequest(mode, std::move(descriptions), /*mark_segment_size=*/0, min_marks_per_request);
+
+    /// Build the authoritative parts set from the coordinator's response. Consumers for parts
+    /// outside this set finish immediately (no phantom getTask spinning), and read requests
+    /// only carry parts the coordinator's stream actually contains. If the initiator didn't
+    /// send a response (older protocol), `stream_id` will be empty and we leave the flag
+    /// unset, falling back to the pre-pruning behavior.
+    if (!response.stream_id.empty())
+    {
+        authoritative_parts_received = true;
+        for (const auto & part : response.parts)
+            authoritative_parts.insert(part.info);
+    }
 
     per_part_marks_in_range.resize(per_part_infos.size(), 1);
 }
@@ -93,6 +106,15 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
 
     const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part->info;
     const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part->name : "";
+
+    /// Phantom consumers: this consumer's part isn't in the coordinator's stream — finish it
+    /// immediately rather than spinning on getTask. We only filter when the coordinator actually
+    /// reported its authoritative set; if it didn't (older initiator), fall back to the pre-existing
+    /// behavior (no pruning). An empty authoritative set with the flag set means the stream doesn't
+    /// exist on the coordinator (over-announced split) — every consumer of this pool should finish.
+    if (authoritative_parts_received && !authoritative_parts.contains(part_info))
+        return nullptr;
+
     auto & marks_in_range = per_part_marks_in_range[task_idx];
     auto get_from_buffer = [&]() -> std::optional<MarkRanges>
     {

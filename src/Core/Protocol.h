@@ -131,7 +131,11 @@ namespace Protocol
 
             QueryPlan = 13,                 /// Query plan
 
-            MAX = QueryPlan,
+            MergeTreeAllRangesAnnouncementResponse = 14,
+                                            /// Initiator's reply to a follower's announcement,
+                                            /// carrying the authoritative parts list for the stream.
+
+            MAX = MergeTreeAllRangesAnnouncementResponse,
         };
 
         std::string_view toString(UInt64 packet);

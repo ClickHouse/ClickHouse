@@ -137,8 +137,25 @@ struct InitialAllRangesAnnouncement
     static InitialAllRangesAnnouncement deserialize(ReadBuffer & i, UInt64 replica_pr_protocol_version);
 };
 
+/// InitialAllRangesAnnouncementResponse is sent by the initiator back to the announcing replica.
+/// It carries the authoritative set of parts the coordinator has registered for the given stream
+/// (as announced by the snapshot replica during planning). Followers use it to size their per-part
+/// state to exactly the parts the stream owns, avoiding phantom consumers and tightening RPC
+/// payloads. An empty `parts` list means the stream does not exist on the coordinator
+/// (e.g. follower over-announced more splits than the initiator created); the follower's pool
+/// for that stream should immediately mark itself finished.
+struct InitialAllRangesAnnouncementResponse
+{
+    RangesInDataPartsDescription parts;
+    String stream_id;
 
-using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
+    void serialize(WriteBuffer & out, UInt64 replica_pr_protocol_version, UInt64 replica_tcp_protocol_version) const;
+    String describe() const;
+    static InitialAllRangesAnnouncementResponse deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
+};
+
+
+using MergeTreeAllRangesCallback = std::function<InitialAllRangesAnnouncementResponse(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
 }
