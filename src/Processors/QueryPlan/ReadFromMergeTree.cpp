@@ -104,7 +104,8 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
     return countPartitions(parts_with_ranges, get_partition_id);
 }
 
-/// check if a DAG node only depends on sorting key columns (ActionsDAG version of isExpressionOverSortingKey)
+/// check if a DAG node only depends on sorting key columns
+/// (ActionsDAG version of isExpressionOverSortingKey)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
 {
     if (sorting_key_set.contains(node->result_name))
@@ -115,6 +116,17 @@ bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting
         return false; // already checked result_name
     for (const auto * child : node->children)
         if (!isNodeOverSortingKey(child, sorting_key_set))
+            return false;
+    return true;
+}
+
+bool isNodeDeterministic(const ActionsDAG::Node * node)
+{
+    if (node->type == ActionsDAG::ActionType::FUNCTION
+        && node->function_base && !node->function_base->isDeterministic())
+        return false;
+    for (const auto * child : node->children)
+        if (!isNodeDeterministic(child))
             return false;
     return true;
 }
@@ -2192,15 +2204,25 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
     bool defer_row_policy = settings[Setting::apply_row_policy_after_final] && query_info.row_level_filter;
     bool defer_prewhere = settings[Setting::apply_prewhere_after_final] && query_info.prewhere_info;
 
-    /// If row policy touches non-sorting-key columns, prewhere must be deferred too
-    if (defer_row_policy && query_info.prewhere_info)
+    if (defer_row_policy)
     {
         const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
         NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
 
         const auto * filter_output = &query_info.row_level_filter->actions.findInOutputs(
             query_info.row_level_filter->column_name);
-        if (!isNodeOverSortingKey(filter_output, sorting_key_set))
+
+        /// Safe to apply before FINAL only if the policy is Sorting-Key-only (verdict
+        /// is the same for every row of a dedup group) and deterministic
+        /// (no `rand`/`now` flipping the winner)
+        bool row_policy_over_sorting_key =
+            isNodeOverSortingKey(filter_output, sorting_key_set)
+            && isNodeDeterministic(filter_output);
+
+        if (row_policy_over_sorting_key)
+            defer_row_policy = false;
+
+        if (!row_policy_over_sorting_key && query_info.prewhere_info)
             defer_prewhere = true;
     }
 
