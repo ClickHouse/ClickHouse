@@ -170,7 +170,7 @@ ZooKeeperWithFaultInjection::Ptr ObjectStorageQueueMetadata::getZooKeeper(Logger
 {
     auto context = Context::getGlobalContextInstance();
     auto zk_client = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
-    if (static_cast<double>(context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probability]) != 0.0)
+    if (context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probability] != 0.0f)
     {
         return ZooKeeperWithFaultInjection::createInstance(
             static_cast<double>(context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probability]),
