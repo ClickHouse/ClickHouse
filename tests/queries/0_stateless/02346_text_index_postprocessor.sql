@@ -458,3 +458,52 @@ SELECT count() FROM tab WHERE hasAny(val, ['baz']);    -- 1
 SELECT count() FROM tab WHERE hasAny(val, ['BAZ']);    -- 0
 
 DROP TABLE tab;
+
+SELECT '18. startsWith / endsWith use hint with postprocessor when normalized tokens survive.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = replaceRegexpAll(val, 'ing$', ''))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'running walking'), (2, 'cat dog');
+
+-- Row-level results are correct.
+SELECT count() FROM tab WHERE startsWith(val, 'running walking');  -- 1
+SELECT count() FROM tab WHERE endsWith(val, 'cat dog');            -- 1
+
+-- Index hint is used: the virtual column __text_index appears in the plan.
+SELECT trimLeft(explain) FROM
+(EXPLAIN indexes = 1, actions = 1 SELECT count() FROM tab WHERE startsWith(val, 'running walking'))
+WHERE explain LIKE '%__text_index%';
+
+SELECT trimLeft(explain) FROM
+(EXPLAIN indexes = 1, actions = 1 SELECT count() FROM tab WHERE endsWith(val, 'cat dog'))
+WHERE explain LIKE '%__text_index%';
+
+DROP TABLE tab;
+
+SELECT '19. startsWith / endsWith do not use hint when postprocessor drops all hint tokens.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'the', '', val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'the quick fox');
+
+-- Row-level result is correct.
+SELECT count() FROM tab WHERE startsWith(val, 'the quick');  -- 1
+
+-- Postprocessor maps 'the' to '' → normalized prefix token list is empty → index not used.
+SELECT trimLeft(explain) FROM
+(EXPLAIN indexes = 1, actions = 1 SELECT count() FROM tab WHERE startsWith(val, 'the quick'))
+WHERE explain LIKE '%__text_index%';
+
+DROP TABLE tab;
