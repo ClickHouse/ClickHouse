@@ -10,6 +10,8 @@ BufferedScatterByHashTransform::BufferedScatterByHashTransform(SharedHeader head
     , num_shards(num_shards_)
     , key_columns(std::move(key_columns_))
     , output_queues(num_shards)
+    , hash(0)
+    , shard_columns(num_shards)
 {
     chassert(num_shards > 0);
 }
@@ -18,23 +20,15 @@ IProcessor::Status BufferedScatterByHashTransform::prepare()
 {
     auto & input = getInputs().front();
 
-    /// Free queues for outputs that have been closed by downstream.
+    /// Free queues for outputs closed by downstream
+    bool all_finished = true;
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
         if (output_it->isFinished())
             output_queues[shard].clear();
-    }
-
-    /// All downstream consumers are done - nothing left to do.
-    bool all_finished = true;
-    for (auto & output : outputs)
-    {
-        if (!output.isFinished())
-        {
+        else
             all_finished = false;
-            break;
-        }
     }
 
     if (all_finished)
@@ -142,17 +136,20 @@ void BufferedScatterByHashTransform::generateOutputChunks()
     /// hash & mask). Without mixing, all keys in a shard would share the same low bits,
     /// causing them to cluster into a small subset of hash table buckets.
     /// The golden ratio constant ensures thorough bit mixing with a single multiply.
+    /// Combine the mix with Lemire fastrange to map into [0, num_shards) without a divide.
     static constexpr size_t fibonacci_hash_multiplier = 0x9e3779b97f4a7c15ULL;
     const auto & hash_data = hash.getData();
-    IColumn::Selector selector(num_rows);
+    selector.resize_exact(num_rows);
     for (size_t row = 0; row < num_rows; ++row)
-        selector[row] = ((static_cast<UInt64>(hash_data[row]) * fibonacci_hash_multiplier) >> 32) % num_shards;
+    {
+        const UInt64 mixed = static_cast<UInt64>(hash_data[row]) * fibonacci_hash_multiplier;
+        selector[row] = ((mixed >> 32) * num_shards) >> 32;
+    }
 
     /// Physically split every column into N per-shard mutable columns.
     /// Skip shards that received no rows.
-    std::vector<MutableColumns> shard_columns(num_shards);
     for (auto & cols : shard_columns)
-        cols.reserve(columns.size());
+        cols.clear();
 
     for (const auto & column : columns)
     {
@@ -167,7 +164,7 @@ void BufferedScatterByHashTransform::generateOutputChunks()
         if (output_it->isFinished())
             continue;
 
-        const size_t shard_rows = shard_columns[shard].empty() ? 0 : shard_columns[shard][0]->size();
+        const size_t shard_rows = shard_columns[shard][0]->size();
         if (shard_rows == 0)
             continue;
 

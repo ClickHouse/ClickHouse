@@ -49,6 +49,10 @@ private:
     std::vector<std::deque<Chunk>> output_queues;
 
     WeakHash32 hash;
+
+    /// Reused across input chunks to skip per-chunk reallocation.
+    IColumn::Selector selector;
+    std::vector<MutableColumns> shard_columns;
 };
 
 }
