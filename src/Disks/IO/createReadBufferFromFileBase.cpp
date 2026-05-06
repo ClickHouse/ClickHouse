@@ -241,9 +241,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
     if (use_page_cache)
     {
-        PageCacheKey key;
-        key.path = "local:" + filename;
-        res = std::make_unique<CachedInMemoryReadBufferFromFile>(key, settings.page_cache, std::move(res), settings);
+        PageCacheFile cache_file;
+        cache_file.path = "local:" + filename;
+        res = std::make_unique<CachedInMemoryReadBufferFromFile>(cache_file, settings.page_cache, std::move(res), settings);
     }
 
     return res;

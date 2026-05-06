@@ -344,20 +344,20 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
 #       message together, so real Kafka regressions (auth, protocol, config) that also emit `rdk:FAIL` are
 #       not masked.
-# `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` and
-# `No stream (ba1.bin) file checksum for column b` are the unique signatures of issue #102259
-#       (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
-#       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until the
-#       fix appears in a stable release used by the upgrade test, the upgraded server detaches
-#       renamed-column parts of two tests:
-#         - `02538_alter_rename_sequence`'s `wrong_metadata_wide` (rename `column1` -> `column1_renamed`)
-#         - `02555_davengers_rename_chain`'s `wrong_metadata` (rename chain `a` -> `a1` -> `b`)
-#       Matched via the exact corrupted filenames + column names, which are unique to those tests and that bug.
+# `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
+#       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
+#       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
+#       upgraded server detaches the renamed-column parts of `02538_alter_rename_sequence`'s `wrong_metadata_wide`
+#       table. Matched via the exact corrupted filename + column name, which is unique to that test and that bug.
+# `No stream (ba1.bin) file checksum for column b` is the same bug observed on
+#       `02555_davengers_rename_chain`'s `wrong_metadata` table. The test chains `a -> a1` and then
+#       `a1 -> b`, so the corrupted file name is `<new=b><old=a1>.bin = ba1.bin` for column `b`. The
+#       `<column><stream>` combination is unique to this chained-rename test.
 # `wrong_metadata` + `Detaching broken part` + `backward incompatibility` is the follow-up cleanup line for
-#       the same issue: a "Detaching broken part" notice that does not contain the corrupted filename. Filtered
-#       via regex in the secondary pipe below to require all three substrings together, so unrelated broken-part
-#       detach messages are not masked. The match covers `wrong_metadata`, `wrong_metadata_wide`, and
-#       `wrong_metadata_compact` (all three tables exist only in the two tests above).
+#       the same issue: a "Detaching broken part" notice that does not contain the corrupted filename.
+#       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
+#       broken-part detach messages are not masked. The regex matches both `wrong_metadata` (from
+#       `02555_davengers_rename_chain`) and `wrong_metadata_wide` (from `02538_alter_rename_sequence`).
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
