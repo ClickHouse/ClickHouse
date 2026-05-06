@@ -54,7 +54,7 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForGroup(name, arguments, 0);
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstTagName(name, arguments, 1);
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstString(name, arguments, 2);
-        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstTagName(name, arguments, 3);
+        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstString(name, arguments, 3);
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstString(name, arguments, 4);
     }
 
@@ -63,7 +63,7 @@ public:
         auto old_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
         auto dest_tag = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
         auto replacement = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 2);
-        auto src_tag = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 3);
+        auto src_tag = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 3);
         auto regex = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 4);
 
         auto new_groups = tags_collector->replaceTag(old_groups, dest_tag, replacement, src_tag, regex);

@@ -498,6 +498,148 @@ def test_instant_selectors():
     )
 
 
+def test_label_functions():
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "$1-kind", "shape", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "kind": "square-kind", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('kind','square-kind'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_replace(foo{shape="square"}, "size", "$1", "shape", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "square"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','square')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "value-$1", "missing", "source-(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_replace(foo{shape="square"}, "shape", "", "size", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "$2-$1", "shape", "(squ)(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "kind": "are-squ", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('kind','are-squ'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_replace(foo{shape="square"}, "__name__", "renamed_$1", "shape", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "renamed_square", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','renamed_square'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_replace(foo{shape="square"}, "metric_copy", "${1}_metric", "__name__", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "metric_copy": "foo_metric", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('metric_copy','foo_metric'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_replace(foo{shape="square"}, "~valid_utf8", "$1", "shape", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s", "~valid_utf8": "square"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s'),('~valid_utf8','square')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "empty-$0", "", "")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "kind": "empty-", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('kind','empty-'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_join(foo{shape="square"}, "joined", ":", "shape", "size")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "joined": "square:s", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('joined','square:s'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_join(foo{shape="square"}, "shape", "-", "size", "missing")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "s-", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','s-'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_join(foo{shape="square"}, "joined", "/", "missing1", "missing2")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "joined": "/", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('joined','/'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_join(foo{shape="square"}, "__name__", "_", "shape", "size")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "square_s", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','square_s'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_query_test(
+        'label_join(foo{shape="square"}, "joined", "/", "__name__", "shape")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "joined": "foo/square", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('joined','foo/square'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    do_range_query_test(
+        'label_join(foo{shape="square"}, "joined", ":", "shape", "size")',
+        110,
+        130,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "joined": "square:s", "shape": "square", "size": "s"}, "values": [[110, "4"], [120, "4"], [130, "40"]]}]}',
+        [
+            [
+                "[('__name__','foo'),('joined','square:s'),('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',4),('1970-01-01 00:02:10.000',40)]",
+            ]
+        ],
+    )
+
+    do_query_test_expect_error(
+        'label_replace(foo{shape="square"}, "", "$1", "shape", "(.*)")',
+        130,
+        "invalid destination label name in label_replace()",
+        "invalid destination label name in label_replace()",
+    )
+
+    do_query_test_expect_error(
+        'label_replace(foo{shape="square"}, "kind", "$1", "shape", "(.*")',
+        130,
+        "invalid regular expression in label_replace(): (.*",
+        "invalid regular expression in label_replace(): (.*",
+    )
+
+    do_query_test_expect_error(
+        'label_join(foo{shape="square"}, "", ":", "shape")',
+        130,
+        "invalid destination label name in label_join()",
+        "invalid destination label name in label_join()",
+    )
+
+    do_query_test_expect_error(
+        'label_join(foo{shape="square"}, "joined", ":", "")',
+        130,
+        "invalid source label name in label_join()",
+        "invalid source label name in label_join()",
+    )
+
+
 def test_function_over_time():
     do_query_test(
         "last_over_time(test[45s])[120s:15s]",
