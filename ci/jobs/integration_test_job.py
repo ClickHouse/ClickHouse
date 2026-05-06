@@ -1060,9 +1060,16 @@ tar -czf ./ci/tmp/logs.tar.gz \
             elif r.status == Result.Status.OK:
                 r.status = Result.Status.FAIL
         if not has_failure:
-            print("Failed to reproduce the bug")
-            R.set_failed()
-            R.set_info("Failed to reproduce the bug")
+            # See the matching comment in `ci/jobs/functional_tests.py`. The
+            # bug did not reproduce on this arch, so report SKIPPED instead
+            # of FAIL: `Result.is_ok` includes SKIPPED so the job exits 0,
+            # while `is_success` (used by the post-hook) excludes SKIPPED so
+            # the per-arch job does not count as a validation. Contract:
+            # at least one per-arch job must end up `OK`/`XFAIL` for the
+            # post-hook to consider the bug validated.
+            print("Bug does not reproduce on this arch — bugfix validation N/A")
+            R.set_status(Result.Status.SKIPPED)
+            R.set_info("Bug does not reproduce on this arch — bugfix validation N/A")
         else:
             R.set_success()
 

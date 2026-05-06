@@ -771,8 +771,18 @@ def main():
             elif r.status == Result.Status.OK:
                 r.status = Result.Status.FAIL
         if not has_failure:
-            print("Failed to reproduce the bug")
-            test_result.set_failed().set_info("Failed to reproduce the bug")
+            # The bug did not reproduce on this arch — every regression test
+            # case still passed on master HEAD here. Report SKIPPED so the
+            # per-arch job exits 0 (`Result.is_ok` includes SKIPPED) and the
+            # GitHub status is not red. The bugfix-validation post-hook in
+            # `new_tests_check.py` uses `is_success` (strict — `OK` or `XFAIL`
+            # only), so a SKIPPED per-arch job does NOT count as a validation
+            # — the contract that "at least one arch must reproduce the bug"
+            # is preserved.
+            print("Bug does not reproduce on this arch — bugfix validation N/A")
+            test_result.set_status(Result.Status.SKIPPED).set_info(
+                "Bug does not reproduce on this arch — bugfix validation N/A"
+            )
         else:
             # For bugfix validation, the expected behavior is:
             # - At least one test must fail (bug reproduced)
