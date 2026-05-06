@@ -182,7 +182,8 @@ void ReadWriteBufferFromHTTP::getHeadResponse(Poco::Net::HTTPResponse & response
             callWithRedirects(response, Poco::Net::HTTPRequest::HTTP_HEAD, {});
         },
         /*on_retry=*/ nullptr,
-        /*mute_logging=*/ true);
+        /*mute_logging=*/ true,
+        cancellation_check);
 }
 
 ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
@@ -313,7 +314,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
 
 void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                                             std::function<void()> on_retry,
-                                            bool mute_logging) const
+                                            bool mute_logging, CheckCancelled check_cancelled) const
 {
     [[maybe_unused]] auto milliseconds_to_wait = read_settings.http_retry_initial_backoff_ms;
 
@@ -322,6 +323,9 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
     for (size_t attempt = 1; attempt <= read_settings.http_max_tries; ++attempt)
     {
+        if (check_cancelled && check_cancelled())
+            break;
+
         [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_max_tries;
 
         String error_message;
@@ -519,7 +523,9 @@ bool ReadWriteBufferFromHTTP::nextImpl()
         /*on_retry=*/ [&] ()
         {
             impl.reset();
-        });
+        },
+        /*mute_logging=*/false,
+        cancellation_check);
 
     return next_result;
 }
@@ -580,7 +586,9 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
             to += bytes_copied;
             n -= bytes_copied;
             bytes_copied = 0;
-        });
+        },
+        /*mute_logging=*/false,
+        cancellation_check);
 
     chassert(total_bytes_copied == initial_n || is_canceled);
     return total_bytes_copied;
@@ -707,6 +715,11 @@ void ReadWriteBufferFromHTTP::setNextCallback(NextCallback next_callback_)
     next_callback = next_callback_;
     /// Some data maybe already read
     next_callback(count());
+}
+
+void ReadWriteBufferFromHTTP::setCancellationCheck(CheckCancelled check_cancelled_)
+{
+    cancellation_check = std::move(check_cancelled_);
 }
 
 const std::string & ReadWriteBufferFromHTTP::getCompressionMethod() const
