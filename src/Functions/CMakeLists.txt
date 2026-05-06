@@ -171,6 +171,12 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_kusto>)
 add_subdirectory(TimeSeries)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_time_series>)
 
+if (TARGET ch_contrib::lexbor)
+    add_subdirectory(HTML)
+    list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_html>)
+    list (APPEND PRIVATE_LIBS ch_contrib::lexbor)
+endif()
+
 if (TARGET ch_contrib::datasketches)
     add_subdirectory(UniqTheta)
     list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_uniqtheta>)

@@ -188,6 +188,8 @@ if (ENABLE_NLP)
     add_contrib (cld2-cmake cld2)
 endif()
 
+add_contrib (lexbor-cmake lexbor)
+
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)

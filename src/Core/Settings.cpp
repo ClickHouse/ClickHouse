@@ -7697,6 +7697,9 @@ Enable experimental functions for funnel analysis.
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_html_functions, false, R"(
+Enable experimental HTML processing functions.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \

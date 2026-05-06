@@ -390,3 +390,6 @@
 [submodule "contrib/zmij"]
 	path = contrib/zmij
 	url = https://github.com/vitaut/zmij.git
+[submodule "contrib/lexbor"]
+	path = contrib/lexbor
+	url = https://github.com/lexbor/lexbor.git
