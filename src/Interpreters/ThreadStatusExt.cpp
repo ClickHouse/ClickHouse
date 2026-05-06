@@ -91,7 +91,7 @@ void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker 
             memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
     }
 
-    if (static_cast<double>(settings[Setting::memory_tracker_fault_probability]) > 0.0)
+    if (settings[Setting::memory_tracker_fault_probability] > 0.0f)
         memory_tracker.setFaultProbability(static_cast<double>(settings[Setting::memory_tracker_fault_probability]));
 
     memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
