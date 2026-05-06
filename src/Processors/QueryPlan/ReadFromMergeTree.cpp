@@ -2212,17 +2212,17 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
         const auto * filter_output = &query_info.row_level_filter->actions.findInOutputs(
             query_info.row_level_filter->column_name);
 
-        /// Safe to apply before FINAL only if the policy is SK-only (verdict
+        /// Safe to apply before FINAL only if the policy is Sorting-Key-only (verdict
         /// is the same for every row of a dedup group) and deterministic
         /// (no `rand`/`now` flipping the winner)
-        bool row_policy_over_sk =
+        bool row_policy_over_sorting_key =
             isNodeOverSortingKey(filter_output, sorting_key_set)
             && isNodeDeterministic(filter_output);
 
-        if (row_policy_over_sk)
+        if (row_policy_over_sorting_key)
             defer_row_policy = false;
 
-        if (!row_policy_over_sk && query_info.prewhere_info)
+        if (!row_policy_over_sorting_key && query_info.prewhere_info)
             defer_prewhere = true;
     }
 

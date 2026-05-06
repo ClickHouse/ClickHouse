@@ -1038,9 +1038,10 @@ void StorageDistributed::read(
         shard_filter_generator,
         is_remote_function);
 
-    /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
+    /// This is possible when skip_unavailable_shards is enabled and all shards were skipped
+    /// (e.g., every shard had a missing table with no remote replicas).
     if (!query_plan.isInitialized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not initialized");
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No available shards to query");
 }
 
 
