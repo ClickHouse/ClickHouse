@@ -153,5 +153,4 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnA
 
     return ColumnArray::create(std::move(result_data), std::move(result_offsets_col));
 }
-
 }

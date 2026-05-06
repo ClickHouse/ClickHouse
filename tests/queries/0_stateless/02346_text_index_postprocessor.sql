@@ -417,3 +417,50 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');      -- 0
 
 SYSTEM START MERGES tab;
 DROP TABLE tab;
+
+SELECT '16. Legacy predicates (hasPhrase / startsWith / endsWith) must bypass the index when a postprocessor is configured.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = replaceRegexpAll(val, 'ing$', ''))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'running walking'), (2, 'cat dog');
+
+-- Raw row-level semantics still hold.
+SELECT count() FROM tab WHERE hasPhrase(val, 'running walking');  -- 1
+SELECT count() FROM tab WHERE startsWith(val, 'running');         -- 1
+SELECT count() FROM tab WHERE endsWith(val, 'walking');           -- 1
+
+-- These predicates must not use the text index when a postprocessor is configured,
+-- otherwise the normalized index tokens would disagree with row-level evaluation.
+SELECT count() FROM tab WHERE hasPhrase(val, 'running walking') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab WHERE startsWith(val, 'running') SETTINGS force_data_skipping_indices = 'idx';        -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab WHERE endsWith(val, 'walking') SETTINGS force_data_skipping_indices = 'idx';          -- { serverError INDEX_NOT_USED }
+
+DROP TABLE tab;
+
+SELECT '17. Array tokenizer + preprocessor: has() / hasAll() / hasAny() bypass the preprocessor.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Array(String),
+    INDEX idx(val) TYPE text(tokenizer = 'array', preprocessor = lower(val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
+
+-- The index stores preprocessed elements, but these functions use raw array semantics.
+SELECT count() FROM tab WHERE has(val, 'Foo');         -- 1
+SELECT count() FROM tab WHERE has(val, 'foo');         -- 0
+SELECT count() FROM tab WHERE hasAll(val, ['BAR']);    -- 1
+SELECT count() FROM tab WHERE hasAll(val, ['bar']);    -- 0
+SELECT count() FROM tab WHERE hasAny(val, ['baz']);    -- 1
+SELECT count() FROM tab WHERE hasAny(val, ['BAZ']);    -- 0
+
+DROP TABLE tab;

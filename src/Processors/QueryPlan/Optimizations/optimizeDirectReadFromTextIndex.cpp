@@ -362,32 +362,21 @@ private:
         const TextIndexReadInfo * info = nullptr;
     };
 
-    struct TextIndexFunctionTransforms
+    /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
+    static bool needApplyTokenizer(const String & function_name)
     {
-        bool apply_tokenizer     = false;
-        bool apply_preprocessor  = false;
-        bool apply_postprocessor = false;
-    };
-
-    static TextIndexFunctionTransforms getRequiredTransforms(const String & function_name)
-    {
-        using Entry = std::pair<std::string_view, TextIndexFunctionTransforms>;
-        /// Entries must be sorted by name for binary search.
-        /// has/hasAll/hasAny operate on array elements directly (no tokenizer, no preprocessor)
-        /// and therefore also bypass the postprocessor; they are not listed here.
-        static constexpr std::array<Entry, 4> table = {{
-            {"hasAllTokens", {true,  true,  true}},
-            {"hasAnyTokens", {true,  true,  true}},
-            {"hasPhrase",    {true,  true,  false}},
-            {"hasToken",     {false, true,  true}},
-        }};
-        const auto it = std::ranges::lower_bound(table, function_name, {}, &Entry::first);
-        return (it != table.end() && it->first == function_name) ? it->second : TextIndexFunctionTransforms{};
+        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
     }
 
-    static bool needApplyTokenizer(const String & fn)     { return getRequiredTransforms(fn).apply_tokenizer; }
-    static bool needApplyPreprocessor(const String & fn)  { return getRequiredTransforms(fn).apply_preprocessor; }
-    static bool needApplyPostprocessor(const String & fn) { return getRequiredTransforms(fn).apply_postprocessor; }
+    static bool needApplyPreprocessor(const String & function_name)
+    {
+        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+    }
+
+    static bool needApplyPostprocessor(const String & function_name)
+    {
+        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
+    }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
     {
@@ -497,8 +486,6 @@ private:
         const auto * tokenizer = condition_text.getTokenizer();
         auto function_name = replacement.node->function_base->getName();
 
-        const bool will_apply_postprocessor = needApplyPostprocessor(function_name) && postprocessor && postprocessor->hasActions();
-
         if (needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions())
         {
             const auto & preprocessor_dag = preprocessor->getOriginalActionsDAG();
@@ -546,7 +533,7 @@ private:
             new_children.push_back(&actions_dag.addColumn(std::move(arg)));
         }
 
-        if (will_apply_postprocessor)
+        if (needApplyPostprocessor(function_name) && postprocessor && postprocessor->hasActions())
         {
             if (needles_field.getType() == Field::Types::String)
             {
@@ -556,7 +543,7 @@ private:
             }
             else if (needles_field.getType() == Field::Types::Array)
             {
-                /// hasAllTokens/hasAnyTokens/has case: array of tokens.
+                /// hasAllTokens/hasAnyTokens case: array of tokens.
                 const auto & src_array = needles_field.safeGet<Array>();
                 std::vector<String> tokens;
                 for (const auto & element : src_array)

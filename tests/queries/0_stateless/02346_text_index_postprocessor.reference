@@ -93,3 +93,14 @@
 1
 2
 0
+16. Legacy predicates (hasPhrase / startsWith / endsWith) must bypass the index when a postprocessor is configured.
+1
+1
+1
+17. Array tokenizer + preprocessor: has() / hasAll() / hasAny() bypass the preprocessor.
+1
+0
+1
+0
+1
+0

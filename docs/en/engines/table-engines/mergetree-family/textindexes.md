@@ -309,6 +309,10 @@ Usage of non-deterministic functions is disallowed.
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) apply the postprocessor to each search token before looking it up in the index.
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
+Functions [has](/sql-reference/functions/array-functions.md/#has), [hasAll](/sql-reference/functions/array-functions.md/#hasAll), [hasAny](/sql-reference/functions/array-functions.md/#hasAny) and [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) do **not** apply the postprocessor.
+`has`, `hasAll`, and `hasAny` operate directly on array elements, bypassing the entire tokenization pipeline (tokenizer, preprocessor, and postprocessor).
+`hasPhrase` does not apply the postprocessor because phrase matching requires tokens to appear in a specific order and position, and the phrase string is tokenized internally during matching rather than through the index pipeline.
+
 Example for stop word filtering:
 
 ```sql

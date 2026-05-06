@@ -520,30 +520,39 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
     return false;
 }
 
-std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
+std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & field, bool apply_preprocessor, bool apply_postprocessor) const
 {
     std::vector<String> tokens;
-    const String value = preprocessor->processConstant(field.safeGet<String>());
+    const String & raw = field.safeGet<String>();
+    const String value = apply_preprocessor ? preprocessor->processConstant(raw) : raw;
     tokenizer->stringToTokens(value.data(), value.size(), tokens);
     tokens = tokenizer->compactTokens(tokens);
+    if (apply_postprocessor && postprocessor->hasActions())
+        tokens = postprocessor->applyBatch(std::move(tokens));
     return tokens;
 }
 
-std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
+std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix, bool apply_preprocessor, bool apply_postprocessor) const
 {
     std::vector<String> tokens;
-    const String value = preprocessor->processConstant(field.safeGet<String>());
+    const String & raw = field.safeGet<String>();
+    const String value = apply_preprocessor ? preprocessor->processConstant(raw) : raw;
     tokenizer->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
     tokens = tokenizer->compactTokens(tokens);
+    if (apply_postprocessor && postprocessor->hasActions())
+        tokens = postprocessor->applyBatch(std::move(tokens));
     return tokens;
 }
 
-std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
+std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field, bool apply_preprocessor, bool apply_postprocessor) const
 {
     std::vector<String> tokens;
-    const String value = preprocessor->processConstant(field.safeGet<String>());
+    const String & raw = field.safeGet<String>();
+    const String value = apply_preprocessor ? preprocessor->processConstant(raw) : raw;
     tokenizer->stringLikeToTokens(value.data(), value.size(), tokens);
     tokens = tokenizer->compactTokens(tokens);
+    if (apply_postprocessor && postprocessor->hasActions())
+        tokens = postprocessor->applyBatch(std::move(tokens));
     return tokens;
 }
 
@@ -709,26 +718,27 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// mapContainsKey* can be used only with an index defined as `mapKeys(Map(String, ...))`
         if (has_map_keys_column)
         {
+            /// Map keys are stored as raw elements (array tokenizer): bypass both transforms.
             if (function_name == "mapContainsKey" || function_name == "has")
-                return make_map_function(stringToTokens(value_field));
+                return make_map_function(stringToTokens(value_field, false, false));
             if (function_name == "mapContainsKeyLike" && tokenizer->supportsStringLike())
-                return make_map_function(stringLikeToTokens(value_field));
+                return make_map_function(stringLikeToTokens(value_field, true, true));
         }
 
         /// mapContainsValue* can be used only with an index defined as `mapValues(Map(String, ...))`
         if (has_map_values_column)
         {
             if (function_name == "mapContainsValue")
-                return make_map_function(stringToTokens(value_field));
+                return make_map_function(stringToTokens(value_field, true, true));
             if (function_name == "mapContainsValueLike" && tokenizer->supportsStringLike())
-                return make_map_function(stringLikeToTokens(value_field));
+                return make_map_function(stringLikeToTokens(value_field, true, true));
         }
 
         return false;
     }
     if (function_name == "equals")
     {
-        auto tokens = stringToTokens(value_field);
+        auto tokens = stringToTokens(value_field, true, true);
         if (tokens.empty())
             return false;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -742,7 +752,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         // hasAny/AllTokens funcs accept either string which will be tokenized or array of strings to be used as-is
         if (value_data_type.isString())
         {
-            search_tokens = postprocessor->applyBatch(stringToTokens(value_field));
+            search_tokens = stringToTokens(value_field, true, true);
         }
         else
         {
@@ -753,7 +763,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
                 search_tokens.push_back(element.safeGet<String>());
             }
-            search_tokens = postprocessor->applyBatch(std::move(search_tokens));
+            /// Array needles are tokens as-is; apply postprocessor only for non-array tokenizers
+            /// (array tokenizer stores raw elements and must be compared raw).
+            if (postprocessor->hasActions() && !typeid_cast<const ArrayTokenizer *>(tokenizer))
+                search_tokens = postprocessor->applyBatch(std::move(search_tokens));
         }
 
         if (function_name == "hasAnyTokens")
@@ -798,7 +811,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 if (element.getType() != Field::Types::String)
                     return false;
 
-                auto element_tokens = stringToTokens(element);
+                /// has/hasAll/hasAny compare raw array elements — bypass both transforms.
+                auto element_tokens = stringToTokens(element, false, false);
                 if (element_tokens.empty())
                     return false;
 
@@ -827,7 +841,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                     return false;
                 }
 
-                auto element_tokens = stringToTokens(element);
+                /// has/hasAll/hasAny compare raw array elements — bypass both transforms.
+                auto element_tokens = stringToTokens(element, false, false);
 
                 /// An element that tokenizes to nothing cannot be proven present by the index.
                 /// Bail out to keep the original predicate, same as tryPrepareSetForTextSearch does for IN.
@@ -846,7 +861,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        auto tokens = stringToTokens(value_field);
+        /// Apply preprocessor but not postprocessor here; the postprocessor is applied
+        /// separately below so that the empty-tokenizer case (non-word char or too-short
+        /// needle) can be distinguished from the postprocessor-filtered case (stop word).
+        auto tokens = stringToTokens(value_field, true, false);
         if (tokens.empty())
         {
             const String & string_needle = value_field.safeGet<String>();
@@ -855,7 +873,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 /// hasToken uses splitByNonAlpha as its tokenizer, so:
                 ///  - A needle without any word character (alphanumeric or non-ASCII) is invalid.
                 ///  - Bypass the index in that case so the row-level evaluation throws BAD_ARGUMENTS (or returns NULL for hasTokenOrNull)
-                ///  -- Consistnt with the no-index behaviour.
+                ///  -- Consistent with the no-index behaviour.
                 /// If the needle does contain word characters (e.g. "abc" with ngrams(4)):
                 ///  - It is valid but too short for the index's tokenizer:
                 ///  -- Fall through to push "" so all granules are pruned and the query returns 0 rows.
@@ -889,21 +907,24 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
 
-        auto tokens = stringToTokens(value_field);
+        /// hasPhrase performs exact positional matching at the row level, so the postprocessor
+        /// must not be applied to the needle (it could change token identity or drop stop words,
+        /// making the phrase lookup inconsistent with the row-level evaluation).
+        auto tokens = stringToTokens(value_field, true, false);
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
     if (function_name == "startsWith" && tokenizer->supportsStringLike())
     {
-        auto tokens = substringToTokens(value_field, true, false);
+        auto tokens = substringToTokens(value_field, true, false, true, true);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
     if (function_name == "endsWith" && tokenizer->supportsStringLike())
     {
-        auto tokens = substringToTokens(value_field, false, true);
+        auto tokens = substringToTokens(value_field, false, true, true, true);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
@@ -941,7 +962,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!tokenizer->supportsStringLike())
             return false;
 
-        std::vector<String> exact_tokens = stringLikeToTokens(value_field);
+        std::vector<String> exact_tokens = stringLikeToTokens(value_field, true, true);
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(exact_tokens)));
@@ -979,14 +1000,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         {
             for (const auto & alternative : result.alternatives)
             {
-                auto tokens = substringToTokens(alternative, false, false);
+                auto tokens = substringToTokens(alternative, false, false, true, true);
                 out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             }
             return true;
         }
         if (!result.required_substring.empty())
         {
-            auto tokens = substringToTokens(result.required_substring, false, false);
+            auto tokens = substringToTokens(result.required_substring, false, false, true, true);
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             return true;
         }
@@ -994,7 +1015,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "has")
     {
-        auto tokens = stringToTokens(value_field);
+        /// has() compares raw array elements — bypass both transforms.
+        auto tokens = stringToTokens(value_field, false, false);
         if (tokens.empty())
             return false;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -1113,7 +1135,8 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (result_column->getBool(0))
         return false;
 
-    auto tokens = stringToTokens(*key_const_value);
+    /// Map keys are stored as raw elements (array tokenizer): bypass both transforms.
+    auto tokens = stringToTokens(*key_const_value, false, false);
     if (tokens.empty())
         return false;
     out.function = RPNElement::FUNCTION_EQUALS;
@@ -1214,7 +1237,8 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     if (result_column->getBool(0))
         return false;
 
-    auto tokens = stringToTokens(Field(json_info->path));
+    /// JSON paths are stored as raw elements (array tokenizer): bypass both transforms.
+    auto tokens = stringToTokens(Field(json_info->path), false, false);
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
         "JSONPathExists", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
