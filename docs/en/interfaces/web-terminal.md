@@ -61,6 +61,7 @@ The web terminal exposes an interactive shell-like session to anyone who can aut
 - Always serve `/webterminal` over HTTPS in untrusted environments to protect credentials and session traffic.
 - Restrict access at the network level (firewall, reverse proxy, or the `listen_host` configuration) the same way you restrict access to the HTTP protocol.
 - The endpoint validates the `Origin` header against the `Host` to mitigate cross-origin WebSocket hijacking; configure reverse proxies accordingly if you terminate TLS externally.
+- Behind a TLS-terminating reverse proxy, the upstream connection to ClickHouse is plain `http` even though the browser uses `https`, so the strict same-origin check would reject legitimate connections. For these deployments, set `webterminal_allowed_origins` to a comma-separated list of full origins that are allowed to open WebSocket sessions; when this setting is non-empty, it replaces the default same-origin check. Example: `<webterminal_allowed_origins>https://example.com,https://app.example.com:8443</webterminal_allowed_origins>`.
 
 The handler also enforces WebSocket protocol conformance per RFC 6455: unmasked client frames, reserved opcodes, oversized or fragmented control frames, and reserved RSV bits are rejected with protocol-error close codes.
 

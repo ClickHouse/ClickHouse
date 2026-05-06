@@ -383,39 +383,92 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
 
     /// Validate Origin header to prevent cross-site WebSocket hijacking.
     /// Browsers always send the Origin header on WebSocket upgrades.
-    /// We enforce same-origin: the Origin must match the request in both
-    /// scheme (`http`/`https`) and host/port. Comparing only host would allow
-    /// a less-trusted page served over `http` on the same host to open a
+    ///
+    /// By default, we enforce same-origin: the Origin must match the request in
+    /// both scheme (`http`/`https`) and host/port. Comparing only host would
+    /// allow a less-trusted page served over `http` on the same host to open a
     /// WebSocket against `https`, weakening CSWSH protection.
+    ///
+    /// Behind a TLS-terminating reverse proxy, `request.isSecure()` is `false`
+    /// even when the browser sees `https`, so the strict check would reject
+    /// legitimate same-origin connections. For such deployments, operators can
+    /// set `webterminal_allowed_origins` in the server config to a
+    /// comma-separated list of full origins (e.g.
+    /// `https://example.com,https://app.example.com:8443`); when non-empty,
+    /// this allowlist replaces the same-origin check.
     String origin = request.get("Origin", "");
     if (!origin.empty())
     {
-        String host = request.getHost();
-        /// Split Origin into scheme and host (e.g. "https://example.com:8443" -> "https", "example.com:8443").
-        size_t origin_scheme_end = origin.find("://");
-        String origin_scheme;
-        String origin_host;
-        if (origin_scheme_end != String::npos)
+        /// Strip trailing slash from Origin to normalize comparisons.
+        String normalized_origin = origin;
+        if (!normalized_origin.empty() && normalized_origin.back() == '/')
+            normalized_origin.pop_back();
+
+        String allowed_origins = server.config().getString("webterminal_allowed_origins", "");
+
+        bool allowed = false;
+        if (!allowed_origins.empty())
         {
-            origin_scheme = origin.substr(0, origin_scheme_end);
-            origin_host = origin.substr(origin_scheme_end + 3);
+            size_t pos = 0;
+            while (pos <= allowed_origins.size())
+            {
+                size_t comma = allowed_origins.find(',', pos);
+                size_t end_pos = (comma == String::npos) ? allowed_origins.size() : comma;
+                /// Trim whitespace from this segment.
+                size_t start = allowed_origins.find_first_not_of(" \t", pos);
+                if (start != String::npos && start < end_pos)
+                {
+                    size_t last = allowed_origins.find_last_not_of(" \t", end_pos - 1);
+                    String candidate = allowed_origins.substr(start, last - start + 1);
+                    if (!candidate.empty() && candidate.back() == '/')
+                        candidate.pop_back();
+                    if (candidate == normalized_origin)
+                    {
+                        allowed = true;
+                        break;
+                    }
+                }
+                if (comma == String::npos)
+                    break;
+                pos = comma + 1;
+            }
+
+            if (!allowed)
+            {
+                LOG_WARNING(log, "WebSocket Origin not in allowlist: origin={}", origin);
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_FORBIDDEN);
+                *response.send() << "Origin not allowed.\n";
+                return;
+            }
         }
         else
         {
-            origin_host = origin;
-        }
-        /// Remove trailing slash if present
-        if (!origin_host.empty() && origin_host.back() == '/')
-            origin_host.pop_back();
+            String host = request.getHost();
+            /// Split Origin into scheme and host (e.g. "https://example.com:8443" -> "https", "example.com:8443").
+            size_t origin_scheme_end = normalized_origin.find("://");
+            String origin_scheme;
+            String origin_host;
+            if (origin_scheme_end != String::npos)
+            {
+                origin_scheme = normalized_origin.substr(0, origin_scheme_end);
+                origin_host = normalized_origin.substr(origin_scheme_end + 3);
+            }
+            else
+            {
+                origin_host = normalized_origin;
+            }
 
-        const String request_scheme = request.isSecure() ? "https" : "http";
+            const String request_scheme = request.isSecure() ? "https" : "http";
 
-        if (origin_host != host || origin_scheme != request_scheme)
-        {
-            LOG_WARNING(log, "WebSocket Origin mismatch: origin={}, host={}, scheme={}", origin, host, request_scheme);
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_FORBIDDEN);
-            *response.send() << "Origin not allowed.\n";
-            return;
+            if (origin_host != host || origin_scheme != request_scheme)
+            {
+                LOG_WARNING(log, "WebSocket Origin mismatch: origin={}, host={}, scheme={}. "
+                                 "If running behind a TLS-terminating proxy, configure `webterminal_allowed_origins`.",
+                            origin, host, request_scheme);
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_FORBIDDEN);
+                *response.send() << "Origin not allowed.\n";
+                return;
+            }
         }
     }
 
