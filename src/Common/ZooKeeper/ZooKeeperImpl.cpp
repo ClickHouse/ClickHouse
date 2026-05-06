@@ -919,116 +919,78 @@ void ZooKeeper::receiveThread()
 
         auto idle_deadline = clock::now() + session_timeout_us;
 
+        /// Rate-limit the stale-operation warning to at most once per operation_timeout period.
+        auto next_stale_warning_at = clock::time_point::min();
+
         while (!requests_queue.isFinished())
         {
             maybeInjectRecvSleep();
             auto prev_bytes_received = in->count();
 
-            clock::time_point now = clock::now();
-            bool has_operations = false;
-            /// Only extract what we need under the lock: create_ts for timeout
-            /// computation and request ptr for error messages. Avoids copying
-            /// the full RequestInfo (which includes std::function callback and
-            /// watch shared_ptrs) on every iteration of the hot loop.
-            std::optional<clock::time_point> earliest_create_ts;
-            ZooKeeperRequestPtr earliest_request;
+            auto now = clock::now();
 
+            /// Check session-level idle timeout (no data at all for session_timeout_ms).
+            if (now >= idle_deadline)
+                throw Exception(Error::ZOPERATIONTIMEOUT,
+                    "Nothing is received in session timeout of {} ms",
+                    args.session_timeout_ms);
+
+            /// If operations are in flight and the earliest has been waiting longer
+            /// than operation_timeout_ms, log a warning (rate-limited). The sync
+            /// wrappers handle the actual timeout decision via waitForFutureWithProgress.
+            ///
+            /// NOTE: callers that use bare future.get() (without waitForFutureWithProgress)
+            /// rely on session_timeout_ms for failure detection, not operation_timeout_ms.
+            /// Known callers: createNewZooKeeperNodesAttempt, removePartsFromZooKeeper,
+            /// markLostReplicas, ReplicatedMergeTreeMergePredicate. Converting them to
+            /// waitForFutureWithProgress is tracked as a follow-up.
+            Coordination::OpNum stale_op{};
+            String stale_path;
+            Int64 stale_waited_ms = 0;
+
+            if (now >= next_stale_warning_at)
             {
                 std::lock_guard lock(operations_mutex);
-                has_operations = !operations.empty();
-                if (has_operations)
+                if (!operations.empty())
                 {
                     const auto & earliest = operations.begin()->second;
-                    earliest_create_ts = earliest.request->create_ts;
-                    earliest_request = earliest.request;
+                    auto waited = std::chrono::duration_cast<std::chrono::microseconds>(
+                        now - earliest.request->create_ts);
+                    if (waited >= operation_timeout_us)
+                    {
+                        stale_op = earliest.request->getOpNum();
+                        stale_path = earliest.request->getPath();
+                        stale_waited_ms = std::chrono::duration_cast<std::chrono::milliseconds>(waited).count();
+                        next_stale_warning_at = now + operation_timeout_us;
+                    }
                 }
             }
 
-            UInt64 max_wait_us;
-            if (has_operations)
-            {
-                /// Active path: operations are in flight.
-                /// Compute the progress-based timeout baseline as the LATER of:
-                ///   (a) the last response received from the server
-                ///   (b) the creation time of the earliest in-flight operation
-                ///
-                /// Using max(a, b) handles idle-to-active transitions: after an idle
-                /// period longer than operation_timeout_ms, last_response_ts is stale.
-                /// The request's create_ts provides a fresh baseline in this scenario.
-                Int64 last_ts = last_response_ts.load(std::memory_order_relaxed);
-                auto last_response_time = clock::time_point(
-                    std::chrono::microseconds(last_ts));
+            if (stale_waited_ms > 0)
+                LOG_WARNING(log,
+                    "Earliest in-flight request {} for path '{}' has been waiting {} ms "
+                    "(operation_timeout_ms={}). Sync wrappers will handle the timeout decision.",
+                    stale_op, stale_path, stale_waited_ms, args.operation_timeout_ms);
 
-                auto baseline = std::max(last_response_time, *earliest_create_ts);
-                auto silence_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                    now - baseline);
+            /// Bound poll to operation_timeout_ms, but also clamp to the remaining
+            /// time until idle_deadline so the session-timeout check fires promptly.
+            auto remaining_to_idle = std::chrono::duration_cast<std::chrono::microseconds>(
+                idle_deadline - now);
+            auto poll_timeout = std::min(operation_timeout_us, remaining_to_idle);
+            /// Ensure non-negative (clock skew / scheduling jitter).
+            auto poll_us = static_cast<UInt64>(std::max(poll_timeout, std::chrono::microseconds(0)).count());
 
-                if (silence_duration >= operation_timeout_us)
-                {
-                    throw Exception(Error::ZOPERATIONTIMEOUT,
-                        "Operation timeout (no response in {} ms) for request {} for path: {}",
-                        args.operation_timeout_ms,
-                        earliest_request->getOpNum(),
-                        earliest_request->getPath());
-                }
-
-                max_wait_us = static_cast<UInt64>(
-                    (operation_timeout_us - silence_duration).count());
-
-                /// Reset idle deadline whenever we have active operations.
-                idle_deadline = now + session_timeout_us;
-            }
-            else
-            {
-                /// Idle path: no operations in flight.
-                /// Use session_timeout_ms as the overall idle deadline, but bound
-                /// each individual poll to operation_timeout_ms so we re-check
-                /// operations.empty() frequently.
-                auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(
-                    idle_deadline - now);
-
-                if (remaining.count() <= 0)
-                    throw Exception(Error::ZOPERATIONTIMEOUT,
-                        "Nothing is received in session timeout of {} ms",
-                        args.session_timeout_ms);
-
-                max_wait_us = static_cast<UInt64>(
-                    std::min(remaining, operation_timeout_us).count());
-            }
-
-            if (in->poll(max_wait_us))
+            if (in->poll(poll_us))
             {
                 if (finalization_started.test())
                     break;
 
                 receiveEvent();
 
-                /// Reset idle deadline on every received response.
+                /// Any received data (heartbeat or operation response) proves the
+                /// server is alive. Reset the idle deadline.
                 idle_deadline = clock::now() + session_timeout_us;
             }
-            else if (has_operations)
-            {
-                /// Poll timed out while operations were in flight.
-                /// Re-check progress -- a response may have arrived since we
-                /// computed max_wait_us. Re-read last_response_ts freshly.
-                Int64 last_ts = last_response_ts.load(std::memory_order_relaxed);
-                auto last_response_time = clock::time_point(
-                    std::chrono::microseconds(last_ts));
-
-                auto baseline = std::max(last_response_time, *earliest_create_ts);
-                auto silence_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                    clock::now() - baseline);
-
-                if (silence_duration >= operation_timeout_us)
-                {
-                    throw Exception(Error::ZOPERATIONTIMEOUT,
-                        "Operation timeout (no response in {} ms) for request {} for path: {}",
-                        args.operation_timeout_ms,
-                        earliest_request->getOpNum(),
-                        earliest_request->getPath());
-                }
-            }
-            /// else: idle poll timed out -- loop back to re-check operations and idle_deadline.
 
             ProfileEvents::increment(ProfileEvents::ZooKeeperBytesReceived,
                 in->count() - prev_bytes_received);

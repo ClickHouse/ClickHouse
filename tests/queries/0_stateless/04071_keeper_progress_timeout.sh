@@ -49,7 +49,7 @@ if [ "$BENCHMARK_EXIT_CODE" -ne 0 ]; then
     exit 1
 fi
 
-if ! echo "$BENCHMARK_OUTPUT" | grep -q "Executed"; then
+if ! echo "$BENCHMARK_OUTPUT" | grep -q "executed"; then
     echo "FAIL: benchmark did not execute"
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_keeper_progress"
     exit 1

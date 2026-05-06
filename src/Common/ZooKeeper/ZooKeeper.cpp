@@ -118,39 +118,27 @@ bool ZooKeeper::waitForFutureWithProgress(std::future<T> & future) const
 {
     using clock = std::chrono::steady_clock;
     const auto timeout = std::chrono::milliseconds(args.operation_timeout_ms);
-    /// Poll in 100ms intervals. Short enough to detect progress promptly,
-    /// long enough to avoid busy-spinning.
-    const auto poll_interval = std::chrono::milliseconds(100);
+    const auto poll_interval = std::chrono::seconds(1);
 
     auto deadline = clock::now() + timeout;
     Int64 last_seen_ts = impl->getLastResponseTimestamp();
 
-    for (;;)
+    while (clock::now() < deadline)
     {
-        auto now = clock::now();
-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-            deadline - now);
-
-        if (remaining.count() <= 0)
-            break;
-
-        auto wait_time = std::min(remaining, poll_interval);
-
-        if (future.wait_for(wait_time) == std::future_status::ready)
+        if (future.wait_for(poll_interval) == std::future_status::ready)
             return true;
 
         /// Check if the server made progress since our last check.
         Int64 current_ts = impl->getLastResponseTimestamp();
         if (current_ts > last_seen_ts)
         {
-            /// Server is alive -- extend the deadline.
+            /// Server is alive — extend the deadline.
             last_seen_ts = current_ts;
             deadline = clock::now() + timeout;
         }
     }
 
-    /// One final check -- the future may have become ready during the last wait.
-    return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready;
+    return false;
 }
 
 
@@ -1266,10 +1254,11 @@ Coordination::Error ZooKeeper::tryListRecursive(const std::string & path, String
 
     impl->listRecursive(path, children_nodes_limit, std::move(callback));
 
-    if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    if (!waitForFutureWithProgress(future))
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::ListRecursive, path));
+        impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
+            Coordination::OpNum::ListRecursive, path, args.operation_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -2255,6 +2244,7 @@ template bool ZooKeeper::waitForFutureWithProgress<Coordination::MultiResponse>(
 template bool ZooKeeper::waitForFutureWithProgress<Coordination::SyncResponse>(std::future<Coordination::SyncResponse> &) const;
 template bool ZooKeeper::waitForFutureWithProgress<Coordination::ReconfigResponse>(std::future<Coordination::ReconfigResponse> &) const;
 template bool ZooKeeper::waitForFutureWithProgress<Coordination::RemoveRecursiveResponse>(std::future<Coordination::RemoveRecursiveResponse> &) const;
+template bool ZooKeeper::waitForFutureWithProgress<Coordination::ListRecursiveResponse>(std::future<Coordination::ListRecursiveResponse> &) const;
 template bool ZooKeeper::waitForFutureWithProgress<Coordination::GetACLResponse>(std::future<Coordination::GetACLResponse> &) const;
 
 }

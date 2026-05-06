@@ -697,9 +697,11 @@ private:
         return MultiReadResponses<TResponse, try_multi>{std::move(future_responses)};
     }
 
-    /// Wait for a future with progress-based timeout. Polls in short intervals
-    /// and extends the deadline when the underlying IKeeper reports recent activity.
-    /// Returns true if the future became ready, false on timeout.
+    /// Wait for a future with progress-based timeout. Polls in 1s intervals and
+    /// extends the deadline when the underlying IKeeper reports recent activity
+    /// (via getLastResponseTimestamp). Returns true if the future became ready,
+    /// false if no progress was observed for a full operation_timeout_ms period.
+    /// Worst-case overshoot is ~1s beyond the configured timeout.
     template <typename T>
     bool waitForFutureWithProgress(std::future<T> & future) const;
 
