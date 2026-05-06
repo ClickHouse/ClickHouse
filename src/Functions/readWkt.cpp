@@ -435,7 +435,7 @@ Parses a Well-Known Text (WKT) representation of Geometry and returns it in the 
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_common = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_common = {25, 12};
     FunctionDocumentation::Category category_common = FunctionDocumentation::Category::Geo;
     FunctionDocumentation function_documentation_common = {description_common, syntax_common, arguments_common, {}, returned_value_common, examples_common, introduced_in_common, category_common};
 
