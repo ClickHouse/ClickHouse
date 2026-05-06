@@ -5,6 +5,7 @@ alias:	1	hello	1
 alias:	2	world	0.5
 alias:	3	alias_test	0.5
 where_pass:	4	positive
+where_star_pass:	100	star_pass	9.9
 order_by:	5	ordered
 multi:	10	first	1.1
 multi:	20	second	2.2

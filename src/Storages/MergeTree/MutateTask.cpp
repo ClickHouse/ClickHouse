@@ -1972,14 +1972,8 @@ private:
         }
 
         MergeTreeIndexGranularityPtr index_granularity_ptr;
-        /// Reuse source part granularity if mutation does not change number of rows.
-        /// Lightweight delete only updates the `_row_exists` column without changing
-        /// the row count, so the source granularity must be preserved. Otherwise,
-        /// a newly created constant granularity object will be adjusted during writing
-        /// to match the actual row count, while non-adaptive mark files don't store
-        /// per-mark granularity, causing a mismatch in `validateColumnOfFixedSize`.
-        bool is_lightweight_delete = ctx->updated_header.has(RowExistsColumn::name);
-        if ((!affects_all_columns || is_lightweight_delete) && ctx->execute_ttl_type == ExecuteTTLType::NONE)
+        /// Reuse source part granularity if mutation does not change number of rows
+        if (!affects_all_columns && ctx->execute_ttl_type == ExecuteTTLType::NONE)
         {
             index_granularity_ptr = ctx->source_part->index_granularity;
         }

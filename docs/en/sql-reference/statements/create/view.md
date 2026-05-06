@@ -46,6 +46,28 @@ This query is fully equivalent to using the subquery:
 SELECT a, b, c FROM (SELECT ...)
 ```
 
+### Inserting into a normal view {#inserting-into-a-normal-view}
+
+`INSERT` is supported into a normal view when its definition is a simple column selection from a single table. Inserted rows are forwarded to the underlying table, missing target columns receive their defaults, and column aliases are remapped back to their target names.
+
+```sql
+CREATE TABLE t (a Int32, b String, c Float64 DEFAULT 0.5) ENGINE = MergeTree ORDER BY a;
+
+CREATE VIEW v AS SELECT a, b FROM t;
+INSERT INTO v VALUES (1, 'hello');
+-- column `c` gets its default value 0.5
+```
+
+A `WHERE` clause in the view definition acts as a check constraint for inserts: rows that do not satisfy it are rejected with `VIOLATED_CONSTRAINT`. The `WHERE` clause may only reference columns that the view's `SELECT` list projects.
+
+```sql
+CREATE VIEW v_positive AS SELECT a, b FROM t WHERE a > 0;
+INSERT INTO v_positive VALUES (3, 'ok');     -- succeeds
+INSERT INTO v_positive VALUES (-1, 'fail');  -- VIOLATED_CONSTRAINT
+```
+
+`ORDER BY` is allowed in the view and ignored for inserts. Views containing `JOIN`, `GROUP BY`, `HAVING`, `LIMIT`, `DISTINCT`, `UNION`, or non-trivial expressions in the `SELECT` list are not insertable and raise `NOT_IMPLEMENTED`. Inserting into a view combined with `SQL SECURITY DEFINER` lets the view act as a writable alias of the underlying table without granting the caller direct access to it.
+
 ## Parameterized View {#parameterized-view}
 
 Parameterized views are similar to normal views, but can be created with parameters which are not resolved immediately. These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.

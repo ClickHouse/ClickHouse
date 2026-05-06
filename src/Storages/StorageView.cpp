@@ -8,6 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/TreeRewriter.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -161,6 +162,39 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot INSERT into view {} because its query contains a JOIN",
             view_id.getFullTableName());
+
+    /// If the view has a WHERE clause, every column it references must also appear in the
+    /// SELECT projection — otherwise the constraint cannot be evaluated against an INSERT
+    /// payload (the unprojected columns are not provided by the user). Asterisk projects
+    /// every column from the target table, so any WHERE is fine in that case.
+    if (select.where() && select.select())
+    {
+        bool has_asterisk = false;
+        NameSet projected_target_columns;
+        for (const auto & expr : select.select()->children)
+        {
+            if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
+            {
+                has_asterisk = true;
+                break;
+            }
+            if (const auto * id = expr->as<ASTIdentifier>())
+                projected_target_columns.insert(id->name());
+        }
+
+        if (!has_asterisk)
+        {
+            const auto idents = IdentifiersCollector::collect(select.where());
+            for (const auto * id : idents)
+            {
+                if (!projected_target_columns.contains(id->name()))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot INSERT into view {} because its WHERE clause references "
+                        "column `{}` that is not projected by the SELECT list",
+                        view_id.getFullTableName(), id->name());
+            }
+        }
+    }
 }
 
 /// Extracts column mapping from view column names to target table column names.
@@ -230,7 +264,7 @@ StoragePtr getViewTargetTable(
             "Cannot INSERT into view {}: FROM clause must reference a table directly",
             view_id.getFullTableName());
 
-    auto table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
+    const auto * table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
     if (!table_id)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot INSERT into view {}: FROM clause must reference a table directly",

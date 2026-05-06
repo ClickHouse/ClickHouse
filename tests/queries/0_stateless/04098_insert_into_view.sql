@@ -5,6 +5,8 @@ DROP VIEW IF EXISTS v_simple;
 DROP VIEW IF EXISTS v_subset;
 DROP VIEW IF EXISTS v_alias;
 DROP VIEW IF EXISTS v_where;
+DROP VIEW IF EXISTS v_where_unprojected;
+DROP VIEW IF EXISTS v_where_star;
 DROP VIEW IF EXISTS v_order_by;
 DROP VIEW IF EXISTS v_limit;
 DROP VIEW IF EXISTS v_group_by;
@@ -35,6 +37,16 @@ SELECT 'where_pass:', a, b FROM t_target WHERE a = 4;
 
 -- 5. INSERT into a view with WHERE (should fail: constraint violated)
 INSERT INTO v_where VALUES (-1, 'negative'); -- { serverError VIOLATED_CONSTRAINT }
+
+-- 5b. WHERE references a non-projected column: rejected at INSERT time
+CREATE VIEW v_where_unprojected AS SELECT a FROM t_target WHERE b != '';
+INSERT INTO v_where_unprojected VALUES (1); -- { serverError NOT_IMPLEMENTED }
+
+-- 5c. WHERE on a non-projected column is allowed when the SELECT uses an asterisk
+CREATE VIEW v_where_star AS SELECT * FROM t_target WHERE b != '';
+INSERT INTO v_where_star VALUES (100, 'star_pass', 9.9);
+SELECT 'where_star_pass:', a, b, c FROM t_target WHERE a = 100;
+INSERT INTO v_where_star VALUES (101, '', 9.9); -- { serverError VIOLATED_CONSTRAINT }
 
 -- 6. INSERT into a view with ORDER BY (allowed, ORDER BY is ignored for inserts)
 CREATE VIEW v_order_by AS SELECT a, b FROM t_target ORDER BY a DESC;
@@ -72,6 +84,8 @@ DROP VIEW v_distinct;
 DROP VIEW v_group_by;
 DROP VIEW v_limit;
 DROP VIEW v_order_by;
+DROP VIEW v_where_star;
+DROP VIEW v_where_unprojected;
 DROP VIEW v_where;
 DROP VIEW v_alias;
 DROP VIEW v_subset;
