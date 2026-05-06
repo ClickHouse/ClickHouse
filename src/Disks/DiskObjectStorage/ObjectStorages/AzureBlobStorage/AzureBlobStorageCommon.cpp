@@ -13,7 +13,6 @@
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <Common/Exception.h>
-#include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 #include <Core/Settings.h>
@@ -21,7 +20,6 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
-#include <base/arithmeticOverflow.h>
 
 namespace ProfileEvents
 {
@@ -56,7 +54,7 @@ namespace Setting
     extern const SettingsUInt64 azure_min_upload_part_size;
     extern const SettingsUInt64 azure_max_upload_part_size;
     extern const SettingsUInt64 azure_max_single_part_copy_size;
-    extern const SettingsUInt64 azure_max_blocks_in_multipart_upload;
+    extern const SettingsNonZeroUInt64 azure_max_blocks_in_multipart_upload;
     extern const SettingsUInt64 azure_max_unexpected_write_error_retries;
     extern const SettingsUInt64 azure_max_inflight_parts_for_one_file;
     extern const SettingsUInt64 azure_strict_upload_part_size;
@@ -91,7 +89,6 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -122,48 +119,6 @@ static void validateContainerName(const String & container_name)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "AzureBlob Storage container name is not valid, should follow the format: {}, got: {}",
                         container_name_pattern_str, container_name);
-}
-
-static void validateRequestSettings(const RequestSettings & settings)
-{
-    if (!settings.max_blocks_in_multipart_upload)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting max_blocks_in_multipart_upload cannot be zero");
-
-    if (!settings.min_upload_part_size)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting min_upload_part_size ({}) cannot be zero",
-            ReadableSize(settings.min_upload_part_size));
-
-    if (settings.max_upload_part_size < settings.min_upload_part_size)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size ({})",
-            ReadableSize(settings.max_upload_part_size),
-            ReadableSize(settings.min_upload_part_size));
-
-    if (!settings.strict_upload_part_size)
-    {
-        if (!settings.upload_part_size_multiply_factor)
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting upload_part_size_multiply_factor cannot be zero");
-
-        if (!settings.upload_part_size_multiply_parts_count_threshold)
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
-
-        size_t maybe_overflow;
-        if (common::mulOverflow(settings.max_upload_part_size, settings.upload_part_size_multiply_factor, maybe_overflow))
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting upload_part_size_multiply_factor is too big ({}). Multiplication to max_upload_part_size ({}) will cause integer overflow",
-                settings.upload_part_size_multiply_factor,
-                ReadableSize(settings.max_upload_part_size));
-    }
 }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -635,8 +590,6 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
     settings->sdk_retry_max_backoff_ms = query_settings[Setting::azure_sdk_retry_max_backoff_ms];
     settings->check_objects_after_upload = query_settings[Setting::azure_check_objects_after_upload];
 
-    validateRequestSettings(*settings);
-
     return settings;
 }
 
@@ -681,8 +634,6 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
     settings->sdk_retry_max_backoff_ms = config.getUInt64(config_prefix + ".retry_max_backoff_ms", settings_ref[Setting::azure_sdk_retry_max_backoff_ms]);
 
     settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
-
-    validateRequestSettings(*settings);
 
     return settings;
 }
