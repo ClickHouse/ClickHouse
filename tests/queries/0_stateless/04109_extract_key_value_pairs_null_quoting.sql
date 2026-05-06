@@ -14,9 +14,11 @@
 -- entered the quoting-character branch for the `ACCEPT` strategy, which was
 -- coded as unreachable and threw `LOGICAL_ERROR`.
 --
--- The fix makes `mm_is_in_execute` respect `num_chars`, so zero-padded slots no
--- longer participate in the compare. Zero is just an ordinary byte value; NUL
--- is now a first-class quoting / delimiter character like any other.
+-- The fix turns `mm_is_in_prepare` and `mm_is_in_execute` into templates
+-- parametrised by the exact compile-time needle count `N`. The needle array is
+-- now `std::array<__m128i, N>` of the exact width, so there are no zero-padded
+-- unused slots that could spuriously match NUL. Zero is just an ordinary byte
+-- value; NUL is now a first-class quoting / delimiter character like any other.
 
 -- The exact fuzzer repro: needs >= 16 bytes of data with a NUL byte in the
 -- first 16 bytes so the SIMD block is exercised.

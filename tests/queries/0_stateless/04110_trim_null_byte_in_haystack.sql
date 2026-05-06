@@ -13,6 +13,11 @@
 -- so the AST fuzzer could not surface it; it was found while auditing sibling
 -- callers for the `extractKeyValuePairs` fix.
 --
+-- The fix turns `mm_is_in_prepare` / `mm_is_in_execute` into templates
+-- parametrised by the exact compile-time needle count `N`, so the needle
+-- array is `std::array<__m128i, N>` of the exact width and contains no
+-- zero-padded unused slots.
+--
 -- Each haystack below is >= 16 bytes so the SSE2 16-byte block is exercised
 -- (the SIMD loop only runs when `pos + 15 < end`).
 

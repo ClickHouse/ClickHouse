@@ -218,11 +218,13 @@ TEST(FindNotSymbols, NullCharacter)
 TEST(FindSymbols, NullByteInHaystack)
 {
     // Regression test for a bug in the SSE2 runtime-needle path: `mm_is_in_prepare`
-    // zero-initialises the fixed 16-slot needle array, and `mm_is_in_execute` used
-    // to iterate all 16 slots unconditionally. Any NUL byte in the haystack matched
-    // the unused zero-padded slots, making `find_first_symbols` stop on NUL even
-    // when the caller did not include it in the needle set. The fix is to iterate
-    // only the first `num_chars` slots.
+    // used to return a fixed 16-slot needle array with the unused slots zero-padded,
+    // and `mm_is_in_execute` iterated all 16 slots unconditionally. Any NUL byte in
+    // the haystack matched the unused zero-padded slots, making `find_first_symbols`
+    // stop on NUL even when the caller did not include it in the needle set. The
+    // fix is to make `mm_is_in_prepare` / `mm_is_in_execute` templates parametrised
+    // by the exact compile-time needle count `N`, so the needle array is exactly
+    // `std::array<__m128i, N>` and contains no zero-padded slots.
     //
     // These haystacks contain an embedded NUL and the needle sets (<5 chars) steer
     // the dispatch into the SSE2 runtime path, where the bug used to live. All

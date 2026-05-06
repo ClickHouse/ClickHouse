@@ -102,23 +102,17 @@ inline __m128i mm_is_in(__m128i bytes)
     return _mm_or_si128(eq0, eq);
 }
 
-inline __m128i mm_is_in(__m128i bytes, const char * symbols, size_t num_chars)
+/// Build a needle vector array sized exactly to the number of needles.
+/// The width `N` is a compile-time parameter, so there are no zero-padded
+/// unused slots that could spuriously match NUL bytes in the haystack.
+/// (Zero is just an ordinary byte like the other 255; the compare must
+/// respect the actual needle count.)
+template <size_t N>
+inline std::array<__m128i, N> mm_is_in_prepare(const char * symbols)
 {
-    __m128i accumulator = _mm_setzero_si128();
-    for (size_t i = 0; i < num_chars; ++i)
-    {
-        __m128i eq = _mm_cmpeq_epi8(bytes, _mm_set1_epi8(symbols[i]));
-        accumulator = _mm_or_si128(accumulator, eq);
-    }
+    std::array<__m128i, N> result {};
 
-    return accumulator;
-}
-
-inline std::array<__m128i, 16u> mm_is_in_prepare(const char * symbols, size_t num_chars)
-{
-    std::array<__m128i, 16u> result {};
-
-    for (size_t i = 0; i < num_chars; ++i)
+    for (size_t i = 0; i < N; ++i)
     {
         result[i] = _mm_set1_epi8(symbols[i]);
     }
@@ -126,16 +120,15 @@ inline std::array<__m128i, 16u> mm_is_in_prepare(const char * symbols, size_t nu
     return result;
 }
 
-/// NOTE: `num_chars` must be passed explicitly. Unused entries in `needles` are
-/// zero-initialised (see `mm_is_in_prepare`), so iterating the whole array would
-/// unconditionally match NUL bytes in `bytes` that the caller did not ask for.
-/// Zero is just an ordinary byte like the other 255; the compare must respect
-/// the actual needle count.
-inline __m128i mm_is_in_execute(__m128i bytes, const std::array<__m128i, 16u> & needles, size_t num_chars)
+/// Compare `bytes` against an exact-width needle array. Loop bound is the
+/// compile-time array size, so the compiler can fully unroll and there
+/// are no unused slots to worry about.
+template <size_t N>
+inline __m128i mm_is_in_execute(__m128i bytes, const std::array<__m128i, N> & needles)
 {
     __m128i accumulator = _mm_setzero_si128();
 
-    for (size_t i = 0; i < num_chars; ++i)
+    for (size_t i = 0; i < N; ++i)
     {
         __m128i eq = _mm_cmpeq_epi8(bytes, needles[i]);
         accumulator = _mm_or_si128(accumulator, eq);
@@ -189,30 +182,64 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
     return return_mode == ReturnMode::End ? end : nullptr;
 }
 
-template <bool positive, ReturnMode return_mode>
-inline const char * find_first_symbols_sse2(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
+/// Per-arity implementation. `N` is the exact compile-time needle count, so the
+/// SIMD needle array (built by `mm_is_in_prepare<N>`) has no zero-padded slots
+/// that could spuriously match NUL bytes in the haystack.
+template <bool positive, ReturnMode return_mode, size_t N>
+inline const char * find_first_symbols_sse2_n(const char * const begin, const char * const end, const char * symbols)
 {
     const char * pos = begin;
 
 #if defined(__SSE2__)
-    const auto needles = mm_is_in_prepare(symbols, num_chars);
-    for (; pos + 15 < end; pos += 16)
+    if constexpr (N > 0)
     {
-        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
+        const auto needles = mm_is_in_prepare<N>(symbols);
+        for (; pos + 15 < end; pos += 16)
+        {
+            __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
 
-        __m128i eq = mm_is_in_execute(bytes, needles, num_chars);
+            __m128i eq = mm_is_in_execute<N>(bytes, needles);
 
-        uint16_t bit_mask = maybe_negate<positive>(uint16_t(_mm_movemask_epi8(eq)));
-        if (bit_mask)
-            return pos + __builtin_ctz(bit_mask);
+            uint16_t bit_mask = maybe_negate<positive>(uint16_t(_mm_movemask_epi8(eq)));
+            if (bit_mask)
+                return pos + __builtin_ctz(bit_mask);
+        }
+    }
+    else if constexpr (!positive)
+    {
+        /// Empty needle set in negative mode: the first byte is "not in {}".
+        if (pos < end)
+            return pos;
     }
 #endif
 
     for (; pos < end; ++pos)
-        if (maybe_negate<positive>(is_in(*pos, symbols, num_chars)))
+        if (maybe_negate<positive>(is_in(*pos, symbols, N)))
             return pos;
 
     return return_mode == ReturnMode::End ? end : nullptr;
+}
+
+template <bool positive, ReturnMode return_mode, size_t... Ns>
+inline const char * find_first_symbols_sse2_dispatch(
+    const char * const begin, const char * const end,
+    const char * symbols, size_t num_chars,
+    std::index_sequence<Ns...>)
+{
+    using FuncPtr = const char * (*)(const char *, const char *, const char *);
+    static constexpr FuncPtr table[] = {&find_first_symbols_sse2_n<positive, return_mode, Ns>...};
+    return table[num_chars](begin, end, symbols);
+}
+
+/// Runtime entry point: dispatches by `num_chars` to the templated
+/// implementation. `SearchSymbols` enforces `num_chars <= BUFFER_SIZE`,
+/// so the table lookup is in bounds.
+template <bool positive, ReturnMode return_mode>
+inline const char * find_first_symbols_sse2(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
+{
+    return find_first_symbols_sse2_dispatch<positive, return_mode>(
+        begin, end, symbols, num_chars,
+        std::make_index_sequence<SearchSymbols::BUFFER_SIZE + 1>{});
 }
 
 
@@ -242,31 +269,59 @@ inline const char * find_last_symbols_sse2(const char * const begin, const char 
     return return_mode == ReturnMode::End ? end : nullptr;
 }
 
-template <bool positive, ReturnMode return_mode>
-inline const char * find_last_symbols_sse2(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
+template <bool positive, ReturnMode return_mode, size_t N>
+inline const char * find_last_symbols_sse2_n(const char * const begin, const char * const end, const char * symbols)
 {
     const char * pos = end;
 
 #if defined(__SSE2__)
-    const auto needles = mm_is_in_prepare(symbols, num_chars);
-    for (; pos - 16 >= begin; pos -= 16)
+    if constexpr (N > 0)
     {
-        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos - 16));
+        const auto needles = mm_is_in_prepare<N>(symbols);
+        for (; pos - 16 >= begin; pos -= 16)
+        {
+            __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos - 16));
 
-        __m128i eq = mm_is_in_execute(bytes, needles, num_chars);
+            __m128i eq = mm_is_in_execute<N>(bytes, needles);
 
-        uint16_t bit_mask = maybe_negate<positive>(uint16_t(_mm_movemask_epi8(eq)));
-        if (bit_mask)
-            return pos - 1 - (__builtin_clz(bit_mask) - 16);    /// because __builtin_clz works with mask as uint32.
+            uint16_t bit_mask = maybe_negate<positive>(uint16_t(_mm_movemask_epi8(eq)));
+            if (bit_mask)
+                return pos - 1 - (__builtin_clz(bit_mask) - 16);    /// because __builtin_clz works with mask as uint32.
+        }
+    }
+    else if constexpr (!positive)
+    {
+        /// Empty needle set in negative mode: the last byte is "not in {}".
+        if (begin < end)
+            return end - 1;
     }
 #endif
 
     --pos;
     for (; pos >= begin; --pos)
-        if (maybe_negate<positive>(is_in(*pos, symbols, num_chars)))
+        if (maybe_negate<positive>(is_in(*pos, symbols, N)))
             return pos;
 
     return return_mode == ReturnMode::End ? end : nullptr;
+}
+
+template <bool positive, ReturnMode return_mode, size_t... Ns>
+inline const char * find_last_symbols_sse2_dispatch(
+    const char * const begin, const char * const end,
+    const char * symbols, size_t num_chars,
+    std::index_sequence<Ns...>)
+{
+    using FuncPtr = const char * (*)(const char *, const char *, const char *);
+    static constexpr FuncPtr table[] = {&find_last_symbols_sse2_n<positive, return_mode, Ns>...};
+    return table[num_chars](begin, end, symbols);
+}
+
+template <bool positive, ReturnMode return_mode>
+inline const char * find_last_symbols_sse2(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
+{
+    return find_last_symbols_sse2_dispatch<positive, return_mode>(
+        begin, end, symbols, num_chars,
+        std::make_index_sequence<SearchSymbols::BUFFER_SIZE + 1>{});
 }
 
 template <bool positive, ReturnMode return_mode, size_t num_chars,
