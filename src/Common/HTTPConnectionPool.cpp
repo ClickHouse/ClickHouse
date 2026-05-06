@@ -828,12 +828,23 @@ private:
         static constexpr size_t max_connect_attempts = 4;
         static constexpr size_t max_resolve_iterations = 16;
 
+        /// In proxy mode `Poco::Net::HTTPClientSession::reconnect` connects to
+        /// `_proxyConfig.host` and ignores `_resolved_host`, so retrying a different
+        /// resolved target address does not change the network path. Disable the
+        /// retry loop in that case and use `setUnused` instead of `setFail` on
+        /// connect failures: the failure belongs to the proxy path, not the target,
+        /// and must not pessimize target-address resolver state or trigger DNS
+        /// refreshes for the target host.
+        const bool retry_resolved_addresses = proxy_configuration.isEmpty();
+        const size_t connect_attempt_budget = retry_resolved_addresses ? max_connect_attempts : 1;
+        const size_t resolve_iteration_budget = retry_resolved_addresses ? max_resolve_iterations : 1;
+
         auto resolver = HostResolversPool::instance().getResolver(host);
         std::unordered_set<String> tried_addresses;
         std::exception_ptr last_net_error;
         size_t connect_attempts = 0;
 
-        for (size_t i = 0; i < max_resolve_iterations && connect_attempts < max_connect_attempts; ++i)
+        for (size_t i = 0; i < resolve_iteration_budget && connect_attempts < connect_attempt_budget; ++i)
         {
             auto address = resolver->resolve();
             if (!tried_addresses.insert(*address).second)
@@ -888,14 +899,22 @@ private:
 #endif
             catch (const Poco::Net::NetException &)
             {
-                address.setFail();
+                if (retry_resolved_addresses)
+                    address.setFail();
+                else
+                    address.setUnused();
                 ProfileEvents::increment(getMetrics().errors);
                 (*connection).reset();
+                if (!retry_resolved_addresses)
+                    throw;
                 last_net_error = std::current_exception();
             }
             catch (...)
             {
-                address.setFail();
+                if (retry_resolved_addresses)
+                    address.setFail();
+                else
+                    address.setUnused();
                 ProfileEvents::increment(getMetrics().errors);
                 (*connection).reset();
                 throw;

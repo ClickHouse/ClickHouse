@@ -1,6 +1,7 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Common/CurrentThread.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Common/HostResolvePool.h>
 
 #include <Poco/URI.h>
 #include <Poco/Net/MessageHeader.h>
@@ -660,6 +661,42 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTP)
 
     ASSERT_EQ(1, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+}
+
+TEST_F(ConnectionPoolTest, ProxyConnectFailureDoesNotPessimizeTarget)
+{
+    /// In proxy mode `Poco::Net::HTTPClientSession::reconnect` connects to the proxy
+    /// host and ignores `_resolved_host`, so retrying alternative resolved target
+    /// addresses does not change the network path. A connect failure on the proxy
+    /// path must not pessimize the target-host resolver state and must not run the
+    /// resolved-address retry loop (it would only inflate the error count without
+    /// any chance of success).
+    auto uri = Poco::URI(getServerUrl());
+
+    DB::ProxyConfiguration proxy_config;
+    proxy_config.host = "127.0.0.1";
+    /// TCPMUX (port 1) is a reserved port that almost never has a listener,
+    /// so connect attempts return ECONNREFUSED synchronously.
+    proxy_config.port = 1;
+    proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
+
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, proxy_config);
+    auto metrics = pool->getMetrics();
+    auto resolver_metrics = DB::HostResolver::getMetrics();
+
+    UInt64 failed_before = DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load();
+
+    ASSERT_ANY_THROW({
+        auto connection = pool->getConnection(timeouts, nullptr);
+    });
+
+    /// Exactly one connect attempt: the retry loop is gated to direct connections only.
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors]);
+    /// `setFail` was not called on any target address: the failure is on the proxy path,
+    /// and pessimizing the target resolver would mis-attribute the failure (and trigger
+    /// extra DNS refreshes for a host that was never actually contacted).
+    ASSERT_EQ(failed_before, DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load());
 }
 
 TEST_F(ConnectionPoolTest, StoreLimit)
