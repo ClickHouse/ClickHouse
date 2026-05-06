@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <boost/math/special_functions/sign.hpp>
@@ -42,37 +43,40 @@ namespace
         }
     }
 
+    using TransformASTFunc = ASTPtr (*)(ASTPtr x);
+
     struct ImplInfo
     {
-        std::string_view ch_function_name;
+        TransformASTFunc transform_ast;
     };
 
     const ImplInfo * getImplInfo(std::string_view function_name)
     {
         static const std::unordered_map<std::string_view, ImplInfo> impl_map = {
-            {"abs",   {"abs"}},
-            {"sgn",   {"sign"}},
-            {"floor", {"floor"}},
-            {"ceil",  {"ceil"}},
-            {"sqrt",  {"sqrt"}},
-            {"exp",   {"exp"}},
-            {"ln",    {"log"}},
-            {"log2",  {"log2"}},
-            {"log10", {"log10"}},
-            {"rad",   {"radians"}},
-            {"deg",   {"degrees"}},
-            {"sin",   {"sin"}},
-            {"cos",   {"cos"}},
-            {"tan",   {"tan"}},
-            {"asin",  {"asin"}},
-            {"acos",  {"acos"}},
-            {"atan",  {"atan"}},
-            {"sinh",  {"sinh"}},
-            {"cosh",  {"cosh"}},
-            {"tanh",  {"tanh"}},
-            {"asinh", {"asinh"}},
-            {"acosh", {"acosh"}},
-            {"atanh", {"atanh"}},
+            {"abs",   {[](ASTPtr x) -> ASTPtr { return makeASTFunction("abs", std::move(x)); }}},
+            {"sgn",   {[](ASTPtr x) -> ASTPtr { return makeASTFunction("sign", std::move(x)); }}},
+            {"floor", {[](ASTPtr x) -> ASTPtr { return makeASTFunction("floor", std::move(x)); }}},
+            {"ceil",  {[](ASTPtr x) -> ASTPtr { return makeASTFunction("ceil", std::move(x)); }}},
+            {"sqrt",  {[](ASTPtr x) -> ASTPtr { return makeASTFunction("sqrt", std::move(x)); }}},
+            {"exp",   {[](ASTPtr x) -> ASTPtr { return makeASTFunction("exp", std::move(x)); }}},
+            {"ln",    {[](ASTPtr x) -> ASTPtr { return makeASTFunction("log", std::move(x)); }}},
+            {"log2",  {[](ASTPtr x) -> ASTPtr { return makeASTFunction("log2", std::move(x)); }}},
+            {"log10", {[](ASTPtr x) -> ASTPtr { return makeASTFunction("log10", std::move(x)); }}},
+            {"rad",   {[](ASTPtr x) -> ASTPtr { return makeASTFunction("radians", std::move(x)); }}},
+            {"deg",   {[](ASTPtr x) -> ASTPtr { return makeASTFunction("degrees", std::move(x)); }}},
+            {"sin",   {[](ASTPtr x) -> ASTPtr { return makeASTFunction("sin", std::move(x)); }}},
+            {"cos",   {[](ASTPtr x) -> ASTPtr { return makeASTFunction("cos", std::move(x)); }}},
+            {"tan",   {[](ASTPtr x) -> ASTPtr { return makeASTFunction("tan", std::move(x)); }}},
+            {"asin",  {[](ASTPtr x) -> ASTPtr { return makeASTFunction("asin", std::move(x)); }}},
+            {"acos",  {[](ASTPtr x) -> ASTPtr { return makeASTFunction("acos", std::move(x)); }}},
+            {"atan",  {[](ASTPtr x) -> ASTPtr { return makeASTFunction("atan", std::move(x)); }}},
+            {"sinh",  {[](ASTPtr x) -> ASTPtr { return makeASTFunction("sinh", std::move(x)); }}},
+            {"cosh",  {[](ASTPtr x) -> ASTPtr { return makeASTFunction("cosh", std::move(x)); }}},
+            {"tanh",  {[](ASTPtr x) -> ASTPtr { return makeASTFunction("tanh", std::move(x)); }}},
+            {"asinh", {[](ASTPtr x) -> ASTPtr { return makeASTFunction("asinh", std::move(x)); }}},
+            {"acosh", {[](ASTPtr x) -> ASTPtr { return makeASTFunction("acosh", std::move(x)); }}},
+            {"atanh", {[](ASTPtr x) -> ASTPtr { return makeASTFunction("atanh", std::move(x)); }}},
+            {"round", {[](ASTPtr x) -> ASTPtr { return makeASTFunction("floor", makeASTFunction("plus", std::move(x), make_intrusive<ASTLiteral>(0.5))); }}},
         };
 
         auto it = impl_map.find(function_name);
@@ -103,7 +107,7 @@ SQLQueryPiece applyOneArgumentMathFunction(
     {
         chassert(args.size() == 1);
         ASTPtr x = std::move(args[0]);
-        return makeASTFunction(impl_info->ch_function_name, std::move(x));
+        return impl_info->transform_ast(std::move(x));
     };
 
     auto res = applySimpleFunction(function_node, context, apply_function_to_ast, std::move(arguments));
