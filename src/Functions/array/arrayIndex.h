@@ -27,9 +27,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypeObject.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 
@@ -1314,5 +1311,3 @@ private:
     }
 };
 }
-
-#pragma clang diagnostic pop

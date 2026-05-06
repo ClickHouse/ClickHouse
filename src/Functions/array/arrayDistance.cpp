@@ -14,9 +14,6 @@
 #include <immintrin.h>
 #endif
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 namespace ErrorCodes
@@ -43,7 +40,7 @@ struct L1Distance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams &)
     {
-        state.sum += fabs(x - y);
+        state.sum += std::fabs(x - y);
     }
 
     template <typename ResultType>
@@ -159,7 +156,7 @@ struct L2Distance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
-        return sqrt(state.sum);
+        return std::sqrt(state.sum);
     }
 };
 
@@ -193,7 +190,7 @@ struct LpDistance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams & params)
     {
-        state.sum += static_cast<ResultType>(std::pow(fabs(x - y), params.power));
+        state.sum += static_cast<ResultType>(std::pow(std::fabs(x - y), static_cast<ResultType>(params.power)));
     }
 
     template <typename ResultType>
@@ -205,7 +202,7 @@ struct LpDistance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams & params)
     {
-        return static_cast<ResultType>(std::pow(state.sum, params.inverted_power));
+        return static_cast<ResultType>(std::pow(state.sum, static_cast<ResultType>(params.inverted_power)));
     }
 };
 
@@ -224,13 +221,13 @@ struct LinfDistance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams &)
     {
-        state.dist = fmax(state.dist, fabs(x - y));
+        state.dist = std::fmax(state.dist, std::fabs(x - y));
     }
 
     template <typename ResultType>
     static void combine(State<ResultType> & state, const State<ResultType> & other_state, const ConstParams &)
     {
-        state.dist = fmax(state.dist, other_state.dist);
+        state.dist = std::fmax(state.dist, other_state.dist);
     }
 
     template <typename ResultType>
@@ -367,7 +364,7 @@ struct CosineDistance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
-        return 1.0f - state.dot_prod / sqrt(state.x_squared * state.y_squared);
+        return ResultType{1} - state.dot_prod / std::sqrt(state.x_squared * state.y_squared);
     }
 };
 
@@ -716,5 +713,3 @@ FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_) { return Functi
 FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_) { return FunctionArrayDistance<CosineDistance>::create(context_); }
 
 }
-
-#pragma clang diagnostic pop

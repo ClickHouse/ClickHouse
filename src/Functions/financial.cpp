@@ -25,9 +25,6 @@
 #include <string_view>
 #include <utility>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 
@@ -86,7 +83,7 @@ enum class IndexMode
 template <typename T>
 struct NpvCalculator
 {
-    using FloatType = std::conditional_t<std::floating_point<T>, T, double>;
+    using FloatType = double;
 
     explicit NpvCalculator(std::span<T> cashflows_)
         : cashflows(cashflows_)
@@ -165,7 +162,7 @@ double npv(double rate, std::span<T> cashflows)
 template <typename T, typename D, DayCountType day_count>
 struct XnpvCalculator
 {
-    using FloatType = std::conditional_t<std::floating_point<T>, T, double>;
+    using FloatType = double;
 
     XnpvCalculator(std::span<T> cashflows_, std::span<D> dates_)
         : cashflows(cashflows_)
@@ -978,5 +975,3 @@ $$
 }
 
 }
-
-#pragma clang diagnostic pop
