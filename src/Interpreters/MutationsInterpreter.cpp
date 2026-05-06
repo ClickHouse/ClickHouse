@@ -1560,7 +1560,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
             /// 2. Set up PlannerContext, collect source columns and sets.
             auto global_planner_context = std::make_shared<GlobalPlannerContext>(
-                nullptr, nullptr, FiltersForTableExpressionMap{});
+                nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
             auto planner_context = std::make_shared<PlannerContext>(
                 execution_context, global_planner_context, SelectQueryOptions{});
 
@@ -1593,7 +1593,8 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                         continue;
 
                     /// Virtual column (e.g. `_part`, `_partition_id`).
-                    if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(selected_name))
+                    if (auto virtual_column = storage_snapshot->metadata->virtuals.tryGet(
+                            selected_name, VirtualsKind::All, VirtualsMaterializationPlace::All))
                     {
                         input_columns.emplace_back(virtual_column->type, virtual_column->name);
                         input_columns_set.insert(selected_name);
@@ -1947,7 +1948,7 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
         subquery_planner.buildQueryPlanIfNeeded();
 
         auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
