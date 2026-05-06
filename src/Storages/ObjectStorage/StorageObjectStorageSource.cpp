@@ -695,7 +695,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             && (Poco::toLower(object_info->getFileFormat().value_or(configuration->format)) == "parquet")
             && !object_info->getObjectMetadata()->etag.empty())
         {
-            const std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
+            std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
+            if (object_info->isArchive())
+                object_with_metadata->relative_path = object_info->getPath();
             input_format = FormatFactory::instance().getInputWithMetadata(
                 object_info->getFileFormat().value_or(configuration->format),
                 *read_buf,
@@ -974,8 +976,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     if (use_page_cache)
     {
-        PageCacheKey key = {.path = "s3:" + object_info.getPath(), .file_version = "etag:" + object_info.metadata->etag};
-        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(key, effective_read_settings.page_cache, std::move(impl), modified_read_settings);
+        PageCacheFile cache_file = {.path = "s3:" + object_info.getPath(), .file_version = "etag:" + object_info.metadata->etag};
+        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(cache_file, effective_read_settings.page_cache, std::move(impl), modified_read_settings);
     }
 
     if (!use_async_buffer)
