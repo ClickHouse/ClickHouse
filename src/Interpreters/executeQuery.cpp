@@ -27,6 +27,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
@@ -69,7 +70,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Databases/IDatabase.h>
@@ -1171,8 +1172,18 @@ public:
 
     static void visit(const ASTSelectQuery & select, Data & data)
     {
-        for (const auto & table : getDatabaseAndTables(select, data.context->getCurrentDatabase()))
-            data.addTableIfNotEmpty(table.database, table.table);
+        /// Walk the FROM table expressions directly so the original (un-resolved) database
+        /// name is preserved. `getDatabaseAndTables` would substitute the current database
+        /// for unqualified references, which defeats the CTE-name check below: a CTE
+        /// shadows only unqualified table references, so we need to know whether the
+        /// reference was qualified in the source query.
+        for (const auto * table_expression : getTableExpressions(select))
+        {
+            if (!table_expression || !table_expression->database_and_table_name)
+                continue;
+            if (const auto * id = table_expression->database_and_table_name->as<ASTTableIdentifier>())
+                data.addTableIfNotEmpty(id->getDatabaseName(), id->shortName());
+        }
     }
 
     /// Pre-pass: collect names of all CTEs and WITH-clause aliases declared anywhere in the query so that
