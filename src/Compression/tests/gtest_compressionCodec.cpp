@@ -1596,7 +1596,11 @@ auto ALPSequentialGenerator = []<typename T>(T base = T{0}, T exception = T{0}, 
 INSTANTIATE_TEST_SUITE_P(ALPSequentialF64,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP(STD)", 0.3)),
+        ::testing::Values(
+            Codec("ALP(STD)", 0.3),
+            Codec("ALP(RD)", 0.93),
+            Codec("ALP(AUTO)", 0.3)
+        ),
         ::testing::Values(
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 1024),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 2048),
@@ -1610,7 +1614,10 @@ INSTANTIATE_TEST_SUITE_P(ALPSequentialF64,
 INSTANTIATE_TEST_SUITE_P(ALPRDSequentialF64,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP(RD)", 0.88)),
+        ::testing::Values(
+            Codec("ALP(RD)", 0.88),
+            Codec("ALP(AUTO)", 0.88) // AUTO will fall back to RD, STD would produce ratio slightly more than 1.0
+        ),
         ::testing::Values(
             generateSeq<Float64>(G(RandomGenerator<Float64>(42, M_E, 2 * M_E)), 0, 1024),
             generateSeq<Float64>(G(RandomGenerator<Float64>(42, M_E, 2 * M_E)), 0, 2048),
@@ -1622,7 +1629,11 @@ INSTANTIATE_TEST_SUITE_P(ALPRDSequentialF64,
 INSTANTIATE_TEST_SUITE_P(ALPSequentialF32,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP(STD)", 0.8)),
+        ::testing::Values(
+            Codec("ALP(STD)", 0.8),
+            Codec("ALP(RD)", 0.9),
+            Codec("ALP(AUTO)", 0.8)
+        ),
         ::testing::Values(
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 1024),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 2048),
@@ -1636,7 +1647,10 @@ INSTANTIATE_TEST_SUITE_P(ALPSequentialF32,
 INSTANTIATE_TEST_SUITE_P(ALPRDSequentialF32,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP(RD)", 0.87)),
+        ::testing::Values(
+            Codec("ALP(RD)", 0.87),
+            Codec("ALP(AUTO)", 0.87) // AUTO will fall back to RD, STD would produce ratio slightly more than 1.0
+        ),
         ::testing::Values(
             generateSeq<Float32>(G(RandomGenerator<Float32>(42, M_Ef32, 2 * M_Ef32)), 0, 1024),
             generateSeq<Float32>(G(RandomGenerator<Float32>(42, M_Ef32, 2 * M_Ef32)), 0, 2048),
@@ -1662,7 +1676,10 @@ INSTANTIATE_TEST_SUITE_P(ALPPyramidOfSequences,
 INSTANTIATE_TEST_SUITE_P(ALPLongSequencesF64,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP(STD)", 0.3)),
+        ::testing::Values(
+            Codec("ALP(STD)", 0.3),
+            Codec("ALP(RD)", 0.93)
+        ),
         ::testing::Values(
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 65536),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 66000),
@@ -1674,7 +1691,10 @@ INSTANTIATE_TEST_SUITE_P(ALPLongSequencesF64,
 INSTANTIATE_TEST_SUITE_P(ALPLongSequencesF32,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP(STD)", 0.9)),
+        ::testing::Values(
+            Codec("ALP(STD)", 0.9),
+            Codec("ALP(RD)", 0.9)
+        ),
         ::testing::Values(
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 65536),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 66000),
@@ -1686,7 +1706,10 @@ INSTANTIATE_TEST_SUITE_P(ALPLongSequencesF32,
 INSTANTIATE_TEST_SUITE_P(ALPHighPrecissionFloatsF64,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP(STD)", 0.5)),
+        ::testing::Values(
+            Codec("ALP(STD)", 0.5),
+            Codec("ALP(RD)", 0.9)
+        ),
         ::testing::Values(
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 0, 0, 4)), 0, 2048),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 0, 0, 6)), 0, 2048)
@@ -1697,7 +1720,10 @@ INSTANTIATE_TEST_SUITE_P(ALPHighPrecissionFloatsF64,
 INSTANTIATE_TEST_SUITE_P(ALPHighPrecissionFloatsF32,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP(STD)", 0.999)),
+        ::testing::Values(
+            Codec("ALP(STD)", 0.999),
+            Codec("ALP(RD)", 0.86)
+        ),
         ::testing::Values(
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 0, 0, 4)), 0, 2048),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 0, 0, 6)), 0, 2048)
