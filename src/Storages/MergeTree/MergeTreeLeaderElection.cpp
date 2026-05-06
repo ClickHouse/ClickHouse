@@ -122,32 +122,49 @@ void MergeTreeLeaderElection::run()
                 StoredObject(lease_path), read_settings, MAX_LEASE_FILE_SIZE);
 
             String etag = data_with_metadata.metadata.etag;
-            auto [file_leader_id, timestamp] = parseLeaseContent(data_with_metadata.data);
+            auto parsed = parseLeaseContent(data_with_metadata.data);
 
             time_t now = time(nullptr);
+            time_t session_timeout_seconds = static_cast<time_t>(session_timeout_ms / 1000);
 
-            if (file_leader_id == leader_id)
+            if (parsed.status == LeaseParseStatus::UnknownVersion)
+            {
+                /// Fail closed for forward compatibility: a newer binary may write a lease
+                /// in a format we do not understand. Taking it over with our older format
+                /// would let an old node steal leadership from a healthy newer leader and
+                /// silently downgrade the on-disk lease format. Stay a follower until the
+                /// binary is upgraded.
+                LOG_WARNING(log, "Lease at '{}' has unknown payload version, refusing to take over (rolling-upgrade safety)", lease_path);
+                became_leader = false;
+            }
+            else if (parsed.status == LeaseParseStatus::Ok && parsed.leader_id == leader_id)
             {
                 /// We are the current leader. Renew the lease.
                 LOG_TRACE(log, "Renewing leader lease at '{}'", lease_path);
                 became_leader = tryWriteLease(/* if_match= */ etag, /* if_none_match= */ "");
             }
-            else if (now - timestamp > static_cast<time_t>(session_timeout_ms / 1000)
-                     || timestamp - now > static_cast<time_t>(session_timeout_ms / 1000))
+            else if (parsed.status == LeaseParseStatus::ParseError
+                     || parsed.timestamp < now - session_timeout_seconds
+                     || parsed.timestamp > now + session_timeout_seconds)
             {
-                /// The lease has expired, or its timestamp is far in the future
-                /// (leader clock skew — otherwise a follower would wait indefinitely until local
-                /// time catches up), or the content was corrupted (`parseLeaseContent` returns
-                /// timestamp 0 on failure). Try to claim leadership.
-                LOG_INFO(log, "Leader lease at '{}' expired, corrupted, or has future timestamp (leader_id: {}, skew: {} s), trying to claim",
-                    lease_path, file_leader_id, now - timestamp);
+                /// The lease has expired, or its timestamp is far in the future (leader clock
+                /// skew — otherwise a follower would wait indefinitely until local time catches
+                /// up), or the content was corrupted. Try to claim leadership.
+                ///
+                /// The two timestamp comparisons are written as `parsed.timestamp < now - X` /
+                /// `parsed.timestamp > now + X` (rather than `now - parsed.timestamp > X`) to
+                /// avoid signed overflow when a malformed lease parses to an extreme timestamp
+                /// value. `now ± X` is safe because `now` is the current Unix time and `X` is
+                /// at most `leader_election_session_timeout`.
+                LOG_INFO(log, "Leader lease at '{}' expired, corrupted, or has future timestamp (leader_id: {}), trying to claim",
+                    lease_path, parsed.leader_id);
                 became_leader = tryWriteLease(/* if_match= */ etag, /* if_none_match= */ "");
             }
             else
             {
                 /// Another leader holds a valid lease.
                 LOG_TRACE(log, "Another leader holds the lease at '{}' (leader_id: {}, age: {} s)",
-                    lease_path, file_leader_id, now - timestamp);
+                    lease_path, parsed.leader_id, now - parsed.timestamp);
                 became_leader = false;
             }
         }
@@ -253,35 +270,41 @@ String MergeTreeLeaderElection::buildLeaseContent() const
     return out.str();
 }
 
-std::pair<String, time_t> MergeTreeLeaderElection::parseLeaseContent(const String & content)
+MergeTreeLeaderElection::ParsedLease MergeTreeLeaderElection::parseLeaseContent(const String & content)
 {
     try
     {
         JSON json(content);
 
-        /// Reject unknown payload versions explicitly so future format changes do not
-        /// silently let a node make leadership decisions on incompatible data. Treat
-        /// unknown versions as corrupted lease (same recovery path as a parse error).
+        /// An unknown payload version is a forward-compatibility signal — a newer binary
+        /// may have written this lease. Distinguishing it from a parse error matters: a
+        /// parse error self-heals via lease takeover, but an unknown version must NOT,
+        /// otherwise an older node would silently downgrade the lease format mid-cluster.
         Int64 version = json["version"].getInt();
         if (version != 1)
         {
             LOG_WARNING(
                 getLogger("MergeTreeLeaderElection"),
-                "Unknown lease file version {}, treating as corrupted",
+                "Lease file has unknown version {}; treating as held by a newer binary",
                 version);
-            return {"", 0};
+            ParsedLease unknown;
+            unknown.status = LeaseParseStatus::UnknownVersion;
+            return unknown;
         }
 
-        String file_leader_id = json["leader_id"].getString();
-        time_t timestamp = json["timestamp"].getInt();
-        return {file_leader_id, timestamp};
+        ParsedLease result;
+        result.leader_id = json["leader_id"].getString();
+        result.timestamp = json["timestamp"].getInt();
+        result.status = LeaseParseStatus::Ok;
+        return result;
     }
     catch (...)
     {
-        /// Corrupted lease file: return empty id and zero timestamp so the caller
-        /// treats it as an expired lease and attempts to overwrite it.
+        /// Corrupted lease file: caller will treat it as expired and overwrite it.
         tryLogCurrentException("MergeTreeLeaderElection", "Failed to parse lease file content");
-        return {"", 0};
+        ParsedLease error;
+        error.status = LeaseParseStatus::ParseError;
+        return error;
     }
 }
 

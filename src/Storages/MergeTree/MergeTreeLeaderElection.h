@@ -85,10 +85,26 @@ private:
     /// Build the lease file content as JSON.
     String buildLeaseContent() const;
 
-    /// Parse the lease file content. Returns {leader_id, timestamp}.
-    /// On parse failure, returns empty leader_id and zero timestamp,
-    /// allowing the caller to treat a corrupted lease as stale.
-    static std::pair<String, time_t> parseLeaseContent(const String & content);
+    /// Result of parsing a lease file. The `status` field disambiguates how the caller
+    /// should react to non-`Ok` outcomes — in particular, an unknown payload version
+    /// must not be treated the same as a parse error, otherwise older binaries would
+    /// silently overwrite leases written by newer binaries during a rolling upgrade.
+    enum class LeaseParseStatus
+    {
+        Ok,
+        ParseError,        /// Unparseable / out-of-range timestamp — treat as a stale lease and self-heal.
+        UnknownVersion,    /// Valid JSON, version not understood — fail closed: stay a follower.
+    };
+
+    struct ParsedLease
+    {
+        String leader_id;
+        time_t timestamp = 0;
+        LeaseParseStatus status = LeaseParseStatus::ParseError;
+    };
+
+    /// Parse the lease file content. See `LeaseParseStatus` for the meaning of each outcome.
+    static ParsedLease parseLeaseContent(const String & content);
 
     /// Generate a unique leader ID for this server instance.
     static String generateLeaderId();
