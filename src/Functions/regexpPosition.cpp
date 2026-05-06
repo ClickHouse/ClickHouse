@@ -97,12 +97,24 @@ public:
         const OptimizedRegularExpression regexp(prepared_pattern, OptimizedRegularExpression::RE_DOT_NL);
         const unsigned num_captures = regexp.getNumberOfSubpatterns();
 
-        /// Materialize so the loop below can index uniformly when the haystack is const but numeric arguments are vectors.
-        ColumnPtr column_haystack_full = column_haystack->convertToFullColumnIfConst();
-        const ColumnString * col_haystack = checkAndGetColumn<ColumnString>(column_haystack_full.get());
-        if (!col_haystack)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", column_haystack->getName(), getName());
+        const ColumnString * col_haystack_vector = nullptr;
+        ColumnString::Chars const_haystack_padded;
+        size_t const_haystack_size = 0;
+
+        if (const auto * col_const_haystack = checkAndGetColumnConst<ColumnString>(column_haystack.get()))
+        {
+            /// Copy into a `PaddedPODArray` so `regexp.match` has the read-overflow guarantees it expects from `ColumnString::Chars`.
+            const String value = col_const_haystack->getValue<String>();
+            const_haystack_padded.insert(value.begin(), value.end());
+            const_haystack_size = value.size();
+        }
+        else
+        {
+            col_haystack_vector = checkAndGetColumn<ColumnString>(column_haystack.get());
+            if (!col_haystack_vector)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", column_haystack->getName(), getName());
+        }
 
         auto col_res = ColumnUInt64::create(input_rows_count);
         ColumnUInt64::Container & res_data = col_res->getData();
@@ -111,9 +123,6 @@ public:
         const ColumnPtr col_occurrence = arguments.size() >= 4 ? arguments[3].column : nullptr;
         const ColumnPtr col_return_option = arguments.size() >= 5 ? arguments[4].column : nullptr;
         const ColumnPtr col_subexpression = arguments.size() >= 7 ? arguments[6].column : nullptr;
-
-        const ColumnString::Chars & haystack_chars = col_haystack->getChars();
-        const ColumnString::Offsets & haystack_offsets = col_haystack->getOffsets();
 
         OptimizedRegularExpression::MatchVec matches;
         matches.reserve(num_captures + 1);
@@ -140,10 +149,21 @@ public:
                     getName(),
                     num_captures);
 
-            const size_t row_data_offset = i == 0 ? 0 : haystack_offsets[i - 1];
-            /// `haystack_offsets[i]` points past the trailing `\0` terminator stored by `ColumnString`; subtract one to get the logical string length.
-            const size_t row_size = haystack_offsets[i] - row_data_offset - 1;
-            const char * row_data = reinterpret_cast<const char *>(&haystack_chars[row_data_offset]);
+            const char * row_data;
+            size_t row_size;
+            if (col_haystack_vector)
+            {
+                const auto & offsets = col_haystack_vector->getOffsets();
+                const size_t row_data_offset = i == 0 ? 0 : offsets[i - 1];
+                /// `offsets[i]` points past the trailing `\0` terminator stored by `ColumnString`; subtract one to get the logical string length.
+                row_size = offsets[i] - row_data_offset - 1;
+                row_data = reinterpret_cast<const char *>(&col_haystack_vector->getChars()[row_data_offset]);
+            }
+            else
+            {
+                row_data = reinterpret_cast<const char *>(const_haystack_padded.data());
+                row_size = const_haystack_size;
+            }
 
             const size_t start_offset = static_cast<size_t>(position) - 1;
             if (start_offset > row_size)
