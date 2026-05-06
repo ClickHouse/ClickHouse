@@ -65,6 +65,8 @@ namespace
 
     ASTPtr resizeEmptyAggregateValues(ASTPtr values, const SQLQueryPiece & argument, const ConverterContext & context)
     {
+        /// Global aggregation over no input series still produces one group.
+        /// Fill that group's grid with NULLs so finalization can drop it as an empty PromQL result.
         return makeASTFunction(
             "if",
             makeASTFunction("empty", values->clone()),

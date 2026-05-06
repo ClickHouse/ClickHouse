@@ -115,6 +115,8 @@ SQLQueryPiece applyFunctionTimestamp(const PQT::Function * function_node, std::v
             builder.from_table = context.subqueries.back().name;
             builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
+            /// timestamp(v) returns the evaluation timestamp only where v has a sample.
+            /// Keep NULL positions so the normal vector-grid finalizer preserves PromQL sparsity.
             builder.select_list.push_back(makeASTFunction(
                 "arrayMap",
                 makeASTFunction(

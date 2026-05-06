@@ -62,6 +62,8 @@ namespace
 
     ASTPtr makeOutOfRangeQuantileResult(ASTPtr values, ScalarType result_value, const DataTypePtr & scalar_data_type)
     {
+        /// PromQL quantile returns -Inf, +Inf, or NaN for constant phi outside [0, 1].
+        /// ClickHouse quantile aggregates reject those parameters, so build the edge result directly.
         return makeASTFunction(
             "arrayMap",
             makeASTFunction(

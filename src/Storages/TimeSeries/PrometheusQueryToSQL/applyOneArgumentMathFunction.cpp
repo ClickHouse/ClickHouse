@@ -76,7 +76,14 @@ namespace
             {"asinh", {[](ASTPtr x) -> ASTPtr { return makeASTFunction("asinh", std::move(x)); }}},
             {"acosh", {[](ASTPtr x) -> ASTPtr { return makeASTFunction("acosh", std::move(x)); }}},
             {"atanh", {[](ASTPtr x) -> ASTPtr { return makeASTFunction("atanh", std::move(x)); }}},
-            {"round", {[](ASTPtr x) -> ASTPtr { return makeASTFunction("floor", makeASTFunction("plus", std::move(x), make_intrusive<ASTLiteral>(0.5))); }}},
+            {"round",
+             {
+                 [](ASTPtr x) -> ASTPtr
+                 {
+                     /// PromQL round() defaults to nearest 1 and resolves ties by rounding up.
+                     return makeASTFunction("floor", makeASTFunction("plus", std::move(x), make_intrusive<ASTLiteral>(0.5)));
+                 },
+             }},
         };
 
         auto it = impl_map.find(function_name);

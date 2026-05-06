@@ -93,6 +93,8 @@ namespace
 
     bool constantClampHasEmptyResult(const std::vector<SQLQueryPiece> & arguments, ClampKind kind)
     {
+        /// PromQL clamp(v, min, max) returns an empty vector when max is less than min.
+        /// Handle only constant bounds here; non-constant scalar grids are rejected above.
         if (kind != ClampKind::Both)
             return false;
 

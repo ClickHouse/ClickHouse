@@ -46,6 +46,8 @@ namespace
 
     SQLQueryPiece makeDefaultTimeVectorArgument(const PQT::Function * function_node, ConverterContext & context)
     {
+        /// PromQL treats no-argument date functions as date_function(vector(time())).
+        /// Synthesize that instant-vector argument so all date function lowering stays on the same path.
         auto node_range = context.node_range_getter.get(function_node);
         if (node_range.empty())
             return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
