@@ -484,7 +484,7 @@ SQLQueryPiece applyFunctionOverRange(
             has_group = true;
             group_by_group = true;
 
-            if (impl_info->simple_over_time_function != SimpleOverTimeFunction::None)
+            if (impl_info && impl_info->simple_over_time_function != SimpleOverTimeFunction::None)
             {
                 timestamps = makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
                 values = makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(ColumnNames::Value));
