@@ -115,3 +115,8 @@ INPUT : 1 -> __text_index_idx_endsWith_62c031dd56b3d56d129e8b959a74ec3e UInt8 : 
 FUNCTION and(__text_index_idx_endsWith_62c031dd56b3d56d129e8b959a74ec3e :: 2, endsWith(__table1.val, \'cat dog\'_String) :: 3) -> and(__text_index_idx_endsWith_62c031dd56b3d56d129e8b959a74ec3e, endsWith(__table1.val, \'cat dog\'_Str... UInt8 : 1
 19. startsWith / endsWith do not use hint when postprocessor drops all hint tokens.
 1
+20. startsWith / endsWith stay correct across mixed indexed and non-indexed parts.
+2
+2
+2
+2

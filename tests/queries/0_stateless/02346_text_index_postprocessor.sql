@@ -507,3 +507,31 @@ SELECT trimLeft(explain) FROM
 WHERE explain LIKE '%__text_index%';
 
 DROP TABLE tab;
+
+SELECT '20. startsWith / endsWith stay correct across mixed indexed and non-indexed parts.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String
+)
+ENGINE = MergeTree ORDER BY id;
+
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES (1, 'running walking');
+
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = replaceRegexpAll(val, 'ing$', ''));
+
+INSERT INTO tab VALUES (2, 'running walking');
+
+SELECT count() FROM tab WHERE startsWith(val, 'running walking');  -- 2
+SELECT count() FROM tab WHERE endsWith(val, 'running walking');    -- 2
+
+ALTER TABLE tab MATERIALIZE INDEX idx;
+
+SELECT count() FROM tab WHERE startsWith(val, 'running walking');  -- 2
+SELECT count() FROM tab WHERE endsWith(val, 'running walking');    -- 2
+
+SYSTEM START MERGES tab;
+DROP TABLE tab;

@@ -306,12 +306,12 @@ When the column is of type `Array(String)`, the postprocessor still operates on 
 
 Usage of non-deterministic functions is disallowed.
 
-Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) apply the postprocessor to each search token before looking it up in the index.
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens), [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), and [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) apply the postprocessor to search tokens before looking them up in the index.
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
-Functions [has](/sql-reference/functions/array-functions.md/#has), [hasAll](/sql-reference/functions/array-functions.md/#hasAll), [hasAny](/sql-reference/functions/array-functions.md/#hasAny) and [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) do **not** apply the postprocessor.
+Functions [has](/sql-reference/functions/array-functions.md/#has), [hasAll](/sql-reference/functions/array-functions.md/#hasAll), and [hasAny](/sql-reference/functions/array-functions.md/#hasAny) do **not** apply the postprocessor.
 `has`, `hasAll`, and `hasAny` operate directly on array elements, bypassing the entire tokenization pipeline (tokenizer, preprocessor, and postprocessor).
-`hasPhrase` does not apply the postprocessor because phrase matching requires tokens to appear in a specific order and position, and the phrase string is tokenized internally during matching rather than through the index pipeline.
+Functions [startsWith](/sql-reference/functions/string-functions.md/#startsWith) and [endsWith](/sql-reference/functions/string-functions.md/#endsWith) can still use the text index in Hint mode with a postprocessor when the extracted hint tokens remain non-empty after normalization. If normalization drops all hint tokens, the text index is not used for that predicate.
 
 Example for stop word filtering:
 
@@ -487,6 +487,7 @@ See the [LIKE/ILIKE performance tuning section](#like-ilike-queries-perf) for de
 
 Similar to `LIKE`, functions [startsWith](/sql-reference/functions/string-functions.md/#startsWith) and [endsWith](/sql-reference/functions/string-functions.md/#endsWith) can only use a text index, if complete tokens can be extracted from the search term.
 For the index with `ngrams` tokenizer, this is the case if the length of the searched strings between wildcards is equal or longer than the ngram length.
+When a text index uses a postprocessor, these functions can still use the index in Hint mode if the extracted hint tokens remain non-empty after normalization. If normalization drops all hint tokens, the index is not used for that predicate.
 
 Example for the text index with `splitByNonAlpha` tokenizer:
 
@@ -551,6 +552,7 @@ Function [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhr
 
 Unlike `hasAllTokens`, which only requires all tokens to be present somewhere, `hasPhrase` requires them to appear as a consecutive sequence.
 The search phrase is tokenized using the same tokenizer configured for the index column.
+When the text index uses a postprocessor, the search phrase is normalized before the index lookup as well.
 Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK` tokenizers.
 
 Example:
