@@ -161,8 +161,7 @@ public:
                     num_captures);
 
             const size_t row_data_offset = i == 0 ? 0 : haystack_offsets[i - 1];
-            /// haystack_offsets[i] points past the trailing zero terminator; subtract one to exclude it.
-            const size_t row_size = haystack_offsets[i] - row_data_offset - 1;
+            const size_t row_size = haystack_offsets[i] - row_data_offset;
             const char * row_data = reinterpret_cast<const char *>(&haystack_chars[row_data_offset]);
 
             const size_t start_offset = static_cast<size_t>(position) - 1;
