@@ -317,7 +317,8 @@ void StorageMergeTree::read(
 {
     const auto & settings = local_context->getSettingsRef();
     /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
-    if (local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
+    if (!query_info.parallel_replicas_disabled
+        && local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
         && !settings[Setting::allow_experimental_analyzer])
     {
         ClusterProxy::executeQueryWithParallelReplicas(
@@ -325,7 +326,8 @@ void StorageMergeTree::read(
         return;
     }
 
-    if (local_context->canUseParallelReplicasCustomKey() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
+    if (!query_info.parallel_replicas_disabled
+        && local_context->canUseParallelReplicasCustomKey() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
         && !settings[Setting::allow_experimental_analyzer] && local_context->getClientInfo().distributed_depth == 0)
     {
         auto cluster = local_context->getClusterForParallelReplicas();

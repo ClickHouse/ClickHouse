@@ -1691,6 +1691,7 @@ void MutationsInterpreter::Source::read(
         SelectQueryInfo query_info;
         query_info.query = std::move(select);
         query_info.filter_actions_dag = std::move(filter_actions_dag);
+        query_info.parallel_replicas_disabled = true;
 
         size_t max_block_size = context_->getSettingsRef()[Setting::max_block_size];
         storage->read(plan, required_columns, storage_snapshot, query_info, context_, QueryProcessingStage::FetchColumns, max_block_size, mutation_settings.max_threads);

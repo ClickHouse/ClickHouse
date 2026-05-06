@@ -1,0 +1,23 @@
+DROP TABLE IF EXISTS t_lwu_parallel_replicas;
+
+CREATE TABLE t_lwu_parallel_replicas
+(
+    c0 Int32
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+
+INSERT INTO t_lwu_parallel_replicas VALUES (1);
+
+UPDATE t_lwu_parallel_replicas SET c0 = 2 WHERE 1
+SETTINGS enable_lightweight_update = 1,
+    enable_parallel_replicas = 1,
+    parallel_replicas_only_with_analyzer = 0,
+    parallel_replicas_prefer_local_replica = 0,
+    parallel_replicas_for_non_replicated_merge_tree = 1,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+
+SELECT c0 FROM t_lwu_parallel_replicas;
+
+DROP TABLE t_lwu_parallel_replicas;
