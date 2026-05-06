@@ -473,9 +473,9 @@ class PullRequestPushYamlGen:
             base_template = YamlGenerator.Templates.TEMPLATE_DISPATCH_WORKFLOW
             format_kwargs = {
                 "DISPATCH_INPUTS": dispatch_inputs,
-                # "GH_TOKEN_PERMISSIONS": (
-                #     YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
-                # ),
+                "GH_TOKEN_PERMISSIONS": (
+                    YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
+                ),
             }
             ENV_CHECKOUT_REFERENCE = (
                 YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
