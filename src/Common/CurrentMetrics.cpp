@@ -65,6 +65,8 @@
     M(QueryThread, "Number of query processing threads") \
     M(ReadonlyReplica, "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.") \
     M(ReplicaReady, "Indicates if the replica is ready for queries: 0 = no, 1 = yes") \
+    M(MergeTreeLeaderElectionLeader, "Number of MergeTree tables with `leader_election` enabled for which this instance currently holds the leader lease and accepts writes.") \
+    M(MergeTreeLeaderElectionFollower, "Number of MergeTree tables with `leader_election` enabled for which this instance is currently a follower (the table is in read-only mode).") \
     M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
     M(MemoryTrackingUncorrected, "Total amount of memory (bytes) allocated by the server not corrected by RSS.") \
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \

@@ -7,12 +7,33 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
 #include <base/JSON.h>
 #include <base/getFQDNOrHostName.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event MergeTreeLeaderElectionAcquired;
+    extern const Event MergeTreeLeaderElectionLost;
+    extern const Event MergeTreeLeaderElectionLeaseRenewals;
+    extern const Event MergeTreeLeaderElectionLeaseTakeovers;
+    extern const Event MergeTreeLeaderElectionLeaseConflicts;
+    extern const Event MergeTreeLeaderElectionLeaseParseErrors;
+    extern const Event MergeTreeLeaderElectionUnknownVersionRejections;
+    extern const Event MergeTreeLeaderElectionHeartbeatErrors;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric MergeTreeLeaderElectionLeader;
+    extern const Metric MergeTreeLeaderElectionFollower;
+}
 
 
 namespace DB
@@ -43,11 +64,17 @@ MergeTreeLeaderElection::MergeTreeLeaderElection(
     , leader_id(generateLeaderId())
     , log(getLogger("MergeTreeLeaderElection"))
 {
+    /// Every participating table starts as a follower. `stop` always brings the
+    /// instance back to the follower state before the destructor decrements this
+    /// gauge, so the increment + decrement pair is balanced regardless of how
+    /// leadership transitions during the table's lifetime.
+    CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
 }
 
 MergeTreeLeaderElection::~MergeTreeLeaderElection()
 {
     stop();
+    CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionFollower);
 }
 
 void MergeTreeLeaderElection::start()
@@ -70,8 +97,14 @@ void MergeTreeLeaderElection::stop()
     /// being invoked after `stop` returns.
     std::lock_guard lock(leadership_change_mutex);
     bool was_leader = is_leader.exchange(false, std::memory_order_acq_rel);
-    if (was_leader && on_leadership_change)
-        on_leadership_change(false);
+    if (was_leader)
+    {
+        ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
+        CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
+        CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
+        if (on_leadership_change)
+            on_leadership_change(false);
+    }
 }
 
 bool MergeTreeLeaderElection::isLeader() const
@@ -99,6 +132,10 @@ void MergeTreeLeaderElection::run()
     try
     {
         bool became_leader = false;
+        /// Whether the successful write (if any) was a renewal of an already-held lease
+        /// or a takeover of a missing/expired lease. Used to attribute the operation
+        /// to the right ProfileEvent counter.
+        bool was_renewal_attempt = false;
 
         /// Try to read the existing lease file.
         /// Disable filesystem cache for lease reads — the lease file is tiny and
@@ -135,12 +172,14 @@ void MergeTreeLeaderElection::run()
                 /// silently downgrade the on-disk lease format. Stay a follower until the
                 /// binary is upgraded.
                 LOG_WARNING(log, "Lease at '{}' has unknown payload version, refusing to take over (rolling-upgrade safety)", lease_path);
+                ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionUnknownVersionRejections);
                 became_leader = false;
             }
             else if (parsed.status == LeaseParseStatus::Ok && parsed.leader_id == leader_id)
             {
                 /// We are the current leader. Renew the lease.
                 LOG_TRACE(log, "Renewing leader lease at '{}'", lease_path);
+                was_renewal_attempt = true;
                 became_leader = tryWriteLease(/* if_match= */ etag, /* if_none_match= */ "");
             }
             else if (parsed.status == LeaseParseStatus::ParseError
@@ -169,6 +208,13 @@ void MergeTreeLeaderElection::run()
             }
         }
 
+        if (became_leader)
+        {
+            ProfileEvents::increment(was_renewal_attempt
+                ? ProfileEvents::MergeTreeLeaderElectionLeaseRenewals
+                : ProfileEvents::MergeTreeLeaderElectionLeaseTakeovers);
+        }
+
         /// Serialize the leadership transition with `stop`. Without this lock, a heartbeat
         /// task in flight when `stop` is called could re-acquire leadership and invoke
         /// `on_leadership_change(true)` after `stop` has already relinquished it,
@@ -185,12 +231,18 @@ void MergeTreeLeaderElection::run()
         if (became_leader && !was_leader)
         {
             LOG_INFO(log, "Acquired leadership for lease at '{}'", lease_path);
+            ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionAcquired);
+            CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionFollower);
+            CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionLeader);
             if (on_leadership_change)
                 on_leadership_change(true);
         }
         else if (!became_leader && was_leader)
         {
             LOG_INFO(log, "Lost leadership for lease at '{}'", lease_path);
+            ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
+            CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
+            CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
             if (on_leadership_change)
                 on_leadership_change(false);
         }
@@ -198,11 +250,15 @@ void MergeTreeLeaderElection::run()
     catch (...)
     {
         /// On any error, conservatively assume we are not the leader.
+        ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionHeartbeatErrors);
         std::lock_guard lock(leadership_change_mutex);
         bool was_leader = is_leader.exchange(false, std::memory_order_acq_rel);
         if (was_leader)
         {
             LOG_WARNING(log, "Lost leadership due to exception for lease at '{}'", lease_path);
+            ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
+            CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
+            CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
             if (on_leadership_change)
                 on_leadership_change(false);
         }
@@ -253,6 +309,7 @@ bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const Strin
                 || e.message().find("ConditionNotMet") != String::npos))
         {
             LOG_TRACE(log, "Conditional write failed (precondition not met) for lease at '{}'", lease_path);
+            ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLeaseConflicts);
             return false;
         }
         throw;
@@ -302,6 +359,7 @@ MergeTreeLeaderElection::ParsedLease MergeTreeLeaderElection::parseLeaseContent(
     {
         /// Corrupted lease file: caller will treat it as expired and overwrite it.
         tryLogCurrentException("MergeTreeLeaderElection", "Failed to parse lease file content");
+        ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLeaseParseErrors);
         ParsedLease error;
         error.status = LeaseParseStatus::ParseError;
         return error;

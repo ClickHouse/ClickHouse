@@ -136,6 +136,81 @@ def test_leader_elected(started_cluster):
     node2.query("DROP TABLE IF EXISTS test_le SYNC")
 
 
+def test_metrics(started_cluster):
+    """Verify that `MergeTreeLeaderElection*` CurrentMetrics and ProfileEvents are wired up."""
+    table = "test_metrics"
+    uuid = "12345678-abcd-abcd-abcd-123456789abf"
+
+    def metric(node, name):
+        return int(node.query(
+            f"SELECT value FROM system.metrics WHERE metric = '{name}'"
+        ).strip())
+
+    def event(node, name):
+        result = node.query(
+            f"SELECT value FROM system.events WHERE event = '{name}'"
+        ).strip()
+        return int(result) if result else 0
+
+    # Baselines captured before the test creates its tables — other tests in this
+    # module may have left counters above zero, so we measure deltas, not absolutes.
+    baseline_leader = {n.name: metric(n, "MergeTreeLeaderElectionLeader") for n in [node1, node2]}
+    baseline_follower = {n.name: metric(n, "MergeTreeLeaderElectionFollower") for n in [node1, node2]}
+    baseline_acquired = {n.name: event(n, "MergeTreeLeaderElectionAcquired") for n in [node1, node2]}
+    baseline_renewals = {n.name: event(n, "MergeTreeLeaderElectionLeaseRenewals") for n in [node1, node2]}
+
+    node1.query(
+        f"""
+        CREATE TABLE {table} UUID '{uuid}' (x UInt64)
+        ENGINE = MergeTree ORDER BY x
+        SETTINGS {TABLE_SETTINGS}
+        """
+    )
+    node2.query(
+        f"""
+        ATTACH TABLE {table} UUID '{uuid}' (x UInt64)
+        ENGINE = MergeTree ORDER BY x
+        SETTINGS {TABLE_SETTINGS}
+        """
+    )
+
+    leader, followers = wait_for_leader([node1, node2], table_name=table)
+    follower = followers[0]
+
+    # Gauge: the leader gauge on the leader's node went up by 1; the follower gauge
+    # on the follower's node went up by 1.
+    assert metric(leader, "MergeTreeLeaderElectionLeader") - baseline_leader[leader.name] >= 1, (
+        f"{leader.name} did not record itself in MergeTreeLeaderElectionLeader"
+    )
+    assert metric(follower, "MergeTreeLeaderElectionFollower") - baseline_follower[follower.name] >= 1, (
+        f"{follower.name} did not record itself in MergeTreeLeaderElectionFollower"
+    )
+
+    # Counters: the leader should have acquired at least once and renewed at least
+    # once. With `leader_election_heartbeat_interval = 1 s` the wait + sleep here
+    # gives at least one renewal cycle.
+    time.sleep(2)
+    assert event(leader, "MergeTreeLeaderElectionAcquired") - baseline_acquired[leader.name] >= 1, (
+        f"{leader.name} did not increment MergeTreeLeaderElectionAcquired"
+    )
+    assert event(leader, "MergeTreeLeaderElectionLeaseRenewals") - baseline_renewals[leader.name] >= 1, (
+        f"{leader.name} did not increment MergeTreeLeaderElectionLeaseRenewals"
+    )
+
+    # Drop the table and verify the gauges return to their pre-test baseline.
+    node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    for n in [node1, node2]:
+        assert metric(n, "MergeTreeLeaderElectionLeader") == baseline_leader[n.name], (
+            f"{n.name} did not release MergeTreeLeaderElectionLeader after DROP "
+            f"(now {metric(n, 'MergeTreeLeaderElectionLeader')}, baseline {baseline_leader[n.name]})"
+        )
+        assert metric(n, "MergeTreeLeaderElectionFollower") == baseline_follower[n.name], (
+            f"{n.name} did not release MergeTreeLeaderElectionFollower after DROP "
+            f"(now {metric(n, 'MergeTreeLeaderElectionFollower')}, baseline {baseline_follower[n.name]})"
+        )
+
+
 def test_failover(started_cluster):
     """Test that when the leader stops, the follower takes over."""
     create_table_on_first_node(node1, "test_fo", SHARED_UUID_FO)

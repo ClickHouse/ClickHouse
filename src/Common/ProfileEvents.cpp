@@ -282,6 +282,15 @@
     M(ReplicatedDataLoss, "Number of times a data part that we wanted doesn't exist on any replica (even on replicas that are offline right now). That data parts are definitely lost. This is normal due to asynchronous replication (if quorum inserts were not enabled), when the replica on which the data part was written was failed and when it became online after fail it doesn't contain that data part.", ValueType::Number) \
     M(ReplicatedCoveredPartsInZooKeeperOnStart, "For debugging purposes. Number of parts in ZooKeeper that have a covering part, but doesn't exist on disk. Checked on server start.", ValueType::Number) \
     \
+    M(MergeTreeLeaderElectionAcquired, "Number of times this instance acquired the leader lease for a MergeTree table with `leader_election` enabled (transitioned from follower to leader).", ValueType::Number) \
+    M(MergeTreeLeaderElectionLost, "Number of times this instance lost the leader lease for a MergeTree table with `leader_election` enabled (transitioned from leader back to follower).", ValueType::Number) \
+    M(MergeTreeLeaderElectionLeaseRenewals, "Number of successful leader-lease renewals (heartbeats) on a MergeTree table with `leader_election` enabled.", ValueType::Number) \
+    M(MergeTreeLeaderElectionLeaseTakeovers, "Number of times this instance successfully claimed a missing or expired leader lease on a MergeTree table with `leader_election` enabled.", ValueType::Number) \
+    M(MergeTreeLeaderElectionLeaseConflicts, "Number of times a conditional write to the leader-lease file was rejected by object storage (PreconditionFailed) due to a concurrent writer winning the race for the lease.", ValueType::Number) \
+    M(MergeTreeLeaderElectionLeaseParseErrors, "Number of times the leader-lease file content failed to parse for a MergeTree table with `leader_election` enabled. The lease is then treated as expired and overwritten on a subsequent heartbeat.", ValueType::Number) \
+    M(MergeTreeLeaderElectionUnknownVersionRejections, "Number of times this instance refused to take over a leader lease that was written with an unknown payload version (rolling-upgrade safety: never silently downgrade a newer lease format).", ValueType::Number) \
+    M(MergeTreeLeaderElectionHeartbeatErrors, "Number of unexpected exceptions thrown in the leader-election heartbeat task (object-storage errors that are not lease conflicts).", ValueType::Number) \
+    \
     M(QuorumParts, "Number of data parts written with quorum. It counts as one part for sync insert and maybe up to async inserts count for insert which flushes async inserts.", ValueType::Number) \
     M(QuorumWaitMicroseconds, "Total time spent waiting for quorum during inserts.", ValueType::Microseconds) \
     M(QuorumFailedInserts, "Number of inserts failed due to quorum not reaching.", ValueType::Number) \
