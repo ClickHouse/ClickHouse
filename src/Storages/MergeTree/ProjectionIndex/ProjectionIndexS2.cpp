@@ -332,7 +332,7 @@ bool tryDecodeTypedColumn(
     const String & type_name,
     std::optional<GeometryDecodeCache> & result)
 {
-    auto custom_name = inner_type->getCustomName();
+    const auto * custom_name = inner_type->getCustomName();
     if (!custom_name || custom_name->getName() != type_name)
         return false;
 
@@ -389,7 +389,7 @@ std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & 
                 if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
                     return nullptr;
                 const auto & col = column_variant->getVariantByLocalDiscriminator(local_discr);
-                return col.size() > 0 ? &col : nullptr;
+                return !col.empty() ? &col : nullptr;
             };
 
             if (const auto * col = get_variant(0))
@@ -459,20 +459,20 @@ std::optional<DecodedGeometry> tryDecodeGeometry(const GeometryDecodeCache & cac
         return std::visit([row](const auto & vec) -> std::optional<DecodedGeometry>
         {
             using VecT = std::decay_t<decltype(vec)>;
-            using ElemT = typename VecT::value_type;
+            using ElementT = typename VecT::value_type;
 
             DecodedGeometry out;
-            if constexpr (std::is_same_v<ElemT, SphericalPoint>)
+            if constexpr (std::is_same_v<ElementT, SphericalPoint>)
                 out.kind = DecodedGeometry::Kind::Point;
-            else if constexpr (std::is_same_v<ElemT, SphericalRing>)
+            else if constexpr (std::is_same_v<ElementT, SphericalRing>)
                 out.kind = DecodedGeometry::Kind::Ring;
-            else if constexpr (std::is_same_v<ElemT, SphericalLineString>)
+            else if constexpr (std::is_same_v<ElementT, SphericalLineString>)
                 out.kind = DecodedGeometry::Kind::LineString;
-            else if constexpr (std::is_same_v<ElemT, SphericalMultiLineString>)
+            else if constexpr (std::is_same_v<ElementT, SphericalMultiLineString>)
                 out.kind = DecodedGeometry::Kind::MultiLineString;
-            else if constexpr (std::is_same_v<ElemT, SphericalPolygon>)
+            else if constexpr (std::is_same_v<ElementT, SphericalPolygon>)
                 out.kind = DecodedGeometry::Kind::Polygon;
-            else if constexpr (std::is_same_v<ElemT, SphericalMultiPolygon>)
+            else if constexpr (std::is_same_v<ElementT, SphericalMultiPolygon>)
                 out.kind = DecodedGeometry::Kind::MultiPolygon;
 
             out.value = vec[row];
@@ -634,6 +634,7 @@ bool tryGetConstantFloat64(const ActionsDAG::Node * node, Float64 & result)
     }
     catch (...)
     {
+        /// Ok: conversion failure means this is not a usable constant number.
         return false;
     }
 }
@@ -668,7 +669,7 @@ bool tryDecodeFieldAsType(
 {
     /// Check custom name first — this distinguishes types with identical
     /// underlying structure (Polygon vs MultiLineString, Ring vs LineString).
-    auto custom_name = type->getCustomName();
+    const auto * custom_name = type->getCustomName();
     if (!custom_name || custom_name->getName() != type_name)
         return false;
 
@@ -927,7 +928,10 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
             if (!isSourceColumnNode(fn->children[0], params.source_column))
                 continue;
 
-            Float64 xmin, ymin, xmax, ymax;
+            Float64 xmin;
+            Float64 ymin;
+            Float64 xmax;
+            Float64 ymax;
             if (!tryGetConstantFloat64(fn->children[1], xmin)
                 || !tryGetConstantFloat64(fn->children[2], ymin)
                 || !tryGetConstantFloat64(fn->children[3], xmax)
@@ -996,7 +1000,7 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
             covering->Expand(radius, /*max_level_diff=*/4);
         }
 
-        LOG_DEBUG(log, "Query geometry: {}, has {} covering cells: , {}", geometry->kind, covering->size(), covering->ToString());
+        LOG_DEBUG(log, "Query geometry: {}, has {} covering cells: {}", geometry->kind, covering->size(), covering->ToString());
 
         /// Build Array(UInt64) constant with all covering cell IDs.
         Array cell_ids;

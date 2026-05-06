@@ -92,8 +92,10 @@ bool tryAnalyzeS2Covering(
     // ------------------------------------------------------------------
     if (func_name == "s2RectContains")
     {
-        Field lo_val, hi_val;
-        DataTypePtr lo_type, hi_type;
+        Field lo_val;
+        Field hi_val;
+        DataTypePtr lo_type;
+        DataTypePtr hi_type;
 
         if (!func.getArgumentAt(0).tryGetConstant(lo_val, lo_type))
             return false;
@@ -117,8 +119,10 @@ bool tryAnalyzeS2Covering(
     // ------------------------------------------------------------------
     if (func_name == "s2CapContains")
     {
-        Field center_val, degrees_val;
-        DataTypePtr center_type, degrees_type;
+        Field center_val;
+        Field degrees_val;
+        DataTypePtr center_type;
+        DataTypePtr degrees_type;
 
         if (!func.getArgumentAt(0).tryGetConstant(center_val, center_type))
             return false;
@@ -242,6 +246,6 @@ BoolMask evalS2Covering(
     return BoolMask(intersects, true);
 }
 
-} // namespace DB
+}
 
 #endif // USE_S2_GEOMETRY

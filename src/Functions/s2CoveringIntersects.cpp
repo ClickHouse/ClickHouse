@@ -21,7 +21,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -126,9 +125,9 @@ public:
                     /// A face cell intersects the covering if any covering cell
                     /// is on the same face.
                     bool found = false;
-                    for (auto cit = covering.begin(); cit != covering.end(); ++cit)
+                    for (const auto & covering_cell : covering)
                     {
-                        if (cit->face() == cell.face())
+                        if (covering_cell.face() == cell.face())
                         {
                             found = true;
                             break;

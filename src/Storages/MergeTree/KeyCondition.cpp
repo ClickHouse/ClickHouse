@@ -5260,7 +5260,11 @@ String KeyCondition::RPNElement::toString(const std::vector<String> & key_names)
             return buf.str();
         }
         case FUNCTION_S2_COVERING:
+#if USE_S2_GEOMETRY
             return s2_covering_data ? s2_covering_data->function_name : "s2Covering";
+#else
+            return "s2Covering";
+#endif
         case FUNCTION_IS_NULL:
         case FUNCTION_IS_NOT_NULL:
         {

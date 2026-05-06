@@ -175,7 +175,7 @@ public:
         offsets_vec.resize(input_rows_count);
 
         /// Extract integer parameters (max_cells, min_level, max_level).
-        auto get_int_column = [&](size_t arg_idx) -> const ColumnPtr
+        auto get_int_column = [&](size_t arg_idx) -> ColumnPtr
         {
             return arguments[arg_idx].column->convertToFullColumnIfConst();
         };

@@ -57,6 +57,6 @@ BoolMask evalS2Covering(
     const KeyCondition::RPNElement & element,
     const Hyperrectangle & hyperrectangle);
 
-} // namespace DB
+}
 
 #endif // USE_S2_GEOMETRY
