@@ -153,6 +153,21 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     }
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
+
+    if (configuration->getRawPath().hasSchemaHashWildcard())
+    {
+        if (configuration->isDataLakeConfiguration())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported for DataLake engines");
+
+        if (configuration->getPartitionStrategyType() == PartitionStrategyFactory::StrategyType::HIVE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported with hive partition strategy");
+
+        if (columns.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use _schema_hash placeholder without explicitly specifying columns");
+
+        configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
+    }
+
     std::string sample_path;
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, object_storage, configuration, {}, sample_path, context_);
