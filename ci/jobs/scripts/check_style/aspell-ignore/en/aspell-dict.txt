@@ -3200,6 +3200,8 @@ redisstreams
 refcounter
 refreshable
 regexpExtract
+regexpInstr
+regexpPosition
 regexpQuoteMeta
 regionHierarchy
 regionIn
