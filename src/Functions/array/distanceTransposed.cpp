@@ -130,7 +130,7 @@ struct CosineDistanceTransposed
         else
         {
             const auto unclipped_result = AccumulatorType(1) - ab / (std::sqrt(a2) * std::sqrt(b2));
-            *result = unclipped_result > 0 ? unclipped_result : 0;
+            *result = unclipped_result > 0 ? static_cast<Float64>(unclipped_result) : Float64{0};
         }
     }
 };

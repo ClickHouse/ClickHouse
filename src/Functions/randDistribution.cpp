@@ -176,7 +176,7 @@ struct BernoulliDistribution
 
     static void generate(Float64 p, ColumnUInt8::Container & container, const DistributionLimits &)
     {
-        if (p < 0.0f || p > 1.0f)
+        if (p < 0.0 || p > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
 
         auto distribution = std::bernoulli_distribution(p);
@@ -193,7 +193,7 @@ struct BinomialDistribution
 
     static void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container, const DistributionLimits & limits)
     {
-        if (p < 0.0f || p > 1.0f)
+        if (p < 0.0 || p > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
         if (limits.max_trials > 0 && t > limits.max_trials)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (number of experiments) of function {} is too large: {}", getName(), t);
@@ -212,7 +212,7 @@ struct NegativeBinomialDistribution
 
     static void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container, const DistributionLimits & limits)
     {
-        if (p < 0.0f || p > 1.0f)
+        if (p < 0.0 || p > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
         if (limits.max_trials > 0 && t > limits.max_trials)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (number of experiments) of function {} is too large: {}", getName(), t);

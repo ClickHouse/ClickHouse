@@ -226,7 +226,7 @@ struct ArrayAggregateImpl
             if (!column_const)
                 return false;
 
-            const AggregationType x = column_const->template getValue<Element>(); // NOLINT
+            const AggregationType x = static_cast<AggregationType>(column_const->template getValue<Element>()); // NOLINT
             const ColVecType * column_typed = checkAndGetColumn<ColVecType>(&column_const->getDataColumn());
 
             typename ColVecResultType::MutablePtr res_column;
@@ -324,7 +324,7 @@ struct ArrayAggregateImpl
             }
 
             size_t count = 1;
-            aggregate_value = data[pos]; // NOLINT
+            aggregate_value = static_cast<AggregationType>(data[pos]); // NOLINT
             ++pos;
 
             for (; pos < offsets[i]; ++pos)
