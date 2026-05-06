@@ -156,12 +156,32 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
     return wb.str();
 }
 
+class FieldVisitorToStringSQLite : public StaticVisitor<String>
+{
+public:
+    template<typename T>
+    String operator() (const T & x) const { return visitor(x); }
+
+private:
+    FieldVisitorToString visitor;
+};
+
+template<>
+String FieldVisitorToStringSQLite::operator() (const String & x) const
+{
+    WriteBufferFromOwnString wb;
+    writeQuotedStringSQLite(x, wb);
+    return wb.str();
+}
+
 void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
     if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
         ostr << applyVisitor(FieldVisitorToString(), value);
-    else
+    else if (settings.literal_escaping_style == LiteralEscapingStyle::PostgreSQL)
         ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
+    else
+        ostr << applyVisitor(FieldVisitorToStringSQLite(), value);
 }
 
 }

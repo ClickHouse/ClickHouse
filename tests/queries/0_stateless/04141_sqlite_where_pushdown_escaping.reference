@@ -1,0 +1,16 @@
+--- engine: exact match on single-quote string
+2	it\'s
+--- engine: exact match on tab
+3
+--- engine: exact match on newline
+4
+--- engine: exact match on backslash
+5
+--- table function: exact match on single-quote string
+2	it\'s
+--- table function: exact match on tab
+3
+--- table function: exact match on newline
+4
+--- table function: exact match on backslash
+5

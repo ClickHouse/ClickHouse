@@ -120,7 +120,7 @@ Pipe StorageSQLite::read(
         column_names,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes,
-        LiteralEscapingStyle::Regular,
+        LiteralEscapingStyle::SQLite,
         "",
         remote_table_name,
         context_);
