@@ -23,23 +23,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Returns the position (1-based) of the `occurrence`-th match of `pattern` in `haystack`,
-/// starting the search at byte position `position`. Modeled after PostgreSQL's `regexp_instr`.
-///
-/// Arguments:
-///   1. haystack       — String to search in.
-///   2. pattern        — Regular expression (constant string).
-///   3. position       — 1-based byte position to start the search (default 1).
-///   4. occurrence     — Which match to return (default 1).
-///   5. return_option  — 0 to return the position of the first byte of the match (default),
-///                       1 to return the position of the first byte after the match.
-///   6. flags          — Regex flags (constant string). Supported: 'i' (case-insensitive),
-///                       'c' (case-sensitive), 'm'/'n' (multiline anchors), 's' (dot matches newline),
-///                       'x' (extended). When unspecified, the default is case-sensitive matching
-///                       with '.' matching newlines (consistent with other ClickHouse regexp functions).
-///   7. subexpression  — Which capture group's position to return. 0 (default) means whole match.
-///
-/// Returns 0 if no match is found, or if the requested capture group did not participate.
 class FunctionRegexpPosition : public IFunction
 {
 public:
@@ -114,10 +97,7 @@ public:
         const OptimizedRegularExpression regexp(prepared_pattern, OptimizedRegularExpression::RE_DOT_NL);
         const unsigned num_captures = regexp.getNumberOfSubpatterns();
 
-        /// Materialize a constant haystack so the per-row loop below can index it uniformly.
-        /// When all arguments are constant, the framework already short-circuits to a single
-        /// row via `useDefaultImplementationForConstants`; this path matters for mixed
-        /// const haystack + vector numeric arguments.
+        /// Materialize so the loop below can index uniformly when the haystack is const but numeric arguments are vectors.
         ColumnPtr column_haystack_full = column_haystack->convertToFullColumnIfConst();
         const ColumnString * col_haystack = checkAndGetColumn<ColumnString>(column_haystack_full.get());
         if (!col_haystack)
@@ -161,7 +141,8 @@ public:
                     num_captures);
 
             const size_t row_data_offset = i == 0 ? 0 : haystack_offsets[i - 1];
-            const size_t row_size = haystack_offsets[i] - row_data_offset;
+            /// `haystack_offsets[i]` points past the trailing `\0` terminator stored by `ColumnString`; subtract one to get the logical string length.
+            const size_t row_size = haystack_offsets[i] - row_data_offset - 1;
             const char * row_data = reinterpret_cast<const char *>(&haystack_chars[row_data_offset]);
 
             const size_t start_offset = static_cast<size_t>(position) - 1;
@@ -245,7 +226,6 @@ private:
             const auto & whole = matches[0];
             if (n + 1 == occurrence)
             {
-                /// Found the requested occurrence; return position of subexpression within it.
                 if (subexpression >= matches.size() || matches[subexpression].offset == std::string::npos)
                     return 0;
                 const auto & m = matches[subexpression];
@@ -316,7 +296,6 @@ SELECT
 
     factory.registerFunction<FunctionRegexpPosition>(documentation);
 
-    /// For PostgreSQL compatibility.
     factory.registerAlias("regexp_instr", "regexpPosition", FunctionFactory::Case::Insensitive);
     factory.registerAlias("regexpInstr", "regexpPosition", FunctionFactory::Case::Insensitive);
 }

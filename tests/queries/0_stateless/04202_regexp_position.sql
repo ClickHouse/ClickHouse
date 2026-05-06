@@ -50,6 +50,13 @@ SELECT regexpPosition(s, 'b+') FROM (SELECT arrayJoin(['abc', 'aaabbb', 'xyz', '
 SELECT regexpPosition('abc', 'a', number + 1) FROM numbers(3);
 SELECT regexpPosition('aXbXcXd', 'X', 1, number + 1) FROM numbers(4);
 
+-- Boundary: start position at and past `length + 1` with an empty pattern.
+-- Empty match is allowed exactly at `length + 1`; anything larger must return 0.
+SELECT regexpPosition('abc', '', 3);
+SELECT regexpPosition('abc', '', 4);
+SELECT regexpPosition('abc', '', 5);
+SELECT regexpPosition('abc', '', 6);
+
 -- Errors.
 SELECT regexpPosition('abc', 'a', 0); -- { serverError BAD_ARGUMENTS }
 SELECT regexpPosition('abc', 'a', 1, 0); -- { serverError BAD_ARGUMENTS }
