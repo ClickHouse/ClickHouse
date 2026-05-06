@@ -23,6 +23,7 @@ void registerTableFunctions()
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
+    registerTableFunctionWaitUntil(factory);
 #if USE_MONGODB
     registerTableFunctionMongoDB(factory);
 #endif
