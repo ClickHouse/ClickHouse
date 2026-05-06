@@ -163,7 +163,10 @@ private:
         }
         else
         {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
             return left[i] >= right;
+#pragma clang diagnostic pop
         }
     }
 
