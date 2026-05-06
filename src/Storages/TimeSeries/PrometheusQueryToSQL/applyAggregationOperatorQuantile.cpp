@@ -2,11 +2,14 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
+#include <cmath>
+#include <limits>
 
 
 namespace DB::ErrorCodes
@@ -57,6 +60,21 @@ namespace
         }
     }
 
+    ASTPtr makeOutOfRangeQuantileResult(ASTPtr values, ScalarType result_value, const DataTypePtr & scalar_data_type)
+    {
+        return makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("count")),
+                makeASTFunction(
+                    "if",
+                    makeASTFunction("greater", make_intrusive<ASTIdentifier>("count"), make_intrusive<ASTLiteral>(0u)),
+                    timeSeriesScalarToAST(result_value, scalar_data_type),
+                    make_intrusive<ASTLiteral>(Field{} /* NULL */))),
+            makeASTFunction("countForEach", std::move(values)));
+    }
+
     /// Converts the quantile parameter phi to an AST expression usable in SQL.
     ASTPtr getPhi(SQLQueryPiece && phi_arg, ConverterContext & context)
     {
@@ -100,6 +118,9 @@ SQLQueryPiece applyAggregationOperatorQuantile(
     if (phi_arg.store_method == StoreMethod::EMPTY || vector_arg.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
 
+    const bool phi_is_const = phi_arg.store_method == StoreMethod::CONST_SCALAR;
+    const auto phi_const_value = phi_arg.scalar_value;
+
     vector_arg = toVectorGrid(std::move(vector_arg), context);
     ASTPtr phi = getPhi(std::move(phi_arg), context);
 
@@ -122,9 +143,23 @@ SQLQueryPiece applyAggregationOperatorQuantile(
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
         /// quantileExactInclusiveForEach(phi)(values)
-        builder.select_list.push_back(addParametersToAggregateFunction(
-            makeASTFunction("quantileExactInclusiveForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-            std::move(phi)));
+        if (phi_is_const && (std::isnan(phi_const_value) || phi_const_value < 0 || phi_const_value > 1))
+        {
+            ScalarType result_value = std::numeric_limits<ScalarType>::quiet_NaN();
+            if (phi_const_value < 0)
+                result_value = -std::numeric_limits<ScalarType>::infinity();
+            else if (phi_const_value > 1)
+                result_value = std::numeric_limits<ScalarType>::infinity();
+
+            builder.select_list.push_back(makeOutOfRangeQuantileResult(
+                make_intrusive<ASTIdentifier>(ColumnNames::Values), result_value, context.scalar_data_type));
+        }
+        else
+        {
+            builder.select_list.push_back(addParametersToAggregateFunction(
+                makeASTFunction("quantileExactInclusiveForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                std::move(phi)));
+        }
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         if (operator_node->by || operator_node->without)
