@@ -148,13 +148,20 @@
         {
             padding: 0.25rem;
             grid-area: menu;
-            position: relative;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            height: 100vh;
+            align-self: start;
             background: var(--table-header-color);
             border-right: 1px solid var(--border-color);
             display: grid;
             grid-template-rows: auto 1fr auto;
             grid-template-areas: "databases-icon" "contents" "github-icon";
             cursor: e-resize;
+            min-height: 0;
+            overflow-x: visible;
+            overflow-y: clip;
         }
 
         #main
@@ -162,7 +169,8 @@
             overflow: auto;
             grid-area: main;
             padding: 0.5rem;
-            position: relative; /* for stacking context */
+            position: relative;
+            z-index: 0; /* stacking context so children don't overlap #menu */
         }
 
         .menu-icon
@@ -189,7 +197,9 @@
         {
             grid-area: contents;
             max-width: 25em;
-            overflow: hidden;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-color) transparent;
         }
 
         .tables:not(:empty)
@@ -284,10 +294,10 @@
 
         .table-addendum
         {
-            position: absolute;
+            position: fixed;
             z-index: 999;
             white-space: pre;
-            transform: translate(0.25rem, calc(-50% + 0.5em));
+            transform: translateY(-50%);
             color: var(--element-background-color);
             background: color-mix(in srgb, var(--text-color) 50%, var(--background-color));
             backdrop-filter: blur(4px);
@@ -316,6 +326,17 @@
             opacity: 1;
             pointer-events: auto;
             transition: opacity 0s 0.1s;
+        }
+
+        /* While suppress-balloons is set on the body (set on scroll, cleared on the
+           next mousemove), no balloon may appear from a :hover state. This prevents
+           a different table button from scrolling under a stationary cursor and
+           revealing its balloon without `mouseenter` having fired to position it. */
+        body.suppress-balloons .table button:hover + .table-addendum,
+        body.suppress-balloons .table .table-addendum:hover
+        {
+            opacity: 0;
+            pointer-events: none;
         }
 
         .table-addendum-elem
@@ -2509,6 +2530,8 @@ async function loadTables(server_address, user, password, database, container) {
                 query_area.value = value;
                 query_area.dispatchEvent(new Event('input'));
             }
+            /// #main is the scroll container (overflow: auto), so scroll it to bring the query area into view.
+            document.getElementById('main').scrollTo(0, 0);
             e.stopPropagation();
         }
 
@@ -2534,6 +2557,14 @@ async function loadTables(server_address, user, password, database, container) {
         engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
         table_addendum.append(engine_elem);
 
+        table_link.addEventListener('mouseenter', function() {
+            const rect = this.getBoundingClientRect();
+            table_addendum.style.left = rect.right + 'px';
+            table_addendum.style.top = (rect.top + rect.height / 2) + 'px';
+            table_addendum.style.visibility = '';
+            visible_balloon = table_addendum;
+        });
+
         table.appendChild(table_link);
         table.appendChild(table_addendum);
         table.addEventListener('click', e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
@@ -2551,6 +2582,32 @@ async function loadTables(server_address, user, password, database, container) {
 let databases_toggle = document.getElementById('databases-toggle');
 
 let menu_elem = document.getElementById('menu');
+
+/// Hide the currently visible table-info balloon on any scroll: it uses
+/// position:fixed and would detach from its anchor. Use capture phase so the
+/// listener fires regardless of which element scrolls (scroll events do not
+/// bubble). Only one balloon can be open at a time (the one the cursor most
+/// recently entered), so we track that reference instead of scanning the DOM.
+///
+/// Also set `suppress-balloons` on the body until the next mousemove, so a
+/// different table button scrolled under a stationary cursor cannot reveal its
+/// balloon at an unset position via the CSS `:hover` rule (`mouseenter` does
+/// not fire without actual mouse movement, so JS positioning would be skipped).
+let visible_balloon = null;
+function hideTableBalloons() {
+    if (visible_balloon) {
+        visible_balloon.style.visibility = 'hidden';
+        visible_balloon = null;
+    }
+    document.body.classList.add('suppress-balloons');
+}
+document.addEventListener('scroll', hideTableBalloons, { capture: true, passive: true });
+document.addEventListener('mousemove', () => {
+    /// Guard so the no-op case does not touch classList on every mouse pixel.
+    if (document.body.classList.contains('suppress-balloons')) {
+        document.body.classList.remove('suppress-balloons');
+    }
+}, { passive: true });
 
 function toggleDatabases() {
     if (!databases_toggle.dataset['opened']) {
@@ -2830,14 +2887,9 @@ async function postSingle(posted_request_num, query, history_query_text)
         return;
     }
 
-    if (resultEl.isExplainGraph) {
-        await resultEl.renderGraph();
-    } else {
-        if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
-        if (result.is_table) resultEl.renderTotals();
-        if (result.is_table) resultEl.transposeIfNeeded();
-        if (result.is_table) resultEl._changeTableLayout();
-    }
+    /// `postImpl` already performed `renderGraph`/`renderExtremes`/`renderTotals`/`transposeIfNeeded`;
+    /// the only step specific to the single-query path is the final table layout pass.
+    if (result.is_table) resultEl._changeTableLayout();
 
     progressEl.finish();
     document.getElementById('download-div').style.display = 'block';

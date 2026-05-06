@@ -18,6 +18,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
@@ -240,6 +241,16 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.local_time_as_utc = settings[Setting::input_format_parquet_local_time_as_utc];
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
+    if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+    {
+        /// Use 90% of the hard limit as the budget for computing caps. This ensures the pipeline's
+        /// natural consumption stays below the hard limit, leaving headroom for spikes and overhead.
+        size_t budget = static_cast<size_t>(static_cast<double>(memory_limit) * 0.9);
+        format_settings.parquet.memory_high_watermark = std::min<size_t>(
+            format_settings.parquet.memory_high_watermark, budget / 8);
+        format_settings.parquet.prefer_block_bytes = std::min<size_t>(
+            format_settings.parquet.prefer_block_bytes, budget / 64);
+    }
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
     format_settings.pretty.glue_chunks = settings[Setting::output_format_pretty_glue_chunks].valueOr(2);
