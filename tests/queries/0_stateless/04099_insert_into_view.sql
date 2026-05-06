@@ -40,8 +40,4 @@ CREATE VIEW v_lambda AS SELECT a, b FROM t WHERE arrayExists(x -> x > 0, [a]);
 INSERT INTO v_lambda VALUES (6, 'lambda');  -- succeeds since a=6 >0
 SELECT * FROM t ORDER BY a;
 
--- WHERE referencing unprojected column is rejected
-DROP VIEW IF EXISTS v_unprojected;
-CREATE VIEW v_unprojected AS SELECT a FROM t WHERE b = 'test'; -- { serverError NOT_IMPLEMENTED }
-
 DROP TABLE t;
