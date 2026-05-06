@@ -1,6 +1,8 @@
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
+#include <Common/re2.h>
+#include <algorithm>
 
 #include "config.h"
 
@@ -324,6 +326,22 @@ namespace
             return matcher;
         }
 
+        bool matcherMatchesEmptyString(const Matcher & matcher) const
+        {
+            switch (matcher.matcher_type)
+            {
+                case MatcherType::EQ:
+                    return matcher.label_value.empty();
+                case MatcherType::NE:
+                    return !matcher.label_value.empty();
+                case MatcherType::RE:
+                    return RE2::FullMatch("", re2::RE2(matcher.label_value));
+                case MatcherType::NRE:
+                    return !RE2::FullMatch("", re2::RE2(matcher.label_value));
+            }
+            UNREACHABLE();
+        }
+
         /// Makes a node for an instant selector.
         Node * makeInstantSelector(antlr4_grammars::PromQLParser::InstantSelectorContext * ctx)
         {
@@ -346,6 +364,14 @@ namespace
                     }
                     matchers.push_back(std::move(matcher));
                 }
+            }
+
+            if (std::ranges::all_of(matchers, [&](const Matcher & matcher) { return matcherMatchesEmptyString(matcher); }))
+            {
+                /// Prometheus rejects selectors that can match every series, for example {__name__=~".*"}.
+                /// Keep this in the parser so all execution backends share the same validity rule.
+                error_listener.setError("vector selector must contain at least one non-empty matcher", ctx->getStart()->getStartIndex());
+                return nullptr;
             }
 
             new_node->matchers = std::move(matchers);
