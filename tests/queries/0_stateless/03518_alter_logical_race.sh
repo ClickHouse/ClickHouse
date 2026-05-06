@@ -27,7 +27,14 @@ function thread_alter()
             "ALTER TABLE alter_table MODIFY COLUMN IF EXISTS $1 UInt64" \
             "ALTER TABLE alter_table DROP COLUMN IF EXISTS $1"
         do
-            ERROR=$(timeout 30s $CLICKHOUSE_CLIENT --query "$STMT" 2>&1 | tr '\n' ' ' || true)
+            OUTPUT=$(timeout 30s $CLICKHOUSE_CLIENT --query "$STMT" 2>&1) && RC=0 || RC=$?
+            ERROR=${OUTPUT//$'\n'/ }
+
+            if [[ "$RC" -eq 124 ]]
+            then
+                echo "TIMEOUT: $STMT"
+                exit 1
+            fi
 
             if [[ -n "${ERROR}" \
                 && ! "${ERROR}" =~ "You can retry this error" ]]
@@ -40,10 +47,18 @@ function thread_alter()
 
 function thread_insert()
 {
+    local STMT="INSERT INTO alter_table (a, b, c, d, e, f, g) SELECT rand(1), rand(2), rand(3), rand(4), rand(5), rand(6), rand(7) FROM numbers(1000)"
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        ERROR=$(timeout 30s $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table (a, b, c, d, e, f, g) SELECT rand(1), rand(2), rand(3), rand(4), rand(5), rand(6), rand(7) FROM numbers(1000)" 2>&1 | tr '\n' ' ' || true)
+        OUTPUT=$(timeout 30s $CLICKHOUSE_CLIENT -q "$STMT" 2>&1) && RC=0 || RC=$?
+        ERROR=${OUTPUT//$'\n'/ }
+
+        if [[ "$RC" -eq 124 ]]
+        then
+            echo "TIMEOUT: $STMT"
+            exit 1
+        fi
 
         if [[ -n "${ERROR}" \
             && ! "${ERROR}" =~ "You can retry this error" ]]
