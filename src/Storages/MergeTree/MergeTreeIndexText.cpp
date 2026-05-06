@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeFunction.h>
+#include <Functions/IFunction.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -1584,9 +1586,77 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
     return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor);
 }
 
+/// Builds an analyzer-independent name from a DAG node
+static String getCanonicalDAGName(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        node = node->children[0];
+
+    bool is_old_lambda = node->type == ActionsDAG::ActionType::FUNCTION
+        && node->function_base && node->function_base->getName().starts_with("Capture[");
+    bool is_new_lambda = node->type == ActionsDAG::ActionType::COLUMN
+        && node->result_type && typeid_cast<const DataTypeFunction *>(node->result_type.get());
+    if (is_old_lambda || is_new_lambda)
+        return "<lambda>";
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
+    {
+        String result = node->function_base->getName() + "(";
+        for (size_t i = 0; i < node->children.size(); ++i)
+        {
+            if (i)
+                result += ", ";
+            result += getCanonicalDAGName(node->children[i]);
+        }
+        return result + ")";
+    }
+
+    return node->result_name;
+}
+
+/// Searches the predicate DAG for a FUNCTION node whose canonical name matches `target`.
+/// Returns its result_name (the Planner-style name), or empty string if not found.
+static String findPredicateName(
+    const ActionsDAG::Node * node, const String & target,
+    std::unordered_set<const ActionsDAG::Node *> & visited)
+{
+    if (!node || !visited.insert(node).second)
+        return {};
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+        && getCanonicalDAGName(node) == target)
+        return node->result_name;
+    for (const auto * child : node->children)
+        if (auto name = findPredicateName(child, target, visited); !name.empty())
+            return name;
+    return {};
+}
+
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, tokenizer.get(), preprocessor);
+    auto sample_block = index.sample_block;
+
+    /// The index sample_block uses column names from the old analyzer. The Planner may name
+    /// the same expression differently (lambdas, typed constants). Bridge the gap by computing
+    /// analyzer-independent canonical names and renaming the sample_block column to match.
+    if (predicate && index.expression && sample_block.columns() == 1)
+    {
+        const auto & outputs = index.expression->getActionsDAG().getOutputs();
+        if (outputs.size() == 1)
+        {
+            auto target = getCanonicalDAGName(outputs[0]);
+            std::unordered_set<const ActionsDAG::Node *> visited;
+            auto new_name = findPredicateName(predicate, target, visited);
+            if (!new_name.empty() && new_name != sample_block.getByPosition(0).name)
+            {
+                auto col = sample_block.getByPosition(0);
+                col.name = new_name;
+                sample_block.clear();
+                sample_block.insert(std::move(col));
+            }
+        }
+    }
+
+    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, sample_block, tokenizer.get(), preprocessor);
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
