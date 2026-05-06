@@ -309,10 +309,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 else
                 {
                     /// Detach columns from the chunk so that the resulting block holds
-                    /// uniquely-owned columns. Otherwise `wrap_with_nullable_or_tuple`
-                    /// calls `makeNullable` -> `ColumnNullable::create` -> `assumeMutable`,
-                    /// which trips `chassert(use_count() == 1)` because the chunk still
-                    /// references the same columns.
+                    /// uniquely-owned columns. `wrap_with_nullable_or_tuple` calls
+                    /// `materializeBlock` (which goes through `IColumn::mutate` for
+                    /// `Const` / `LowCardinality` columns) and may construct a
+                    /// `ColumnTuple`, both of which require `use_count() == 1` for
+                    /// the inputs in debug/sanitizer builds.
                     auto block = executor->getHeader().cloneWithColumns(chunk.detachColumns());
                     wrap_with_nullable_or_tuple(block);
                     scalar_block = std::move(block);
