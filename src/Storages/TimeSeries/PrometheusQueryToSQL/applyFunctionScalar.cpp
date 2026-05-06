@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -69,9 +70,39 @@ SQLQueryPiece applyFunctionScalar(
         {
             /// If the argument contains time series we have to do some aggregation.
 
-            /// SELECT arrayMap(x, y -> if(x = 1, assumeNotNull(y), NaN), countForEach(values), anyForEach(values)) AS values
+            /// SELECT arrayMap(x, y -> if(x = 1, assumeNotNull(y), NaN),
+            ///                 if(empty(counts), arrayResize(CAST([], 'Array(UInt64)'), <count_of_time_steps>, CAST(0, 'UInt64')), counts),
+            ///                 if(empty(any_values), arrayResize(CAST([], 'Array(Nullable(scalar_data_type))'), <count_of_time_steps>, CAST(NaN, 'Nullable(scalar_data_type)')), any_values)) AS values
             /// FROM <vector_grid>
             SelectQueryBuilder builder;
+
+            auto counts = makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values));
+            auto any_values = makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values));
+            auto count_of_time_steps = make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(argument.start_time, argument.end_time, argument.step));
+            auto nan = timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type);
+
+            auto empty_counts = makeASTFunction("CAST", make_intrusive<ASTLiteral>(Array{}), make_intrusive<ASTLiteral>("Array(UInt64)"));
+            auto empty_values = makeASTFunction(
+                "CAST",
+                make_intrusive<ASTLiteral>(Array{}),
+                make_intrusive<ASTLiteral>(fmt::format("Array(Nullable({}))", context.scalar_data_type->getName())));
+            auto nullable_nan = makeASTFunction(
+                "CAST",
+                nan->clone(),
+                make_intrusive<ASTLiteral>(fmt::format("Nullable({})", context.scalar_data_type->getName())));
+
+            auto counts_or_zero_counts = makeASTFunction(
+                "if",
+                makeASTFunction("empty", counts->clone()),
+                makeASTFunction(
+                    "arrayResize", std::move(empty_counts), count_of_time_steps->clone(), makeASTFunction("CAST", make_intrusive<ASTLiteral>(0), make_intrusive<ASTLiteral>("UInt64"))),
+                std::move(counts));
+
+            auto any_values_or_nans = makeASTFunction(
+                "if",
+                makeASTFunction("empty", any_values->clone()),
+                makeASTFunction("arrayResize", std::move(empty_values), count_of_time_steps->clone(), std::move(nullable_nan)),
+                std::move(any_values));
 
             builder.select_list.push_back(makeASTFunction(
                 "arrayMap",
@@ -82,9 +113,9 @@ SQLQueryPiece applyFunctionScalar(
                         "if",
                         makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1)),
                         makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("y")),
-                        timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type))),
-                makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))));
+                        std::move(nan))),
+                std::move(counts_or_zero_counts),
+                std::move(any_values_or_nans)));
 
             builder.select_list.back()->setAlias(ColumnNames::Values);
 
