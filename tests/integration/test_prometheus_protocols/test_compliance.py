@@ -157,7 +157,7 @@ def _expand_query(template, variant_args):
 # ── Test case definitions from prometheus/compliance promql-test-queries.yml ─
 # (query_template, variant_args, should_fail)
 
-COMPLIANCE_TEST_CASES = [
+UPSTREAM_COMPLIANCE_TEST_CASES = [
     # Scalar literals
     ("42", [], False),
     ("1.234", [], False),
@@ -263,81 +263,136 @@ COMPLIANCE_TEST_CASES = [
     # Functions: misc
     ("time()", [], False),
 
-    # label_replace
-    ('label_replace(demo_num_cpus, "job", "destination-value-$1", "instance", "demo.promlabs.com:(.*)")', [], False),
-    ('label_replace(demo_num_cpus, "job", "destination-value-$1", "instance", "host:(.*)")', [], False),
-    ('label_replace(demo_num_cpus, "job", "$1-$2", "instance", "local(.*):(.*)")', [], False),
-    ('label_replace(demo_num_cpus, "job", "value-$1", "nonexistent-src", "source-value-(.*)")', [], False),
-    ('label_replace(demo_num_cpus, "job", "value-$1", "nonexistent-src", "(.*)")', [], False),
-    ('label_replace(demo_num_cpus, "job", "value-$1", "instance", "non-matching-regex")', [], False),
-    ('label_replace(demo_num_cpus, "job", "", "dst", ".*")', [], False),
-    ('label_replace(demo_num_cpus, "job", "value-$1", "src", "(.*")', [], True),
-    ('label_replace(demo_num_cpus, "~valid_utf8", "", "src", "(.*)")', [], False),
-    ('label_replace(demo_num_cpus, "", "", "src", "(.*)")', [], True),
-    ('label_replace(demo_num_cpus, "instance", "", "", "")', [], False),
 
-    # label_join
-    ('label_join(demo_num_cpus, "new_label", "-", "instance", "job")', [], False),
-    ('label_join(demo_num_cpus, "job", "-", "instance", "job")', [], False),
-    ('label_join(demo_num_cpus, "job", "-", "instance")', [], False),
-    ('label_join(demo_num_cpus, "~valid_utf8", "-", "instance")', [], False),
-    ('label_join(demo_num_cpus, "", "-", "instance")', [], True),
-    ('label_join(demo_num_cpus, "new_label", "-", "")', [], True),
-
-    # Date functions
-    ("{{.dateFunc}}()", ["dateFunc"], False),
-    ("{{.dateFunc}}(demo_batch_last_success_timestamp_seconds offset {{.offset}})", ["dateFunc", "offset"], False),
-
-    # Instant rate functions
-    ("{{.instantRateFunc}}(demo_cpu_usage_seconds_total[{{.range}}])", ["instantRateFunc", "range"], False),
-
-    # Clamp
-    ("{{.clampFunc}}(demo_memory_usage_bytes, 2)", ["clampFunc"], False),
-    ("clamp(demo_memory_usage_bytes, 0, 1)", [], False),
-    ("clamp(demo_memory_usage_bytes, 0, 1000000000000)", [], False),
-    ("clamp(demo_memory_usage_bytes, 1000000000000, 0)", [], False),
-    ("clamp(demo_memory_usage_bytes, 1000000000000, 1000000000000)", [], False),
-
-    # Resets / changes
-    ("resets(demo_cpu_usage_seconds_total[{{.range}}])", ["range"], False),
-    ("changes(demo_batch_last_success_timestamp_seconds[{{.range}}])", ["range"], False),
-
-    # Vector
-    ("vector(1.23)", [], False),
-    ("vector(time())", [], False),
-
-    # Histogram quantile
-    ("histogram_quantile({{.quantile}}, rate(demo_api_request_duration_seconds_bucket[1m]))", ["quantile"], False),
-    ("histogram_quantile(0.9, nonexistent_metric)", [], False),
-    ("histogram_quantile(0.9, demo_memory_usage_bytes)", [], False),
-    ('histogram_quantile(0.9, {__name__=~"demo_api_request_duration_seconds_.+"})', [], False),
-
-    # count_values
-    ('count_values("value", demo_api_request_duration_seconds_bucket)', [], False),
-    ('count_values("value", demo_api_request_duration_seconds_bucket) without (instance)', [], False),
-    ('count_values("job", demo_api_request_duration_seconds_bucket) by (job)', [], False),
-    ('count_values("", demo_api_request_duration_seconds_bucket)', [], True),
-
-    # absent
-    ("absent(demo_memory_usage_bytes)", [], False),
-    ("absent(nonexistent_metric_name)", [], False),
-    ('absent(demo_memory_usage_bytes{type="missing"})', [], False),
-    ('absent(demo_memory_usage_bytes{type=~"missing"})', [], False),
-    ('absent(nonexistent_metric_name{type!="free"})', [], False),
-    ('absent_over_time(demo_memory_usage_bytes{type="missing"}[5m])', [], False),
-    ('absent_over_time(demo_memory_usage_bytes{type=~"missing"}[5m])', [], False),
-
-    # Subqueries
-    ("max_over_time((time() - max(demo_batch_last_success_timestamp_seconds) < 1000)[5m:10s] offset 5m)", [], False),
-    ("avg_over_time(rate(demo_cpu_usage_seconds_total[1m])[2m:10s])", [], False),
 ]
+
+RISK_LABEL_TRANSFORMATIONS = "label transformation functions"
+RISK_DATE_FUNCTIONS = "date function defaults and offsets"
+RISK_INSTANT_RATES = "instant rate range functions"
+RISK_CLAMP_BOUNDS = "clamp scalar bounds"
+RISK_COUNTER_STATE = "counter reset/change functions"
+RISK_SCALAR_GRID = "scalar-grid parameters and vector conversion"
+RISK_HISTOGRAM_DEFERRED = "deferred histogram surface"
+RISK_VALUE_LABEL_AGGREGATION = "value-to-label aggregation"
+RISK_EMPTY_VECTOR_ABSENCE = "empty vector and absence semantics"
+RISK_SUBQUERY_ALIGNMENT = "subquery alignment and offset"
+
+
+def _with_risk(semantic_risk, cases):
+    return [(template, variant_args, should_fail, semantic_risk) for template, variant_args, should_fail in cases]
+
+
+# Fork-local cases beyond the upstream Prometheus compliance corpus. Each group
+# names the semantic risk it protects so future additions have an obvious home.
+FORK_LOCAL_REGRESSION_CASES = [
+    *_with_risk(RISK_LABEL_TRANSFORMATIONS, [
+        # label_replace
+        ('label_replace(demo_num_cpus, "job", "destination-value-$1", "instance", "demo.promlabs.com:(.*)")', [], False),
+        ('label_replace(demo_num_cpus, "job", "destination-value-$1", "instance", "host:(.*)")', [], False),
+        ('label_replace(demo_num_cpus, "job", "$1-$2", "instance", "local(.*):(.*)")', [], False),
+        ('label_replace(demo_num_cpus, "job", "value-$1", "nonexistent-src", "source-value-(.*)")', [], False),
+        ('label_replace(demo_num_cpus, "job", "value-$1", "nonexistent-src", "(.*)")', [], False),
+        ('label_replace(demo_num_cpus, "job", "value-$1", "instance", "non-matching-regex")', [], False),
+        ('label_replace(demo_num_cpus, "job", "", "dst", ".*")', [], False),
+        ('label_replace(demo_num_cpus, "job", "value-$1", "src", "(.*")', [], True),
+        ('label_replace(demo_num_cpus, "~valid_utf8", "", "src", "(.*)")', [], False),
+        ('label_replace(demo_num_cpus, "", "", "src", "(.*)")', [], True),
+        ('label_replace(demo_num_cpus, "instance", "", "", "")', [], False),
+
+        # label_join
+        ('label_join(demo_num_cpus, "new_label", "-", "instance", "job")', [], False),
+        ('label_join(demo_num_cpus, "job", "-", "instance", "job")', [], False),
+        ('label_join(demo_num_cpus, "job", "-", "instance")', [], False),
+        ('label_join(demo_num_cpus, "~valid_utf8", "-", "instance")', [], False),
+        ('label_join(demo_num_cpus, "", "-", "instance")', [], True),
+        ('label_join(demo_num_cpus, "new_label", "-", "")', [], True),
+    ]),
+
+    *_with_risk(RISK_DATE_FUNCTIONS, [
+        ("{{.dateFunc}}()", ["dateFunc"], False),
+        ("{{.dateFunc}}(demo_batch_last_success_timestamp_seconds offset {{.offset}})", ["dateFunc", "offset"], False),
+    ]),
+
+    *_with_risk(RISK_INSTANT_RATES, [
+        ("{{.instantRateFunc}}(demo_cpu_usage_seconds_total[{{.range}}])", ["instantRateFunc", "range"], False),
+    ]),
+
+    *_with_risk(RISK_CLAMP_BOUNDS, [
+        ("{{.clampFunc}}(demo_memory_usage_bytes, 2)", ["clampFunc"], False),
+        ("clamp(demo_memory_usage_bytes, 0, 1)", [], False),
+        ("clamp(demo_memory_usage_bytes, 0, 1000000000000)", [], False),
+        ("clamp(demo_memory_usage_bytes, 1000000000000, 0)", [], False),
+        ("clamp(demo_memory_usage_bytes, 1000000000000, 1000000000000)", [], False),
+    ]),
+
+    *_with_risk(RISK_COUNTER_STATE, [
+        ("resets(demo_cpu_usage_seconds_total[{{.range}}])", ["range"], False),
+        ("changes(demo_batch_last_success_timestamp_seconds[{{.range}}])", ["range"], False),
+    ]),
+
+    *_with_risk(RISK_SCALAR_GRID, [
+        ("vector(1.23)", [], False),
+        ("vector(time())", [], False),
+    ]),
+
+    *_with_risk(RISK_HISTOGRAM_DEFERRED, [
+        ("histogram_quantile({{.quantile}}, rate(demo_api_request_duration_seconds_bucket[1m]))", ["quantile"], False),
+        ("histogram_quantile(0.9, nonexistent_metric)", [], False),
+        ("histogram_quantile(0.9, demo_memory_usage_bytes)", [], False),
+        ('histogram_quantile(0.9, {__name__=~"demo_api_request_duration_seconds_.+"})', [], False),
+    ]),
+
+    *_with_risk(RISK_VALUE_LABEL_AGGREGATION, [
+        ('count_values("value", demo_api_request_duration_seconds_bucket)', [], False),
+        ('count_values("value", demo_api_request_duration_seconds_bucket) without (instance)', [], False),
+        ('count_values("job", demo_api_request_duration_seconds_bucket) by (job)', [], False),
+        ('count_values("", demo_api_request_duration_seconds_bucket)', [], True),
+    ]),
+
+    *_with_risk(RISK_EMPTY_VECTOR_ABSENCE, [
+        ("absent(demo_memory_usage_bytes)", [], False),
+        ("absent(nonexistent_metric_name)", [], False),
+        ('absent(demo_memory_usage_bytes{type="missing"})', [], False),
+        ('absent(demo_memory_usage_bytes{type=~"missing"})', [], False),
+        ('absent(nonexistent_metric_name{type!="free"})', [], False),
+        ('absent_over_time(demo_memory_usage_bytes{type="missing"}[5m])', [], False),
+        ('absent_over_time(demo_memory_usage_bytes{type=~"missing"}[5m])', [], False),
+    ]),
+
+    *_with_risk(RISK_SUBQUERY_ALIGNMENT, [
+        ("max_over_time((time() - max(demo_batch_last_success_timestamp_seconds) < 1000)[5m:10s] offset 5m)", [], False),
+        ("avg_over_time(rate(demo_cpu_usage_seconds_total[1m])[2m:10s])", [], False),
+    ]),
+]
+
+
+def _iter_case_definitions():
+    for template, variant_args, should_fail in UPSTREAM_COMPLIANCE_TEST_CASES:
+        yield template, variant_args, should_fail, "upstream compliance"
+    yield from FORK_LOCAL_REGRESSION_CASES
 
 
 def _expand_all_test_cases():
     result = []
-    for template, variant_args, should_fail in COMPLIANCE_TEST_CASES:
+    seen = {}
+    duplicate_queries = []
+
+    for template, variant_args, should_fail, semantic_risk in _iter_case_definitions():
         for query in _expand_query(template, variant_args):
+            key = (query, should_fail)
+            if key in seen:
+                duplicate_queries.append((query, seen[key], semantic_risk))
+            else:
+                seen[key] = semantic_risk
             result.append((query, should_fail))
+
+    if duplicate_queries:
+        examples = "; ".join(
+            f"{query!r} in {first_risk!r} and {second_risk!r}"
+            for query, first_risk, second_risk in duplicate_queries[:5]
+        )
+        raise AssertionError(f"duplicate PromQL compliance cases: {examples}")
+
     return result
 
 
