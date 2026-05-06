@@ -30,6 +30,7 @@
 
 #include <Common/typeid_cast.h>
 
+#include <Core/Names.h>
 #include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -61,6 +62,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_IDENTIFIER;
     extern const int VIOLATED_CONSTRAINT;
 }
 
@@ -187,12 +189,28 @@ std::unordered_map<String, String> extractColumnMapping(
             "View {} has no SELECT expression list", view_id.getFullTableName());
 
     bool has_asterisk = false;
+    bool has_explicit_column = false;
 
-    // First pass: check for asterisk and validate all items
     for (const auto & expr : select.select()->children)
     {
-        if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
+        if (const auto * asterisk = expr->as<ASTAsterisk>())
         {
+            if (asterisk->transformers)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot INSERT into view {} because its SELECT list contains * with column transformers",
+                    view_id.getFullTableName());
+
+            has_asterisk = true;
+            continue;
+        }
+
+        if (const auto * qualified_asterisk = expr->as<ASTQualifiedAsterisk>())
+        {
+            if (qualified_asterisk->transformers)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot INSERT into view {} because its SELECT list contains * with column transformers",
+                    view_id.getFullTableName());
+
             has_asterisk = true;
             continue;
         }
@@ -205,7 +223,7 @@ std::unordered_map<String, String> extractColumnMapping(
                 "expressions that are not simple column references",
                 view_id.getFullTableName());
 
-        // Cannot mix asterisk with explicit column references
+        has_explicit_column = true;
         if (has_asterisk)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot INSERT into view {} because its SELECT list mixes * with explicit columns",
@@ -220,7 +238,11 @@ std::unordered_map<String, String> extractColumnMapping(
             mapping[view_col] = target_col;
     }
 
-    // If we have asterisk alone, return empty mapping
+    if (has_asterisk && has_explicit_column)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its SELECT list mixes * with explicit columns",
+            view_id.getFullTableName());
+
     if (has_asterisk)
         return {};
 
@@ -315,16 +337,39 @@ public:
         {
             auto where_clone = where_condition->clone();
 
-            /// Provide view columns (with target names) as source columns for expression analysis.
+            /// Provide both view names and target names for aliases used in the `WHERE` condition.
             NamesAndTypesList source_columns;
+            NameSet source_column_names;
             for (const auto & col : getHeader().getColumnsWithTypeAndName())
             {
+                source_columns.emplace_back(col.name, col.type);
+                source_column_names.insert(col.name);
+
                 auto it = column_mapping_.find(col.name);
                 String target_name = (it != column_mapping_.end()) ? it->second : col.name;
-                source_columns.emplace_back(target_name, col.type);
+                if (!source_column_names.contains(target_name))
+                {
+                    source_columns.emplace_back(target_name, col.type);
+                    source_column_names.insert(target_name);
+                }
             }
 
-            auto syntax = TreeRewriter(context).analyze(where_clone, source_columns);
+            TreeRewriterResultPtr syntax;
+            try
+            {
+                syntax = TreeRewriter(context).analyze(where_clone, source_columns);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::UNKNOWN_IDENTIFIER)
+                    throw;
+
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot INSERT into view {} because its WHERE condition references columns "
+                    "that are not projected by the view",
+                    view_id_.getFullTableName());
+            }
+
             where_actions_ = ExpressionAnalyzer(where_clone, syntax, context).getActions(false, true);
             where_column_name_ = where_clone->getColumnName();
         }
@@ -338,15 +383,20 @@ public:
     {
         auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
-        /// Rename view columns to target table columns.
-        for (const auto & [view_name, target_name] : column_mapping_)
-            if (block.has(view_name))
-                block.getByName(view_name).name = target_name;
-
-        /// Check WHERE constraint: every inserted row must satisfy the view's WHERE condition.
+        /// Check the `WHERE` constraint: every inserted row must satisfy the view's condition.
         if (where_actions_)
         {
             Block check_block(block);
+            for (const auto & [view_name, target_name] : column_mapping_)
+            {
+                if (check_block.has(view_name) && !check_block.has(target_name))
+                {
+                    auto target_column = check_block.getByName(view_name);
+                    target_column.name = target_name;
+                    check_block.insert(std::move(target_column));
+                }
+            }
+
             where_actions_->execute(check_block);
 
             const auto & result_column = check_block.getByName(where_column_name_).column;
@@ -361,7 +411,12 @@ public:
             }
         }
 
-        /// Push to the inner INSERT pipeline which handles defaults, constraints, and writing.
+        /// Rename view columns to target table columns.
+        for (const auto & [view_name, target_name] : column_mapping_)
+            if (block.has(view_name))
+                block.getByName(view_name).name = target_name;
+
+        /// Push to the inner `INSERT` pipeline which handles defaults, constraints, and writing.
         executor_->push(std::move(block));
     }
 

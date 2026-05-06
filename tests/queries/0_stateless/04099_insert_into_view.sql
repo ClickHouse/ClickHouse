@@ -28,7 +28,7 @@ DROP VIEW IF EXISTS v_positive;
 CREATE VIEW v_positive AS SELECT a, b FROM t WHERE a > 0;
 INSERT INTO v_positive VALUES (5, 'ok');     -- succeeds
 SELECT * FROM t ORDER BY a;
-INSERT INTO v_positive VALUES (-1, 'fail');  -- fails with VIOLATED_CONSTRAINT
+INSERT INTO v_positive VALUES (-1, 'fail');  -- { serverError VIOLATED_CONSTRAINT }
 
 -- ORDER BY is allowed and ignored for inserts
 DROP VIEW IF EXISTS v_ordered;
@@ -38,7 +38,8 @@ SELECT * FROM t ORDER BY a;
 
 -- PREWHERE is rejected
 DROP VIEW IF EXISTS v_prewhere;
-CREATE VIEW v_prewhere AS SELECT a, b FROM t PREWHERE a > 0; -- { serverError NOT_IMPLEMENTED }
+CREATE VIEW v_prewhere AS SELECT a, b FROM t PREWHERE a > 0;
+INSERT INTO v_prewhere VALUES (6, 'prewhere'); -- { serverError NOT_IMPLEMENTED }
 
 -- WHERE with lambda is allowed
 DROP VIEW IF EXISTS v_lambda;
@@ -55,5 +56,10 @@ INSERT INTO v_mixed VALUES (8, 'mixed', 0.1, 9); -- { serverError NOT_IMPLEMENTE
 DROP VIEW IF EXISTS v_mixed2;
 CREATE VIEW v_mixed2 AS SELECT *, b AS extra FROM t;
 INSERT INTO v_mixed2 VALUES (9, 'mixed2', 0.2, 'extra'); -- { serverError NOT_IMPLEMENTED }
+
+-- Asterisk with column transformers is rejected
+DROP VIEW IF EXISTS v_replace;
+CREATE VIEW v_replace AS SELECT * REPLACE(a + 1 AS a) FROM t;
+INSERT INTO v_replace VALUES (10, 'replace', 1.0); -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE t;

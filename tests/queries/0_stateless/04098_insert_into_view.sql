@@ -12,6 +12,7 @@ DROP VIEW IF EXISTS v_limit;
 DROP VIEW IF EXISTS v_group_by;
 DROP VIEW IF EXISTS v_distinct;
 DROP VIEW IF EXISTS v_join;
+DROP VIEW IF EXISTS v_replace;
 
 CREATE TABLE t_target (a Int32, b String, c Float64 DEFAULT 0.5) ENGINE = MergeTree ORDER BY a;
 
@@ -74,7 +75,11 @@ TRUNCATE TABLE t_target;
 INSERT INTO v_simple VALUES (10, 'first', 1.1), (20, 'second', 2.2), (30, 'third', 3.3);
 SELECT 'multi:', a, b, c FROM t_target ORDER BY a;
 
--- 12. INSERT ... SELECT into view
+-- 12. INSERT into a view with transformed asterisk (should fail)
+CREATE VIEW v_replace AS SELECT * REPLACE(a + 1 AS a) FROM t_target;
+INSERT INTO v_replace VALUES (40, 'replace', 4.4); -- { serverError NOT_IMPLEMENTED }
+
+-- 13. INSERT ... SELECT into view
 INSERT INTO v_subset SELECT number, toString(number) FROM numbers(3);
 SELECT 'insert_select:', a, b FROM t_target WHERE c = 0.5 ORDER BY a;
 
@@ -84,6 +89,7 @@ DROP VIEW v_distinct;
 DROP VIEW v_group_by;
 DROP VIEW v_limit;
 DROP VIEW v_order_by;
+DROP VIEW v_replace;
 DROP VIEW v_where_star;
 DROP VIEW v_where_unprojected;
 DROP VIEW v_where;
