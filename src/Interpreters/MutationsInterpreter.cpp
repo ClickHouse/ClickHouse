@@ -78,6 +78,7 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_statistics;
+    extern const SettingsBool validate_mutation_query;
 }
 
 namespace MergeTreeSetting
@@ -2224,13 +2225,19 @@ void MutationsInterpreter::validate()
         }
     }
 
-    // Make sure the mutation query is valid
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
-    else
+    /// Make sure the mutation query is valid.
+    /// Gated by `validate_mutation_query` so that mutations referencing not-yet-existing
+    /// objects (e.g. an IN subquery over a table created later) can still be scheduled.
+    /// The non-determinism check above always runs regardless of this setting.
+    if (context->getSettingsRef()[Setting::validate_mutation_query])
     {
-        ASTPtr select_query = prepareQueryAffectedAST(commands, source.getStorage(), context);
-        InterpreterSelectQuery(select_query, context, source.getStorage(), metadata_snapshot);
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
+        else
+        {
+            ASTPtr select_query = prepareQueryAffectedAST(commands, source.getStorage(), context);
+            InterpreterSelectQuery(select_query, context, source.getStorage(), metadata_snapshot);
+        }
     }
 
     QueryPlan plan;
