@@ -1,7 +1,9 @@
+import json
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import tsv_close_to
+from helpers.test_tools import TSV, tsv_close_to
 from .prometheus_test_utils import *
 
 
@@ -276,6 +278,38 @@ def do_query_test(
     assert (
         http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
         == clickhouse_http_api_result_is_same_as_prometheus
+    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+
+
+def normalized_result_order(response):
+    data = json.loads(response)
+    if data.get("resultType") in ("vector", "matrix"):
+        data["result"] = sorted(
+            data["result"],
+            key=lambda item: json.dumps(item.get("metric", {}), sort_keys=True),
+        )
+    return data
+
+
+def tsv_close_to_ignoring_row_order(result, expected, eps=0):
+    return tsv_close_to(
+        sorted(TSV(result).lines), sorted(TSV(expected).lines), eps=eps
+    )
+
+
+def do_query_test_ignoring_result_order(query, timestamp, result, chresult, eps=0):
+    assert normalized_result_order(
+        execute_query_in_prometheus(query, timestamp)
+    ) == normalized_result_order(result)
+
+    actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
+    assert tsv_close_to_ignoring_row_order(
+        actual_chresult, chresult, eps=eps
+    ), f"actual result: {actual_chresult}, expected: {chresult}"
+
+    actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
+    assert normalized_result_order(actual_result_from_http_api) == normalized_result_order(
+        result
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
 
 
@@ -1588,6 +1622,155 @@ def test_alignment_with_subquery_step():
 
     do_query_test(
         "vector(1)[19:20]", 9999, '{"resultType": "matrix", "result": []}', ""
+    )
+
+
+def test_set_binary_operators():
+    do_query_test(
+        'foo{shape="circle"} and bar{shape="circle"}',
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}]}',
+        [["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16]],
+    )
+
+    do_query_test(
+        'foo{shape="triangle"} and bar{shape="triangle"}',
+        150,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    do_query_test(
+        'foo{shape="triangle"} and on(shape) bar{shape="triangle"}',
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
+        [["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80]],
+    )
+
+    do_query_test(
+        'foo{shape="triangle"} and ignoring(size) bar{shape="triangle"}',
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
+        [["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80]],
+    )
+
+    do_query_test(
+        'foo{shape="circle"} and on(__name__, shape, size) bar{shape="circle"}',
+        150,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    do_query_test(
+        'foo{shape="circle"} and on(size) bar',
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}]}',
+        [["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16]],
+    )
+
+    do_query_test(
+        'foo{shape="circle"} unless bar{shape="circle"}',
+        150,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    do_query_test(
+        'foo{shape="triangle"} unless bar{shape="triangle"}',
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
+        [["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80]],
+    )
+
+    do_query_test(
+        'foo{shape="circle"} or bar{shape="circle"}',
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}]}',
+        [["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16]],
+    )
+
+    do_query_test_ignoring_result_order(
+        'foo{shape="circle"} or on(__name__, shape, size) bar{shape="circle"}',
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}, {"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "value": [150, "1000"]}]}',
+        [
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16],
+            ["[('__name__','bar'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 1000],
+        ],
+    )
+
+    do_query_test_ignoring_result_order(
+        'foo{shape="triangle"} or bar{shape="triangle"}',
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "value": [150, "30"]}]}',
+        [
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80],
+            ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "1970-01-01 00:02:30.000", 30],
+        ],
+    )
+
+    do_query_test(
+        "foo and no_such_metric",
+        150,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    do_query_test_expect_error(
+        "foo and 1",
+        150,
+        "set operator \\\"and\\\" not allowed in binary scalar expression",
+        "Set binary operator 'and' expects two arguments of type INSTANT_VECTOR",
+    )
+
+    do_query_test_expect_error(
+        "foo and on(shape) group_left bar",
+        150,
+        "no grouping allowed for \\\"and\\\" operation",
+        "Set binary operator 'and' does not support group modifiers",
+    )
+
+    do_query_test_expect_error(
+        "foo and bool bar",
+        150,
+        "bool modifier can only be used on comparison operators",
+        "while parsing PromQL query: foo and bool bar",
+    )
+
+    do_query_test(
+        "(last_over_time(foo[10]) and last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"]]}]}',
+        [
+            [
+                "[('__name__','foo'),('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]",
+            ],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',4)]"],
+        ],
+    )
+
+    do_query_test(
+        "(last_over_time(foo[10]) unless last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
+        [
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:02:10.000',40)]"],
+            [
+                "[('__name__','foo'),('shape','triangle'),('size','m')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',80)]",
+            ],
+        ],
+    )
+
+    do_query_test_ignoring_result_order(
+        '(last_over_time(foo{shape="circle"}[10]) or last_over_time(bar{shape="circle"}[10]))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[120, "16"]]}]}',
+        [
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]"],
+            ["[('__name__','bar'),('shape','circle'),('size','l')]", "[('1970-01-01 00:02:00.000',16)]"],
+        ],
     )
 
 
