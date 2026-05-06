@@ -297,7 +297,8 @@ FORK_LOCAL_REGRESSION_CASES = [
         ('label_replace(demo_num_cpus, "job", "value-$1", "src", "(.*")', [], True),
         ('label_replace(demo_num_cpus, "~valid_utf8", "", "src", "(.*)")', [], False),
         ('label_replace(demo_num_cpus, "", "", "src", "(.*)")', [], True),
-        ('label_replace(demo_num_cpus, "instance", "", "", "")', [], False),
+        # Replacing instance with an empty value collapses multiple input series to the same label set.
+        ('label_replace(demo_num_cpus, "instance", "", "", "")', [], True),
 
         # label_join
         ('label_join(demo_num_cpus, "new_label", "-", "instance", "job")', [], False),
