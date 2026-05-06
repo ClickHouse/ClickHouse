@@ -8,22 +8,22 @@
 
 SET enable_analyzer = 1;
 
--- Variant(UInt32, Date): neither alternative is compatible with base64Encode(String).
+-- Variant(UInt32, Date): neither alternative is compatible with base58Encode(String).
 
 -- WHERE context: must throw, not silently return 0 rows.
 SELECT count() FROM (
     SELECT CAST(number::UInt32 AS Variant(UInt32, Date)) AS v FROM numbers(5)
 )
-WHERE base64Encode(v) != ''; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+WHERE base58Encode(v) != ''; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
 -- SELECT context: must throw the same error (was already consistent).
-SELECT base64Encode(v) FROM (
+SELECT base58Encode(v) FROM (
     SELECT CAST(number::UInt32 AS Variant(UInt32, Date)) AS v FROM numbers(3)
 ); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
 -- Sanity check: a Variant where one alternative IS compatible works correctly.
--- base64Encode accepts String, so Variant(UInt32, String) rows with String value
+-- base58Encode accepts String, so Variant(UInt32, String) rows with String value
 -- produce a result; UInt32 rows produce NULL.
-SELECT base64Encode(v) IS NOT NULL FROM (
+SELECT base58Encode(v) IS NOT NULL FROM (
     SELECT CAST('hello'::String AS Variant(UInt32, String)) AS v
 );
