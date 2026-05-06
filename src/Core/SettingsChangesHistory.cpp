@@ -1169,7 +1169,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
-            {"add_minmax_index_for_numeric_columns", false, true, "Automatic min-max skipping indices on numeric columns improve query performance for range filters with negligible storage and ingestion overhead. Set to false to revert to the previous behavior."},
+            {"add_minmax_index_for_numeric_columns", false, true, "Automatic min-max skipping indices on numeric columns can speed up range-filter queries; the trade-off is some additional storage and ingestion overhead, which may be noticeable on very wide or high-ingest tables. Set to false to revert to the previous behavior."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
