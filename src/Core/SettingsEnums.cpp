@@ -475,4 +475,6 @@ IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
      {"symbolized", JemallocProfileFormat::Symbolized},
      {"collapsed", JemallocProfileFormat::Collapsed}})
 
+IMPLEMENT_SETTING_AUTO_ENUM(MergeTreePartExportFileAlreadyExistsPolicy, ErrorCodes::BAD_ARGUMENTS);
+
 }

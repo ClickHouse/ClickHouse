@@ -9,6 +9,7 @@ columns
 columns
 creator_info
 deduplication_hashes
+exports
 failed_parts
 flags
 host
@@ -51,6 +52,7 @@ columns
 columns
 creator_info
 deduplication_hashes
+exports
 failed_parts
 flags
 host

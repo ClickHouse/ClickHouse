@@ -13,6 +13,7 @@
 #include <Core/ServerUUID.h>
 #include <Core/ServerSettings.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <Core/ServerSettings.h>
 
 
 namespace CurrentMetrics
@@ -32,6 +33,11 @@ namespace ServerSetting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsSeconds zookeeper_session_expiration_check_period;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool allow_experimental_export_merge_tree_partition;
 }
 
 namespace ErrorCodes
@@ -179,12 +185,21 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.mutations_updating_task->activateAndSchedule();
     storage.mutations_finalizing_task->activateAndSchedule();
     storage.merge_selecting_task->activateAndSchedule();
+
+    if (storage.getContext()->getServerSettings()[ServerSetting::allow_experimental_export_merge_tree_partition])
+    {
+        storage.export_merge_tree_partition_updating_task->activateAndSchedule();
+        storage.export_merge_tree_partition_select_task->activateAndSchedule();
+        storage.export_merge_tree_partition_status_handling_task->activateAndSchedule();
+    }
+
     storage.cleanup_thread.start();
     storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
 
     if (storage.getContext()->getServerSettings()[ServerSetting::insert_deduplication_version].value != InsertDeduplicationVersions::OLD_SEPARATE_HASHES)
         storage.deduplication_hashes_cache.start();
+
 
     LOG_DEBUG(log, "Table started successfully");
     return true;

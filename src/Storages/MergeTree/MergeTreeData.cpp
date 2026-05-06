@@ -3,7 +3,9 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Storages/MergeTree/ExportList.h>
 #include <Access/AccessControl.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Utils.h>
@@ -25,6 +27,12 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
+#include <Storages/MergeTree/ExportPartTask.h>
+#include <Storages/MergeTree/ExportPartitionUtils.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -41,6 +49,7 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
+#include <Formats/FormatFactory.h>
 #include <IO/Operators.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
@@ -80,12 +89,15 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
@@ -96,6 +108,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
+#include <Functions/generateSnowflakeID.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -114,6 +127,7 @@
 #include <thread>
 #include <unordered_set>
 #include <filesystem>
+#include <utility>
 
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
@@ -160,6 +174,10 @@ namespace ProfileEvents
     extern const Event RestorePartsSkippedFiles;
     extern const Event RestorePartsSkippedBytes;
     extern const Event LoadedStatisticsMicroseconds;
+    extern const Event PartsExports;
+    extern const Event PartsExportTotalMilliseconds;
+    extern const Event PartsExportFailures;
+    extern const Event PartsExportDuplicated;
 }
 
 namespace CurrentMetrics
@@ -211,6 +229,14 @@ namespace Setting
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool allow_experimental_export_merge_tree_part;
+    extern const SettingsUInt64 min_bytes_to_use_direct_io;
+    extern const SettingsMergeTreePartExportFileAlreadyExistsPolicy export_merge_tree_part_file_already_exists_policy;
+    extern const SettingsBool output_format_parallel_formatting;
+    extern const SettingsBool output_format_parquet_parallel_encoding;
+    extern const SettingsBool export_merge_tree_part_throw_on_pending_mutations;
+    extern const SettingsBool export_merge_tree_part_throw_on_pending_patch_parts;
+    extern const SettingsBool allow_insert_into_iceberg;
 }
 
 namespace MergeTreeSetting
@@ -341,6 +367,9 @@ namespace ErrorCodes
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
+    extern const int UNKNOWN_TABLE;
+    extern const int FILE_ALREADY_EXISTS;
+    extern const int PENDING_MUTATIONS_NOT_ALLOWED;
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -4822,8 +4851,6 @@ void MergeTreeData::changeSettings(
 {
     if (new_settings)
     {
-        bool has_storage_policy_changed = false;
-
         const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
         StoragePolicyPtr new_storage_policy = nullptr;
 
@@ -4862,8 +4889,6 @@ void MergeTreeData::changeSettings(
                         disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
                     }
                     /// FIXME how would that be done while reloading configuration???
-
-                    has_storage_policy_changed = true;
                 }
             }
         }
@@ -4896,9 +4921,6 @@ void MergeTreeData::changeSettings(
         }
 
         setInMemoryMetadata(new_metadata);
-
-        if (has_storage_policy_changed)
-            startBackgroundMovesIfNeeded();
 
         if (has_refresh_statistics_interval_changed)
         {
@@ -6583,6 +6605,250 @@ void MergeTreeData::movePartitionToTable(const PartitionCommand & command, Conte
     movePartitionToTable(dest_storage, command.partition, query_context);
 }
 
+void MergeTreeData::exportPartToTable(const PartitionCommand & command, ContextPtr query_context)
+{
+    if (!query_context->getSettingsRef()[Setting::allow_experimental_export_merge_tree_part])
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Exporting merge tree part is experimental. Set `allow_experimental_export_merge_tree_part` to enable it");
+    }
+
+    const auto part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (!command.to_table_function)
+    {
+        const auto database_name = query_context->resolveDatabase(command.to_database);
+        exportPartToTable(part_name, StorageID{database_name, command.to_table}, generateSnowflakeIDString(), query_context);
+
+        return;
+    }
+
+    auto table_function_ast = command.to_table_function;
+    auto table_function_ptr = TableFunctionFactory::instance().get(command.to_table_function, query_context);
+
+    if (table_function_ptr->needStructureHint())
+    {
+        const auto source_metadata_ptr = getInMemoryMetadataPtr();
+
+        /// Grab only the readable columns from the source metadata to skip ephemeral columns
+        const auto readable_columns = ColumnsDescription(source_metadata_ptr->getColumns().getReadable());
+        table_function_ptr->setStructureHint(readable_columns);
+    }
+
+    if (command.partition_by_expr)
+    {
+        table_function_ptr->setPartitionBy(command.partition_by_expr);
+    }
+
+    auto dest_storage = table_function_ptr->execute(
+        table_function_ast,
+        query_context,
+        table_function_ptr->getName(),
+        /* cached_columns */ {},
+        /* use_global_context */ false,
+        /* is_insert_query */ true);
+
+    if (!dest_storage)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to reconstruct destination storage");
+    }
+
+    exportPartToTable(part_name, dest_storage, generateSnowflakeIDString(), query_context);
+}
+
+void MergeTreeData::exportPartToTable(
+    const std::string & part_name,
+    const StorageID & destination_storage_id,
+    const String & transaction_id,
+    ContextPtr query_context,
+    const std::optional<String> & iceberg_metadata_json,
+    bool allow_outdated_parts,
+    std::function<void(MergeTreePartExportManifest::CompletionCallbackResult)> completion_callback)
+{
+    auto dest_storage = DatabaseCatalog::instance().getTable(destination_storage_id, query_context);
+
+    if (destination_storage_id == this->getStorageID())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Exporting to the same table is not allowed");
+    }
+
+    exportPartToTable(part_name, dest_storage, transaction_id, query_context, iceberg_metadata_json, allow_outdated_parts, completion_callback);
+}
+
+void MergeTreeData::exportPartToTable(
+    const std::string & part_name,
+    const StoragePtr & dest_storage,
+    const String & transaction_id,
+    ContextPtr query_context,
+    const std::optional<String> & iceberg_metadata_json_,
+    bool allow_outdated_parts,
+    std::function<void(MergeTreePartExportManifest::CompletionCallbackResult)> completion_callback)
+{
+    if (!dest_storage->supportsImport(query_context))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Destination storage {} does not support MergeTree parts or uses unsupported partitioning", dest_storage->getName());
+
+    auto query_to_string = [] (const ASTPtr & ast)
+    {
+        return ast ? ast->formatWithSecretsOneLine() : "";
+    };
+
+    auto source_metadata_ptr = getInMemoryMetadataPtr();
+    auto destination_metadata_ptr = dest_storage->getInMemoryMetadataPtr();
+
+    std::string iceberg_metadata_json;
+
+    if (dest_storage->isDataLake())
+    {
+        if (!query_context->getSettingsRef()[Setting::allow_insert_into_iceberg])
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Iceberg writes are experimental. "
+                "To allow its usage, enable the setting allow_experimental_insert_into_iceberg");
+        }
+
+#if USE_AVRO
+        if (iceberg_metadata_json_)
+        {
+            iceberg_metadata_json = *iceberg_metadata_json_;
+        }
+        else
+        {
+            auto * object_storage = dynamic_cast<StorageObjectStorage *>(dest_storage.get());
+
+            /// in theory this should never happen, but just in case
+            if (!object_storage)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Destination storage {} is not a StorageObjectStorage", dest_storage->getName());
+            }
+
+            auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(query_context));
+            if (!iceberg_metadata)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Destination storage {} is a data lake but not an iceberg table", dest_storage->getName());
+            }
+    
+            const auto metadata_object = iceberg_metadata->getMetadataJSON(query_context);
+                
+            std::ostringstream oss;
+            metadata_object->stringify(oss);
+            iceberg_metadata_json = oss.str();
+
+            ExportPartitionUtils::verifyIcebergPartitionCompatibility(metadata_object, source_metadata_ptr->getPartitionKeyAST());
+        }
+#else
+        (void)iceberg_metadata_json_;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data lake export requires Avro support");
+#endif
+    }
+
+    const auto & source_columns = source_metadata_ptr->getColumns();
+
+    const auto & destination_columns = destination_metadata_ptr->getColumns();
+
+    /// compare all source readable columns with all destination insertable columns
+    /// this allows us to skip ephemeral columns
+    if (source_columns.getReadable().sizeOfDifference(destination_columns.getInsertable()))
+        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
+
+    /// for data lakes this check is performed differently. It is a bit more complex as we need to convert the iceberg partition spec
+    /// to the MergeTree partition spec and compare the two.
+    if (!dest_storage->isDataLake())
+    {
+        if (query_to_string(source_metadata_ptr->getPartitionKeyAST()) != query_to_string(destination_metadata_ptr->getPartitionKeyAST()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
+    }
+
+    auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+
+    if (!part)
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No such data part '{}' to export in table '{}'",
+                        part_name, getStorageID().getFullTableName());
+
+    if (part->getState() == MergeTreeDataPartState::Outdated && !allow_outdated_parts)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Part {} is in the outdated state and cannot be exported",
+            part_name);
+
+    const bool throw_on_pending_mutations = query_context->getSettingsRef()[Setting::export_merge_tree_part_throw_on_pending_mutations];
+    const bool throw_on_pending_patch_parts = query_context->getSettingsRef()[Setting::export_merge_tree_part_throw_on_pending_patch_parts];
+
+    MergeTreeData::IMutationsSnapshot::Params mutations_snapshot_params
+    {
+        .metadata_version = source_metadata_ptr->getMetadataVersion(),
+        .min_part_metadata_version = part->getMetadataVersion(),
+        .need_data_mutations = throw_on_pending_mutations,
+        .need_alter_mutations = throw_on_pending_mutations || throw_on_pending_patch_parts,
+        .need_patch_parts = throw_on_pending_patch_parts,
+    };
+
+    const auto mutations_snapshot = getMutationsSnapshot(mutations_snapshot_params);
+
+    const auto alter_conversions = getAlterConversionsForPart(part, mutations_snapshot, query_context);
+
+    /// re-check `throw_on_pending_mutations` because `pending_mutations` might have been filled due to `throw_on_pending_patch_parts`
+    if (throw_on_pending_mutations && alter_conversions->hasMutations())
+    {
+        throw Exception(ErrorCodes::PENDING_MUTATIONS_NOT_ALLOWED,
+            "Part {} can not be exported because there are pending mutations. Either wait for the mutations to be applied or set `export_merge_tree_part_throw_on_pending_mutations` to false",
+            part_name);
+    }
+
+    if (alter_conversions->hasPatches())
+    {
+        throw Exception(ErrorCodes::PENDING_MUTATIONS_NOT_ALLOWED,
+            "Part {} can not be exported because there are pending patch parts. Either wait for the patch parts to be applied or set `export_merge_tree_part_throw_on_pending_patch_parts` to false",
+            part_name);
+    }
+
+    {
+        MergeTreePartExportManifest manifest(
+            dest_storage,
+            part,
+            transaction_id,
+            query_context->getCurrentQueryId(),
+            query_context->getSettingsRef()[Setting::export_merge_tree_part_file_already_exists_policy].value,
+            query_context->getSettingsCopy(),
+            source_metadata_ptr,
+            iceberg_metadata_json,
+            completion_callback);
+
+        std::lock_guard lock(export_manifests_mutex);
+
+        manifest.task = std::make_shared<ExportPartTask>(*this, manifest);
+
+        if (!export_manifests.emplace(manifest).second)
+        {
+            throw Exception(ErrorCodes::ABORTED, "Data part '{}' is already being exported",
+                part_name);
+        }
+
+        if (!background_moves_assignee.scheduleMoveTask(manifest.task))
+        {
+            export_manifests.erase(manifest);
+            throw Exception(ErrorCodes::ABORTED, "Failed to schedule export part task for data part '{}'. Background executor is busy",
+                            part_name);
+        }
+    }
+}
+
+void MergeTreeData::killExportPart(const String & transaction_id)
+{
+    std::lock_guard lock(export_manifests_mutex);
+
+    std::erase_if(export_manifests, [&](const auto & manifest)
+    {
+        if (manifest.transaction_id == transaction_id)
+        {
+            if (manifest.task)
+                manifest.task->cancel();
+
+            return true;
+        }
+        return false;
+    });
+}
+
 void MergeTreeData::movePartitionToShard(const ASTPtr & /*partition*/, bool /*move_part*/, const String & /*to*/, ContextPtr /*query_context*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MOVE PARTITION TO SHARD is not supported by storage {}", getName());
@@ -6634,6 +6900,17 @@ Pipe MergeTreeData::alterPartition(
                 }
             }
             break;
+            case PartitionCommand::EXPORT_PART:
+            {
+                exportPartToTable(command, query_context);
+                break;
+            }
+
+            case PartitionCommand::EXPORT_PARTITION:
+            {
+                exportPartitionToTable(command, query_context);
+                break;
+            }
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
                 dropDetached(command.partition, command.part, query_context);
@@ -9201,6 +9478,33 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     return std::make_pair(dst_data_part, std::move(temporary_directory_lock));
 }
 
+std::vector<MergeTreeExportStatus> MergeTreeData::getExportsStatus() const
+{
+    std::lock_guard lock(export_manifests_mutex);
+    std::vector<MergeTreeExportStatus> result;
+
+    auto source_database = getStorageID().database_name;
+    auto source_table = getStorageID().table_name;
+
+    for (const auto & manifest : export_manifests)
+    {
+        MergeTreeExportStatus status;
+
+        status.source_database = source_database;
+        status.source_table = source_table;
+        const auto destination_storage_id = manifest.destination_storage_ptr->getStorageID();
+        status.destination_database = destination_storage_id.database_name;
+        status.destination_table = destination_storage_id.table_name;
+        status.create_time = manifest.create_time;
+        status.part_name = manifest.data_part->name;
+
+        result.emplace_back(std::move(status));
+    }
+
+    return result;
+}
+
+
 bool MergeTreeData::canUseAdaptiveGranularity() const
 {
     const auto settings = getSettings();
@@ -9516,7 +9820,8 @@ void MergeTreeData::writePartLog(
     const DataPartsVector & source_parts,
     const MergeListEntry * merge_entry,
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
-    const Strings & mutation_ids)
+    const Strings & mutation_ids,
+    const ExportsListEntry * exports_entry)
 try
 {
     auto table_id = getStorageID();
@@ -9583,6 +9888,16 @@ try
 
         part_log_elem.rows = (*merge_entry)->rows_written;
         part_log_elem.peak_memory_usage = (*merge_entry)->getMemoryTracker().getPeak();
+    }
+    else if (exports_entry)
+    {
+        part_log_elem.rows_read = (*exports_entry)->rows_read;
+        part_log_elem.bytes_read_uncompressed = (*exports_entry)->bytes_read_uncompressed;
+        part_log_elem.peak_memory_usage = (*exports_entry)->getPeakMemoryUsage();
+        part_log_elem.query_id = (*exports_entry)->query_id;
+
+        /// no need to lock because at this point no one is writing to the destination file paths
+        part_log_elem.remote_file_paths = (*exports_entry)->destination_file_paths;
     }
 
     if (profile_counters)
@@ -9859,6 +10174,10 @@ bool MergeTreeData::canUsePolymorphicParts() const
     return canUsePolymorphicParts(*getSettings(), unused);
 }
 
+void MergeTreeData::startBackgroundMoves()
+{
+    background_moves_assignee.start();
+}
 
 void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
     const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const

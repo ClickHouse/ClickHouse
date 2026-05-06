@@ -3,9 +3,11 @@
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 
+#include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Core/Range.h>
+#include <DataTypes/IDataType.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -198,6 +200,37 @@ public:
     {
         throwNotImplemented("write");
     }
+
+    virtual bool supportsImport(ContextPtr) const
+    {
+        return false;
+    }
+
+    virtual SinkToStoragePtr import(
+        std::shared_ptr<DataLake::ICatalog> /* catalog */,
+        const std::function<void(const std::string &)> & /* new_file_path_callback */,
+        SharedHeader /* sample_block */,
+        const std::string & /* iceberg_metadata_json_string */,
+        const std::optional<FormatSettings> & /* format_settings_ */,
+        ContextPtr /* context */)
+    {
+        throwNotImplemented("import");
+    }
+
+    virtual void commitExportPartitionTransaction(
+        std::shared_ptr<DataLake::ICatalog> /* catalog */,
+        const StorageID & /* table_id */,
+        const String & /* transaction_id */,
+        Int64 /* original_schema_id */,
+        Int64 /* partition_spec_id */,
+        const std::vector<Field> & /* partition_values */,
+        SharedHeader /* sample_block */,
+        const std::vector<String> & /* data_file_paths */,
+        StorageObjectStorageConfigurationPtr /* configuration */,
+        ContextPtr /* context */)
+        {
+            throwNotImplemented("commitExportPartitionTransaction");
+        }
 
     virtual bool optimize(
         const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)

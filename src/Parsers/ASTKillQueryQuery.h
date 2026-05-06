@@ -13,6 +13,7 @@ public:
     {
         Query,      /// KILL QUERY
         Mutation,   /// KILL MUTATION
+        ExportPartition, /// KILL EXPORT_PARTITION
         PartMoveToShard, /// KILL PART_MOVE_TO_SHARD
         Transaction,     /// KILL TRANSACTION
     };

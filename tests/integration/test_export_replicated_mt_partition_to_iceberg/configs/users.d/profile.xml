@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <s3_retry_attempts>3</s3_retry_attempts>
+            <allow_experimental_insert_into_iceberg>1</allow_experimental_insert_into_iceberg>
+        </default>
+    </profiles>
+</clickhouse>
+

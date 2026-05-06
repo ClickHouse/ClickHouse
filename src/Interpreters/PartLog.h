@@ -31,6 +31,7 @@ struct PartLogElement
         MOVE_PART = 6,
         MERGE_PARTS_START = 7,
         MUTATE_PART_START = 8,
+        EXPORT_PART = 9,
     };
 
     /// Copy of MergeAlgorithm since values are written to disk.
@@ -74,6 +75,7 @@ struct PartLogElement
     String disk_name;
     String path_on_disk;
     Strings deduplication_block_ids;
+    std::vector<String> remote_file_paths;
 
     MergeTreeDataPartFormat part_format;
 

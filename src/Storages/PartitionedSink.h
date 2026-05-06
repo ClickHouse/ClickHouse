@@ -17,10 +17,17 @@ namespace DB
 class PartitionedSink : public SinkToStorage
 {
 public:
+    struct SinkCreator
+    {
+        virtual ~SinkCreator() = default;
+        virtual SinkPtr createSinkForPartition(const String & partition_id) = 0;
+    };
+
     static constexpr auto PARTITION_ID_WILDCARD = "{_partition_id}";
 
     PartitionedSink(
         std::shared_ptr<IPartitionStrategy> partition_strategy_,
+        std::shared_ptr<SinkCreator> sink_creator_,
         ContextPtr context_,
         SharedHeader source_header_);
 
@@ -34,16 +41,15 @@ public:
 
     void onFinish() override;
 
-    virtual SinkPtr createSinkForPartition(const String & partition_id) = 0;
-
     static void validatePartitionKey(const String & str, bool allow_slash);
 
     static String replaceWildcards(const String & haystack, const String & partition_id);
 
+
 protected:
     std::shared_ptr<IPartitionStrategy> partition_strategy;
-
 private:
+    std::shared_ptr<SinkCreator> sink_creator;
     ContextPtr context;
     SharedHeader source_header;
 

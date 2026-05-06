@@ -27,10 +27,9 @@ struct IPartitionStrategy
 
     virtual ~IPartitionStrategy() = default;
 
-    virtual ColumnPtr computePartitionKey(const Chunk & chunk) = 0;
+    virtual ColumnPtr computePartitionKey(const Chunk & chunk) const = 0;
 
-    virtual std::string getPathForRead(const std::string & prefix) = 0;
-    virtual std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) = 0;
+    virtual ColumnPtr computePartitionKey(Block & block) const = 0;
 
     virtual ColumnRawPtrs getFormatChunkColumns(const Chunk & chunk)
     {
@@ -49,7 +48,7 @@ struct IPartitionStrategy
     NamesAndTypesList getPartitionColumns() const;
     const KeyDescription & getPartitionKeyDescription() const;
 
-    PartitionExpressionActionsAndColumnName getPartitionExpressionActions(ASTPtr & expression_ast);
+    PartitionExpressionActionsAndColumnName getPartitionExpressionActions(ASTPtr & expression_ast) const;
 
 protected:
     const KeyDescription partition_key_description;
@@ -92,9 +91,9 @@ struct WildcardPartitionStrategy : IPartitionStrategy
 {
     WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_);
 
-    ColumnPtr computePartitionKey(const Chunk & chunk) override;
-    std::string getPathForRead(const std::string & prefix) override;
-    std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) override;
+    ColumnPtr computePartitionKey(const Chunk & chunk) const override;
+
+    ColumnPtr computePartitionKey(Block & block) const override;
 };
 
 /*
@@ -111,9 +110,9 @@ struct HiveStylePartitionStrategy : IPartitionStrategy
         const std::string & file_format_,
         bool partition_columns_in_data_file_);
 
-    ColumnPtr computePartitionKey(const Chunk & chunk) override;
-    std::string getPathForRead(const std::string & prefix) override;
-    std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) override;
+    ColumnPtr computePartitionKey(const Chunk & chunk) const override;
+
+    ColumnPtr computePartitionKey(Block & block) const override;
 
     ColumnRawPtrs getFormatChunkColumns(const Chunk & chunk) override;
     Block getFormatHeader() override;
