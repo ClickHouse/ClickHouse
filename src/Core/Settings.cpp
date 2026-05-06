@@ -5698,6 +5698,22 @@ Allows to enable/disable decoding/encoding path in uri in [URL](../../engines/ta
 
 Disabled by default.
 )", 0) \
+    DECLARE(String, url_base, "", R"(
+The base URL used to resolve relative URLs in the [url](../../sql-reference/table-functions/url.md) table function and the [URL](../../engines/table-engines/special/url.md) table engine.
+
+When set, relative URLs are resolved as follows:
+- Path-relative URL (e.g. `data.csv`): merged with the base URL path per RFC 3986. Everything after the last `/` in the base path is replaced by the relative URL, so a trailing slash matters: `https://example.com/dir/` + `data.csv` = `https://example.com/dir/data.csv`, but `https://example.com/dir` + `data.csv` = `https://example.com/data.csv`. If the base has no path (e.g. `https://example.com`), a `/` is inserted: `https://example.com/data.csv`. Dot segments (`./` and `../`) in the relative URL are normalized: `https://example.com/dir/` + `../a.csv` = `https://example.com/a.csv`.
+- Host-relative URL (e.g. `/test/data.csv`): resolved against the base URL's scheme and host.
+- Scheme-relative URL (e.g. `//other.com/test/data.csv`): resolved using the base URL's scheme.
+- Query-only reference (e.g. `?x=1`): appended to the base URL path (replacing any existing query/fragment).
+- Fragment-only reference (e.g. `#frag`): appended to the base URL, preserving any query string (replacing any existing fragment).
+- Empty reference: returns the base URL without fragment.
+
+For example, if `url_base` is `https://example.com/def/`, then:
+- `data.csv` resolves to `https://example.com/def/data.csv`
+- `/test/data.csv` resolves to `https://example.com/test/data.csv`
+- `//other.com/test/data.csv` resolves to `https://other.com/test/data.csv`
+)", 0) \
     DECLARE(UInt64, database_replicated_initial_query_timeout_sec, 300, R"(
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
 
