@@ -4,8 +4,8 @@ name = "_ch_rust_h3o"
 version = "0.1.0"
 
 [dependencies]
-h3o = { version = "0.6", features = ["geo"] }
-geo = "0.28"
+h3o = { version = "0.9.5", features = ["geo"] }
+geo = "0.33"
 
 [lib]
 crate-type = ["staticlib"]

@@ -1002,8 +1002,6 @@ pub unsafe extern "C" fn getIcosahedronFaces(h3: H3Index, out: *mut i32) -> H3Er
 // Polygon operations
 // ---------------------------------------------------------------------------
 
-use h3o::geom::ToCells;
-
 /// H3Error maxPolygonToCellsSize(const GeoPolygon *geoPolygon, int res,
 ///                               uint32_t flags, int64_t *out)
 ///
@@ -1024,9 +1022,11 @@ pub unsafe extern "C" fn maxPolygonToCellsSize(
     };
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let geo_poly = c_polygon_to_geo(&*geo_polygon);
-        let polygon = h3o::geom::Polygon::from_radians(geo_poly).ok()?;
-        let config = h3o::geom::PolyfillConfig::new(resolution);
-        Some(polygon.max_cells_count(config))
+        let mut tiler = h3o::geom::TilerBuilder::new(resolution)
+            .disable_radians_conversion()
+            .build();
+        tiler.add(geo_poly).ok()?;
+        Some(tiler.coverage_size_hint())
     }));
     let Ok(Some(count)) = result else {
         return E_FAILED;
@@ -1053,13 +1053,14 @@ pub unsafe extern "C" fn polygonToCells(
     };
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let geo_poly = c_polygon_to_geo(&*geo_polygon);
-        let polygon = h3o::geom::Polygon::from_radians(geo_poly.clone()).ok()?;
-        // Compute the maximum buffer size to defensively bound writes.
-        let max_config = h3o::geom::PolyfillConfig::new(resolution);
-        let max_polygon = h3o::geom::Polygon::from_radians(geo_poly).ok()?;
-        let max_size = max_polygon.max_cells_count(max_config);
-        let config = h3o::geom::PolyfillConfig::new(resolution);
-        for (i, cell) in polygon.to_cells(config).enumerate() {
+        let mut tiler = h3o::geom::TilerBuilder::new(resolution)
+            .disable_radians_conversion()
+            .build();
+        tiler.add(geo_poly).ok()?;
+        // Defensive upper bound on writes — the caller has allocated at least
+        // this many slots via `maxPolygonToCellsSize`.
+        let max_size = tiler.coverage_size_hint();
+        for (i, cell) in tiler.into_coverage().enumerate() {
             if i >= max_size {
                 break;
             }
