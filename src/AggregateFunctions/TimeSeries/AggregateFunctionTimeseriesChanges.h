@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstring>
 
@@ -128,7 +129,9 @@ private:
             }
             else
             {
-                bool is_change = (sample.second != prev_sample_value);
+                /// PromQL changes() treats consecutive NaN samples as the same value.
+                bool is_change = (sample.second != prev_sample_value)
+                    && !(std::isnan(sample.second) && std::isnan(prev_sample_value));
                 if (is_change)
                     count++;
             }
