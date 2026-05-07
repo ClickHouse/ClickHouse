@@ -1294,12 +1294,13 @@ Settings:
 - `port` – Port for `endpoint`.
 
   :::warning Deprecated
-  The dedicated `<port>` listener is deprecated. The Prometheus protocol handlers
-  (`remote_write`, `remote_read`, and the Query API) are now auto-mounted on the main
-  `<http_port>` under the `<http_path_prefix>` (default `/prometheus`); see below. The
-  dedicated listener still works for backward compatibility with existing fixed-table `<handlers>`
-  configurations and will continue to do so, but ClickHouse logs a startup warning the
-  first time it binds the dedicated port.
+  The dedicated `<port>` listener is deprecated for **new** setups in favor of auto-mounting
+  the same protocols on `<http_port>`, but it is **not removed**: keeping Prometheus on its
+  own port remains valid for isolation or fixed-table `<prometheus><handlers>` configurations.
+  The Prometheus protocol handlers (`remote_write`, `remote_read`, and the Query API) can be
+  auto-mounted on the main `<http_port>` under `<http_path_prefix>` (default `/prometheus`);
+  see below. The dedicated listener still works for backward compatibility and logs a
+  one-shot startup warning the first time it binds.
   :::
 
 - `http_path_prefix` – URL prefix used to auto-mount the Prometheus `remote_write`,
@@ -1310,6 +1311,8 @@ Settings:
   `http://<host>:<http_port>/prometheus/write?database=mydb&table=metrics`), or set the
   `X-ClickHouse-Database` and `X-ClickHouse-Table` HTTP headers when the corresponding
   query parameters are absent.
+  These routes are registered only for URLs under `<http_path_prefix>`; they do not replace
+  or intercept ordinary ClickHouse HTTP usage such as `/?query=SELECT 1` on `<http_port>`.
   Set to an empty string to opt out of the auto-mount entirely. The target table must
   be a `TimeSeries` engine table; URL-routed access is on by default for every
   `TimeSeries` table and can be disabled per table by setting
@@ -1319,9 +1322,12 @@ Settings:
 
   The dynamic-routing protocol handlers can also be mounted manually under
   [`<http_handlers>`](#http_handlers) using the explicit handler types
-  `prometheus_remote_write`, `prometheus_remote_read`, and `prometheus_query_api`. The legacy
-  `<type>prometheus</type>` handler in `<http_handlers>` is unchanged and still serves the
-  expose-metrics protocol on its configured URL.
+  `prometheus_remote_write`, `prometheus_remote_read`, and `prometheus_query_api`. Match the
+  `<url>` rule to the protocol path **after** `<http_path_prefix>` only—for example
+  `regex:^/foo/write$` together with `<http_path_prefix>/foo</http_path_prefix>` for
+  remote write—because `database` and `table` are query parameters or headers, not path
+  segments. The legacy `<type>prometheus</type>` handler in `<http_handlers>` is unchanged and
+  still serves the expose-metrics protocol on its configured URL.
 
   When `keeper_metrics_only` is `true`, the dedicated Prometheus listener is limited to
   keeper-related scrape metrics, and the HTTP-port auto-mount described above is **not**
