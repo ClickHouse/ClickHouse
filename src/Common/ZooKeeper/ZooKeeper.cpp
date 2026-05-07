@@ -116,29 +116,21 @@ UInt64 getSecondsUntilReconnect(const ZooKeeperArgs & args)
 template <typename T>
 bool ZooKeeper::waitForFutureWithProgress(std::future<T> & future) const
 {
-    using clock = std::chrono::steady_clock;
-    const auto timeout = std::chrono::milliseconds(args.operation_timeout_ms);
-    const auto poll_interval = std::chrono::seconds(1);
+    const auto timeout = std::chrono::milliseconds(args.session_timeout_ms);
 
-    auto deadline = clock::now() + timeout;
-    Int64 last_seen_ts = impl->getLastResponseTimestamp();
-
-    while (clock::now() < deadline)
+    for (;;)
     {
-        if (future.wait_for(poll_interval) == std::future_status::ready)
+        Int64 last_seen_ts = impl->getLastReceivedAt();
+
+        if (future.wait_for(timeout) == std::future_status::ready)
             return true;
 
-        /// Check if the server made progress since our last check.
-        Int64 current_ts = impl->getLastResponseTimestamp();
-        if (current_ts > last_seen_ts)
-        {
-            /// Server is alive — extend the deadline.
-            last_seen_ts = current_ts;
-            deadline = clock::now() + timeout;
-        }
-    }
+        /// Did the server make progress (any received data) during our wait?
+        if (impl->getLastReceivedAt() > last_seen_ts)
+            continue;  /// yes — wait another full session_timeout
 
-    return false;
+        return false;  /// no progress for full session_timeout — give up
+    }
 }
 
 
@@ -401,7 +393,7 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
-            Coordination::OpNum::List, path, args.operation_timeout_ms));
+            Coordination::OpNum::List, path, args.session_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -485,7 +477,7 @@ Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::s
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
-            Coordination::OpNum::Create, path, args.operation_timeout_ms));
+            Coordination::OpNum::Create, path, args.session_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -649,7 +641,7 @@ Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t vers
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
-            Coordination::OpNum::Remove, path, args.operation_timeout_ms));
+            Coordination::OpNum::Remove, path, args.session_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -699,7 +691,7 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
-            Coordination::OpNum::Exists, path, args.operation_timeout_ms));
+            Coordination::OpNum::Exists, path, args.session_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -761,7 +753,7 @@ Coordination::Error ZooKeeper::getImpl(
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
-            Coordination::OpNum::Get, path, args.operation_timeout_ms));
+            Coordination::OpNum::Get, path, args.session_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -849,7 +841,7 @@ Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::stri
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
-            Coordination::OpNum::Set, path, args.operation_timeout_ms));
+            Coordination::OpNum::Set, path, args.session_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -938,7 +930,7 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
             "Operation timeout on {} of {} requests (no progress for {} ms). First ({}): {}",
             Coordination::OpNum::Multi,
             requests.size(),
-            args.operation_timeout_ms,
+            args.session_timeout_ms,
             demangle(typeid(request).name()),
             request.getPath()));
         return {Coordination::Error::ZOPERATIONTIMEOUT, ""};
@@ -1021,7 +1013,7 @@ Coordination::Error ZooKeeper::syncImpl(const std::string & path, std::string & 
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
-            Coordination::OpNum::Sync, path, args.operation_timeout_ms));
+            Coordination::OpNum::Sync, path, args.session_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -1212,7 +1204,7 @@ Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
-            Coordination::OpNum::RemoveRecursive, path, args.operation_timeout_ms));
+            Coordination::OpNum::RemoveRecursive, path, args.session_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -1266,7 +1258,7 @@ Coordination::Error ZooKeeper::tryListRecursive(const std::string & path, String
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
-            Coordination::OpNum::ListRecursive, path, args.operation_timeout_ms));
+            Coordination::OpNum::ListRecursive, path, args.session_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -1300,7 +1292,7 @@ Coordination::Error ZooKeeper::getACLImpl(const std::string & path, Coordination
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
-            Coordination::OpNum::GetACL, path, args.operation_timeout_ms));
+            Coordination::OpNum::GetACL, path, args.session_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -1458,7 +1450,7 @@ Coordination::ReconfigResponse ZooKeeper::reconfig(
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} (no progress for {} ms)",
-            Coordination::OpNum::Reconfig, args.operation_timeout_ms));
+            Coordination::OpNum::Reconfig, args.session_timeout_ms));
         throw KeeperException(Coordination::Error::ZOPERATIONTIMEOUT);
     }
 

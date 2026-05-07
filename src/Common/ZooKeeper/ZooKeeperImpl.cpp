@@ -474,7 +474,7 @@ ZooKeeper::ZooKeeper(
 
     /// Initialize progress tracker to "now" so the receive loop does not
     /// immediately trigger a timeout before any responses arrive.
-    last_response_ts.store(
+    last_received_at.store(
         std::chrono::duration_cast<std::chrono::microseconds>(
             clock::now().time_since_epoch()).count(),
         std::memory_order_relaxed);
@@ -914,13 +914,6 @@ void ZooKeeper::receiveThread()
     {
         const auto session_timeout_us = std::chrono::microseconds(
             static_cast<Int64>(args.session_timeout_ms) * 1000);
-        const auto operation_timeout_us = std::chrono::microseconds(
-            static_cast<Int64>(args.operation_timeout_ms) * 1000);
-
-        auto idle_deadline = clock::now() + session_timeout_us;
-
-        /// Rate-limit the stale-operation warning to at most once per operation_timeout period.
-        auto next_stale_warning_at = clock::time_point::min();
 
         while (!requests_queue.isFinished())
         {
@@ -929,67 +922,34 @@ void ZooKeeper::receiveThread()
 
             auto now = clock::now();
 
-            /// Check session-level idle timeout (no data at all for session_timeout_ms).
-            if (now >= idle_deadline)
+            Int64 last_ts = last_received_at.load(std::memory_order_relaxed);
+            auto last_received_time = clock::time_point(std::chrono::microseconds(last_ts));
+            auto deadline = last_received_time + session_timeout_us;
+
+            if (now >= deadline)
                 throw Exception(Error::ZOPERATIONTIMEOUT,
                     "Nothing is received in session timeout of {} ms",
                     args.session_timeout_ms);
 
-            /// If operations are in flight and the earliest has been waiting longer
-            /// than operation_timeout_ms, log a warning (rate-limited). The sync
-            /// wrappers handle the actual timeout decision via waitForFutureWithProgress.
-            ///
-            /// NOTE: callers that use bare future.get() (without waitForFutureWithProgress)
-            /// rely on session_timeout_ms for failure detection, not operation_timeout_ms.
-            /// Known callers: createNewZooKeeperNodesAttempt, removePartsFromZooKeeper,
-            /// markLostReplicas, ReplicatedMergeTreeMergePredicate. Converting them to
-            /// waitForFutureWithProgress is tracked as a follow-up.
-            Coordination::OpNum stale_op{};
-            String stale_path;
-            Int64 stale_waited_ms = 0;
+            /// Safe: the `now >= deadline` guard above guarantees `deadline - now > 0`.
+            auto wait_us = static_cast<UInt64>(
+                std::chrono::duration_cast<std::chrono::microseconds>(deadline - now).count());
 
-            if (now >= next_stale_warning_at)
-            {
-                std::lock_guard lock(operations_mutex);
-                if (!operations.empty())
-                {
-                    const auto & earliest = operations.begin()->second;
-                    auto waited = std::chrono::duration_cast<std::chrono::microseconds>(
-                        now - earliest.request->create_ts);
-                    if (waited >= operation_timeout_us)
-                    {
-                        stale_op = earliest.request->getOpNum();
-                        stale_path = earliest.request->getPath();
-                        stale_waited_ms = std::chrono::duration_cast<std::chrono::milliseconds>(waited).count();
-                        next_stale_warning_at = now + operation_timeout_us;
-                    }
-                }
-            }
-
-            if (stale_waited_ms > 0)
-                LOG_WARNING(log,
-                    "Earliest in-flight request {} for path '{}' has been waiting {} ms "
-                    "(operation_timeout_ms={}). Sync wrappers will handle the timeout decision.",
-                    stale_op, stale_path, stale_waited_ms, args.operation_timeout_ms);
-
-            /// Bound poll to operation_timeout_ms, but also clamp to the remaining
-            /// time until idle_deadline so the session-timeout check fires promptly.
-            auto remaining_to_idle = std::chrono::duration_cast<std::chrono::microseconds>(
-                idle_deadline - now);
-            auto poll_timeout = std::min(operation_timeout_us, remaining_to_idle);
-            /// Ensure non-negative (clock skew / scheduling jitter).
-            auto poll_us = static_cast<UInt64>(std::max(poll_timeout, std::chrono::microseconds(0)).count());
-
-            if (in->poll(poll_us))
+            if (in->poll(wait_us))
             {
                 if (finalization_started.test())
                     break;
 
                 receiveEvent();
 
-                /// Any received data (heartbeat or operation response) proves the
-                /// server is alive. Reset the idle deadline.
-                idle_deadline = clock::now() + session_timeout_us;
+                /// Any received data — operation response, heartbeat, or watch event —
+                /// proves the server is alive. Update the progress timestamp.
+                /// Unlike the old per-type updates inside receiveEvent(), this single
+                /// update point covers all data types including watch events.
+                last_received_at.store(
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        clock::now().time_since_epoch()).count(),
+                    std::memory_order_relaxed);
             }
 
             ProfileEvents::increment(ProfileEvents::ZooKeeperBytesReceived,
@@ -1044,12 +1004,6 @@ void ZooKeeper::receiveEvent()
             throw Exception(Error::ZRUNTIMEINCONSISTENCY, "Received error in heartbeat response: {}", err);
 
         response = std::make_shared<ZooKeeperHeartbeatResponse>();
-
-        /// Heartbeat confirms the server is alive and the network path works.
-        last_response_ts.store(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                clock::now().time_since_epoch()).count(),
-            std::memory_order_relaxed);
     }
     else if (xid == WATCH_XID)
     {
@@ -1130,13 +1084,6 @@ void ZooKeeper::receiveEvent()
         }
 
         auto receive_ts = clock::now();
-
-        /// Normal operation response: proves the server is processing our
-        /// request pipeline. Update progress tracker.
-        last_response_ts.store(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                receive_ts.time_since_epoch()).count(),
-            std::memory_order_relaxed);
 
         chassert(request_info.request->create_ts != std::chrono::steady_clock::time_point{});
         elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(receive_ts - request_info.request->create_ts).count();

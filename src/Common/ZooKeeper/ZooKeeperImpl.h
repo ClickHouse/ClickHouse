@@ -239,9 +239,9 @@ public:
 
     int64_t getLastZXIDSeen() const override { return last_zxid_seen.load(std::memory_order_relaxed); }
 
-    Int64 getLastResponseTimestamp() const override
+    Int64 getLastReceivedAt() const override
     {
-        return last_response_ts.load(std::memory_order_relaxed);
+        return last_received_at.load(std::memory_order_relaxed);
     }
 
 private:
@@ -386,11 +386,11 @@ private:
 
     std::atomic<int64_t> last_zxid_seen;
 
-    /// Timestamp of the last response received from the server, in microseconds
-    /// since steady_clock epoch. Updated by receiveThread on every operation
-    /// response and heartbeat reply (NOT watch notifications).
-    /// Read by sync wrappers via getLastResponseTimestamp() for progress-based timeout.
-    std::atomic<Int64> last_response_ts{0};
+    /// Timestamp of the last data received from the server (any kind: response,
+    /// heartbeat, or watch event), in microseconds since steady_clock epoch.
+    /// Updated by receiveThread after each receiveEvent call.
+    /// Read by sync wrappers via getLastReceivedAt() for progress-based timeout.
+    std::atomic<Int64> last_received_at{0};
 
     DB::KeeperFeatureFlags keeper_feature_flags;
 };

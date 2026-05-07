@@ -37,8 +37,10 @@ if [ -z "$CLIENT_ID_BEFORE" ]; then
 fi
 
 # Flood ZooKeeper with concurrent reads to generate pipeline backlog.
-# The timelimit (15s) exceeds operation_timeout_ms (10s in CI) to trigger
-# the old bug. 50 concurrent connections generate deep pipelining.
+# The timelimit (15s) generates deep pipelining that would trigger the old
+# bug (operation_timeout_ms=10s). With the unified session_timeout_ms (30s)
+# the test still validates that no false-positive session kill occurs.
+# 50 concurrent connections generate deep pipelining.
 BENCHMARK_EXIT_CODE=0
 BENCHMARK_OUTPUT=$(echo "SELECT count() FROM system.zookeeper WHERE path = '$ZK_PATH' FORMAT Null" | \
     ${CLICKHOUSE_BENCHMARK} --concurrency 50 --iterations 200000 --timelimit 15 2>&1) || BENCHMARK_EXIT_CODE=$?
