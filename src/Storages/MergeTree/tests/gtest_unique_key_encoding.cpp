@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -661,19 +662,23 @@ TEST(UniqueKeyEncoding, FixedStringBlockEncoderByteEquivalentEmbeddedNull)
     ASSERT_EQ(got.size(), 4u);
 
     /// Reference: row-encode a 1-col FixedString block — raw N bytes.
-    /// Take `(ptr, len)` so embedded-NUL callers don't trip clang's
-    /// truncated-string-literal warning — same shape as `insertData(literal, N)`
-    /// above, where clang recognizes the explicit length and stays quiet.
-    auto expected_for = [&](const char * data, size_t len) {
+    /// Construct each row as `std::array<char, N>` instead of a string literal:
+    /// embedded NULs in literals trip clang's truncated-string-literal warning
+    /// at every call site, even with an explicit length companion.
+    auto expected_for = [&](const std::array<char, N> & data) {
         auto rcol = ColumnFixedString::create(N);
-        rcol->insertData(data, len);
+        rcol->insertData(data.data(), N);
         Columns rcols{std::move(rcol)};
         return testEncodeRow(rcols, 0, 4096);
     };
-    EXPECT_EQ(got[0], expected_for("hello!!!", N));
-    EXPECT_EQ(got[1], expected_for("\x00\x00\x00\x00\x00\x00\x00\x00", N));
-    EXPECT_EQ(got[2], expected_for("ab\x00""cd\x00""ef", N));
-    EXPECT_EQ(got[3], expected_for("\x00""1234567", N));
+    constexpr std::array<char, N> row0 = {'h', 'e', 'l', 'l', 'o', '!', '!', '!'};
+    constexpr std::array<char, N> row1 = {0, 0, 0, 0, 0, 0, 0, 0};
+    constexpr std::array<char, N> row2 = {'a', 'b', 0, 'c', 'd', 0, 'e', 'f'};
+    constexpr std::array<char, N> row3 = {0, '1', '2', '3', '4', '5', '6', '7'};
+    EXPECT_EQ(got[0], expected_for(row0));
+    EXPECT_EQ(got[1], expected_for(row1));
+    EXPECT_EQ(got[2], expected_for(row2));
+    EXPECT_EQ(got[3], expected_for(row3));
 }
 
 TEST(UniqueKeyEncoding, FixedStringEncoderByteEquivalent)
