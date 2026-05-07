@@ -1140,9 +1140,6 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
             return false;
 
         case Protocol::Client::TablesStatusRequest:
-            if (is_interserver_mode && !is_interserver_authenticated)
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                    "TablesStatusRequest requires interserver authentication");
             processTablesStatusRequest();
             return false;
 
@@ -1550,6 +1547,10 @@ void TCPHandler::processTablesStatusRequest()
     ContextPtr context_to_resolve_table_names;
     if (is_interserver_mode)
     {
+        if (!is_interserver_authenticated)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "TablesStatusRequest requires interserver authentication");
+
         /// In the interserver mode session context does not exist, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
         /// but query is not received yet. So we have to do this trick.

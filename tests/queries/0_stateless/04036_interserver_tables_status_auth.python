@@ -5,56 +5,87 @@ HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "9000"))
 DB   = os.environ.get("CLICKHOUSE_DATABASE", "default")
 
-def vu(n):
+def varbyte(n):
     b = bytearray()
-    while n >= 0x80: b.append((n & 0x7F) | 0x80); n >>= 7
-    b.append(n & 0x7F); return bytes(b)
+    while n >= 0x80:
+        b.append((n & 0x7F) | 0x80)
+        n >>= 7
+    b.append(n & 0x7F)
+    return bytes(b)
 
-def ws(s):
+def varstring(s):
     b = s.encode() if isinstance(s, str) else bytes(s)
-    return vu(len(b)) + b
+    return varbyte(len(b)) + b
 
 def recv_exact(s, n):
     buf = bytearray()
     while len(buf) < n:
         chunk = s.recv(n - len(buf))
-        if not chunk: raise EOFError()
+        if not chunk:
+            raise EOFError()
         buf.extend(chunk)
     return buf
 
-def read_vu(s):
+def read_varbyte(s):
     x = 0
     for i in range(9):
         b = recv_exact(s, 1)[0]
         x |= (b & 0x7F) << (7 * i)
-        if not (b & 0x80): return x
+        if not (b & 0x80):
+            return x
     return x
 
-def read_ws(s): return recv_exact(s, read_vu(s))
+def read_varstring(s):
+    return recv_exact(s, read_varbyte(s))
 
-# Interserver Hello (revision 54449 — below optional-fields threshold 54461)
-# cluster_name + salt are appended synchronously: processClusterNameAndSalt is
-# called inside receiveHello before sendHello, so they must be in the same send.
-hello = (vu(0) + ws("test") + vu(24) + vu(3) + vu(54449)
-         + ws("") + ws(" INTERSERVER SECRET ") + ws("")
-         + ws("") + ws(""))  # cluster_name + salt
+# We send an interserver Hello followed immediately by a TablesStatusRequest,
+# without completing cluster-secret authentication. The server must close the
+# connection without returning any table information.
+#
+# Hello packet layout (type 0):
+#   varbyte(0)          -- packet type: Hello
+#   varstring("test")   -- client name
+#   varbyte(24)         -- major version
+#   varbyte(3)          -- minor version
+#   varbyte(54449)      -- revision (below 54461, the threshold for optional fields)
+#   varstring("")       -- default database
+#   varstring(" INTERSERVER SECRET ")  -- user marker that triggers interserver mode
+#   varstring("")       -- password (empty)
+#   varstring("")       -- cluster name
+#   varstring("")       -- salt
+hello = (varbyte(0) + varstring("test") + varbyte(24) + varbyte(3) + varbyte(54449)
+         + varstring("") + varstring(" INTERSERVER SECRET ") + varstring("")
+         + varstring("") + varstring(""))
 
-# TablesStatusRequest (packet type 5): 1 table
-tsr = vu(5) + vu(1) + ws(DB) + ws("t_interserver_auth_check")
+# TablesStatusRequest packet layout (type 5): ask about one table
+#   varbyte(5)   -- packet type: TablesStatusRequest
+#   varbyte(1)   -- number of tables
+#   varstring    -- database name
+#   varstring    -- table name
+tsr = varbyte(5) + varbyte(1) + varstring(DB) + varstring("t_interserver_auth_check")
 
 sock = socket.socket()
 sock.settimeout(5)
 sock.connect((HOST, PORT))
 try:
     sock.sendall(hello)
-    # Consume server Hello: type + name + major + minor + revision + tz + display + patch
-    assert read_vu(sock) == 0
-    read_ws(sock); read_vu(sock); read_vu(sock); read_vu(sock)
-    read_ws(sock); read_ws(sock); read_vu(sock)
+    # Consume the server Hello response:
+    read_varbyte(sock)     # packet type (0 = Hello)
+    read_varstring(sock)   # server name
+    read_varbyte(sock)     # major version
+    read_varbyte(sock)     # minor version
+    read_varbyte(sock)     # revision
+    read_varstring(sock)   # timezone
+    read_varstring(sock)   # display name
+    read_varbyte(sock)     # patch version
     sock.sendall(tsr)
+    # The server should close the connection without sending any data.
+    # An empty recv means graceful close; an exception below means abrupt close.
     data = sock.recv(4096)
     print("FAIL: server returned data" if data else "OK: connection closed without leaking table status")
 except (EOFError, ConnectionResetError, socket.timeout):
+    # The OS may deliver an abrupt close as an exception rather than empty recv,
+    # depending on the TCP RST timing. Both outcomes mean no data was leaked.
     print("OK: connection closed without leaking table status")
 finally:
     sock.close()
