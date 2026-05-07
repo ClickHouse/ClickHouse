@@ -83,7 +83,7 @@ $CLICKHOUSE_LOCAL -q "
     FORMAT Arrow
 " > "$DATA_FILE"
 
-uv run --with pyarrow python3 -c "
+python3 -c "
 import pyarrow as pa
 import pyarrow.feather as feather
 
