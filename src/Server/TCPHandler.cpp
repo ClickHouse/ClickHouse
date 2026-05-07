@@ -25,6 +25,7 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ReplicatedTableDelay.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/TablesStatus.h>
@@ -1569,15 +1570,11 @@ void TCPHandler::processTablesStatusRequest()
         if (!table)
             continue;
 
-        TableStatus status;
-        if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
-        {
-            status.is_replicated = true;
-            status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
-            status.is_readonly = replicated_table->isTableReadOnly();
-        }
-        else
-            status.is_replicated = false;
+        auto delay_info = getReplicatedDelay(table, context_to_resolve_table_names);
+        TableStatus status {
+            .is_replicated = delay_info.is_replicated,
+            .absolute_delay = static_cast<UInt32>(delay_info.max_absolute_delay),
+            .is_readonly = delay_info.is_readonly };
 
         response.table_states_by_id.emplace(table_name, std::move(status));
     }
