@@ -1001,12 +1001,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             sort_desc_buf << idx;
             sort_desc_buf << (sort_typed.getSortDirection() == SortDirection::ASCENDING ? " ASC" : " DESC");
             if (sort_typed.getNullsSortDirection().has_value())
-                sort_desc_buf << " NULLS "
-                              << (*sort_typed.getNullsSortDirection() == SortDirection::ASCENDING ? "FIRST" : "LAST");
+            {
+                bool nulls_first = (*sort_typed.getNullsSortDirection() != sort_typed.getSortDirection());
+                sort_desc_buf << " NULLS " << (nulls_first ? "FIRST" : "LAST");
+            }
             ++idx;
         }
         const String sort_desc_str = sort_desc_buf.str();
-
         /// 3. Prepend sort description (and optional LIMIT) to function parameters.
         ///    The combinator factory expects:
         ///      params[0] = sort description string
