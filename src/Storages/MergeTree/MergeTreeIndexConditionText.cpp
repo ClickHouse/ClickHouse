@@ -1320,9 +1320,19 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return false;
         }
 
-        const String value = preprocessor->processConstant(String(ref));
-        std::vector<String> tokens;
-        tokenizer->stringToTokens(value.data(), value.size(), tokens);
+        /// Apply preprocessor + tokenizer + postprocessor so set elements use the same
+        /// tokens that were stored in the index. Skipping the postprocessor here would
+        /// produce false negatives for postprocessors like lower(), stem(), etc.
+        auto tokens = stringToTokens(Field(String(ref)), true, true);
+
+        /// An element that tokenizes to nothing cannot be proven present by the index.
+        /// Bail out to keep the original predicate.
+        if (tokens.empty())
+        {
+            out.text_search_queries.clear();
+            return false;
+        }
+
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
     }
 

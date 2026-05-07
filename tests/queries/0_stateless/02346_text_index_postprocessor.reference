@@ -133,3 +133,17 @@ failed	1
 full	1
 server	1
 started	1
+22. val IN (...) routes set elements through the postprocessor.
+1
+1
+1
+0
+0
+2
+2
+-- IN with stem postprocessor: stem-folded set tokens must match index.
+2
+-- IN element that the postprocessor maps to empty: index falls back to row-scan.
+1
+1
+2

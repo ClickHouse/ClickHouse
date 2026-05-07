@@ -574,3 +574,76 @@ ORDER BY token;
 
 SYSTEM START MERGES tab;
 DROP TABLE tab;
+
+SELECT '22. val IN (...) routes set elements through the postprocessor.';
+-- The bug: tryPrepareSetForTextSearch built set tokens with preprocessor + tokenizer
+-- only, ignoring the postprocessor. Index stored 'foo' (postprocessed); a query
+-- val IN ('FOO') would search for token 'FOO', miss, prune the granule, and drop
+-- the matching row 1. The fix routes set elements through the same stringToTokens
+-- helper (preprocessor + tokenizer + postprocessor) used elsewhere.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Rows are stored as-is; the postprocessor only affects index tokens.
+INSERT INTO tab VALUES (1, 'FOO'), (2, 'bar'), (3, 'Baz');
+
+-- IN exact-matches the stored value. The granule must NOT be pruned just because
+-- the set element differs from the indexed (postprocessed) token form.
+SELECT count() FROM tab WHERE val IN ('FOO');         -- 1: row 1 exact match
+SELECT count() FROM tab WHERE val IN ('bar');         -- 1: row 2 exact match
+SELECT count() FROM tab WHERE val IN ('Baz');         -- 1: row 3 exact match
+
+-- Set element with different case from stored row: row-level IN is false, but the
+-- index lookup must still go through the postprocessor and not produce a stale 0.
+SELECT count() FROM tab WHERE val IN ('foo');         -- 0: no row equals 'foo' literally
+SELECT count() FROM tab WHERE val IN ('xyz');         -- 0
+
+-- Multi-element IN, with elements of different cases. All matching rows must survive.
+SELECT count() FROM tab WHERE val IN ('FOO', 'bar');  -- 2: rows 1 and 2
+
+-- NOT IN exercises the same set-token build path.
+SELECT count() FROM tab WHERE val NOT IN ('FOO');     -- 2: rows 2 and 3
+
+DROP TABLE tab;
+
+SELECT '-- IN with stem postprocessor: stem-folded set tokens must match index.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(val), 'en'))
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'running'), (2, 'studies'), (3, 'collection');
+
+-- Row-level IN exact-matches the stored words. Without the fix, the index would
+-- search for 'running'/'collection' (not stored) and prune both granules.
+SELECT count() FROM tab WHERE val IN ('running', 'collection');   -- 2
+
+DROP TABLE tab;
+
+SELECT '-- IN element that the postprocessor maps to empty: index falls back to row-scan.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'the', '', val))
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'the'), (2, 'cat');
+
+-- 'the' is dropped by the postprocessor (not stored in the index). The set-token
+-- builder bails out (empty tokens) so the index is not used; row-scan finds the row.
+SELECT count() FROM tab WHERE val IN ('the');           -- 1
+SELECT count() FROM tab WHERE val IN ('cat');           -- 1
+SELECT count() FROM tab WHERE val IN ('the', 'cat');    -- 2
+
+DROP TABLE tab;
