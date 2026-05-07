@@ -7593,8 +7593,8 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 ### Disabling the Setting
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0) \
-    DECLARE(UInt64, min_rows_per_stream_for_gradual_resize, 0, R"(
-Minimum number of rows per aggregation stream before an additional parallel aggregation stream is activated. When non-zero, the query pipeline starts `GROUP BY` aggregation with a single stream and gradually increases parallelism as data volume grows. This reduces the overhead of merging partial aggregation states when the result set is small. When set to 0 (default), all aggregation streams are used from the start. A reasonable value to try is 1000.
+    DECLARE(UInt64, min_rows_per_stream_for_gradual_resize, 1000, R"(
+Minimum number of rows per aggregation stream before an additional parallel aggregation stream is activated. When non-zero, the query pipeline starts `GROUP BY` aggregation with a single stream and gradually increases parallelism as data volume grows. This reduces the overhead of merging partial aggregation states when the result set is small. When set to 0, all aggregation streams are used from the start.
 
 Only affects `GROUP BY` queries with non-empty grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected: serializing the upstream scan/filter work would lose parallel-scan throughput while still producing one partial state per stream.
 )", 0) \
