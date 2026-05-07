@@ -70,6 +70,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsUInt64 max_bytes_before_external_join;
+    extern const SettingsDouble max_bytes_ratio_before_external_join;
 }
 
 namespace ServerSetting
@@ -1297,7 +1298,9 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     max_size_to_preallocate_for_joins = settings[Setting::max_size_to_preallocate_for_joins];
     max_threads = settings[Setting::max_threads];
 
-    max_bytes_before_external_join = settings[Setting::max_bytes_before_external_join];
+    max_bytes_before_external_join = JoinSettings::getMaxBytesBeforeExternalJoin(
+        settings[Setting::max_bytes_before_external_join],
+        settings[Setting::max_bytes_ratio_before_external_join]);
 
     initial_query_id = context.getInitialQueryId();
     lock_acquire_timeout = std::chrono::milliseconds(settings[Setting::lock_acquire_timeout].totalMilliseconds());
@@ -1324,7 +1327,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     max_size_to_preallocate_for_joins = join_settings.max_size_to_preallocate_for_joins;
     max_threads = max_threads_;
 
-    max_bytes_before_external_join = join_settings.max_bytes_before_external_join;
+    max_bytes_before_external_join = join_settings.getEffectiveMaxBytesBeforeExternalJoin();
 
     initial_query_id = std::move(initial_query_id_);
     lock_acquire_timeout = lock_acquire_timeout_;
