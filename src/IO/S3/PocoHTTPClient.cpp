@@ -133,6 +133,11 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         LOG_INFO(getLogger("PocoHTTPClientConfiguration"), "Jitter factor for the retry strategy must be within the [0, 1], clamping");
         retry_strategy.jitter_factor = std::clamp(retry_strategy.jitter_factor, 0.0, 1.0);
     }
+
+    /// NOTE: Without these settings AWS SDK enable transfer-encoding: chunked and content-encoding: aws-chunked
+    /// We don't use them and MinIO server doesn't support them.
+    checksumConfig.requestChecksumCalculation = Aws::Client::RequestChecksumCalculation::WHEN_REQUIRED;
+    checksumConfig.responseChecksumValidation = Aws::Client::ResponseChecksumValidation::WHEN_REQUIRED;
 }
 
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
