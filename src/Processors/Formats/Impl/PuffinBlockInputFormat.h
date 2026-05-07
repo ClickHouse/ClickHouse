@@ -35,7 +35,9 @@ public:
 private:
     Chunk read() override;
 
-    bool done = false;
+    PuffinFooter footer;
+    bool initialized = false;
+    size_t blob_index = 0;
 };
 
 class PuffinInputFormat : public IInputFormat
