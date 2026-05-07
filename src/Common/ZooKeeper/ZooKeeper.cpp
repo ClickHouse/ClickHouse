@@ -116,7 +116,13 @@ UInt64 getSecondsUntilReconnect(const ZooKeeperArgs & args)
 template <typename T>
 bool ZooKeeper::waitForFutureWithProgress(std::future<T> & future) const
 {
+    using clock = std::chrono::steady_clock;
     const auto timeout = std::chrono::milliseconds(args.session_timeout_ms);
+
+    /// Hard cap: bound how long any single request can wait, even when global progress
+    /// keeps flowing. Catches genuinely stuck requests on an otherwise healthy session
+    /// (e.g. a request lost by the server while heartbeats and other responses arrive).
+    const auto hard_deadline = clock::now() + 3 * timeout;
 
     for (;;)
     {
@@ -124,6 +130,14 @@ bool ZooKeeper::waitForFutureWithProgress(std::future<T> & future) const
 
         if (future.wait_for(timeout) == std::future_status::ready)
             return true;
+
+        if (clock::now() >= hard_deadline)
+        {
+            LOG_WARNING(log, "Request stuck for over {} ms despite global progress — giving up. "
+                "This usually indicates a lost request on an otherwise healthy session.",
+                3 * args.session_timeout_ms);
+            return false;
+        }
 
         /// Did the server make progress (any received data) during our wait?
         if (impl->getLastReceivedAt() > last_seen_ts)
