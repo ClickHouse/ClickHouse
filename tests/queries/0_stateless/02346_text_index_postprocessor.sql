@@ -606,7 +606,7 @@ CREATE TABLE tab
 (
     id UInt64,
     val Map(String, String),
-    INDEX idx(mapKeys(val)) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val))
+    INDEX idx(mapKeys(val)) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(mapKeys(val)))
 ) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (1, {'FOO': 'a'}), (2, {'BAR': 'a'});
@@ -625,7 +625,7 @@ CREATE TABLE tab
 (
     id UInt64,
     val Map(String, String),
-    INDEX idx(mapValues(val)) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val))
+    INDEX idx(mapValues(val)) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(mapValues(val)))
 ) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (1, {'a': 'FOO'}), (2, {'a': 'BAR'});

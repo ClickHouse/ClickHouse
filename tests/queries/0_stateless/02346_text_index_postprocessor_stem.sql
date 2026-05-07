@@ -291,18 +291,29 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY id SETTINGS allow_nullable_key = 1;
 
-INSERT INTO tab VALUES (1, 'running'), (2, NULL), (3, 'studies'), (4, NULL), (5, 'collection');
+-- Three rows share stem 'run', two share stem 'studi', interleaved with NULLs.
+INSERT INTO tab VALUES
+    (1, 'running'),     -- stem 'run'
+    (2, NULL),
+    (3, 'runs'),        -- stem 'run'
+    (4, 'run'),         -- stem 'run'
+    (5, NULL),
+    (6, 'studies'),     -- stem 'studi'
+    (7, 'studied');     -- stem 'studi'
 
--- NULL rows contribute nothing to the index and are never returned by hasToken.
-SELECT count() FROM tab WHERE hasToken(val, 'running');   -- row 1 = 1
-SELECT count() FROM tab WHERE hasToken(val, 'run');       -- same stem; 1
-SELECT count() FROM tab WHERE hasToken(val, 'study');     -- row 3 = 1
-SELECT count() FROM tab WHERE hasToken(val, 'collect');   -- row 5 = 1
-SELECT count() FROM tab WHERE hasToken(val, 'xyz');       -- 0
--- 'run' and 'studi' are in different rows; no row has both.
-SELECT count() FROM tab WHERE hasAllTokens(val, 'running studies');        -- 0
--- 'run' (row 1) or 'studi' (row 3) = 2.
-SELECT count() FROM tab WHERE hasAnyTokens(val, ['running', 'studies']);   -- 2
+-- Any morphological form of 'run' reaches all three run-stem rows; NULL rows are skipped.
+SELECT count() FROM tab WHERE hasToken(val, 'running');   -- 3
+SELECT count() FROM tab WHERE hasToken(val, 'runs');      -- 3
+SELECT count() FROM tab WHERE hasToken(val, 'run');       -- 3
+-- Either form of 'study' reaches both studi-stem rows.
+SELECT count() FROM tab WHERE hasToken(val, 'studying');  -- 2
+SELECT count() FROM tab WHERE hasToken(val, 'studied');   -- 2
+-- 'walker' has its own stem; no match.
+SELECT count() FROM tab WHERE hasToken(val, 'walker');    -- 0
+-- 'run' and 'studi' never share a row.
+SELECT count() FROM tab WHERE hasAllTokens(val, 'running studied');         -- 0
+-- 3 run-stem rows ∪ 2 studi-stem rows = 5.
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['running', 'studied']);    -- 5
 
 DROP TABLE tab;
 
@@ -348,14 +359,32 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO tab VALUES (1, 'running'), (2, 'studies'), (3, 'collection');
+-- Three rows share stem 'run', two share stem 'studi'.
+INSERT INTO tab VALUES
+    (1, 'running'),    -- stem 'run'
+    (2, 'runs'),       -- stem 'run'
+    (3, 'run'),        -- stem 'run'
+    (4, 'studies'),    -- stem 'studi'
+    (5, 'studied');    -- stem 'studi'
 
--- Row-level IN exact-matches the stored words; the index must not prune those rows.
-SELECT count() FROM tab WHERE val IN ('running', 'collection');   -- 2
+-- IN with all three morphological forms — each is exact-matched at row level; the index
+-- must keep the granule for each needle (stem 'run' is in the index).
+SELECT count() FROM tab WHERE val IN ('running', 'runs', 'run');   -- 3
+-- IN with both 'studi' forms.
+SELECT count() FROM tab WHERE val IN ('studies', 'studied');       -- 2
+-- Single literal — exact match returns 1 row.
+SELECT count() FROM tab WHERE val IN ('runs');                     -- 1
+-- Stem-equivalent needle without a literal match: granule kept (stem 'studi' present),
+-- but no row has the literal 'studying'.
+SELECT count() FROM tab WHERE val IN ('studying');                 -- 0
+-- Different stem — granule pruned.
+SELECT count() FROM tab WHERE val IN ('walking');                  -- 0
 
 DROP TABLE tab;
 
 SELECT '11. equals: needle is stemmed before index lookup so morphologically equivalent rows are not pruned.';
+-- equals is HINT mode: the index keeps the granule when the needle's stem is present,
+-- but row-level evaluation is literal exact match. Each form returns its own row.
 
 CREATE TABLE tab
 (
@@ -365,15 +394,27 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO tab VALUES (1, 'running'), (2, 'cat');
+-- Three rows share stem 'run'.
+INSERT INTO tab VALUES
+    (1, 'running'),    -- stem 'run'
+    (2, 'runs'),       -- stem 'run'
+    (3, 'run'),        -- stem 'run'
+    (4, 'cat');
 
+-- Each morphological form matches its literal row; the index keeps the granule via stem 'run'.
 SELECT count() FROM tab WHERE val = 'running';   -- 1
-SELECT count() FROM tab WHERE val = 'cat';       -- 1
+SELECT count() FROM tab WHERE val = 'runs';      -- 1
+SELECT count() FROM tab WHERE val = 'run';       -- 1
+-- The OR of all three literals covers every row in the stem-'run' family.
+SELECT count() FROM tab WHERE val = 'running' OR val = 'runs' OR val = 'run';   -- 3
+-- Different stem — granule pruned.
 SELECT count() FROM tab WHERE val = 'walking';   -- 0
 
 DROP TABLE tab;
 
 SELECT '12. hasPhrase: phrase tokens are stemmed before index lookup.';
+-- HINT mode: granule is kept if every phrase-token stem is present. Row-level hasPhrase
+-- still does literal phrase matching, so each variant matches only its own row.
 
 CREATE TABLE tab
 (
@@ -383,15 +424,27 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO tab VALUES (1, 'running fast'), (2, 'walking slowly');
+-- Three rows share the stem-'run' family for the first phrase token.
+INSERT INTO tab VALUES
+    (1, 'running fast'),   -- stems 'run', 'fast'
+    (2, 'runs fast'),      -- stems 'run', 'fast'
+    (3, 'run fast'),       -- stems 'run', 'fast'
+    (4, 'walking slowly'); -- stems 'walk', 'slowli'
 
+-- Each literal phrase matches its row; granule kept via stems 'run', 'fast'.
 SELECT count() FROM tab WHERE hasPhrase(val, 'running fast');     -- 1
-SELECT count() FROM tab WHERE hasPhrase(val, 'walking slowly');   -- 1
+SELECT count() FROM tab WHERE hasPhrase(val, 'runs fast');        -- 1
+SELECT count() FROM tab WHERE hasPhrase(val, 'run fast');         -- 1
+-- All three phrases together cover every stem-'run' row.
+SELECT count() FROM tab WHERE hasPhrase(val, 'running fast') OR hasPhrase(val, 'runs fast') OR hasPhrase(val, 'run fast');   -- 3
+-- Different stems — granule pruned.
 SELECT count() FROM tab WHERE hasPhrase(val, 'jumping high');     -- 0
 
 DROP TABLE tab;
 
 SELECT '13. startsWith / endsWith: prefix/suffix tokens are stemmed for the hint lookup.';
+-- HINT mode: granule is kept when the first/last stem of the prefix/suffix is present.
+-- Row-level startsWith / endsWith does literal prefix/suffix match.
 
 CREATE TABLE tab
 (
@@ -401,15 +454,30 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO tab VALUES (1, 'running fast'), (2, 'cat dog');
+-- Three rows start with stem-'run' family; two end with stem-'dog' family.
+INSERT INTO tab VALUES
+    (1, 'running fast'),   -- starts with 'run' family
+    (2, 'runs fast'),      -- starts with 'run' family
+    (3, 'run fast'),       -- starts with 'run' family
+    (4, 'cat dog'),        -- ends with 'dog' family
+    (5, 'fluffy dogs');    -- ends with 'dog' family
 
-SELECT count() FROM tab WHERE startsWith(val, 'running fast');   -- 1
-SELECT count() FROM tab WHERE endsWith(val, 'cat dog');          -- 1
-SELECT count() FROM tab WHERE startsWith(val, 'jumping high');   -- 0
+-- Each literal prefix matches its own row; granule kept via stem 'run' for each needle.
+SELECT count() FROM tab WHERE startsWith(val, 'running');   -- 1
+SELECT count() FROM tab WHERE startsWith(val, 'runs');      -- 1
+SELECT count() FROM tab WHERE startsWith(val, 'run');       -- 3 (literal 'run' is a prefix of 'running', 'runs', and 'run')
+-- Each literal suffix matches its row; granule kept via stem 'dog'.
+SELECT count() FROM tab WHERE endsWith(val, 'dog');         -- 1
+SELECT count() FROM tab WHERE endsWith(val, 'dogs');        -- 1
+-- Different stem — granule pruned.
+SELECT count() FROM tab WHERE startsWith(val, 'jumping');   -- 0
+SELECT count() FROM tab WHERE endsWith(val, 'birds');       -- 0
 
 DROP TABLE tab;
 
 SELECT '14. like: HINT-mode pattern tokens are stemmed.';
+-- HINT mode: granule is kept when the literal pattern's tokenized stems are present.
+-- Row-level LIKE remains a literal substring/wildcard match against the column.
 
 CREATE TABLE tab
 (
@@ -419,46 +487,77 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO tab VALUES (1, 'running fast'), (2, 'walking slowly');
+-- Three rows share stem 'run'.
+INSERT INTO tab VALUES
+    (1, 'running fast'),
+    (2, 'runs fast'),
+    (3, 'run fast'),
+    (4, 'walking slowly');
 
+-- Literal-substring LIKE matches per row; the index keeps the granule via stem 'run'.
 SELECT count() FROM tab WHERE val LIKE '%running%';   -- 1
+SELECT count() FROM tab WHERE val LIKE '%runs%';      -- 1
+-- 'run' is a literal substring of 'running', 'runs', and 'run', so all three match.
+SELECT count() FROM tab WHERE val LIKE '%run%';       -- 3
 SELECT count() FROM tab WHERE val LIKE '%walking%';   -- 1
+-- Different stem — granule pruned.
 SELECT count() FROM tab WHERE val LIKE '%jumping%';   -- 0
 
 DROP TABLE tab;
 
 SELECT '15. mapContainsKey / mapContainsKeyLike: needle is stemmed for index on mapKeys.';
+-- HINT mode: granule kept when the needle's stem is in the mapKeys index. Row-level
+-- mapContainsKey is exact key match; mapContainsKeyLike is literal LIKE on the keys.
 
 CREATE TABLE tab
 (
     id UInt64,
     val Map(String, String),
-    INDEX idx(mapKeys(val)) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(val), 'en'))
+    INDEX idx(mapKeys(val)) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(mapKeys(val)), 'en'))
 ) ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO tab VALUES (1, {'running': 'a'}), (2, {'walking': 'a'});
+-- Three rows share key-stem 'run', one has stem 'walk'.
+INSERT INTO tab VALUES
+    (1, {'running': 'a'}),
+    (2, {'runs':    'b'}),
+    (3, {'run':     'c'}),
+    (4, {'walking': 'd'});
 
+-- Each literal key matches its own row; granule kept via stem 'run' for every needle.
 SELECT count() FROM tab WHERE mapContainsKey(val, 'running');         -- 1
-SELECT count() FROM tab WHERE mapContainsKey(val, 'walking');         -- 1
+SELECT count() FROM tab WHERE mapContainsKey(val, 'runs');            -- 1
+SELECT count() FROM tab WHERE mapContainsKey(val, 'run');             -- 1
+-- Different stem — granule pruned.
 SELECT count() FROM tab WHERE mapContainsKey(val, 'jumping');         -- 0
+-- Literal LIKE pattern matches its row; the index keeps the granule via stem 'run'.
 SELECT count() FROM tab WHERE mapContainsKeyLike(val, '%running%');   -- 1
+-- 'run' is a literal substring of all three run-stem keys.
+SELECT count() FROM tab WHERE mapContainsKeyLike(val, '%run%');       -- 3
 
 DROP TABLE tab;
 
 SELECT '16. mapContainsValue / mapContainsValueLike: needle is stemmed for index on mapValues.';
+-- Same pattern as test 15, but the index is built on mapValues.
 
 CREATE TABLE tab
 (
     id UInt64,
     val Map(String, String),
-    INDEX idx(mapValues(val)) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(val), 'en'))
+    INDEX idx(mapValues(val)) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(mapValues(val)), 'en'))
 ) ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO tab VALUES (1, {'a': 'running'}), (2, {'a': 'walking'});
+-- Three rows share value-stem 'run', one has stem 'walk'.
+INSERT INTO tab VALUES
+    (1, {'a': 'running'}),
+    (2, {'b': 'runs'}),
+    (3, {'c': 'run'}),
+    (4, {'d': 'walking'});
 
 SELECT count() FROM tab WHERE mapContainsValue(val, 'running');         -- 1
-SELECT count() FROM tab WHERE mapContainsValue(val, 'walking');         -- 1
+SELECT count() FROM tab WHERE mapContainsValue(val, 'runs');            -- 1
+SELECT count() FROM tab WHERE mapContainsValue(val, 'run');             -- 1
 SELECT count() FROM tab WHERE mapContainsValue(val, 'jumping');         -- 0
 SELECT count() FROM tab WHERE mapContainsValueLike(val, '%running%');   -- 1
+SELECT count() FROM tab WHERE mapContainsValueLike(val, '%run%');       -- 3
 
 DROP TABLE tab;
