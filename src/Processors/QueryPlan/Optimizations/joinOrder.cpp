@@ -872,7 +872,7 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
         column_equivalences = query_graph.column_equivalences;
     }
 
-    JoinOrderOptimizer reorderer(std::move(query_graph), optimization_settings.query_plan_optimize_join_order_algorithm);
+    JoinOrderOptimizer reorderer(std::move(query_graph), join_order_algorithms);
     auto best_plan = reorderer.solve();
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
