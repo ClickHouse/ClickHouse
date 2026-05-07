@@ -239,7 +239,7 @@ void ThreadStatus::flushUntrackedMemory()
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    Int64 current_untracked_memory = current_thread->untracked_memory;
+    Int64 current_untracked_memory = untracked_memory;
     untracked_memory = 0;
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
