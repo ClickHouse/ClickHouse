@@ -48,7 +48,7 @@ SphericalPoint toSphericalPoint(const S2Point & p)
 }
 
 /// Norm2 below this means the S2Point is degenerate (cancellation or zero-area input).
-static constexpr double S2_ZERO_NORM2_THRESHOLD = 1e-60;
+constexpr double S2_ZERO_NORM2_THRESHOLD = 1e-60;
 
 /// Normalize an S2Point centroid and convert to SphericalPoint, with fallback for degenerate inputs.
 SphericalPoint normalizeAndProject(const S2Point & centroid, const SphericalPoint & fallback)
@@ -87,7 +87,7 @@ S2Point computeRingCentroidS2(const Ring<SphericalPoint> & ring, std::vector<S2P
     /// We always want positive orientation so that the caller can do
     /// explicit outer + (−holes). Flip if the ring was CW (negative area).
     if (S2::GetSignedArea(loop) < 0)
-        centroid = -centroid;
+        centroid = S2Point(-centroid.x(), -centroid.y(), -centroid.z());
 
     return centroid;
 }
@@ -206,6 +206,11 @@ public:
         return DataTypeFactory::instance().get("Point");
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return DataTypeFactory::instance().get("Point");
+    }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -223,16 +228,16 @@ public:
         if (column_variant)
         {
             Field field;
-            const auto & descriptors = column_variant->getLocalDiscriminators();
             if constexpr (std::is_same_v<Point, SphericalPoint>)
             {
                 std::vector<S2Point> scratch;
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     column_variant->get(i, field);
-                    auto type = magic_enum::enum_cast<GeometryColumnType>(descriptors[i]);
+                    auto global_discr = column_variant->globalDiscriminatorAt(i);
+                    auto type = magic_enum::enum_cast<GeometryColumnType>(global_discr);
                     if (!type)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(global_discr));
                     processField(field, *type, serializer, scratch);
                 }
             }
@@ -241,9 +246,10 @@ public:
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     column_variant->get(i, field);
-                    auto type = magic_enum::enum_cast<GeometryColumnType>(descriptors[i]);
+                    auto global_discr = column_variant->globalDiscriminatorAt(i);
+                    auto type = magic_enum::enum_cast<GeometryColumnType>(global_discr);
                     if (!type)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(global_discr));
                     processField(field, *type, serializer);
                 }
             }

@@ -72,8 +72,6 @@ Polygon<Point> getPolygonFromField(const Field & field)
 {
     Polygon<Point> polygon;
     const auto & array = field.safeGet<Array>();
-    std::vector<Ring<Point>> rings_outer;
-    Ring<Point> ring_inner;
 
     for (size_t i = 0; i < array.size(); ++i)
     {
@@ -238,13 +236,13 @@ public:
         {
             /// Geometry (Variant) type path.
             Field field;
-            const auto & descriptors = column_variant->getLocalDiscriminators();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 column_variant->get(i, field);
-                auto type = magic_enum::enum_cast<GeometryColumnType>(descriptors[i]);
+                auto global_discr = column_variant->globalDiscriminatorAt(i);
+                auto type = magic_enum::enum_cast<GeometryColumnType>(global_discr);
                 if (!type)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(global_discr));
                 processField(field, *type, res_data);
             }
         }

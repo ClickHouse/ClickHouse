@@ -50,6 +50,11 @@ public:
         return DataTypeFactory::instance().get("Ring");
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return DataTypeFactory::instance().get("Ring");
+    }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -69,13 +74,13 @@ public:
         if (column_variant)
         {
             Field field;
-            const auto & descriptors = column_variant->getLocalDiscriminators();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 column_variant->get(i, field);
-                auto type = magic_enum::enum_cast<GeometryColumnType>(descriptors[i]);
+                auto global_discr = column_variant->globalDiscriminatorAt(i);
+                auto type = magic_enum::enum_cast<GeometryColumnType>(global_discr);
                 if (!type)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(global_discr));
                 processField(field, *type, serializer);
             }
         }
