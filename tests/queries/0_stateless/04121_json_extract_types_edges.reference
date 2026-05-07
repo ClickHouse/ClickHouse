@@ -97,7 +97,7 @@ hello
 --- VariantNode ---
 1
 hi
-3
+3.14
 true
 --- DynamicNode ---
 42
