@@ -207,6 +207,11 @@
     -->
     <postgresql_port>9005</postgresql_port>
 
+    <!-- Compatibility with Redis protocol.
+         This skeleton currently supports only PING and QUIT.
+    -->
+    <!-- <redis_port>9006</redis_port> -->
+
     <!-- HTTP API with TLS (HTTPS).
          You have to configure certificate to enable this interface.
          See the OpenSSL section below.
