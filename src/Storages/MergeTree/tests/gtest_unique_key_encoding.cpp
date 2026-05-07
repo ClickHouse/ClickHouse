@@ -661,16 +661,19 @@ TEST(UniqueKeyEncoding, FixedStringBlockEncoderByteEquivalentEmbeddedNull)
     ASSERT_EQ(got.size(), 4u);
 
     /// Reference: row-encode a 1-col FixedString block — raw N bytes.
-    auto expected_for = [&](std::string_view data) {
+    /// Take `(ptr, len)` so embedded-NUL callers don't trip clang's
+    /// truncated-string-literal warning — same shape as `insertData(literal, N)`
+    /// above, where clang recognizes the explicit length and stays quiet.
+    auto expected_for = [&](const char * data, size_t len) {
         auto rcol = ColumnFixedString::create(N);
-        rcol->insertData(data.data(), N);
+        rcol->insertData(data, len);
         Columns rcols{std::move(rcol)};
         return testEncodeRow(rcols, 0, 4096);
     };
-    EXPECT_EQ(got[0], expected_for(std::string_view("hello!!!", N)));
-    EXPECT_EQ(got[1], expected_for(std::string_view("\x00\x00\x00\x00\x00\x00\x00\x00", N)));
-    EXPECT_EQ(got[2], expected_for(std::string_view("ab\x00""cd\x00""ef", N)));
-    EXPECT_EQ(got[3], expected_for(std::string_view("\x00""1234567", N)));
+    EXPECT_EQ(got[0], expected_for("hello!!!", N));
+    EXPECT_EQ(got[1], expected_for("\x00\x00\x00\x00\x00\x00\x00\x00", N));
+    EXPECT_EQ(got[2], expected_for("ab\x00""cd\x00""ef", N));
+    EXPECT_EQ(got[3], expected_for("\x00""1234567", N));
 }
 
 TEST(UniqueKeyEncoding, FixedStringEncoderByteEquivalent)
