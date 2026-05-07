@@ -353,7 +353,7 @@ void appendFixedStringColumn(
         if (null_map && null_map[src])
             continue;
         const std::string_view view = c.getDataAt(src);
-        out[r].append(view.data(), n);
+        out[r].append(view.substr(0, n));
     }
 }
 

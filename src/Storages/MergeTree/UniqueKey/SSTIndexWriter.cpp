@@ -41,7 +41,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int LIMIT_EXCEEDED;
 }
 
@@ -134,13 +133,19 @@ SSTIndexWriter::~SSTIndexWriter()
             rocksdb::ExternalSstFileInfo info;
             (void)impl->writer.Finish(&info);
         }
-        catch (...) {}
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
 
         try
         {
             part_storage.removeFileIfExists(TMP_FILE_NAME);
         }
-        catch (...) {}
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 #endif
 }

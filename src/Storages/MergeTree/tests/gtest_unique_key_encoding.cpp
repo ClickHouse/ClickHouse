@@ -112,6 +112,7 @@ bool agrees(const Columns & cols, size_t ra, size_t rb, size_t max_size = 4096)
 /// ---------------------------------------------------------------------------
 TEST(UniqueKeyEncoding, UInt64Ordering)
 {
+    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937_64 rng(0xDEADBEEF);
 
     auto col = ColumnUInt64::create();
@@ -150,6 +151,7 @@ TEST(UniqueKeyEncoding, AllUnsignedWidths)
 
 TEST(UniqueKeyEncoding, SignedIntOrdering)
 {
+    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937_64 rng(0xCAFEBABE);
 
     auto col = ColumnInt64::create();
@@ -501,6 +503,7 @@ TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_NoEmbeddedNull)
     /// Standard widths covering both small (<= 32) and larger (>= 64, 256)
     /// inputs to exercise the bulk-memcpy fast path on different vector lanes
     /// / cache-line sizes.
+    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937_64 rng(0xA5A5A5A5);
     for (size_t width : {size_t(0), size_t(1), size_t(7), size_t(8), size_t(15),
                           size_t(16), size_t(17), size_t(31), size_t(32),
@@ -580,6 +583,7 @@ TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_Random)
     /// Fuzz: random strings of varying widths, ~25% of bytes are '\0'.
     /// Exercises every branch of the slow path on a wide distribution of
     /// embedded-'\0' counts and positions.
+    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937_64 rng(0x1234567890ABCDEFULL);
     for (size_t trial = 0; trial < 500; ++trial)
     {
@@ -622,6 +626,7 @@ TEST(UniqueKeyEncoding, StringBlockEncoderByteEquivalent_Widths)
 {
     /// Block of mixed-width rows — exercises bulk-memcpy fast path lengths
     /// across cache lines.
+    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937_64 rng(0xB10C);
     std::vector<String> rows;
     for (size_t width : {size_t(0), size_t(1), size_t(8), size_t(16), size_t(64), size_t(256), size_t(1023)})
@@ -673,6 +678,7 @@ TEST(UniqueKeyEncoding, FixedStringEncoderByteEquivalent)
     /// FixedString routes through `appendFixedStringColumn`, which appends raw
     /// bytes (no escape — width-prefixed). Verify direct memcpy for widths
     /// 8 / 16 / 24 / 32 / 64.
+    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937_64 rng(0xFEEDFACE);
     for (size_t width : {size_t(8), size_t(16), size_t(24), size_t(32), size_t(64)})
     {
@@ -849,6 +855,7 @@ TEST(UniqueKeyEncoding, NullableOrdering)
 /// ---------------------------------------------------------------------------
 TEST(UniqueKeyEncoding, CompoundKeyShuffleSort)
 {
+    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937_64 rng(0x12345678);
 
     auto col_u = ColumnUInt32::create();
@@ -969,6 +976,7 @@ TEST(UniqueKeyEncoding, MicrobenchUInt64_1M)
 {
     constexpr size_t N = 1'000'000;
     auto col = ColumnUInt64::create();
+    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937_64 rng(42);
     for (size_t i = 0; i < N; ++i)
         col->insert(Field(rng()));
@@ -987,6 +995,7 @@ TEST(UniqueKeyEncoding, MicrobenchString32_1M)
 {
     constexpr size_t N = 1'000'000;
     auto col = ColumnString::create();
+    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937_64 rng(43);
     for (size_t i = 0; i < N; ++i)
     {
@@ -1011,6 +1020,7 @@ TEST(UniqueKeyEncoding, MicrobenchCompoundUInt64String_1M)
     constexpr size_t N = 1'000'000;
     auto col_u = ColumnUInt64::create();
     auto col_s = ColumnString::create();
+    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937_64 rng(44);
     for (size_t i = 0; i < N; ++i)
     {

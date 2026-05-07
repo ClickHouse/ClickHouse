@@ -83,7 +83,7 @@ private:
 
     IDataPartStorage & part_storage;
     UInt64 entries_added = 0;
-    bool finalized = false;
+    [[maybe_unused]] bool finalized = false;
 };
 
 }
