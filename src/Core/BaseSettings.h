@@ -1056,22 +1056,6 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
         + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
         + DATA_BASE_OFFSET_}; /* NOLINT(misc-use-internal-linkage) */
 
-/// Switch case for getSettingDefault_: one case per setting
-#define SETTING_DEFAULT_CASE_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    case Traits_::SettingID_::NAME: { SettingField##TYPE d(DEFAULT); return {static_cast<Field>(d), d.toString()}; }
-
-/// Switch case for resetSettingToDefault_: typed reconstruction + typed assignment
-/// preserves all members (e.g. `SettingFieldMaxThreads::is_auto`, see issue #103120) that
-/// would otherwise be lost through a Field round-trip when `operator Field` is non-invertible.
-#define SETTING_RESET_CASE_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    case Traits_::SettingID_::NAME: \
-    { \
-        auto & target = data.TYPE##_[Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)]]; \
-        target = SettingField##TYPE(DEFAULT); \
-        target.setChanged(false); \
-        return; \
-    }
-
 /// Generate traits for a basic settings collection (no custom settings, no paths)
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SUPPORTED_TYPES_MACRO) \
@@ -1250,9 +1234,11 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             } \
             void resetValueToDefault(Data & data, size_t index) const \
             { \
-                /* Typed reconstruction + typed assignment via the per-traits switch, not a */ \
-                /* `Field` round-trip. See issue #103120 / SETTING_RESET_CASE_. */ \
-                reset_to_default_fn(data, index); \
+                /* Typed copy from the canonical default-constructed Data, dispatched per type via */ \
+                /* SettingFieldOps::typed_copy. Avoids a Field round-trip for types whose */ \
+                /* `operator Field` is non-invertible (e.g. `SettingFieldMaxThreads`, issue #103120). */ \
+                const auto & fi = field_infos[index]; \
+                fi.ops->typed_copy(settingPtr(data, fi.data_offset), settingPtr(default_data, fi.data_offset)); \
             } \
             \
             /* Binary serialization (by index) */ \
@@ -1267,10 +1253,11 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 fi.ops->read_binary(settingPtr(data, fi.data_offset), in); \
             } \
             \
-            /* Default value as string */ \
+            /* Default value as string, read from the canonical default-constructed Data. */ \
             String getDefaultValueString(size_t index) const \
             { \
-                return field_infos[index].get_default().second; \
+                const auto & fi = field_infos[index]; \
+                return fi.ops->to_string(settingPtr(default_data, fi.data_offset)); \
             } \
             \
         private: \
@@ -1286,14 +1273,14 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 const UInt64 flags; \
                 const SettingFieldOps * ops;                    /* Type-erased ops, shared per type */ \
                 size_t data_offset;                             /* Byte offset within Data struct */ \
-                std::pair<Field, String> (*default_fn_)(size_t); \
-                size_t default_index_; \
-                std::pair<Field, String> get_default() const { return default_fn_(default_index_); } \
             }; \
             \
             std::vector<FieldInfo> field_infos;                                     /* Metadata for all settings */ \
             std::unordered_map<std::string_view, size_t> name_to_index_map;         /* Fast name -> index lookup */ \
-            void (*reset_to_default_fn)(Data &, size_t) = nullptr;                  /* Per-traits typed reset switch */ \
+            /* Canonical default-constructed instance. Used to reset individual settings to their */ \
+            /* declared defaults via a typed copy (see resetValueToDefault) and to read the default */ \
+            /* string representation (see getDefaultValueString). */ \
+            Data default_data; \
         }; \
         \
         /** Whether this traits allows custom settings */ \
@@ -1410,11 +1397,10 @@ size_t settingsDataBaseOffset()
 
 /** This macro implements:
   * 1. Data::Data() constructor — initializes all settings to their defaults
-  * 2. getSettingDefault_() — single switch function replacing per-setting lambdas
-  * 3. Accessor::instance() — Singleton accessor, initialized lazily on first access
-  * 4. Accessor::Accessor() — Private constructor
-  * 5. Accessor::find() — Name lookup function
-  * 6. Explicit template instantiation of BaseSettings<SETTINGS_TRAITS_NAME>
+  * 2. Accessor::instance() — Singleton accessor, initialized lazily on first access
+  * 3. Accessor::Accessor() — Private constructor
+  * 4. Accessor::find() — Name lookup function
+  * 5. Explicit template instantiation of BaseSettings<SETTINGS_TRAITS_NAME>
   */
     /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
@@ -1427,33 +1413,6 @@ size_t settingsDataBaseOffset()
         LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_INIT_DEFAULT_, SETTING_INIT_DEFAULT_) \
     } \
     \
-    /* Single switch function for all setting defaults (replaces 1 lambda per setting) */ \
-    static std::pair<Field, String> getSettingDefault_(size_t index) \
-    { \
-        using Traits_ = SETTINGS_TRAITS_NAME; \
-        switch (static_cast<Traits_::SettingID_>(index)) \
-        { \
-            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_DEFAULT_CASE_, SETTING_DEFAULT_CASE_) \
-            LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_DEFAULT_CASE_, SETTING_DEFAULT_CASE_) \
-            default: UNREACHABLE(); \
-        } \
-    } \
-    \
-    /* Reset a setting to its declared default via typed reconstruction + typed assignment, */ \
-    /* not a `Field` round-trip. See issue #103120: `SettingFieldMaxThreads::operator Field` */ \
-    /* returns the resolved auto-value (an opaque UInt64) rather than the canonical `0`/`"auto"`, */ \
-    /* so going through Field would drop `is_auto` on `SET <name> = DEFAULT`. */ \
-    static void resetSettingToDefault_(SETTINGS_TRAITS_NAME::Data & data, size_t index) \
-    { \
-        using Traits_ = SETTINGS_TRAITS_NAME; \
-        switch (static_cast<Traits_::SettingID_>(index)) \
-        { \
-            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_RESET_CASE_, SETTING_RESET_CASE_) \
-            LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_RESET_CASE_, SETTING_RESET_CASE_) \
-            default: UNREACHABLE(); \
-        } \
-    } \
-    \
     const SETTINGS_TRAITS_NAME::Accessor & SETTINGS_TRAITS_NAME::Accessor::instance() \
     { \
         using Traits_ = SETTINGS_TRAITS_NAME; \
@@ -1464,7 +1423,6 @@ size_t settingsDataBaseOffset()
             [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
             [[maybe_unused]] constexpr int HOT_RELOAD = 0x80; \
             Accessor res; \
-            res.reset_to_default_fn = &resetSettingToDefault_; \
             /* offsetof on non-standard-layout types is well-defined in Clang */ \
             _Pragma("clang diagnostic push") \
             _Pragma("clang diagnostic ignored \"-Winvalid-offsetof\"") \
@@ -1508,8 +1466,6 @@ size_t settingsDataBaseOffset()
             static_cast<UInt64>(FLAGS), \
             &settingFieldOps<SettingField##TYPE>(), \
             offsetof(Data, TYPE##_) + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
-            &getSettingDefault_, \
-            static_cast<size_t>(Traits_::SettingID_::NAME), \
         });
 
 /// Generate a FieldInfo entry for a setting with a config file path
@@ -1525,7 +1481,5 @@ size_t settingsDataBaseOffset()
             static_cast<UInt64>(FLAGS), \
             &settingFieldOps<SettingField##TYPE>(), \
             offsetof(Data, TYPE##_) + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
-            &getSettingDefault_, \
-            static_cast<size_t>(Traits_::SettingID_::NAME), \
         });
 }

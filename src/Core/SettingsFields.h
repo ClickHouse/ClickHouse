@@ -28,6 +28,11 @@ struct SettingFieldOps
     void (*parse_from_string)(void * setting, const String & str);
     void (*write_binary)(const void * setting, WriteBuffer & out);
     void (*read_binary)(void * setting, ReadBuffer & in);
+    /// Typed copy, used to reset a setting to its declared default by copying from a canonical
+    /// default-constructed Data instance. A typed `operator=` preserves all members of the source
+    /// (e.g. `SettingFieldMaxThreads::is_auto`, see issue #103120) that would be lost through a
+    /// `Field` round-trip when `operator Field` is non-invertible.
+    void (*typed_copy)(void * dst, const void * src);
     /// Type-level utilities (operate on temporaries, no Data instance needed)
     Field (*cast_value)(const Field & value);
     String (*value_to_string)(const Field & value);
@@ -37,17 +42,18 @@ struct SettingFieldOps
 /// Named template functions for type-erased dispatch.
 /// Using named functions instead of lambdas avoids creating unique closure types per instantiation,
 /// which reduces compilation overhead.
-template <typename T> void sfAssignFromField(void * p, const Field & f) { *static_cast<T *>(p) = f; }
-template <typename T> Field sfToField(const void * p) { return static_cast<Field>(*static_cast<const T *>(p)); }
-template <typename T> bool sfIsChanged(const void * p) { return static_cast<const T *>(p)->isChanged(); }
-template <typename T> void sfSetChanged(void * p, bool v) { static_cast<T *>(p)->setChanged(v); }
-template <typename T> String sfToString(const void * p) { return static_cast<const T *>(p)->toString(); }
-template <typename T> void sfParseFromString(void * p, const String & s) { static_cast<T *>(p)->parseFromString(s); }
-template <typename T> void sfWriteBinary(const void * p, WriteBuffer & out) { static_cast<const T *>(p)->writeBinary(out); }
-template <typename T> void sfReadBinary(void * p, ReadBuffer & in) { static_cast<T *>(p)->readBinary(in); }
-template <typename T> Field sfCastValue(const Field & f) { T temp; temp = f; return static_cast<Field>(temp); }
-template <typename T> String sfValueToString(const Field & f) { T temp; temp = f; return temp.toString(); }
-template <typename T> Field sfStringToValue(const String & s) { T temp; temp.parseFromString(s); return static_cast<Field>(temp); }
+template <typename T> void settingFieldAssignFromField(void * p, const Field & f) { *static_cast<T *>(p) = f; }
+template <typename T> Field settingFieldToField(const void * p) { return static_cast<Field>(*static_cast<const T *>(p)); }
+template <typename T> bool settingFieldIsChanged(const void * p) { return static_cast<const T *>(p)->isChanged(); }
+template <typename T> void settingFieldSetChanged(void * p, bool v) { static_cast<T *>(p)->setChanged(v); }
+template <typename T> String settingFieldToString(const void * p) { return static_cast<const T *>(p)->toString(); }
+template <typename T> void settingFieldParseFromString(void * p, const String & s) { static_cast<T *>(p)->parseFromString(s); }
+template <typename T> void settingFieldWriteBinary(const void * p, WriteBuffer & out) { static_cast<const T *>(p)->writeBinary(out); }
+template <typename T> void settingFieldReadBinary(void * p, ReadBuffer & in) { static_cast<T *>(p)->readBinary(in); }
+template <typename T> void settingFieldTypedCopy(void * dst, const void * src) { *static_cast<T *>(dst) = *static_cast<const T *>(src); }
+template <typename T> Field settingFieldCastValue(const Field & f) { T temp; temp = f; return static_cast<Field>(temp); }
+template <typename T> String settingFieldValueToString(const Field & f) { T temp; temp = f; return temp.toString(); }
+template <typename T> Field settingFieldStringToValue(const String & s) { T temp; temp.parseFromString(s); return static_cast<Field>(temp); }
 
 /// Generate a SettingFieldOps instance for a concrete SettingField type.
 /// Instantiated once per type (not per setting) — the static local is shared.
@@ -56,9 +62,10 @@ const SettingFieldOps & settingFieldOps()
 {
     static const SettingFieldOps ops =
     {
-        &sfAssignFromField<T>, &sfToField<T>, &sfIsChanged<T>, &sfSetChanged<T>,
-        &sfToString<T>, &sfParseFromString<T>, &sfWriteBinary<T>, &sfReadBinary<T>,
-        &sfCastValue<T>, &sfValueToString<T>, &sfStringToValue<T>,
+        &settingFieldAssignFromField<T>, &settingFieldToField<T>, &settingFieldIsChanged<T>, &settingFieldSetChanged<T>,
+        &settingFieldToString<T>, &settingFieldParseFromString<T>, &settingFieldWriteBinary<T>, &settingFieldReadBinary<T>,
+        &settingFieldTypedCopy<T>,
+        &settingFieldCastValue<T>, &settingFieldValueToString<T>, &settingFieldStringToValue<T>,
     };
     return ops;
 }
@@ -214,21 +221,6 @@ struct SettingFieldMaxThreads final
 
     bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
-
-    /// Override of the base-class hook used by `BaseSettings::resetValueToDefault`. The default
-    /// `Field`-based implementation is lossy here because `operator Field` deliberately returns
-    /// the resolved value (e.g. `32` when `is_auto` is set), so a round-trip would reconstruct
-    /// the setting as if it had been set explicitly to that number, dropping `is_auto`. We avoid
-    /// the round-trip entirely by copying `default_value` member-wise. This preserves whichever
-    /// state the declared default carries: `is_auto = true` for settings declared with default
-    /// `0` (e.g. `max_threads`, `max_final_threads`, `max_parsing_threads`), and `is_auto = false`
-    /// with the typed default value for settings declared with an explicit non-zero default (e.g.
-    /// `max_download_threads = 4`). See issue #103120.
-    void resetFromDefault(const SettingFieldBase & default_value) override
-    {
-        *this = static_cast<const SettingFieldMaxThreads &>(default_value);
-        changed = false;
-    }
 
     operator UInt64() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
