@@ -71,7 +71,7 @@ SELECT trimLeft(explain) FROM (
             )
         SELECT lead
         FROM window2
-        SETTINGS max_threads = 20, enable_parallel_replicas=0
+        SETTINGS max_threads = 20, enable_parallel_replicas=0, query_plan_enable_multithreading_after_window_functions = 1, max_threads_min_free_memory_per_thread = 0 -- CI may inject False; changes Resize pipeline structure after window functions
 ) WHERE explain LIKE '%Resize%' LIMIT 3;
 
 
@@ -103,7 +103,7 @@ SELECT trimLeft(explain) FROM (
             )
         SELECT lead
         FROM window2
-        SETTINGS max_threads = 2000, enable_parallel_replicas=0
+        SETTINGS max_threads = 2000, enable_parallel_replicas=0, query_plan_enable_multithreading_after_window_functions = 1, max_threads_min_free_memory_per_thread = 0 -- CI may inject False; changes Resize pipeline structure after window functions
 ) WHERE explain LIKE '%Resize%' LIMIT 3; -- {serverError LIMIT_EXCEEDED}
 
 
@@ -135,7 +135,7 @@ SELECT trimLeft(explain) FROM (
             )
         SELECT lead
         FROM window2
-        SETTINGS max_threads = 300, enable_parallel_replicas=0
+        SETTINGS max_threads = 300, enable_parallel_replicas=0, query_plan_enable_multithreading_after_window_functions = 1, max_threads_min_free_memory_per_thread = 0 -- CI may inject False; changes Resize pipeline structure after window functions
 ) WHERE explain LIKE '%Resize%' LIMIT 1;
 
 DROP TABLE empty;
