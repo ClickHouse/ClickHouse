@@ -459,6 +459,45 @@ TEST_F(SSTFixture, WriteFromBlockProducesSortedSST)
     EXPECT_EQ(expected_row, static_cast<UInt32>(N));
 }
 
+/// Caller permutation values are used as direct indices into
+/// `source_to_part_offset`; an out-of-range entry must be rejected with
+/// LOGICAL_ERROR rather than producing OOB writes.
+TEST_F(SSTFixture, UnsortedPermutationOutOfRangeRejected)
+{
+    auto type_u64 = std::make_shared<DataTypeUInt64>();
+    auto col = type_u64->createColumn();
+    auto * typed = typeid_cast<ColumnUInt64 *>(col.get());
+    for (UInt64 v : {1, 2, 3})
+        typed->insertValue(v);
+    Block block;
+    block.insert({std::move(col), type_u64, "k"});
+
+    IColumn::Permutation bad_perm{0, 1, 99}; /// 99 >= 3
+    EXPECT_THROW(
+        SSTIndexWriter::writeFromBlockUnsorted(
+            *storage, block, Names{"k"}, &bad_perm, /*max_encoded_size=*/256),
+        DB::Exception);
+}
+
+/// Duplicate permutation values silently drop a source-row mapping;
+/// reject with LOGICAL_ERROR.
+TEST_F(SSTFixture, UnsortedPermutationDuplicateRejected)
+{
+    auto type_u64 = std::make_shared<DataTypeUInt64>();
+    auto col = type_u64->createColumn();
+    auto * typed = typeid_cast<ColumnUInt64 *>(col.get());
+    for (UInt64 v : {1, 2, 3})
+        typed->insertValue(v);
+    Block block;
+    block.insert({std::move(col), type_u64, "k"});
+
+    IColumn::Permutation bad_perm{0, 1, 1}; /// duplicate
+    EXPECT_THROW(
+        SSTIndexWriter::writeFromBlockUnsorted(
+            *storage, block, Names{"k"}, &bad_perm, /*max_encoded_size=*/256),
+        DB::Exception);
+}
+
 #endif  // USE_ROCKSDB
 
 /// ---------------------------------------------------------------------------
@@ -486,7 +525,7 @@ TEST_F(SSTFixture, WriteFromBlockProducesSortedSST)
 
 using namespace DB;
 
-TEST(UniqueKeyNoRocksDB, StaticWritersReturnZeroNoThrow)
+TEST(UniqueKeyNoRocksDB, StaticWritersThrowSupportIsDisabled)
 {
     auto tmp_path = std::filesystem::temp_directory_path()
         / ("gtest_unique_key_no_rocksdb_"
@@ -507,15 +546,18 @@ TEST(UniqueKeyNoRocksDB, StaticWritersReturnZeroNoThrow)
 
     Names uk_names{"a"};
 
-    UInt64 entries_prefix = SSTIndexWriter::writeFromBlock(
-        *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256);
-    EXPECT_EQ(entries_prefix, 0u)
-        << "writeFromBlock must return 0 on USE_ROCKSDB=0 (no SST produced)";
+    /// Both static entry points must fail loudly on USE_ROCKSDB=0; a silent
+    /// success would let the merge-write path skip index creation without the
+    /// caller noticing.
+    EXPECT_THROW(
+        SSTIndexWriter::writeFromBlock(
+            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256),
+        DB::Exception);
 
-    UInt64 entries_unsorted = SSTIndexWriter::writeFromBlockUnsorted(
-        *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256);
-    EXPECT_EQ(entries_unsorted, 0u)
-        << "writeFromBlockUnsorted must return 0 on USE_ROCKSDB=0";
+    EXPECT_THROW(
+        SSTIndexWriter::writeFromBlockUnsorted(
+            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256),
+        DB::Exception);
 
     EXPECT_FALSE(storage->existsFile(SSTIndexWriter::FILE_NAME));
     EXPECT_FALSE(storage->existsFile(SSTIndexWriter::TMP_FILE_NAME));

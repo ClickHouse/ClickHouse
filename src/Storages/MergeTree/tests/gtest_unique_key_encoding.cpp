@@ -966,6 +966,51 @@ TEST(UniqueKeyEncoding, EncodeBlockSizeLimitRejection)
     ASSERT_EQ(out.size(), 2u);
 }
 
+/// Permutation contents are used as direct row indices; an out-of-range entry
+/// must be rejected with BAD_ARGUMENTS rather than producing OOB access.
+TEST(UniqueKeyEncoding, EncodeBlockPermutationOutOfRangeRejected)
+{
+    auto col = ColumnUInt64::create();
+    col->insert(Field(UInt64{1}));
+    col->insert(Field(UInt64{2}));
+    col->insert(Field(UInt64{3}));
+    Columns cols{std::move(col)};
+
+    IColumn::Permutation perm{0, 1, 99}; /// 99 >= 3
+    std::vector<String> out;
+    EXPECT_THROW(UniqueKeyEncoding::encodeBlock(cols, &perm, 256, out), DB::Exception);
+}
+
+/// Duplicate permutation entries silently drop a source row mapping; reject
+/// with BAD_ARGUMENTS so callers get a clear failure instead of corruption.
+TEST(UniqueKeyEncoding, EncodeBlockPermutationDuplicateRejected)
+{
+    auto col = ColumnUInt64::create();
+    col->insert(Field(UInt64{1}));
+    col->insert(Field(UInt64{2}));
+    col->insert(Field(UInt64{3}));
+    Columns cols{std::move(col)};
+
+    IColumn::Permutation perm{0, 1, 1}; /// duplicate
+    std::vector<String> out;
+    EXPECT_THROW(UniqueKeyEncoding::encodeBlock(cols, &perm, 256, out), DB::Exception);
+}
+
+/// Well-formed permutation must succeed and produce one encoded row per input.
+TEST(UniqueKeyEncoding, EncodeBlockPermutationValidAccepted)
+{
+    auto col = ColumnUInt64::create();
+    col->insert(Field(UInt64{10}));
+    col->insert(Field(UInt64{20}));
+    col->insert(Field(UInt64{30}));
+    Columns cols{std::move(col)};
+
+    IColumn::Permutation perm{2, 0, 1};
+    std::vector<String> out;
+    EXPECT_NO_THROW(UniqueKeyEncoding::encodeBlock(cols, &perm, 256, out));
+    ASSERT_EQ(out.size(), 3u);
+}
+
 /// Empty-block: must produce an empty output vector without touching max_size.
 TEST(UniqueKeyEncoding, EncodeBlockEmptyBlock)
 {

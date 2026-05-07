@@ -39,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int LIMIT_EXCEEDED;
@@ -263,7 +264,8 @@ UInt64 SSTIndexWriter::writeFromBlock(
     return writer.finalizeToStorage();
 #else
     (void)part_storage; (void)block; (void)unique_key_column_names; (void)permutation; (void)max_encoded_size;
-    return 0;
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "SSTIndexWriter::writeFromBlock requires RocksDB support (USE_ROCKSDB=1)");
 #endif
 }
 
@@ -288,6 +290,28 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
         throw Exception(ErrorCodes::LIMIT_EXCEEDED,
             "SSTIndexWriter::writeFromBlockUnsorted: part has {} rows, exceeds UInt32 row-number capacity",
             num_rows);
+
+    /// Caller's permutation entries are used as direct indices into
+    /// `source_to_part_offset` below; validate as a true permutation of
+    /// [0, num_rows): every value in range and no duplicates. Throws
+    /// BAD_ARGUMENTS so it surfaces as a recoverable error instead of the
+    /// debug-build abort path that LOGICAL_ERROR triggers.
+    if (permutation && num_rows > 0)
+    {
+        std::vector<bool> seen(num_rows);
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            const size_t v = (*permutation)[i];
+            if (v >= num_rows)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "SSTIndexWriter::writeFromBlockUnsorted: permutation[{}]={} out of range (num_rows={})",
+                    i, v, num_rows);
+            if (seen[v])
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "SSTIndexWriter::writeFromBlockUnsorted: permutation has duplicate value {}", v);
+            seen[v] = true;
+        }
+    }
 
     Columns uk_columns;
     uk_columns.reserve(unique_key_column_names.size());
@@ -324,7 +348,8 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
 #else
     (void)part_storage; (void)block; (void)unique_key_column_names;
     (void)permutation; (void)max_encoded_size;
-    return 0;
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "SSTIndexWriter::writeFromBlockUnsorted requires RocksDB support (USE_ROCKSDB=1)");
 #endif
 }
 

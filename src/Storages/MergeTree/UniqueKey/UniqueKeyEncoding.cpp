@@ -485,6 +485,27 @@ void encodeBlock(
                         "UNIQUE KEY encoding: permutation size {} != block rows {}",
                         permutation->size(), num_rows);
 
+    /// Permutation entries are used as direct row indices below
+    /// (`null_map[src]`, `data[src]`, `getDataAt(src)`); a malformed entry would
+    /// be an out-of-bounds access. Validate as a true permutation of [0, n):
+    /// every value in range and no duplicates.
+    if (permutation && num_rows > 0)
+    {
+        std::vector<bool> seen(num_rows);
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            const size_t v = (*permutation)[i];
+            if (v >= num_rows)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "UNIQUE KEY encoding: permutation[{}]={} out of range (num_rows={})",
+                                i, v, num_rows);
+            if (seen[v])
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "UNIQUE KEY encoding: permutation has duplicate value {}", v);
+            seen[v] = true;
+        }
+    }
+
     out.resize(num_rows);
     if (num_rows == 0)
         return;
