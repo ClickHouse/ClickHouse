@@ -1454,7 +1454,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                     bool is_enum16 = false;
                 };
 
-
                 auto get_enum_type = [](const IDataType * dt) -> EnumTypeInfo
                 {
                     const auto * column_enum_type = dynamic_cast<const IDataTypeEnum *>(dt);
