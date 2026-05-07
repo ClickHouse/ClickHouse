@@ -1,10 +1,10 @@
 #pragma once
 
 #include "config.h"
+#include <base/types.h>
+#include <IO/S3/getAvailabilityZone.h>
 
 #if USE_AWS_S3
-
-#    include <base/types.h>
 
 #    include <aws/core/auth/AWSCredentials.h>
 #    include <aws/core/utils/threading/ReaderWriterLock.h>
@@ -33,22 +33,20 @@ namespace DB::S3
 /// In GCP metadata service can be accessed via DNS regardless of IPv4 or IPv6.
 static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";
 
-/// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
-std::string getRunningAvailabilityZone();
-std::string tryGetRunningAvailabilityZone();
 
 void setCredentialsProviderCacheMaxSize(size_t cache_size);
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
+public:
     static constexpr char EC2_SECURITY_CREDENTIALS_RESOURCE[] = "/latest/meta-data/iam/security-credentials";
     static constexpr char EC2_AVAILABILITY_ZONE_RESOURCE[] = "/latest/meta-data/placement/availability-zone";
+    static constexpr char EC2_AVAILABILITY_ZONE_ID_RESOURCE[] = "/latest/meta-data/placement/availability-zone-id";
     static constexpr char EC2_IMDS_TOKEN_RESOURCE[] = "/latest/api/token";
     static constexpr char EC2_IMDS_TOKEN_HEADER[] = "x-aws-ec2-metadata-token";
     static constexpr char EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE[] = "21600";
     static constexpr char EC2_IMDS_TOKEN_TTL_HEADER[] = "x-aws-ec2-metadata-token-ttl-seconds";
 
-public:
     /// See EC2MetadataClient.
 
     explicit AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration, const char * endpoint_);
@@ -71,11 +69,14 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
-    friend String getRunningAvailabilityZone();
+    friend String getRunningAvailabilityZone(AZFacilities az_facility);
 
 private:
     std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
-    static String getAvailabilityZoneOrException();
+    // static String getAvailabilityZoneOrException(bool is_zone_id = false);
+    static String getAWSZoneID();
+    static String getAWSZoneName();
+
 
     const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
@@ -338,18 +339,4 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
     const CredentialsConfiguration & credentials_configuration);
 }
 
-#else
-
-#    include <string>
-
-namespace DB
-{
-
-namespace S3
-{
-std::string getRunningAvailabilityZone();
-std::string tryGetRunningAvailabilityZone();
-}
-
-}
 #endif

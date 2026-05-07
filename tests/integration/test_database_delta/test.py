@@ -750,3 +750,78 @@ FROM {db_name}.`{schema_name}.{table_name}`
             },
         ).strip()
     )
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_varchar_char_types_via_unity_catalog(started_cluster, use_delta_kernel):
+    """
+    Regression test for: Unsupported DeltaLake type: varchar(n)
+
+    The Unity Catalog REST API returns the column schema via the `type_json` field,
+    which contains the logical SQL type name from Databricks (e.g. `varchar(256)`)
+    rather than the physical Delta Lake type (`string`). ClickHouse must map these
+    to `String` instead of throwing an exception.
+
+    This test creates a Delta table with VARCHAR and CHAR columns via Spark connected
+    to a real Unity Catalog server, then reads it through ClickHouse's DataLakeCatalog
+    engine, which fetches the schema from the Unity Catalog REST API endpoint — the
+    exact path that was broken before the fix.
+    """
+    node1 = started_cluster.instances["node1"]
+
+    schema_name = f"varchar_schema_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
+    table_name = f"varchar_table_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
+    db_name = f"uc_varchar_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
+
+    create_query = (
+        f"CREATE TABLE {schema_name}.{table_name} "
+        f"(id INT, name VARCHAR(256), code CHAR(10)) "
+        f"USING DELTA LOCATION '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}'"
+    )
+    insert_query = (
+        f"INSERT INTO {schema_name}.{table_name} VALUES (1, 'hello varchar', 'hello char')"
+    )
+    execute_multiple_spark_queries(
+        node1,
+        [f"CREATE SCHEMA {schema_name}", create_query, insert_query],
+    )
+
+    node1.query(
+        f"""
+DROP DATABASE IF EXISTS {db_name};
+CREATE DATABASE {db_name}
+ENGINE DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
+SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false,
+         allow_experimental_delta_kernel_rs = {use_delta_kernel}
+        """,
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    tables = (
+        node1.query(
+            f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'",
+            settings={"use_hive_partitioning": "0"},
+        )
+        .strip()
+        .split("\n")
+    )
+    assert len(tables) == 1
+
+    # Before the fix, this raised: DB::Exception: Unsupported DeltaLake type: varchar(256)
+    # because Unity Catalog REST API returns type_json with SQL type names, not physical
+    # Delta types, and getSimpleTypeByName had no handler for varchar(n)/char(n).
+    describe_result = node1.query(
+        f"DESCRIBE TABLE {db_name}.`{schema_name}.{table_name}`"
+    ).strip()
+    assert "id\tNullable(Int32)" in describe_result
+    assert "name\tNullable(String)" in describe_result
+    assert "code\tNullable(String)" in describe_result
+
+    row = (
+        node1.query(
+            f"SELECT id, name, code FROM {db_name}.`{schema_name}.{table_name}`",
+            settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
+        )
+        .strip()
+    )
+    assert row == "1\thello varchar\thello char"

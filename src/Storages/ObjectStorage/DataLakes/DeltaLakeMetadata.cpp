@@ -723,6 +723,10 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
         tryReadIntText(scale, buf);
         return createDecimal<DataTypeDecimal>(precision, scale);
     }
+    /// varchar(n) and char(n) are valid Delta Lake types that map to string in Parquet.
+    /// The length constraint is a SQL-level annotation only; we ignore it and use String.
+    if ((type_name.starts_with("varchar(") || type_name.starts_with("char(")) && type_name.ends_with(')'))
+        return std::make_shared<DataTypeString>();
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
 }

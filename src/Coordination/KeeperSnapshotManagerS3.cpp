@@ -37,6 +37,8 @@ namespace S3AuthSetting
     extern const S3AuthSettingsUInt64 expiration_window_seconds;
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString region;
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString secret_access_key;
     extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsString session_token;
@@ -150,6 +152,9 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
                 auth_settings[S3AuthSetting::use_insecure_imds_request],
                 auth_settings[S3AuthSetting::expiration_window_seconds],
                 auth_settings[S3AuthSetting::no_sign_request],
+                auth_settings[S3AuthSetting::role_arn],
+                auth_settings[S3AuthSetting::role_session_name],
+                /*sts_endpoint_override=*/""
             },
             credentials.GetSessionToken());
 
