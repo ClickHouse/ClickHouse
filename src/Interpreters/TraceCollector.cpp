@@ -1,4 +1,5 @@
 #include <memory>
+#include <thread>
 #include <Interpreters/TraceCollector.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -35,6 +36,12 @@ TraceCollector::TraceCollector()
     TraceSender::pipe.setNonBlockingWrite();
     TraceSender::pipe.tryIncreaseSize(1 << 20);
 
+    /// Re-arm the shutdown gate in case a previous TraceCollector ran in this
+    /// process. The previous destructor left it set to true to drain senders
+    /// before closing the pipe; on a fresh start, senders should be allowed
+    /// through again.
+    TraceSender::shutdown.store(false);
+
     thread = ThreadFromGlobalPoolWithoutTraceCollector(&TraceCollector::run, this);
 }
 
@@ -54,6 +61,18 @@ std::shared_ptr<TraceLog> TraceCollector::getTraceLog()
         return nullptr;
 
     return trace_log_ptr;
+}
+
+void TraceCollector::tryClosePipe()
+{
+    try
+    {
+        TraceSender::pipe.close();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("TraceCollector");
+    }
 }
 
 TraceCollector::~TraceCollector()
@@ -84,13 +103,15 @@ TraceCollector::~TraceCollector()
     else
         LOG_ERROR(getLogger("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
 
-    /// We deliberately do NOT close the pipe here. `TraceSender::pipe` is a
-    /// static `LazyPipeFDs` whose destructor will close it at process exit.
-    /// Closing it from this thread races with profiler signal handlers on
-    /// other threads that are still allowed to call `TraceSender::send` —
-    /// after the worker exits no one reads the pipe, so any further writes
-    /// fill the kernel buffer and are then silently dropped by
-    /// `WriteBufferFromFileDescriptorDiscardOnFailure`.
+    /// Close the gate so any new `TraceSender::send` call returns without
+    /// touching the pipe, then wait for any sender that already entered the
+    /// critical section to finish its `write()`. After both, `close()` cannot
+    /// race with a concurrent `write()` on the same fd.
+    TraceSender::shutdown.store(true);
+    while (TraceSender::in_flight.load() > 0)
+        std::this_thread::yield();
+
+    tryClosePipe();
 }
 
 
