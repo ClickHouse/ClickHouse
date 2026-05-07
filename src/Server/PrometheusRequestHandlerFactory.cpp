@@ -238,7 +238,7 @@ namespace
     ///   - trailing '/' characters are trimmed;
     ///   - the bare root prefix `/` is collapsed to empty so neither the route regex nor the
     ///     handler-side path strip inserts an extra leading slash (which would require URLs
-    ///     like `//db/table/write`).
+    ///     like `//write` instead of `/write`).
     /// This is shared between the auto-mount path (`addPrometheusProtocolsToHTTPDefaults`) and
     /// the per-rule `<http_handlers>` path (`parseHTTPRuleHandlerConfig`) so they cannot drift.
     String normalizeHTTPPathPrefix(String prefix)
@@ -264,7 +264,8 @@ namespace
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
                     "Prometheus handler under <http_handlers> cannot specify <{}>: dynamic routing is the only supported mode here. "
-                    "The target table is resolved from the URL path segments. Remove <{}> from {}.",
+                    "The target table is resolved from `database` / `table` query parameters (or "
+                    "`X-ClickHouse-Database` / `X-ClickHouse-Table` headers). Remove <{}> from {}.",
                     key, key, handler_prefix);
         }
     }
@@ -281,7 +282,7 @@ namespace
     ///   - New explicit handler types @c prometheus_remote_write / @c prometheus_remote_read /
     ///     @c prometheus_query_api enable the dynamic-routing-only mode: the parsed config has
     ///     @c enable_table_name_url_routing set to true, @c time_series_table_name left empty,
-    ///     and the @c (database, table) pair is later resolved from the URL path.
+    ///     and the @c (database, table) pair is later resolved from query parameters / headers.
     PrometheusRequestHandlerConfig parseHTTPRuleHandlerConfig(
         const Poco::Util::AbstractConfiguration & config, const String & handler_prefix)
     {
@@ -360,8 +361,9 @@ namespace
     }
 
     /// Adds the three dynamic-routing rules (RemoteWrite, RemoteRead, QueryAPI) to `factory`,
-    /// matching `^<prefix>/[^/]+/[^/]+/<protocol-suffix>$`. @c prefix is treated as a literal URL
-    /// prefix and is regex-escaped before being interpolated into the route filter.
+    /// matching `^<prefix>/<protocol-suffix>$` (database/table are query params, not path
+    /// segments). @c prefix is treated as a literal URL prefix and is regex-escaped before
+    /// being interpolated into the route filter.
     void addDynamicRoutingRules(
         HTTPRequestHandlerFactoryMain & factory,
         IServer & server,
@@ -387,7 +389,7 @@ namespace
 
             auto handler = createPrometheusHandlerFactoryFromConfig(server, async_metrics, parsed_config, /* for_keeper= */ false);
             chassert(handler);
-            handler->addFilter(regexPathFilter("^" + escaped_prefix + "/[^/]+/[^/]+" + path_suffix_regex + "$"));
+            handler->addFilter(regexPathFilter("^" + escaped_prefix + path_suffix_regex + "$"));
             handler->addFilter(methodsListFilter(std::move(allowed_methods)));
             factory.addHandler(std::move(handler));
         };
@@ -451,7 +453,7 @@ void addPrometheusProtocolsToHTTPDefaults(
         return;
 
     String prefix = normalizeHTTPPathPrefix(
-        config.getString("prometheus.http_path_prefix", "/time-series"));
+        config.getString("prometheus.http_path_prefix", "/prometheus"));
 
     addDynamicRoutingRules(factory, server, config, async_metrics, prefix);
 }

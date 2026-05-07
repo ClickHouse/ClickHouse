@@ -2,13 +2,15 @@
 Tests for the Prometheus protocol surface mounted on the main HTTP port.
 
 Covers:
-- Happy path for remote_write, remote_read, and the Query API endpoints under the default
-  `/time-series/<db>/<table>/...` prefix.
+- Happy path for remote_write, remote_read, and the Query API under the default
+  `/prometheus/...` prefix; the target table is selected via `database` / `table` query
+  parameters or `X-ClickHouse-Database` / `X-ClickHouse-Table` headers.
 - A custom `<http_path_prefix>` is honored.
-- The per-table `prometheus_url_routing_enabled` setting gates access; URL routing is on
-  by default, and a table that explicitly sets it to 0 is rejected with HTTP 403.
+- The per-table `prometheus_url_routing_enabled` setting gates access; routing is on by
+  default, and a table that explicitly sets it to 0 is rejected with HTTP 403.
 - Routing rejects non-TimeSeries storages with HTTP 403.
-- Malformed URLs (missing the db/table segments) get HTTP 404 from the factory.
+- Requests without database/table identification get HTTP 400 (`BAD_ARGUMENTS`).
+- Malformed protocol paths get HTTP 404 from the factory filters.
 - The expose_metrics endpoint is NOT reachable through the prefix (still served at /metrics).
 - Backward-compatible behavior of the dedicated <port> listener: the existing fixed-table
   config keeps working and a deprecation warning is logged at startup.
@@ -17,8 +19,8 @@ Covers:
   and an explicit `<type>prometheus_remote_write</type>` rule can be mounted alongside it.
 - Regex metacharacters in `<http_path_prefix>` (e.g. `.`, `+`) are treated literally rather
   than as regex wildcards (regression coverage for the route-filter escaping fix).
-- Root mount (`<http_path_prefix>/</http_path_prefix>`) routes URLs with a single leading
-  slash (regression coverage for the `^//<db>/<table>/...` regex bug).
+- Root mount (`<http_path_prefix>/</http_path_prefix>`) serves `/write`, `/read`, `/api/v1/...`
+  at the URL root with query-based table routing.
 - `<prometheus><keeper_metrics_only>true</keeper_metrics_only>` skips the HTTP-port
   auto-mount entirely (keeper-only scrape surface must not gain `remote_write`/read/Query API
   routes on `<http_port>`).
@@ -43,7 +45,7 @@ from .prometheus_test_utils import (
 
 cluster = ClickHouseCluster(__file__)
 
-# Node 1: New-style auto-mount on the HTTP port, default `/time-series` prefix. No dedicated
+# Node 1: New-style auto-mount on the HTTP port, default `/prometheus` prefix. No dedicated
 # Prometheus port, so we should NOT see the deprecation warning here.
 node_default = cluster.add_instance(
     "node_default",
@@ -113,9 +115,29 @@ node_keeper_metrics_only = cluster.add_instance(
 
 
 HTTP_PORT = 8123  # ClickHouseCluster's default for this image.
-DEFAULT_PREFIX = "/time-series"
+DEFAULT_PREFIX = "/prometheus"
 CUSTOM_PREFIX = "/grafana/prom"
 REGEX_PREFIX = "/v1.0/prom+ts"
+
+
+def _rw_query_path(prefix, db, table, extra=""):
+    """Path segment for remote_write URLs (passed to `get_response_to_remote_write`)."""
+    q = f"database={db}&table={table}"
+    if extra:
+        q += f"&{extra}"
+    if prefix:
+        return f"{prefix.strip('/')}/write?{q}"
+    return f"write?{q}"
+
+
+def _rr_query_path(prefix, db, table, extra=""):
+    """Path segment for remote_read URLs."""
+    q = f"database={db}&table={table}"
+    if extra:
+        q += f"&{extra}"
+    if prefix:
+        return f"{prefix.strip('/')}/read?{q}"
+    return f"read?{q}"
 
 
 def _set_up_table(node, db, table):
@@ -130,12 +152,12 @@ def _set_up_table(node, db, table):
 
 def _send_one_sample(node, prefix, db, table, metric, ts, val,
                      expected_status=http.HTTPStatus.NO_CONTENT):
-    """Sends a single sample via remote_write to /<prefix>/<db>/<table>/write."""
+    """Sends a single sample via remote_write to `<prefix>/write?database=&table=`."""
     payload = convert_time_series_to_protobuf(
         [({"__name__": metric}, {ts: val})]
     )
     response = get_response_to_remote_write(
-        node.ip_address, HTTP_PORT, f"{prefix}/{db}/{table}/write", payload
+        node.ip_address, HTTP_PORT, _rw_query_path(prefix, db, table), payload
     )
     assert response.status_code == expected_status, (
         f"unexpected status {response.status_code}: {response.text}"
@@ -153,7 +175,7 @@ def start_cluster():
 
 
 # -----------------------------------------------------------------------------
-# Happy path under the default /time-series prefix.
+# Happy path under the default /prometheus prefix.
 # -----------------------------------------------------------------------------
 
 def test_remote_write_default_prefix():
@@ -161,6 +183,29 @@ def test_remote_write_default_prefix():
     _set_up_table(node_default, db, table)
     _send_one_sample(node_default, DEFAULT_PREFIX, db, table, metric, 1700000000, 42.0)
     # Round-trip via SQL to confirm the row landed in the right table.
+    rows = int(node_default.query(
+        f"SELECT count() FROM timeSeriesData({db}.{table})"))
+    assert rows >= 1
+
+
+def test_remote_write_via_x_clickhouse_headers():
+    """Target table can be supplied via X-ClickHouse-Database / X-ClickHouse-Table headers."""
+    db, table, metric = "default", "ts_headers", "rw_headers_metric"
+    _set_up_table(node_default, db, table)
+    payload = convert_time_series_to_protobuf(
+        [({"__name__": metric}, {1700000050: 99.0})]
+    )
+    response = get_response_to_remote_write(
+        node_default.ip_address,
+        HTTP_PORT,
+        f"{DEFAULT_PREFIX.strip('/')}/write",
+        payload,
+        extra_headers={
+            "X-ClickHouse-Database": db,
+            "X-ClickHouse-Table": table,
+        },
+    )
+    assert response.status_code == http.HTTPStatus.NO_CONTENT, response.text
     rows = int(node_default.query(
         f"SELECT count() FROM timeSeriesData({db}.{table})"))
     assert rows >= 1
@@ -175,7 +220,7 @@ def test_remote_read_default_prefix():
     )
     response = get_response_to_remote_read(
         node_default.ip_address, HTTP_PORT,
-        f"{DEFAULT_PREFIX}/{db}/{table}/read", read_request,
+        _rr_query_path(DEFAULT_PREFIX, db, table), read_request,
     )
     decoded = extract_protobuf_from_remote_read_response(response)
     assert len(decoded.results) == 1
@@ -187,15 +232,17 @@ def test_query_api_default_prefix():
     _set_up_table(node_default, db, table)
     _send_one_sample(node_default, DEFAULT_PREFIX, db, table, metric, 1700001000, 3.5)
 
-    base = f"http://{node_default.ip_address}:{HTTP_PORT}{DEFAULT_PREFIX}/{db}/{table}"
+    origin = f"http://{node_default.ip_address}:{HTTP_PORT}{DEFAULT_PREFIX}/api/v1"
 
     # Instant query: end-to-end happy path through the QueryAPI handler.
-    instant = requests.get(f"{base}/api/v1/query?query={metric}&time=1700001000")
+    instant = requests.get(
+        f"{origin}/query?database={db}&table={table}&query={metric}&time=1700001000"
+    )
     extract_data_from_http_api_response(instant)
 
     # Range query: end-to-end happy path through the QueryAPI handler.
     rng = requests.get(
-        f"{base}/api/v1/query_range?query={metric}"
+        f"{origin}/query_range?database={db}&table={table}&query={metric}"
         f"&start=1700000999&end=1700001001&step=1"
     )
     extract_data_from_http_api_response(rng)
@@ -207,11 +254,11 @@ def test_query_api_default_prefix():
     # an UNKNOWN_SETTING error from DynamicQueryHandler trying to interpret `match[]` as a
     # query setting.
     for path in [
-        f"/api/v1/series?match[]={metric}",
-        "/api/v1/labels",
-        "/api/v1/label/__name__/values",
+        f"/series?database={db}&table={table}&match[]={metric}",
+        f"/labels?database={db}&table={table}",
+        f"/label/__name__/values?database={db}&table={table}",
     ]:
-        response = requests.get(f"{base}{path}")
+        response = requests.get(f"{origin}{path}")
         assert response.status_code == http.HTTPStatus.BAD_REQUEST, (
             f"unexpected status {response.status_code} for {path}: {response.text}"
         )
@@ -242,13 +289,18 @@ def test_query_api_reserved_http_params_not_treated_as_settings():
     _set_up_table(node_default, db, table)
     _send_one_sample(node_default, DEFAULT_PREFIX, db, table, metric, 1700001500, 1.0)
 
-    base = f"http://{node_default.ip_address}:{HTTP_PORT}{DEFAULT_PREFIX}/{db}/{table}"
+    origin = f"http://{node_default.ip_address}:{HTTP_PORT}{DEFAULT_PREFIX}/api/v1"
 
     def url_for(endpoint, extra):
         if endpoint == "query":
-            return (f"{base}/api/v1/query?query={metric}&time=1700001500&{extra}")
-        return (f"{base}/api/v1/query_range?query={metric}"
-                f"&start=1700001499&end=1700001501&step=1&{extra}")
+            return (
+                f"{origin}/query?database={db}&table={table}&query={metric}"
+                f"&time=1700001500&{extra}"
+            )
+        return (
+            f"{origin}/query_range?database={db}&table={table}&query={metric}"
+            f"&start=1700001499&end=1700001501&step=1&{extra}"
+        )
 
     # 1. `query_id` and `stacktrace`: end-to-end success.
     for param_name, param_value in [("query_id", "prom-test-qid-1"), ("stacktrace", "1")]:
@@ -289,13 +341,13 @@ def test_custom_prefix_remote_write():
 
 
 def test_custom_prefix_does_not_serve_default():
-    """The default `/time-series` prefix is NOT mounted when a custom one is configured."""
+    """The default `/prometheus` prefix is NOT mounted when a custom one is configured."""
     payload = convert_time_series_to_protobuf(
         [({"__name__": "neg"}, {1700002000: 1.0})]
     )
     response = get_response_to_remote_write(
         node_prefix.ip_address, HTTP_PORT,
-        f"{DEFAULT_PREFIX}/default/ts_custom/write", payload,
+        _rw_query_path(DEFAULT_PREFIX, "default", "ts_custom"), payload,
     )
     # The catch-all dynamic-query handler doesn't accept POSTs to arbitrary URIs that aren't
     # `/`, `/?...`, or `/query?...`, so the request is unhandled (404).
@@ -319,7 +371,7 @@ def test_table_flag_off_rejected():
     )
     response = get_response_to_remote_write(
         node_default.ip_address, HTTP_PORT,
-        f"{DEFAULT_PREFIX}/{db}/{table}/write", payload,
+        _rw_query_path(DEFAULT_PREFIX, db, table), payload,
     )
     assert response.status_code == http.HTTPStatus.FORBIDDEN
 
@@ -330,7 +382,7 @@ def test_table_flag_off_rejected():
     node_default.query(f"CREATE TABLE {db}.{table} ENGINE=TimeSeries")
     response = get_response_to_remote_write(
         node_default.ip_address, HTTP_PORT,
-        f"{DEFAULT_PREFIX}/{db}/{table}/write", payload,
+        _rw_query_path(DEFAULT_PREFIX, db, table), payload,
     )
     assert response.status_code == http.HTTPStatus.NO_CONTENT
 
@@ -346,7 +398,7 @@ def test_non_timeseries_storage_rejected():
     )
     response = get_response_to_remote_write(
         node_default.ip_address, HTTP_PORT,
-        f"{DEFAULT_PREFIX}/{db}/{table}/write", payload,
+        _rw_query_path(DEFAULT_PREFIX, db, table), payload,
     )
     # Routed to the prometheus handler, but rejected because the storage isn't a TimeSeries.
     assert response.status_code == http.HTTPStatus.FORBIDDEN
@@ -356,20 +408,27 @@ def test_non_timeseries_storage_rejected():
 # Malformed URLs.
 # -----------------------------------------------------------------------------
 
-def test_missing_db_table_segments_404():
-    """`/time-series/api/v1/query` is missing the `<db>/<table>` segments and so doesn't
-    match any of the auto-mounted URL filters."""
-    response = requests.get(
-        f"http://{node_default.ip_address}:{HTTP_PORT}{DEFAULT_PREFIX}/api/v1/query?query=up"
+def test_missing_database_or_table_returns_400():
+    """Without `database` / `table` (or matching headers), dynamic routing fails with HTTP 400."""
+    payload = convert_time_series_to_protobuf(
+        [({"__name__": "missing_tbl"}, {1700000500: 1.0})]
     )
-    assert response.status_code == http.HTTPStatus.NOT_FOUND
+    response = get_response_to_remote_write(
+        node_default.ip_address,
+        HTTP_PORT,
+        f"{DEFAULT_PREFIX.strip('/')}/write",
+        payload,
+    )
+    assert response.status_code == http.HTTPStatus.BAD_REQUEST
+    text = response.text.lower()
+    assert "database" in text and "table" in text
 
 
 def test_partial_url_404():
-    """`/time-series/default/ts/wrong_action` doesn't match any known protocol suffix."""
+    """`/prometheus/wrong_action` doesn't match any known protocol suffix."""
     response = requests.post(
         f"http://{node_default.ip_address}:{HTTP_PORT}"
-        f"{DEFAULT_PREFIX}/default/ts_write/wrong_action"
+        f"{DEFAULT_PREFIX}/wrong_action?database=default&table=ts_write"
     )
     assert response.status_code == http.HTTPStatus.NOT_FOUND
 
@@ -379,7 +438,7 @@ def test_partial_url_404():
 # -----------------------------------------------------------------------------
 
 def test_metrics_not_under_prefix():
-    """`/time-series/metrics` is not a mounted route -- the `/metrics` auto-mount stays at
+    """`/prometheus/metrics` is not a mounted route -- the `/metrics` auto-mount stays at
     its own URL and is served by the ExposeMetrics handler factory."""
     response = requests.get(
         f"http://{node_default.ip_address}:{HTTP_PORT}{DEFAULT_PREFIX}/metrics"
@@ -458,7 +517,7 @@ def test_http_handlers_prometheus_type_legacy_metrics():
 
 def test_http_handlers_explicit_remote_write_dynamic_routing():
     """A user can mount the new `<type>prometheus_remote_write</type>` handler explicitly under
-    `<http_handlers>` and dynamic routing still resolves the (database, table) pair from the URL."""
+    `<http_handlers>` and dynamic routing resolves the (database, table) pair from params."""
     db, table, metric = "default", "ts_explicit", "explicit_metric"
     _set_up_table(node_http_handlers, db, table)
 
@@ -467,7 +526,7 @@ def test_http_handlers_explicit_remote_write_dynamic_routing():
     )
     response = get_response_to_remote_write(
         node_http_handlers.ip_address, HTTP_PORT,
-        f"/explicit/{db}/{table}/write", payload,
+        _rw_query_path("/explicit", db, table), payload,
     )
     assert response.status_code == http.HTTPStatus.NO_CONTENT
 
@@ -479,7 +538,7 @@ def test_http_handlers_explicit_remote_write_dynamic_routing():
 def test_http_handlers_explicit_remote_write_unnormalized_prefix():
     """An explicit `<http_handlers>` rule that sets `<http_path_prefix>` WITHOUT a leading
     slash (e.g. `bare` instead of `/bare`) must be normalized the same way as the auto-mount,
-    otherwise `computeDispatchInfo` would reject `/bare/db/table/write` with `BAD_ARGUMENTS`.
+    otherwise `computeDispatchInfo` would reject `/bare/write?database=...` with `BAD_ARGUMENTS`.
     Regression coverage for the per-rule prefix normalization fix."""
     db, table, metric = "default", "ts_bare", "bare_metric"
     _set_up_table(node_http_handlers, db, table)
@@ -489,7 +548,7 @@ def test_http_handlers_explicit_remote_write_unnormalized_prefix():
     )
     response = get_response_to_remote_write(
         node_http_handlers.ip_address, HTTP_PORT,
-        f"/bare/{db}/{table}/write", payload,
+        _rw_query_path("/bare", db, table), payload,
     )
     assert response.status_code == http.HTTPStatus.NO_CONTENT, (
         f"unexpected status {response.status_code}: {response.text}"
@@ -502,26 +561,26 @@ def test_http_handlers_explicit_remote_write_unnormalized_prefix():
 
 def test_http_handlers_auto_mount_opted_out():
     """An empty `<http_path_prefix>` opts the HTTP-port auto-mount out entirely. Hitting the
-    default `/time-series/...` URL on this node must NOT route to a Prometheus handler."""
+    default `/prometheus/...` URL on this node must NOT route to a Prometheus handler."""
     payload = convert_time_series_to_protobuf(
         [({"__name__": "negative_auto"}, {1700006100: 1.0})]
     )
     response = get_response_to_remote_write(
         node_http_handlers.ip_address, HTTP_PORT,
-        f"{DEFAULT_PREFIX}/default/ts_explicit/write", payload,
+        _rw_query_path(DEFAULT_PREFIX, "default", "ts_explicit"), payload,
     )
     assert response.status_code == http.HTTPStatus.NOT_FOUND
 
 
 def test_keeper_metrics_only_skips_http_auto_mount():
     """`<prometheus><keeper_metrics_only>true</keeper_metrics_only>` must not register the
-    default `/time-series/<db>/<table>/...` routes on the main HTTP port."""
+    default Prometheus protocol routes on the main HTTP port."""
     payload = convert_time_series_to_protobuf(
         [({"__name__": "keeper_only_negative"}, {1700006300: 1.0})]
     )
     response = get_response_to_remote_write(
         node_keeper_metrics_only.ip_address, HTTP_PORT,
-        f"{DEFAULT_PREFIX}/default/ts_keeper_only/write", payload,
+        _rw_query_path(DEFAULT_PREFIX, "default", "ts_keeper_only"), payload,
     )
     assert response.status_code == http.HTTPStatus.NOT_FOUND
 
@@ -544,13 +603,13 @@ def test_regex_prefix_literal_match():
 def test_regex_prefix_does_not_match_as_regex():
     """A path that would only match if `.` and `+` were interpreted as regex metacharacters
     (e.g. `.` -> any char, `+` -> one-or-more) must NOT route to the prometheus handler.
-    `/v1x0/promXXts/.../write` is one such would-be regex match for `/v1.0/prom+ts/...`."""
+    `/v1x0/promXXts/write` is one such would-be regex match for `/v1.0/prom+ts/write`."""
     payload = convert_time_series_to_protobuf(
         [({"__name__": "negative"}, {1700007100: 1.0})]
     )
     response = get_response_to_remote_write(
         node_regex_prefix.ip_address, HTTP_PORT,
-        "/v1x0/promXXts/default/ts_regex_prefix/write", payload,
+        _rw_query_path("/v1x0/promXXts", "default", "ts_regex_prefix"), payload,
     )
     assert response.status_code == http.HTTPStatus.NOT_FOUND
 
@@ -560,7 +619,7 @@ def test_regex_prefix_does_not_match_as_regex():
 # -----------------------------------------------------------------------------
 
 def test_root_prefix_remote_write_single_slash():
-    """`http_path_prefix = "/"` routes `/db/table/write` (single leading slash)."""
+    """`http_path_prefix = "/"` routes `/write?database=&table=` (single leading slash)."""
     db, table, metric = "default", "ts_root", "root_metric"
     _set_up_table(node_root_prefix, db, table)
     # Note: prefix passed as empty string to avoid building a `//db/...` URL.
@@ -571,7 +630,7 @@ def test_root_prefix_remote_write_single_slash():
 
 
 def test_root_prefix_remote_read_single_slash():
-    """`http_path_prefix = "/"` also routes `/db/table/read`."""
+    """`http_path_prefix = "/"` also routes `/read?database=&table=`."""
     db, table, metric = "default", "ts_root_read", "rr_metric"
     _set_up_table(node_root_prefix, db, table)
     _send_one_sample(node_root_prefix, "", db, table, metric, 1700008100, 7.5)
@@ -580,7 +639,7 @@ def test_root_prefix_remote_read_single_slash():
     )
     response = get_response_to_remote_read(
         node_root_prefix.ip_address, HTTP_PORT,
-        f"/{db}/{table}/read", read_request,
+        _rr_query_path("", db, table), read_request,
     )
     decoded = extract_protobuf_from_remote_read_response(response)
     assert len(decoded.results) == 1
@@ -588,32 +647,31 @@ def test_root_prefix_remote_read_single_slash():
 
 
 def test_root_prefix_query_api_single_slash():
-    """`http_path_prefix = "/"` routes `/db/table/api/v1/query` (single leading slash) end-to-end,
+    """`http_path_prefix = "/"` routes `/api/v1/query?database=&table=` end-to-end,
     and also routes the not-yet-implemented `/api/v1/labels` to our handler (proving it doesn't
     fall through to DynamicQueryHandler)."""
     db, table, metric = "default", "ts_root_api", "api_metric"
     _set_up_table(node_root_prefix, db, table)
     _send_one_sample(node_root_prefix, "", db, table, metric, 1700008200, 8.5)
-    base = f"http://{node_root_prefix.ip_address}:{HTTP_PORT}/{db}/{table}"
+    origin = f"http://{node_root_prefix.ip_address}:{HTTP_PORT}/api/v1"
 
     # Happy path through the implemented Query API endpoint.
-    instant = requests.get(f"{base}/api/v1/query?query={metric}&time=1700008200")
+    instant = requests.get(
+        f"{origin}/query?database={db}&table={table}&query={metric}&time=1700008200"
+    )
     extract_data_from_http_api_response(instant)
 
     # Routed to our handler (returns the well-formed not-implemented JSON, NOT a 404 from
     # the catch-all DynamicQueryHandler).
-    labels = requests.get(f"{base}/api/v1/labels")
+    labels = requests.get(f"{origin}/labels?database={db}&table={table}")
     assert labels.status_code == http.HTTPStatus.BAD_REQUEST
     body = labels.json()
     assert body.get("errorType") == "bad_data"
     assert "not implemented" in body.get("error", "").lower()
 
 
-# The previous bug required `//<db>/<table>/...` (an extra leading slash) on root mount, so
-# the positive single-slash tests above are sufficient regression coverage by themselves -
-# they would have returned 404 against the buggy regex `^//[^/]+/[^/]+/...$`. We don't add a
-# negative assertion against `//<db>/<table>/...` here because Poco's HTTP layer normalizes
-# repeated slashes in the URI before it reaches the route filter.
+# Root-mount regression coverage: the route filters must not require doubled slashes before
+# `/write`, `/read`, or `/api/v1/...`.
 
 
 # -----------------------------------------------------------------------------
@@ -634,7 +692,7 @@ def _trigger_remote_write_error_with_stacktrace_param(node, prefix):
     )
     response = get_response_to_remote_write(
         node.ip_address, HTTP_PORT,
-        f"{prefix}/default/__no_such_table__/write?stacktrace=1",
+        _rw_query_path(prefix, "default", "__no_such_table__", "stacktrace=1"),
         payload,
     )
     # Either UNKNOWN_TABLE or ACCESS_DENIED, both surface through the same

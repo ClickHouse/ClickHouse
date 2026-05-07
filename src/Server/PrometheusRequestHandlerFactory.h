@@ -70,7 +70,8 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///
 ///   - The new explicit handler types @c prometheus_remote_write / @c prometheus_remote_read /
 ///     @c prometheus_query_api enable dynamic-routing-only mode: the target TimeSeries table is
-///     parsed from the URL path segments after the user-configured @c url filter, so @c table
+///     taken from @c database / @c table query parameters (or @c X-ClickHouse-Database /
+///     @c X-ClickHouse-Table headers) after the user-configured @c url filter matches, so @c table
 ///     and @c database must NOT be specified on the handler (the factory will reject the rule
 ///     otherwise).
 ///
@@ -80,7 +81,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 /// <http_port>8123</http_port>
 /// <http_handlers>
 ///     <my_rule2>
-///         <url>regex:^/foo/[^/]+/[^/]+/write$</url>
+///         <url>regex:^/foo/write$</url>
 ///         <methods>POST</methods>
 ///         <handler>
 ///             <type>prometheus_remote_write</type>
@@ -98,7 +99,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
 
 /// Auto-mounts the three dynamic-routing Prometheus protocol rules (remote_write, remote_read,
 /// query_api) on @p factory under the prefix configured by @c prometheus.http_path_prefix
-/// (default @c /time-series). No-op when @c prometheus is not configured or the prefix is empty.
+/// (default @c /prometheus). No-op when @c prometheus is not configured or the prefix is empty.
 /// @c expose_metrics is NOT registered here -- that has its own @c /metrics auto-mount via
 /// createPrometheusHandlerFactoryForHTTPRuleDefaults().
 void addPrometheusProtocolsToHTTPDefaults(

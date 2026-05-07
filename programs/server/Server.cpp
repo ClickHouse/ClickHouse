@@ -3730,8 +3730,9 @@ void Server::createServers(
 
             /// The dedicated `<prometheus><port>` listener is kept for back-compat with
             /// fixed-table `<prometheus><handlers>` configurations, but new deployments should
-            /// use the auto-mounted `/<prefix>/<db>/<table>/...` routes on the main HTTP port
-            /// (configurable via `<prometheus><http_path_prefix>`, default `/time-series`).
+            /// use the auto-mounted Prometheus routes on the main HTTP port under
+            /// `<prometheus><http_path_prefix>` (default `/prometheus`), passing `database` and
+            /// `table` as query parameters (or `X-ClickHouse-Database` / `X-ClickHouse-Table`).
             /// Use a `call_once` so the warning is emitted only the first time we start the
             /// listener for this process even if the servers are reloaded.
             {
@@ -3739,10 +3740,11 @@ void Server::createServers(
                 std::call_once(prometheus_dedicated_port_deprecation_warning, [this, handler_name] {
                     LOG_WARNING(&logger(),
                         "The dedicated <prometheus><port> listener (handler: {}) is deprecated. "
-                        "Prefer the auto-mounted Prometheus protocols on the main HTTP port at "
-                        "/<prometheus.http_path_prefix>/<database>/<table>/... "
-                        "(default prefix: /time-series). All TimeSeries tables are opted in by "
-                        "default; set prometheus_url_routing_enabled = 0 on a table to opt it out.",
+                        "Prefer the auto-mounted Prometheus protocols on the main HTTP port "
+                        "(configure <prometheus><http_path_prefix>, default /prometheus), for "
+                        "example /prometheus/write?database=...&table=... . All TimeSeries tables "
+                        "are opted in by default; set prometheus_url_routing_enabled = 0 on a "
+                        "table to opt it out.",
                         handler_name);
                 });
             }

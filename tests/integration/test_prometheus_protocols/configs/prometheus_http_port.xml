@@ -2,7 +2,7 @@
     <!--
         New-style configuration: no dedicated <port>, no fixed-table <handlers>.
         The Prometheus protocols (remote_write, remote_read, query_api) are auto-mounted on
-        the main HTTP port at the default prefix /time-series/<db>/<table>/...
+        the main HTTP port at the default prefix /prometheus/... with database/table in query params
         URL routing is enabled by default for every TimeSeries table; tables can opt out by
         creating them with SETTINGS prometheus_url_routing_enabled = 0.
     -->

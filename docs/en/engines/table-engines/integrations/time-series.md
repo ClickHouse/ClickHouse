@@ -54,9 +54,10 @@ Then this table can be used with the following protocols (a port must be assigne
 
 The Prometheus protocols (`remote_write`, `remote_read`, and the Query API) are also
 auto-mounted on the main `<http_port>` under a configurable URL prefix (default
-`/time-series`); the target table is encoded directly in the URL path as
-`/<http_path_prefix>/<database>/<table>/<protocol-path>`. URL-routed access is on by
-default for every `TimeSeries` table; set
+`/prometheus`). The request specifies the target table via the `database` and `table`
+query parameters (or the `X-ClickHouse-Database` and `X-ClickHouse-Table` HTTP headers),
+for example `/<http_path_prefix>/write?database=mydb&table=metrics`. URL-routed access is
+on by default for every `TimeSeries` table; set
 [prometheus_url_routing_enabled](#prometheus_url_routing_enabled) to `0` at
 `CREATE TABLE` time to opt a particular table out. See the
 [`prometheus`](/operations/server-configuration-parameters/settings#prometheus) server
@@ -325,7 +326,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
-| <a id="prometheus_url_routing_enabled"></a>`prometheus_url_routing_enabled` | Bool | true | When `true` (the default), this `TimeSeries` table can be addressed via the URL path `/<http_path_prefix>/<database>/<table>/...` by the Prometheus protocols (`remote_write`, `remote_read`, query API) auto-mounted on the main HTTP port. Set to `false` to opt this table out of URL-routed access; such requests are then rejected with HTTP 403. See the [`prometheus`](/operations/server-configuration-parameters/settings#prometheus) server settings for details on the URL prefix. Note that `TimeSeries` tables do not currently support `ALTER ... MODIFY SETTING`, so this setting must be supplied at `CREATE TABLE` time |
+| <a id="prometheus_url_routing_enabled"></a>`prometheus_url_routing_enabled` | Bool | true | When `true` (the default), this `TimeSeries` table can be addressed by the Prometheus protocols (`remote_write`, `remote_read`, query API) auto-mounted on the main HTTP port, by passing `database` / `table` query parameters (or `X-ClickHouse-Database` / `X-ClickHouse-Table` headers) together with paths under `<http_path_prefix>`. Set to `false` to opt this table out of URL-routed access; such requests are then rejected with HTTP 403. See the [`prometheus`](/operations/server-configuration-parameters/settings#prometheus) server settings for details on the URL prefix. Note that `TimeSeries` tables do not currently support `ALTER ... MODIFY SETTING`, so this setting must be supplied at `CREATE TABLE` time |
 
 # Functions {#functions}
 

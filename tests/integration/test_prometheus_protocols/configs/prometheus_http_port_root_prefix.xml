@@ -3,13 +3,13 @@
         Regression coverage for `prometheus.http_path_prefix = "/"` (root mount).
 
         With the root prefix, Prometheus protocols must be reachable at:
-            /<database>/<table>/write
-            /<database>/<table>/read
-            /<database>/<table>/api/v1/{query,query_range,series,labels,...}
+            /write?database=...&table=...
+            /read?database=...&table=...
+            /api/v1/{query,query_range,series,labels,...}?database=...&table=...
 
-        i.e. with a SINGLE leading slash. Earlier the route regex was assembled as
-        `^//[^/]+/[^/]+/...$`, which made the root mount unreachable except via a malformed
-        double-slash URL. See `addPrometheusProtocolsToHTTPDefaults`.
+        i.e. with a SINGLE leading slash before `write`, `read`, or `api`. Earlier the route
+        regex incorrectly required extra path segments, which made the root mount unreachable.
+        See `addPrometheusProtocolsToHTTPDefaults`.
     -->
     <prometheus>
         <http_path_prefix>/</http_path_prefix>

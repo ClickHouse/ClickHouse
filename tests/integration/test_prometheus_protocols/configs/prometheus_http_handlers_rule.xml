@@ -8,12 +8,12 @@
            at `/test_prometheus_legacy` here and gated by a custom request header.
 
         2. The new explicit `<type>prometheus_remote_write</type>` handler can be mounted
-           manually too, and the (database, table) pair is still resolved from the URL path
+           manually too; the (database, table) pair comes from query parameters / headers
            (dynamic routing is the only supported mode for the new handler types).
 
         3. A second explicit `<type>prometheus_remote_write</type>` rule uses a `<http_path_prefix>`
            WITHOUT a leading slash (`bare`). The per-rule prefix must be normalized the same way
-           as the auto-mount path; otherwise `computeDispatchInfo` would reject `/bare/db/table/write`
+           as the auto-mount path; otherwise `computeDispatchInfo` would reject `/bare/write?...`
            with `BAD_ARGUMENTS` because the URI starts with `/` but `prefix.starts_with("bare")`
            would be false.
 
@@ -35,7 +35,7 @@
         </rule>
         <rule>
             <methods>POST</methods>
-            <url>regex:^/explicit/[^/]+/[^/]+/write$</url>
+            <url>regex:^/explicit/write$</url>
             <handler>
                 <type>prometheus_remote_write</type>
                 <http_path_prefix>/explicit</http_path_prefix>
@@ -43,7 +43,7 @@
         </rule>
         <rule>
             <methods>POST</methods>
-            <url>regex:^/bare/[^/]+/[^/]+/write$</url>
+            <url>regex:^/bare/write$</url>
             <handler>
                 <type>prometheus_remote_write</type>
                 <http_path_prefix>bare</http_path_prefix>

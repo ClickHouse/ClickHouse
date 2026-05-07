@@ -86,18 +86,21 @@ def send_protobuf_to_remote_write(host, port, path, write_request_proto):
     check_remote_write_response(response)
 
 
-def get_response_to_remote_write(host, port, path, write_request_proto):
+def get_response_to_remote_write(host, port, path, write_request_proto, extra_headers=None):
     url = f"http://{host}:{port}/{path.strip('/')}"
     print(f"Posting {url}")
+    headers = {
+        "Content-Encoding": "snappy",
+        "Content-Type": "application/x-protobuf",
+        "User-Agent": requests.utils.default_user_agent(),
+        "X-Prometheus-Remote-Write-Version": "0.1.0",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
     response = requests.post(
         url,
         data=snappy.compress(data=write_request_proto.SerializeToString()),
-        headers={
-            "Content-Encoding": "snappy",
-            "Content-Type": "application/x-protobuf",
-            "User-Agent": requests.utils.default_user_agent(),
-            "X-Prometheus-Remote-Write-Version": "0.1.0",
-        },
+        headers=headers,
     )
     print(
         f"Status code: {response.status_code} {http.HTTPStatus(response.status_code).phrase}"
@@ -135,19 +138,22 @@ def receive_protobuf_from_remote_read(host, port, path, read_request_proto):
     return extract_protobuf_from_remote_read_response(response)
 
 
-def get_response_to_remote_read(host, port, path, read_request_proto):
+def get_response_to_remote_read(host, port, path, read_request_proto, extra_headers=None):
     url = f"http://{host}:{port}/{path.strip('/')}"
     print(f"Posting {url}")
+    headers = {
+        "Content-Encoding": "snappy",
+        "Accept-Encoding": "snappy",
+        "Content-Type": "application/x-protobuf",
+        "User-Agent": requests.utils.default_user_agent(),
+        "X-Prometheus-Remote-Read-Version": "0.1.0",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
     response = requests.get(
         url,
         data=snappy.compress(data=read_request_proto.SerializeToString()),
-        headers={
-            "Content-Encoding": "snappy",
-            "Accept-Encoding": "snappy",
-            "Content-Type": "application/x-protobuf",
-            "User-Agent": requests.utils.default_user_agent(),
-            "X-Prometheus-Remote-Read-Version": "0.1.0",
-        },
+        headers=headers,
     )
     print(
         f"Status code: {response.status_code} {http.HTTPStatus(response.status_code).phrase}"

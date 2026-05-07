@@ -185,9 +185,16 @@ protected:
         if (name.empty())
             return false;
 
-        /// Some parameters (database, default_format, everything used in the code above) do not
-        /// belong to the Settings class.
-        static const NameSet reserved_param_names{"user", "password", "quota_key", "stacktrace", "role", "query_id"};
+        /// Reserved-parameter set is the union of:
+        ///   - HTTP-handler base names handled specially in @c makeContext / authentication
+        ///     (@c user, @c password, @c quota_key, @c stacktrace, @c role, @c query_id);
+        ///   - Prometheus dynamic-routing target names (@c database, @c table) consumed by
+        ///     @c computeDispatchInfo to pick the target TimeSeries table. They are not
+        ///     ClickHouse settings, and forwarding them to @c applySettingsChanges would throw
+        ///     @c UNKNOWN_SETTING (HTTP 400) for otherwise valid Prometheus requests.
+        static const NameSet reserved_param_names{
+            "user", "password", "quota_key", "stacktrace", "role", "query_id",
+            "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
@@ -235,22 +242,21 @@ protected:
     struct DispatchInfo
     {
         /// The `(database, table)` pair to use for this request. Either copied from the handler
-        /// config (fixed-table mode) or parsed out of the URL after @c http_path_prefix
-        /// (dynamic-routing mode).
+        /// config (fixed-table mode) or taken from the HTTP query string / headers in
+        /// dynamic-routing mode (`database`, `table`, `X-ClickHouse-Database`, `X-ClickHouse-Table`).
         QualifiedTableName table_name;
 
-        /// The portion of the request path that follows @c http_path_prefix (and, in dynamic
-        /// routing mode, the database/table segments). Always begins with @c / . The query
-        /// string is stripped. Used by @c QueryAPIImpl to dispatch on `/api/v1/...`. In
+        /// The portion of the request path after @c http_path_prefix (query string stripped).
+        /// Always begins with @c / . In dynamic-routing mode this is e.g. @c /write , @c /read ,
+        /// or @c /api/v1/query . Used by @c QueryAPIImpl to dispatch on `/api/v1/...`. In
         /// fixed-table mode this is the full path of the request.
         String relative_path;
     };
 
-    /// Parses the request URI, applies the configured prefix and (optionally) extracts the
-    /// database/table segments. Throws @c BAD_ARGUMENTS (400) when dynamic routing is enabled but
-    /// the path does not contain the required segments. In practice the factory's URL filter
-    /// regex already rejects malformed URLs before they reach the handler, so this path is mainly
-    /// a belt-and-suspenders check for direct callers that bypass the filter.
+    /// Parses the request URI: strips @c http_path_prefix , builds @c relative_path , and in
+    /// dynamic-routing mode resolves the target table from @c database / @c table query parameters
+    /// (falling back to @c X-ClickHouse-Database / @c X-ClickHouse-Table headers). Throws
+    /// @c BAD_ARGUMENTS (400) when those are missing or empty.
     DispatchInfo computeDispatchInfo(const HTTPServerRequest & request)
     {
         const String & uri = request.getURI();
@@ -277,33 +283,26 @@ protected:
 
         if (path.empty() || path.front() != '/')
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Prometheus request URI {} is missing the /<database>/<table>/<protocol-path> segments after the prefix", uri);
-        path.remove_prefix(1);
-
-        const auto first_slash = path.find('/');
-        if (first_slash == std::string_view::npos || first_slash == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Prometheus request URI {} does not contain a /<database>/<table>/... segment after the prefix", uri);
-        std::string_view db_segment = path.substr(0, first_slash);
-        path.remove_prefix(first_slash + 1);
-
-        const auto second_slash = path.find('/');
-        if (second_slash == std::string_view::npos || second_slash == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Prometheus request URI {} does not contain a /<table>/<protocol-path> segment after the database segment", uri);
-        std::string_view table_segment = path.substr(0, second_slash);
-        std::string_view rest = path.substr(second_slash);
+                "Prometheus request URI {} is missing the protocol path after the prefix "
+                "(expected e.g. /write, /read, /api/v1/query under {})",
+                uri,
+                prefix.empty() ? String{"the configured mount"} : prefix);
 
         QualifiedTableName resolved;
-        Poco::URI::decode(String{db_segment}, resolved.database);
-        Poco::URI::decode(String{table_segment}, resolved.table);
+        resolved.database = params->get("database", request.get("X-ClickHouse-Database", ""));
+        resolved.table = params->get("table", request.get("X-ClickHouse-Table", ""));
         if (resolved.database.empty() || resolved.table.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Prometheus request URI {} contains an empty database or table segment after the prefix", uri);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Prometheus dynamic routing requires both a database and a table name: pass "
+                "`database` and `table` as query parameters, or set the "
+                "`X-ClickHouse-Database` and `X-ClickHouse-Table` HTTP headers "
+                "(request URI was {})",
+                uri);
 
         return DispatchInfo{
             .table_name = std::move(resolved),
-            .relative_path = String{rest},
+            .relative_path = String{path},
         };
     }
 
@@ -487,6 +486,8 @@ public:
         static const NameSet reserved_param_names{
             /// Base HTTP handler reserved params:
             "user", "password", "quota_key", "stacktrace", "role", "query_id",
+            /// Dynamic routing target (same as @c ImplWithContext::isSettingLikeParameter):
+            "database", "table",
             /// Prometheus HTTP API reserved params:
             "query", "time", "start", "end", "step", "match[]", "limit", "timeout", "lookback_delta"};
         return !reserved_param_names.contains(name);

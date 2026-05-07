@@ -1296,7 +1296,7 @@ Settings:
   :::warning Deprecated
   The dedicated `<port>` listener is deprecated. The Prometheus protocol handlers
   (`remote_write`, `remote_read`, and the Query API) are now auto-mounted on the main
-  `<http_port>` under the `<http_path_prefix>` (default `/time-series`); see below. The
+  `<http_port>` under the `<http_path_prefix>` (default `/prometheus`); see below. The
   dedicated listener still works for backward compatibility with existing fixed-table `<handlers>`
   configurations and will continue to do so, but ClickHouse logs a startup warning the
   first time it binds the dedicated port.
@@ -1304,9 +1304,12 @@ Settings:
 
 - `http_path_prefix` – URL prefix used to auto-mount the Prometheus `remote_write`,
   `remote_read`, and Query API handlers on the main `<http_port>`. Defaults to
-  `/time-series`. The full request URL is then
-  `http://<host>:<http_port>/<http_path_prefix>/<database>/<table>/<protocol-path>`,
-  where `<database>` and `<table>` are taken from the URL itself (dynamic routing).
+  `/prometheus`. After that prefix, paths such as `/write`, `/read`, and `/api/v1/query`
+  identify the protocol. The target database and table are **not** part of the path:
+  pass them as `database` and `table` query parameters (for example
+  `http://<host>:<http_port>/prometheus/write?database=mydb&table=metrics`), or set the
+  `X-ClickHouse-Database` and `X-ClickHouse-Table` HTTP headers when the corresponding
+  query parameters are absent.
   Set to an empty string to opt out of the auto-mount entirely. The target table must
   be a `TimeSeries` engine table; URL-routed access is on by default for every
   `TimeSeries` table and can be disabled per table by setting
@@ -1370,7 +1373,7 @@ curl 127.0.0.1:9363/metrics
         <errors>true</errors>
 
         <!-- Auto-mount remote_write/remote_read/query_api on the main HTTP port. -->
-        <http_path_prefix>/time-series</http_path_prefix>
+        <http_path_prefix>/prometheus</http_path_prefix>
     </prometheus>
 </clickhouse>
 ```
@@ -1380,16 +1383,21 @@ on by default), Prometheus can be pointed at:
 
 ```yaml
 remote_write:
-  - url: http://127.0.0.1:8123/time-series/mydb/metrics/write
+  - url: http://127.0.0.1:8123/prometheus/write?database=mydb&table=metrics
 remote_read:
-  - url: http://127.0.0.1:8123/time-series/mydb/metrics/read
+  - url: http://127.0.0.1:8123/prometheus/read?database=mydb&table=metrics
 ```
 
-Prometheus Query API endpoints are available under the same prefix
-(`http://127.0.0.1:8123/time-series/mydb/metrics/api/v1/...`), with paths such as `query`,
-`query_range`, `series`, `labels`, and `label/<name>/values` (where `<name>` is a label
-name). The same URL prefix (`http://127.0.0.1:8123/time-series/mydb/metrics`) is what
-Grafana should use as the Prometheus data source URL.
+Prometheus Query API endpoints are available under
+`http://127.0.0.1:8123/prometheus/api/v1/...` with the same `database` and `table`
+parameters added to each request (for example
+`http://127.0.0.1:8123/prometheus/api/v1/query?database=mydb&table=metrics&query=up`),
+with paths such as `query`, `query_range`, `series`, `labels`, and
+`label/<name>/values` (where `<name>` is a label name). Use
+`http://127.0.0.1:8123/prometheus` as the Prometheus data source URL in Grafana when
+the datasource adds `/api/v1/...` paths itself (include `database` and `table` in the
+extra fields your client supports, or rely on `X-ClickHouse-Database` /
+`X-ClickHouse-Table` headers).
 
 ## query_log {#query_log}
 
