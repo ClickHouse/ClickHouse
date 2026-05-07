@@ -36,6 +36,20 @@ struct SettingFieldBase
 
     virtual void writeBinary(WriteBuffer & out) const = 0;
     virtual void readBinary(ReadBuffer & in) = 0;
+
+    /// Reset this setting to the value held by `default_value` (which must have the same dynamic
+    /// type as `*this`). The default implementation goes through a `Field` round-trip, which is
+    /// fine for any type whose `operator Field` is invertible (i.e. `*this = Field(other)` then
+    /// `static_cast<Field>(*this) == Field(other)`). Types that deliberately have a non-invertible
+    /// `operator Field` must override and copy state directly. See issue #103120 - the canonical
+    /// example is `SettingFieldMaxThreads`, which behaves like a plain `UInt64` for backward
+    /// compatibility (its `operator Field` returns the resolved value, not the `0` / `"auto"`
+    /// canonical form), and so loses `is_auto` across the `Field` round-trip.
+    virtual void resetFromDefault(const SettingFieldBase & default_value)
+    {
+        *this = static_cast<Field>(default_value);
+        setChanged(false);
+    }
 };
 
 template <typename T>
@@ -213,6 +227,21 @@ struct SettingFieldMaxThreads final : SettingFieldBase
 
     bool isChanged() const override { return changed; }
     void setChanged(bool changed_) override { changed = changed_; }
+
+    /// Override of the base-class hook used by `BaseSettings::resetValueToDefault`. The default
+    /// `Field`-based implementation is lossy here because `operator Field` deliberately returns
+    /// the resolved value (e.g. `32` when `is_auto` is set), so a round-trip would reconstruct
+    /// the setting as if it had been set explicitly to that number, dropping `is_auto`. We avoid
+    /// the round-trip entirely by copying `default_value` member-wise. This preserves whichever
+    /// state the declared default carries: `is_auto = true` for settings declared with default
+    /// `0` (e.g. `max_threads`, `max_final_threads`, `max_parsing_threads`), and `is_auto = false`
+    /// with the typed default value for settings declared with an explicit non-zero default (e.g.
+    /// `max_download_threads = 4`). See issue #103120.
+    void resetFromDefault(const SettingFieldBase & default_value) override
+    {
+        *this = static_cast<const SettingFieldMaxThreads &>(default_value);
+        changed = false;
+    }
 
     operator UInt64() const { return value; } /// NOLINT
     explicit operator Field() const override { return value; }
