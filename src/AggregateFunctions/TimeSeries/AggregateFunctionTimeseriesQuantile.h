@@ -43,7 +43,7 @@ struct AggregateFunctionTimeseriesQuantileTraits
         {
             auto it = samples.find(timestamp);
             if (it != samples.end())
-                it->second = std::max(it->second, value);
+                it->second = std::fmax(it->second, value);
             else
                 samples[timestamp] = value;
         }

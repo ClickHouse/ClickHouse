@@ -1480,6 +1480,18 @@ def test_conversion_functions():
     )
 
     do_query_test(
+        "timestamp(vector(1))[40:10]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "150"], [160, "160"], [170, "170"], [180, "180"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',150),('1970-01-01 00:02:40.000',160),('1970-01-01 00:02:50.000',170),('1970-01-01 00:03:00.000',180)]",
+            ]
+        ],
+    )
+
+    do_query_test(
         "scalar(vector(1))",
         180,
         '{"resultType": "scalar", "result": [180, "1"]}',
@@ -1788,6 +1800,34 @@ def test_math_functions():
                 "[('1970-01-01 00:01:40.000',-2),('1970-01-01 00:03:20.000',-1),('1970-01-01 00:05:00.000',-0),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',1),('1970-01-01 00:10:00.000',1),('1970-01-01 00:11:40.000',2)]",
             ]
         ],
+    )
+
+    do_query_test(
+        "round(vector(5), 2)",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "6"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", 6]],
+    )
+
+    do_query_test(
+        "clamp_min(vector(2), NaN)",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "NaN"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", "nan"]],
+    )
+
+    do_query_test(
+        "clamp_max(vector(2), NaN)",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "NaN"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", "nan"]],
+    )
+
+    do_query_test(
+        "clamp(vector(2), 0, NaN)",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "NaN"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", "nan"]],
     )
 
     do_query_test(

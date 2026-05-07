@@ -54,6 +54,33 @@ namespace
                 timeSeriesDurationToAST(argument.step, context.timestamp_data_type)),
             make_intrusive<ASTLiteral>(fmt::format("Array({})", context.scalar_data_type->getName())));
     }
+
+    SQLQueryPiece makeScalarLikeTimestampResult(
+        const PQT::Function * function_node,
+        const SQLQueryPiece & argument,
+        ConverterContext & context)
+    {
+        SQLQueryPiece res{function_node, function_node->result_type, argument.store_method};
+        res.start_time = argument.start_time;
+        res.end_time = argument.end_time;
+        res.step = argument.step;
+        res.metric_name_dropped = argument.metric_name_dropped;
+
+        if (argument.start_time == argument.end_time)
+        {
+            res.store_method = StoreMethod::CONST_SCALAR;
+            res.scalar_value = DecimalUtils::convertTo<Float64>(argument.start_time, context.timestamp_scale);
+            return dropMetricName(std::move(res), context);
+        }
+
+        SelectQueryBuilder builder;
+        builder.select_list.push_back(makeTimeGridAST(argument, context));
+        builder.select_list.back()->setAlias(ColumnNames::Values);
+
+        res.store_method = StoreMethod::SCALAR_GRID;
+        res.select_query = builder.getSelectQuery();
+        return dropMetricName(std::move(res), context);
+    }
 }
 
 
@@ -83,17 +110,10 @@ SQLQueryPiece applyFunctionTimestamp(const PQT::Function * function_node, std::v
         }
 
         case StoreMethod::CONST_SCALAR:
-        {
-            res.store_method = StoreMethod::CONST_SCALAR;
-            res.scalar_value = DecimalUtils::convertTo<Float64>(argument.start_time, context.timestamp_scale);
-            return dropMetricName(std::move(res), context);
-        }
-
         case StoreMethod::SINGLE_SCALAR:
         {
-            res.store_method = StoreMethod::CONST_SCALAR;
-            res.scalar_value = DecimalUtils::convertTo<Float64>(argument.start_time, context.timestamp_scale);
-            return dropMetricName(std::move(res), context);
+            /// Scalar-like instant vectors have a sample at every evaluation step.
+            return makeScalarLikeTimestampResult(function_node, argument, context);
         }
 
         case StoreMethod::SCALAR_GRID:
