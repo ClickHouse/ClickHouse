@@ -20,6 +20,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include "Common/Exception.h"
 #include <Core/Defines.h>
 #include <IO/ReadBuffer.h>
 #include <base/types.h>
@@ -38,24 +39,6 @@ namespace
 {
 
 constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
-
-struct PuffinBlob
-{
-    String type;
-    Int64 snapshot_id = 0;
-    Int64 sequence_number = 0;
-    std::vector<Int32> fields;
-    Int64 offset = 0;
-    Int64 length = 0;
-    String compression_codec;
-    std::map<String, String> properties;
-};
-
-struct PuffinFooter
-{
-    std::vector<PuffinBlob> blobs;
-    std::vector<UInt8> data;
-};
 
 void checkMagic(const UInt8 * p, const char * context)
 {
@@ -175,18 +158,13 @@ BlobBufPtr readBlobBytes(
     };
 }
 
-std::vector<UInt64> deserializeRoaring(ReadBuffer & buf, size_t size)
+roaring::Roaring deserializeRoaring(ReadBuffer & buf, size_t size)
 {
     String blob_data(size, '\0');
     buf.readStrict(blob_data.data(), size);
 
     roaring::Roaring bitmap = roaring::Roaring::readSafe(blob_data.data(), size);
-
-    std::vector<UInt64> result;
-    result.reserve(bitmap.cardinality());
-    for (const uint32_t val : bitmap)
-        result.push_back(static_cast<UInt64>(val));
-    return result;
+    return bitmap;
 }
 
 NamesAndTypesList getPuffinMetadataSchema()
@@ -296,31 +274,35 @@ PuffinInputFormat::PuffinInputFormat(ReadBuffer & buf, SharedHeader header_)
 
 Chunk PuffinInputFormat::read()
 {
-    if (done)
-        return {};
-    done = true;
-
-    auto footer = readPuffinFooter(*in);
+    if (!initialized)
+    {
+        blob_index = 0;
+        initialized = true;
+        footer = readPuffinFooter(*in);
+    }
     size_t n = footer.blobs.size();
-    if (n == 0)
+    if (n == 0 || n <= blob_index)
         return {};
 
     auto col_rows_data = ColumnUInt64::create();
     auto col_rows_offsets = ColumnArray::ColumnOffsets::create();
 
     ColumnArray::Offset rows_offset = 0;
-    for (const auto & blob : footer.blobs)
+    const auto & blob = footer.blobs[blob_index++];
+
+    if (blob.type.find("deletion-vector") == String::npos)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse supports only deletion vector blobs. Datasketches deletion vectors are not supported");
+
+    auto blob_buf = readBlobBytes(blob, *in, footer.data);
+    auto rows = deserializeRoaring(*blob_buf, static_cast<size_t>(blob.length));
+    size_t elem_count = 0;
+    for (UInt64 r : rows)
     {
-        if (blob.type.find("deletion-vector") != String::npos && blob.length > 0)
-        {
-            auto blob_buf = readBlobBytes(blob, *in, footer.data);
-            auto rows = deserializeRoaring(*blob_buf, static_cast<size_t>(blob.length));
-            for (UInt64 r : rows)
-                col_rows_data->insertValue(r);
-            rows_offset += rows.size();
-        }
-        col_rows_offsets->insertValue(rows_offset);
+        ++elem_count;
+        col_rows_data->insertValue(r);
     }
+    rows_offset += elem_count;
+    col_rows_offsets->insertValue(rows_offset);
 
     auto col_rows = ColumnArray::create(std::move(col_rows_data), std::move(col_rows_offsets));
 
