@@ -151,7 +151,14 @@ FUNCTION and(__text_index_idx_endsWith_62c031dd56b3d56d129e8b959a74ec3e :: 2, en
 1
 0
 1
-25. Negative tests.
+25. Map column + array tokenizer + postprocessor: mapContains* bypass postprocessor (raw key/value match).
+1
+1
+0
+1
+1
+0
+26. Negative tests.
 - The postprocessor expression must reference the index column
 - The postprocessor expression must be a function, not an identifier
 - The postprocessor expression must return String

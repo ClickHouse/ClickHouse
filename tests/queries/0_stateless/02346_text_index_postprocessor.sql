@@ -636,7 +636,44 @@ SELECT count() FROM tab WHERE mapContainsValueLike(val, '%FOO%');   -- 1
 
 DROP TABLE tab;
 
-SELECT '25. Negative tests.';
+SELECT '25. Map column + array tokenizer + postprocessor: mapContains* bypass postprocessor (raw key/value match).';
+-- Mirrors test 11 (has/hasAll/hasAny + array tokenizer): the index build skips the postprocessor on
+-- the array tokenizer, so the lookup must skip it too. Otherwise the postprocessed needle would never
+-- match the raw stored key/value and matching granules would be falsely pruned.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Map(String, String),
+    INDEX idx(mapKeys(val)) TYPE text(tokenizer = 'array', postprocessor = lower(mapKeys(val)))
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, {'Foo': 'a'}), (2, {'BAR': 'b'});
+
+-- Raw needle matches the literal stored key.
+SELECT count() FROM tab WHERE mapContainsKey(val, 'Foo');   -- 1
+SELECT count() FROM tab WHERE mapContainsKey(val, 'BAR');   -- 1
+-- Lower-cased needle does not match: postprocessor is bypassed on both sides; stored key is 'Foo'.
+SELECT count() FROM tab WHERE mapContainsKey(val, 'foo');   -- 0
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Map(String, String),
+    INDEX idx(mapValues(val)) TYPE text(tokenizer = 'array', postprocessor = lower(mapValues(val)))
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, {'a': 'Foo'}), (2, {'b': 'BAR'});
+
+SELECT count() FROM tab WHERE mapContainsValue(val, 'Foo');   -- 1
+SELECT count() FROM tab WHERE mapContainsValue(val, 'BAR');   -- 1
+SELECT count() FROM tab WHERE mapContainsValue(val, 'foo');   -- 0
+
+DROP TABLE tab;
+
+SELECT '26. Negative tests.';
 
 SELECT '- The postprocessor expression must reference the index column';
 CREATE TABLE tab

@@ -319,9 +319,13 @@ Usage of non-deterministic functions is disallowed.
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens), [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), and [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) apply the postprocessor to search tokens before looking them up in the index.
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
+Functions [equals](/sql-reference/functions/comparison-functions.md/#equals) (`=`), [IN](/sql-reference/operators/in.md), [mapContainsKey](/sql-reference/functions/tuple-map-functions#mapContainsKey), [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike), [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue), and [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike) also apply the postprocessor to the needle for the granule lookup. Row-level evaluation of these predicates remains literal — the index simply prunes granules whose stored (postprocessed) tokens cannot match a postprocessed needle.
+
 Functions [has](/sql-reference/functions/array-functions.md/#has), [hasAll](/sql-reference/functions/array-functions.md/#hasAll), and [hasAny](/sql-reference/functions/array-functions.md/#hasAny) do **not** apply the postprocessor.
 `has`, `hasAll`, and `hasAny` operate directly on array elements, bypassing the entire tokenization pipeline (tokenizer, preprocessor, and postprocessor).
 Functions [startsWith](/sql-reference/functions/string-functions.md/#startsWith) and [endsWith](/sql-reference/functions/string-functions.md/#endsWith) can still use the text index in Hint mode with a postprocessor when the extracted hint tokens remain non-empty after normalization. If normalization drops all hint tokens, the text index is not used for that predicate.
+
+When the index is built with `tokenizer = 'array'`, the index stores raw array elements unchanged — the postprocessor is **bypassed at index build** so that `has`, `hasAll`, and `hasAny` can do their literal element comparison. To stay consistent, `mapContainsKey`, `mapContainsKeyLike`, `mapContainsValue`, and `mapContainsValueLike` also bypass the postprocessor on the lookup side when the tokenizer is `array`. As a result, combining `tokenizer = 'array'` with a postprocessor is effectively a no-op for query semantics — every search compares against raw array elements.
 
 Example for stop word filtering:
 

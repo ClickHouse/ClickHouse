@@ -707,22 +707,26 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return true;
         };
 
+        /// The array tokenizer stores raw elements (the index build skips the postprocessor for it,
+        /// matching has/hasAll/hasAny semantics), so the lookup must also skip it to avoid false-negative pruning.
+        const bool apply_postprocessor = typeid_cast<const ArrayTokenizer *>(tokenizer) == nullptr;
+
         /// mapContainsKey* can be used only with an index defined as `mapKeys(Map(String, ...))`
         if (has_map_keys_column)
         {
             if (function_name == "mapContainsKey" || function_name == "has")
-                return make_map_function(stringToTokens(value_field, true, true));
+                return make_map_function(stringToTokens(value_field, true, apply_postprocessor));
             if (function_name == "mapContainsKeyLike" && tokenizer->supportsStringLike())
-                return make_map_function(stringLikeToTokens(value_field, true, true));
+                return make_map_function(stringLikeToTokens(value_field, true, apply_postprocessor));
         }
 
         /// mapContainsValue* can be used only with an index defined as `mapValues(Map(String, ...))`
         if (has_map_values_column)
         {
             if (function_name == "mapContainsValue")
-                return make_map_function(stringToTokens(value_field, true, true));
+                return make_map_function(stringToTokens(value_field, true, apply_postprocessor));
             if (function_name == "mapContainsValueLike" && tokenizer->supportsStringLike())
-                return make_map_function(stringLikeToTokens(value_field, true, true));
+                return make_map_function(stringLikeToTokens(value_field, true, apply_postprocessor));
         }
 
         return false;
