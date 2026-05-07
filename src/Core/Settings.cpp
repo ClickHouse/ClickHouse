@@ -1745,6 +1745,18 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_top_k_dynamic_filtering_for_variable_length_types, false, R"(
+Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable-length data type (e.g. `String`, `Array`, `Map`, `Tuple` containing variable-length elements).
+
+For such types, the per-row threshold comparison performed by the dynamic filter can outweigh its savings when the column's lexicographic minimum dominates (e.g. mostly empty strings) and few granules can be skipped. In that case the dynamic filter degrades query latency rather than improving it.
+
+When this setting is `0`, dynamic filtering is restricted to columns whose values have a fixed maximum size in memory (numbers, `Date`, `DateTime`, `FixedString`, `Enum`, `Nullable` of such types, `Tuple` of such types). When set to `1`, dynamic filtering applies to variable-length types as well.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_top_k_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
@@ -5558,6 +5570,9 @@ Supported only with the analyzer (`enable_analyzer = 1`).
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
+    DECLARE(Bool, optimize_dictget_tuple_element, true, R"(
+Rewrite `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` into `dictGet('dict', 'b', key)` to avoid fetching unnecessary dictionary attributes. Supports positional (`.1`, `.2`, ...) and named (`.b`) access, and also applies to `dictGetOrDefault` when the default argument is a constant tuple or a `tuple(...)` of constants.
+)", 0) \
     DECLARE(Bool, optimize_rewrite_like_perfect_affix, true, R"(
 Rewrite LIKE expressions with perfect prefix or suffix (e.g. `col LIKE 'ClickHouse%'`) to startsWith or endsWith functions (e.g. `startsWith(col, 'ClickHouse')`).
 )", 0) \
@@ -6381,6 +6396,11 @@ A higher value, like 1 MiB is good for high-throughput queries, and a lower valu
 On userspace page cache miss, read up to this many consecutive blocks at once from the underlying storage, if they're also not in the cache. Each block is page_cache_block_size bytes.
 
 A higher value is good for high-throughput queries, while low-latency point queries will work better without readahead.
+)", 0) \
+    DECLARE(UInt64, page_cache_max_coalesced_bytes, 16777216, R"(
+When `readBigAt` populates the userspace page cache, consecutive cache misses are coalesced into a single read from the underlying storage. This setting bounds the size of one coalesced read in bytes; longer miss runs are split into multiple reads. It limits transient memory usage of the temporary buffer under parallel cold reads.
+
+A higher value reduces the number of HTTP requests for cold scans on object storage; a lower value reduces peak transient memory.
 )", 0) \
     \
     DECLARE(Bool, load_marks_asynchronously, false, R"(
@@ -7678,6 +7698,15 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
 If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), automatic spilling is disabled. It prevents read in order through join optimization.
+)", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_join, 0., R"(
+The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
+
+For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
+
+If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0` (default), only the absolute setting applies.
+
+Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto` and a temporary data path is configured.
 )", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
