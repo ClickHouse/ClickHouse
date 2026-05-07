@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -17,6 +18,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
 #include <Functions/s2CoveringBuilder.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -54,6 +56,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool st_function_use_spherical;
 }
 
 namespace
@@ -884,13 +891,6 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
         "geoTouchesSpherical",
         "geoWithinCartesian",
         "geoWithinSpherical",
-        // "ST_Contains",
-        // "ST_CoveredBy",
-        // "ST_Covers",
-        // "ST_Equals",
-        // "ST_Intersects",
-        // "ST_Touches",
-        // "ST_Within",
     };
 
     const auto atoms = ActionsDAG::extractConjunctionAtoms(filter_node);
@@ -900,7 +900,32 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
         if (!fn || fn->type != ActionsDAG::ActionType::FUNCTION)
             continue;
 
-        const auto & func_name = fn->function_base->getName();
+        const auto & raw_func_name = fn->function_base->getName();
+        String func_name = raw_func_name;
+
+        if (raw_func_name.starts_with("ST_"))
+        {
+            const bool use_spherical = context->getSettingsRef()[Setting::st_function_use_spherical];
+            if (raw_func_name == "ST_Contains")
+                func_name = use_spherical ? "geoContainsSpherical" : "geoContainsCartesian";
+            else if (raw_func_name == "ST_CoveredBy")
+                func_name = use_spherical ? "geoCoveredBySpherical" : "geoCoveredByCartesian";
+            else if (raw_func_name == "ST_Covers")
+                func_name = use_spherical ? "geoCoversSpherical" : "geoCoversCartesian";
+            else if (raw_func_name == "ST_Equals")
+                func_name = use_spherical ? "geoEqualsSpherical" : "geoEqualsCartesian";
+            else if (raw_func_name == "ST_Intersects")
+                func_name = use_spherical ? "geoIntersectsSpherical" : "geoIntersectsCartesian";
+            else if (raw_func_name == "ST_IntersectsBox")
+                func_name = use_spherical ? "geoIntersectsBoxSpherical" : "geoIntersectsBoxCartesian";
+            else if (raw_func_name == "ST_Touches")
+                func_name = use_spherical ? "geoTouchesSpherical" : "geoTouchesCartesian";
+            else if (raw_func_name == "ST_Within")
+                func_name = use_spherical ? "geoWithinSpherical" : "geoWithinCartesian";
+            else if (raw_func_name == "ST_DWithin")
+                func_name = use_spherical ? "geoDWithinSpherical" : "geoDWithinCartesian";
+        }
+
         std::optional<DecodedGeometry> geometry;
         double distance_buffer_meters = 0;
 
@@ -1068,17 +1093,29 @@ Block ProjectionIndexS2::calculate(
 
     const auto & source = block.getByName(params.source_column);
 
+    const size_t rows = block.rows();
+    auto parent_offsets = buildParentOffsets(rows, starting_offset, perm_ptr);
+
     auto decode_cache = prepareGeometryDecodeCache(source.column, source.type, params.strict_decode);
     if (!decode_cache)
     {
+        /// Conservative fallback: if column-level decode fails (e.g. malformed rows),
+        /// emit face cells for every row so no row is pruned by this index.
+        auto fallback_cell_id_column = ColumnUInt64::create();
+        auto fallback_parent_offset_column = ColumnUInt64::create();
+        const size_t reserve_rows = rows * 6;
+        fallback_cell_id_column->reserve(reserve_rows);
+        fallback_parent_offset_column->reserve(reserve_rows);
+
+        for (size_t row = 0; row < rows; ++row)
+            insertFaceCellsForRow(*fallback_cell_id_column, *fallback_parent_offset_column, parent_offsets[row]);
+
         Block out;
-        out.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "cell_id"});
-        out.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_parent_part_offset"});
+        out.insert({std::move(fallback_cell_id_column), std::make_shared<DataTypeUInt64>(), "cell_id"});
+        out.insert({std::move(fallback_parent_offset_column), std::make_shared<DataTypeUInt64>(), "_parent_part_offset"});
+        sortProjectionIndexS2Block(out);
         return out;
     }
-
-    const size_t rows = block.rows();
-    auto parent_offsets = buildParentOffsets(rows, starting_offset, perm_ptr);
 
     auto cell_id_column = ColumnUInt64::create();
     auto parent_offset_column = ColumnUInt64::create();
@@ -1110,9 +1147,9 @@ Block ProjectionIndexS2::calculate(
         {
             if (params.strict_decode)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to build S2 covering for row {}", row);
-            /// Cannot build covering (e.g., degenerate geometry) — emit face cells.
-            if (geometry->kind != DecodedGeometry::Kind::Point)
-                insertFaceCellsForRow(*cell_id_column, *parent_offset_column, parent_offset);
+            /// Cannot build covering (e.g., degenerate or invalid geometry) — emit
+            /// face cells to keep pruning conservative for all geometry kinds.
+            insertFaceCellsForRow(*cell_id_column, *parent_offset_column, parent_offset);
             continue;
         }
 
