@@ -215,6 +215,21 @@ struct SettingFieldMaxThreads final
     bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
+    /// Override of the base-class hook used by `BaseSettings::resetValueToDefault`. The default
+    /// `Field`-based implementation is lossy here because `operator Field` deliberately returns
+    /// the resolved value (e.g. `32` when `is_auto` is set), so a round-trip would reconstruct
+    /// the setting as if it had been set explicitly to that number, dropping `is_auto`. We avoid
+    /// the round-trip entirely by copying `default_value` member-wise. This preserves whichever
+    /// state the declared default carries: `is_auto = true` for settings declared with default
+    /// `0` (e.g. `max_threads`, `max_final_threads`, `max_parsing_threads`), and `is_auto = false`
+    /// with the typed default value for settings declared with an explicit non-zero default (e.g.
+    /// `max_download_threads = 4`). See issue #103120.
+    void resetFromDefault(const SettingFieldBase & default_value) override
+    {
+        *this = static_cast<const SettingFieldMaxThreads &>(default_value);
+        changed = false;
+    }
+
     operator UInt64() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 

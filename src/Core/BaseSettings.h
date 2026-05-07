@@ -1060,6 +1060,18 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 #define SETTING_DEFAULT_CASE_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     case Traits_::SettingID_::NAME: { SettingField##TYPE d(DEFAULT); return {static_cast<Field>(d), d.toString()}; }
 
+/// Switch case for resetSettingToDefault_: typed reconstruction + typed assignment
+/// preserves all members (e.g. `SettingFieldMaxThreads::is_auto`, see issue #103120) that
+/// would otherwise be lost through a Field round-trip when `operator Field` is non-invertible.
+#define SETTING_RESET_CASE_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    case Traits_::SettingID_::NAME: \
+    { \
+        auto & target = data.TYPE##_[Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)]]; \
+        target = SettingField##TYPE(DEFAULT); \
+        target.setChanged(false); \
+        return; \
+    }
+
 /// Generate traits for a basic settings collection (no custom settings, no paths)
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SUPPORTED_TYPES_MACRO) \
@@ -1238,10 +1250,9 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             } \
             void resetValueToDefault(Data & data, size_t index) const \
             { \
-                const auto & fi = field_infos[index]; \
-                void * ptr = settingPtr(data, fi.data_offset); \
-                fi.ops->assign_from_field(ptr, fi.get_default().first); \
-                fi.ops->set_changed(ptr, false); \
+                /* Typed reconstruction + typed assignment via the per-traits switch, not a */ \
+                /* `Field` round-trip. See issue #103120 / SETTING_RESET_CASE_. */ \
+                reset_to_default_fn(data, index); \
             } \
             \
             /* Binary serialization (by index) */ \
@@ -1282,6 +1293,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             \
             std::vector<FieldInfo> field_infos;                                     /* Metadata for all settings */ \
             std::unordered_map<std::string_view, size_t> name_to_index_map;         /* Fast name -> index lookup */ \
+            void (*reset_to_default_fn)(Data &, size_t) = nullptr;                  /* Per-traits typed reset switch */ \
         }; \
         \
         /** Whether this traits allows custom settings */ \
@@ -1427,6 +1439,21 @@ size_t settingsDataBaseOffset()
         } \
     } \
     \
+    /* Reset a setting to its declared default via typed reconstruction + typed assignment, */ \
+    /* not a `Field` round-trip. See issue #103120: `SettingFieldMaxThreads::operator Field` */ \
+    /* returns the resolved auto-value (an opaque UInt64) rather than the canonical `0`/`"auto"`, */ \
+    /* so going through Field would drop `is_auto` on `SET <name> = DEFAULT`. */ \
+    static void resetSettingToDefault_(SETTINGS_TRAITS_NAME::Data & data, size_t index) \
+    { \
+        using Traits_ = SETTINGS_TRAITS_NAME; \
+        switch (static_cast<Traits_::SettingID_>(index)) \
+        { \
+            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_RESET_CASE_, SETTING_RESET_CASE_) \
+            LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_RESET_CASE_, SETTING_RESET_CASE_) \
+            default: UNREACHABLE(); \
+        } \
+    } \
+    \
     const SETTINGS_TRAITS_NAME::Accessor & SETTINGS_TRAITS_NAME::Accessor::instance() \
     { \
         using Traits_ = SETTINGS_TRAITS_NAME; \
@@ -1437,6 +1464,7 @@ size_t settingsDataBaseOffset()
             [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
             [[maybe_unused]] constexpr int HOT_RELOAD = 0x80; \
             Accessor res; \
+            res.reset_to_default_fn = &resetSettingToDefault_; \
             /* offsetof on non-standard-layout types is well-defined in Clang */ \
             _Pragma("clang diagnostic push") \
             _Pragma("clang diagnostic ignored \"-Winvalid-offsetof\"") \
