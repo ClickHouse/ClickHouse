@@ -37,7 +37,8 @@ function thread_alter()
             fi
 
             if [[ -n "${ERROR}" \
-                && ! "${ERROR}" =~ "You can retry this error" ]]
+                && ! "${ERROR}" =~ "You can retry this error" \
+                && ! "${ERROR}" =~ "Please retry this query" ]]
             then
                 echo "${ERROR}"
             fi
@@ -61,7 +62,8 @@ function thread_insert()
         fi
 
         if [[ -n "${ERROR}" \
-            && ! "${ERROR}" =~ "You can retry this error" ]]
+            && ! "${ERROR}" =~ "You can retry this error" \
+            && ! "${ERROR}" =~ "Please retry this query" ]]
         then
             echo "${ERROR}"
         fi
