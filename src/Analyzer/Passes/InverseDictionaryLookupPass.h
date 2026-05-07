@@ -20,7 +20,7 @@ namespace DB
   *
   * Supported comparison operators: =, !=, <, <=, >, >=, LIKE, ILIKE and their negations.
   * Supported IN operators: in, notIn.
-  * NOTE: Does not support `dictGet*OrDefault` functions. Supports all other `dictGet*` functions that has 3 arguments.
+  * NOTE: Does not support `dictGet*OrDefault` functions. Supports all other `dictGet*` functions that have 3 arguments.
   */
 class InverseDictionaryLookupPass final : public IQueryTreePass
 {
