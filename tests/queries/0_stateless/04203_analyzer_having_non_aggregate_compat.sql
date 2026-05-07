@@ -116,11 +116,14 @@ HAVING (total_attempts > 0) AND (ad_attempts > 0)
 ORDER BY session_id, device_id
 SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
--- Result must match the legacy analyzer for the canonical case.
+-- Result must match the legacy analyzer for the canonical case. The legacy AST-level
+-- HAVING-to-WHERE rewrite lives in `PredicateExpressionsOptimizer` and is gated on
+-- `enable_optimize_predicate_expression`; the flaky-check randomizer can disable it,
+-- so pin it here to keep the parity assertion deterministic.
 SELECT 'A.1 legacy parity';
 SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING service = 'svc1'
 ORDER BY category
-SETTINGS enable_analyzer = 0;
+SETTINGS enable_analyzer = 0, enable_optimize_predicate_expression = 1;
 
 -- Setting enabled but without GROUP BY/aggregates: setting is a no-op.
 SELECT 'no-aggregation no-op';
