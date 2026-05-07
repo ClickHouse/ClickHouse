@@ -13,6 +13,8 @@
 
 #include <Common/FieldVisitorConvertToNumber.h>
 
+#include <cmath>
+
 namespace DB
 {
 
@@ -105,7 +107,12 @@ bool tryAnalyzeS2Covering(
         UInt64 lo_id = lo_val.safeGet<UInt64>();
         UInt64 hi_id = hi_val.safeGet<UInt64>();
 
-        S2LatLngRect rect(S2CellId(lo_id).ToLatLng(), S2CellId(hi_id).ToLatLng());
+        S2CellId lo_cell(lo_id);
+        S2CellId hi_cell(hi_id);
+        if (!lo_cell.is_valid() || !hi_cell.is_valid())
+            return false;
+
+        S2LatLngRect rect(lo_cell.ToLatLng(), hi_cell.ToLatLng());
         if (!rect.is_valid())
             return false;
 
@@ -132,7 +139,13 @@ bool tryAnalyzeS2Covering(
         UInt64 center_id = center_val.safeGet<UInt64>();
         Float64 degrees = degrees_val.safeGet<Float64>();
 
-        S2Cap cap(S2CellId(center_id).ToPoint(), S1Angle::Degrees(degrees));
+        S2CellId center_cell(center_id);
+        if (!center_cell.is_valid())
+            return false;
+        if (!std::isfinite(degrees))
+            return false;
+
+        S2Cap cap(center_cell.ToPoint(), S1Angle::Degrees(degrees));
         if (!cap.is_valid())
             return false;
 
