@@ -515,11 +515,6 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
         /// whose own name already matches the projection name; other expressions
         /// (functions, constants) need the alias to keep the result-column name.
         std::unordered_set<std::string_view> seen;
-        std::unordered_set<std::string_view> duplicate_names;
-        for (const auto & col : projection_columns)
-            if (!seen.insert(col.name).second)
-                duplicate_names.insert(col.name);
-
         const auto & projection_nodes = projection.getNodes();
         for (size_t i = 0; i < projection_expression_list_ast_children_size; ++i)
         {
@@ -527,14 +522,15 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             if (!ast_with_alias)
                 continue;
 
-            if (duplicate_names.contains(projection_columns[i].name))
+            const auto & column_name = projection_columns[i].name;
+            if (!seen.insert(column_name).second)
             {
                 const auto * column_node = projection_nodes[i]->as<ColumnNode>();
-                if (column_node && column_node->getColumnName() == projection_columns[i].name)
+                if (column_node && column_node->getColumnName() == column_name)
                     continue;
             }
 
-            ast_with_alias->setAlias(projection_columns[i].name);
+            ast_with_alias->setAlias(column_name);
         }
     }
 
