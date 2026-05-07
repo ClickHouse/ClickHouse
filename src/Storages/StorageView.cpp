@@ -58,6 +58,7 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool enable_positional_arguments;
 }
 
 namespace ErrorCodes
@@ -119,6 +120,10 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
+  *
+  * The context is also marked as a view inner context so that the query analyzer
+  * resolves positional arguments inside the view even on remote/secondary nodes
+  * (views are expanded on remote nodes, unlike the outer query).
   */
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
@@ -135,6 +140,7 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
+    view_context->setIsViewInnerQuery(true);
     return view_context;
 }
 

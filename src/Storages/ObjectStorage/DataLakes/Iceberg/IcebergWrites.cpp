@@ -198,13 +198,24 @@ bool canWriteStatistics(
 
 String removeEscapedSlashes(const String & json_str)
 {
-    auto result = json_str;
-    size_t pos = 0;
-    while ((pos = result.find("\\/", pos)) != std::string::npos)
+    size_t pos = json_str.find("\\/");
+    if (pos == String::npos)
+        return json_str;
+
+    String result;
+    result.reserve(json_str.size());
+
+    size_t start = 0;
+    while (pos != String::npos)
     {
-        result.replace(pos, 2, "/");
-        ++pos;
+        result.append(json_str, start, pos - start);
+        result.push_back('/');
+
+        start = pos + 2;
+        pos = json_str.find("\\/", start);
     }
+    result.append(json_str, start, String::npos);
+
     return result;
 }
 

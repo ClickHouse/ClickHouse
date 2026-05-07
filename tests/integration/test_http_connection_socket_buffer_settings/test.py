@@ -38,14 +38,16 @@ def remove_config(config_name):
 
 
 def assert_settings(settings_dict):
-    """Check that server_settings match expected values."""
+    """Check that server_settings match expected values and are marked changeable without restart."""
     names = ", ".join(f"'{name}'" for name in settings_dict)
     result = node.query(
-        f"SELECT name, value FROM system.server_settings "
+        f"SELECT name, value, changeable_without_restart FROM system.server_settings "
         f"WHERE name IN ({names}) ORDER BY name"
     )
     for name, value in settings_dict.items():
-        assert f"{name}\t{value}" in result, f"Expected {name}={value}, got: {result}"
+        assert f"{name}\t{value}\tYes" in result, (
+            f"Expected {name}={value} with changeable_without_restart=Yes, got: {result}"
+        )
 
 
 def reload_with_invalid_config_and_check_log(config_name, group_name):

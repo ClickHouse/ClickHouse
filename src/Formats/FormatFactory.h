@@ -373,6 +373,9 @@ public:
     void registerFileBucketInfo(const String & format, FileBucketInfoCreator bucket_info);
     void registerSplitter(const String & format, BucketSplitterCreator splitter);
     BucketSplitter getSplitter(const String & format);
+    /// Returns true if `format` is registered and has a bucket splitter
+    /// (e.g. Parquet). Used to decide whether to attempt single-file parallel splitting.
+    bool checkFormatHasSplitter(const String & format) const;
 
 private:
     FormatsDictionary dict;

@@ -4,20 +4,25 @@
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/89300
 -- Calling a data-lake table function with `SETTINGS disk = '<disk>'` used to throw
--- `Logical error: 'Bad cast from type DB::CachedObjectStorage to DB::S3ObjectStorage'`
+-- a bad-cast assertion (from the wrapping decorator down to `S3ObjectStorage`)
 -- whenever the disk wrapped its underlying object storage (e.g. cache layer).
--- The same shape of bug previously affected `DB::PlainObjectStorage<DB::S3ObjectStorage>`
+-- The same shape of bug previously affected `PlainObjectStorage` over `S3ObjectStorage`
 -- before that decorator was removed in #90580.
 --
 -- The fix unwraps decorator object storages via `IObjectStorage::getUnderlying`
 -- before casting to the concrete `S3ObjectStorage` in `S3StorageParsedArguments::fromDisk`.
 --
 -- We do not exercise reading any real iceberg data here; the assertion is purely
--- that argument parsing does not crash with a logical error. The query itself is
--- expected to fail at table-resolution time with an S3/iceberg error code.
+-- that argument parsing does not abort. The query itself is expected to fail at
+-- table-resolution time with an S3/iceberg error code.
+--
+-- NOTE: this comment intentionally avoids quoting the exception text verbatim,
+-- because the stress-test log scanner greps for that pattern in the server log
+-- and a literal copy in the query log produces false-positive failure reports
+-- (the SQL comment is echoed into the `<Error> executeQuery` entry on failure).
 
--- Cached disk (`CachedObjectStorage` wrapping `S3ObjectStorage`) — the bug from
--- BuzzHouse fuzzer hit on PR #94148 ("Bad cast from CachedObjectStorage to S3ObjectStorage").
+-- Cached disk (`CachedObjectStorage` wrapping `S3ObjectStorage`) — the bug
+-- originally reported from a BuzzHouse fuzzer hit on PR #94148.
 SELECT 1 FROM icebergS3('no_such_table_for_89300_cache', 'Parquet', 'a Int',
                         SETTINGS disk = 's3_cache')
 ; -- { serverError S3_ERROR, FILE_DOESNT_EXIST, BAD_REQUEST_PARAMETER, ICEBERG_SPECIFICATION_VIOLATION, RESOURCE_NOT_FOUND, FORMAT_IS_NOT_SUITABLE_FOR_INPUT, CANNOT_PARSE_INPUT_ASSERTION_FAILED, CANNOT_EXTRACT_TABLE_STRUCTURE }

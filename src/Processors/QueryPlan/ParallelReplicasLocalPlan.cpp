@@ -125,10 +125,11 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     auto select_query_options = SelectQueryOptions(processed_stage).ignoreASTOptimizations();
     select_query_options.build_logical_plan = true;
 
-    /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
-    /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
-    /// ConstantNode with ProjectionNode again(https://github.com/ClickHouse/ClickHouse/issues/62289).
-    new_context->setSetting("enable_positional_arguments", Field(false));
+    /// Positional arguments in the outer query were already resolved by the initiator.
+    /// Use a context flag instead of disabling enable_positional_arguments so that
+    /// view-inner queries on this node are still processed correctly.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/62289.
+    new_context->setPositionalArgumentsAlreadyResolved(true);
     new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
     auto query_plan = std::make_shared<QueryPlan>(std::move(interpreter).extractQueryPlan());
@@ -163,11 +164,12 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     /// leading to column name mismatches with the expected header.
     auto select_query_options = SelectQueryOptions(processed_stage);
 
-    /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
-    /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
-    /// ConstantNode with ProjectionNode again(https://github.com/ClickHouse/ClickHouse/issues/62289).
+    /// Positional arguments in the outer query were already resolved by the initiator.
+    /// Use a context flag instead of disabling enable_positional_arguments so that
+    /// view-inner queries on this node are still processed correctly.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/62289.
     auto new_context = Context::createCopy(context);
-    new_context->setSetting("enable_positional_arguments", Field(false));
+    new_context->setPositionalArgumentsAlreadyResolved(true);
     new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 
     /// Clone the query tree and disable parallel replicas in ALL QueryNode/UnionNode contexts.
@@ -189,14 +191,14 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
             if (auto * query_node = current->as<QueryNode>())
             {
                 auto node_context = Context::createCopy(query_node->getContext());
-                node_context->setSetting("enable_positional_arguments", Field(false));
+                node_context->setPositionalArgumentsAlreadyResolved(true);
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 query_node->getMutableContext() = std::move(node_context);
             }
             else if (auto * union_node = current->as<UnionNode>())
             {
                 auto node_context = Context::createCopy(union_node->getContext());
-                node_context->setSetting("enable_positional_arguments", Field(false));
+                node_context->setPositionalArgumentsAlreadyResolved(true);
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 union_node->getMutableContext() = std::move(node_context);
             }

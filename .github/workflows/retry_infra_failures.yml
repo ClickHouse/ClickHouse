@@ -97,8 +97,9 @@ jobs:
             run_sha=$(echo "$run_data" | jq -r '.sha')
 
             # If the job-level heuristic didn't trigger, check Praktika result JSONs
-            # on S3 for failures at the "Checkout Submodules" sub-step (e.g. transient
-            # DNS failures cloning git submodules).
+            # on S3 for infrastructure-related failures:
+            # - "Checkout Submodules" failures (transient DNS/git issues)
+            # - Results with the "infra" label (e.g. Docker image pull failures)
             if [ "$should_rerun" = "false" ] && [ -n "$verdicts" ] && [ -n "$pr_number" ] && [ -n "$run_sha" ]; then
               # Get names of failed jobs (excluding pipeline plumbing)
               failed_job_names=$(echo "$jobs_raw" | jq -r '
@@ -107,7 +108,7 @@ jobs:
                 .name
               ')
 
-              all_checkout_failures=true
+              all_infra_failures=true
               while IFS= read -r job_name; do
                 [ -z "$job_name" ] && continue
                 # Normalize job name to match Praktika result file naming:
@@ -118,8 +119,16 @@ jobs:
 
                 result_json=$(curl -sf --compressed "$result_url" 2>/dev/null || true)
                 if [ -z "$result_json" ]; then
-                  all_checkout_failures=false
+                  all_infra_failures=false
                   break
+                fi
+
+                # Check if the top-level result has the "infra" label
+                has_infra_label=$(echo "$result_json" | jq -r '
+                  (.ext.labels // []) | any(. == "infra")
+                ')
+                if [ "$has_infra_label" = "true" ]; then
+                  continue
                 fi
 
                 # Check: all failed sub-results must be "Checkout Submodules"
@@ -128,61 +137,14 @@ jobs:
                    .name] | map(select(. != "Checkout Submodules")) | length > 0
                 ')
                 if [ "$has_non_checkout_failure" = "true" ]; then
-                  all_checkout_failures=false
+                  all_infra_failures=false
                   break
                 fi
               done <<< "$failed_job_names"
 
-              if [ "$all_checkout_failures" = "true" ] && [ -n "$failed_job_names" ]; then
+              if [ "$all_infra_failures" = "true" ] && [ -n "$failed_job_names" ]; then
                 should_rerun=true
-                echo "  Infrastructure failure detected (submodule checkout failure in Praktika results)."
-              fi
-            fi
-
-            # If still not marked for rerun, check Praktika result JSONs for
-            # infrastructure error patterns in the top-level info field (e.g. network
-            # failures during docker pull, disk full, OOM).  This catches cases where
-            # the job reached the "Run" step but failed due to infra issues before
-            # running any tests, so the sub-results list is empty.
-            if [ "$should_rerun" = "false" ] && [ -n "$verdicts" ] && [ -n "$pr_number" ] && [ -n "$run_sha" ]; then
-              infra_patterns="network is unreachable|No space left on device|Cannot allocate memory|Name or service not known|Temporary failure in name resolution|Connection reset by peer|Cannot connect to the Docker daemon|OCI runtime create failed"
-
-              failed_job_names_infra=$(echo "$jobs_raw" | jq -r '
-                .jobs[] | select(.conclusion == "failure") |
-                select(.name != "Config Workflow" and .name != "Finish Workflow") |
-                .name
-              ')
-
-              all_infra=true
-              has_jobs=false
-              while IFS= read -r job_name; do
-                [ -z "$job_name" ] && continue
-                has_jobs=true
-                normalized=$(echo "$job_name" | tr '[:upper:]' '[:lower:]' | \
-                  sed 's/[^a-z0-9_]/_/g; s/__*/_/g')
-                result_url="https://s3.amazonaws.com/clickhouse-test-reports/PRs/${pr_number}/${run_sha}/result_${normalized}.json"
-
-                result_json=$(curl -sf --compressed "$result_url" 2>/dev/null || true)
-                if [ -z "$result_json" ]; then
-                  all_infra=false
-                  break
-                fi
-
-                job_status=$(echo "$result_json" | jq -r '.status // empty')
-                job_info=$(echo "$result_json" | jq -r '.info // empty')
-                if [ "$job_status" != "error" ] || [ -z "$job_info" ]; then
-                  all_infra=false
-                  break
-                fi
-                if ! echo "$job_info" | grep -qiE "$infra_patterns"; then
-                  all_infra=false
-                  break
-                fi
-              done <<< "$failed_job_names_infra"
-
-              if [ "$all_infra" = "true" ] && [ "$has_jobs" = "true" ]; then
-                should_rerun=true
-                echo "  Infrastructure failure detected (infra error pattern in Praktika results)."
+                echo "  Infrastructure failure detected (Praktika results indicate infra issue)."
               fi
             fi
 

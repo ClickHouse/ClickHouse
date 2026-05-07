@@ -811,6 +811,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         Result.create_from(
             status=Result.Status.ERROR,
             info="Failed to pre-pull Docker images needed by the test batch",
+            labels=[Result.Label.INFRA],
         ).complete_job()
 
     test_env = {

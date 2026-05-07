@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-azure-blob-storage
+# ^ The test counts `StorageConnectionsCreated` + `StorageConnectionsReused`,
+# which on the `azure` test configuration is also bumped by background HTTP
+# activity against the Azure backend, making the totals non-deterministic.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
