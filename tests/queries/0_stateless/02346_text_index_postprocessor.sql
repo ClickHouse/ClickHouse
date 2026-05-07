@@ -535,3 +535,42 @@ SELECT count() FROM tab WHERE endsWith(val, 'running walking');    -- 2
 
 SYSTEM START MERGES tab;
 DROP TABLE tab;
+
+SELECT '21. Timestamp removal: postprocessor uses parseDateTimeOrNull to drop timestamp tokens.';
+
+-- Log lines are split by whitespace (splitByString default tokenizer), so the ISO timestamp
+-- becomes a single token per line. The postprocessor uses parseDateTimeOrNull with an explicit
+-- format to detect and drop timestamp-format tokens (mapping them to '').
+-- Non-timestamp tokens are kept unchanged.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(
+        tokenizer    = 'splitByString',
+        postprocessor = if(isNotNull(parseDateTimeOrNull(val, '%Y-%m-%dT%H:%i:%S')), '', val)
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES
+    (1, '2024-01-15T10:23:45 ERROR connection failed'),
+    (2, '2024-01-15T10:23:46 INFO server started'),
+    (3, '2024-01-15T10:23:47 ERROR disk full');
+
+-- Searching by message content finds rows.
+SELECT count() FROM tab WHERE hasToken(val, 'ERROR');                -- 2
+SELECT count() FROM tab WHERE hasToken(val, 'connection');           -- 1
+SELECT count() FROM tab WHERE hasToken(val, 'server');               -- 1
+-- The timestamp token maps to '' via the postprocessor; the index never stored it.
+SELECT count() FROM tab WHERE hasToken(val, '2024-01-15T10:23:45'); -- 0
+
+-- The index stores only message-level tokens.
+SELECT token, cardinality
+FROM mergeTreeTextIndex(currentDatabase(), tab, idx)
+ORDER BY token;
+
+SYSTEM START MERGES tab;
+DROP TABLE tab;

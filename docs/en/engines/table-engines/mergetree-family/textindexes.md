@@ -293,11 +293,21 @@ Typical use cases for the postprocessor argument include:
 1. **Filtering stop words (extremely frequent tokens)**. Very common tokens such as "the", "a", and "is" carry little search relevancy and inflate the index.
    You can use the postprocessor to discard them by converting them to empty tokens — empty tokens are ignored, i.e., not added to the index.
    Example: `if(col IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', col)`
-2. **Stemming or lemmatization**. Mapping each token to its stem improves search recall by matching morphological variants of the token with the same meaning.
+2. **Timestamp removal**. Log lines often begin with a structured timestamp such as `2024-01-15T10:23:45`.
+   Indexing timestamp tokens bloats the index with strings that carry no search relevance.
+   There are two complementary approaches:
+   - **Postprocessor approach**: use the `splitByString` tokenizer (whitespace split) so that the entire timestamp becomes a single token, then use `parseDateTimeOrNull` to detect and drop it.
+     Example: `if(isNotNull(parseDateTimeOrNull(col, '%Y-%m-%dT%H:%i:%S')), '', col)`
+     For timestamps with timezone offsets or fractional seconds, use `parseDateTimeBestEffortOrNull(col)` without an explicit format string.
+   - **Preprocessor approach**: strip the timestamp from the full log line *before* tokenization with a regular expression.
+     Example: `replaceRegexpAll(col, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
+     This works with any tokenizer and is more efficient as timestamp characters are never tokenized.
+   Both approaches can be combined: the preprocessor strips the timestamp while the postprocessor normalizes or filters the remaining tokens (e.g., lowercase + drop severity words like `ERROR` or `INFO`).
+3. **Stemming or lemmatization**. Mapping each token to its stem improves search recall by matching morphological variants of the token with the same meaning.
    For example, a query for "running" would also match "run", searching for "better" finds "good", etc.
    ClickHouse provides a built-in [stem](/sql-reference/functions/string-functions.md/#stem) function for several languages.
    Example: `stem('en', col)`
-3. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8).
+4. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8).
    We generally recommend using a corresponding preprocessor for lower- and upper-casing.
 
 The postprocessor expression transforms tokens of type [String](/sql-reference/data-types/string.md) to tokens of type [String](/sql-reference/data-types/string.md).
@@ -326,6 +336,70 @@ CREATE TABLE table
 )
 ENGINE = MergeTree
 ORDER BY tuple();
+```
+
+Example for timestamp removal — postprocessor approach:
+
+```sql
+-- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
+-- The splitByString tokenizer (default: whitespace) keeps the full timestamp as one token.
+-- parseDateTimeOrNull detects and drops it; non-timestamp words are kept.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByString',
+        postprocessor = if(isNotNull(parseDateTimeOrNull(line, '%Y-%m-%dT%H:%i:%S')), '', line)
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Only message-level words are indexed; timestamp tokens are not stored.
+SELECT count() FROM logs WHERE hasToken(line, 'ERROR');       -- fast index lookup
+SELECT count() FROM logs WHERE hasToken(line, '2024-01-15T10:23:45');  -- returns 0: token was never indexed
+```
+
+Example for timestamp removal — preprocessor approach:
+
+```sql
+-- The preprocessor strips the ISO timestamp prefix before tokenization.
+-- Any tokenizer can be used; timestamp characters are never seen by the tokenizer.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer   = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+Example for timestamp removal — combined preprocessor and postprocessor:
+
+```sql
+-- Preprocessor strips the timestamp, then lowercases the remainder.
+-- Postprocessor drops the severity word (error, info, warn, debug) after tokenization.
+-- Result: only substantive message words are stored in the index.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByNonAlpha',
+        preprocessor = lower(replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')),
+        postprocessor = if(line IN ('error', 'info', 'warn', 'warning', 'debug', 'critical'), '', line)
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Example log line: '2024-01-15T10:23:45 ERROR connection failed'
+-- After preprocessor:  'error connection failed'
+-- After tokenization:  ['error', 'connection', 'failed']
+-- After postprocessor: ['connection', 'failed']   ← 'error' dropped as severity word
+SELECT count() FROM logs WHERE hasToken(line, 'connection');
 ```
 
 Example for stemming:

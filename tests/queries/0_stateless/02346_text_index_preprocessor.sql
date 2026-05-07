@@ -532,3 +532,36 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');      -- 0
 
 SYSTEM START MERGES tab;
 DROP TABLE tab;
+
+SELECT '16. Timestamp removal: preprocessor strips ISO timestamp prefix from log lines.';
+
+-- Log lines contain a leading ISO timestamp followed by a space and the log message.
+-- The preprocessor uses replaceRegexpAll to remove the timestamp prefix before tokenization,
+-- so timestamp components are never stored in the index.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(val, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES
+    (1, '2024-01-15T10:23:45 ERROR connection failed'),
+    (2, '2024-01-15T10:23:46 INFO server started'),
+    (3, '2024-01-15T10:23:47 ERROR disk full');
+
+-- Searching by message content finds rows; the preprocessor is applied to the needle too,
+-- but 'ERROR', 'connection', etc. are unaffected by the timestamp regex.
+SELECT count() FROM tab WHERE hasToken(val, 'ERROR');        -- 2
+SELECT count() FROM tab WHERE hasToken(val, 'connection');   -- 1
+SELECT count() FROM tab WHERE hasToken(val, 'server');       -- 1
+-- Timestamp components are not indexed; searching for them returns 0.
+SELECT count() FROM tab WHERE hasToken(val, '2024');         -- 0
+SELECT count() FROM tab WHERE hasToken(val, '10');           -- 0
+
+DROP TABLE tab;
