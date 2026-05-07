@@ -14,6 +14,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/VariableContext.h>
 #include <Common/setThreadName.h>
+#include <base/errnoToString.h>
 #include <Common/logger_useful.h>
 #include <Common/SymbolIndex.h>
 
@@ -98,19 +99,30 @@ TraceCollector::~TraceCollector()
         }
     }
 
+    /// Close the gate first so no new sender writes to the pipe, then wait for
+    /// any sender already past the gate to finish its `write()`. After this
+    /// the write fd has no concurrent users and we can safely close it.
+    TraceSender::shutdown.store(true);
+    while (TraceSender::in_flight.load() > 0)
+        std::this_thread::yield();
+
+    /// Guaranteed fallback to unblock the worker even if the in-band stop byte
+    /// above failed to deliver (e.g. EAGAIN on the non-blocking write end):
+    /// closing the write end makes the worker's `read()` return EOF, so
+    /// `thread.join()` below cannot wait indefinitely on a missed stop byte.
+    if (TraceSender::pipe.fds_rw[1] >= 0)
+    {
+        if (0 != ::close(TraceSender::pipe.fds_rw[1]))
+            LOG_ERROR(getLogger("TraceCollector"), "Cannot close write end of trace pipe: {}", errnoToString());
+        TraceSender::pipe.fds_rw[1] = -1;
+    }
+
     if (thread.joinable())
         thread.join();
     else
         LOG_ERROR(getLogger("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
 
-    /// Close the gate so any new `TraceSender::send` call returns without
-    /// touching the pipe, then wait for any sender that already entered the
-    /// critical section to finish its `write()`. After both, `close()` cannot
-    /// race with a concurrent `write()` on the same fd.
-    TraceSender::shutdown.store(true);
-    while (TraceSender::in_flight.load() > 0)
-        std::this_thread::yield();
-
+    /// Worker has exited; close the read end (the write end is already closed).
     tryClosePipe();
 }
 
