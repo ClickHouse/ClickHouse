@@ -999,14 +999,31 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
             return false;
     }
 
-    /// Verify the SELECT list only contains aggregates and GROUP BY columns.
-    /// If there are extra expressions (bare constants, arithmetic), the State/Merge
-    /// transformation won't preserve them and column counts will differ.
-    size_t expected_exprs = agg_data.aggregates.size();
-    if (select.groupBy())
-        expected_exprs += select.groupBy()->children.size();
-    if (select.select()->children.size() != expected_exprs)
-        return false;
+    /// Every SELECT-list expression must be EITHER an exact aggregate from the
+    /// collected list (we'll rewrite it as `aggMerge(_s_N)`) OR a bare GROUP BY
+    /// expression (we'll pass it through unchanged). If an aggregate is nested
+    /// inside a non-aggregate expression (e.g. `plus(count(), 1)`), the
+    /// per-expression rewrite at line ~1069 won't find a top-level match and
+    /// the outer query ends up running the aggregate over the UNION ALL of
+    /// already-grouped rows, producing wrong results. Reject such queries.
+    {
+        std::unordered_set<UInt64> aggregate_hashes;
+        for (const auto & agg : agg_data.aggregates)
+            aggregate_hashes.insert(agg->getTreeHash(/*ignore_aliases=*/true).low64);
+
+        std::unordered_set<UInt64> group_by_hashes;
+        if (select.groupBy())
+            for (const auto & g : select.groupBy()->children)
+                group_by_hashes.insert(g->getTreeHash(/*ignore_aliases=*/true).low64);
+
+        for (const auto & select_expr : select.select()->children)
+        {
+            UInt64 h = select_expr->getTreeHash(/*ignore_aliases=*/true).low64;
+            if (aggregate_hashes.contains(h) || group_by_hashes.contains(h))
+                continue;
+            return false;
+        }
+    }
 
     ASTPtr predicate = select.where()->clone();
 
