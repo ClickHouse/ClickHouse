@@ -15,10 +15,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int NUMBER_OF_PARAMETERS_DOESNT_MATCH;
-    extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -55,7 +53,7 @@ public:
     size_t getNumberOfNestedArguments(const DataTypes & arguments, const Array & parameters) const override
     {
         if (parameters.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_PARAMETERS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Aggregate function with {} suffix requires at least one parameter (sort description string)", getName());
 
         const String & sort_desc_str = parameters[0].safeGet<String>();
@@ -69,7 +67,7 @@ public:
         const size_t sort_keys_count = sort_list->children.size();
 
         if (arguments.size() <= sort_keys_count)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Aggregate function with {} suffix expects at least {} arguments (got {}): "
                 "trailing {} arguments are sort keys, the rest are passed to the nested function",
                 getName(), sort_keys_count + 1, arguments.size(), sort_keys_count);
@@ -90,7 +88,7 @@ public:
     Array transformParameters(const Array & parameters) const override
     {
         if (parameters.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_PARAMETERS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Aggregate function with {} suffix requires at least one parameter", getName());
 
         size_t consumed = 1;
@@ -107,7 +105,7 @@ public:
         const Array & params) const override
     {
         if (params.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_PARAMETERS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Aggregate function with {} suffix requires at least one parameter", getName());
 
         /// Sort description: first parameter, must be a String.

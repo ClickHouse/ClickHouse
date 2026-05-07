@@ -9,6 +9,7 @@
 #include <Interpreters/sortBlock.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromMemory.h>
 
 
 namespace DB
@@ -67,17 +68,20 @@ struct OrderByArrayNode
     /// a StringRef that tells us how many bytes were written.
     static OrderByArrayNode * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
+        IColumn::SerializationSettings settings;
         const char * begin = arena->alignedAlloc(sizeof(OrderByArrayNode), alignof(OrderByArrayNode));
-        StringRef value = column.serializeValueIntoArena(row_num, *arena, begin);
+        auto value = column.serializeValueIntoArena(row_num, *arena, begin, &settings);
 
         auto * node = reinterpret_cast<OrderByArrayNode *>(const_cast<char *>(begin));
-        node->size = value.size;
+        node->size = value.size();
         return node;
     }
 
     void insertInto(IColumn & column) const
     {
-        std::ignore = column.deserializeAndInsertFromArena(data());
+        IColumn::SerializationSettings settings;
+        ReadBufferFromMemory buf(data(), size);
+        column.deserializeAndInsertFromArena(buf, &settings);
     }
 };
 
