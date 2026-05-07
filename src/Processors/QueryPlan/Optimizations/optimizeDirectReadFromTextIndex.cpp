@@ -545,9 +545,10 @@ private:
                 auto tokens = postprocessor->processTokens({needles_field.safeGet<String>()});
                 needles_field = tokens.empty() ? String{} : tokens.front();
             }
-            else if (needles_field.getType() == Field::Types::Array)
+            else if (needles_field.getType() == Field::Types::Array && !typeid_cast<const ArrayTokenizer *>(tokenizer))
             {
-                /// hasAllTokens/hasAnyTokens case: array of tokens.
+                /// Array needle: skip postprocessor for the array tokenizer (raw elements).
+                /// Mirrors MergeTreeIndexConditionText::traverseFunctionNode.
                 const auto & src_array = needles_field.safeGet<Array>();
                 std::vector<String> tokens;
                 for (const auto & element : src_array)
