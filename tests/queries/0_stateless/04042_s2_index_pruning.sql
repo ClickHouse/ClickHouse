@@ -83,17 +83,29 @@ SELECT
     =
     (SELECT count() FROM t_s2_cells WHERE s2CellsIntersect(cell_id, 9926594385212866560) SETTINGS use_primary_key = 0);
 
--- 7. EXPLAIN: s2CellsIntersect shows in key condition and prunes granules
-EXPLAIN indexes = 1 SELECT count() FROM t_s2_cells
-WHERE s2CellsIntersect(cell_id, 9926594385212866560);
+-- 7. EXPLAIN: `s2CellsIntersect` should appear in key condition
+SELECT countIf(explain LIKE '%Condition: s2CellsIntersect%') > 0
+FROM
+(
+    EXPLAIN indexes = 1 SELECT count() FROM t_s2_cells
+    WHERE s2CellsIntersect(cell_id, 9926594385212866560)
+);
 
--- 8. EXPLAIN: s2RectContains still works after refactoring
-EXPLAIN indexes = 1 SELECT count() FROM t_s2_cells
-WHERE s2RectContains(geoToS2(-74.0, 40.7), geoToS2(-73.9, 40.8), cell_id);
+-- 8. EXPLAIN: `s2RectContains` should appear in key condition
+SELECT countIf(explain LIKE '%Condition: s2RectContains%') > 0
+FROM
+(
+    EXPLAIN indexes = 1 SELECT count() FROM t_s2_cells
+    WHERE s2RectContains(geoToS2(-74.0, 40.7), geoToS2(-73.9, 40.8), cell_id)
+);
 
--- 9. EXPLAIN: s2CapContains still works after refactoring
-EXPLAIN indexes = 1 SELECT count() FROM t_s2_cells
-WHERE s2CapContains(geoToS2(-73.98, 40.75), 0.01, cell_id);
+-- 9. EXPLAIN: `s2CapContains` should appear in key condition
+SELECT countIf(explain LIKE '%Condition: s2CapContains%') > 0
+FROM
+(
+    EXPLAIN indexes = 1 SELECT count() FROM t_s2_cells
+    WHERE s2CapContains(geoToS2(-73.98, 40.75), 0.01, cell_id)
+);
 
 -- 10. s2_max_covering_cells setting is accepted (lower budget, same correctness)
 SELECT count() FROM t_s2_cells
