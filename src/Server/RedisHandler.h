@@ -23,9 +23,21 @@ public:
     void run() override;
 
 private:
+    struct TargetConfig
+    {
+        String database;
+        String table;
+        String default_column;
+    };
+
+    bool selectDatabase(const String & db_index);
+
+    IServer & server;
     TCPServer & tcp_server;
     LoggerPtr log;
     UInt64 connection_id;
+    UInt64 selected_db = 0;
+    TargetConfig selected_target;
 };
 
 }

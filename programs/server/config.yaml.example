@@ -73,6 +73,17 @@ postgresql_port: 9005
 # Compatibility with Redis protocol.
 # This skeleton currently supports only PING and QUIT.
 # redis_port: 9006
+#
+# Redis DB to ClickHouse table mapping.
+# This skeleton currently supports SELECT mapping only. GET/MGET will be added later.
+# The mapping is needed for future key-value lookup.
+#
+# redis:
+#   db:
+#     _0:
+#       database: default
+#       table: kv_baseline
+#       default_column: value
 
 # HTTP API with TLS (HTTPS).
 # You have to configure certificate to enable this interface.

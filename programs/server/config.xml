@@ -212,6 +212,22 @@
     -->
     <!-- <redis_port>9006</redis_port> -->
 
+    <!-- Redis DB to ClickHouse table mapping.
+         This skeleton currently supports SELECT mapping only. GET/MGET will be added later.
+         The mapping is needed for future key-value lookup.
+    -->
+    <!--
+    <redis>
+        <db>
+            <_0>
+                <database>default</database>
+                <table>kv_baseline</table>
+                <default_column>value</default_column>
+            </_0>
+        </db>
+    </redis>
+    -->
+
     <!-- HTTP API with TLS (HTTPS).
          You have to configure certificate to enable this interface.
          See the OpenSSL section below.
