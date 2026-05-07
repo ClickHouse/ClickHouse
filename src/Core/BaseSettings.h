@@ -1152,7 +1152,21 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
         struct Data \
         { \
             SUPPORTED_TYPES_MACRO(SETTINGS_TRAITS_NAME, SETTING_DECLARE_DATA_ARRAY_) \
+            /* Default ctor: typed copy from `Accessor::instance().default_data`. The per-setting */ \
+            /* init lives in the private tag ctor below and runs only when the singleton's */ \
+            /* `default_data` member is initialized for the first time. */ \
             Data(); \
+            Data(const Data &) = default; \
+            Data(Data &&) = default; \
+            Data & operator=(const Data &) = default; \
+            Data & operator=(Data &&) = default; \
+            \
+            /* Tag for the per-setting init constructor. Used only by `Accessor::default_data` */ \
+            /* during singleton construction; every other `Data()` call is a typed copy from */ \
+            /* that singleton. The tag has an explicit default ctor so callers can't synthesize */ \
+            /* it accidentally with `{}`. */ \
+            struct DefaultInitTag { explicit DefaultInitTag() = default; }; \
+            explicit Data(DefaultInitTag); \
         }; \
         \
         DECLARE_SETTINGS_TRAITS_BODY_(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS) \
@@ -1260,6 +1274,11 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 return fi.ops->to_string(settingPtr(default_data, fi.data_offset)); \
             } \
             \
+            /* Canonical default-constructed Data instance. The public `Data()` constructor */ \
+            /* copies from this so each fresh Settings construction is a typed copy rather than */ \
+            /* a full per-setting init. */ \
+            const Data & getDefaultData() const { return default_data; } \
+            \
         private: \
             Accessor(); \
             \
@@ -1279,8 +1298,9 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             std::unordered_map<std::string_view, size_t> name_to_index_map;         /* Fast name -> index lookup */ \
             /* Canonical default-constructed instance. Used to reset individual settings to their */ \
             /* declared defaults via a typed copy (see resetValueToDefault) and to read the default */ \
-            /* string representation (see getDefaultValueString). */ \
-            Data default_data; \
+            /* string representation (see getDefaultValueString). Initialized once via the tag */ \
+            /* ctor; the public `Data()` then becomes a typed copy from this member. */ \
+            Data default_data{typename Data::DefaultInitTag{}}; \
         }; \
         \
         /** Whether this traits allows custom settings */ \
@@ -1404,14 +1424,17 @@ size_t settingsDataBaseOffset()
   */
     /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
-    /* Data constructor: initialize all typed arrays with default values. */ \
+    /* Per-setting init: invoked once via the singleton's `default_data` member. */ \
     /* The Traits_ alias lets helper macros reference the enclosing traits. */ \
-    SETTINGS_TRAITS_NAME::Data::Data() \
+    SETTINGS_TRAITS_NAME::Data::Data(DefaultInitTag) \
     { \
         using Traits_ = SETTINGS_TRAITS_NAME; \
         LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_INIT_DEFAULT_, SETTING_INIT_DEFAULT_) \
         LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_INIT_DEFAULT_, SETTING_INIT_DEFAULT_) \
     } \
+    \
+    /* Public default ctor: typed copy from the singleton's canonical default Data. */ \
+    SETTINGS_TRAITS_NAME::Data::Data() : Data(SETTINGS_TRAITS_NAME::Accessor::instance().getDefaultData()) {} \
     \
     const SETTINGS_TRAITS_NAME::Accessor & SETTINGS_TRAITS_NAME::Accessor::instance() \
     { \
