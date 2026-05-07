@@ -74,7 +74,9 @@ static thread_local ThreadName thread_name = ThreadName::UNKNOWN;
 
 void setThreadName(ThreadName name)
 {
-    thread_name = name;
+    // Skip rename on no-op.
+    if (thread_name == name)
+        return;
 
     auto thread_name_view = toString(name);
     if (thread_name_view.size() > THREAD_NAME_SIZE)
@@ -98,6 +100,8 @@ void setThreadName(ThreadName name)
 #endif
         if (errno != ENOSYS && errno != EPERM)    /// It's ok if the syscall is unsupported or not allowed in some environments.
             throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot set thread name with prctl(PR_SET_NAME, ...)");
+
+    thread_name = name;
 
 #if USE_JEMALLOC
     DB::Jemalloc::setValue("thread.prof.name", thread_name_str.data());
