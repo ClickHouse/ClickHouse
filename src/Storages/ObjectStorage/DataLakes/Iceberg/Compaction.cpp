@@ -23,6 +23,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Common/FieldVisitorDump.h>
 #include <Common/Logger.h>
 
 #if USE_AVRO
@@ -30,6 +31,7 @@
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::Setting
@@ -485,8 +487,7 @@ bool writeConsolidatedManifestFile(
 
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 
-    // Ordered map so partition manifest files are written in a deterministic order
-    std::map<String, PartitionData> partitions_map;
+    std::unordered_map<String, PartitionData> partitions_map;
 
     // Collect live data files from the current snapshot only.
     // getFilesWithoutDeleted() already filters out entries with ManifestEntryStatus::DELETED,
@@ -506,10 +507,13 @@ bool writeConsolidatedManifestFile(
 
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
-            // Build a string key that uniquely identifies this partition
+            // Build a string key that uniquely identifies this partition.
+            // FieldVisitorDump preserves the type tag, so e.g. UInt64{42} and Int64{42}
+            // do not collide as the same partition.
             String partition_key;
+            FieldVisitorDump dump_visitor;
             for (const auto & val : data_file->parsed_entry->partition_key_value)
-                partition_key += val.dump() + "|";
+                partition_key += applyVisitor(dump_visitor, val) + "|";
 
             if (!partitions_map.contains(partition_key))
                 partitions_map.emplace(partition_key, PartitionData(schema_fields));
@@ -973,7 +977,7 @@ void compactIcebergManifests(
         }
     }
 
-    LOG_WARNING(log, "Manifest compaction failed to commit after {} attempts due to concurrent modifications",
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest compaction failed to commit after {} attempts",
                 MAX_COMPACTION_RETRIES);
 }
 
