@@ -1945,6 +1945,10 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
             continue;
 
         auto subquery_options = SelectQueryOptions{}.subquery();
+        /// Sets may use Materialized CTEs; mirror the regular planner path
+        /// (`addBuildSubqueriesForSetsStepIfNeeded`) so CTE materialization is
+        /// preserved when the IN subquery references one.
+        subquery_options.forceMaterializeCTE();
         subquery_options.ignore_limits = false;
         Planner subquery_planner(
             query_tree,
