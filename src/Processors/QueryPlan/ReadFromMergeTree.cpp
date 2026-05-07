@@ -841,6 +841,13 @@ Pipe ReadFromMergeTree::readInOrder(
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
+    /// Empty pipe — every part was pruned as a phantom (the coordinator's stream owns none of
+    /// this replica's parts, e.g. follower over-announced more splits than the initiator created).
+    /// Return as-is; the caller in `spreadMarkRangesAmongStreamsWithOrder` filters out empty
+    /// pipes, and `initializePipeline` substitutes a `NullSource` for an empty top-level pipe.
+    if (pipe.empty())
+        return pipe;
+
     if (read_type == ReadType::InReverseOrder)
     {
         pipe.addSimpleTransform([&](const SharedHeader & header)
@@ -2933,13 +2940,20 @@ void ReadFromMergeTree::updateSortDescription()
 
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
 {
+    /// `createLocalPlanForParallelReplicas` only runs with the analyzer, so the split-stream
+    /// topology only exists when the analyzer is enabled. Without it, fall back to the old
+    /// non-split path on both sides — otherwise the follower's local-plan branch creates split
+    /// pools while the initiator's coordinator never registers any streams, leaving followers
+    /// to read all parts and produce duplicates.
     return is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
+        && context->getSettingsRef()[Setting::allow_experimental_analyzer]
         && context->canUseParallelReplicasOnInitiator();
 }
 
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
 {
     return is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
+        && context->getSettingsRef()[Setting::allow_experimental_analyzer]
         && context->canUseParallelReplicasOnFollower();
 }
 
