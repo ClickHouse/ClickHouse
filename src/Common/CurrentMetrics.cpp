@@ -350,6 +350,8 @@
     M(DNSAddressesCacheSize, "Number of cached DNS addresses") \
     M(MarkCacheBytes, "Total size of mark cache in bytes") \
     M(MarkCacheFiles, "Total number of mark files cached in the mark cache") \
+    M(UniqueKeyIndexCacheBytes, "Total size of UNIQUE KEY index cache in bytes") \
+    M(UniqueKeyIndexCacheEntries, "Total number of UNIQUE KEY index blocks cached") \
     M(NamedCollection, "Number of named collections") \
     M(PrimaryIndexCacheBytes, "Total size of primary index cache in bytes") \
     M(PrimaryIndexCacheFiles, "Total number of index files cached in the primary index cache") \
