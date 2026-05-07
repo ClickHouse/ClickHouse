@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.3.1.20001.altinityantalya",
         {
+            {"object_storage_cluster_join_mode", "allow", "allow", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

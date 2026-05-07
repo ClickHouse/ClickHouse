@@ -485,6 +485,7 @@ void executeQuery(
             std::move(unavailable_shard_tracker));
 
         read_from_remote->setStepDescription("Read from remote replica");
+        read_from_remote->setIsRemoteFunction(is_remote_function);
         plan->addStep(std::move(read_from_remote));
         plan->addInterpreterContext(new_context);
         plans.emplace_back(std::move(plan));

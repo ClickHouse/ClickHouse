@@ -77,8 +77,7 @@ def check_convert_system_db_to_atomic():
     errors_count = int(node.count_in_log("<Error>"))
     allowed_errors_count = int(node.count_in_log("Can't receive Netlink response")) + int(
         node.count_in_log( # NOTE (strtgbb): cgroups error occurs in our environment
-            "CgroupsReader: Cannot find 'kernel' in '/sys/fs/cgroup/memory.stat'"
-        )
+            "CgroupsReader: Cannot find 'kernel' in '/sys/fs/cgroup/memory.stat'")
     )
     assert errors_count == allowed_errors_count
     assert "0\n" == node.count_in_log("<Warning> Database")
