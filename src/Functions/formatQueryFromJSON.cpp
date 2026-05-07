@@ -335,6 +335,10 @@ Takes a JSON representation of a SQL AST (as produced by `parseQueryToJSON`) and
 
 With one argument, produces canonically formatted SQL.
 With two arguments `(json, original_query)`, preserves comments, whitespace, and indentation from the original query on a best-effort basis.
+
+The deserialized AST is bounded by the current session's `max_ast_depth` and `max_ast_elements` settings.
+Together with `parseQueryToJSON`, this function enables programmatic inspection and transformation of queries
+through their JSON AST form.
     )";
     FunctionDocumentation::Syntax syntax = "formatQueryFromJSON(json[, original_query])";
     FunctionDocumentation::Arguments func_arguments = {

@@ -103,7 +103,14 @@ namespace ErrorCodes
 #else
 #define COMMON_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(Dialect, dialect, Dialect::clickhouse, R"(
-Which dialect will be used to parse query
+Which dialect will be used to parse query.
+
+Supported values:
+- `clickhouse` (default) — standard ClickHouse SQL.
+- `kusto` — Kusto Query Language. Requires the experimental setting `allow_experimental_kusto_dialect`.
+- `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
+- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
+- `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `allow_experimental_json_ast_dialect`.
 )", 0)\
     DECLARE(UInt64, min_compress_block_size, 65536, R"(
 For [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
@@ -7843,7 +7850,20 @@ Enable PRQL - an alternative to SQL.
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_json_ast_dialect, false, R"(
-Enable `clickhouse_json` dialect - pass JSON AST directly as a query instead of SQL.
+Enable the `clickhouse_json` value of the `dialect` setting.
+
+When `dialect` is set to `clickhouse_json`, queries are interpreted as JSON ASTs
+(the output of `parseQueryToJSON`) instead of SQL text. The `SET` query is still
+parsed as plain SQL so that the dialect can be switched back.
+
+Example:
+```sql
+SET allow_experimental_json_ast_dialect = 1;
+SET dialect = 'clickhouse_json';
+
+-- Subsequent queries are parsed as JSON ASTs:
+{"type":"SelectWithUnionQuery", ...}
+```
 )", EXPERIMENTAL) \
     DECLARE(String, polyglot_dialect, "", R"(
 Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
