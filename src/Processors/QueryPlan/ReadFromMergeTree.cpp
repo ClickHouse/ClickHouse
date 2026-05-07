@@ -1501,6 +1501,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         }
     }
 
+    /// Drop pipes that ended up with no source processors. This happens when every part in a
+    /// split was pruned as a phantom (the coordinator's stream owns none of this replica's parts,
+    /// e.g. the follower over-announced more splits than the initiator created). An empty pipe
+    /// has no output port and would crash later code that reads a header from it.
+    std::erase_if(pipes, [](const Pipe & p) { return p.empty(); });
+
     Block pipe_header;
     if (!pipes.empty())
         pipe_header = pipes.front().getHeader();
