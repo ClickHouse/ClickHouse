@@ -10,6 +10,14 @@
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
 #include <Poco/JSON/Object.h>
 
+namespace DB
+{
+
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
+
+}
+
 namespace DataLake
 {
 
@@ -136,6 +144,7 @@ struct CatalogSettings
     String aws_access_key_id;
     String aws_secret_access_key;
     String region;
+    String namespaces;
     String aws_role_arn;
     String aws_role_session_name;
 
@@ -172,6 +181,7 @@ public:
     virtual void getTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
+        DB::ContextPtr context,
         TableMetadata & result) const = 0;
 
     /// Get table metadata in the given namespace.
@@ -179,6 +189,7 @@ public:
     virtual bool tryGetTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
+        DB::ContextPtr context,
         TableMetadata & result) const = 0;
 
     /// Get storage type, where Iceberg tables' data is stored.

@@ -236,8 +236,12 @@ def get_creation_expression(
     table_function=False,
     use_version_hint=False,
     run_on_cluster=False,
+    object_storage_cluster=False,
     explicit_metadata_path="",
     additional_settings = [],
+    storage_type_as_arg=False,
+    storage_type_in_named_collection=False,
+    cluster_name_as_literal=True,
     **kwargs,
 ):
     settings_array = list(additional_settings)
@@ -247,6 +251,9 @@ def get_creation_expression(
 
     if use_version_hint:
         settings_array.append("iceberg_use_version_hint = true")
+
+    if object_storage_cluster:
+        settings_array.append(f"object_storage_cluster = '{object_storage_cluster}'")
 
     if partition_by:
         partition_by = "PARTITION BY " + partition_by
@@ -264,6 +271,24 @@ def get_creation_expression(
     else:
         settings_expression = ""
 
+    cluster_name = "'cluster_simple'" if cluster_name_as_literal else "cluster_simple"
+
+    storage_arg = storage_type
+    engine_part = ""
+    if (storage_type_in_named_collection):
+        storage_arg += "_with_type"
+    elif (storage_type_as_arg):
+        storage_arg += f", storage_type='{storage_type}'"
+    else:
+        if (storage_type == "s3"):
+            engine_part = "S3"
+        elif (storage_type == "azure"):
+            engine_part = "Azure"
+        elif (storage_type == "hdfs"):
+            engine_part = "HDFS"
+        elif (storage_type == "local"):
+            engine_part = "Local"
+
     if_not_exists_prefix = ""
     if if_not_exists:
         if_not_exists_prefix = "IF NOT EXISTS"
@@ -276,16 +301,16 @@ def get_creation_expression(
 
         if run_on_cluster:
             assert table_function
-            return f"icebergS3Cluster('cluster_simple', s3, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+            return f"iceberg{engine_part}Cluster({cluster_name}, {storage_arg}, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
         else:
             if table_function:
-                return f"icebergS3(s3, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+                return f"iceberg{engine_part}({storage_arg}, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
             else:
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
-                    ENGINE=IcebergS3(s3, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
+                    ENGINE=Iceberg{engine_part}({storage_arg}, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
                     {order_by}
                     {partition_by}
                     {settings_expression};
@@ -296,19 +321,19 @@ def get_creation_expression(
         if run_on_cluster:
             assert table_function
             return f"""
-                icebergAzureCluster('cluster_simple', azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
+                iceberg{engine_part}Cluster({cluster_name}, {storage_arg}, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
             """
         else:
             if table_function:
                 return f"""
-                    icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
+                    iceberg{engine_part}({storage_arg}, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
                 """
             else:
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
-                    ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
+                    ENGINE=Iceberg{engine_part}({storage_arg}, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
                     {order_by}
                     {partition_by}
                     {settings_expression}
@@ -319,19 +344,19 @@ def get_creation_expression(
         if run_on_cluster:
             assert table_function
             return f"""
-                icebergLocalCluster('cluster_simple', local, path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}', format={format})
+                iceberg{engine_part}Cluster({cluster_name}, {storage_arg}, path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
             """
         else:
             if table_function:
                 return f"""
-                    icebergLocal(local, path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}', format={format})
+                    iceberg{engine_part}({storage_arg}, path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}', format={format})
                 """
             else:
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
-                    ENGINE=IcebergLocal(local, path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}', format={format})
+                    ENGINE=Iceberg{engine_part}({storage_arg}, path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
                     {order_by}
                     {partition_by}
                     {settings_expression}
@@ -422,16 +447,43 @@ def create_iceberg_table(
     run_on_cluster=False,
     format="Parquet",
     order_by="",
+    object_storage_cluster=False,
     **kwargs,
 ):
     if 'output_format_parquet_use_custom_encoder' in kwargs:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, order_by, run_on_cluster = run_on_cluster, **kwargs),
+            get_creation_expression(
+                storage_type,
+                table_name,
+                cluster,
+                schema,
+                format_version,
+                partition_by,
+                if_not_exists,
+                compression_method,
+                format,
+                order_by,
+                run_on_cluster=run_on_cluster,
+                object_storage_cluster=object_storage_cluster,
+                **kwargs),
             settings={"output_format_parquet_use_custom_encoder" : 0, "output_format_parquet_parallel_encoding" : 0}
         )
     else:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, order_by, run_on_cluster=run_on_cluster, **kwargs),
+            get_creation_expression(
+                storage_type,
+                table_name,
+                cluster,
+                schema,
+                format_version,
+                partition_by,
+                if_not_exists,
+                compression_method,
+                format,
+                order_by,
+                run_on_cluster=run_on_cluster,
+                object_storage_cluster=object_storage_cluster,
+                **kwargs),
         )
 
 

@@ -324,6 +324,62 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 **Note**: Current expectation is that metadata cache size is sufficient to hold the latest metadata snapshot in full for all active tables, if asynchronous prefetching is enabled.
 
+## Altinity Antalya branch
+
+### Specify storage type in arguments
+
+Only in the Altinity Antalya branch does `Iceberg` table engine support all storage types. The storage type can be specified using the named argument `storage_type`. Supported values are `s3`, `azure`, `hdfs`, and `local`.
+
+```sql
+CREATE TABLE iceberg_table_s3
+    ENGINE = Iceberg(storage_type='s3', url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])
+
+CREATE TABLE iceberg_table_azure
+    ENGINE = Iceberg(storage_type='azure', connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+CREATE TABLE iceberg_table_hdfs
+    ENGINE = Iceberg(storage_type='hdfs', path_to_table, [,format] [,compression_method])
+
+CREATE TABLE iceberg_table_local
+    ENGINE = Iceberg(storage_type='local', path_to_table, [,format] [,compression_method])
+```
+
+### Specify storage type in named collection
+
+Only in Altinity Antalya branch `storage_type` can be included as part of a named collection. This allows for centralized configuration of storage settings.
+
+```xml
+<clickhouse>
+    <named_collections>
+        <iceberg_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test<access_key_id>
+            <secret_access_key>test</secret_access_key>
+            <format>auto</format>
+            <structure>auto</structure>
+            <storage_type>s3</storage_type>
+        </iceberg_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE iceberg_table ENGINE=Iceberg(iceberg_conf, filename = 'test_table')
+```
+
+The default value for `storage_type` is `s3`.
+
+### The `object_storage_cluster` setting.
+
+Only in the Altinity Antalya branch is an alternative syntax for the `Iceberg` table engine available. This syntax allows execution on a cluster when the `object_storage_cluster` setting is non-empty and contains the cluster name.
+
+```sql
+CREATE TABLE iceberg_table_s3
+    ENGINE = Iceberg(storage_type='s3', url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression]);
+
+SELECT * FROM iceberg_table_s3 SETTINGS object_storage_cluster='cluster_simple';
+```
+
 ## See also {#see-also}
 
 - [iceberg table function](/sql-reference/table-functions/iceberg.md)

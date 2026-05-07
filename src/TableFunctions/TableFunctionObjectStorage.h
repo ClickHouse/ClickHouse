@@ -25,10 +25,12 @@ struct S3StorageSettings;
 struct AzureStorageSettings;
 struct HDFSStorageSettings;
 
-template <typename Definition, typename Configuration, bool is_data_lake = false>
+template <typename Definition, typename StorageConfiguration, bool is_data_lake = false>
 class TableFunctionObjectStorage : public ITableFunction
 {
 public:
+    using Configuration = StorageConfiguration;
+
     static constexpr auto name = Definition::name;
     using Settings = typename std::conditional_t<
         is_data_lake,
@@ -37,15 +39,16 @@ public:
 
     String getName() const override { return name; }
 
-    bool hasStaticStructure() const override { return configuration->structure != "auto"; }
+    bool hasStaticStructure() const override { return configuration->getStructure() != "auto"; }
 
-    bool needStructureHint() const override { return configuration->structure == "auto"; }
+    bool needStructureHint() const override { return configuration->getStructure() == "auto"; }
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override
     {
-        return configuration->format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
+        return configuration->getFormat() != "auto"
+            && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->getFormat(), context);
     }
 
     std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
@@ -55,7 +58,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true);
+        getConfiguration(context)->initialize(args, context, true);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -67,8 +70,8 @@ public:
         if constexpr (is_data_lake)
         {
             Configuration configuration(createEmptySettings());
-            if (configuration.format == "auto")
-                configuration.format = "Parquet"; /// Default format of data lakes.
+            if (configuration.getFormat() == "auto")
+                configuration.setFormat("Parquet"); /// Default format of data lakes.
 
             configuration.addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
         }
@@ -110,21 +113,22 @@ protected:
 };
 
 #if USE_AWS_S3
-using TableFunctionS3 = TableFunctionObjectStorage<S3Definition, StorageS3Configuration>;
+using TableFunctionS3 = TableFunctionObjectStorage<S3Definition, StorageS3Configuration, false>;
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration>;
+using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration, false>;
 #endif
 
 #if USE_HDFS
-using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
+using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration, false>;
 #endif
 
 
 #if USE_AVRO
+using TableFunctionIceberg = TableFunctionObjectStorage<IcebergDefinition, StorageIcebergConfiguration, true>;
+
 #    if USE_AWS_S3
-using TableFunctionIceberg = TableFunctionObjectStorage<IcebergDefinition, StorageS3IcebergConfiguration, true>;
 using TableFunctionIcebergS3 = TableFunctionObjectStorage<IcebergS3Definition, StorageS3IcebergConfiguration, true>;
 #    endif
 #    if USE_AZURE_BLOB_STORAGE
@@ -149,13 +153,13 @@ using TableFunctionPaimonHDFS = TableFunctionObjectStorage<PaimonHDFSDefinition,
 using TableFunctionPaimonLocal = TableFunctionObjectStorage<PaimonLocalDefinition, StorageLocalPaimonConfiguration, true>;
 #endif
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-#if USE_AWS_S3
+#    if USE_AWS_S3
 using TableFunctionDeltaLake = TableFunctionObjectStorage<DeltaLakeDefinition, StorageS3DeltaLakeConfiguration, true>;
 using TableFunctionDeltaLakeS3 = TableFunctionObjectStorage<DeltaLakeS3Definition, StorageS3DeltaLakeConfiguration, true>;
-#endif
-#if USE_AZURE_BLOB_STORAGE
+#    endif
+#    if USE_AZURE_BLOB_STORAGE
 using TableFunctionDeltaLakeAzure = TableFunctionObjectStorage<DeltaLakeAzureDefinition, StorageAzureDeltaLakeConfiguration, true>;
-#endif
+#    endif
 // New alias for local Delta Lake table function
 using TableFunctionDeltaLakeLocal = TableFunctionObjectStorage<DeltaLakeLocalDefinition, StorageLocalDeltaLakeConfiguration, true>;
 #endif

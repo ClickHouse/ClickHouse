@@ -58,7 +58,7 @@ public:
 
     void renameInMemory(const StorageID & new_table_id) override;
 
-    const auto & getFormatName() const { return configuration->format; }
+    const auto & getFormatName() const { return configuration->getFormat(); }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
 

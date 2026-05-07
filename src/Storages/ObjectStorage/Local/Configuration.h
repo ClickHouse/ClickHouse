@@ -82,6 +82,8 @@ public:
 
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
+    ASTPtr createArgsWithAccessData() const override;
+
 protected:
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     void fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure) override;
