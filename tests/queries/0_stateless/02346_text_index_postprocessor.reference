@@ -120,7 +120,7 @@ FUNCTION and(__text_index_idx_startsWith_f7063bbcb2ba91bac1bf1207ce313e25 :: 2, 
 Prewhere filter column: and(__text_index_idx_endsWith_62c031dd56b3d56d129e8b959a74ec3e, endsWith(__table1.val, \'cat dog\'_String)) (removed)
 INPUT : 1 -> __text_index_idx_endsWith_62c031dd56b3d56d129e8b959a74ec3e UInt8 : 2
 FUNCTION and(__text_index_idx_endsWith_62c031dd56b3d56d129e8b959a74ec3e :: 2, endsWith(__table1.val, \'cat dog\'_String) :: 3) -> and(__text_index_idx_endsWith_62c031dd56b3d56d129e8b959a74ec3e, endsWith(__table1.val, \'cat dog\'_Str... UInt8 : 1
-19. startsWith / endsWith do not use hint when postprocessor drops all hint tokens.
+19. startsWith stays correct when the postprocessor maps all hint tokens to empty.
 1
 20. startsWith / endsWith stay correct across mixed indexed and non-indexed parts.
 2

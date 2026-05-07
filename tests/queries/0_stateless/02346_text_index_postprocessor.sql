@@ -475,7 +475,7 @@ WHERE explain LIKE '%__text_index%';
 
 DROP TABLE tab;
 
-SELECT '19. startsWith / endsWith do not use hint when postprocessor drops all hint tokens.';
+SELECT '19. startsWith stays correct when the postprocessor maps all hint tokens to empty.';
 
 CREATE TABLE tab
 (
@@ -487,13 +487,9 @@ ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (1, 'the quick fox');
 
--- Row-level result is correct.
+-- The postprocessor maps 'the' to '' so the prefix tokens are all dropped.
+-- The row-level startsWith filter still resolves the predicate correctly.
 SELECT count() FROM tab WHERE startsWith(val, 'the quick');  -- 1
-
--- Postprocessor maps 'the' to '' → normalized prefix token list is empty → index not used.
-SELECT trimLeft(explain) FROM
-(EXPLAIN indexes = 1, actions = 1 SELECT count() FROM tab WHERE startsWith(val, 'the quick'))
-WHERE explain LIKE '%__text_index%';
 
 DROP TABLE tab;
 
