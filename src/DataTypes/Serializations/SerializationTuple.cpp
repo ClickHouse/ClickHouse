@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 
@@ -260,7 +261,24 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
         if (whole && !istr.eof())
         {
             if constexpr (throw_exception)
-                throwUnexpectedDataAfterParsedValue(column, istr, settings, "Tuple");
+            {
+                /// If empty tuple, temporarily increase size to make sure we can read the parsed
+                /// value via serializeText.
+                if (elems.empty())
+                    assert_cast<ColumnTuple &>(column).addSize(1);
+                WriteBufferFromOwnString ostr;
+                serializeText(column, column.size() - 1, ostr, settings);
+
+                /// Revert the temporarily added size increment for empty tuple.
+                if (elems.empty())
+                    assert_cast<ColumnTuple &>(column).popBack(1);
+
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                    "Unexpected data '{}' after parsed Tuple value '{}'",
+                    std::string(istr.position(), std::min(size_t(10), istr.available())),
+                    ostr.str());
+            }
             return false;
         }
 

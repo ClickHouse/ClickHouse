@@ -13,7 +13,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/FunctionsComparison.h>
+#include <Functions/ComparisonNames.h>
 #include <Common/logger_useful.h>
 #include <fmt/ranges.h>
 
@@ -434,6 +434,14 @@ std::vector<JoinActionRef> JoinActionRef::getArguments(bool recursive) const
     for (const auto & child : node->children)
         arguments.emplace_back(child, data_ptr);
     return arguments;
+}
+
+JoinActionRef JoinActionRef::resolveAliases() const
+{
+    const auto * node = getNode();
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+    return JoinActionRef(node, getData());
 }
 
 std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData() const

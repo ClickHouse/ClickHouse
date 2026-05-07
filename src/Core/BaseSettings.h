@@ -44,7 +44,9 @@ struct BaseSettingsHelpers
         IMPORTANT = 0x01,  /// Setting affects query results, cannot be ignored by older versions
         CUSTOM = 0x02,     /// User-defined custom setting
         TIER = 0x0c,       /// 0b1100 == 2 bits for tier level (PRODUCTION/BETA/EXPERIMENTAL)
-        /// If adding new flags, consider first if Tier might need more bits
+        /// Flag indicating that changes from config can be picked up without server restart.
+        /// Currently only works in CoordinationSettings.
+        HOT_RELOAD = 0x80,
     };
 
     static SettingsTierType getTier(UInt64 flags);
@@ -227,6 +229,10 @@ public:
     /// Read settings in binary format
     void readBinary(ReadBuffer & in);
 
+    /// Copy settings with HOT_RELOAD flag from `new_settings` into `this`.
+    /// Leave other settings unchanged.
+    void updateHotReloadableSettings(const BaseSettings & new_settings);
+
     /// Convert all settings to a human-readable string (for debugging)
     std::string toString() const;
 
@@ -245,6 +251,7 @@ public:
         std::string_view getDescription() const;
         bool isCustom() const;
         SettingsTierType getTier() const;
+        bool isHotReload() const;
 
         bool operator==(const SettingFieldRef & other) const { return (getName() == other.getName()) && (getValue() == other.getValue()); }
         bool operator!=(const SettingFieldRef & other) const { return !(*this == other); }
@@ -665,6 +672,19 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
 }
 
 template <typename TTraits>
+void BaseSettings<TTraits>::updateHotReloadableSettings(const BaseSettings & new_settings)
+{
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t index = 0; index < accessor.size(); ++index)
+    {
+        if (!accessor.isHotReload(index))
+            continue;
+        Field value = accessor.getValue(new_settings, index);
+        accessor.setValue(*this, index, value);
+    }
+}
+
+template <typename TTraits>
 String BaseSettings<TTraits>::toString() const
 {
     WriteBufferFromOwnString out;
@@ -967,6 +987,17 @@ SettingsTierType BaseSettings<TTraits>::SettingFieldRef::getTier() const
     return accessor->getTier(index);
 }
 
+template <typename TTraits>
+bool BaseSettings<TTraits>::SettingFieldRef::isHotReload() const
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return false;
+    }
+    return accessor->isHotReload(index);
+}
+
 // ============================================================================
 // MACRO SYSTEM FOR DEFINING SETTINGS TRAITS
 // ============================================================================
@@ -1069,6 +1100,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             std::string_view getTypeName(size_t index) const { return field_infos[index].type; } \
             std::string_view getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
+            bool isHotReload(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::HOT_RELOAD; } \
             SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
             \
             /* Value conversion utilities */ \
@@ -1115,8 +1147,11 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             void resetValueToDefault(Data & data, size_t index) const \
             { \
                 auto p = field_infos[index].create_default_function(); \
-                *field_infos[index].get_data_function(*const_cast<Data *>(&data)) = static_cast<Field>(*p); \
-                field_infos[index].get_data_function(*const_cast<Data *>(&data))->setChanged(false); \
+                /* Dispatch through `SettingFieldBase::resetFromDefault` so that types whose */ \
+                /* `operator Field` is non-invertible (e.g. `SettingFieldMaxThreads`, see */ \
+                /* issue #103120) can override and copy member state directly instead of going */ \
+                /* through a lossy `Field` round-trip. */ \
+                field_infos[index].get_data_function(*const_cast<Data *>(&data))->resetFromDefault(*p); \
             } \
             \
             /* Binary serialization (by index) */ \
@@ -1225,6 +1260,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
         static const Accessor the_instance = [] \
         { \
             [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
+            [[maybe_unused]] constexpr int HOT_RELOAD = 0x80; \
             Accessor res; \
             /* Populate field_infos with one entry per setting */ \
             LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \

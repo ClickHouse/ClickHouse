@@ -168,9 +168,31 @@ def main():
     max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 3000)
     min_string_length = random.randint(0, 100)
     max_string_length = min_string_length + (10 if allow_hardcoded_inserts else 300)
+
+    # Cap `max_depth` based on `max_nested_rows` so the worst-case nested-value
+    # product stays under ASan's allocation cap. BuzzHouse value generators
+    # for `Map` and `Array` recurse on their child types, multiplying the
+    # per-level row count at each nesting level. With `max_nested_rows` up to
+    # 105, depth 5 produces ~10^10 entries in a single value, which trips
+    # ASan's `allocation-size-too-big` guard.
+    #
+    # Worst-case nested-value product (`max_nested_rows ^ max_depth_high`):
+    #   `max_nested_rows` <=  5 -> depth up to 5   (5^5    =     3125)
+    #   `max_nested_rows` <= 20 -> depth up to 4   (20^4   =   160000)
+    #   `max_nested_rows`  > 20 -> depth up to 3   (~105^3 = ~1.2M)
+    # All bounded below ~2e6, well under ASan's ~1e9 allocation cap. Tiny
+    # `max_nested_rows` (0 or 1) keeps full depth-5 coverage for type-shape
+    # exploration; only the row-heavy branches lose the deepest levels.
+    if max_nested_rows <= 5:
+        max_depth_high = 5
+    elif max_nested_rows <= 20:
+        max_depth_high = 4
+    else:
+        max_depth_high = 3
+
     buzz_config = {
         "seed": random.randint(1, 18446744073709551615),
-        "max_depth": random.randint(2, 5),
+        "max_depth": random.randint(2, max_depth_high),
         "max_width": random.randint(2, 7),
         "max_databases": random.randint(2, 5),
         "max_tables": random.randint(3, 10),
@@ -201,10 +223,11 @@ def main():
         "enable_force_settings": random.randint(1, 4) == 1,
         # Don't compare for correctness yet, false positives maybe
         "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
-        "test_with_fill": random.randint(1, 7) == 1,
+        "test_with_fill": random.randint(1, 10) == 1,
         "compare_success_results": False,  # This can give false positives, so disable it
-        "allow_infinite_tables": random.randint(1, 7) == 1,
+        "allow_infinite_tables": random.randint(1, 10) == 1,
         "allow_health_check": False,  # I have to test this first
+        "allow_nasty_identifiers": random.randint(1, 8) == 1,
         "enable_compatibility_settings": random.randint(1, 4) == 1,
         "enable_memory_settings": random.randint(1, 4) == 1,
         "enable_sync_settings": random.randint(1, 4) == 1,

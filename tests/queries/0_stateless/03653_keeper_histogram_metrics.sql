@@ -14,3 +14,9 @@ SELECT value > 0
 FROM system.histogram_metrics
 WHERE name = 'keeper_client_queue_duration_milliseconds'
   AND labels['le'] = '+Inf';
+
+-- Numeric bucket boundaries are formatted without trailing zeros (e.g. "100", not "100.000000").
+SELECT count()
+FROM system.histogram_metrics
+WHERE name = 'keeper_client_queue_duration_milliseconds'
+  AND labels['le'] = '100';

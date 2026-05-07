@@ -42,9 +42,13 @@ struct TimeSeriesColumnNames
     /// The function prometheusQuery() doesn't output them.
     static constexpr const char * Group = "group";
     static constexpr const char * NewGroup = "new_group";
+    static constexpr const char * Groups = "groups";
+    static constexpr const char * Indices = "indices";
+    static constexpr const char * MaskedValues = "masked_values";
     static constexpr const char * OriginalGroup = "original_group";
     static constexpr const char * JoinGroup = "join_group";
     static constexpr const char * Values = "values";
+    static constexpr const char * SamplingKeys = "sampling_keys";
 };
 
 }

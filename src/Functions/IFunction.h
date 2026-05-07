@@ -125,6 +125,10 @@ protected:
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
+    /** True if function might throw an exception during execution.
+      */
+    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
+
 private:
 
     ColumnPtr defaultImplementationForConstantArguments(
