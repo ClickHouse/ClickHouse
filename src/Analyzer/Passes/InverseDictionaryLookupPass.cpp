@@ -12,11 +12,12 @@
 #include <Analyzer/Utils.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <Functions/FunctionsExternalDictionaries.h>
 
-#include <Access/ContextAccess.h>
 #include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
 
@@ -24,6 +25,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 namespace Setting
 {
 extern const SettingsBool optimize_inverse_dictionary_lookup;
@@ -74,11 +79,70 @@ bool isSupportedDictGetFunction(const String & name)
     return supported_functions.contains(name);
 }
 
+enum class FunctionT
+{
+    invalid_t,
+    in_t,
+    comparison_t,
+};
+
+struct ConstantListCheckResult
+{
+    bool has_default_value{};
+    bool has_null{};
+};
+
+ConstantListCheckResult
+checkConstantList(const Field & default_value, const ConstantNode * constant_node, const DataTypePtr & dict_attr_type)
+{
+    ConstantListCheckResult result;
+    const auto & constant_field = constant_node->getValue();
+
+    auto check_element = [&](const Field & element)
+    {
+        if (element.isNull())
+        {
+            result.has_null = true;
+            return;
+        }
+        Field converted = tryConvertFieldToType(element, *dict_attr_type);
+        if (!converted.isNull() && converted == default_value)
+            result.has_default_value = true;
+    };
+
+    if (constant_field.getType() == Field::Types::Tuple)
+    {
+        for (const auto & element : constant_field.safeGet<Tuple>())
+            check_element(element);
+    }
+    else if (constant_field.getType() == Field::Types::Array)
+    {
+        for (const auto & element : constant_field.safeGet<Array>())
+            check_element(element);
+    }
+    else
+    {
+        check_element(constant_field);
+    }
+
+    return result;
+}
+
+template <FunctionT T>
 std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodePtr & node)
 {
     const auto * function_node = node->as<FunctionNode>();
 
-    if (!function_node || !isSupportedDictGetFunction(function_node->getFunctionName()))
+    if (!function_node)
+        return std::nullopt;
+
+    const auto & function_name = function_node->getFunctionName();
+
+    if constexpr (T == FunctionT::in_t)
+        if (function_node->getResultType()->isNullable())
+            return std::nullopt;
+
+    if (!isSupportedDictGetFunction(function_name))
         return std::nullopt;
 
     const auto & arguments = function_node->getArguments().getNodes();
@@ -147,57 +211,166 @@ public:
         if (!node_function)
             return;
 
+        const String function_name = node_function->getFunctionName();
+
+        static std::unordered_set<String> allowed_in_functions = {"in", "notIn"};
         static std::unordered_set<String> allowed_comparison_functions = {
             "equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals", "like", "notLike", "ilike", "notILike", "match"};
 
-        const String attr_comparison_function_name = node_function->getFunctionName();
-        if (!allowed_comparison_functions.contains(attr_comparison_function_name))
-            return;
+        FunctionT function_t;
 
-        auto & arguments = node_function->getArguments().getNodes();
-        if (arguments.size() != 2)
-            return;
-
-        enum class Side
+        if (allowed_in_functions.contains(function_name))
         {
-            LHS,
-            RHS,
-            NONE
-        };
-
-        Side dict_side = Side::NONE;
-        DictGetFunctionInfo dictget_function_info;
-
-        if (auto info_lhs = tryParseDictFunctionCall(arguments[0]); info_lhs && arguments[1]->as<ConstantNode>())
-        {
-            dict_side = Side::LHS;
-            dictget_function_info = std::move(*info_lhs);
+            function_t = FunctionT::in_t;
         }
-        else if (auto info_rhs = tryParseDictFunctionCall(arguments[1]); info_rhs && arguments[0]->as<ConstantNode>())
+        else if (allowed_comparison_functions.contains(function_name))
         {
-            dict_side = Side::RHS;
-            dictget_function_info = std::move(*info_rhs);
+            function_t = FunctionT::comparison_t;
         }
         else
         {
             return;
         }
 
-        /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
+        auto ctx = prepareTransformContext(node_function, function_t);
+        if (!ctx || ctx->null_in_list)
+            return;
+
+        QueryTreeNodePtr final_in_expr;
+
+        switch (function_t)
+        {
+            case FunctionT::in_t: {
+                bool need_negated_condition = (function_name == "in") ? ctx->default_value_in_list : !ctx->default_value_in_list;
+                if (need_negated_condition)
+                {
+                    /// IN & default_value in list:         key NOT IN (SELECT id WHERE attr NOT IN values)
+                    /// NOT IN & default_value not in list: key NOT IN (SELECT id WHERE attr IN values)
+                    auto negated_where_condition = buildNegatedWhereCondition(*ctx, function_name);
+                    auto subquery = buildSubquery(*ctx, negated_where_condition);
+
+                    auto in_expr = buildInExpression(*ctx, subquery);
+                    final_in_expr = buildNotExpression(in_expr);
+                }
+                else
+                {
+                    /// IN & default_value not in list:     key IN (SELECT id WHERE attr IN values)
+                    /// NOT IN & default_value in list:     key IN (SELECT id WHERE attr NOT IN values)
+                    auto where_condition = buildWhereCondition(*ctx, node_function, function_name, function_t);
+                    auto subquery = buildSubquery(*ctx, where_condition);
+                    final_in_expr = buildInExpression(*ctx, subquery);
+                }
+                break;
+            }
+            case FunctionT::comparison_t: {
+                auto where_condition = buildWhereCondition(*ctx, node_function, function_name, function_t);
+                auto subquery = buildSubquery(*ctx, where_condition);
+                final_in_expr = buildInExpression(*ctx, subquery);
+                break;
+            }
+            default: {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected function type {} in InverseDictionaryLookupPass",
+                    magic_enum::enum_name(function_t));
+            }
+        }
+
+        DataTypePtr original_result_type = node_function->getResultType();
+        QueryTreeNodePtr replacement_node = final_in_expr;
+        if (original_result_type && !final_in_expr->getResultType()->equals(*original_result_type))
+            replacement_node = createCastFunction(final_in_expr, original_result_type, getContext());
+
+        node = std::move(replacement_node);
+    }
+
+private:
+    enum class DictSide
+    {
+        NONE,
+        LHS,
+        RHS,
+    };
+
+    struct TransformContext
+    {
+        DictGetFunctionInfo dictget_info;
+        DictSide side;
+        QueryTreeNodePtr constant_arg; ///< The constant argument (RHS for IN, side-dependent for comparison)
+        std::vector<NameAndTypePair> key_cols;
+        QueryTreeNodePtr dict_table_function;
+        QueryTreeNodePtr attr_col_node_casted;
+        bool default_value_in_list{};
+        bool null_in_list{};
+    };
+
+    /// Validates the function arguments and extracts dictionary/attribute information.
+    /// Returns nullopt if the pattern doesn't match or dictionary is not suitable.
+    std::optional<TransformContext> prepareTransformContext(FunctionNode * node_function, FunctionT function_t)
+    {
+        auto & arguments = node_function->getArguments().getNodes();
+        if (arguments.size() != 2)
+            return std::nullopt;
+
+        DictSide side;
+        DictGetFunctionInfo dictget_info;
+        QueryTreeNodePtr constant_arg;
+
+        switch (function_t)
+        {
+            case FunctionT::in_t: {
+                auto info = tryParseDictFunctionCall<FunctionT::in_t>(arguments[0]);
+                if (!info)
+                    return std::nullopt;
+                if (!arguments[1]->as<ConstantNode>())
+                    return std::nullopt;
+                side = DictSide::LHS;
+                dictget_info = std::move(*info);
+                constant_arg = arguments[1];
+                break;
+            }
+            case FunctionT::comparison_t: {
+                if (auto info_lhs = tryParseDictFunctionCall<FunctionT::comparison_t>(arguments[0]);
+                    info_lhs && arguments[1]->as<ConstantNode>())
+                {
+                    side = DictSide::LHS;
+                    dictget_info = std::move(*info_lhs);
+                    constant_arg = arguments[1];
+                }
+                else if (
+                    auto info_rhs = tryParseDictFunctionCall<FunctionT::comparison_t>(arguments[1]);
+                    info_rhs && arguments[0]->as<ConstantNode>())
+                {
+                    side = DictSide::RHS;
+                    dictget_info = std::move(*info_rhs);
+                    constant_arg = arguments[0];
+                }
+                else
+                {
+                    return std::nullopt;
+                }
+                break;
+            }
+            default: {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected function type {} in InverseDictionaryLookupPass",
+                    magic_enum::enum_name(function_t));
+            }
+        }
+
         auto helper = FunctionDictHelper(getContext());
-        const String dict_name = dictget_function_info.dict_name_node->getValue().safeGet<String>();
+        const String dict_name = dictget_info.dict_name_node->getValue().safeGet<String>();
         const auto dict = helper.getDictionary(dict_name);
         if (!dict)
-            return;
+            return std::nullopt;
 
         const String dict_type_name = dict->getTypeName();
-
         if (!isInMemoryLayout(dict_type_name))
-            return;
+            return std::nullopt;
 
 
         std::vector<NameAndTypePair> key_cols;
-
         const auto & dict_structure = dict->getStructure();
 
         if (dict_structure.id)
@@ -223,71 +396,122 @@ public:
         }
         else
         {
-            return;
+            return std::nullopt;
         }
 
-        const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
-
+        const String attr_col_name = dictget_info.attr_col_name_node->getValue().safeGet<String>();
         if (!dict_structure.hasAttribute(attr_col_name))
-            return;
+            return std::nullopt;
 
-        DataTypePtr dict_attr_col_type = dict_structure.getAttribute(attr_col_name).type;
+        const auto & dict_attr = dict_structure.getAttribute(attr_col_name);
+        DataTypePtr dict_attr_col_type = dict_attr.type;
+        Field default_value = dict_attr.null_value;
+
+        /// For IN/notIn operations, check if the default value is in the constant list.
+        ConstantListCheckResult check_result{};
+        if (function_t == FunctionT::in_t)
+        {
+            const auto * constant_node = constant_arg->as<ConstantNode>();
+            if (constant_node)
+                check_result = checkConstantList(default_value, constant_node, dict_attr_col_type);
+        }
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
-        dict_table_function->getArguments().getNodes().push_back(dictget_function_info.dict_name_node);
+        dict_table_function->getArguments().getNodes().push_back(dictget_info.dict_name_node);
         resolveNode(dict_table_function, getContext());
 
         NameAndTypePair attr_col{attr_col_name, dict_attr_col_type};
         auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
 
-        /// Needed for dictGet functions like `dictGetString`, `dictGetInt32`, etc.
         QueryTreeNodePtr attr_col_node_casted = attr_col_node;
-        if (!attr_col_node->getResultType()->equals(*dictget_function_info.return_type))
+        if (!attr_col_node->getResultType()->equals(*dictget_info.return_type))
         {
-            attr_col_node_casted = createCastFunction(attr_col_node, dictget_function_info.return_type, getContext());
+            attr_col_node_casted = createCastFunction(attr_col_node, dictget_info.return_type, getContext());
         }
 
-        auto attr_comparison_function_node = std::static_pointer_cast<FunctionNode>(node_function->clone());
-        attr_comparison_function_node->markAsOperator();
+        return TransformContext{
+            .dictget_info = std::move(dictget_info),
+            .side = side,
+            .constant_arg = std::move(constant_arg),
+            .key_cols = std::move(key_cols),
+            .dict_table_function = std::move(dict_table_function),
+            .attr_col_node_casted = std::move(attr_col_node_casted),
+            .default_value_in_list = check_result.has_default_value,
+            .null_in_list = check_result.has_null,
+        };
+    }
 
-        if (dict_side == Side::LHS)
+    /// Builds the WHERE condition for the subquery.
+    /// For IN: builds attr_col IN (consts)
+    /// For comparison: builds attr_col op const (respecting side for argument order)
+    QueryTreeNodePtr
+    buildWhereCondition(const TransformContext & ctx, FunctionNode * original_function, const String & function_name, FunctionT function_t)
+    {
+        auto where_function_node = std::static_pointer_cast<FunctionNode>(original_function->clone());
+        where_function_node->markAsOperator();
+
+        if (function_t == FunctionT::in_t)
         {
-            attr_comparison_function_node->getArguments().getNodes() = { attr_col_node_casted, arguments[1] };
+            where_function_node->getArguments().getNodes() = {ctx.attr_col_node_casted, ctx.constant_arg};
         }
         else
         {
-            attr_comparison_function_node->getArguments().getNodes() = { arguments[0], attr_col_node_casted };
+            if (ctx.side == DictSide::LHS)
+                where_function_node->getArguments().getNodes() = {ctx.attr_col_node_casted, ctx.constant_arg};
+            else
+                where_function_node->getArguments().getNodes() = {ctx.constant_arg, ctx.attr_col_node_casted};
         }
-        resolveOrdinaryFunctionNodeByName(*attr_comparison_function_node, attr_comparison_function_name, getContext());
 
-        /// SELECT key_col FROM dictionary(dict_name) WHERE attr_name = const_value
+        resolveOrdinaryFunctionNodeByName(*where_function_node, function_name, getContext());
+        return where_function_node;
+    }
+
+    /// Builds the negated WHERE condition for optimized rewrite.
+    /// For IN: builds attr_col NOT IN (consts)
+    /// For NOT IN: builds attr_col IN (consts)
+    QueryTreeNodePtr buildNegatedWhereCondition(const TransformContext & ctx, const String & original_function_name)
+    {
+        String negated_function_name = (original_function_name == "in") ? "notIn" : "in";
+
+        auto where_function_node = std::make_shared<FunctionNode>(negated_function_name);
+        where_function_node->markAsOperator();
+        where_function_node->getArguments().getNodes() = {ctx.attr_col_node_casted, ctx.constant_arg};
+
+        resolveOrdinaryFunctionNodeByName(*where_function_node, negated_function_name, getContext());
+        return where_function_node;
+    }
+
+    QueryTreeNodePtr buildSubquery(const TransformContext & ctx, const QueryTreeNodePtr & where_condition)
+    {
         auto subquery_node = std::make_shared<QueryNode>(Context::createCopy(getContext()));
         subquery_node->setIsSubquery(true);
-        subquery_node->getJoinTree() = dict_table_function;
-        subquery_node->getWhere() = attr_comparison_function_node;
+        subquery_node->getJoinTree() = ctx.dict_table_function;
+        subquery_node->getWhere() = where_condition;
 
-        for (const auto & key_col_node : key_cols)
+        for (const auto & key_col : ctx.key_cols)
         {
-            subquery_node->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(key_col_node, dict_table_function));
+            subquery_node->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(key_col, ctx.dict_table_function));
         }
-        subquery_node->resolveProjectionColumns(key_cols);
+        subquery_node->resolveProjectionColumns(ctx.key_cols);
 
+        return subquery_node;
+    }
+
+    QueryTreeNodePtr buildInExpression(const TransformContext & ctx, const QueryTreeNodePtr & subquery)
+    {
         auto in_function_node = std::make_shared<FunctionNode>("in");
         in_function_node->markAsOperator();
-        QueryTreeNodePtr querytree_subquery_node = subquery_node;
-        in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, querytree_subquery_node};
+        in_function_node->getArguments().getNodes() = {ctx.dictget_info.key_expr_node, subquery};
         resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
+        return in_function_node;
+    }
 
-        /// Preserve the original result type of the comparison node.
-        /// For example, original "equals(...)" might have result type Nullable(UInt8),
-        /// while "IN" might return UInt8.
-        DataTypePtr original_result_type = node_function->getResultType();
-
-        QueryTreeNodePtr replacement_node = in_function_node;
-        if (original_result_type && !in_function_node->getResultType()->equals(*original_result_type))
-            replacement_node = createCastFunction(in_function_node, original_result_type, getContext());
-
-        node = std::move(replacement_node);
+    QueryTreeNodePtr buildNotExpression(const QueryTreeNodePtr & expr)
+    {
+        auto not_function_node = std::make_shared<FunctionNode>("not");
+        not_function_node->getArguments().getNodes() = {expr};
+        resolveOrdinaryFunctionNodeByName(*not_function_node, "not", getContext());
+        return not_function_node;
     }
 };
 

@@ -1,0 +1,666 @@
+IN with default value - plan (should have negated IN)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE not(__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name NOT IN (\'\')
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with default value - result
+99	missing_key
+IN with default value among others - plan (should have negated IN)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE not(__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name NOT IN (\'red\', \'\')
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with default value among others - result
+1	a
+3	c
+99	missing_key
+notIn with default value - plan (should NOT have OR clause)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name NOT IN (\'\')
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+notIn with default value - result
+1	a
+2	b
+3	c
+4	d
+5	R
+notIn without default value - plan (should have negated IN)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE not(__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN (\'red\', \'blue\')
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+notIn without default value - result
+4	d
+5	R
+99	missing_key
+IN with numeric default - plan (should have negated IN)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE not(__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.n NOT IN (0)
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with numeric default - result
+4	d
+99	missing_key
+IN with constant tuple - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN (\'red\', \'blue\')
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with constant tuple
+1	a
+2	b
+3	c
+notIn with constant tuple - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE not(__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN (\'red\', \'blue\')
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+notIn with constant tuple
+4	d
+5	R
+IN with numeric attribute - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.n IN (5, 7)
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with numeric attribute
+1	a
+2	b
+IN with single value - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN (\'red\')
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with single value
+1	a
+3	c
+IN with Array form - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN [\'red\', \'blue\']
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with Array form
+1	a
+2	b
+3	c
+IN with Array form, default value - plan (should have negated IN)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE not(__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name NOT IN [\'\', \'red\']
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with Array form, default value - result
+1	a
+3	c
+99	missing_key
+IN combined with AND - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE (__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN (\'red\', \'blue\')
+)) AND (__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.n < 10
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN combined with AND
+1	a
+2	b
+IN combined with OR - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE (__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN (\'red\', \'blue\')
+)) OR (__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'green\'
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN combined with OR
+1	a
+2	b
+3	c
+4	d
+Negative: IN with subquery - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE dictGetString(\'colors\', \'name\', __table1.color_id) IN (
+    SELECT \'red\' AS `\'red\'`
+    FROM system.one AS __table1
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Negative: IN with subquery
+1	a
+3	c
+Negative: IN with table column - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE if(_CAST(0, \'UInt8\'), _CAST(NULL, \'Nullable(UInt8)\'), has(array(CAST(__table1.payload, \'Nullable(String)\')), dictGetString(\'colors\', \'name\', __table1.color_id)))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Negative: IN with table column
+IN with composite key, default value - plan (should have negated IN)
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.fact AS __table1
+WHERE not((__table1.k1, __table1.k2) IN (
+    SELECT
+        __table1.k1 AS k1,
+        __table1.k2 AS k2
+    FROM dictionary(\'dict_prices\') AS __table1
+    WHERE __table1.tag NOT IN (\'\')
+))
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+IN with composite key, default value - result
+2	b	w
+99	z	missing_composite_key
+notIn with composite key, no default - plan (should have negated IN)
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.fact AS __table1
+WHERE not((__table1.k1, __table1.k2) IN (
+    SELECT
+        __table1.k1 AS k1,
+        __table1.k2 AS k2
+    FROM dictionary(\'dict_prices\') AS __table1
+    WHERE __table1.tag IN (\'pro\', \'basic\')
+))
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+notIn with composite key, no default - result
+2	a	z
+2	b	w
+3	c	u
+99	z	missing_composite_key
+IN with composite key, numeric default - plan (should have negated IN)
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.fact AS __table1
+WHERE not((__table1.k1, __table1.k2) IN (
+    SELECT
+        __table1.k1 AS k1,
+        __table1.k2 AS k2
+    FROM dictionary(\'dict_prices\') AS __table1
+    WHERE __table1.price NOT IN (0)
+))
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+IN with composite key, numeric default - result
+2	b	w
+99	z	missing_composite_key
+IN with composite key - plan
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.fact AS __table1
+WHERE (__table1.k1, __table1.k2) IN (
+    SELECT
+        __table1.k1 AS k1,
+        __table1.k2 AS k2
+    FROM dictionary(\'dict_prices\') AS __table1
+    WHERE __table1.tag IN (\'pro\', \'basic\')
+)
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+IN with composite key
+1	a	x
+1	b	y
+notIn with composite key - plan
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.fact AS __table1
+WHERE not((__table1.k1, __table1.k2) IN (
+    SELECT
+        __table1.k1 AS k1,
+        __table1.k2 AS k2
+    FROM dictionary(\'dict_prices\') AS __table1
+    WHERE __table1.tag IN (\'pro\', \'basic\')
+))
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+notIn with composite key
+2	a	z
+2	b	w
+3	c	u
+IN with composite key, numeric attribute - plan
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.fact AS __table1
+WHERE (__table1.k1, __table1.k2) IN (
+    SELECT
+        __table1.k1 AS k1,
+        __table1.k2 AS k2
+    FROM dictionary(\'dict_prices\') AS __table1
+    WHERE __table1.price IN (100, 75)
+)
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+IN with composite key, numeric attribute
+1	a	x
+2	a	z
+dictGetOrNull IN - plan (should NOT be rewritten)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE dictGetOrNull(\'colors\', \'name\', __table1.color_id) IN (\'red\', \'blue\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+dictGetOrNull IN - result (missing key 99 returns NULL, filtered out)
+1	a
+2	b
+3	c
+dictGetOrNull NOT IN - plan (should NOT be rewritten)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE dictGetOrNull(\'colors\', \'name\', __table1.color_id) NOT IN (\'red\', \'blue\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+dictGetOrNull NOT IN - result (missing key 99 returns NULL, filtered out)
+4	d
+5	R
+dictGetOrNull missing key sanity check
+1	red
+99	\N
+dictGet missing key returns default
+1	red
+99	
+Nullable attribute: dictGet returns NULL for missing key
+1	red
+99	\N
+Nullable attribute IN - plan (should NOT be rewritten)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE dictGet(\'colors_nullable\', \'name\', __table1.color_id) IN (\'red\', \'blue\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Nullable attribute IN - result (missing key 99 → NULL, filtered out)
+1	a
+2	b
+3	c
+Nullable attribute NOT IN - plan (should NOT be rewritten)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE dictGet(\'colors_nullable\', \'name\', __table1.color_id) NOT IN (\'red\', \'blue\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Nullable attribute NOT IN - result (missing key 99 → NULL, filtered out)
+4	d
+5	R
+IPv4 equality with default value
+3	c
+IPv4 equality with non-default value
+1	a
+IPv4 IN with default value in list - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip4 NOT IN _CAST(0, \'UInt32\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+IPv4 IN with default value - result
+3	c
+99	missing_key
+IPv4 IN with default value among others - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip4 NOT IN _CAST((0, 167772161), \'Tuple(UInt32, UInt32)\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+IPv4 IN with default value among others - result
+1	a
+3	c
+99	missing_key
+IPv4 IN without default value - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE __table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip4 IN _CAST((167772161, 167772162), \'Tuple(UInt32, UInt32)\')
+)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+IPv4 IN without default value - result
+1	a
+2	b
+IPv4 NOT IN with default value - plan (should NOT have OR clause)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE __table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip4 NOT IN _CAST(0, \'UInt32\')
+)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+IPv4 NOT IN with default value - result
+1	a
+2	b
+4	d
+IPv6 IN with default value - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip6 NOT IN _CAST(\'::\', \'IPv6\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+IPv6 IN with default value - result
+3	c
+99	missing_key
+IPv6 IN without default value - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE __table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip6 IN _CAST((\'2001:db8::1\', \'2001:db8::2\'), \'Tuple(IPv6, IPv6)\')
+)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+IPv6 IN without default value - result
+1	a
+2	b
+Date IN with default value - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.d NOT IN _CAST(\'1970-01-01\', \'Date\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+Date IN with default value - result
+3	c
+99	missing_key
+Date IN without default value - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE __table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.d IN _CAST((\'2024-01-15\', \'2024-03-20\'), \'Tuple(Date, Date)\')
+)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+Date IN without default value - result
+1	a
+2	b
+DateTime IN with default value - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.dt NOT IN _CAST(\'1970-01-01 00:00:00\', \'DateTime(\\\'UTC\\\')\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+DateTime IN with default value - result
+3	c
+99	missing_key
+DateTime IN without default value - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE __table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.dt IN _CAST((\'2024-01-15 10:30:00\', \'2025-06-01 12:00:00\'), \'Tuple(DateTime(\\\'UTC\\\'), DateTime(\\\'UTC\\\'))\')
+)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+DateTime IN without default value - result
+1	a
+4	d
+UUID IN with default value - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.uid NOT IN _CAST(\'00000000-0000-0000-0000-000000000000\', \'UUID\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+UUID IN with default value - result
+3	c
+99	missing_key
+UUID IN without default value - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE __table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.uid IN _CAST((\'550e8400-e29b-41d4-a716-446655440000\', \'6ba7b810-9dad-11d1-80b4-00c04fd430c8\'), \'Tuple(UUID, UUID)\')
+)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+UUID IN without default value - result
+1	a
+2	b
+dictGet IPv4 equality
+1	a
+dictGet IPv4 IN with default value - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip4 NOT IN _CAST(\'0.0.0.0\', \'IPv4\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGet IPv4 IN with default value - result
+3	c
+99	missing_key
+dictGet UUID equality
+1	a
+dictGet UUID IN with default value - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.uid NOT IN _CAST(\'00000000-0000-0000-0000-000000000000\', \'UUID\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGet UUID IN with default value - result
+3	c
+99	missing_key

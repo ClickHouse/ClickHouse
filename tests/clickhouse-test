@@ -76,6 +76,7 @@ def write_text_atomic(path: Path, text: str) -> None:
     except Exception as e:
         print(f"Warning: could not write {path}: {e}", file=sys.stderr)
 
+
 USE_JINJA = True
 try:
     import jinja2
@@ -109,6 +110,8 @@ IGNORED_SANITIZER_ERRORS = [
     "ASan is ignoring requested __asan_handle_no_return",
     # Note, usually such error means that sanitizer has found something but failed to print, so it should not be ignored
     # "LLVM ERROR: IO failure on output stream: Broken pipe",
+    "WARNING: ptrace appears to be blocked",
+    "Child exited with signal",  # for test, temporary
 ]
 
 MAX_RETRIES = 3
@@ -127,10 +130,12 @@ def detect_cgroup_version():
         return 1
     return None
 
+
 CGROUP_VERSION = detect_cgroup_version()
 
 
 BASH = "/bin/bash"
+
 
 def shell_get_output(cmd: str) -> str:
     try:
@@ -150,8 +155,11 @@ def shell_get_output(cmd: str) -> str:
         print(f"Error running command {cmd!r}: {e}", file=sys.stderr)
         return ""
 
+
 class SharedEngineReplacer:
-    SPECIALIZED_ENGINES = "Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|Coalescing"
+    SPECIALIZED_ENGINES = (
+        "Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|Coalescing"
+    )
     ENGINES_NON_REPLICATED_REGEXP = (
         rf"(?i)ENGINE[ =]{{0,5}}(({SPECIALIZED_ENGINES}|)MergeTree\(?\)?)"
     )
@@ -478,7 +486,9 @@ def trim_for_log(s, limit=10000):
     lines = s.splitlines()
     if len(lines) > limit:
         separator = "-" * 40 + str(len(lines) - limit) + " lines are hidden" + "-" * 40
-        return "\n".join(lines[:limit//2] + [] + [separator] + [] + lines[-limit//2:])
+        return "\n".join(
+            lines[: limit // 2] + [] + [separator] + [] + lines[-limit // 2 :]
+        )
     return "\n".join(lines)
 
 
@@ -629,7 +639,7 @@ def kill_process_group(pgid, fatal_log):
         if SANITIZED:
             print(f"Processes left in process group {pgid}:")
             print(
-                '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
+                "\n".join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
             )
             print("Wait 60 seconds to let sanitizers print the report...")
             sleep(60)
@@ -637,14 +647,16 @@ def kill_process_group(pgid, fatal_log):
         print(f"Killing process group {pgid}")
         print(f"Processes in process group {pgid}:")
         print(
-            '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
+            "\n".join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
         )
 
         if CAPTURE_CLIENT_STACKTRACE:
             # Let's try to dump stacktrace in client (useful to catch issues there)
             os.killpg(pgid, signal.SIGTSTP)
             stacktrace_delay = 0.5 if RELEASE_NON_SANITIZED else 10
-            print(f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP...")
+            print(
+                f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP..."
+            )
             sleep(stacktrace_delay)
 
             # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with gdb
@@ -708,7 +720,7 @@ def cleanup_child_processes(pid):
             return
         raise
     print(
-        '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(ppid=pid)),
+        "\n".join(f"{p[0]} {p[3]}" for p in pgrep(ppid=pid)),
     )
     # Due to start_new_session=True, it is not enough to kill by PGID, we need
     # to look at children processes as well.
@@ -986,6 +998,7 @@ def get_stacktraces_from_clickhouse(args):
 
     return shell_get_output(msg)
 
+
 def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[str]]:
     ps = shell_get_output("ps -eo pid,ppid,pgid,command").splitlines()[1:]
     ps = [p.split(None, 3) for p in ps]
@@ -999,9 +1012,9 @@ def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[
         ps = [p for p in ps if command in p[3]]
     return ps
 
+
 def get_all_server_pids():
-    """Get PIDs of clickhouse-server processes belonging to the current process group.
-    """
+    """Get PIDs of clickhouse-server processes belonging to the current process group."""
     pgid = os.getpgrp()
     return [p[0] for p in pgrep(pgid=pgid, command="clickhouse-server")]
 
@@ -1174,8 +1187,12 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin', 'nullcount']
-        return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
+        all_statistic_types = ["minmax", "uniq", "tdigest", "countmin", "nullcount"]
+        return ",".join(
+            random.sample(
+                all_statistic_types, random.randint(0, len(all_statistic_types))
+            )
+        )
 
     return gen
 
@@ -1230,7 +1247,9 @@ class SettingsRandomizer:
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_joined_block_size_rows": lambda: random.randint(8000, 100000),
         "joined_block_split_single_row": lambda: random.randint(0, 1),
-        "join_output_by_rowlist_perkey_rows_threshold": lambda: random.choices([0, 1, 1_000_000, random.randint(0, 1000)], weights=[1, 1, 1, 10])[0],
+        "join_output_by_rowlist_perkey_rows_threshold": lambda: random.choices(
+            [0, 1, 1_000_000, random.randint(0, 1000)], weights=[1, 1, 1, 10]
+        )[0],
         "max_threads": lambda: 32 if random.random() < 0.03 else random.randint(1, 3),
         "optimize_append_index": lambda: random.randint(0, 1),
         "use_hedged_requests": lambda: random.randint(0, 1),
@@ -1258,20 +1277,16 @@ class SettingsRandomizer:
         "filesystem_cache_segments_batch_size": lambda: random.choice(
             [0, 1, 2, 3, 5, 10, 50, 100]
         ),
-        "read_from_filesystem_cache_if_exists_otherwise_bypass_cache": lambda: random.randint(
-            0, 1
+        "read_from_filesystem_cache_if_exists_otherwise_bypass_cache": lambda: (
+            random.randint(0, 1)
         ),
         "throw_on_error_from_cache_on_write_operations": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "distributed_cache_discard_connection_if_unread_data": lambda: random.randint(
             0, 1
         ),
-        "distributed_cache_use_clients_cache_for_write": lambda: random.randint(
-            0, 1
-        ),
-        "distributed_cache_use_clients_cache_for_read": lambda: random.randint(
-            0, 1
-        ),
+        "distributed_cache_use_clients_cache_for_write": lambda: random.randint(0, 1),
+        "distributed_cache_use_clients_cache_for_read": lambda: random.randint(0, 1),
         "allow_prefetched_read_pool_for_remote_filesystem": lambda: random.randint(
             0, 1
         ),
@@ -1300,8 +1315,8 @@ class SettingsRandomizer:
         "max_bytes_before_remerge_sort": lambda: random.randint(1, 3000000000),
         "min_compress_block_size": lambda: random.randint(1, 1048576 * 3),
         "max_compress_block_size": lambda: random.randint(1, 1048576 * 3),
-        "merge_tree_compact_parts_min_granules_to_multibuffer_read": lambda: random.randint(
-            1, 128
+        "merge_tree_compact_parts_min_granules_to_multibuffer_read": lambda: (
+            random.randint(1, 128)
         ),
         "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
         "http_response_buffer_size": lambda: random.randint(0, 10 * 1048576),
@@ -1336,8 +1351,8 @@ class SettingsRandomizer:
         "use_page_cache_for_local_disks": lambda: random.random() < 0.3,
         "use_page_cache_for_object_storage": lambda: random.random() < 0.5,
         "page_cache_inject_eviction": lambda: random.random() < 0.5,
-        "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability": lambda: round(
-            random.random(), 2
+        "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability": lambda: (
+            round(random.random(), 2)
         ),
         "prefer_external_sort_block_bytes": lambda: random.choice([0, 1, 100000000]),
         "cross_join_min_rows_to_compress": lambda: random.choice([0, 1, 100000000]),
@@ -1346,7 +1361,9 @@ class SettingsRandomizer:
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
-        "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmful for some tests
+        "query_plan_join_swap_table": lambda: random.choice(
+            ["auto", "false"]
+        ),  # true forces swap, which is harmful for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         # Default-false optimize_* settings: enable with 0.5 probability
@@ -1362,7 +1379,9 @@ class SettingsRandomizer:
         # Default-true optimize_* settings: disable with 0.05 probability
         "optimize_aggregators_of_group_by_keys": lambda: random.random() > 0.05,
         "optimize_and_compare_chain": lambda: random.random() > 0.05,
-        "optimize_arithmetic_operations_in_aggregate_functions": lambda: random.random() > 0.05,
+        "optimize_arithmetic_operations_in_aggregate_functions": lambda: (
+            random.random() > 0.05
+        ),
         "optimize_count_from_files": lambda: random.random() > 0.05,
         "optimize_distributed_group_by_sharding_key": lambda: random.random() > 0.05,
         "optimize_empty_string_comparisons": lambda: random.random() > 0.05,
@@ -1396,20 +1415,30 @@ class SettingsRandomizer:
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
-        "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
+        "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(
+            0, 1
+        ),
         "use_skip_indexes_for_top_k": lambda: random.randint(0, 1),
         "use_top_k_dynamic_filtering": lambda: random.randint(0, 1),
-        "query_plan_max_limit_for_top_k_optimization": lambda: random.choice([0, 1, 10, 100, 1000, 100000]),
+        "query_plan_max_limit_for_top_k_optimization": lambda: random.choice(
+            [0, 1, 10, 100, 1000, 100000]
+        ),
         "query_plan_read_in_order_through_join": lambda: random.randint(0, 1),
         "read_in_order_use_virtual_row": lambda: random.randint(0, 1),
-        "short_circuit_function_evaluation_for_nulls_threshold": lambda: random.random() * 1.1,
+        "short_circuit_function_evaluation_for_nulls_threshold": lambda: (
+            random.random() * 1.1
+        ),
         "automatic_parallel_replicas_mode": lambda: 2 if random.random() < 0.25 else 0,
         "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
         # That is why we use it with fallback to 'greedy'.
-        "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
+        "query_plan_optimize_join_order_algorithm": lambda: random.choice(
+            ["greedy", "dpsize,greedy", "greedy,dpsize"]
+        ),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
-        "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
+        "query_plan_optimize_join_order_randomize": lambda: (
+            1 if random.random() < 0.1 else random.randint(2, 1_000_000)
+        ),
         # changing grace_hash_join_initial_buckets is giving wrong results in a test
         # "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8, 16, 32, 64, 128]),
         # Default-true optimize/enable settings: disable with 0.05 probability
@@ -1418,7 +1447,9 @@ class SettingsRandomizer:
         "enable_join_runtime_filters": lambda: random.random() > 0.05,
         "enable_parallel_blocks_marshalling": lambda: random.random() > 0.05,
         # Default-false query_plan_* toggles: enable with 0.3 probability
-        "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.random() < 0.3,
+        "query_plan_reuse_storage_ordering_for_window_functions": lambda: (
+            random.random() < 0.3
+        ),
         "query_plan_join_shard_by_pk_ranges": lambda: random.random() < 0.3,
         "count_distinct_optimization": lambda: random.random() < 0.3,
         "enable_add_distinct_to_in_subqueries": lambda: random.random() < 0.3,
@@ -1427,17 +1458,27 @@ class SettingsRandomizer:
         "use_statistics_cache": lambda: random.random() > 0.05,
         # More query plan optimizations
         "enable_optimize_predicate_expression": lambda: random.random() > 0.05,
-        "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
+        "enable_optimize_predicate_expression_to_final_subquery": lambda: (
+            random.random() > 0.05
+        ),
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
         "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
         "query_plan_merge_filters": lambda: random.random() > 0.05,
         "query_plan_remove_unused_columns": lambda: random.random() > 0.05,
         "query_plan_convert_outer_join_to_inner_join": lambda: random.random() > 0.05,
-        "query_plan_convert_any_join_to_semi_or_anti_join": lambda: random.random() > 0.05,
+        "query_plan_convert_any_join_to_semi_or_anti_join": lambda: (
+            random.random() > 0.05
+        ),
         "query_plan_merge_filter_into_join_condition": lambda: random.random() > 0.05,
-        "query_plan_enable_multithreading_after_window_functions": lambda: random.random() > 0.05,
-        "query_plan_max_limit_for_lazy_materialization": lambda: random.choice([0, 1, 10, 100, 1000, 10000, 100000]),
-        "query_plan_optimize_join_order_limit": lambda: 0 if random.random() < 0.05 else random.choice([1, 5, 10, 20, 64]),
+        "query_plan_enable_multithreading_after_window_functions": lambda: (
+            random.random() > 0.05
+        ),
+        "query_plan_max_limit_for_lazy_materialization": lambda: random.choice(
+            [0, 1, 10, 100, 1000, 10000, 100000]
+        ),
+        "query_plan_optimize_join_order_limit": lambda: (
+            0 if random.random() < 0.05 else random.choice([1, 5, 10, 20, 64])
+        ),
     }
 
     dependent_settings = {
@@ -1478,7 +1519,10 @@ class SettingsRandomizer:
         random_settings = {}
         is_debug = BuildFlags.DEBUG in args.build_flags
         for setting, generator in SettingsRandomizer.settings.items():
-            if setting in SettingsRandomizer.stress_test_only_settings and not args.stress_tests:
+            if (
+                setting in SettingsRandomizer.stress_test_only_settings
+                and not args.stress_tests
+            ):
                 continue
             if (
                 is_debug
@@ -1555,23 +1599,35 @@ class MergeTreeSettingsRandomizer:
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
         "object_shared_data_serialization_version": lambda: random.choice(
-            ["map", "map_with_buckets", "advanced"]),
-        "object_shared_data_serialization_version_for_zero_level_parts": lambda: random.choice(
-            ["map", "map_with_buckets", "advanced"]),
+            ["map", "map_with_buckets", "advanced"]
+        ),
+        "object_shared_data_serialization_version_for_zero_level_parts": lambda: (
+            random.choice(["map", "map_with_buckets", "advanced"])
+        ),
         "object_shared_data_buckets_for_compact_part": lambda: random.randint(1, 32),
         "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
         "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
         "auto_statistics_types": auto_statistics_generator(),
         "serialization_info_version": lambda: random.choice(["basic", "with_types"]),
-        "string_serialization_version": lambda: random.choice(["single_stream", "with_size_stream"]),
-        "nullable_serialization_version": lambda: random.choice(["basic", "allow_sparse"]),
+        "string_serialization_version": lambda: random.choice(
+            ["single_stream", "with_size_stream"]
+        ),
+        "nullable_serialization_version": lambda: random.choice(
+            ["basic", "allow_sparse"]
+        ),
         "enable_shared_storage_snapshot_in_query": lambda: random.randint(0, 1),
-        "min_columns_to_activate_adaptive_write_buffer": lambda: random.randint(0, 1000),
+        "min_columns_to_activate_adaptive_write_buffer": lambda: random.randint(
+            0, 1000
+        ),
         "reduce_blocking_parts_sleep_ms": lambda: random.randint(200, 2000),
         "shared_merge_tree_outdated_parts_group_size": lambda: random.randint(1, 2),
-        "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: random.randint(1, 10),
+        "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: (
+            random.randint(1, 10)
+        ),
         "map_serialization_version": lambda: random.choice(["basic", "with_buckets"]),
-        "map_serialization_version_for_zero_level_parts": lambda: random.choice(["basic", "with_buckets"]),
+        "map_serialization_version_for_zero_level_parts": lambda: random.choice(
+            ["basic", "with_buckets"]
+        ),
         "max_buckets_in_map": lambda: random.randint(1, 100),
         "map_buckets_strategy": lambda: random.choice(["constant", "sqrt", "linear"]),
         "map_buckets_min_avg_size": lambda: random.randint(1, 1000),
@@ -1603,6 +1659,7 @@ def replace_in_file(filename, what, with_what):
 
 def replace_in_file_re(filename, what, with_what):
     os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
+
 
 def str_to_numeric(v: str):
     vl = v.lower()
@@ -1755,7 +1812,10 @@ def is_old_analyzer_used(args):
 def setup_cgroup_with_memory_limit_cb(cgroup_name: str, memory_limit_bytes: int):
     def preexec_fn():
         if CGROUP_VERSION is None:
-            print(f"Cgroups are not available, memory limit will not be applied", file=sys.stderr)
+            print(
+                f"Cgroups are not available, memory limit will not be applied",
+                file=sys.stderr,
+            )
             return
 
         try:
@@ -1782,6 +1842,7 @@ def setup_cgroup_with_memory_limit_cb(cgroup_name: str, memory_limit_bytes: int)
             print(f"Failed to configure cgroup {cgroup_name}: {e}", file=sys.stderr)
             # Exit child safely without running exec
             os._exit(1)
+
     return preexec_fn
 
 
@@ -1800,7 +1861,9 @@ def cleanup_cgroup(cgroup_name: str):
                 return
 
             CGROUP_ROOT = "/sys/fs/cgroup"
-            cgroup_path = os.path.join(CGROUP_ROOT, current_cgroup.lstrip("/"), cgroup_name)
+            cgroup_path = os.path.join(
+                CGROUP_ROOT, current_cgroup.lstrip("/"), cgroup_name
+            )
 
             if os.path.exists(cgroup_path):
                 os.rmdir(cgroup_path)
@@ -1934,9 +1997,7 @@ class TestCase:
             os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".debuglog"
         )
 
-        testcase_args.testcase_client = (
-            f"{testcase_args.client} --log_comment '{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
-        )
+        testcase_args.testcase_client = f"{testcase_args.client} --log_comment '{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
 
         return testcase_args
 
@@ -1982,7 +2043,9 @@ class TestCase:
             )
 
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
-        os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
+        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+            f"{current_value} --allow_repeated_settings".strip()
+        )
 
         return client_options + new_options
 
@@ -2198,8 +2261,11 @@ class TestCase:
         # Minimize regular settings (keep all MT settings active during minimization)
         if minimize_regular:
             culprit_settings, hit_limit = self._minimize_settings(
-                args, suite, client_options,
-                failed_settings, failed_mt_settings if minimize_mt else {},
+                args,
+                suite,
+                client_options,
+                failed_settings,
+                failed_mt_settings if minimize_mt else {},
                 is_merge_tree=False,
                 deadline=minimize_deadline,
             )
@@ -2209,8 +2275,11 @@ class TestCase:
         # cross-category interactions)
         if minimize_mt and not minimize_hit_limit:
             culprit_mt_settings, hit_limit = self._minimize_settings(
-                args, suite, client_options,
-                failed_settings if minimize_regular else {}, failed_mt_settings,
+                args,
+                suite,
+                client_options,
+                failed_settings if minimize_regular else {},
+                failed_mt_settings,
                 is_merge_tree=True,
                 deadline=minimize_deadline,
             )
@@ -2248,8 +2317,13 @@ class TestCase:
         return "\n".join(diagnosis_lines) + "\n"
 
     def _minimize_settings(
-        self, args, suite, client_options,
-        all_settings, all_mt_settings, is_merge_tree,
+        self,
+        args,
+        suite,
+        client_options,
+        all_settings,
+        all_mt_settings,
+        is_merge_tree,
         deadline,
     ):
         """Delta-debugging (ddmin) minimization for one settings category.
@@ -2359,7 +2433,9 @@ class TestCase:
             if case in suite.all_random_settings_limits
             else {}
         )
-        self.memory_limit = suite.all_memory_limits.get(case, args.memory_limit) or args.memory_limit
+        self.memory_limit = (
+            suite.all_memory_limits.get(case, args.memory_limit) or args.memory_limit
+        )
 
         for tag in os.getenv("GLOBAL_TAGS", "").split(","):
             self.tags.add(tag.strip())
@@ -2384,7 +2460,9 @@ class TestCase:
             self.tags and "no-random-merge-tree-settings" in self.tags
         )
 
-        allow_random_settings = not (args.no_random_settings or has_no_random_settings_tag)
+        allow_random_settings = not (
+            args.no_random_settings or has_no_random_settings_tag
+        )
         # If test contains SHOW CREATE TABLE do not
         # randomize merge tree settings, because
         # they will be added to table definition and test will fail
@@ -2413,7 +2491,9 @@ class TestCase:
         # - If user passed fixed settings, use them exclusively.
         # - Otherwise, use randomized (if allowed), else empty.
         self.effective_settings = fixed_settings if fixed_settings else base_settings
-        self.effective_merge_tree_settings = fixed_mt_settings if fixed_mt_settings else base_mt_settings
+        self.effective_merge_tree_settings = (
+            fixed_mt_settings if fixed_mt_settings else base_mt_settings
+        )
 
         self.base_url_params = (
             os.environ["CLICKHOUSE_URL_PARAMS"]
@@ -2537,9 +2617,7 @@ class TestCase:
             # Skip tests that are incompatible with LLVM coverage
             return FailureReason.NO_LLVM_COVERAGE
 
-        if args.excluded_from_llvm and (
-            not tags or "no-llvm-coverage" not in tags
-        ):
+        if args.excluded_from_llvm and (not tags or "no-llvm-coverage" not in tags):
             # Run only tests that are normally disabled under LLVM coverage
             return FailureReason.NO_LLVM_COVERAGE
 
@@ -2643,10 +2721,7 @@ class TestCase:
                 if "no-" + build_flag in tags:
                     return FailureReason.BUILD
             if "no-sanitizers" in tags:
-                if any(
-                    flag in args.build_flags
-                    for flag in BuildFlags.SANITIZERS
-                ):
+                if any(flag in args.build_flags for flag in BuildFlags.SANITIZERS):
                     return FailureReason.BUILD
 
             for tag in tags:
@@ -2743,7 +2818,7 @@ class TestCase:
             r"usr/bin/expect",
             "SYSTEM ENABLE FAILPOINT",
             "SYSTEM FLUSH ASYNC INSERT QUEUE",
-            "python3 "
+            "python3 ",
         ]
 
         with open(self.case_file, "r", encoding="utf-8") as f:
@@ -2963,6 +3038,7 @@ class TestCase:
             # If --record is enabled, create a new reference file
             if self.testcase_args.record:
                 import shutil
+
                 # Use the same logic as get_reference_file to determine the correct path
                 name = removesuffix(self.name, ".gen")
                 # Determine the appropriate extension based on analyzer mode
@@ -2996,6 +3072,7 @@ class TestCase:
             # If --record is enabled, copy stdout to reference file
             if self.testcase_args.record:
                 import shutil
+
                 shutil.copy2(self.stdout_file, self.reference_file)
                 description += "\tReference file updated\n"
                 return TestResult(
@@ -3159,7 +3236,9 @@ class TestCase:
         ) + log_opt
 
         # This is for .sh tests
-        os.environ["CLICKHOUSE_LOG_COMMENT"] = f'{args.testcase_basename}-{args.testcase_database}'
+        os.environ["CLICKHOUSE_LOG_COMMENT"] = (
+            f"{args.testcase_basename}-{args.testcase_database}"
+        )
 
         query_params = ""
         if "need-query-parameters" in self.tags:
@@ -3213,10 +3292,19 @@ class TestCase:
         cgroup_name = None
         if args.memory_limit:
             cgroup_name = f"clickhouse-test-{os.getpid()}"
-            preexec_fn = setup_cgroup_with_memory_limit_cb(cgroup_name, self.memory_limit)
+            preexec_fn = setup_cgroup_with_memory_limit_cb(
+                cgroup_name, self.memory_limit
+            )
 
         # pylint:disable-next=consider-using-with; TODO: fix
-        proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
+        proc = Popen(
+            command,
+            shell=True,
+            executable=BASH,
+            env=tests_env,
+            start_new_session=True,
+            preexec_fn=preexec_fn,
+        )
         # proc.pid == PGID after start_new_session=True; write it atomically so
         # `clickhouse-test --cleanup` can find it even if we are killed with SIGKILL.
         _gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
@@ -3365,7 +3453,10 @@ class TestCase:
 
             client_options = self.add_effective_settings(client_options)
 
-            if args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags:
+            if (
+                args.collect_per_test_coverage
+                and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags
+            ):
                 try:
                     safe_case = self.case.replace("'", "\\'")
                     clickhouse_execute(args, f"SYSTEM SET COVERAGE TEST '{safe_case}'")
@@ -3546,7 +3637,7 @@ class TestCase:
                     f"SHOW TABLES FROM {database}",
                     timeout=timeout,
                     settings={
-                        "log_comment": f'{args.testcase_basename}-{args.testcase_database}',
+                        "log_comment": f"{args.testcase_basename}-{args.testcase_database}",
                     },
                 )
                 .decode()
@@ -3571,7 +3662,7 @@ class TestCase:
                     drop_database_query,
                     timeout=timeout,
                     settings={
-                        "log_comment": f'{args.testcase_basename}-{args.testcase_database}',
+                        "log_comment": f"{args.testcase_basename}-{args.testcase_database}",
                     },
                 )
             except HTTPError as e:
@@ -3580,10 +3671,18 @@ class TestCase:
                 raise
             break
 
+
 def parse_to_bytes(size_str):
     units = {
-        'B': 1, 'KB': 10**3, 'MB': 10**6, 'GB': 10**9, 'TB': 10**12,
-        'KIB': 2**10, 'MIB': 2**20, 'GIB': 2**30, 'TIB': 2**40
+        "B": 1,
+        "KB": 10**3,
+        "MB": 10**6,
+        "GB": 10**9,
+        "TB": 10**12,
+        "KIB": 2**10,
+        "MIB": 2**20,
+        "GIB": 2**30,
+        "TIB": 2**40,
     }
 
     # Use regex to split the number from the unit
@@ -3593,6 +3692,7 @@ def parse_to_bytes(size_str):
 
     number, unit = match.groups()
     return int(float(number) * units[unit.upper()])
+
 
 class TestSuite:
     @staticmethod
@@ -3675,7 +3775,7 @@ class TestSuite:
             memory_limits_prefix = "Memory limits:"
             if not memory_limits_str.startswith(memory_limits_prefix):
                 return None
-            memory_limits_str = memory_limits_str[len(memory_limits_prefix) : ]
+            memory_limits_str = memory_limits_str[len(memory_limits_prefix) :]
             return parse_to_bytes(memory_limits_str)
 
         def parse_random_settings_limits_from_line(
@@ -3730,7 +3830,9 @@ class TestSuite:
                 try:
                     lines = file.readlines()
                     tag_line = find_tag_line(lines, comment_sign)
-                    random_settings_limits_line = find_random_settings_limits_line(lines, comment_sign)
+                    random_settings_limits_line = find_random_settings_limits_line(
+                        lines, comment_sign
+                    )
                     memory_limits_line = find_memory_limits_line(lines, comment_sign)
                 except UnicodeDecodeError:
                     return [], {}, None
@@ -3749,8 +3851,12 @@ class TestSuite:
             if ".cloud." in filepath:
                 parsed_tags.add("cloud")
 
-            random_settings_limits = parse_random_settings_limits_from_line(random_settings_limits_line, comment_sign)
-            memory_limits = parse_memory_limits_from_line(memory_limits_line, comment_sign)
+            random_settings_limits = parse_random_settings_limits_from_line(
+                random_settings_limits_line, comment_sign
+            )
+            memory_limits = parse_memory_limits_from_line(
+                memory_limits_line, comment_sign
+            )
 
             return parsed_tags, random_settings_limits, memory_limits
 
@@ -3815,8 +3921,10 @@ class TestSuite:
             self.read_test_tags_and_random_settings_limits(self.suite_path, all_tests)
         )
         self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
-        self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = (all_tags_and_random_settings_limits[1])
-        self.all_memory_limits: Dict[str, int] = (all_tags_and_random_settings_limits[2])
+        self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = (
+            all_tags_and_random_settings_limits[1]
+        )
+        self.all_memory_limits: Dict[str, int] = all_tags_and_random_settings_limits[2]
         self.sequential_tests = []
         self.parallel_tests = []
 
@@ -3846,13 +3954,14 @@ class TestSuite:
         long_test_runs = max(
             int(self.args.test_runs * self.args.long_test_runs_ratio), 1
         )
-        sequential_runs = self.args.sequential_test_runs if self.args.sequential_test_runs is not None else test_runs
+        sequential_runs = (
+            self.args.sequential_test_runs
+            if self.args.sequential_test_runs is not None
+            else test_runs
+        )
 
         newly_modified_runs = {}
-        if (
-            self.args.repeat_newly_modified_tests
-            and not self.args.no_random_settings
-        ):
+        if self.args.repeat_newly_modified_tests and not self.args.no_random_settings:
             newly_modified_runs = self.get_newly_modified_test_runs(all_tests)
             if newly_modified_runs:
                 print(
@@ -4018,9 +4127,7 @@ def run_diagnose_from_artifacts(args, server_died):
             if any(re.search(pattern, e["test_name"]) for pattern in args.test)
         ]
         if not entries:
-            print(
-                f"No artifacts match the test selector: {args.test}"
-            )
+            print(f"No artifacts match the test selector: {args.test}")
             return 0
 
     print(f"Found {len(entries)} test(s) to diagnose.")
@@ -4054,7 +4161,9 @@ def run_diagnose_from_artifacts(args, server_died):
                     continue
                 for fname in os.listdir(suite_path):
                     name_without_ext = os.path.splitext(fname)[0]
-                    if name_without_ext == test_name and is_test_from_dir(suite_path, fname):
+                    if name_without_ext == test_name and is_test_from_dir(
+                        suite_path, fname
+                    ):
                         case = fname
                         suite_dir_name = suite_candidate
                         break
@@ -4078,16 +4187,20 @@ def run_diagnose_from_artifacts(args, server_died):
 
             client_options = get_additional_client_options(args)
 
-            print(f"\n{'='*70}")
+            print(f"\n{'=' * 70}")
             print(f"Diagnosing: {test_name}")
             if settings:
                 print(f"  Settings: {TestCase.cli_format_settings(settings)}")
             if mt_settings:
-                print(f"  MergeTree settings: {TestCase.cli_format_settings(mt_settings)}")
-            print(f"{'='*70}")
+                print(
+                    f"  MergeTree settings: {TestCase.cli_format_settings(mt_settings)}"
+                )
+            print(f"{'=' * 70}")
 
             try:
-                diagnosis = test_case.diagnose_random_settings(args, test_suite, client_options)
+                diagnosis = test_case.diagnose_random_settings(
+                    args, test_suite, client_options
+                )
             except Exception as e:
                 print(f"ERROR: Diagnosis failed for {test_name}: {e}")
                 traceback.print_exc()
@@ -4103,9 +4216,15 @@ def run_diagnose_from_artifacts(args, server_died):
             label = ""
             if "Inconclusive" in diagnosis:
                 label = ""
-            elif "Culprit settings:" in diagnosis or "Culprit MergeTree settings:" in diagnosis:
+            elif (
+                "Culprit settings:" in diagnosis
+                or "Culprit MergeTree settings:" in diagnosis
+            ):
                 label = "setting"
-            elif "Failure is flaky" in diagnosis or "not reproducible" in diagnosis.lower():
+            elif (
+                "Failure is flaky" in diagnosis
+                or "not reproducible" in diagnosis.lower()
+            ):
                 label = "flaky"
             elif (
                 "not a randomization issue" in diagnosis
@@ -4122,7 +4241,11 @@ def run_diagnose_from_artifacts(args, server_died):
                     else:
                         label = "reproducible"
 
-            result_entry = {"test_name": test_name, "diagnosis": diagnosis, "label": label}
+            result_entry = {
+                "test_name": test_name,
+                "diagnosis": diagnosis,
+                "label": label,
+            }
             results_file.write(json.dumps(result_entry, ensure_ascii=False) + "\n")
             results_file.flush()
 
@@ -4158,7 +4281,9 @@ def run_tests_array(
         total_failures_shared,
     ) = all_tests_with_params
 
-    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%2m.profraw"
+    os.environ["LLVM_PROFILE_FILE"] = (
+        f"clickhouse-client-proc{process_index}-%2m.profraw"
+    )
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=["bold"])
     CL_SQUARE_BRACKET = colored("]", args, attrs=["bold"])
@@ -4320,7 +4445,9 @@ def run_tests_array(
                         total_failures_shared.value += 1
                         if total_failures_shared.value >= args.max_failures:
                             stop_tests()
-                            raise ServerDied(f"Reached --max-failures limit ({args.max_failures})")
+                            raise ServerDied(
+                                f"Reached --max-failures limit ({args.max_failures})"
+                            )
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
 
@@ -4520,6 +4647,7 @@ def collect_build_flags(args):
         b"memory": BuildFlags.MEMORY,
     }
     import re as _re
+
     m = _re.search(rb"-fsanitize=([\w,]+)", value)
     if m:
         for san in m.group(1).split(b","):
@@ -4537,7 +4665,8 @@ def collect_build_flags(args):
         result.append(BuildFlags.WITH_COVERAGE)
 
     with_coverage_depth = clickhouse_execute(
-        args, "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE_DEPTH'"
+        args,
+        "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE_DEPTH'",
     )
     if with_coverage_depth.strip() in (b"ON", b"1"):
         result.append(BuildFlags.WITH_COVERAGE_DEPTH)
@@ -4679,8 +4808,8 @@ def do_run_tests(
         if jobs > 1:
             random.shuffle(test_suite.parallel_tests)
 
-        workers_to_shed = multiprocessing.Value('i', 0)
-        total_failures_shared = multiprocessing.Value('i', 0)
+        workers_to_shed = multiprocessing.Value("i", 0)
+        total_failures_shared = multiprocessing.Value("i", 0)
 
         if args.no_self_parallel:
             # Partition tests so that all copies of the same test go to the
@@ -4748,7 +4877,10 @@ def do_run_tests(
             if now - last_memory_check >= MEMORY_CHECK_INTERVAL and len(processes) > 1:
                 last_memory_check = now
                 memory_fraction = get_server_memory_fraction(args)
-                if memory_fraction is not None and memory_fraction > MEMORY_PRESSURE_THRESHOLD:
+                if (
+                    memory_fraction is not None
+                    and memory_fraction > MEMORY_PRESSURE_THRESHOLD
+                ):
                     # Cap outstanding shed requests so we never drain the pool
                     # to zero: only increment if the number of workers that will
                     # still be running after all pending sheds is greater than 1.
@@ -4762,7 +4894,9 @@ def do_run_tests(
                             )
                     # Use a longer cooldown so memory has time to drop before
                     # we consider shedding another worker.
-                    last_memory_check = time() + MEMORY_SHED_COOLDOWN - MEMORY_CHECK_INTERVAL
+                    last_memory_check = (
+                        time() + MEMORY_SHED_COOLDOWN - MEMORY_CHECK_INTERVAL
+                    )
 
             # Periodically check the server for hangs
             # and stop all processes in this case
@@ -4801,7 +4935,11 @@ def do_run_tests(
     if test_suite.sequential_tests:
         # Sequential runner shares the total_failures_shared counter with parallel workers
         # so that --max-failures counts failures from both groups combined.
-        seq_total_failures = total_failures_shared if test_suite.parallel_tests else multiprocessing.Value('i', 0)
+        seq_total_failures = (
+            total_failures_shared
+            if test_suite.parallel_tests
+            else multiprocessing.Value("i", 0)
+        )
         run_tests_array(
             (
                 list(test_suite.sequential_tests),
@@ -4811,7 +4949,7 @@ def do_run_tests(
                 args,
                 exit_code,
                 server_died,
-                multiprocessing.Value('i', 0),  # sequential runner is never shed
+                multiprocessing.Value("i", 0),  # sequential runner is never shed
                 restarted_tests,
                 jobs + 1,
                 seq_total_failures,
@@ -5129,13 +5267,19 @@ def main(args):
         f"coverage_active={args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags}"
     )
 
-    if args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH not in args.build_flags:
+    if (
+        args.collect_per_test_coverage
+        and BuildFlags.WITH_COVERAGE_DEPTH not in args.build_flags
+    ):
         raise RuntimeError(
             "--collect-per-test-coverage is enabled but the binary was not built with "
             "WITH_COVERAGE_DEPTH=ON. Per-test coverage collection will not work. "
             "Make sure the binary is built with -DWITH_COVERAGE_DEPTH=ON."
         )
-    if BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags and not args.collect_per_test_coverage:
+    if (
+        BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags
+        and not args.collect_per_test_coverage
+    ):
         raise RuntimeError(
             "Binary is built with WITH_COVERAGE_DEPTH=ON but --collect-per-test-coverage "
             "is disabled. Per-test coverage data will not be collected. "
@@ -5199,7 +5343,10 @@ def main(args):
             create_database_retries += 1
 
         if last_err:
-            raise RuntimeError(f"Failed to create database {db_name} after {MAX_RETRIES} attempts") from last_err
+            raise RuntimeError(
+                f"Failed to create database {db_name} after {MAX_RETRIES} attempts"
+            ) from last_err
+
     try:
         if args.database and args.database != "test":
             create_common_database(args, args.database)
@@ -5250,11 +5397,15 @@ ORDER BY (test_name, callee_offset)
         clickhouse_execute(args, "SYSTEM SET COVERAGE TEST '_selftest'")
         # Diagnostic: check coverage map size and covered NameRefs via SQL
         try:
-            diag = clickhouse_execute(
-                args, "SELECT coverageDiag()"
-            ).decode(errors="replace").strip()
-            print(f"Coverage diagnostic (before self-test): coverageDiag={diag} "
-                  f"(name_refs, map_size, matches, non_empty_file_regions, zero_line_regions, first_file_len_and_line)")
+            diag = (
+                clickhouse_execute(args, "SELECT coverageDiag()")
+                .decode(errors="replace")
+                .strip()
+            )
+            print(
+                f"Coverage diagnostic (before self-test): coverageDiag={diag} "
+                f"(name_refs, map_size, matches, non_empty_file_regions, zero_line_regions, first_file_len_and_line)"
+            )
         except Exception as e:
             print(f"Coverage diagnostic: coverageDiag() failed: {e}")
         clickhouse_execute(args, "SELECT 1")
@@ -5267,11 +5418,15 @@ ORDER BY (test_name, callee_offset)
             or 0
         )
         try:
-            diag2 = clickhouse_execute(
-                args, "SELECT coverageDiag()"
-            ).decode(errors="replace").strip()
-            print(f"Coverage diagnostic (after self-test): coverageDiag={diag2} "
-                  f"(name_refs, map_size, matches, non_empty_file_regions, zero_line_regions, first_file_len_and_line)")
+            diag2 = (
+                clickhouse_execute(args, "SELECT coverageDiag()")
+                .decode(errors="replace")
+                .strip()
+            )
+            print(
+                f"Coverage diagnostic (after self-test): coverageDiag={diag2} "
+                f"(name_refs, map_size, matches, non_empty_file_regions, zero_line_regions, first_file_len_and_line)"
+            )
         except Exception:
             pass
         if selftest_rows == 0:
@@ -5279,7 +5434,9 @@ ORDER BY (test_name, callee_offset)
                 "Coverage self-test FAILED: coverage_log has 0 rows for _selftest — "
                 "coverage mapping is not working (binary built without WITH_COVERAGE_DEPTH?)"
             )
-        print(f"Coverage self-test: coverage_log rows for _selftest = {selftest_rows} (OK)")
+        print(
+            f"Coverage self-test: coverage_log rows for _selftest = {selftest_rows} (OK)"
+        )
         # Validate that the coverage mapping parser produced no bogus line numbers.
         # line_end > 50000 or line_end < line_start indicate cursor-misalignment bugs
         # in the LLVM coverage region decoder (e.g. wrong kKindShift for BranchRegion).
@@ -5294,13 +5451,17 @@ ORDER BY (test_name, callee_offset)
                 or 0
             )
             if bogus_rows > 0:
-                sample = clickhouse_execute(
-                    args,
-                    "SELECT file, line_start, line_end FROM system.coverage_log FINAL"
-                    " WHERE test_name = '_selftest'"
-                    "   AND (line_end > 50000 OR line_end < line_start)"
-                    " LIMIT 5",
-                ).decode(errors="replace").strip()
+                sample = (
+                    clickhouse_execute(
+                        args,
+                        "SELECT file, line_start, line_end FROM system.coverage_log FINAL"
+                        " WHERE test_name = '_selftest'"
+                        "   AND (line_end > 50000 OR line_end < line_start)"
+                        " LIMIT 5",
+                    )
+                    .decode(errors="replace")
+                    .strip()
+                )
                 raise Exception(
                     f"Coverage region quality FAILED: {bogus_rows} bogus line numbers "
                     f"(line_end > 50000 or line_end < line_start) — "
@@ -5355,7 +5516,7 @@ ORDER BY (test_name, callee_offset)
         # cloud_mode=1 restricts index_granularity=0
         "table cannot have index granularity (bytes) equals zero",
         # make_distributed_plan add to constraints because it doesn't work yet
-        "Setting make_distributed_plan should not be changed"
+        "Setting make_distributed_plan should not be changed",
     ]
 
     if not args.shared_catalog:
@@ -5463,9 +5624,7 @@ ORDER BY (test_name, callee_offset)
                     exit_code.value = 1
                     hung_check_failed = True
                 else:
-                    print(
-                        " queries finished while collecting stacktraces, not a hang"
-                    )
+                    print(" queries finished while collecting stacktraces, not a hang")
 
         if processlist:
             print(
@@ -5499,14 +5658,25 @@ ORDER BY (test_name, callee_offset)
     else:
         print("All tests have finished.")
 
-    if args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags:
+    if (
+        args.collect_per_test_coverage
+        and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags
+    ):
         try:
             # Flush the last test's coverage into system.coverage_log.
             clickhouse_execute(args, "SYSTEM SET COVERAGE TEST ''")
         except Exception as e:
             print("Cannot flush final coverage: ", str(e))
-        cov_rows = int(clickhouse_execute(args, "SELECT count() FROM system.coverage_log FINAL") or 0)
-        cov_tests = int(clickhouse_execute(args, "SELECT uniq(test_name) FROM system.coverage_log FINAL") or 0)
+        cov_rows = int(
+            clickhouse_execute(args, "SELECT count() FROM system.coverage_log FINAL")
+            or 0
+        )
+        cov_tests = int(
+            clickhouse_execute(
+                args, "SELECT uniq(test_name) FROM system.coverage_log FINAL"
+            )
+            or 0
+        )
         print(f"system.coverage_log: {cov_rows} rows, {cov_tests} distinct tests")
         try:
             ic_rows = int(
@@ -5530,7 +5700,11 @@ ORDER BY (test_name, callee_offset)
                 )
                 or 0
             )
-            ic_status = "OK" if ic_rows > 0 else "EMPTY - indirect call value profiling inactive"
+            ic_status = (
+                "OK"
+                if ic_rows > 0
+                else "EMPTY - indirect call value profiling inactive"
+            )
             print(
                 f"system.coverage_indirect_calls: {ic_rows} rows, {ic_tests} tests, "
                 f"{ic_callees} unique callees ({ic_status})"
@@ -5548,16 +5722,21 @@ ORDER BY (test_name, callee_offset)
         try:
             clickhouse_execute(args, "SYSTEM FLUSH LOGS system.trace_log")
 
-            unchecked_memory = int(clickhouse_execute(args, f"""
+            unchecked_memory = int(
+                clickhouse_execute(
+                    args,
+                    f"""
             SELECT sum(size) FROM system.trace_log
             WHERE
                 trace_type = 'MemoryAllocatedWithoutCheck'
                 AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
                 AND event_time >= fromUnixTimestamp({int(tests_start_time)})
-            """))
+            """,
+                )
+            )
             if unchecked_memory > 1e9:
                 print(f"""
-                Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB.
+                Too much memory has been allocated without checking for memory limits: {unchecked_memory / 1024 / 1024 / 1024} GiB.
                 Take a look at:
 
                 SELECT arrayStringConcat(symbols, '\\n'), sum(size)
@@ -5575,7 +5754,9 @@ ORDER BY (test_name, callee_offset)
                 - AllocatorWithMemoryTracking
                 """)
         except Exception as e:
-            print(f"Failed to get MemoryAllocatedWithoutCheck events from trace_log: {e}")
+            print(
+                f"Failed to get MemoryAllocatedWithoutCheck events from trace_log: {e}"
+            )
 
     if args.report_logs_stats:
         try:
@@ -5610,7 +5791,9 @@ def find_binary(name):
         return bin_path
 
     # Default binary path if source folder contains build
-    bin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"../build/programs/{name}")
+    bin_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), f"../build/programs/{name}"
+    )
     if is_executable(bin_path):
         return bin_path
 
@@ -5762,7 +5945,7 @@ def parse_args():
         nargs="?",
         type=int,
         help="Number of runs for sequential (no-parallel) and no-flaky-check tests. "
-             "Defaults to half of --test-runs.",
+        "Defaults to half of --test-runs.",
     )
     parser.add_argument(
         "--repeat-newly-modified-tests",
@@ -5899,25 +6082,25 @@ def parse_args():
     parser.add_argument(
         "--settings",
         type=str,
-        help='Explicit ClickHouse settings to use. Paste the CI blob inside quotes, e.g.: '
-             '--settings "--max_threads 1 --fsync_metadata 1 ..."',
+        help="Explicit ClickHouse settings to use. Paste the CI blob inside quotes, e.g.: "
+        '--settings "--max_threads 1 --fsync_metadata 1 ..."',
     )
     parser.add_argument(
         "--settings-file",
         type=str,
         help="Path to a file containing ONLY the inner space-separated settings blob "
-             '(e.g. "--max_threads 1 --fsync_metadata 1 ...").',
+        '(e.g. "--max_threads 1 --fsync_metadata 1 ...").',
     )
     parser.add_argument(
         "--merge-tree-settings",
         type=str,
-        help='Explicit MergeTree settings to use. Paste the CI blob inside quotes, e.g.: '
-             '--merge-tree-settings "--index_granularity 8192 ..."',
+        help="Explicit MergeTree settings to use. Paste the CI blob inside quotes, e.g.: "
+        '--merge-tree-settings "--index_granularity 8192 ..."',
     )
     parser.add_argument(
         "--merge-tree-settings-file",
         type=str,
-        help="Path to a file containing ONLY the inner space-separated MergeTree settings blob."
+        help="Path to a file containing ONLY the inner space-separated MergeTree settings blob.",
     )
     parser.add_argument(
         "--run-by-hash-num",
@@ -6168,8 +6351,7 @@ def parse_args():
 
 
 def cleanup_test_groups():
-    """Kill all process groups recorded in per-worker PGID files.
-    """
+    """Kill all process groups recorded in per-worker PGID files."""
     for _pgid_file in _GROUP_PID_PATH.glob(f"{_GROUP_PID_NAME}.*"):
         if _pgid_file.name.endswith(".tmp"):
             continue
@@ -6228,9 +6410,18 @@ if __name__ == "__main__":
     # When using --record, disable engine replacement to ensure we record
     # the original test's output, not a modified version
     if args.record:
-        if args.replace_replicated_with_shared or args.replace_non_replicated_with_shared:
-            print("INFO: Disabling engine replacement (--replace-replicated-with-shared, --replace-non-replicated-with-shared)", file=sys.stderr)
-            print("      when using --record to ensure reference files are updated with original test output.", file=sys.stderr)
+        if (
+            args.replace_replicated_with_shared
+            or args.replace_non_replicated_with_shared
+        ):
+            print(
+                "INFO: Disabling engine replacement (--replace-replicated-with-shared, --replace-non-replicated-with-shared)",
+                file=sys.stderr,
+            )
+            print(
+                "      when using --record to ensure reference files are updated with original test output.",
+                file=sys.stderr,
+            )
         args.replace_replicated_with_shared = False
         args.replace_non_replicated_with_shared = False
 
@@ -6246,7 +6437,9 @@ if __name__ == "__main__":
             args.fixed_settings.update(parse_settings_cli_blob(args.settings))
         if getattr(args, "merge_tree_settings_file", None):
             args.fixed_merge_tree_settings.update(
-                load_settings_from_file(args.merge_tree_settings_file, kind="merge-tree settings")
+                load_settings_from_file(
+                    args.merge_tree_settings_file, kind="merge-tree settings"
+                )
             )
         if getattr(args, "merge_tree_settings", None):
             args.fixed_merge_tree_settings.update(
@@ -6361,11 +6554,11 @@ if __name__ == "__main__":
         else:
             os.environ["CLICKHOUSE_CLIENT_OPT"] = ""
 
-        print('---------')
+        print("---------")
         print(os.environ["CLICKHOUSE_CLIENT_OPT"])
         print(get_additional_client_options(args))
         os.environ["CLICKHOUSE_CLIENT_OPT"] += get_additional_client_options(args)
-        print('---------')
+        print("---------")
 
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
