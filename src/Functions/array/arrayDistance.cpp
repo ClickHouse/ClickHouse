@@ -190,7 +190,7 @@ struct LpDistance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams & params)
     {
-        state.sum += static_cast<ResultType>(std::pow(std::fabs(x - y), static_cast<ResultType>(params.power)));
+        state.sum += static_cast<ResultType>(std::pow(static_cast<double>(std::fabs(x - y)), params.power));
     }
 
     template <typename ResultType>
@@ -202,7 +202,7 @@ struct LpDistance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams & params)
     {
-        return static_cast<ResultType>(std::pow(state.sum, static_cast<ResultType>(params.inverted_power)));
+        return static_cast<ResultType>(std::pow(static_cast<double>(state.sum), params.inverted_power));
     }
 };
 
