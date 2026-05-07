@@ -31,7 +31,6 @@
 
 #include <Parsers/ParserSelectWithUnionQuery.h>
 
-#include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
@@ -1119,15 +1118,15 @@ public:
 
             // ORDER BY combinator
             ParserKeyword order_by_kw(Keyword::ORDER_BY);
-            if (order_by_kw.ignore(pos, expected))
+            bool order_by_matched = order_by_kw.ignore(pos, expected);
+
+            if (order_by_matched)
             {
                 if (has_order_by)
+                {
                     return false;
+                }
                 has_order_by = true;
-
-                if (!isCurrentElementEmpty() || !elements.empty())
-                    if (!mergeElement())
-                        return false;
 
                 ParserOrderByExpressionList order_parser;
                 if (!order_parser.parse(pos, order_by_columns, expected))
