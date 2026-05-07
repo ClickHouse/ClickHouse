@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-random-detach
+# Tags: zookeeper, no-parallel, no-azure-blob-storage, no-random-detach
+# no-azure-blob-storage: this test runs parallel `INSERT` threads against
+#   `ReplicatedMergeTree` and exceeds the test framework timeout under slow Azure blob
+#   storage. CIDB shows 14 failures / 4491 OKs (0.31%) on
+#   `Stateless tests (arm_asan_ubsan, azure, sequential)`, with 0 failures across 45K+ runs
+#   on every other non-Fast-test configuration. Coverage is preserved by other
+#   sanitizer/storage configs.
 # no-random-detach: test checks replication state
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
