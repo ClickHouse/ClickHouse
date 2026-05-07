@@ -179,6 +179,41 @@ bool hasPasteJoin(const ASTSelectQuery & select)
     return false;
 }
 
+/// True if the FROM clause uses a subquery that itself contains UNION ALL /
+/// UNION DISTINCT / INTERSECT / EXCEPT. We skip those: when the union
+/// branches have mismatched column types, the subquery output column ends up
+/// as `Variant(...)`, and the same predicate can produce different rows
+/// depending on whether it is applied directly to the union output, through
+/// an intermediate `SELECT *`, or pushed into individual branches before the
+/// type unification. The oracle's reference-vs-rewrite comparison cannot
+/// distinguish those alternative semantics from real correctness bugs.
+bool fromContainsUnionSubquery(const ASTSelectQuery & select)
+{
+    ASTPtr tables = select.tables();
+    if (!tables)
+        return false;
+    for (const auto & table_child : tables->children)
+    {
+        const auto * tables_element = table_child->as<ASTTablesInSelectQueryElement>();
+        if (!tables_element || !tables_element->table_expression)
+            continue;
+        const auto * table_expr = tables_element->table_expression->as<ASTTableExpression>();
+        if (!table_expr || !table_expr->subquery)
+            continue;
+        /// table_expr->subquery is an ASTSubquery whose child is the SELECT
+        /// (often wrapped in an ASTSelectWithUnionQuery).
+        for (const auto & sub_child : table_expr->subquery->children)
+        {
+            if (const auto * union_query = sub_child->as<ASTSelectWithUnionQuery>())
+            {
+                if (union_query->list_of_selects && union_query->list_of_selects->children.size() > 1)
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
 /// True if any table in the FROM clause refers to a database whose contents
 /// are not stable across two adjacent reads. This includes the `system`
 /// database (snapshots of live server state like `processes`, `merges`,
@@ -1433,6 +1468,14 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (referencesNonDeterministicDatabase(*select))
     {
         LOG_TRACE(logger, "Oracle skip: query reads from system database");
+        return false;
+    }
+
+    /// FROM clause is a subquery containing a UNION — see
+    /// `fromContainsUnionSubquery` for why this can't be checked reliably.
+    if (fromContainsUnionSubquery(*select))
+    {
+        LOG_TRACE(logger, "Oracle skip: FROM is a subquery containing UNION");
         return false;
     }
 
