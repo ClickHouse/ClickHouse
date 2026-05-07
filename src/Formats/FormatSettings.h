@@ -30,6 +30,7 @@ struct FormatSettings
     bool null_as_default = true;
     bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
+    bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
     bool try_infer_variant = false;
@@ -48,6 +49,9 @@ struct FormatSettings
     bool try_infer_exponent_floats = false;
 
     bool allow_special_serialization_kinds = false;
+
+    /// tolerates leading zeros during parsing integers
+    bool allow_number_leading_zeros = false;
 
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
     inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
@@ -121,6 +125,15 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
+    enum class InputFormatColumnMatchingCaseSensitivity : uint8_t
+    {
+        MATCH_CASE, /// Matches case-sensitively
+        IGNORE_CASE, /// Matches case-insensitively
+        AUTO, /// First tries to match case-sensitively, if fails, tries to match case-insensitively
+    };
+
+    InputFormatColumnMatchingCaseSensitivity input_format_column_matching_case_sensitivity = InputFormatColumnMatchingCaseSensitivity::MATCH_CASE;
+
     UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
@@ -165,6 +178,7 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
+        bool output_unsupported_types_as_binary = true;
     } arrow{};
 
     struct
@@ -310,7 +324,7 @@ struct FormatSettings
         bool bloom_filter_push_down = true;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
-        bool use_native_reader_v3 = false;
+
         bool enable_json_parsing = true;
         bool preserve_order = false;
         bool enable_row_group_prefetch = true;
@@ -331,13 +345,11 @@ struct FormatSettings
         bool output_datetime_as_uint32 = false;
         bool output_date_as_uint16 = false;
         bool output_enum_as_byte_array = false;
-        bool use_custom_encoder = true;
+
         bool parallel_encoding = true;
-        bool output_compliant_nested_types = true;
         bool write_page_index = false;
         bool write_bloom_filter = false;
         bool write_checksums = true;
-        ParquetVersion output_version = ParquetVersion::V2_LATEST;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;

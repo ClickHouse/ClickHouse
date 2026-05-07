@@ -157,8 +157,10 @@ public:
     /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
     /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
     /// to not accidentally query external non-free service for some trivial things like
-    /// autocompletion hints or system.tables query. We have a setting which allow to show
+    /// autocompletion hints or system.tables / system.columns queries. We have a setting which allow to show
     /// these databases everywhere, but user must explicitly specify it.
+    /// Note: system.databases always passes with_datalake_catalogs = true because listing a database name
+    /// is purely local metadata and never requires calls to an external catalog service.
     Databases getDatabases(GetDatabasesOptions options) const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
@@ -185,6 +187,12 @@ public:
     /// View dependencies between a source table and its view.
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
+
+    /// Check that all dependent views of a streaming source table are ready.
+    /// Returns the list of ready views, or empty if not all are ready yet.
+    /// During server startup, returns empty to prevent streaming engines from
+    /// processing data before all MV dependencies are registered.
+    std::vector<StorageID> getReadyDependentViews(const StorageID & source_table_id, const ContextPtr & query_context) const;
 
     /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
     /// removeUUIDMapping(...) must be called when it detached,

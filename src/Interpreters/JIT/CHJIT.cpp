@@ -22,6 +22,7 @@
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
 #include <base/getPageSize.h>
+#include <base/memcmpSmall.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/formatReadable.h>
@@ -392,6 +393,7 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
+    symbol_resolver->registerSymbol("memcmpSmallCharsAllowOverflow15", reinterpret_cast<void *>(&memcmpSmallCharsAllowOverflow15));
 
     symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(&fmod)));
     symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&__divti3));
@@ -551,10 +553,10 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
 
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();
-    auto triple = llvm::sys::getProcessTriple();
-    const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
+    auto triple = llvm::Triple(llvm::sys::getProcessTriple());
+    const auto * target = llvm::TargetRegistry::lookupTarget(triple.str(), error);
     if (!target)
-        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple, error);
+        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple.str(), error);
 
     llvm::SubtargetFeatures features;
     for (const auto & f : llvm::sys::getHostCPUFeatures())

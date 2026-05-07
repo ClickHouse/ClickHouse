@@ -391,7 +391,7 @@ object_storages_properties = {
         "s3_max_single_read_retries": threshold_generator(0.2, 0.2, 0, 16),
         "s3_max_unexpected_write_error_retries": threshold_generator(0.2, 0.2, 0, 16),
         "s3_max_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 5 * 1024 * 1024 * 1024, 33
+            0.2, 0.2, 16 * 1024 * 1024, 5 * 1024 * 1024 * 1024, 33
         ),
         "s3_strict_upload_part_size": threshold_generator(
             0.2, 0.2, 0, 100 * 1024 * 1024
@@ -477,9 +477,9 @@ cache_storage_properties = {
     "keep_free_space_remove_batch": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "keep_free_space_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "load_metadata_asynchronously": true_false_lambda,
-    "load_metadata_threads": threads_lambda,
+    "load_metadata_threads": no_zero_threads_lambda,
     "max_elements": threshold_generator(0.2, 0.2, 10000, 10000000),
-    "max_file_segment_size": file_size_value(100),
+    "max_file_segment_size": threshold_generator(0.2, 0.2, 4 * 1024 * 1024, 32 * 1024 * 1024),  # must be >= default boundary_alignment (4Mi)
     "overcommit_eviction_evict_step": threshold_generator(
         0.2, 0.2, 1, 10 * 1024 * 1024
     ),
@@ -966,15 +966,23 @@ class DiskPropertiesGroup(PropertiesGroup):
                 tmp_path_xml = ET.SubElement(top_root, "tmp_path")
                 tmp_path_xml.text = "/var/lib/clickhouse/tmp/"
         # Set disk for SMTs
-        if len(created_keeper_disks) > 0:
+        if top_root.find("shared_merge_tree") is None and len(created_keeper_disks) > 0:
             smt_element = ET.SubElement(top_root, "shared_merge_tree")
             disk_element = ET.SubElement(smt_element, "disk")
             disk_element.text = f"disk{random.choice(created_keeper_disks)}"
         # Optionally set database disk
-        if len(safe_for_database_disk) > 0 and random.randint(1, 100) <= 30:
+        if (
+            top_root.find("database_disk") is None
+            and len(safe_for_database_disk) > 0
+            and random.randint(1, 100) <= 30
+        ):
             dbd_element = ET.SubElement(top_root, "database_disk")
             disk_element = ET.SubElement(dbd_element, "disk")
             disk_element.text = f"disk{random.choice(safe_for_database_disk)}"
+        # Add custom_local_disks_base_directory
+        if top_root.find("custom_local_disks_base_directory") is None:
+            clddb_element = ET.SubElement(top_root, "custom_local_disks_base_directory")
+            clddb_element.text = "/var/lib/clickhouse/disks/"
 
 
 def add_single_cache(i: int, next_cache: ET.Element):
@@ -1102,6 +1110,7 @@ class DatabaseReplicatedGroup(PropertiesGroup):
         replicated_settings = {
             "allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views": true_false_lambda,
             "check_consistency": true_false_lambda,
+            "internal_replication": true_false_lambda,
             "logs_to_keep": threshold_generator(0.2, 0.2, 0, 3000),
             "max_broken_tables_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
             "max_replication_lag_to_enqueue": threshold_generator(0.2, 0.2, 0, 200),

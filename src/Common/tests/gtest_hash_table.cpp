@@ -6,7 +6,9 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/MemoryTracker.h>
 #include <Common/iota.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -491,3 +493,59 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple(10, true, true)
     )
 );
+
+TEST(HashTable, StringHashMapMoveConstructorDoesNotAllocate)
+{
+    /// Populate a StringHashMap that covers all five sub-maps:
+    /// m0 (empty key), m1 (1-8 bytes), m2 (9-16 bytes), m3 (17-24 bytes), ms (25+ bytes).
+    /// Then move-construct it under DENY_ALLOCATIONS_IN_SCOPE to verify
+    /// the move constructor does not allocate memory.
+
+    using Map = StringHashMap<UInt64>;
+    Map src;
+
+    std::pair<std::string, UInt64> entries[] = {
+        {"", 0},                              // m0 (empty key)
+        {"hello", 1},                         // m1 (1-8 bytes)
+        {"medium_key_9abc", 2},               // m2 (9-16 bytes)
+        {"long_key_17bytes_value", 3},        // m3 (17-24 bytes)
+        {"this_is_a_very_long_key_value!!", 4}, // ms (25+ bytes)
+    };
+
+    for (const auto & [key, value] : entries)
+    {
+        Map::LookupResult it;
+        bool inserted = false;
+        std::string_view key_view = key;
+        src.emplace(key_view, it, inserted);
+        ASSERT_TRUE(inserted);
+        it->getMapped() = value;
+    }
+
+    auto check_map = [&](const auto & map)
+    {
+        ASSERT_EQ(map.size(), 5);
+
+        /// Verify all keys are findable in the destination map.
+        for (const auto & [key, value] : entries)
+        {
+            std::string_view key_view = key;
+            auto it = map.find(key_view);
+            ASSERT_TRUE(it != nullptr) << "key not found after move: size=" << key.size();
+            ASSERT_EQ(it->getMapped(), value);
+        }
+    };
+
+    /// The move constructor must not allocate — it only swaps buffer pointers.
+    DENY_ALLOCATIONS_IN_SCOPE;
+    Map dst1(std::move(src));
+    ALLOW_ALLOCATIONS_IN_SCOPE;
+
+    check_map(dst1);
+
+    DENY_ALLOCATIONS_IN_SCOPE;
+    Map dst2 = std::move(dst1);
+    ALLOW_ALLOCATIONS_IN_SCOPE;
+
+    check_map(dst2);
+}

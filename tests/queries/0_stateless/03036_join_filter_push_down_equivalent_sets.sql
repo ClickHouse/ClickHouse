@@ -2,6 +2,8 @@ SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 0;
 SET query_plan_convert_outer_join_to_inner_join = 0;
 SET parallel_hash_join_threshold = 0;
+SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
+SET query_plan_join_shard_by_pk_ranges = 0; -- adds 'Sharding:' lines to EXPLAIN output when enabled
 
 DROP TABLE IF EXISTS test_table_1;
 CREATE TABLE test_table_1

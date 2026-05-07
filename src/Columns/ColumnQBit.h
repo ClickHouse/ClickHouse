@@ -161,7 +161,7 @@ public:
     }
 
     void reserve(size_t n) override { tuple->reserve(n); }
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
     void shrinkToFit() override { tuple->shrinkToFit(); }
     void ensureOwnership() override { tuple->ensureOwnership(); }
     void protect() override { tuple->protect(); }
@@ -180,7 +180,12 @@ public:
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     void finalize() override { tuple->finalize(); }
 
-    bool structureEquals(const IColumn & rhs) const override { return tuple->structureEquals(rhs); }
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (const auto * rhs_qbit = typeid_cast<const ColumnQBit *>(&rhs))
+            return dimension == rhs_qbit->dimension && tuple->structureEquals(*rhs_qbit->tuple);
+        return false;
+    }
     bool isFinalized() const override { return tuple->isFinalized(); }
 
     /// Efficient access to the underlying tuple

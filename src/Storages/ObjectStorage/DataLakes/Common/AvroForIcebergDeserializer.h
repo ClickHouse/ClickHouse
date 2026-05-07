@@ -9,6 +9,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Common/SharedMutex.h>
 
 
@@ -36,7 +37,7 @@ class AvroForIcebergDeserializer
 {
 private:
     std::unique_ptr<DB::ReadBufferFromFileBase> buffer;
-    std::string manifest_file_path;
+    Iceberg::IcebergPathFromMetadata manifest_file_path;
     DB::ColumnPtr parsed_column;
     std::shared_ptr<const DB::DataTypeTuple> parsed_column_data_type;
     mutable std::optional<ColumnsWithTypeAndName> cache_parsed_columns TSA_GUARDED_BY(cache_mutex);
@@ -61,7 +62,7 @@ private:
 public:
     AvroForIcebergDeserializer(
         std::unique_ptr<DB::ReadBufferFromFileBase> buffer_,
-        const std::string & manifest_file_path_,
+        const Iceberg::IcebergPathFromMetadata & manifest_file_path_,
         const DB::FormatSettings & format_settings);
 
     size_t rows() const;

@@ -19,6 +19,7 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -86,6 +87,7 @@ namespace Setting
 {
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
 namespace MergeTreeSetting
@@ -387,6 +389,17 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         auto db_and_table = tryGetByUUID(table_id.uuid);
         if (!db_and_table.first || !db_and_table.second)
         {
+            if (db_and_table.first && !db_and_table.second)
+            {
+                /// UUID is used by a database, not a table: the user specified a table UUID that collides with a database UUID.
+                if (exception)
+                    exception->emplace(Exception(
+                        ErrorCodes::TABLE_ALREADY_EXISTS,
+                        "Table UUID {} is already used by database {}",
+                        table_id.uuid,
+                        db_and_table.first->getDatabaseName()));
+                return {};
+            }
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
             {
@@ -400,7 +413,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             return {};
         }
         /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
-        else if (!analyzer)
+        else if (analyzer)
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
             if (db_and_table.first->getDatabaseName() != table_id.database_name ||
@@ -1019,6 +1032,35 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
 {
     std::lock_guard lock{databases_mutex};
     return view_dependencies.getDependencies(source_table_id);
+}
+
+std::vector<StorageID> DatabaseCatalog::getReadyDependentViews(const StorageID & source_table_id, const ContextPtr & query_context) const
+{
+    /// During server startup, not all dependent views may be registered yet.
+    /// Return empty to prevent streaming engines from processing with a
+    /// partial dependency graph, which would permanently lose data for
+    /// views not yet loaded.
+    auto global_context = Context::getGlobalContextInstance();
+    if (global_context->getApplicationType() == Context::ApplicationType::SERVER
+        && !global_context->isServerCompletelyStarted())
+        return {};
+
+    auto view_ids = getDependentViews(source_table_id);
+    if (view_ids.empty())
+        return {};
+
+    for (const auto & view_id : view_ids)
+    {
+        auto view = tryGetTable(view_id, query_context);
+        if (!view)
+            return {};
+
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+        if (materialized_view && !materialized_view->tryGetTargetTable())
+            return {};
+    }
+
+    return view_ids;
 }
 
 DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table, const IDatabase * expected_database)
@@ -2206,9 +2248,12 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 
 Names TableNameHints::getAllRegisteredNames() const
 {
-    if (database)
-        return database->getAllTableNames(context);
-    return {};
+    if (!database)
+        return {};
+    /// DataLakeCatalog::getAllTableNames lists all tables from remote catalog - expensive. Skip when user opted out.
+    if (database->isDatalakeCatalog() && context && !context->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
+        return {};
+    return database->getAllTableNames(context);
 }
 
 }
