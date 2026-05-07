@@ -62,6 +62,7 @@ public:
     RefreshTaskPtr tryGetTaskForInnerTable(const StorageID & inner_table_id) const;
 
     /// Calls notify() on all tasks that depend on `id`.
+    /// RefreshTask must call this whenever its getInfoForDependentViews() may have changed.
     void notifyDependents(const StorageID & id) const;
 
     void setRefreshesStopped(bool stopped);
@@ -87,8 +88,11 @@ private:
     std::atomic<bool> refreshes_stopped {false};
     std::chrono::steady_clock::time_point refreshes_stopped_at;
 
+    /// Update `tasks`. Caller should then also call notifyDependents, because dependent views need
+    /// to know when their dependencies appear/disappear.
     RefreshTaskList::iterator addTaskLocked(StorageID id, RefreshTaskPtr task);
     void removeTaskLocked(StorageID id, RefreshTaskList::iterator iter);
+
     RefreshTaskList::iterator addInnerTableLocked(StorageID inner_table_id, RefreshTaskPtr task);
     void removeInnerTableLocked(StorageID inner_table_id, RefreshTaskList::iterator inner_table_iter);
     void addDependenciesLocked(RefreshTaskPtr task, const std::vector<StorageID> & dependencies);

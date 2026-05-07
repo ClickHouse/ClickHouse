@@ -66,9 +66,9 @@ std::chrono::sys_seconds RefreshSchedule::advance(std::chrono::sys_seconds last_
     return advanceEvery(last_completed_timeslot, period, offset);
 }
 
-std::chrono::system_clock::time_point RefreshSchedule::addRandomSpread(std::chrono::sys_seconds timeslot, Int64 randomness) const
+std::chrono::system_clock::time_point RefreshSchedule::addRandomSpread(std::chrono::system_clock::time_point when, Int64 randomness) const
 {
-    return timeslot + std::chrono::milliseconds(Int64(static_cast<double>(spread.minSeconds()) * 1e3 / 2 * static_cast<double>(randomness) / 1e9));
+    return when + std::chrono::milliseconds(Int64(static_cast<double>(spread.minSeconds()) * 1e3 / 2 * static_cast<double>(randomness) / 1e9));
 }
 
 }
