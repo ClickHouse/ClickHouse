@@ -255,6 +255,5 @@ private:
     static constexpr size_t order_by_columns_child_index = 3;
     static constexpr size_t children_size = order_by_columns_child_index + 1;
 };
-};
 
 }
