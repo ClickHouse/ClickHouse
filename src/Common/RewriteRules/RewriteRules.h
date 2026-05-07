@@ -52,12 +52,14 @@ protected:
     mutable std::mutex mutex;
     mutable std::vector<MutableRewriteRuleLogPtr> logs;
 
+    bool loadIfNot(std::lock_guard<std::mutex> & lock) const;
+
     const LoggerPtr log = getLogger("RewriteRule");
 
-    bool loaded = false;
+    mutable bool loaded = false;
     std::atomic<bool> shutdown_called = false;
-    std::unique_ptr<RewriteRulesStorage> storage;
-    BackgroundSchedulePoolTaskHolder update_task;
+    mutable std::unique_ptr<RewriteRulesStorage> storage;
+    mutable BackgroundSchedulePoolTaskHolder update_task;
 
     bool exists(
         const std::string & rule_name,

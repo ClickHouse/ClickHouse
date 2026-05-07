@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {
@@ -32,7 +33,7 @@ void RewriteRules::shutdown()
     if (update_task)
     {
         update_task->deactivate();
-        update_task.reset();
+        update_task = BackgroundSchedulePoolTaskHolder{};
     }
     std::lock_guard lock(mutex);
     storage.reset();
@@ -41,12 +42,14 @@ void RewriteRules::shutdown()
 bool RewriteRules::exists(const std::string & rule_name) const
 {
     std::lock_guard lock(mutex);
+    loadIfNot(lock);
     return exists(rule_name, lock);
 }
 
 RewriteRuleObjectPtr RewriteRules::get(const std::string & rule_name) const
 {
     std::lock_guard lock(mutex);
+    loadIfNot(lock);
     auto rule = tryGet(rule_name, lock);
     if (!rule)
     {
@@ -61,12 +64,14 @@ RewriteRuleObjectPtr RewriteRules::get(const std::string & rule_name) const
 RewriteRuleObjectPtr RewriteRules::tryGet(const std::string & rule_name) const
 {
     std::lock_guard lock(mutex);
+    loadIfNot(lock);
     return tryGet(rule_name, lock);
 }
 
 RewriteRuleObjectsMap RewriteRules::getAll() const
 {
     std::lock_guard lock(mutex);
+    loadIfNot(lock);
     return loaded_rewrite_rules;
 }
 
@@ -129,6 +134,7 @@ void RewriteRules::remove(const std::string & rule_name, std::lock_guard<std::mu
 void RewriteRules::createRule(const ASTCreateRewriteRuleQuery & query)
 {
     std::lock_guard lock(mutex);
+    loadIfNot(lock);
     if (exists(query.rule_name, lock))
     {
         throw Exception(
@@ -144,6 +150,7 @@ void RewriteRules::createRule(const ASTCreateRewriteRuleQuery & query)
 void RewriteRules::removeRule(const ASTDropRewriteRuleQuery & query)
 {
     std::lock_guard lock(mutex);
+    loadIfNot(lock);
     if (!exists(query.rule_name, lock))
     {
         throw Exception(
@@ -158,6 +165,7 @@ void RewriteRules::removeRule(const ASTDropRewriteRuleQuery & query)
 void RewriteRules::updateRule(const ASTAlterRewriteRuleQuery & query)
 {
     std::lock_guard lock(mutex);
+    loadIfNot(lock);
     if (!exists(query.rule_name, lock))
     {
         throw Exception(
@@ -190,6 +198,10 @@ void RewriteRules::addLog(
     {
         return;
     }
+    /// Bound the log size to avoid unbounded memory growth.
+    static constexpr size_t max_logs = 1024;
+    if (logs.size() >= max_logs)
+        logs.erase(logs.begin(), logs.begin() + (logs.size() - max_logs + 1));
     logs.push_back(RewriteRuleLog::create(original_query, applied_rules, resulting_query));
 }
 
@@ -199,20 +211,24 @@ std::vector<MutableRewriteRuleLogPtr> RewriteRules::getLogs() const
     return logs;
 }
 
-bool RewriteRules::loadIfNot()
+bool RewriteRules::loadIfNot(std::lock_guard<std::mutex> & lock) const
 {
-    std::lock_guard lock(mutex);
     if (loaded)
         return false;
 
     auto context = Context::getGlobalContextInstance();
     storage = RewriteRulesStorage::create(context);
     auto rules = storage->getAll();
-    add(std::move(rules), lock);
+    /// `add` is non-const but only mutates `mutable` `loaded_rewrite_rules`.
+    const_cast<RewriteRules *>(this)->add(std::move(rules), lock);
 
     if (storage->isReplicated())
     {
-        update_task = context->getSchedulePool().createTask("RewriteRuleReplicatedStorage", [this]{ updateFunc(); });
+        auto * self = const_cast<RewriteRules *>(this);
+        update_task = context->getSchedulePool().createTask(
+            StorageID::createEmpty(),
+            "RewriteRuleReplicatedStorage",
+            [self]{ self->updateFunc(); });
         update_task->activate();
         update_task->schedule();
     }
@@ -221,15 +237,17 @@ bool RewriteRules::loadIfNot()
     return true;
 }
 
+bool RewriteRules::loadIfNot()
+{
+    std::lock_guard lock(mutex);
+    return loadIfNot(lock);
+}
+
 void RewriteRules::reload()
 {
-    if (!loaded)
-    {
-        loadIfNot();
-        return;
-    }
-
     std::lock_guard lock(mutex);
+    if (loadIfNot(lock))
+        return;
     if (!storage)
         return;
     auto rules = storage->getAll();

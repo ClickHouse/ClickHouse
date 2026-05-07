@@ -161,7 +161,10 @@ void applyRule(ASTPtr &ast, RewriteRuleObjectPtr rule, std::unordered_map<String
                     if (auto it = matching_map.find(query_parameter->name);
                         it != matching_map.end())
                     {
-                        child = std::move(it->second);
+                        /// Clone instead of moving so the same parameter
+                        /// can be substituted in multiple positions of the
+                        /// resulting query template.
+                        child = it->second->clone();
                     } else
                     {
                         throw Exception(
@@ -170,8 +173,8 @@ void applyRule(ASTPtr &ast, RewriteRuleObjectPtr rule, std::unordered_map<String
                             query_parameter->name
                         );
                     }
-                // } else if (child->children.size() == 1 && child->children[0]->as<ASTQueryParameter>()) {
-                } else
+                }
+                else
                 {
                     queue.push(child);
                 }
