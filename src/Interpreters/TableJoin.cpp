@@ -26,6 +26,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
@@ -78,6 +80,8 @@ namespace Setting
     extern const SettingsString temporary_files_codec;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool enable_lazy_columns_replication;
+    extern const SettingsUInt64 max_bytes_before_external_join;
+    extern const SettingsBool enable_join_fixed_hash_table_conversion;
 }
 
 namespace ErrorCodes
@@ -154,6 +158,51 @@ std::string TableJoin::formatClauses(const TableJoin::Clauses & clauses, bool sh
     return fmt::format("{}", fmt::join(res, "; "));
 }
 
+String TableJoin::JoinOnClause::formatPretty(const ExplainFormatSettings & settings) const
+{
+    std::vector<std::string> parts;
+    parts.reserve(key_names_left.size() + 2);
+
+    for (size_t i = 0; i < key_names_left.size(); ++i)
+    {
+        String left = QueryPlanFormat::formatColumnPretty(key_names_left[i], settings.pretty_names);
+        String right = QueryPlanFormat::formatColumnPretty(key_names_right[i], settings.pretty_names);
+        bool null_safe = nullsafe_compare_key_indexes.contains(i);
+        parts.push_back(fmt::format("{} {} {}", left, null_safe ? "<=>" : "=", right));
+    }
+
+    const auto & [left_cond, right_cond] = condColumnNames();
+    if (!left_cond.empty())
+        parts.push_back(QueryPlanFormat::formatColumnPretty(left_cond, settings.pretty_names));
+    if (!right_cond.empty())
+        parts.push_back(QueryPlanFormat::formatColumnPretty(right_cond, settings.pretty_names));
+
+    return fmt::format("{}", fmt::join(parts, " AND "));
+}
+
+std::string TableJoin::formatClausesPretty(const TableJoin::Clauses & clauses, const ExplainFormatSettings & settings)
+{
+    if (clauses.empty())
+        return "";
+
+    if (clauses.size() == 1)
+        return clauses[0].formatPretty(settings);
+
+    std::vector<std::string> res;
+    for (const auto & clause : clauses)
+    {
+        auto formatted = clause.formatPretty(settings);
+        bool needs_parens = clause.keysCount() > 1
+            || !clause.condColumnNames().first.empty()
+            || !clause.condColumnNames().second.empty();
+        if (needs_parens)
+            res.push_back("(" + formatted + ")");
+        else
+            res.push_back(formatted);
+    }
+    return fmt::format("{}", fmt::join(res, " OR "));
+}
+
 TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
     : size_limits(SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
     , default_max_bytes(settings[Setting::default_max_bytes_in_join])
@@ -173,6 +222,8 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
     , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
     , enable_lazy_columns_replication(settings[Setting::enable_lazy_columns_replication])
+    , max_bytes_before_external_join(settings[Setting::max_bytes_before_external_join])
+    , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -202,6 +253,8 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , allow_join_sorting(settings.allow_experimental_join_right_table_sorting)
     , allow_dynamic_type_in_join_keys(settings.allow_dynamic_type_in_join_keys)
     , enable_lazy_columns_replication(settings.enable_lazy_columns_replication)
+    , max_bytes_before_external_join(settings.max_bytes_before_external_join)
+    , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)

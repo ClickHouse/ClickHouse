@@ -33,13 +33,13 @@ class _Settings:
     ENABLED_WORKFLOWS: Optional[List[str]] = None
     DEFAULT_LOCAL_TEST_WORKFLOW: str = ""
 
-    ENABLE_ARTIFACTS_REPORT: bool = False
-
     ######################################
     #    Runtime Settings                #
     ######################################
     MAX_RETRIES_S3 = 3
     MAX_RETRIES_GH = 3
+    # PR label that bypasses all job filtering (filter hooks and changed-file filtering)
+    CI_FORCE_ALL_LABEL: str = "ci-force-all"
 
     ######################################
     #   S3 (artifact storage) settings   #
@@ -77,6 +77,10 @@ class _Settings:
     ######################################
     #        CI Cache settings           #
     ######################################
+    # If enabled, Config Workflow creates a content-addressed .git/modules/ archive
+    # in S3. Jobs with needs_submodules=True download it instead of cloning from GitHub.
+    ENABLE_SUBMODULE_CACHE: bool = False
+
     CACHE_VERSION: int = 1
     CACHE_DIGEST_LEN: int = 20
     CACHE_S3_PATH: str = ""
@@ -155,6 +159,7 @@ _USER_DEFINED_SETTINGS = [
     "INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS",
     "MAX_RETRIES_S3",
     "MAX_RETRIES_GH",
+    "CI_FORCE_ALL_LABEL",
     "VALIDATE_FILE_PATHS",
     "DOCKERHUB_USERNAME",
     "DOCKERHUB_SECRET",
@@ -176,9 +181,9 @@ _USER_DEFINED_SETTINGS = [
     "DISABLED_WORKFLOWS",
     "ENABLED_WORKFLOWS",
     "PYTHONPATHS",
-    "ENABLE_ARTIFACTS_REPORT",
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
+    "ENABLE_SUBMODULE_CACHE",
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",

@@ -81,8 +81,8 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | ngrams[(N)]
                                             | asciiCJK
+                                            | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
                                 -- Optional parameters:
@@ -480,6 +480,24 @@ SELECT count() FROM table WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 ```
 
+#### `hasPhrase` {#functions-example-hasphrase}
+
+Function [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) matches against a phrase: all tokens must appear consecutively and in the same order as in the search string.
+
+Unlike `hasAllTokens`, which only requires all tokens to be present somewhere, `hasPhrase` requires them to appear as a consecutive sequence.
+The search phrase is tokenized using the same tokenizer configured for the index column.
+Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK` tokenizers.
+
+Example:
+
+```sql
+-- Matches: 'clickhouse' and 'olap' must appear consecutively in that order
+SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
+
+-- Does NOT match a row containing 'olap clickhouse' (wrong order)
+-- Does NOT match a row containing 'clickhouse fast olap' (non-consecutive)
+```
+
 #### `has` {#functions-example-has}
 
 Array function [has](/sql-reference/functions/array-functions#has) matches against a single token in the array of strings.
@@ -488,6 +506,17 @@ Example:
 
 ```sql
 SELECT count() FROM table WHERE has(array, 'clickhouse');
+```
+
+#### `hasAny` and `hasAll` {#functions-example-hasany-hasall}
+
+Array functions [hasAny](/sql-reference/functions/array-functions#hasAny) and [hasAll](/sql-reference/functions/array-functions#hasAll) test whether the indexed array column contains any or all of a constant set of needle strings.
+
+Example:
+
+```sql
+SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
+SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 ```
 
 #### `mapContains` {#functions-example-mapcontains}
@@ -539,9 +568,7 @@ SELECT count() FROM table WHERE map['engine'] = 'clickhouse';
 
 See the following examples for using columns of type `Array(T)` and `Map(K, V)` with the text index.
 
-### Examples for `Array` and `Map` columns with text indexes {#text-index-array-and-map-examples}
-
-#### Indexing Array(String) columns {#text-index-example-array}
+### Indexing Array(String) columns {#text-index-example-array}
 
 Imagine a blogging platform, where authors categorize their blog posts using keywords.
 We like users to discover related content by searching for or clicking on topics.
@@ -574,7 +601,7 @@ ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = splitBy
 ALTER TABLE posts MATERIALIZE INDEX keywords_idx; -- Don't forget to rebuild the index for existing data
 ```
 
-#### Indexing Map columns {#text-index-example-map}
+### Indexing Map columns {#text-index-example-map}
 
 In many observability use cases, log messages are split into "components" and stored as appropriate data types, e.g. date time for the timestamp, enum for the log level etc.
 Metrics fields are best stored as key-value pairs.
@@ -639,8 +666,8 @@ SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 Text indexes can be used with `JSON` columns in three ways:
 
 1. **Indexes on specific subcolumns** — create a text index on a known JSON path, just like on a regular column. This indexes the *values* at that path.
-2. **Path-based indexes with `JSONAllPaths`** — index the *set of paths* present in each granule to skip granules that cannot contain the queried path. Similar to `Map` columns.
-3. **Value-based indexes with `JSONAllValues`** — index *all values* across all JSON paths to accelerate full-text search on any JSON subcolumn with a single index.
+2. **Path-based indexes with [JSONAllPaths](/sql-reference/functions/json-functions.md/#JSONAllPaths)** — indexes *all paths* present in each granule to skip granules that cannot contain the queried path. Similar to `Map` columns.
+3. **Value-based indexes with [JSONAllValues](/sql-reference/functions/json-functions.md#JSONAllValues)** — indexes *all values* across all JSON paths to accelerate full-text search on any JSON subcolumn with a single index.
 
 #### Indexes on specific subcolumns {#json-indexes-on-subcolumns}
 
@@ -651,7 +678,7 @@ There are two ways to reference a JSON subcolumn in an index expression:
 - **Typed path** declared in the JSON type hint — access by name directly: `json.a`.
 - **Dynamic path** with explicit cast — use the `::` cast syntax: `json.b::String`.
 
-Example queries:
+Example index definition:
 
 ```sql
 CREATE TABLE sensor_data
@@ -668,11 +695,15 @@ INSERT INTO sensor_data SELECT toJSONString(map('sensor_id', 'id_' || number , '
 INSERT INTO sensor_data SELECT toJSONString(map('sensor_id', 'id_' || number, 'location', 'room_' || toString(number))) FROM numbers(4, 4);
 ```
 
-```sql title="Query"
+Example query:
+
+```sql
 EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.sensor_id = 'id_5';
 ```
 
-```text title="Response"
+Result:
+
+```text
 ...
     Indexes:
       Skip
@@ -683,11 +714,15 @@ EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.sensor_id = 'id_5';
         Granules: 1/8
 ```
 
-```sql title="Query"
+Example query:
+
+```sql
 EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'room_5';
 ```
 
-```text title="Response"
+Result:
+
+```text
 ...
     Indexes:
       Skip
@@ -703,7 +738,7 @@ EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'roo
 Similar to `Map` columns, text indexes can be created on [JSON](/sql-reference/data-types/newjson.md) columns using [`JSONAllPaths`](/sql-reference/functions/json-functions.md/#JSONAllPaths).
 The index stores the set of JSON paths present in each granule and uses them to skip granules where a queried path is absent.
 
-Example queries:
+Example index definition:
 
 ```sql
 CREATE TABLE events
@@ -718,13 +753,18 @@ INSERT INTO events VALUES ('{"user": {"name": "Alice"}, "action": "login"}');
 INSERT INTO events VALUES ('{"metric": {"cpu": 0.95}, "host": "srv1"}');
 ```
 
-You can use `EXPLAIN indexes = 1` to verify that the skip index is being used. When a path exists only in one part, the index skips the other part:
+You can use `EXPLAIN indexes = 1` to verify that the skip index is being used.
+When a path exists only in one part, the index skips the other part.
 
-```sql title="Query"
+Example:
+
+```sql
 EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name = 'Alice';
 ```
 
-```text title="Response"
+Result:
+
+```text
 ...
     Indexes:
       Skip
@@ -735,11 +775,15 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name = 'Alice';
         Granules: 1/2
 ```
 
-When a path does not exist in any part, all parts and granules are skipped:
+When a path does not exist in any part, all parts and granules are skipped.
 
-```sql title="Query"
+Example:
+
+```sql
 EXPLAIN indexes = 1 SELECT * FROM events WHERE data.nonexistent = 1;
 ```
+
+Result:
 
 ```text title="Response"
 ...
@@ -754,11 +798,15 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.nonexistent = 1;
 
 `IS NOT NULL` also uses the index — it skips granules where the path is absent (since the value would be `NULL`):
 
-```sql title="Query"
+Example:
+
+```sql
 EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ...
     Indexes:
       Skip
@@ -773,11 +821,22 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
 
 Text indexes can be used to accelerate searches on [JSON](/sql-reference/data-types/newjson.md) columns via function [`JSONAllValues`](/sql-reference/functions/json-functions.md#JSONAllValues).
 
-`JSONAllValues` returns all values from a JSON column as `Array(String)`, with values serialized in their text representation.
-When a text index is built on `JSONAllValues(json_column)`, all values across all JSON paths are tokenized and indexed together.
-This single index can then accelerate queries that filter on individual JSON subcolumns.
+`JSONAllValues` returns all values from a JSON column as `Array(String)`.
+Values of non-string datatypes (e.g. integers and arrays) are converted to their text representation.
+A text index build using `JSONAllValues` indexes these text representations across all JSON paths in each row.
+This index can then accelerate queries that filter on individual JSON subcolumns.
+When a query filters on a specific subcolumn (e.g. `data.user_name = 'alice'`), the text index can quickly skip rows (and granules) that do not contain the search tokens in any of their JSON values.
+
+:::note
+The index may produce false positives when different JSON paths contain the same tokens.
+For example, if row 1 has `{"a": "hello", "b": "world"}` and a query searches for `data.a = 'world'`, the text index cannot distinguish that `world` belongs to path `b`, not `a`.
+In such cases, the index will not skip the row, and the filter on the actual column data will handle the final evaluation.
+This is the same behavior as with other text index use cases where the index acts as a fast pre-filter.
+:::
 
 ##### Creating the index {#json-all-values-creating-the-index}
+
+Example index definition:
 
 ```sql
 CREATE TABLE events
@@ -817,20 +876,50 @@ SELECT * FROM events WHERE has(data.tags::Array(String), 'bug')
 SELECT * FROM events WHERE data.level IN ('error', 'critical');
 ```
 
-##### How it works {#json-all-values-how-it-works}
+### Phrase search {#text-index-phrase-search}
 
-`JSONAllValues` serializes every value to its text representation, so values of all types (strings, integers, arrays, etc.) are indexed as text tokens.
+Text index supports phrase search via the `hasPhrase` function.
+All tokens in the phrase must appear consecutively and in the same order in the document.
 
-The text index on `JSONAllValues` indexes these text representations across all JSON paths in each row.
-When a query filters on a specific subcolumn (e.g. `data.user_name = 'alice'`), the text index can quickly skip rows (and granules) that do not contain the search tokens in any of their JSON values.
-Since the index covers all paths, a single index definition is sufficient to accelerate searches across any JSON subcolumn.
+The text index accelerates phrase search by intersecting the posting lists for all tokens in the phrase to identify candidate granules.
+Within those granules, ClickHouse then verifies exact token adjacency.
 
-:::note
-The index may produce false positives when different JSON paths contain the same tokens.
-For example, if row 1 has `{"a": "hello", "b": "world"}` and a query searches for `data.a = 'world'`, the text index cannot distinguish that `world` belongs to path `b`, not `a`.
-In such cases, the index will not skip the row, and the filter on the actual column data will handle the final evaluation.
-This is the same behavior as with other text index use cases where the index acts as a fast pre-filter.
-:::
+`hasPhrase` is supported with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, and `asciiCJK`.
+
+The phrase string is tokenized using the index's configured tokenizer.
+Tokenizer separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')` for the `splitByNonAlpha` tokenizer.
+
+#### Example {#text-index-phrase-search-example}
+
+```sql
+CREATE TABLE tab (
+    id UInt32,
+    text String,
+    INDEX idx(text) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES
+    (1, 'weather in New York'),
+    (2, 'New weather in York'),
+    (3, 'weather in New Orleans');
+```
+
+```sql
+SELECT id, text FROM tab WHERE hasPhrase(text, 'weather in New York');
+```
+
+Result:
+
+```result
+   ┌─id─┬─text────────────────┐
+1. │  1 │ weather in New York │
+   └────┴─────────────────────┘
+```
+
+Row 2 (`'New weather in York'`) does not match because the tokens are in the wrong order.
+Row 3 (`'weather in New Orleans'`) does not match because it does not contain the token `'York'`.
 
 ## Performance Tuning {#performance-tuning}
 
@@ -851,12 +940,12 @@ Text index lookups read relatively little data and are therefore much faster tha
 
 Direct read is controlled by two settings:
 - Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (true by default) which specifies if direct read is generally enabled.
-- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read), another prerequisite for direct read. In ClickHouse versions >= 26.1, the setting is enabled by default. In earlier versions, you need to run `SET use_skip_indexes_on_data_read = 1` explicitly.
+- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) was a prerequisite for direct read in ClickHouse versions < 26.4.
 
 **Supported functions**
 
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
-If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `mapContainsKey`, and `mapContainsValue`.
+If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, and `mapContainsValue`.
 These functions can also be combined by `AND`, `OR`, and `NOT` operators.
 The `WHERE` or `PREWHERE` clauses can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
@@ -869,7 +958,6 @@ SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
 SETTINGS query_plan_direct_read_from_text_index = 0, -- disable direct read
-         use_skip_indexes_on_data_read = 1;
 ```
 
 returns
@@ -892,7 +980,6 @@ SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
 SETTINGS query_plan_direct_read_from_text_index = 1, -- enable direct read
-         use_skip_indexes_on_data_read = 1;
 ```
 
 returns
@@ -918,7 +1005,7 @@ However, even if the text column is accessed elsewhere in the query, direct read
 Direct read as a hint is based on the same principles as normal direct read, but instead adds an additional filter build from the text index data without removing the underlying text column.
 It is used for functions when reading only from the text index would produce false positives.
 
-Supported functions are: `like`, `startsWith`, `endsWith`, `equals`, `has`, `mapContainsKey`, and `mapContainsValue`.
+Supported functions are: `like`, `startsWith`, `endsWith`, `equals`, `has`, `hasPhrase`, `mapContainsKey`, and `mapContainsValue`.
 
 The additional filter can provide additional selectivity to restrict the result set in combination with other filters further, helping to reduce the amount of data read from other columns.
 
@@ -931,7 +1018,7 @@ EXPLAIN actions = 1
 SELECT count()
 FROM table
 WHERE (col LIKE '%some-token%') AND (d >= today())
-SETTINGS use_skip_indexes_on_data_read = 1, query_plan_text_index_add_hint = 0
+SETTINGS query_plan_text_index_add_hint = 0
 FORMAT TSV
 ```
 
@@ -950,7 +1037,7 @@ EXPLAIN actions = 1
 SELECT count()
 FROM table
 WHERE col LIKE '%some-token%'
-SETTINGS use_skip_indexes_on_data_read = 1, query_plan_text_index_add_hint = 1
+SETTINGS query_plan_text_index_add_hint = 1
 ```
 
 returns
@@ -968,7 +1055,7 @@ This ordering enables skipping even more data granules than the granules skipped
 
 ### LIKE/ILIKE queries {#like-ilike-queries-perf}
 
-When a LIKE/ILIKE query pattern is `%<alpha-numeric-characters-without-spaces>%` and the text index tokenizer is `splitByNonAlpha`, ClickHouse leverages the inverted index to speed up LIKE/ILIKE queries significantly. To achieve that, ClickHouse scans the inverted index dictionary instead of a full-table scan to find the matching pattern.
+When a LIKE/ILIKE query pattern is `%<alpha-numeric-characters-without-spaces>%` and the text index tokenizer is `splitByNonAlpha` or `array`, ClickHouse leverages the inverted index to speed up LIKE/ILIKE queries significantly. To achieve that, ClickHouse scans the inverted index dictionary instead of a full-table scan to find the matching pattern.
 
 When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Luckily, there is a fallback mechanism to prevent that.
 
@@ -1214,7 +1301,7 @@ We'll search for comments containing either 'love' or 'ClickHouse'.
 SELECT count()
 FROM hackernews
 WHERE hasAnyTokens(comment, 'love ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+SETTINGS query_plan_direct_read_from_text_index = 0;
 
 ┌─count()─┐
 │  408426 │
@@ -1229,7 +1316,7 @@ SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_re
 SELECT count()
 FROM hackernews
 WHERE hasAnyTokens(comment, 'love ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+SETTINGS query_plan_direct_read_from_text_index = 1;
 
 ┌─count()─┐
 │  408426 │
@@ -1253,7 +1340,7 @@ It filters down the 28.7M rows to just 147.46K rows, but it still must read 57.0
 SELECT count()
 FROM hackernews
 WHERE hasAllTokens(comment, 'love ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+SETTINGS query_plan_direct_read_from_text_index = 0;
 
 ┌─count()─┐
 │      11 │
@@ -1269,7 +1356,7 @@ Direct read answers the query by operating on the index data, reading only 147.4
 SELECT count()
 FROM hackernews
 WHERE hasAllTokens(comment, 'love ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+SETTINGS query_plan_direct_read_from_text_index = 1;
 
 ┌─count()─┐
 │      11 │
@@ -1291,7 +1378,7 @@ Here, we'll perform a case-insensitive search for 'ClickHouse' OR 'clickhouse'.
 SELECT count()
 FROM hackernews
 WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
-SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+SETTINGS query_plan_direct_read_from_text_index = 0;
 
 ┌─count()─┐
 │     769 │
@@ -1306,7 +1393,7 @@ SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_re
 SELECT count()
 FROM hackernews
 WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
-SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+SETTINGS query_plan_direct_read_from_text_index = 1;
 
 ┌─count()─┐
 │     769 │
