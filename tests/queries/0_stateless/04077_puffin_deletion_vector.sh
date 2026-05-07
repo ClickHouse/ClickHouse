@@ -9,7 +9,7 @@ PUFFIN="$CURDIR/data_puffin/04077_deletion_vector.puffin"
 
 echo "--- PuffinMetadata ---"
 $CLICKHOUSE_LOCAL -q "
-SELECT blob_type, snapshot_id, sequence_number, fields, offset, length, compression_codec
+SELECT blob_type, snapshot_id, sequence_number, fields, offset, length, compression_codec, properties
 FROM file('$PUFFIN', PuffinMetadata)
 "
 
