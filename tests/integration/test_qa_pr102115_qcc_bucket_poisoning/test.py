@@ -1,24 +1,15 @@
-# Proof test for suspected bug in PR #102115: cluster mode with
-# `cluster_table_function_split_granularity=BUCKET` poisons the query
-# condition cache.  Each worker computes the QCC "unmatched" set as
-# (whole-file row-group count) \ (this worker's matched row groups), so
-# every worker writes "no match" entries for row groups assigned to the
-# *other* worker.  A second run of the same predicate then reads the
-# poisoned cache and skips row groups that actually contain matches.
+# Proof test for PR #102115: cluster mode with cluster_table_function_split_granularity=BUCKET
+# poisons the QCC by writing 'no match' for row groups assigned to *other* workers.
 # Root cause: src/Storages/ObjectStorage/StorageObjectStorageSource.cpp:524.
 # Bug signature: result_2 < result_1 for an idempotent SELECT count() ... WHERE.
 
-import logging
-import time
-import uuid as uuid_lib
-
+import logging, time, uuid as uuid_lib
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import IntegerType, NestedField, StringType
-
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
 
@@ -28,91 +19,58 @@ CATALOG_NAME = "demo"
 
 @pytest.fixture(scope="module")
 def started_cluster():
-    # Two-replica cluster_simple (see configs/cluster.xml) wired together with
-    # with_iceberg_catalog=True so an iceberg-rest container + minio are spun
-    # up alongside ClickHouse.  Both replicas must be present, otherwise the
-    # BUCKET-level splitter has only one worker and the bug cannot manifest.
     cluster = ClickHouseCluster(__file__)
     try:
-        cluster.add_instance(
-            "node1",
-            main_configs=["configs/cluster.xml"],
-            user_configs=[],
-            stay_alive=True,
-            with_iceberg_catalog=True,
-        )
-        cluster.add_instance(
-            "node2",
-            main_configs=["configs/cluster.xml"],
-            user_configs=[],
-            stay_alive=True,
-            with_iceberg_catalog=True,
-        )
+        cluster.add_instance("node1", main_configs=["configs/cluster.xml"],
+                             stay_alive=True, with_iceberg_catalog=True)
+        cluster.add_instance("node2", main_configs=["configs/cluster.xml"],
+                             stay_alive=True, with_iceberg_catalog=True)
         cluster.start()
-        # The REST catalog container needs a moment after cluster start.
-        time.sleep(10)
+        time.sleep(10)  # iceberg-rest container needs a moment after start
         yield cluster
     finally:
         cluster.shutdown()
 
 
 def _load_catalog(started_cluster):
-    base_url = f"http://localhost:{started_cluster.iceberg_rest_catalog_port}"
-    return load_catalog(
-        CATALOG_NAME,
-        **{
-            "uri": base_url,
-            "type": "rest",
-            "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
-            "s3.access-key-id": minio_access_key,
-            "s3.secret-access-key": minio_secret_key,
-        },
-    )
+    return load_catalog(CATALOG_NAME, **{
+        "uri": f"http://localhost:{started_cluster.iceberg_rest_catalog_port}",
+        "type": "rest",
+        "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
+        "s3.access-key-id": minio_access_key,
+        "s3.secret-access-key": minio_secret_key,
+    })
 
 
 def _create_iceberg_database(node):
-    settings = {
-        "catalog_type": "rest",
-        "warehouse": "demo",
-        "storage_endpoint": "http://minio:9000/warehouse-rest",
-    }
     node.query(
-        f"""
-DROP DATABASE IF EXISTS {CATALOG_NAME};
-CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
-SETTINGS {",".join(k + "=" + repr(v) for k, v in settings.items())}
-        """,
-        settings={
-            "allow_database_iceberg": 1,
-            "write_full_path_in_iceberg_metadata": 1,
-        },
+        f"DROP DATABASE IF EXISTS {CATALOG_NAME}; "
+        f"CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog("
+        f"  '{BASE_URL}', 'minio', '{minio_secret_key}') "
+        f"SETTINGS catalog_type='rest', warehouse='demo', "
+        f"  storage_endpoint='http://minio:9000/warehouse-rest'",
+        settings={"allow_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
     )
 
 
 def test_qcc_bucket_split_does_not_poison_other_workers_buckets(started_cluster):
     n1 = started_cluster.instances["node1"]
     n2 = started_cluster.instances["node2"]
-
-    test_id = uuid_lib.uuid4().hex[:8]
-    namespace = f"qcc_bucket_{test_id}"
+    namespace = f"qcc_bucket_{uuid_lib.uuid4().hex[:8]}"
     table_name = "t"
 
-    # iceberg-rest "demo" warehouse maps to s3://warehouse-rest/data/
     schema = Schema(
         NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
         NestedField(field_id=2, name="flag", field_type=IntegerType(), required=False),
         NestedField(field_id=3, name="payload", field_type=StringType(), required=False),
     )
-
     catalog = _load_catalog(started_cluster)
     catalog.create_namespace(namespace)
-    # Force tiny row groups so a single parquet file has many row groups
-    # (>= number of replicas, so each worker is guaranteed at least one
-    # bucket).  pyiceberg uses `write.parquet.row-group-limit` as the
-    # `row_group_size` (in rows) it passes to pyarrow's ParquetWriter —
-    # see pyiceberg/io/pyarrow.py::write_file.
-    rows_per_group = 256
-    n_groups = 16
+
+    # Force tiny row groups so a single parquet file has many row groups.
+    # pyiceberg uses `write.parquet.row-group-limit` as pyarrow's `row_group_size`
+    # (see pyiceberg/io/pyarrow.py::write_file).
+    rows_per_group, n_groups = 256, 16
     iceberg_table = catalog.create_table(
         identifier=f"{namespace}.{table_name}",
         schema=schema,
@@ -125,48 +83,35 @@ def test_qcc_bucket_split_does_not_poison_other_workers_buckets(started_cluster)
         },
     )
 
-    # Construct n_groups row groups with one matching row per row group,
-    # evenly spread so both buckets the splitter assigns to workers MUST
-    # contain matches.
+    # One matching row per row group, evenly spread → both workers get matches.
     total_rows = rows_per_group * n_groups
-    ids = list(range(total_rows))
     flags = [1 if (i % rows_per_group == 0) else 0 for i in range(total_rows)]
-    payload = ["x" * 8] * total_rows
-    df = pa.table({"id": ids, "flag": flags, "payload": payload})
-
+    df = pa.table({
+        "id": list(range(total_rows)),
+        "flag": flags,
+        "payload": ["x" * 8] * total_rows,
+    })
     expected_matches = sum(flags)
-    assert expected_matches == n_groups, expected_matches
-
+    assert expected_matches == n_groups
     iceberg_table.append(df)
 
-    # Verify the parquet file actually has multiple row groups.  If pyiceberg
-    # ever changes the property semantics this test would silently degrade
-    # into a no-op; the explicit check ensures CI surfaces that.
+    # Sanity: confirm the parquet file actually has multiple row groups,
+    # otherwise the BUCKET splitter produces a single bucket and the bug
+    # cannot manifest (would result in a silent no-op test).
     iceberg_table.refresh()
     data_files = list(iceberg_table.scan().plan_files())
     assert len(data_files) >= 1, "iceberg table has no data files"
-    file_io = iceberg_table.io
     max_row_groups = 0
     for ft in data_files[:4]:
-        with file_io.new_input(ft.file.file_path).open() as f:
-            pf = pq.ParquetFile(f)
-            max_row_groups = max(max_row_groups, pf.num_row_groups)
+        with iceberg_table.io.new_input(ft.file.file_path).open() as f:
+            max_row_groups = max(max_row_groups, pq.ParquetFile(f).num_row_groups)
     assert max_row_groups >= 4, (
-        f"expected >=4 row groups in a single parquet file but pyiceberg "
-        f"wrote {max_row_groups} (with row-group-limit={rows_per_group}, "
-        f"{total_rows} rows).  Without multi-row-group files the QCC bucket "
-        "split bug cannot be exercised — fix the parquet writer setup."
-    )
-    logging.info(
-        "parquet file has %d row groups (need >1 to exercise the bug)",
-        max_row_groups,
+        f"need >=4 row groups in a single parquet file but pyiceberg wrote "
+        f"{max_row_groups}; QCC bucket-split bug cannot be exercised"
     )
 
     for node in (n1, n2):
         _create_iceberg_database(node)
-
-    # Wipe any QCC state from earlier tests in the module.
-    for node in (n1, n2):
         node.query("SYSTEM DROP QUERY CONDITION CACHE")
 
     settings = {
@@ -177,41 +122,22 @@ def test_qcc_bucket_split_does_not_poison_other_workers_buckets(started_cluster)
         "enable_parallel_replicas": 2,
         "allow_experimental_analyzer": 1,
     }
+    q = f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}` WHERE flag = 1"
 
-    q = (
-        f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}` "
-        f"WHERE flag = 1"
-    )
-
-    # First run populates the cache; under the bug, also poisons it.
+    # First run populates the cache; under the bug, also poisons it
+    # (each worker writes 'no match' for the row groups it never read).
     r1 = int(n1.query(q, settings=settings).strip())
-
-    # Second run consumes the cache.  Under the bug, the initiator's
-    # ObjectIteratorSplitByBuckets reads the (poisoned) matching_marks
-    # for the file, sees that "no row groups match" and skips the file,
-    # yielding 0 instead of `expected_matches`.
+    # Second run consumes the cache.  Under the bug, the initiator reads
+    # the poisoned matching_marks and skips most/all row groups → r2 < r1.
     r2 = int(n1.query(q, settings=settings).strip())
 
-    logging.info(
-        "QCC bucket-split test: expected=%d  first_run=%d  second_run=%d",
-        expected_matches,
-        r1,
-        r2,
-    )
-
-    # First-run correctness gate (independent of the QCC bug).  If this
-    # fails, something else is wrong; surface it explicitly.
-    assert r1 == expected_matches, (
-        f"first run returned {r1}, expected {expected_matches}; "
-        "BUCKET split or iceberg setup is broken"
-    )
-
-    # Cache-poisoning gate.  This is the bug the test is designed to expose:
-    # under the bug, r2 < r1 because workers wrote 'no match' entries for
-    # row groups they never read.
+    logging.info("QCC bucket-split test: expected=%d  r1=%d  r2=%d",
+                 expected_matches, r1, r2)
+    # Setup gate: first run must return all matches.
+    assert r1 == expected_matches, f"first run returned {r1}, expected {expected_matches}"
+    # Bug gate: second run must equal first run.  Under the bug, r2 < r1
+    # because each worker poisoned the QCC for the *other* worker's buckets.
     assert r1 == r2, (
-        f"QCC bucket-split poisoning detected: first run returned {r1}, "
-        f"second run returned {r2}.  The second run should hit the query "
-        "condition cache and return the same count, but each worker poisoned "
-        "the cache for the row groups assigned to the *other* worker."
+        f"QCC bucket-split poisoning detected: r1={r1}, r2={r2}. "
+        "Workers wrote 'no match' for row groups they never read."
     )
