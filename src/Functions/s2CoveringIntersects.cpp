@@ -239,7 +239,7 @@ Checks whether a single S2 cell intersects any cell in a covering (array of cell
     FunctionDocumentation::ReturnedValue returned_value = {"Returns 1 if the cell intersects any cell in the covering, 0 otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT __s2CoveringIntersects(9926595209846587392, [9926594385212866560])", "1"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Internal;
     FunctionDocumentation documentation = {description, syntax, function_arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionS2CoveringIntersects>(documentation);
