@@ -37,7 +37,7 @@ STAGE2_LLVM_PROJECTS = "clang;clang-tools-extra;lld;bolt;polly"
 # Cross-target triples for compiler-rt builtins. Builtins are freestanding C code
 # (no sysroot needed), built via LLVM_BUILTIN_TARGETS so the toolchain is
 # self-contained for all ClickHouse cross-compilation targets.
-# Must match triples in cmake/build_clang_builtin.cmake.
+# Must match the architectures supported in contrib/compiler-rt-cmake/CMakeLists.txt.
 CROSS_BUILTIN_TARGETS = [
     ("x86_64-unknown-linux-gnu", "Linux"),
     ("aarch64-unknown-linux-gnu", "Linux"),
@@ -202,8 +202,6 @@ def main():
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=OFF"
             f" -DLLVM_ENABLE_ZSTD=OFF"
-            f' -DCMAKE_C_FLAGS="-mllvm -vp-counters-per-site=8"'
-            f' -DCMAKE_CXX_FLAGS="-mllvm -vp-counters-per-site=8"'
             f" -DCMAKE_INSTALL_PREFIX={STAGE1_INSTALL_DIR}"
             f" -S {LLVM_SOURCE_DIR}/llvm"
             f" -B {STAGE1_BUILD_DIR}"

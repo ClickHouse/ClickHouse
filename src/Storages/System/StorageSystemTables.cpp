@@ -311,6 +311,8 @@ protected:
     }
 
 
+    /// The caller has already verified `SHOW_TABLES` for this database,
+    /// so no per-table access check is needed.
     size_t fillTableNamesOnly(MutableColumns & res_columns)
     {
         auto table_details = database->getLightweightTablesIterator(context,
@@ -319,7 +321,6 @@ protected:
 
         size_t count = 0;
 
-        const auto access = context->getAccess();
         for (const auto & table_detail: table_details)
         {
             if (!tables.contains(table_detail.name))
@@ -327,9 +328,6 @@ protected:
 
             size_t src_index = 0;
             size_t res_index = 0;
-
-            if (!access->isGranted(AccessType::SHOW_TABLES, database_name, table_detail.name))
-                continue;
 
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(database_name);

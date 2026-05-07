@@ -67,6 +67,7 @@ struct ReadSettings
     bool page_cache_inject_eviction = false;
     size_t page_cache_block_size = 1 << 20;
     size_t page_cache_lookahead_blocks = 16;
+    size_t page_cache_max_coalesced_bytes = 16 << 20;
     std::shared_ptr<PageCache> page_cache;
 
     size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
@@ -93,6 +94,7 @@ struct ReadSettings
     DistributedCacheSettings distributed_cache_settings;
     std::optional<FileCacheOriginInfo> filecache_origin_info;
     bool enable_hdfs_pread = true;
+    bool enable_blob_storage_log_for_read_operations = false;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
     ReadSettings withNestedBuffer(bool seekable = false) const;
