@@ -1,6 +1,7 @@
 #include <algorithm>
 
 #include <Common/typeid_cast.h>
+#include <Core/Joins.h>
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
@@ -119,6 +120,10 @@ void tryOptimizeSelfJoinSharedScan(
         left_scan->rmt_parent->children[0] = &ref_node;
     else
         node.children[0] = &ref_node;
+
+    auto & join_algorithms = join_step->getJoinSettings().join_algorithms;
+    std::erase_if(join_algorithms, [](auto algo) { return algo != JoinAlgorithm::HASH && algo != JoinAlgorithm::PARALLEL_HASH; });
+    join_step->setOptimized();
 }
 
 }
