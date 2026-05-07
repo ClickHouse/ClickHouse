@@ -264,11 +264,19 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     summary->set(Iceberg::f_added_files_size, "0");
     summary->set(Iceberg::f_changed_partition_count, "0");
 
+    /// Iceberg only requires totals on snapshots that change row-level state, so older
+    /// Spark-written tables (especially v1, or post-removeOrphanFiles) routinely omit
+    /// some of total-data-files/total-delete-files/total-position-deletes/
+    /// total-equality-deletes. Treat any missing or null field as 0.
     auto carry_total_from_parent = [&](const char * field_name)
     {
-        Int64 prev_value = parent_snapshot
-            ? parse<Int64>(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(field_name))
-            : 0;
+        Int64 prev_value = 0;
+        if (parent_snapshot && parent_snapshot->has(Iceberg::f_summary))
+        {
+            auto parent_summary = parent_snapshot->getObject(Iceberg::f_summary);
+            if (parent_summary && parent_summary->has(field_name) && !parent_summary->isNull(field_name))
+                prev_value = parse<Int64>(parent_summary->getValue<String>(field_name));
+        }
         summary->set(field_name, std::to_string(prev_value));
     };
 

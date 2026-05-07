@@ -23,6 +23,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Common/Exception.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/Logger.h>
 
@@ -32,6 +33,7 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 namespace DB::Setting
@@ -451,7 +453,13 @@ bool writeConsolidatedManifestFile(
         }
     }
 
-    auto partition_spec_id = metadata_object->getValue<Int32>(f_default_spec_id);
+    if (!current_schema)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg metadata does not contain a schema entry matching current-schema-id {}",
+            current_schema_id);
+
+    auto partition_spec_id = metadata_object->getValue<Int64>(f_default_spec_id);
     auto partitions_specs = metadata_object->getArray(f_partition_specs);
     Poco::JSON::Object::Ptr partition_spec;
 
@@ -464,6 +472,12 @@ bool writeConsolidatedManifestFile(
             break;
         }
     }
+
+    if (!partition_spec)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg metadata does not contain a partition spec entry matching default-spec-id {}",
+            partition_spec_id);
 
     std::vector<String> partition_columns;
     auto fields_from_partition_spec = partition_spec->getArray(f_fields);
@@ -560,13 +574,33 @@ bool writeConsolidatedManifestFile(
     std::vector<IcebergPathFromMetadata> consolidated_manifest_paths;
     std::vector<Int64> manifest_entry_sizes;
 
-    // Defined before the write phase so it can be called on both commit conflict and exceptions.
-    // consolidated_manifest_paths is built incrementally, so only already-written files are removed.
+    /// Defined before the write phase so it can be called on both commit conflict and exceptions.
+    /// Each manifest path is tracked in consolidated_manifest_paths before the corresponding
+    /// writeObject call, so cleanup also removes objects that a writer may have partially
+    /// created if generateManifestFile or finalize throws mid-iteration.
+    /// removeObjectIfExists tolerates non-existent objects, so tracking a path that turned
+    /// out never to be written is safe.
     auto cleanup = [&]()
     {
         for (const auto & mp : consolidated_manifest_paths)
-            object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(mp)));
-        object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(new_snapshot.manifest_list_path)));
+        {
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(mp)));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to remove orphaned manifest file during cleanup");
+            }
+        }
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(new_snapshot.manifest_list_path)));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to remove orphaned manifest list during cleanup");
+        }
     };
 
     try
@@ -577,6 +611,10 @@ bool writeConsolidatedManifestFile(
             auto storage_manifest_path = path_resolver.resolve(manifest_path);
             LOG_INFO(log, "Creating manifest file for partition '{}': {} ({} data files)",
                      partition_key, storage_manifest_path, pd.file_paths.size());
+
+            /// Track the path before writeObject so cleanup() removes any object the
+            /// underlying buffer may have created even if generateManifestFile or finalize throws.
+            consolidated_manifest_paths.push_back(manifest_path);
 
             auto buffer_manifest = object_storage->writeObject(
                 StoredObject(storage_manifest_path),
@@ -606,8 +644,6 @@ bool writeConsolidatedManifestFile(
             if (manifest_size == 0)
                 manifest_size = object_storage->getObjectMetadata(storage_manifest_path, /*with_tags=*/false).size_bytes;
             manifest_entry_sizes.push_back(manifest_size);
-
-            consolidated_manifest_paths.push_back(manifest_path);
         }
 
         // Create manifest list pointing to all per-partition manifest files

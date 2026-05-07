@@ -753,3 +753,127 @@ def test_optimize_manifest_totals_invariant_schema_evolution(
 
     # Data must still be correct after compaction.
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == total_rows
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_optimize_manifest_parent_summary_missing_totals(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """
+    Regression test: OPTIMIZE TABLE ... MANIFEST must tolerate a parent snapshot
+    whose summary omits some of the carried `total-*` counters.
+
+    Iceberg only requires totals on snapshots that change row-level state, so older
+    Spark-written tables and tables touched by tools like `removeOrphanFiles`
+    routinely drop fields like `total-position-deletes`, `total-equality-deletes`,
+    or `total-delete-files` from the summary. Before the fix, the carry-forward
+    helper would call `parse<Int64>` on a missing field and throw
+    "Cannot parse Int64".
+
+    This test simulates that situation by stripping those fields from the latest
+    metadata file before ClickHouse first sees the table.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_parent_missing_totals_" + storage_type + "_" + get_uuid_str()
+    TABLE_PATH = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg
+        TBLPROPERTIES ('format-version' = '2')
+        """
+    )
+    for batch_start in range(0, 30, 10):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} "
+            f"SELECT id, char(id + ascii('a')) FROM range({batch_start}, {batch_start + 10})"
+        )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    # Locate the latest metadata file and strip several total-* fields from the
+    # current snapshot's summary, mimicking older Spark / removeOrphanFiles output.
+    metadata_dir = f"{TABLE_PATH}/metadata/"
+    latest_path = None
+    latest_ts = -1
+    for filename in os.listdir(metadata_dir):
+        if filename.endswith(".json"):
+            fp = os.path.join(metadata_dir, filename)
+            with _open_metadata_file(fp) as f:
+                data = json.load(f)
+            ts = data.get("last-updated-ms", 0)
+            if ts > latest_ts:
+                latest_ts = ts
+                latest_path = fp
+    assert latest_path is not None, "Could not locate latest metadata file"
+
+    with _open_metadata_file(latest_path) as f:
+        data = json.load(f)
+
+    stripped_fields = (
+        "total-position-deletes",
+        "total-equality-deletes",
+        "total-delete-files",
+    )
+    for snap in data.get("snapshots", []):
+        summary = snap.get("summary", {})
+        for stripped in stripped_fields:
+            summary.pop(stripped, None)
+
+    # Preserve the on-disk encoding (gzip vs plain) when writing back.
+    with open(latest_path, "rb") as raw:
+        magic = raw.read(2)
+    if magic == b"\x1f\x8b":
+        with gzip.open(latest_path, "wt") as f:
+            json.dump(data, f)
+    else:
+        with open(latest_path, "w") as f:
+            json.dump(data, f)
+
+    # Re-upload the edited metadata so ClickHouse reads the stripped summary.
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    # Create the table only after the edit so no metadata cache is populated
+    # with the original (full) summary.
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 30
+
+    # Must not throw despite the missing total-* fields in the parent summary.
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 1,
+        },
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 30
+
+    # The newly-written manifest-only snapshot must carry the missing totals as "0".
+    default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+    summary = get_current_snapshot_summary(TABLE_PATH)
+    assert summary, "Could not read snapshot summary after compaction"
+    assert summary.get("operation") == "replace", (
+        f"Expected operation='replace', got: {summary.get('operation')}"
+    )
+    for stripped in stripped_fields:
+        assert summary.get(stripped) == "0", (
+            f"Expected {stripped}='0' on the new manifest-only snapshot, "
+            f"got: {summary.get(stripped)!r}"
+        )
