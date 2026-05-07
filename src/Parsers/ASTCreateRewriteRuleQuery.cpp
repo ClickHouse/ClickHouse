@@ -12,7 +12,7 @@ namespace DB
 // todo deep copy
 ASTPtr ASTCreateRewriteRuleQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateRewriteRuleQuery>(*this);
+    auto res = make_intrusive<ASTCreateRewriteRuleQuery>(*this);
     res->source_query = this->source_query->clone();
     if (rewrite())
     {

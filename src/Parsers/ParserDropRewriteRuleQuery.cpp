@@ -25,7 +25,7 @@ bool ParserDropRewriteRuleQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Ex
     if (!rule_name_p.parse(pos, rule_name, expected))
         return false;
 
-    auto query = std::make_shared<ASTDropRewriteRuleQuery>();
+    auto query = make_intrusive<ASTDropRewriteRuleQuery>();
 
     tryGetIdentifierNameInto(rule_name, query->rule_name);
 

@@ -12,7 +12,7 @@ namespace DB
 
 ASTPtr ASTDropRewriteRuleQuery::clone() const
 {
-    return std::make_shared<ASTDropRewriteRuleQuery>(*this);
+    return make_intrusive<ASTDropRewriteRuleQuery>(*this);
 }
 
 void ASTDropRewriteRuleQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings &, IAST::FormatState &, IAST::FormatStateStacked) const

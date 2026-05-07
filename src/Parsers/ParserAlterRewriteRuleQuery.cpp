@@ -85,7 +85,7 @@ bool ParserAlterRewriteRuleQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
         whole_query += " " + String(begin_pos->begin, begin_pos->end);
     }
 
-    auto query = std::make_shared<ASTAlterRewriteRuleQuery>();
+    auto query = make_intrusive<ASTAlterRewriteRuleQuery>();
 
     tryGetIdentifierNameInto(rule_name, query->rule_name);
     if (auto* literal = reject_message ? reject_message->as<ASTLiteral>() : nullptr;
