@@ -175,10 +175,14 @@ KeyDescription KeyDescription::getKeyFromAST(
     {
         auto expr = result.expression_list_ast->clone();
         auto all_columns = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals);
+        /// Build the analyzer DAG once: `analyzeExpressionToActionsDAG` runs
+        /// `buildSetInplace` for any `IN (subquery)` set, so calling it twice
+        /// would execute the subquery twice and could pick up inconsistent rows.
+        auto analyzed = analyzeExpressionToActionsAndSampleBlock(expr, all_columns, context);
         /// In expression we also need to store source columns
-        result.expression = analyzeExpressionToActions(expr, all_columns, context);
+        result.expression = std::move(analyzed.expression);
         /// In sample block we use just key columns
-        result.sample_block = analyzeExpressionToActions(expr, all_columns, context, true)->getSampleBlock();
+        result.sample_block = std::move(analyzed.sample_block);
     }
 
     /// Reject wildcards / column matchers in key expressions: the Analyzer expands

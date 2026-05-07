@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
@@ -34,6 +35,29 @@ ExpressionActionsPtr analyzeExpressionToActions(
     const NamesAndTypesList & available_columns,
     const ContextPtr & context,
     bool add_aliases = false,
+    CompileExpressions compile_expressions = CompileExpressions::no);
+
+struct AnalyzedExpressionWithSampleBlock
+{
+    /// Full ExpressionActions: source columns are preserved alongside the expression
+    /// results in the output, so callers can run `expression->execute(block)` to add
+    /// the expression columns to an input block.
+    ExpressionActionsPtr expression;
+    /// Sample block of just the projected expression result columns (no source columns).
+    Block sample_block;
+};
+
+/// Analyze a standalone expression AST and return both an `ExpressionActions` (with
+/// source columns preserved) and a sample block of just the expression result columns.
+///
+/// Equivalent to calling `analyzeExpressionToActions(expr, columns, context)` and
+/// `analyzeExpressionToActions(expr, columns, context, /*add_aliases=*/true)->getSampleBlock()`,
+/// but the underlying DAG is built only once.  Avoids running `IN (subquery)` sets
+/// twice via `buildSetInplace`, which the analyzer executes eagerly when the DAG is built.
+AnalyzedExpressionWithSampleBlock analyzeExpressionToActionsAndSampleBlock(
+    const ASTPtr & expression_ast,
+    const NamesAndTypesList & available_columns,
+    const ContextPtr & context,
     CompileExpressions compile_expressions = CompileExpressions::no);
 
 }
