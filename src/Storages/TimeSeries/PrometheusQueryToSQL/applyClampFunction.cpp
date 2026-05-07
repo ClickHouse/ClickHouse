@@ -102,6 +102,61 @@ namespace
             && max_arg.store_method == StoreMethod::CONST_SCALAR
             && max_arg.scalar_value < min_arg.scalar_value;
     }
+
+    ASTPtr keepNullSamplesSparse(ASTPtr value, ASTPtr clamped_value)
+    {
+        return makeASTFunction(
+            "if",
+            makeASTFunction("isNull", value->clone()),
+            make_intrusive<ASTLiteral>(Field{}),
+            std::move(clamped_value));
+    }
+
+    ASTPtr makeClampMin(ASTPtr value, ASTPtr min_bound)
+    {
+        ASTPtr clamped_value = makeASTFunction(
+            "if",
+            makeASTFunction("isNaN", min_bound->clone()),
+            min_bound->clone(),
+            makeASTFunction(
+                "if",
+                makeASTFunction("less", value->clone(), min_bound->clone()),
+                min_bound->clone(),
+                value->clone()));
+        return keepNullSamplesSparse(std::move(value), std::move(clamped_value));
+    }
+
+    ASTPtr makeClampMax(ASTPtr value, ASTPtr max_bound)
+    {
+        ASTPtr clamped_value = makeASTFunction(
+            "if",
+            makeASTFunction("isNaN", max_bound->clone()),
+            max_bound->clone(),
+            makeASTFunction(
+                "if",
+                makeASTFunction("greater", value->clone(), max_bound->clone()),
+                max_bound->clone(),
+                value->clone()));
+        return keepNullSamplesSparse(std::move(value), std::move(clamped_value));
+    }
+
+    ASTPtr makeClampBoth(ASTPtr value, ASTPtr min_bound, ASTPtr max_bound)
+    {
+        ASTPtr clamped_value = makeASTFunction(
+            "if",
+            makeASTFunction("or", makeASTFunction("isNaN", min_bound->clone()), makeASTFunction("isNaN", max_bound->clone())),
+            makeASTFunction("plus", min_bound->clone(), max_bound->clone()),
+            makeASTFunction(
+                "if",
+                makeASTFunction("less", value->clone(), min_bound->clone()),
+                min_bound->clone(),
+                makeASTFunction(
+                    "if",
+                    makeASTFunction("greater", value->clone(), max_bound->clone()),
+                    max_bound->clone(),
+                    value->clone())));
+        return keepNullSamplesSparse(std::move(value), std::move(clamped_value));
+    }
 }
 
 
@@ -127,33 +182,17 @@ SQLQueryPiece applyClampFunction(const PQT::Function * function_node, std::vecto
         if (impl_info->kind == ClampKind::Min)
         {
             chassert(args.size() == 2);
-            return makeASTFunction(
-                "if",
-                makeASTFunction("less", args[0]->clone(), args[1]->clone()),
-                std::move(args[1]),
-                std::move(args[0]));
+            return makeClampMin(std::move(args[0]), std::move(args[1]));
         }
 
         if (impl_info->kind == ClampKind::Max)
         {
             chassert(args.size() == 2);
-            return makeASTFunction(
-                "if",
-                makeASTFunction("greater", args[0]->clone(), args[1]->clone()),
-                std::move(args[1]),
-                std::move(args[0]));
+            return makeClampMax(std::move(args[0]), std::move(args[1]));
         }
 
         chassert(args.size() == 3);
-        return makeASTFunction(
-            "if",
-            makeASTFunction("less", args[0]->clone(), args[1]->clone()),
-            args[1]->clone(),
-            makeASTFunction(
-                "if",
-                makeASTFunction("greater", args[0]->clone(), args[2]->clone()),
-                std::move(args[2]),
-                std::move(args[0])));
+        return makeClampBoth(std::move(args[0]), std::move(args[1]), std::move(args[2]));
     };
 
     auto res = applySimpleFunction(function_node, context, apply_function_to_ast, std::move(arguments));
