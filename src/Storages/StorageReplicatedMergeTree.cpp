@@ -658,10 +658,24 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             /// It may happen if the table was altered just after creation.
             /// Metadata will be updated in cloneMetadataIfNeeded(...), metadata_version will be 0 for a while.
             int32_t metadata_version = 0;
-            bool same_structure = checkTableStructure(zookeeper_path, metadata_snapshot, &metadata_version, need_check_structure, getCreateQueryZooKeeperRetriesInfo());
+            ColumnsDescription columns_from_zk;
+            bool same_structure = checkTableStructure(
+                zookeeper_path, metadata_snapshot, &metadata_version, need_check_structure, getCreateQueryZooKeeperRetriesInfo(), &columns_from_zk);
 
             if (same_structure)
             {
+                /// checkTableStructure uses ColumnsDescription::operator== which ignores
+                /// column comments. If the ZK columns have different comments (e.g. from
+                /// a replicated COMMENT COLUMN alter), adopt them so that new replicas
+                /// pick up the correct comments.
+                if (columns_from_zk.toString(true) != metadata_snapshot->getColumns().toString(true))
+                {
+                    LOG_INFO(log, "Columns structure is the same, but column comments differ from ZooKeeper. Adopting comments from ZooKeeper.");
+                    StorageInMemoryMetadata updated_metadata = *metadata_snapshot;
+                    updated_metadata.columns = columns_from_zk;
+                    metadata_snapshot = std::make_shared<const StorageInMemoryMetadata>(updated_metadata);
+                }
+
                 /** We change metadata_snapshot so that `createReplica` method will create `metadata_version` node in ZooKeeper
                   * with version of table '/metadata' node in Zookeeper.
                   *
@@ -1816,7 +1830,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
   */
 bool StorageReplicatedMergeTree::checkTableStructure(
     const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check,
-    const ZooKeeperRetriesInfo & zookeeper_retries_info)
+    const ZooKeeperRetriesInfo & zookeeper_retries_info, ColumnsDescription * columns_from_zk)
 {
     bool same_structure = false;
     if (zookeeper_retries_info.max_retries > 0)
@@ -1827,19 +1841,20 @@ bool StorageReplicatedMergeTree::checkTableStructure(
             /// Refresh current_zookeeper on retry since it's not auto-updated during creation (RestartingThread not yet running).
             if (retries_ctl.isRetry())
                 setZooKeeper();
-            same_structure = checkTableStructureAttempt(zookeeper_prefix, metadata_snapshot, metadata_version, strict_check);
+            same_structure = checkTableStructureAttempt(zookeeper_prefix, metadata_snapshot, metadata_version, strict_check, columns_from_zk);
         });
     }
     else
     {
-        same_structure = checkTableStructureAttempt(zookeeper_prefix, metadata_snapshot, metadata_version, strict_check);
+        same_structure = checkTableStructureAttempt(zookeeper_prefix, metadata_snapshot, metadata_version, strict_check, columns_from_zk);
     }
     return same_structure;
 }
 
 
 bool StorageReplicatedMergeTree::checkTableStructureAttempt(
-    const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check) const
+    const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check,
+    ColumnsDescription * columns_from_zk_out) const
 {
     auto zookeeper = getZooKeeper();
 
@@ -1859,6 +1874,8 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
 
     Coordination::Stat columns_stat;
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_prefix) / "columns", &columns_stat));
+    if (columns_from_zk_out)
+        *columns_from_zk_out = columns_from_zk;
 
     const ColumnsDescription & old_columns = metadata_snapshot->getColumns();
     if (columns_from_zk == old_columns && is_metadata_equal)
@@ -7073,8 +7090,11 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
-    if (commands.isCommentAlter())
+    if (commands.isTableCommentAlter())
     {
+        /// Table comment is not stored in ZooKeeper metadata, so it's a local-only operation.
+        /// Column comments, on the other hand, are part of the ZK /columns node
+        /// and must go through the normal replicated alter path.
         auto old_metadata = getInMemoryMetadataPtr(query_context, true);
         {
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
@@ -7095,10 +7115,10 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
-    /// A batch that mixes settings and comments (e.g. MODIFY SETTING ..., MODIFY COMMENT ...)
+    /// A batch that mixes settings and table comments (e.g. MODIFY SETTING ..., MODIFY COMMENT ...)
     /// matches neither single-type predicate above. Apply it locally like both of them combined
     /// instead of writing a replicated log entry, so it stays consistent with the DDLWorker
-    /// routing (ASTAlterQuery::isSettingsOrCommentAlter) that sends it to every replica.
+    /// routing (ASTAlterQuery::isSettingsOrTableCommentAlter) that sends it to every replica.
     if (commands.areNonReplicatedAlterCommands())
     {
         merge_strategy_picker.refreshState();

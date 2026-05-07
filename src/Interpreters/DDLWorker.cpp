@@ -832,17 +832,17 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
     {
-        // Setting/comment alters should be executed on all replicas, including
+        // Setting/table comment alters should be executed on all replicas, including
         // mixed batches (e.g. MODIFY COMMENT ..., MODIFY SETTING ...) that match
         // neither single-type predicate. The storage layer applies such commands
         // as local metadata without a replicated log entry, so leader-only routing
-        // would leave the followers diverged.
+        // would leave the followers diverged. Column comments are replicated
+        // through ZooKeeper, so they take the leader-only path.
         if (alter->isSettingsAlter() ||
             alter->isFreezeAlter() ||
             alter->isUnlockSnapshot() ||
             alter->isMovePartitionToDiskOrVolumeAlter() ||
-            alter->isCommentAlter() ||
-            alter->isSettingsOrCommentAlter())
+            alter->isSettingsOrTableCommentAlter())
             return false;
     }
 
