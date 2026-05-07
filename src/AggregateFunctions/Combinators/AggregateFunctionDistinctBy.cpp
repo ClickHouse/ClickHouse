@@ -46,9 +46,12 @@ namespace
         void merge(const Self & rhs, Arena *)
         {
             auto & mutable_rhs_map = const_cast<Map &>(rhs.map);
-            mutable_rhs_map.mergeToViaEmplace(map, [&](UInt64 & dst, UInt64 & src, bool found)
+            /// `inserted` is true when the key was newly inserted into the destination map
+            /// and the destination cell needs initialization. For DistinctBy semantics we keep
+            /// the first value seen, so on existing keys we leave the destination untouched.
+            mutable_rhs_map.mergeToViaEmplace(map, [&](UInt64 & dst, UInt64 & src, bool inserted)
             {
-                if (!found)
+                if (inserted)
                     dst = src;
             });
         }
@@ -110,9 +113,9 @@ namespace
         void merge(const Self & rhs, Arena *)
         {
             auto & mutable_rhs_map = const_cast<Map &>(rhs.map);
-            mutable_rhs_map.mergeToViaEmplace(map,[&](T & dst, T & src, bool found)
+            mutable_rhs_map.mergeToViaEmplace(map, [&](T & dst, T & src, bool inserted)
             {
-                if (!found)
+                if (inserted)
                     dst = src;
             });
         }
@@ -184,9 +187,9 @@ struct AggregateFunctionDistinctByGenericData
     void merge(const Self & rhs, Arena * arena)
     {
         auto & mutable_rhs_map = const_cast<Map &>(rhs.map);
-        mutable_rhs_map.mergeToViaEmplace(map, [&](std::string_view & dst, std::string_view & src, bool found)
+        mutable_rhs_map.mergeToViaEmplace(map, [&](std::string_view & dst, std::string_view & src, bool inserted)
         {
-            if (!found)
+            if (inserted)
                 dst = std::string_view(arena->insert(src.data(), src.size()), src.size());
         });
     }
@@ -389,7 +392,8 @@ public:
                 res.reset(createWithNumericType<
                     AggregateFunctionDistinctBy,
                     AggregateFunctionDistinctByNumericData>(*arguments[1], nested_function, arguments, params));
-            else if (arguments[0]->getSizeOfValueInMemory() <= sizeof(UInt64))
+            else if (arguments[0]->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion()
+                && arguments[0]->getSizeOfValueInMemory() <= sizeof(UInt64))
                 res.reset(createWithNumericType<
                     AggregateFunctionDistinctBy,
                     AggregateFunctionDistinctByNumericKeyData>(*arguments[1], nested_function, arguments, params));
