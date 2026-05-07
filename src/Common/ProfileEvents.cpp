@@ -336,6 +336,8 @@
     M(DistributedConnectionSkipReadOnlyReplica, "Number of replicas skipped during INSERT into Distributed table due to replicas being read-only", ValueType::Number) \
     M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished.", ValueType::Number) \
     \
+    M(Shards, "The number of shards involved in a query, summed across all distributed tables and table functions. A single host is counted multiple times if it appears in multiple tables. The number counts the total expected number of shards, which includes skipped shards with the `skip_unavailable_shards` setting.", ValueType::Number) \
+    \
     M(HedgedRequestsChangeReplica, "Total count when timeout for changing replica expired in hedged requests.", ValueType::Number) \
     M(SuspendSendingQueryToShard, "Total count when sending query to shard was suspended when async_query_sending_for_remote is enabled.", ValueType::Number) \
     \
@@ -369,6 +371,11 @@
     M(JoinBuildTableRowCount, "Total number of rows in the build table for a JOIN operation.", ValueType::Number) \
     M(JoinProbeTableRowCount, "Total number of rows in the probe table for a JOIN operation.", ValueType::Number) \
     M(JoinResultRowCount, "Total number of rows in the result of a JOIN operation.", ValueType::Number) \
+    M(JoinNonJoinedTransformBlockCount, "Number of blocks emitted by NonJoinedBlocksTransform.", ValueType::Number) \
+    M(JoinNonJoinedTransformRowCount, "Number of non-joined rows emitted by NonJoinedBlocksTransform.", ValueType::Number) \
+    M(JoinDelayedJoinedTransformBlockCount, "Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
+    M(JoinDelayedJoinedTransformRowCount, "Number of rows emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
+    M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \

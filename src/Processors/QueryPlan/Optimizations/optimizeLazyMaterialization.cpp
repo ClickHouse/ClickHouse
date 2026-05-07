@@ -118,7 +118,7 @@ std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block
 
     /// Used columns which are not DAG outputs should be forwarded to the input header.
     size_t num_outputs = dag.getOutputs().size();
-    for (size_t i = 0; num_outputs + i < required_output_positions.size(); ++i)
+    for (size_t i = 0; i < non_mapped.size() && num_outputs + i < required_output_positions.size(); ++i)
         if (required_output_positions[num_outputs + i])
             required_input_positions[non_mapped[i]] = true;
 
