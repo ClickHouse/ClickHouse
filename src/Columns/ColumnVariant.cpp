@@ -59,7 +59,11 @@ void ColumnVariant::initIdentityGlobalToLocalDiscriminatorsMapping()
 
 void ColumnVariant::constructOffsetsFromDiscriminators()
 {
-    const ColumnDiscriminators * discriminators_concrete = typeid_cast<const ColumnDiscriminators *>(local_discriminators.get());
+    /// `local_discriminators.get()` (non-const) would `chassert(use_count() == 1)` via
+    /// `assumeMutableRef`. We only need read access here, so go through the const overload.
+    /// `offsets.get()` is uniquely owned in the caller (just created via `ColumnOffsets::create`),
+    /// so the non-const access there is safe.
+    const ColumnDiscriminators * discriminators_concrete = typeid_cast<const ColumnDiscriminators *>(std::as_const(local_discriminators).get());
     Offsets & offsets_data = typeid_cast<ColumnOffsets *>(offsets.get())->getData();
     offsets_data.clear();
     offsets_data.reserve(discriminators_concrete->size());
@@ -154,7 +158,11 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type with more than {} nested types is not allowed", ColumnVariant::MAX_NESTED_COLUMNS);
 
     local_discriminators = std::move(local_discriminators_);
-    const ColumnDiscriminators * discriminators_concrete = typeid_cast<const ColumnDiscriminators *>(local_discriminators.get());
+    /// Use `std::as_const` for the read-only validation below: a non-const `WrappedPtr::get`
+    /// goes through `assumeMutableRef`, which now `chassert(use_count() == 1)`. This constructor
+    /// is reached from `ColumnVariant::create(const ColumnPtr &, ...)` with shared inputs, so
+    /// `use_count()` is `> 1` and the assertion would fire.
+    const ColumnDiscriminators * discriminators_concrete = typeid_cast<const ColumnDiscriminators *>(std::as_const(local_discriminators).get());
     if (!discriminators_concrete)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "discriminator column must be a ColumnUInt8");
 
@@ -171,8 +179,9 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
 
     /// We can have more discriminators than values in columns
     /// (because of NULL discriminators), but not less.
-    if (total_size > local_discriminators->size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested columns sizes are inconsistent with local_discriminators column size. Total column sizes: {}, local_discriminators size: {}", total_size, local_discriminators->size());
+    /// Use the const overload of `WrappedPtr::operator->` here for the same reason as above.
+    if (total_size > std::as_const(local_discriminators)->size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested columns sizes are inconsistent with local_discriminators column size. Total column sizes: {}, local_discriminators size: {}", total_size, std::as_const(local_discriminators)->size());
 
     if (offsets_)
     {
@@ -228,7 +237,12 @@ MutableColumns getVariantsForCreation(const Columns & variants)
     {
         if (isColumnConst(*variant))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnVariant cannot have ColumnConst as its element");
-        mutable_variants.emplace_back(variant->assumeMutable());
+        /// Per the doc comment on `ColumnVariant::create(const Columns &, ...)`, the underlying
+        /// variants may be shared. `assumeMutable` here would `chassert(use_count() == 1)`
+        /// and abort. Bypass via `const_cast` + `getPtr` — equivalent to the old `assumeMutable`
+        /// fast path. The result is returned as `Ptr` (immutable), and any mutation must go
+        /// through `IColumn::mutate`, which deep-clones shared sub-columns at the proper time.
+        mutable_variants.emplace_back(const_cast<IColumn *>(variant.get())->getPtr());
     }
 
     return mutable_variants;
@@ -243,12 +257,22 @@ ColumnVariant::Ptr ColumnVariant::create(const Columns & variants, const VectorW
 
 ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
 {
-    return ColumnVariant::create(local_discriminators->assumeMutable(), getVariantsForCreation(variants), local_to_global_discriminators);
+    /// Bypass `assumeMutable` via `const_cast` + `getPtr` for the same reason as in
+    /// `getVariantsForCreation`: the caller may keep its own immutable reference to
+    /// `local_discriminators`, so `use_count()` is `> 1` and the assertion would fire.
+    return ColumnVariant::create(
+        const_cast<IColumn *>(local_discriminators.get())->getPtr(),
+        getVariantsForCreation(variants),
+        local_to_global_discriminators);
 }
 
 ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::ColumnPtr & offsets, const DB::Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
 {
-    return ColumnVariant::create(local_discriminators->assumeMutable(), offsets->assumeMutable(), getVariantsForCreation(variants), local_to_global_discriminators);
+    return ColumnVariant::create(
+        const_cast<IColumn *>(local_discriminators.get())->getPtr(),
+        const_cast<IColumn *>(offsets.get())->getPtr(),
+        getVariantsForCreation(variants),
+        local_to_global_discriminators);
 }
 
 
