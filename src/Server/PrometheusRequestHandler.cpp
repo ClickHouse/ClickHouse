@@ -247,13 +247,13 @@ protected:
         QualifiedTableName table_name;
 
         /// The portion of the request path after @c http_path_prefix (query string stripped).
-        /// Always begins with @c / . In dynamic-routing mode this is e.g. @c /write , @c /read ,
-        /// or @c /api/v1/query . Used by @c QueryAPIImpl to dispatch on `/api/v1/...`. In
+        /// Always begins with @c / . In dynamic-routing mode this is e.g. @c /write, @c /read,
+        /// or @c /api/v1/query. Used by @c QueryAPIImpl to dispatch on `/api/v1/...`. In
         /// fixed-table mode this is the full path of the request.
         String relative_path;
     };
 
-    /// Parses the request URI: strips @c http_path_prefix , builds @c relative_path , and in
+    /// Parses the request URI: strips @c http_path_prefix, builds @c relative_path, and in
     /// dynamic-routing mode resolves the target table from @c database / @c table query parameters
     /// (falling back to @c X-ClickHouse-Database / @c X-ClickHouse-Table headers). Throws
     /// @c BAD_ARGUMENTS (400) when those are missing or empty.

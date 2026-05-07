@@ -44,7 +44,7 @@ struct PrometheusRequestHandlerConfig
     /// is stripped from the URL path).
     QualifiedTableName time_series_table_name;
 
-    /// URL prefix that precedes protocol paths such as @c /write , @c /read , @c /api/v1/query
+    /// URL prefix that precedes protocol paths such as @c /write, @c /read, @c /api/v1/query
     /// (only meaningful when @c enable_table_name_url_routing is true). Empty means "no prefix",
     /// which is the case on the dedicated @c prometheus.port listener.
     String http_path_prefix;
