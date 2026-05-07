@@ -77,6 +77,10 @@ void tryOptimizeSelfJoinSharedScan(
     if (join_op.strictness != JoinStrictness::All)
         return;
 
+    const auto & join_algorithms = join_step->getJoinSettings().join_algorithms;
+    if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH; }))
+        return;
+
     auto left_scan = findReadFromMergeTree(node.children[0]);
     auto right_scan = findReadFromMergeTree(node.children[1]);
     if (!left_scan || !right_scan)
@@ -121,8 +125,8 @@ void tryOptimizeSelfJoinSharedScan(
     else
         node.children[0] = &ref_node;
 
-    auto & join_algorithms = join_step->getJoinSettings().join_algorithms;
-    std::erase_if(join_algorithms, [](auto algo) { return algo != JoinAlgorithm::HASH && algo != JoinAlgorithm::PARALLEL_HASH; });
+    auto & mutable_join_algorithms = join_step->getJoinSettings().join_algorithms;
+    std::erase_if(mutable_join_algorithms, [](auto algo) { return algo != JoinAlgorithm::HASH && algo != JoinAlgorithm::PARALLEL_HASH; });
     join_step->setOptimized();
 }
 
