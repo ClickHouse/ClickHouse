@@ -488,6 +488,7 @@ const std::unordered_map<std::string_view, std::vector<std::pair</*arg_idx*/ siz
 function_arg_constraints = {
     {"randomStringUTF8", {{0, {.integer_at_most = 50}}}},
     {"arrayWithConstant", {{0, {.integer_at_most = 20}}}},
+    {"arrayResize", {{1, {.integer_at_most = 1000}}}},
 };
 
 constexpr size_t MEMORY_LIMIT_BYTES_PER_THREAD = 256 << 20;

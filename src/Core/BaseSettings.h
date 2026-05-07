@@ -1147,8 +1147,11 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             void resetValueToDefault(Data & data, size_t index) const \
             { \
                 auto p = field_infos[index].create_default_function(); \
-                *field_infos[index].get_data_function(*const_cast<Data *>(&data)) = static_cast<Field>(*p); \
-                field_infos[index].get_data_function(*const_cast<Data *>(&data))->setChanged(false); \
+                /* Dispatch through `SettingFieldBase::resetFromDefault` so that types whose */ \
+                /* `operator Field` is non-invertible (e.g. `SettingFieldMaxThreads`, see */ \
+                /* issue #103120) can override and copy member state directly instead of going */ \
+                /* through a lossy `Field` round-trip. */ \
+                field_infos[index].get_data_function(*const_cast<Data *>(&data))->resetFromDefault(*p); \
             } \
             \
             /* Binary serialization (by index) */ \
