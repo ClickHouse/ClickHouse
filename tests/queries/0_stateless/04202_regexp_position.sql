@@ -29,6 +29,9 @@ SELECT regexpPosition('Hello WORLD', 'WORLD', 1, 1, 0, 'c');
 -- Conflicting case flags follow left-to-right precedence (PostgreSQL "last wins").
 SELECT regexpPosition('Hello WORLD', 'world', 1, 1, 0, 'ic');
 SELECT regexpPosition('Hello WORLD', 'world', 1, 1, 0, 'ci');
+-- `s` flag (dot matches newline) is opt-in; default `.` does not cross newlines.
+SELECT regexpPosition('a\nb', 'a.b');
+SELECT regexpPosition('a\nb', 'a.b', 1, 1, 0, 's');
 
 -- subexpression
 SELECT regexpPosition('foo123bar456', '([a-z]+)([0-9]+)', 1, 1, 0, '', 0);

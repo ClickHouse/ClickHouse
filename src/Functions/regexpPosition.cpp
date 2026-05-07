@@ -94,7 +94,7 @@ public:
 
         const String prepared_pattern = applyFlagsToPattern(pattern, flags, getName());
 
-        const OptimizedRegularExpression regexp(prepared_pattern, OptimizedRegularExpression::RE_DOT_NL);
+        const OptimizedRegularExpression regexp(prepared_pattern);
         const unsigned num_captures = regexp.getNumberOfSubpatterns();
 
         const auto * col_haystack_vector = checkAndGetColumn<ColumnString>(column_haystack.get());
