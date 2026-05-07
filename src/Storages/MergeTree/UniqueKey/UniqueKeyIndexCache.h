@@ -144,7 +144,7 @@ public:
     uint64_t NewId() override;
 
     void SetCapacity(size_t capacity) override;
-    void SetStrictCapacityLimit(bool strict_capacity_limit) override;
+    void SetStrictCapacityLimit(bool value) override;
     bool HasStrictCapacityLimit() const override { return strict_capacity_limit; }
 
     size_t GetCapacity() const override;

@@ -214,14 +214,18 @@ bool UniqueKeyIndexCache::Release(Handle * handle, bool erase_if_last_ref)
     if (erase_if_last_ref && pin->key != UInt128{})
     {
         const auto & pinned = pin->entry;
-        const size_t before = backing->count();
+        /// `CacheBase::remove(predicate)` runs the predicate under the cache
+        /// lock; capturing the match here avoids a racy second `count()` that
+        /// concurrent insert/erase on unrelated keys could perturb.
         std::function<bool(const UInt128 &, const std::shared_ptr<UniqueKeyIndexCacheEntry> &)>
             pred = [&](const UInt128 & k, const std::shared_ptr<UniqueKeyIndexCacheEntry> & v)
             {
-                return k == pin->key && v == pinned;
+                const bool matches = (k == pin->key && v == pinned);
+                if (matches)
+                    erased = true;
+                return matches;
             };
         backing->remove(pred);
-        erased = backing->count() < before;
     }
     delete pin;
     return erased;
@@ -247,9 +251,9 @@ void UniqueKeyIndexCache::SetCapacity(size_t capacity)
     backing->setMaxSizeInBytes(capacity);
 }
 
-void UniqueKeyIndexCache::SetStrictCapacityLimit(bool v)
+void UniqueKeyIndexCache::SetStrictCapacityLimit(bool value)
 {
-    strict_capacity_limit.store(v, std::memory_order_relaxed);
+    strict_capacity_limit.store(value, std::memory_order_relaxed);
 }
 
 size_t UniqueKeyIndexCache::GetCapacity() const
