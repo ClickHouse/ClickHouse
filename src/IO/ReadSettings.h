@@ -67,6 +67,7 @@ struct ReadSettings
     bool page_cache_inject_eviction = false;
     size_t page_cache_block_size = 1 << 20;
     size_t page_cache_lookahead_blocks = 16;
+    size_t page_cache_max_coalesced_bytes = 16 << 20;
     std::shared_ptr<PageCache> page_cache;
 
     size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
