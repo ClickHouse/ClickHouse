@@ -51,7 +51,7 @@ MultiFileStorageObjectStorageSink::~MultiFileStorageObjectStorageSink()
 /// Output is `table_root/year=2025/month=12/day=12/file.1.parquet`
 std::string MultiFileStorageObjectStorageSink::generateNewFilePath()
 {
-    const auto file_format = Poco::toLower(configuration->format);
+    const auto file_format = Poco::toLower(configuration->getFormat());
     const auto index_string = std::to_string(file_paths.size() + 1);
     std::size_t pos = base_path.rfind(file_format);
 
@@ -91,8 +91,8 @@ std::shared_ptr<StorageObjectStorageSink> MultiFileStorageObjectStorageSink::cre
         format_settings,
         sample_block,
         context,
-        configuration->format,
-        configuration->compression_method);
+        configuration->getFormat(),
+        configuration->getCompressionMethod());
 }
 
 void MultiFileStorageObjectStorageSink::consume(Chunk & chunk)

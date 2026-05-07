@@ -474,8 +474,8 @@ namespace ExportPartitionUtils
             /// produced by different writers (ClickHouse vs Spark/Trino) compare equal.
             /// Comparison is on {function_name, argument}; time_zone is writer-specific
             /// and not part of the partition spec identity.
-            const auto expected_canonical = Iceberg::parseTransformAndArgument(expected_transform);
-            const auto actual_canonical   = Iceberg::parseTransformAndArgument(actual_transform);
+            const auto expected_canonical = Iceberg::parseTransformAndArgument(expected_transform, "");
+            const auto actual_canonical   = Iceberg::parseTransformAndArgument(actual_transform, "");
             const bool transforms_match =
                 (expected_canonical && actual_canonical)
                     ? (expected_canonical->transform_name == actual_canonical->transform_name

@@ -126,4 +126,21 @@ void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & coll
     initializeFromParsedArguments(parsed_arguments);
     paths = {path};
 }
+
+ASTPtr StorageLocalConfiguration::createArgsWithAccessData() const
+{
+    auto arguments = make_intrusive<ASTExpressionList>();
+
+    arguments->children.push_back(make_intrusive<ASTLiteral>(path.path));
+    if (getFormat() != "auto")
+        arguments->children.push_back(make_intrusive<ASTLiteral>(getFormat()));
+    if (getStructure() != "auto")
+        arguments->children.push_back(make_intrusive<ASTLiteral>(getStructure()));
+    if (getCompressionMethod() != "auto")
+        arguments->children.push_back(make_intrusive<ASTLiteral>(getCompressionMethod()));
+
+    return arguments;
+}
+
+
 }

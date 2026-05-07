@@ -20,6 +20,20 @@
         </shard>
     </cluster_simple>
 
+    <!-- Cluster without s0_0_0-->
+    <cluster_remote>
+        <shard>
+            <replica>
+                <host>s0_0_1</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>s0_1_0</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </cluster_remote>
+
     <!-- A part of the cluster above, represents only one shard-->
     <first_shard>
         <shard>
@@ -48,6 +62,94 @@
             </replica>
         </shard>
     </cluster_non_existent_port>
+
+    <cluster_with_dots>
+        <shard>
+            <replica>
+                <host>c2.s0_0_0</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>c2.s0_0_1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </cluster_with_dots>
+
+    <cluster_with_username_and_password>
+        <shard>
+            <replica>
+                <host>s0_0_1</host>
+                <port>9000</port>
+                <user>foo</user>
+                <password>bar</password>
+            </replica>
+            <replica>
+                <host>s0_1_0</host>
+                <port>9000</port>
+                <user>foo</user>
+                <password>bar</password>
+            </replica>
+        </shard>
+    </cluster_with_username_and_password>
+
+    <cluster_with_dots_and_user>
+        <shard>
+            <replica>
+                <host>c2.s0_0_0</host>
+                <port>9000</port>
+                <user>biz</user>
+                <password>bar</password>
+            </replica>
+            <replica>
+                <host>c2.s0_0_1</host>
+                <port>9000</port>
+                <user>biz</user>
+                <password>bar</password>
+            </replica>
+        </shard>
+    </cluster_with_dots_and_user>
+
+    <cluster_with_secret>
+        <secret>baz</secret>
+        <shard>
+            <replica>
+                <host>s0_0_1</host>
+                <port>9000</port>
+                <user>foo</user>
+            </replica>
+            <replica>
+                <host>s0_1_0</host>
+                <port>9000</port>
+                <user>foo</user>
+            </replica>
+        </shard>
+    </cluster_with_secret>
+
+    <cluster_all>
+        <shard>
+            <replica>
+                <host>s0_0_0</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>s0_0_1</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>s0_1_0</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>c2.s0_0_0</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>c2.s0_0_1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </cluster_all>
 
     </remote_servers>
     <macros>

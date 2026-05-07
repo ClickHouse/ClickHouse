@@ -9,6 +9,11 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 #include <Parsers/NullsAction.h>
+<<<<<<< HEAD
+=======
+#include <Common/typeid_cast.h>
+#include <Common/SettingsChanges.h>
+>>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 
 namespace DB
 {
@@ -203,6 +208,18 @@ public:
             wrap_with_nullable = true;
     }
 
+    /// Get settings changes passed to table function
+    const SettingsChanges & getSettingsChanges() const
+    {
+        return settings_changes;
+    }
+
+    /// Set settings changes passed as last argument to table function
+    void setSettingsChanges(SettingsChanges settings_changes_)
+    {
+        settings_changes = std::move(settings_changes_);
+    }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -227,6 +244,8 @@ private:
     static constexpr size_t arguments_child_index = 1;
     static constexpr size_t window_child_index = 2;
     static constexpr size_t children_size = window_child_index + 1;
+
+    SettingsChanges settings_changes;
 };
 
 }

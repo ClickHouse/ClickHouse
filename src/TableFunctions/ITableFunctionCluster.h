@@ -16,6 +16,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 /// Base class for *Cluster table functions that require cluster_name for the first argument.
@@ -46,8 +47,12 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected table function name: {}", table_function->name);
     }
 
-    bool canBeUsedToCreateTable() const override { return false; }
     bool isClusterFunction() const override { return true; }
+
+    void validateUseToCreateTable() const override
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", getName());
+    }
 
 protected:
     void parseArguments(const ASTPtr & ast, ContextPtr context) override
@@ -70,9 +75,11 @@ protected:
 
         /// Cluster name is always the first
         cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
-
-        if (!context->tryGetCluster(cluster_name))
-            throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
+        /// Remove check cluster existing here
+        /// In query like
+        /// remote('remote_host', xxxCluster('remote_cluster', ...))
+        /// 'remote_cluster' can be defined only on 'remote_host'
+        /// If cluster not exists, query falls later
 
         /// Just cut the first arg (cluster_name) and try to parse other table function arguments as is
         args.erase(args.begin());

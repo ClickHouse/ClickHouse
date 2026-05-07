@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
@@ -12,5 +12,6 @@ ASTTableExpression * extractTableExpressionASTPtrFromSelectQuery(ASTPtr & query)
 ASTPtr extractTableFunctionASTPtrFromSelectQuery(ASTPtr & query);
 ASTPtr extractTableASTPtrFromSelectQuery(ASTPtr & query);
 ASTFunction * extractTableFunctionFromSelectQuery(ASTPtr & query);
+ASTExpressionList * extractTableFunctionArgumentsFromSelectQuery(ASTPtr & query);
 
 }

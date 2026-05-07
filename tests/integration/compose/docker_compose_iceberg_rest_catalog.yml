@@ -1,8 +1,33 @@
 services:
+<<<<<<< HEAD
   rest:
     image: tabulario/iceberg-rest:1.6.0
     ports:
       - "${ICEBERG_REST_CATALOG_PORT}:8181"
+=======
+  spark-iceberg:
+    image: tabulario/spark-iceberg:3.5.5_1.8.1
+    build: spark/
+    depends_on:
+      rest:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+    ports:
+      - ${SPARK_ICEBERG_EXTERNAL_PORT:-8080}:8080
+      - ${SPARK_ICEBERG_EXTERNAL_PORT_2:-10002}:10000
+      - ${SPARK_ICEBERG_EXTERNAL_PORT_3:-10003}:10001
+    stop_grace_period: 5s
+    cpus: 3
+  rest:
+    image: tabulario/iceberg-rest:1.6.0
+    ports:
+      - ${ICEBERG_REST_EXTERNAL_PORT:-8182}:8181
+>>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
     environment:
       - AWS_ACCESS_KEY_ID=minio
       - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd

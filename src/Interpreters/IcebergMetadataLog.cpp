@@ -12,6 +12,7 @@
 #include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrnoException.h>
 #include <base/getFQDNOrHostName.h>
@@ -84,7 +85,7 @@ void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
 
 void insertRowToLogTable(
     const ContextPtr & local_context,
-    String row,
+    std::function<String()> get_row,
     IcebergMetadataLogLevel row_log_level,
     const String & table_path,
     const Iceberg::IcebergPathFromMetadata & file_path,
@@ -111,8 +112,13 @@ void insertRowToLogTable(
             .query_id = local_context->getCurrentQueryId(),
             .content_type = row_log_level,
             .table_path = table_path,
+<<<<<<< HEAD
             .file_path = file_path.serialize(),
             .metadata_content = row,
+=======
+            .file_path = file_path,
+            .metadata_content = get_row(),
+>>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
             .row_in_file = row_in_file,
             .pruning_status = pruning_status});
 }

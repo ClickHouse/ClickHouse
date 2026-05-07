@@ -81,7 +81,11 @@ StorageFileCluster::StorageFileCluster(
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
+void StorageFileCluster::updateQueryToSendIfNeeded(
+    DB::ASTPtr & query,
+    const StorageSnapshotPtr & storage_snapshot,
+    const DB::ContextPtr & context,
+    bool /*make_cluster_function*/)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
