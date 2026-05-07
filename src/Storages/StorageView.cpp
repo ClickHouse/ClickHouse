@@ -229,7 +229,7 @@ std::unordered_map<String, String> extractColumnMapping(
                 "Cannot INSERT into view {} because its SELECT list mixes * with explicit columns",
                 view_id.getFullTableName());
 
-        String target_col = identifier->name();
+        String target_col = identifier->shortName();
         String view_col = identifier->tryGetAlias();
         if (view_col.empty())
             view_col = target_col;

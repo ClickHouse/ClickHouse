@@ -23,17 +23,23 @@ CREATE VIEW v_alias AS SELECT a AS id, b AS name FROM t;
 INSERT INTO v_alias VALUES (4, 'alias');
 SELECT * FROM t ORDER BY a;
 
+-- View with qualified identifiers maps aliases to physical target columns
+DROP VIEW IF EXISTS v_qualified_alias;
+CREATE VIEW v_qualified_alias AS SELECT t.a AS id, t.b AS name FROM t AS t;
+INSERT INTO v_qualified_alias VALUES (5, 'qualified');
+SELECT * FROM t ORDER BY a;
+
 -- View with WHERE: acts as a constraint
 DROP VIEW IF EXISTS v_positive;
 CREATE VIEW v_positive AS SELECT a, b FROM t WHERE a > 0;
-INSERT INTO v_positive VALUES (5, 'ok');     -- succeeds
+INSERT INTO v_positive VALUES (6, 'ok');     -- succeeds
 SELECT * FROM t ORDER BY a;
 INSERT INTO v_positive VALUES (-1, 'fail');  -- { serverError VIOLATED_CONSTRAINT }
 
 -- ORDER BY is allowed and ignored for inserts
 DROP VIEW IF EXISTS v_ordered;
 CREATE VIEW v_ordered AS SELECT a, b FROM t ORDER BY a;
-INSERT INTO v_ordered VALUES (6, 'fine');    -- succeeds
+INSERT INTO v_ordered VALUES (7, 'fine');    -- succeeds
 SELECT * FROM t ORDER BY a;
 
 -- PREWHERE is rejected
@@ -44,7 +50,7 @@ INSERT INTO v_prewhere VALUES (6, 'prewhere'); -- { serverError NOT_IMPLEMENTED 
 -- WHERE with lambda is allowed
 DROP VIEW IF EXISTS v_lambda;
 CREATE VIEW v_lambda AS SELECT a, b FROM t WHERE arrayExists(x -> x > 0, [a]);
-INSERT INTO v_lambda VALUES (7, 'lambda');  -- succeeds since a=7 >0
+INSERT INTO v_lambda VALUES (8, 'lambda');  -- succeeds since a=8 >0
 SELECT * FROM t ORDER BY a;
 
 -- Asterisk with expressions is rejected (cannot mix * with explicit columns)
