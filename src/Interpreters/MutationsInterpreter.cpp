@@ -2205,39 +2205,40 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
     return pipeline;
 }
 
-void MutationsInterpreter::validate()
+void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
+    const StoragePtr & storage,
+    const MutationCommands & commands,
+    ContextPtr context)
 {
     /// For Replicated* storages mutations cannot employ non-deterministic functions
-    /// because that produces inconsistencies between replicas
-    if (startsWith(source.getStorage()->getName(), "Replicated") && !context->getSettingsRef()[Setting::allow_nondeterministic_mutations])
-    {
-        for (const auto & command : commands)
-        {
-            const auto nondeterministic_func_data = findFirstNonDeterministicFunction(command, context);
-            if (nondeterministic_func_data.subquery)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER UPDATE/ALTER DELETE statement with subquery may be nondeterministic, "
-                                                           "see allow_nondeterministic_mutations setting");
+    /// because that produces inconsistencies between replicas.
+    if (!startsWith(storage->getName(), "Replicated") || context->getSettingsRef()[Setting::allow_nondeterministic_mutations])
+        return;
 
-            if (nondeterministic_func_data.nondeterministic_function_name)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
-                    "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
-        }
+    for (const auto & command : commands)
+    {
+        const auto nondeterministic_func_data = findFirstNonDeterministicFunction(command, context);
+        if (nondeterministic_func_data.subquery)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER UPDATE/ALTER DELETE statement with subquery may be nondeterministic, "
+                                                       "see allow_nondeterministic_mutations setting");
+
+        if (nondeterministic_func_data.nondeterministic_function_name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
+                "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
     }
+}
 
-    /// Make sure the mutation query is valid.
-    /// Gated by `validate_mutation_query` so that mutations referencing not-yet-existing
-    /// objects (e.g. an IN subquery over a table created later) can still be scheduled.
-    /// The non-determinism check above always runs regardless of this setting.
-    if (context->getSettingsRef()[Setting::validate_mutation_query])
+void MutationsInterpreter::validate()
+{
+    validateNonDeterministicMutationsForStorage(source.getStorage(), commands, context);
+
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
+    else
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
-        else
-        {
-            ASTPtr select_query = prepareQueryAffectedAST(commands, source.getStorage(), context);
-            InterpreterSelectQuery(select_query, context, source.getStorage(), metadata_snapshot);
-        }
+        ASTPtr select_query = prepareQueryAffectedAST(commands, source.getStorage(), context);
+        InterpreterSelectQuery(select_query, context, source.getStorage(), metadata_snapshot);
     }
 
     QueryPlan plan;

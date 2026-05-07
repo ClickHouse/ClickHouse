@@ -102,6 +102,15 @@ public:
 
     void validate();
 
+    /// Throws if the mutation contains non-deterministic functions or subqueries on a Replicated*
+    /// storage and `allow_nondeterministic_mutations` is disabled.  Static so it can be called
+    /// without constructing a full `MutationsInterpreter` (which would require the predicate
+    /// to be analyzable — see `validate_mutation_query`).
+    static void validateNonDeterministicMutationsForStorage(
+        const StoragePtr & storage,
+        const MutationCommands & commands,
+        ContextPtr context);
+
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     QueryPipelineBuilder execute();
 
