@@ -17,7 +17,7 @@
 
 # 2026 Changelog
 
-### <a id="264"></a> ClickHouse release 26.4, 2026-04-30. [Presentation](https://presentations.clickhouse.com/2026-release-26.4/), Video: TODO
+### <a id="264"></a> ClickHouse release 26.4, 2026-04-30. [Presentation](https://presentations.clickhouse.com/2026-release-26.4/), [Video](https://www.youtube.com/watch?v=9lSVy7k2EoI)
 
 #### Backward Incompatible Change
 * The `IN` operator now uses exact value semantics for `Bool` type: only `0` and `1` values in the set match `Bool` values. Previously, numeric values greater than `255` in the `IN` set were incorrectly clamped to true when compared against `Bool`, so `SELECT CAST(1, 'Bool') IN (256)` returned 1. Now it correctly returns `0`. Closes [#92980](https://github.com/ClickHouse/ClickHouse/issues/92980). [#93115](https://github.com/ClickHouse/ClickHouse/pull/93115) ([Ashrith Bandla](https://github.com/ashrithb)).
@@ -115,6 +115,7 @@
 * Inline VIEW subquery in the query tree to allow more optimisations to be applied to the VIEW. [#100830](https://github.com/ClickHouse/ClickHouse/pull/100830) ([Dmitry Novik](https://github.com/novikd)).
 * Optimize cache loading on server startup. [#101500](https://github.com/ClickHouse/ClickHouse/pull/101500) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Implement lazy column materialization for ReplacingMergeTree with FINAL in case the predicate is selective enough. [#101647](https://github.com/ClickHouse/ClickHouse/pull/101647) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Re-enable the `optimize_rewrite_array_exists_to_has` optimization (off by default since 23.10). It rewrites `arrayExists(x -> x = elem, arr)` into the much faster `has(arr, elem)` and now correctly skips the rewrite when the array element type and `elem` are not compatible for `has` (e.g. `Date` vs `String`), so previously breaking queries continue to work. Closes [#71431](https://github.com/ClickHouse/ClickHouse/issues/71431). [#100944](https://github.com/ClickHouse/ClickHouse/pull/100944) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
 #### Improvement
 * Improved EXPLAIN PLAN pretty=1 output: print top-level query output columns, show join relation labels/symbols with estimated result rows and locality, and include per-step output columns for join/source steps. The changes cover Information Deficit part from [#98117](https://github.com/ClickHouse/ClickHouse/issues/98117). [#99462](https://github.com/ClickHouse/ClickHouse/pull/99462) ([Kirill Kopnev](https://github.com/Fgrtue)).

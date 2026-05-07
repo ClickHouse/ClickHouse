@@ -146,6 +146,10 @@ LIST_OF_ALL_SYSTEM_LOGS(FORWARD_DECLARATION)
 #undef FORWARD_DECLARATION
 /// NOLINTEND(bugprone-macro-parentheses)
 
+/// Returns `true` if the configuration contains any system log section
+/// (e.g. `query_log`, `processors_profile_log`).
+bool hasAnySystemLogConfigured(const Poco::Util::AbstractConfiguration & config);
+
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 class SystemLogs
@@ -202,6 +206,13 @@ public:
     SystemLog(ContextPtr context_,
               const SystemLogSettings & settings_,
               std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
+
+    /// Join the saving thread before any derived state (`log`, `flush_policy`, `table_id`, ...)
+    /// is destroyed. `savingThreadFunction` is overridden here and reads those members, so the
+    /// join must happen at this level rather than in `~SystemLogBase`. Required for paths that
+    /// bypass `shutdown` (for example, when an exception escaped `flushAndShutdown` and left
+    /// the saving threads running until `~ContextSharedPart`).
+    ~SystemLog() override;
 
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
