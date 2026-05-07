@@ -172,6 +172,36 @@ TEST(UniqueKeyIndexCache, ReleaseEraseIdentityAwareDoesNotEvictReplacement)
     cache.Release(h_new, /*erase_if_last_ref=*/false);
 }
 
+TEST(UniqueKeyIndexCache, CreateStandaloneHonorsStrictCapacityLimit)
+{
+    UniqueKeyIndexCache cache = makeCache(/*bytes=*/64);
+    cache.SetStrictCapacityLimit(true);
+
+    /// Strict + over-capacity + !allow_uncharged → must return nullptr
+    /// (mirrors `rocksdb::Cache::CreateStandalone`).
+    auto * obj_blocked = new FakeObject{nullptr, 1};
+    auto * h = cache.CreateStandalone(rocksdb::Slice("k"), obj_blocked, &kTestHelper,
+                                      /*charge=*/8192, /*allow_uncharged=*/false);
+    EXPECT_EQ(h, nullptr);
+    /// We own the object since the cache refused; clean up.
+    delete obj_blocked;
+
+    /// allow_uncharged=true → standalone handle returned even when over cap.
+    auto * obj_allowed = new FakeObject{nullptr, 2};
+    auto * h2 = cache.CreateStandalone(rocksdb::Slice("k"), obj_allowed, &kTestHelper,
+                                       /*charge=*/8192, /*allow_uncharged=*/true);
+    ASSERT_NE(h2, nullptr);
+    EXPECT_EQ(static_cast<FakeObject *>(cache.Value(h2))->value, 2);
+    cache.Release(h2, /*erase_if_last_ref=*/false);
+
+    /// Within capacity → returned regardless of allow_uncharged.
+    auto * obj_small = new FakeObject{nullptr, 3};
+    auto * h3 = cache.CreateStandalone(rocksdb::Slice("k"), obj_small, &kTestHelper,
+                                       /*charge=*/16, /*allow_uncharged=*/false);
+    ASSERT_NE(h3, nullptr);
+    cache.Release(h3, /*erase_if_last_ref=*/false);
+}
+
 TEST(UniqueKeyIndexCache, ThreadSafetySmoke)
 {
     UniqueKeyIndexCache cache = makeCache(128 * 1024);

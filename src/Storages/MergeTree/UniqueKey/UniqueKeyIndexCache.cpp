@@ -141,12 +141,24 @@ UniqueKeyIndexCache::CreateStandalone(
     ObjectPtr obj,
     const CacheItemHelper * helper,
     size_t charge,
-    bool /*allow_uncharged*/)
+    bool allow_uncharged)
 {
-    /// Standalone entries are detached from the shared table; only the returned
-    /// handle keeps them alive. Since CacheBase doesn't support that directly,
-    /// we implement standalone as "heap-allocated entry that lives in the pin
-    /// only" — simple and sufficient for RocksDB's memory-charging use case.
+    /// Standalone entries are detached from the shared table — only the
+    /// returned handle keeps them alive. `CacheBase` has no native
+    /// standalone-tracked path, so the entry itself is uncharged.
+    ///
+    /// Honor RocksDB's strict-capacity contract: when `strict_capacity_limit`
+    /// is set, refuse if the requested charge alone would exceed the cap and
+    /// the caller can't accept an uncharged handle. With `allow_uncharged=true`
+    /// (the typical RocksDB caller), the standalone handle is returned with no
+    /// capacity accounting — consistent with `rocksdb::Cache`'s spec.
+    if (strict_capacity_limit.load(std::memory_order_relaxed) && !allow_uncharged)
+    {
+        const size_t max = backing->maxSizeInBytes();
+        if (max != 0 && charge > max)
+            return nullptr;
+    }
+
     auto entry = std::make_shared<UniqueKeyIndexCacheEntry>();
     entry->obj = obj;
     entry->helper = helper;
