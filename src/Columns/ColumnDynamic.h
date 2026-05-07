@@ -80,7 +80,14 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
     static Ptr create(const ColumnPtr & variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
     {
-        return ColumnDynamic::create(variant_column_->assumeMutable(), variant_info_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
+        /// Per the doc comment above, the underlying variant column may be shared.
+        /// `assumeMutable` here would `chassert(use_count() == 1)` and abort. Bypass via
+        /// `const_cast` + `getPtr` — equivalent to the old `assumeMutable` fast path. The
+        /// result is returned as `Ptr` (immutable), and any mutation must go through
+        /// `IColumn::mutate`, which deep-clones shared sub-columns at the proper time.
+        return ColumnDynamic::create(
+            const_cast<IColumn *>(variant_column_.get())->getPtr(),
+            variant_info_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 
     static MutablePtr create(MutableColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
@@ -95,7 +102,12 @@ public:
 
     static ColumnPtr create(ColumnPtr variant_column_, const DataTypePtr & variant_type, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
     {
-        return create(std::move(variant_column_)->assumeMutable(), variant_type, max_dynamic_types_, global_max_dynamic_types_, statistics_);
+        /// Same rationale as the immutable-`VariantInfo` overload above: bypass `assumeMutable`
+        /// to allow shared inputs. `std::move(variant_column_)` does not reduce ownership
+        /// count when the caller keeps its reference.
+        return create(
+            const_cast<IColumn *>(variant_column_.get())->getPtr(),
+            variant_type, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 
     static MutablePtr create(size_t max_dynamic_types_ = MAX_DYNAMIC_TYPES_LIMIT)
