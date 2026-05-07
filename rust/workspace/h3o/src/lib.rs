@@ -1014,9 +1014,15 @@ pub unsafe extern "C" fn getIcosahedronFaces(h3: H3Index, out: *mut i32) -> H3Er
 pub unsafe extern "C" fn maxPolygonToCellsSize(
     geo_polygon: *const GeoPolygon,
     res: i32,
-    _flags: u32,
+    flags: u32,
     out: *mut i64,
 ) -> H3Error {
+    // Only the default containment mode (`flags == 0`) is implemented.
+    // Reject anything else explicitly so callers cannot silently get
+    // default-mode results when asking for a non-default flag.
+    if flags != 0 {
+        return E_FAILED;
+    }
     let Some(resolution) = try_resolution(res) else {
         return E_FAILED;
     };
@@ -1045,9 +1051,14 @@ pub unsafe extern "C" fn maxPolygonToCellsSize(
 pub unsafe extern "C" fn polygonToCells(
     geo_polygon: *const GeoPolygon,
     res: i32,
-    _flags: u32,
+    flags: u32,
     out: *mut H3Index,
 ) -> H3Error {
+    // See `maxPolygonToCellsSize` — non-default containment modes are not
+    // implemented yet, so reject `flags != 0` instead of silently ignoring.
+    if flags != 0 {
+        return E_FAILED;
+    }
     let Some(resolution) = try_resolution(res) else {
         return E_FAILED;
     };
