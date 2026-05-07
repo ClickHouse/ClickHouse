@@ -1,22 +1,23 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunction.h>
 
-#include <Common/Exception.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyClampFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyDateTimeFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionAbsent.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionHistogramQuantile.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionTimestamp.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionPi.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
+#include <Common/Exception.h>
 
 
 namespace DB::ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
+extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -53,6 +54,9 @@ SQLQueryPiece applyFunction(const PQT::Function * function_node, std::vector<SQL
 
     if (isFunctionAbsent(function_name))
         return applyFunctionAbsent(function_node, std::move(arguments), context);
+
+    if (isFunctionHistogramQuantile(function_name))
+        return applyFunctionHistogramQuantile(function_node, std::move(arguments), context);
 
     if (isFunctionOverRange(function_name))
         return applyFunctionOverRange(function_node, std::move(arguments), context);

@@ -272,7 +272,7 @@ RISK_INSTANT_RATES = "instant rate range functions"
 RISK_CLAMP_BOUNDS = "clamp scalar bounds"
 RISK_COUNTER_STATE = "counter reset/change functions"
 RISK_SCALAR_GRID = "scalar-grid parameters and vector conversion"
-RISK_HISTOGRAM_DEFERRED = "deferred histogram surface"
+RISK_CLASSIC_HISTOGRAM_QUANTILE = "classic histogram quantile"
 RISK_VALUE_LABEL_AGGREGATION = "value-to-label aggregation"
 RISK_EMPTY_VECTOR_ABSENCE = "empty vector and absence semantics"
 RISK_SUBQUERY_ALIGNMENT = "subquery alignment and offset"
@@ -336,7 +336,7 @@ FORK_LOCAL_REGRESSION_CASES = [
         ("vector(time())", [], False),
     ]),
 
-    *_with_risk(RISK_HISTOGRAM_DEFERRED, [
+    *_with_risk(RISK_CLASSIC_HISTOGRAM_QUANTILE, [
         ("histogram_quantile({{.quantile}}, rate(demo_api_request_duration_seconds_bucket[1m]))", ["quantile"], False),
         ("histogram_quantile(0.9, nonexistent_metric)", [], False),
         ("histogram_quantile(0.9, demo_memory_usage_bytes)", [], False),
@@ -568,7 +568,7 @@ def _feature_category(query):
 def _unsupported_category(query):
     feature = _feature_category(query)
     if feature == "histogram":
-        return "deferred: histogram"
+        return "unsupported: histogram"
     return f"unsupported: {feature}"
 
 
@@ -655,7 +655,7 @@ def _categorize_failure(query, reason):
     if "UNSUPPORTED:" in reason:
         feature = _extract_unsupported_feature(reason)
         if _HISTOGRAM_QUERY_RE.search(query):
-            return "deferred histogram support"
+            return "histogram support"
         return feature or "other unsupported"
 
     if "expected failure but ClickHouse succeeded" in reason:
