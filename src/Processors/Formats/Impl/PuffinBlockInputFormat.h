@@ -7,6 +7,24 @@
 namespace DB
 {
 
+struct PuffinBlob
+{
+    String type;
+    Int64 snapshot_id = 0;
+    Int64 sequence_number = 0;
+    std::vector<Int32> fields;
+    Int64 offset = 0;
+    Int64 length = 0;
+    String compression_codec;
+    std::map<String, String> properties;
+};
+
+struct PuffinFooter
+{
+    std::vector<PuffinBlob> blobs;
+    std::vector<UInt8> data;
+};
+
 class PuffinMetadataInputFormat : public IInputFormat
 {
 public:
@@ -30,7 +48,9 @@ public:
 private:
     Chunk read() override;
 
-    bool done = false;
+    PuffinFooter footer;
+    bool initialized = false;
+    size_t blob_index = 0;
 };
 
 class PuffinMetadataSchemaReader : public ISchemaReader
