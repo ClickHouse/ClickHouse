@@ -566,7 +566,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     if (configuration->getPartitionStrategy())
     {
         auto sink_creator = std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
-        return std::make_shared<PartitionedSink>(configuration->partition_strategy, sink_creator, local_context, sample_block);
+        return std::make_shared<PartitionedSink>(configuration->getPartitionStrategy(), sink_creator, local_context, sample_block);
     }
 
     auto paths = configuration->getPaths();
@@ -607,13 +607,13 @@ bool StorageObjectStorage::supportsImport(ContextPtr local_context) const
         return configuration->getExternalMetadata()->supportsImport(local_context);
     }
 
-    if (!configuration->partition_strategy)
+    if (!configuration->getPartitionStrategy())
         return false;
 
-    if (configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::WILDCARD)
+    if (configuration->getPartitionStrategyType() == PartitionStrategyFactory::StrategyType::WILDCARD)
         return configuration->getRawPath().hasExportFilenameWildcard();
 
-    return configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE;
+    return configuration->getPartitionStrategyType() == PartitionStrategyFactory::StrategyType::HIVE;
 }
 
 SinkToStoragePtr StorageObjectStorage::import(
@@ -641,9 +641,9 @@ SinkToStoragePtr StorageObjectStorage::import(
 
     std::string partition_key;
 
-    if (configuration->partition_strategy)
+    if (configuration->getPartitionStrategy())
     {
-        const auto column_with_partition_key = configuration->partition_strategy->computePartitionKey(block_with_partition_values);
+        const auto column_with_partition_key = configuration->getPartitionStrategy()->computePartitionKey(block_with_partition_values);
 
         if (!column_with_partition_key->empty())
         {

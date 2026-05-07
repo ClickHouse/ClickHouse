@@ -31,6 +31,26 @@ public:
 
     std::string getName() const override;
 
+    bool supportsImport(ContextPtr context) const override;
+
+    SinkToStoragePtr import(
+        const std::string & file_name,
+        Block & block_with_partition_values,
+        const std::function<void(const std::string &)> & new_file_path_callback,
+        bool overwrite_if_exists,
+        std::size_t max_bytes_per_file,
+        std::size_t max_rows_per_file,
+        const std::optional<std::string> & iceberg_metadata_json_string,
+        const std::optional<FormatSettings> & format_settings_,
+        ContextPtr context) override;
+
+    void commitExportPartitionTransaction(
+        const String & transaction_id,
+        const String & partition_id,
+        const Strings & exported_paths,
+        const IcebergCommitExportPartitionArguments & iceberg_commit_export_partition_arguments,
+        ContextPtr local_context) override;
+
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate,
         const ActionsDAG * filter,
@@ -148,6 +168,8 @@ public:
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
     bool isObjectStorage() const override { return true; }
+
+    bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
 
 private:
     void updateQueryToSendIfNeeded(
