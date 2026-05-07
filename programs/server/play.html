@@ -69,6 +69,7 @@
 
             --selection-color: #FFF;
             --selection-background-color: #456;
+            --current-query-background-color: #FFF4E0;
         }
 
         [data-theme="dark"] {
@@ -101,6 +102,7 @@
 
             --selection-color: #000;
             --selection-background-color: #FF8;
+            --current-query-background-color: #442;
         }
 
         ::selection {
@@ -146,13 +148,20 @@
         {
             padding: 0.25rem;
             grid-area: menu;
-            position: relative;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            height: 100vh;
+            align-self: start;
             background: var(--table-header-color);
             border-right: 1px solid var(--border-color);
             display: grid;
             grid-template-rows: auto 1fr auto;
             grid-template-areas: "databases-icon" "contents" "github-icon";
             cursor: e-resize;
+            min-height: 0;
+            overflow-x: visible;
+            overflow-y: clip;
         }
 
         #main
@@ -160,7 +169,8 @@
             overflow: auto;
             grid-area: main;
             padding: 0.5rem;
-            position: relative; /* for stacking context */
+            position: relative;
+            z-index: 0; /* stacking context so children don't overlap #menu */
         }
 
         .menu-icon
@@ -179,13 +189,17 @@
         #databases-icon
         {
             grid-area: databases-icon;
+            text-decoration: none;
+            display: block;
         }
 
         #databases
         {
             grid-area: contents;
             max-width: 25em;
-            overflow: hidden;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-color) transparent;
         }
 
         .tables:not(:empty)
@@ -280,10 +294,10 @@
 
         .table-addendum
         {
-            position: absolute;
+            position: fixed;
             z-index: 999;
             white-space: pre;
-            transform: translate(0.25rem, calc(-50% + 0.5em));
+            transform: translateY(-50%);
             color: var(--element-background-color);
             background: color-mix(in srgb, var(--text-color) 50%, var(--background-color));
             backdrop-filter: blur(4px);
@@ -312,6 +326,17 @@
             opacity: 1;
             pointer-events: auto;
             transition: opacity 0s 0.1s;
+        }
+
+        /* While suppress-balloons is set on the body (set on scroll, cleared on the
+           next mousemove), no balloon may appear from a :hover state. This prevents
+           a different table button from scrolling under a stationary cursor and
+           revealing its balloon without `mouseenter` having fired to position it. */
+        body.suppress-balloons .table button:hover + .table-addendum,
+        body.suppress-balloons .table .table-addendum:hover
+        {
+            opacity: 0;
+            pointer-events: none;
         }
 
         .table-addendum-elem
@@ -367,6 +392,8 @@
         #query
         {
             display: block;
+            position: relative;
+            z-index: 1;
             /* Make enough space for even big queries. */
             height: 20vh;
             /* Keeps query text-area's width full screen even when user adjusting the width of the query box. */
@@ -374,9 +401,39 @@
             min-width: 100%;
             max-width: 100%;
             margin-top: -1px; /* To compensate the border. */
-            contain: strict; /* Less input lag even if the table is large. */
             resize: none; /* Disable default browser resizer */
         }
+
+        /* When the backdrop is active, the textarea becomes transparent so
+           the colored query spans behind it are visible. */
+        #query.has-backdrop
+        {
+            background: transparent;
+        }
+
+        #query-backdrop
+        {
+            display: none;
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 0;
+            /* Typography MUST match the textarea exactly. */
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+            font-size: 11pt;
+            line-height: normal;
+            padding: 0.25rem;
+            border: 1px solid transparent; /* same box model as textarea */
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            background-color: var(--element-background-color);
+            color: transparent; /* text is invisible; only backgrounds are visible */
+        }
+
+        #query-backdrop .q-active { background-color: var(--current-query-background-color); }
+
 
         #inputs
         {
@@ -417,7 +474,7 @@
             flex: 1;
         }
 
-        #run
+        #run, #run-all
         {
             grid-area: run;
             user-select: none;
@@ -429,7 +486,12 @@
             font-size: 100%; /* Otherwise button element will have a lower font size. */
         }
 
-        #run:hover, #run:focus, #copy-div:hover, #copy-div:focus, #download-div:hover, #download-div:focus
+        #run-all
+        {
+            display: none;
+        }
+
+        #run:hover, #run:focus, #run-all:hover, #run-all:focus, #copy-div:hover, #copy-div:focus, #download-div:hover, #download-div:focus
         {
             color: var(--button-active-text-color);
             background-color: var(--button-active-color);
@@ -708,9 +770,9 @@
 
 <body>
     <div id="menu">
-        <div id="databases-icon" class="menu-icon">
+        <a id="databases-icon" class="menu-icon" href="">
             <svg id="databases-toggle" viewBox="0 0 9 9"><path d="M0,0 h1 v8 h-1 z"/><path d="M2,0 h1 v8 h-1 z"/><path d="M4,0 h1 v8 h-1 z"/><path d="M6,0 h1 v8 h-1 z"/><path d="M8,3.25 h1 v1.5 h-1 z"/></svg>
-        </div>
+        </a>
         <div id="databases"></div>
         <!-- https://github.com/logos -->
         <div id="github-icon" class="menu-icon">
@@ -725,11 +787,12 @@
             <div id="inputs">
                 <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
             </div>
-            <div id="query_div"><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
+            <div id="query_div"><div id="query-backdrop"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
             <div id="query-params"></div>
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
-                <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
+                <button type="button" class="shadow" id="run-all">Run all</button>
+                <div id="hint">&nbsp;(Ctrl/Cmd+Enter, +Shift to run all)</div>
                 <query-progress id="query-progress"></query-progress>
                 <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1307,8 +1370,6 @@ class QueryResultElement extends HTMLElement
         this._max_rows = 1_000;
         this._max_cells = 100_000;
 
-        this.setAttribute('tabindex', '0');
-        this.style.outline = 'none';
         this.addEventListener('keydown', (e) => this._handleKeyDown(e));
 
         /* Clicking on non-data areas (e.g. table header) deactivates the selected cell */
@@ -1317,6 +1378,12 @@ class QueryResultElement extends HTMLElement
         });
 
         new ResizeObserver(() => this._resizeChart()).observe(this._chart);
+    }
+
+    connectedCallback()
+    {
+        if (!this.hasAttribute('tabindex')) this.setAttribute('tabindex', '0');
+        this.style.outline = 'none';
     }
 
     get rowCount() { return this._row_idx; }
@@ -2458,10 +2525,13 @@ async function loadTables(server_address, user, password, database, container) {
         const set_query_or_run = (e, value) => {
             if (query_area.value == value) {
                 /// Double click will run the query.
-                post();
+                postOne();
             } else {
                 query_area.value = value;
+                query_area.dispatchEvent(new Event('input'));
             }
+            /// #main is the scroll container (overflow: auto), so scroll it to bring the query area into view.
+            document.getElementById('main').scrollTo(0, 0);
             e.stopPropagation();
         }
 
@@ -2487,6 +2557,14 @@ async function loadTables(server_address, user, password, database, container) {
         engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
         table_addendum.append(engine_elem);
 
+        table_link.addEventListener('mouseenter', function() {
+            const rect = this.getBoundingClientRect();
+            table_addendum.style.left = rect.right + 'px';
+            table_addendum.style.top = (rect.top + rect.height / 2) + 'px';
+            table_addendum.style.visibility = '';
+            visible_balloon = table_addendum;
+        });
+
         table.appendChild(table_link);
         table.appendChild(table_addendum);
         table.addEventListener('click', e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
@@ -2505,6 +2583,32 @@ let databases_toggle = document.getElementById('databases-toggle');
 
 let menu_elem = document.getElementById('menu');
 
+/// Hide the currently visible table-info balloon on any scroll: it uses
+/// position:fixed and would detach from its anchor. Use capture phase so the
+/// listener fires regardless of which element scrolls (scroll events do not
+/// bubble). Only one balloon can be open at a time (the one the cursor most
+/// recently entered), so we track that reference instead of scanning the DOM.
+///
+/// Also set `suppress-balloons` on the body until the next mousemove, so a
+/// different table button scrolled under a stationary cursor cannot reveal its
+/// balloon at an unset position via the CSS `:hover` rule (`mouseenter` does
+/// not fire without actual mouse movement, so JS positioning would be skipped).
+let visible_balloon = null;
+function hideTableBalloons() {
+    if (visible_balloon) {
+        visible_balloon.style.visibility = 'hidden';
+        visible_balloon = null;
+    }
+    document.body.classList.add('suppress-balloons');
+}
+document.addEventListener('scroll', hideTableBalloons, { capture: true, passive: true });
+document.addEventListener('mousemove', () => {
+    /// Guard so the no-op case does not touch classList on every mouse pixel.
+    if (document.body.classList.contains('suppress-balloons')) {
+        document.body.classList.remove('suppress-balloons');
+    }
+}, { passive: true });
+
 function toggleDatabases() {
     if (!databases_toggle.dataset['opened']) {
         loadDatabases(url_elem.value, user_elem.value, password_elem.value).then(ok => {
@@ -2521,12 +2625,24 @@ function toggleDatabases() {
     }
 }
 
+/// The logo is an <a> element so that Ctrl/Cmd/Shift+click and middle-click
+/// natively open the current page (with the query) in a new tab.
+/// We update the href on mousedown so it always reflects the current URL.
+document.getElementById('databases-icon').addEventListener('mousedown', () => {
+    document.getElementById('databases-icon').href = window.location.href;
+});
+
 databases_toggle.addEventListener('click', e => {
     e.stopPropagation();
+    /// Let the browser handle modifier clicks as a link (open in new tab).
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    /// Normal click: toggle the databases panel instead of following the link.
+    e.preventDefault();
     toggleDatabases();
 });
 
 document.getElementById('menu').addEventListener('click', e => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle') && !e.target.closest('button')) {
         toggleDatabases();
     }
@@ -2601,7 +2717,11 @@ let elapsed_ns = 0;
 const default_format = 'JSONStringsEachRowWithProgress';
 
 let controller = null;
-async function postImpl(posted_request_num, query)
+/// Execute a single query, rendering results into the given targetResultEl.
+/// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_error }.
+/// The caller is responsible for top-level UI (download buttons, history, favicon).
+/// `abortController` is an AbortController that can be used to cancel this query.
+async function postImpl(posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot)
 {
     const user = user_elem.value;
     const password = password_elem.value;
@@ -2617,9 +2737,6 @@ async function postImpl(posted_request_num, query)
     /// But we don't use cached results, so the results that we get here, are always fresh.
     url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore';
 
-    /// Add query parameter values. Capture the snapshot before fetch so that
-    /// edits made while the request is in flight do not affect history/download.
-    const paramValuesSnapshot = getParamValues();
     for (const [name, value] of Object.entries(paramValuesSnapshot))
     {
         url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
@@ -2628,14 +2745,7 @@ async function postImpl(posted_request_num, query)
     /// Extremes only if the format is likely to be unchanged. This is imprecise.
     if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
 
-    last_query_start = performance.now();
-
-    document.getElementById('download-div').style.display = 'none';
-    document.getElementById('copy-div').style.display = 'none';
-
-    clear();
-    progressEl.start();
-    resultEl.queryText = query;
+    targetResultEl.queryText = query;
 
     let is_table = false;
     let is_raw = false;
@@ -2645,8 +2755,7 @@ async function postImpl(posted_request_num, query)
     let response, reply, format;
     reply = '';
     try {
-        controller = new AbortController();
-        response = await fetch(url, { method: "POST", body: query, signal: controller.signal,
+        response = await fetch(url, { method: "POST", body: query, signal: abortController.signal,
             headers: { 'Authorization': 'never' } });
 
         format = response.headers.get('X-ClickHouse-Format') ?? default_format;
@@ -2654,25 +2763,21 @@ async function postImpl(posted_request_num, query)
         if (!response.ok) {
             is_error = true;
             reply = await response.text();
-            if (posted_request_num != request_num) { return; }
+            if (posted_request_num != request_num) { return { cancelled: true }; }
 
             let has_exception = false;
-            for (line of reply.split('\n')) {
+            for (const line of reply.split('\n')) {
                 if (line.startsWith(`{"exception":`)) {
-                    resultEl.update(JSON.parse(line));
+                    targetResultEl.update(JSON.parse(line));
                     has_exception = true;
                     break;
                 }
             }
             if (!has_exception) {
-                resultEl.renderError(reply);
-                logoEl.style.display = 'none';
+                targetResultEl.renderError(reply);
             }
 
-            progressEl.clear();
-            document.getElementById('download-div').style.display = 'none';
-            document.getElementById('copy-div').style.display = 'none';
-            return;
+            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_error };
         } else if (format == default_format) {
             is_table = true;
             const reader = response.body.getReader();
@@ -2681,7 +2786,7 @@ async function postImpl(posted_request_num, query)
             let buffer = '';
             while (true) {
                 const { done, value } = await reader.read();
-                if (posted_request_num != request_num) { return; }
+                if (posted_request_num != request_num) { return { cancelled: true }; }
                 if (done) break;
 
                 let new_content = decoder.decode(value, { stream: true });
@@ -2692,17 +2797,17 @@ async function postImpl(posted_request_num, query)
                 let fragment = document.createDocumentFragment();
 
                 let cont = true;
-                for (line of lines.slice(0, -1)) {
+                for (const line of lines.slice(0, -1)) {
                     const data = JSON.parse(line);
-                    cont = resultEl.update(data, fragment);
+                    cont = targetResultEl.update(data, fragment);
                     if (!cont) { break; }
                 }
 
-                resultEl.flushFragment(fragment);
+                targetResultEl.flushFragment(fragment);
 
                 if (!cont)
                 {
-                    controller.abort();
+                    abortController.abort();
                     break;
                 }
                 buffer = lines[lines.length - 1];
@@ -2710,8 +2815,8 @@ async function postImpl(posted_request_num, query)
         } else if (format == 'JSONCompactColumns') {
             is_chart = true;
             reply = await response.text();
-            if (posted_request_num != request_num) { return; }
-            resultEl.renderChart(JSON.parse(reply));
+            if (posted_request_num != request_num) { return { cancelled: true }; }
+            targetResultEl.renderChart(JSON.parse(reply));
         } else {
             is_raw = true;
             const reader = response.body.getReader();
@@ -2725,12 +2830,12 @@ async function postImpl(posted_request_num, query)
                 let new_content = decoder.decode(value, { stream: true });
                 reply += new_content;
 
-                if (posted_request_num != request_num) { return; }
-                resultEl.updateRaw(new_content);
+                if (posted_request_num != request_num) { return { cancelled: true }; }
+                targetResultEl.updateRaw(new_content);
             }
         }
     } catch (e) {
-        if (posted_request_num != request_num) { return; }
+        if (posted_request_num != request_num) { return { cancelled: true }; }
 
         console.log(e);
         if (e instanceof TypeError) {
@@ -2740,7 +2845,41 @@ async function postImpl(posted_request_num, query)
         } else {
             reply = e.toString();
         }
-        resultEl.renderError(reply);
+        targetResultEl.renderError(reply);
+        return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_error: true };
+    }
+
+    if (targetResultEl.isExplainGraph) {
+        await targetResultEl.renderGraph();
+    } else {
+        if (targetResultEl._extremes['min'] && targetResultEl._extremes['max']) targetResultEl.renderExtremes();
+        if (is_table) targetResultEl.renderTotals();
+        if (is_table) targetResultEl.transposeIfNeeded();
+    }
+
+    return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_error };
+}
+
+/// Execute a single query (legacy path, used for single-query mode).
+/// When `history_query_text` is provided, it overrides `query` for browser history/URL storage,
+/// preserving the full textarea content when running a selected query in multi-query mode.
+async function postSingle(posted_request_num, query, history_query_text)
+{
+    const paramValuesSnapshot = getParamValues();
+    last_query_start = performance.now();
+
+    document.getElementById('download-div').style.display = 'none';
+    document.getElementById('copy-div').style.display = 'none';
+
+    clear();
+    progressEl.start();
+
+    controller = new AbortController();
+    const result = await postImpl(posted_request_num, query, resultEl, controller, paramValuesSnapshot);
+
+    if (result.cancelled) return;
+
+    if (result.is_error || !result.response_ok) {
         logoEl.style.display = 'none';
         progressEl.clear();
         document.getElementById('download-div').style.display = 'none';
@@ -2748,22 +2887,17 @@ async function postImpl(posted_request_num, query)
         return;
     }
 
-    if (resultEl.isExplainGraph) {
-        await resultEl.renderGraph();
-    } else {
-        if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
-        if (is_table) resultEl.renderTotals();
-        if (is_table) resultEl.transposeIfNeeded();
-        if (is_table) resultEl._changeTableLayout();
-    }
+    /// `postImpl` already performed `renderGraph`/`renderExtremes`/`renderTotals`/`transposeIfNeeded`;
+    /// the only step specific to the single-query path is the final table layout pass.
+    if (result.is_table) resultEl._changeTableLayout();
 
     progressEl.finish();
     document.getElementById('download-div').style.display = 'block';
-    document.getElementById('copy-div').style.display = is_raw ? 'block' : 'none';
+    document.getElementById('copy-div').style.display = result.is_raw ? 'block' : 'none';
     last_query_for_download = query;
     last_params_for_download = paramValuesSnapshot;
 
-    if (is_raw) {
+    if (result.is_raw) {
         resultEl.elapsedNs = 1e6 * (performance.now() - last_query_start);
         elapsed_ns = resultEl.elapsedNs;
     } else {
@@ -2778,30 +2912,34 @@ async function postImpl(posted_request_num, query)
 
     /// The query is saved in browser history (in a state JSON object)
     /// as well as in URL fragment identifier.
-    if (query != previous_query) {
+    /// When history_query_text is provided (multi-query "Run selected" with a single query),
+    /// use the full textarea content for history/URL to avoid losing the rest of the editor.
+    const saved_query = history_query_text || query;
+    if (saved_query != previous_query) {
         const state = {
-            query: query,
-            format: format,
-            ok: response.ok,
-            data: reply.length > 100000 ? null : reply, /// Lower than the browser's limit.
+            query: saved_query,
+            format: result.format,
+            ok: result.response_ok,
+            data: result.reply.length > 100000 ? null : result.reply,
             elapsed_ns: elapsed_ns,
             params: paramValuesSnapshot,
         };
-        const title = "ClickHouse Query: " + query;
+        const title = "ClickHouse Query: " + saved_query;
 
+        const user = user_elem.value;
+        const server_address = url_elem.value;
         let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
         if (run_immediately) {
             history_url += "&run=1";
         }
         if (server_address != location.origin) {
-            /// Save server's address in URL if it's not identical to the address of the play UI.
             history_url += '&url=' + encodeURIComponent(server_address);
         }
         for (const [name, value] of Object.entries(paramValuesSnapshot))
         {
             history_url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
         }
-        history_url += '#' + toBase64(query);
+        history_url += '#' + toBase64(saved_query);
 
         if (previous_query == '') {
             history.replaceState(state, title, history_url);
@@ -2809,13 +2947,187 @@ async function postImpl(posted_request_num, query)
             history.pushState(state, title, history_url);
         }
         document.title = title;
-        previous_query = query;
+        previous_query = saved_query;
+    }
+}
+
+/// Container for dynamically created result elements in multi-query mode.
+let multiQueryContainer = null;
+/// Array of AbortControllers for all in-flight queries in multi-query mode.
+let multiQueryControllers = [];
+
+/// Execute multiple queries with parallelization of consecutive SELECTs.
+/// `parsed` is an array of { query, is_select } objects from splitAllQueries.
+async function postMulti(posted_request_num, parsed)
+{
+    const paramValuesSnapshot = getParamValues();
+    last_query_start = performance.now();
+
+    document.getElementById('download-div').style.display = 'none';
+    document.getElementById('copy-div').style.display = 'none';
+
+    clear();
+    progressEl.start();
+
+    /// Hide the default single result element and the logo.
+    resultEl.style.display = 'none';
+    logoEl.style.display = 'none';
+
+    /// Create a container for multiple results if it doesn't exist.
+    if (!multiQueryContainer) {
+        multiQueryContainer = document.createElement('div');
+        multiQueryContainer.id = 'multi-query-results';
+        resultEl.parentElement.insertBefore(multiQueryContainer, resultEl);
+    }
+    multiQueryContainer.innerHTML = '';
+    multiQueryContainer.style.display = 'block';
+    multiQueryControllers = [];
+
+    /// Create result elements for each query.
+    const resultElements = [];
+    for (let i = 0; i < parsed.length; ++i) {
+        const el = document.createElement('query-result');
+        multiQueryContainer.appendChild(el);
+        resultElements.push(el);
+    }
+
+    /// Track aggregated progress across all concurrent queries.
+    const progressState = new Map(); /// query index -> { read_rows, read_bytes, total_rows, elapsed_ns }
+    function updateAggregatedProgress() {
+        let total_read_rows = 0, total_read_bytes = 0, total_total_rows = 0, max_elapsed_ns = 0;
+        for (const [, p] of progressState) {
+            total_read_rows += p.read_rows;
+            total_read_bytes += p.read_bytes;
+            total_total_rows += p.total_rows;
+            max_elapsed_ns = Math.max(max_elapsed_ns, p.elapsed_ns);
+        }
+        progressEl.updateProgress({
+            read_rows: String(total_read_rows),
+            read_bytes: String(total_read_bytes),
+            total_rows_to_read: String(total_total_rows),
+            elapsed_ns: String(max_elapsed_ns),
+        });
+    }
+
+    /// Listen for progress events from each result element.
+    for (let i = 0; i < resultElements.length; ++i) {
+        resultElements[i].addEventListener('query-progress', (e) => {
+            progressState.set(i, {
+                read_rows: +e.detail.read_rows,
+                read_bytes: +e.detail.read_bytes,
+                total_rows: +e.detail.total_rows_to_read,
+                elapsed_ns: +e.detail.elapsed_ns,
+            });
+            updateAggregatedProgress();
+        });
+    }
+
+    /// Group consecutive parallelizable queries together.
+    /// Each group is either a batch of SELECTs (run in parallel) or a single non-SELECT (barrier).
+    const groups = [];
+    let current_group = null;
+    for (let i = 0; i < parsed.length; ++i) {
+        if (parsed[i].is_select) {
+            if (!current_group || !current_group.parallelizable) {
+                current_group = { parallelizable: true, indices: [] };
+                groups.push(current_group);
+            }
+            current_group.indices.push(i);
+        } else {
+            current_group = { parallelizable: false, indices: [i] };
+            groups.push(current_group);
+        }
+    }
+
+    /// Execute groups sequentially; within a parallelizable group, execute all queries concurrently.
+    let had_error = false;
+    for (const group of groups) {
+        if (posted_request_num != request_num) return;
+        if (had_error) break;
+
+        const promises = group.indices.map(i => {
+            const ac = new AbortController();
+            multiQueryControllers.push(ac);
+            return postImpl(posted_request_num, parsed[i].query, resultElements[i], ac, paramValuesSnapshot)
+                .then(result => ({ index: i, result }));
+        });
+
+        const results = await Promise.all(promises);
+
+        for (const { index, result } of results) {
+            if (result.cancelled) return;
+            if (result.is_error || !result.response_ok) {
+                had_error = true;
+            }
+        }
+    }
+
+    if (posted_request_num != request_num) return;
+
+    /// Compute aggregated stats.
+    let total_rows = 0;
+    let max_elapsed_ns = 0;
+    let any_incomplete = false;
+    for (const el of resultElements) {
+        total_rows += el.rowCount;
+        max_elapsed_ns = Math.max(max_elapsed_ns, el.elapsedNs);
+        if (el.incompleteResult) any_incomplete = true;
+    }
+
+    if (!had_error) {
+        logoEl.style.display = 'block';
+    }
+
+    progressEl.finish();
+    elapsed_ns = max_elapsed_ns || 1e6 * (performance.now() - last_query_start);
+    progressEl.updateText(total_rows, elapsed_ns, any_incomplete);
+    progressEl.style.setProperty('--progress', '0');
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(parsed[0].query));
+
+    if (posted_request_num != request_num) return;
+
+    /// Save all queries to browser history, using the full textarea content.
+    const all_queries_text = query_area.value;
+    if (all_queries_text != previous_query) {
+        const state = {
+            query: all_queries_text,
+            format: null,
+            ok: !had_error,
+            data: null,
+            elapsed_ns: elapsed_ns,
+            params: paramValuesSnapshot,
+        };
+        const title = "ClickHouse Query: " + parsed[0].query;
+
+        const user = user_elem.value;
+        const server_address = url_elem.value;
+        let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+        if (run_immediately) {
+            history_url += "&run=1";
+        }
+        if (server_address != location.origin) {
+            history_url += '&url=' + encodeURIComponent(server_address);
+        }
+        for (const [name, value] of Object.entries(paramValuesSnapshot))
+        {
+            history_url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
+        }
+        history_url += '#' + toBase64(all_queries_text);
+
+        if (previous_query == '') {
+            history.replaceState(state, title, history_url);
+        } else {
+            history.pushState(state, title, history_url);
+        }
+        document.title = title;
+        previous_query = all_queries_text;
     }
 }
 
 async function restoreFromHistory(state) {
     clear();
     query_area.value = state.query;
+    query_area.dispatchEvent(new Event('input'));
     resultEl.queryText = state.query;
 
     /// Restore query parameter inputs and their values.
@@ -2838,7 +3150,7 @@ async function restoreFromHistory(state) {
         is_error = true;
 
         let has_exception = false;
-        for (line of state.data.split('\n')) {
+        for (const line of state.data.split('\n')) {
             if (line.startsWith(`{"exception":`)) {
                 resultEl.update(JSON.parse(line));
                 has_exception = true;
@@ -2857,7 +3169,7 @@ async function restoreFromHistory(state) {
         let lines = state.data.split('\n');
         let fragment = document.createDocumentFragment();
 
-        for (line of lines) {
+        for (const line of lines) {
             if (line.length == 0) continue;
             if (!resultEl.update(JSON.parse(line), fragment)) { break; }
         }
@@ -2905,6 +3217,7 @@ window.onpopstate = function(event) {
 
 if (window.location.hash) {
     query_area.value = fromBase64(window.location.hash.substr(1));
+    query_area.dispatchEvent(new Event('input'));
 }
 
 let in_flight = false;
@@ -2915,51 +3228,140 @@ const favicon_running = 'data:image/svg+xml;base64,' + btoa(atob(favicon_default
 
 function setFavicon(href) { document.querySelector('link[rel="icon"]').href = href; }
 
-async function post()
+function beginFlight() {
+    in_flight = true;
+    setFavicon(favicon_running);
+    document.getElementById('run').innerText = 'Stop';
+    document.getElementById('run-all').style.display = 'none';
+}
+
+function endFlight() {
+    in_flight = false;
+    document.getElementById('run').blur();
+    updateRunButtons(isMultiQuery);
+    setFavicon(favicon_default);
+}
+
+/// Run the query under cursor, or all queries intersecting the selection.
+async function postOne()
 {
     ++request_num;
     document.body.scrollTo(0, 0);
-    let query = await getQueryUnderCursor();
-    in_flight = true;
-    setFavicon(favicon_running);
-    let run = document.getElementById('run');
-    run.innerText = 'Stop';
-    await postImpl(request_num, query);
-    run.blur();
-    run.innerText = 'Run';
-    setFavicon(favicon_default);
-    in_flight = false;
+    beginFlight();
+
+    const has_selection = query_area.selectionStart !== query_area.selectionEnd;
+    if (has_selection && isMultiQuery) {
+        /// Find all queries that intersect the selection and run them.
+        const all_text = query_area.value;
+        const parsed = await splitAllQueries(all_text);
+        const selStart = query_area.selectionStart;
+        const selEnd = query_area.selectionEnd;
+
+        /// Use start/end offsets from splitAllQueries to find which queries overlap with the selection.
+        const selected = [];
+        for (let i = 0; i < parsed.length; ++i) {
+            if (parsed[i].end > selStart && parsed[i].start < selEnd) {
+                selected.push(parsed[i]);
+            }
+        }
+
+        if (selected.length > 1) {
+            await postMulti(request_num, selected);
+        } else if (selected.length === 1) {
+            await postSingle(request_num, selected[0].query, all_text);
+        }
+    } else {
+        const query = await getQueryUnderCursor();
+        /// In multi-query mode, preserve the full textarea content in history/URL
+        /// even when running a single query under cursor (so refresh restores all queries).
+        await postSingle(request_num, query, isMultiQuery ? query_area.value : undefined);
+    }
+
+    endFlight();
+}
+
+/// Run all queries from the textarea.
+async function postAll()
+{
+    ++request_num;
+    document.body.scrollTo(0, 0);
+    beginFlight();
+
+    const all_text = query_area.value;
+    const parsed = await splitAllQueries(all_text);
+
+    if (parsed.length > 1) {
+        await postMulti(request_num, parsed);
+    } else {
+        const query = await getQueryUnderCursor();
+        await postSingle(request_num, query);
+    }
+
+    endFlight();
 }
 
 async function cancel()
 {
-    controller.abort();
-    document.getElementById('run').innerText = 'Run';
+    /// Invalidate in-flight requests so postImpl/postSingle/postMulti will
+    /// see a stale posted_request_num and bail out before saving history.
+    ++request_num;
+    /// Cancel single-query mode controller.
+    if (controller) controller.abort();
+    /// Cancel all multi-query mode controllers.
+    for (const ac of multiQueryControllers) {
+        ac.abort();
+    }
+    multiQueryControllers = [];
+    endFlight();
 }
 
+function storeCredentials() {
+    if (password_elem.value) {
+        const cred = new PasswordCredential({
+            id: user_elem.value,
+            password: password_elem.value,
+            name: url_elem.value,
+        });
+        navigator.credentials.store(cred);
+    }
+}
+
+/// The "Run" / "Run one" button submits the form; handle it here.
 document.getElementById('controls').addEventListener('submit', e =>
 {
     e.preventDefault();
     if (in_flight) {
         cancel();
     } else {
-        post();
+        postOne();
+        storeCredentials();
+    }
+});
 
-        if (password_elem.value) {
-            const cred = new PasswordCredential({
-                id: user_elem.value,
-                password: password_elem.value,
-                name: url_elem.value,
-            });
-            navigator.credentials.store(cred);
-        }
+/// The "Run all" button.
+document.getElementById('run-all').addEventListener('click', e =>
+{
+    e.preventDefault();
+    if (!in_flight) {
+        postAll();
+        storeCredentials();
     }
 });
 
 document.addEventListener('keydown', event => {
     /// Firefox has code 13 for Enter and Chromium has code 10.
     if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
-        document.getElementById('controls').requestSubmit();
+        if (in_flight) {
+            cancel();
+        } else if (event.shiftKey && isMultiQuery) {
+            /// Ctrl/Cmd+Shift+Enter runs all queries in multi-query mode.
+            postAll();
+            storeCredentials();
+        } else {
+            postOne();
+            storeCredentials();
+        }
+        event.preventDefault();
     }
 });
 
@@ -3050,9 +3452,16 @@ query_area.onkeydown = (e) => {
 function clear()
 {
     resultEl.clear();
+    resultEl.style.display = '';
     progressEl.clear();
     logoEl.style.display = 'block';
     elapsed_ns = 0;
+
+    /// Clean up multi-query results.
+    if (multiQueryContainer) {
+        multiQueryContainer.innerHTML = '';
+        multiQueryContainer.style.display = 'none';
+    }
 }
 
 function formatReadable(number = 0, decimals = 2, units = []) {
@@ -3229,8 +3638,232 @@ async function getQueryUnderCursor() {
 
     }
 
-    return all_queries;
+    /// Cursor is in the last query (no trailing semicolon).
+    const tail = all_queries.substring(current_query_start);
+    query_area.setSelectionRange(current_query_start, all_queries.length);
+    query_area.focus();
+    return tail;
 }
+
+const PARALLELIZABLE_KEYWORDS = new Set([
+    'SELECT', 'SHOW', 'DESCRIBE', 'DESC', 'EXISTS', 'EXPLAIN', 'WITH'
+]);
+
+/// Split the textarea content into individual queries using the lexer.
+/// Returns an array of { query, is_select } objects.
+/// `is_select` is true for queries that start with a parallelizable keyword
+/// (after skipping whitespace, comments, and opening brackets).
+async function splitAllQueries(text) {
+    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+        return [{ query: text, is_select: PARALLELIZABLE_KEYWORDS.has(text.trimStart().split(/\s/)[0].toUpperCase()), start: 0, end: text.length }];
+    }
+
+    const tokens = await tokenize(text);
+    const queries = [];
+    let current_query_start = 0;
+    let current_offset = 0;
+    let first_keyword = null; /// First significant non-bracket token of the current query.
+    let has_significant = false;
+    let first_significant_offset = -1;
+    let last_significant_end = -1;
+
+    for (const elem of tokens) {
+        current_offset += elem.token.length;
+
+        if (elem.token == ';') {
+            if (has_significant) {
+                const q = text.substring(current_query_start, current_offset).trim();
+                if (q && q !== ';') {
+                    queries.push({
+                        query: q,
+                        is_select: first_keyword !== null && PARALLELIZABLE_KEYWORDS.has(first_keyword),
+                        start: first_significant_offset,
+                        end: last_significant_end,
+                    });
+                }
+            }
+            current_query_start = current_offset;
+            first_keyword = null;
+            has_significant = false;
+            first_significant_offset = -1;
+            last_significant_end = -1;
+        } else if (elem.significant) {
+            if (!has_significant) {
+                first_significant_offset = current_offset - elem.token.length;
+            }
+            last_significant_end = current_offset;
+            has_significant = true;
+            if (first_keyword === null && elem.token !== '(') {
+                first_keyword = elem.token.toUpperCase();
+            }
+        }
+    }
+
+    /// Last query (no trailing semicolon)
+    if (has_significant) {
+        const last = text.substring(current_query_start).trim();
+        if (last && last !== ';') {
+            queries.push({
+                query: last,
+                is_select: first_keyword !== null && PARALLELIZABLE_KEYWORDS.has(first_keyword),
+                start: first_significant_offset,
+                end: last_significant_end,
+            });
+        }
+    }
+
+    return queries;
+}
+
+/// Return an array of { start, end } character offsets for each non-empty query.
+/// Includes surrounding whitespace/semicolons so spans cover the full text without gaps.
+/// Used by updateQueryParams to detect multi-query mode and to highlight query regions.
+function getQueryBoundaries(tokens, text) {
+    const boundaries = [];
+    let current_query_start = 0;
+    let current_offset = 0;
+    let has_significant = false;
+
+    let first_significant_offset = -1;
+    let last_significant_end = -1;
+
+    for (const elem of tokens) {
+        current_offset += elem.token.length;
+        if (elem.token == ';') {
+            if (has_significant) {
+                boundaries.push({ start: first_significant_offset, end: last_significant_end });
+            }
+            current_query_start = current_offset;
+            has_significant = false;
+            first_significant_offset = -1;
+            last_significant_end = -1;
+        } else if (elem.significant) {
+            if (!has_significant) {
+                first_significant_offset = current_offset - elem.token.length;
+            }
+            last_significant_end = current_offset;
+            has_significant = true;
+        }
+    }
+
+    /// Last query (no trailing semicolon).
+    if (has_significant) {
+        boundaries.push({ start: first_significant_offset, end: last_significant_end });
+    }
+
+    return boundaries;
+}
+
+/// Show/hide the "Run all" button and relabel "Run" depending on multi-query mode and selection.
+let isMultiQuery = false;
+function updateRunButtons(multi) {
+    isMultiQuery = multi;
+    const runBtn = document.getElementById('run');
+    const runAllBtn = document.getElementById('run-all');
+    const has_selection = query_area.selectionStart !== query_area.selectionEnd;
+    const selects_all = has_selection
+        && query_area.selectionStart === 0
+        && query_area.selectionEnd >= query_area.value.length;
+
+    if (!in_flight) {
+        if (!multi) {
+            runBtn.innerText = 'Run';
+        } else {
+            runBtn.innerText = has_selection ? 'Run selected' : 'Run one';
+        }
+    }
+    runAllBtn.style.display = (multi && !selects_all) ? 'inline-block' : 'none';
+}
+
+/// Update the backdrop div behind the textarea to highlight individual queries
+/// with alternating faint background colors.
+const queryBackdrop = document.getElementById('query-backdrop');
+
+function escapeHTML(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/// Cached boundaries for cursor-tracking updates.
+let currentBoundaries = [];
+let currentBackdropText = '';
+
+function updateQueryBackdrop(text, boundaries) {
+    currentBoundaries = boundaries;
+    currentBackdropText = text;
+    renderQueryBackdrop();
+}
+
+function renderQueryBackdrop() {
+    const text = currentBackdropText;
+    const boundaries = currentBoundaries;
+
+    /// Update button labels to reflect current selection state.
+    updateRunButtons(boundaries.length > 1);
+
+    if (boundaries.length <= 1) {
+        queryBackdrop.style.display = 'none';
+        query_area.classList.remove('has-backdrop');
+        return;
+    }
+
+    const cursor = query_area.selectionStart;
+    const focused = document.activeElement === query_area;
+
+    /// Find which query contains the cursor (only when textarea is focused).
+    let activeIdx = -1;
+    if (focused) for (let i = 0; i < boundaries.length; ++i) {
+        if (cursor >= boundaries[i].start && cursor <= boundaries[i].end) {
+            activeIdx = i;
+            break;
+        }
+    }
+
+    let html = '';
+    let pos = 0;
+    for (let i = 0; i < boundaries.length; ++i) {
+        const b = boundaries[i];
+        if (b.start > pos) {
+            html += escapeHTML(text.substring(pos, b.start));
+        }
+        if (i === activeIdx) {
+            html += '<span class="q-active">' + escapeHTML(text.substring(b.start, b.end)) + '</span>';
+        } else {
+            html += escapeHTML(text.substring(b.start, b.end));
+        }
+        pos = b.end;
+    }
+    if (pos < text.length) {
+        html += escapeHTML(text.substring(pos));
+    }
+    /// Trailing newline fix: browsers collapse a trailing \n in a div.
+    if (html.endsWith('\n')) html += ' ';
+
+    queryBackdrop.innerHTML = html;
+    queryBackdrop.style.display = 'block';
+    query_area.classList.add('has-backdrop');
+
+    /// Match the scrollbar: reserve extra right padding so text wraps identically.
+    /// clientWidth excludes borders and scrollbar; offsetWidth includes borders.
+    /// The border is 1px on each side, so scrollbar = offsetWidth - clientWidth - 2.
+    const scrollbarWidth = query_area.offsetWidth - query_area.clientWidth - 2;
+    queryBackdrop.style.paddingRight = scrollbarWidth > 0 ? 'calc(0.25rem + ' + scrollbarWidth + 'px)' : '';
+
+    queryBackdrop.scrollTop = query_area.scrollTop;
+    queryBackdrop.scrollLeft = query_area.scrollLeft;
+}
+
+/// Re-render backdrop when cursor moves or selection changes.
+query_area.addEventListener('click', renderQueryBackdrop);
+query_area.addEventListener('keyup', renderQueryBackdrop);
+query_area.addEventListener('select', renderQueryBackdrop);
+query_area.addEventListener('focus', renderQueryBackdrop);
+query_area.addEventListener('blur', renderQueryBackdrop);
+
+/// Keep backdrop scroll in sync with textarea.
+query_area.addEventListener('scroll', () => {
+    queryBackdrop.scrollTop = query_area.scrollTop;
+    queryBackdrop.scrollLeft = query_area.scrollLeft;
+});
 
 /// Query parameters support: detect {name:Type} placeholders and show input fields.
 
@@ -3308,6 +3941,8 @@ async function updateQueryParams()
     {
         queryParamsContainer.innerHTML = '';
         currentQueryParams = [];
+        updateRunButtons(false);
+        updateQueryBackdrop('', []);
         return;
     }
 
@@ -3315,6 +3950,11 @@ async function updateQueryParams()
     const tokens = await tokenize(query);
     if (generation !== updateQueryParamsGeneration) { return; }
     const params = extractQueryParams(tokens);
+
+    /// Detect multi-query mode from the same token stream.
+    const boundaries = getQueryBoundaries(tokens, query);
+    updateRunButtons(boundaries.length > 1);
+    updateQueryBackdrop(query, boundaries);
 
     if (JSON.stringify(params) === JSON.stringify(currentQueryParams))
     {
@@ -3423,13 +4063,13 @@ if (query_area.value)
         setParamValues(urlParamValues);
         if (run_immediately)
         {
-            post();
+            postAll();
         }
     });
 }
 else if (run_immediately)
 {
-    post();
+    postAll();
 }
 
 document.getElementById('toggle-light').onclick = function() {
