@@ -407,6 +407,7 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"SQLite", "TABLE"},
     {"File", "TABLE"},
     {"FileLog", "TABLE"},
+    {"Filesystem", "TABLE"},
     {"GenerateRandom", "TABLE"},
     {"FuzzJSON", "TABLE"},
     {"FuzzQuery", "TABLE"},
