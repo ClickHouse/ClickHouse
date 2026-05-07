@@ -134,15 +134,6 @@ void ASTFunction::finishFormatWithWindow(WriteBuffer & ostr, const FormatSetting
     else if (getNullsAction() == NullsAction::IGNORE_NULLS)
         ostr << " IGNORE NULLS";
 
-    /// Aggregate function combinator: ORDER BY ... [LIMIT N]
-    if (order_by_combinator && order_by_combinator_columns)
-    {
-        ostr << " ORDER BY ";
-        order_by_combinator_columns->format(ostr, settings, state, frame);
-        if (order_by_combinator_limit.has_value())
-            ostr << " LIMIT " << *order_by_combinator_limit;
-    }
-
     if (!isWindowFunction())
         return;
 
@@ -828,6 +819,17 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             argument->format(ostr, settings, state, nested_dont_need_parens);
         }
 
+    }
+
+    /// Aggregate function combinator: ORDER BY ... [LIMIT N] inside the function arguments.
+    /// Example: groupArray(value ORDER BY ts DESC LIMIT 10).
+    /// Must be printed BEFORE the closing parenthesis so the syntactic sugar round-trips correctly.
+    if (order_by_combinator && order_by_combinator_columns)
+    {
+        ostr << " ORDER BY ";
+        order_by_combinator_columns->format(ostr, settings, state, frame);
+        if (order_by_combinator_limit.has_value())
+            ostr << " LIMIT " << *order_by_combinator_limit;
     }
 
     if (need_parens)
