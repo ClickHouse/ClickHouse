@@ -20,7 +20,6 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include "Common/Exception.h"
 #include <Core/Defines.h>
 #include <IO/ReadBuffer.h>
 #include <base/types.h>
@@ -198,14 +197,16 @@ PuffinMetadataInputFormat::PuffinMetadataInputFormat(ReadBuffer & buf, SharedHea
 
 Chunk PuffinMetadataInputFormat::read()
 {
-    if (done)
+    if (!initialized)
+    {
+        blob_index = 0;
+        initialized = true;
+        footer = readPuffinFooter(*in);
+    }
+    if (footer.blobs.size() <= blob_index)
         return {};
-    done = true;
 
-    auto footer = readPuffinFooter(*in);
-    size_t n = footer.blobs.size();
-    if (n == 0)
-        return {};
+    const PuffinBlob & blob = footer.blobs[blob_index++];
 
     auto col_type = ColumnString::create();
     auto col_snap = ColumnInt64::create();
@@ -219,28 +220,21 @@ Chunk PuffinMetadataInputFormat::read()
     auto col_props_vals = ColumnString::create();
     auto col_props_offsets = ColumnArray::ColumnOffsets::create();
 
-    ColumnArray::Offset fields_offset = 0;
-    ColumnArray::Offset props_offset = 0;
-    for (const auto & blob : footer.blobs)
+    col_type->insertData(blob.type.data(), blob.type.size());
+    col_snap->insertValue(blob.snapshot_id);
+    col_seq->insertValue(blob.sequence_number);
+    for (Int32 f : blob.fields)
+        col_fields_data->insertValue(f);
+    col_fields_offsets->insertValue(blob.fields.size());
+    col_offset->insertValue(blob.offset);
+    col_length->insertValue(blob.length);
+    col_codec->insertData(blob.compression_codec.data(), blob.compression_codec.size());
+    for (const auto & [k, v] : blob.properties)
     {
-        col_type->insertData(blob.type.data(), blob.type.size());
-        col_snap->insertValue(blob.snapshot_id);
-        col_seq->insertValue(blob.sequence_number);
-        for (Int32 f : blob.fields)
-            col_fields_data->insertValue(f);
-        fields_offset += blob.fields.size();
-        col_fields_offsets->insertValue(fields_offset);
-        col_offset->insertValue(blob.offset);
-        col_length->insertValue(blob.length);
-        col_codec->insertData(blob.compression_codec.data(), blob.compression_codec.size());
-        for (const auto & [k, v] : blob.properties)
-        {
-            col_props_keys->insertData(k.data(), k.size());
-            col_props_vals->insertData(v.data(), v.size());
-        }
-        props_offset += blob.properties.size();
-        col_props_offsets->insertValue(props_offset);
+        col_props_keys->insertData(k.data(), k.size());
+        col_props_vals->insertData(v.data(), v.size());
     }
+    col_props_offsets->insertValue(blob.properties.size());
 
     auto col_fields = ColumnArray::create(std::move(col_fields_data), std::move(col_fields_offsets));
     MutableColumns prop_cols;
@@ -251,21 +245,21 @@ Chunk PuffinMetadataInputFormat::read()
     MutableColumnPtr col_props = ColumnMap::create(std::move(col_props_arr));
 
     std::unordered_map<String, MutableColumnPtr> built;
-    built.emplace("blob_type", std::move(col_type));
-    built.emplace("snapshot_id", std::move(col_snap));
-    built.emplace("sequence_number", std::move(col_seq));
-    built.emplace("fields", std::move(col_fields));
-    built.emplace("offset", std::move(col_offset));
-    built.emplace("length", std::move(col_length));
+    built.emplace("blob_type",         std::move(col_type));
+    built.emplace("snapshot_id",       std::move(col_snap));
+    built.emplace("sequence_number",   std::move(col_seq));
+    built.emplace("fields",            std::move(col_fields));
+    built.emplace("offset",            std::move(col_offset));
+    built.emplace("length",            std::move(col_length));
     built.emplace("compression_codec", std::move(col_codec));
-    built.emplace("properties", std::move(col_props));
+    built.emplace("properties",        std::move(col_props));
 
     const Block & out_header = getPort().getHeader();
     MutableColumns result;
     result.reserve(out_header.columns());
     for (const auto & col_with_name : out_header)
         result.push_back(std::move(built.at(col_with_name.name)));
-    return Chunk(std::move(result), n);
+    return Chunk(std::move(result), 1);
 }
 
 PuffinInputFormat::PuffinInputFormat(ReadBuffer & buf, SharedHeader header_)
@@ -309,7 +303,7 @@ Chunk PuffinInputFormat::read()
 
     MutableColumns cols;
     cols.push_back(std::move(col_rows));
-    return Chunk(std::move(cols), n);
+    return Chunk(std::move(cols), 1);
 }
 
 PuffinMetadataSchemaReader::PuffinMetadataSchemaReader(ReadBuffer & in_)
