@@ -496,4 +496,127 @@ SELECT * FROM 04032_t WHERE f != 3.0 AND f >= 3 ORDER BY f SETTINGS optimize_red
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE f != 3.0 AND f >= 3 SETTINGS optimize_redundant_comparisons = 0;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE f != 3.0 AND f >= 3 SETTINGS optimize_redundant_comparisons = 1;
 
+-- =====================================================================
+-- Section 11: float-rewrite on int columns combined with downstream comparisons (notEquals strengthening, PRUNE/NONE, boundary fold).
+-- =====================================================================
+
+-- 11.A  Float-rewrite + notEquals → STRENGTHEN (the actual rebuild path; was the original Bug 1).
+
+-- LESS rewritten to LESS_OR_EQUALS, then strengthened back to LESS.
+SELECT 'float_rewrite_lt_ne_strengthen';
+SELECT groupArray(i) FROM 04032_t WHERE i < 3.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE i < 3.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 3.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 3.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- LESS_OR_EQUALS already; the rewrite only swaps the constant.
+SELECT 'float_rewrite_le_ne_strengthen';
+SELECT groupArray(i) FROM 04032_t WHERE i <= 3.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE i <= 3.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i <= 3.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i <= 3.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- GREATER rewritten via ceil to GREATER_OR_EQUALS, then strengthened back to GREATER.
+SELECT 'float_rewrite_gt_ne_strengthen';
+SELECT groupArray(i) FROM 04032_t WHERE i > 2.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE i > 2.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i > 2.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i > 2.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- GREATER_OR_EQUALS already; ceil rewrite, then notEquals strengthens.
+SELECT 'float_rewrite_ge_ne_strengthen';
+SELECT groupArray(i) FROM 04032_t WHERE i >= 2.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE i >= 2.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i >= 2.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i >= 2.5 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- Constant-on-left flip: same logical case as `i < 3.5 AND i != 3`.
+SELECT 'float_rewrite_lt_ne_strengthen_flip';
+SELECT groupArray(i) FROM 04032_t WHERE 3.5 > i AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE 3.5 > i AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE 3.5 > i AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE 3.5 > i AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- 11.B  Float-rewrite + chained notEquals → cumulative strengthening (`i < 4.5 AND i != 4 AND i != 3` → `i < 4 AND i != 3`).
+SELECT 'float_rewrite_lt_ne_chain';
+SELECT groupArray(i) FROM 04032_t WHERE i < 4.5 AND i != 4 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE i < 4.5 AND i != 4 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 4.5 AND i != 4 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 4.5 AND i != 4 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- Mirror: `i > 0.5` → `i >= 1`; `i != 1` strengthens to `i > 1`; `i != 3` independent.
+SELECT 'float_rewrite_gt_ne_chain';
+SELECT groupArray(i) FROM 04032_t WHERE i > 0.5 AND i != 1 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE i > 0.5 AND i != 1 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i > 0.5 AND i != 1 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i > 0.5 AND i != 1 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- 11.C  Float-rewrite + non-strengthening compare ops (PRUNE / NONE; rewrite must not corrupt these branches).
+
+-- Float-rewrite + EQUALS at the same value → equals subsumes the range (PRUNE).
+SELECT 'float_rewrite_lt_eq_prune';
+SELECT groupArray(i) FROM 04032_t WHERE i < 3.5 AND i = 3 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE i < 3.5 AND i = 3 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 3.5 AND i = 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 3.5 AND i = 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- Float-rewrite + same-direction tighter range → tighter range wins (PRUNE), float operand erased.
+SELECT 'float_rewrite_lt_lt_prune';
+SELECT groupArray(i) FROM 04032_t WHERE i < 4.5 AND i < 3 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE i < 4.5 AND i < 3 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 4.5 AND i < 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 4.5 AND i < 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- Float-rewrite is the surviving (looser) range; the integer companion is pruned.
+-- AST is not rebuilt, so EXPLAIN keeps the original `i < 3.5` literal (semantically
+-- equivalent to `i <= 3` for an Int32 column at runtime).
+SELECT 'float_rewrite_lt_lt_keep';
+SELECT groupArray(i) FROM 04032_t WHERE i < 3.5 AND i < 100 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE i < 3.5 AND i < 100 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 3.5 AND i < 100 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 3.5 AND i < 100 SETTINGS optimize_redundant_comparisons = 1;
+
+-- Float-rewrite + opposite-direction non-conflicting range → both kept (NONE).
+SELECT 'float_rewrite_lt_gt_keep_both';
+SELECT groupArray(i) FROM 04032_t WHERE i < 3.5 AND i > 1 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE i < 3.5 AND i > 1 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 3.5 AND i > 1 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 3.5 AND i > 1 SETTINGS optimize_redundant_comparisons = 1;
+
+-- 11.D  Float-rewrite + boundary fold (CONFLICT / REDUNDANT bypassing the pair-comparison machinery).
+
+-- `i < -1e10` on Int32 is below the type minimum → CONFLICT → whole AND folds to 0.
+SELECT 'float_rewrite_below_min_conflict';
+SELECT groupArray(i) FROM 04032_t WHERE i < -1e10 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE i < -1e10 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < -1e10 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < -1e10 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- `i < 1e10` on Int32 is above the type maximum → REDUNDANT → only `i != 3` survives.
+SELECT 'float_rewrite_above_max_redundant';
+SELECT groupArray(i) FROM 04032_t WHERE i < 1e10 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+SELECT groupArray(i) FROM 04032_t WHERE i < 1e10 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 1e10 AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 1e10 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- =====================================================================
+-- Section 12: contradictory AND folds to `0`; sibling throwing operands get short-circuited away (consistent with `expr AND 0`).
+-- =====================================================================
+
+-- TYPE_MISMATCH on `i > 'str'`: thrown when un-optimized; suppressed by conflict folding.
+SELECT 'conflict_folds_throwing_operand_type_mismatch_off';
+SELECT groupArray(i) FROM 04032_t WHERE i > 'str' AND i < 0 AND i > 10 SETTINGS optimize_redundant_comparisons = 0; -- { serverError TYPE_MISMATCH }
+SELECT 'conflict_folds_throwing_operand_type_mismatch_on';
+SELECT groupArray(i) FROM 04032_t WHERE i > 'str' AND i < 0 AND i > 10 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i > 'str' AND i < 0 AND i > 10 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i > 'str' AND i < 0 AND i > 10 SETTINGS optimize_redundant_comparisons = 1;
+
+-- Same shape with EQUALS: still throws when un-optimized; folded to 0 with optimization.
+SELECT 'conflict_folds_throwing_operand_eq_off';
+SELECT groupArray(i) FROM 04032_t WHERE i = 'str' AND i = 3 AND i = 5 SETTINGS optimize_redundant_comparisons = 0; -- { serverError TYPE_MISMATCH }
+SELECT 'conflict_folds_throwing_operand_eq_on';
+SELECT groupArray(i) FROM 04032_t WHERE i = 'str' AND i = 3 AND i = 5 SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i = 'str' AND i = 3 AND i = 5 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i = 'str' AND i = 3 AND i = 5 SETTINGS optimize_redundant_comparisons = 1;
+
 DROP TABLE IF EXISTS 04032_t;

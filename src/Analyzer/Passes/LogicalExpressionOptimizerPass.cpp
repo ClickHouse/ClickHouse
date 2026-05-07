@@ -350,6 +350,11 @@ struct ComparisonFilterInfo
     QueryTreeNodePtr original_node;          /// Original query tree node of this comparison.
     std::optional<Field> converted_value;    /// Constant converted to the column type.
     size_t original_index = 0;               /// Position in the original AND argument list (for stable ordering).
+    /// (e.g. for an Int32 column, `i < 3.5` is internally rewritten to `i <= 3`, with
+    /// `function = LESS_OR_EQUALS` and `converted_value = 3`).  In that case `original_node`
+    /// still references the old literal (3.5) and any later rebuild must substitute it with
+    /// `converted_value`, otherwise the AST goes out of sync with the analysis state.
+    bool constant_rewritten = false;
 };
 
 using ComparisonFilterMap = QueryTreeNodePtrWithHashMap<std::vector<ComparisonFilterInfo>>;
@@ -387,7 +392,7 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
             return std::nullopt;
         return converted;
     }
-    catch (...) /// Ok: conversion failure means we can't optimize, not an error
+    catch (const Exception &) /// Ok: conversion failure means we can't optimize, not an error
     {
         return std::nullopt;
     }
@@ -588,6 +593,7 @@ static std::optional<AddComparisonFilterResult> tryFoldBoundaryOrRewriteFloatFor
         if (auto result = fold_boundary(Field(floored)))
             return result;
         filter.converted_value = make_int_field(floored);
+        filter.constant_rewritten = true;
         break;
     }
     case ComparisonFunction::GREATER:
@@ -598,6 +604,7 @@ static std::optional<AddComparisonFilterResult> tryFoldBoundaryOrRewriteFloatFor
         if (auto result = fold_boundary(Field(ceiled)))
             return result;
         filter.converted_value = make_int_field(ceiled);
+        filter.constant_rewritten = true;
         break;
     }
     }
@@ -742,7 +749,7 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
         chassert(isGreaterThanCompare(lf) && isLessThanCompare(rf));
         return invertComparisonResult(compareComparisonFilters(right, left));
     }
-    catch (...) /// Ok: comparison failure means we can't optimize, not an error
+    catch (const Exception &) /// Ok: comparison failure means we can't optimize, not an error
     {
         return ValueComparisonResult::NONE;
     }
@@ -754,13 +761,22 @@ static void rebuildComparisonNode(ComparisonFilterInfo & filter, const ContextPt
 {
     auto * orig = filter.original_node->as<FunctionNode>();
     chassert(orig);
-    bool constant_on_left = orig->getArguments().getNodes()[0]->as<ConstantNode>() != nullptr;
+    auto orig_args = orig->getArguments().getNodes();
+    bool constant_on_left = orig_args[0]->as<ConstantNode>() != nullptr;
     auto output_func = constant_on_left ? flipComparisonFunction(filter.function) : filter.function;
     auto func_name = comparisonFunctionToName(output_func);
 
+    QueryTreeNodes new_args = std::move(orig_args);
+    if (filter.constant_rewritten)
+    {
+        chassert(filter.converted_value.has_value());
+        const size_t constant_idx = constant_on_left ? 0 : 1;
+        new_args[constant_idx] = std::make_shared<ConstantNode>(*filter.converted_value);
+    }
+
     auto new_node = std::make_shared<FunctionNode>(func_name);
     new_node->markAsOperator();
-    new_node->getArguments().getNodes() = orig->getArguments().getNodes();
+    new_node->getArguments().getNodes() = std::move(new_args);
     resolveOrdinaryFunctionNodeByName(*new_node, func_name, context);
     filter.original_node = std::move(new_node);
 }
