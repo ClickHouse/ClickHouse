@@ -24,6 +24,7 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     {
         return "Parquet";
     }
+    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
@@ -31,6 +32,7 @@ struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
     std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+    std::vector<FileBucketInfoPtr> splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_) override;
 };
 
 class ParquetV3BlockInputFormat : public IInputFormat
@@ -58,6 +60,8 @@ public:
     }
 
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
+
+    std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
 
 private:
     Chunk read() override;
