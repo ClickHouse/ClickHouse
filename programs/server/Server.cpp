@@ -3744,7 +3744,7 @@ void Server::createServers(
                         "The dedicated <prometheus><port> listener (handler: {}) is deprecated for "
                         "protocol APIs (remote_write, remote_read, Query API)—prefer those auto-mounted "
                         "on the main HTTP port (<prometheus><http_path_prefix>, default /prometheus), "
-                        "e.g. /prometheus/write?database=...&table=.... Prometheus text scrape "
+                        "e.g. /prometheus/write?database=...&table=... Prometheus text scrape "
                         "(expose_metrics) remains on this listener when <prometheus><port> is set and "
                         "is not registered on <http_port> in that configuration. All TimeSeries tables "
                         "are opted in by default; set prometheus_url_routing_enabled = 0 on a table "
