@@ -1,4 +1,5 @@
 #include <cstring>
+#include <unordered_map>
 #include <vector>
 #include <roaring/roaring.hh>
 #include <Columns/ColumnArray.h>
@@ -270,22 +271,21 @@ Chunk PuffinMetadataInputFormat::read()
     MutableColumnPtr col_props_arr = ColumnArray::create(std::move(col_props_tuple), std::move(col_props_offsets));
     MutableColumnPtr col_props = ColumnMap::create(std::move(col_props_arr));
 
-    // Select only the columns present in the output header (subset-of-columns support).
+    std::unordered_map<String, MutableColumnPtr> built;
+    built.emplace("blob_type", std::move(col_type));
+    built.emplace("snapshot_id", std::move(col_snap));
+    built.emplace("sequence_number", std::move(col_seq));
+    built.emplace("fields", std::move(col_fields));
+    built.emplace("offset", std::move(col_offset));
+    built.emplace("length", std::move(col_length));
+    built.emplace("compression_codec", std::move(col_codec));
+    built.emplace("properties", std::move(col_props));
+
     const Block & out_header = getPort().getHeader();
     MutableColumns result;
     result.reserve(out_header.columns());
     for (const auto & col_with_name : out_header)
-    {
-        const String & name = col_with_name.name;
-        if (name == "blob_type")          result.push_back(std::move(col_type));
-        else if (name == "snapshot_id")   result.push_back(std::move(col_snap));
-        else if (name == "sequence_number") result.push_back(std::move(col_seq));
-        else if (name == "fields")        result.push_back(std::move(col_fields));
-        else if (name == "offset")        result.push_back(std::move(col_offset));
-        else if (name == "length")        result.push_back(std::move(col_length));
-        else if (name == "compression_codec") result.push_back(std::move(col_codec));
-        else if (name == "properties")    result.push_back(std::move(col_props));
-    }
+        result.push_back(std::move(built.at(col_with_name.name)));
     return Chunk(std::move(result), n);
 }
 
