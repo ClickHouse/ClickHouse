@@ -585,7 +585,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                            .withSkipNotFound(skip_url_not_found_error)
                            .withHeaders(headers)
                            .withDelayInit(delay_initialization)
-                            .create(credentials);
+                           .create(credentials);
 
             if (check_cancelled)
                 res->setCancellationCheck(check_cancelled);
