@@ -737,10 +737,21 @@ Pipe ReadFromMergeTree::readInOrder(
     const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
     const bool set_total_rows_approx = !is_parallel_reading_from_replicas || isParallelReplicasLocalPlanForInitiator();
 
+    /// On followers, the pool was constructed over all local parts but the coordinator's stream
+    /// only owns a subset. Skip constructing source processors for parts outside the authoritative
+    /// set so the pipeline structure (and EXPLAIN PIPELINE output) reflects only the consumers
+    /// that will actually do work, instead of phantoms that immediately exit.
+    auto * pr_in_order_pool = is_parallel_reading_from_replicas
+        ? dynamic_cast<MergeTreeReadPoolParallelReplicasInOrder *>(pool.get())
+        : nullptr;
+
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
     {
         const auto & part_with_ranges = parts_with_ranges[i];
+
+        if (pr_in_order_pool && pr_in_order_pool->isPhantomPart(part_with_ranges.data_part->info))
+            continue;
 
         UInt64 total_rows = part_with_ranges.getRowsCount();
         if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)

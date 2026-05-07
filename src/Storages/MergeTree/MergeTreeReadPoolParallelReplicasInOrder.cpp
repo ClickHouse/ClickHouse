@@ -93,6 +93,13 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     per_part_marks_in_range.resize(per_part_infos.size(), 1);
 }
 
+bool MergeTreeReadPoolParallelReplicasInOrder::isPhantomPart(const MergeTreePartInfo & part_info) const
+{
+    if (!authoritative_parts_received)
+        return false;
+    return !authoritative_parts.contains(part_info);
+}
+
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
     std::lock_guard lock(mutex);

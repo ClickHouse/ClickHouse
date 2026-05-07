@@ -35,6 +35,13 @@ public:
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
     MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
 
+    /// Returns true if this part is not in the coordinator's authoritative set for this stream.
+    /// Used to skip constructing source processors for phantom parts at pipeline-build time
+    /// (instead of running them and having `getTask` short-circuit on every call).
+    /// Returns false if the coordinator didn't send an authoritative set (older protocol):
+    /// fall back to the pre-existing behavior, which constructs all sources.
+    bool isPhantomPart(const MergeTreePartInfo & part_info) const;
+
 private:
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicasInOrder");
     const ParallelReadingExtension extension;
