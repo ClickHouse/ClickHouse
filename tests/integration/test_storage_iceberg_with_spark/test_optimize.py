@@ -18,10 +18,14 @@ from helpers.iceberg_utils import (
 def _open_metadata_file(filepath):
     """Open an Iceberg metadata file, transparently handling gzip compression.
 
-    ClickHouse writes compressed metadata as `v<N>.gz.metadata.json` (compression
-    suffix in the middle of the name), so the filename still ends with `.json`.
+    ClickHouse writes compressed metadata with the encoding name (e.g. `gzip`)
+    embedded in the middle of the file name, e.g. `v<N>.gzip.metadata.json`,
+    so the filename still ends with `.json`. Detect gzip by the magic bytes
+    (0x1f 0x8b) to be agnostic to the exact naming convention.
     """
-    if ".gz." in os.path.basename(filepath):
+    with open(filepath, "rb") as raw:
+        magic = raw.read(2)
+    if magic == b"\x1f\x8b":
         return gzip.open(filepath, "rt")
     return open(filepath, "r")
 
