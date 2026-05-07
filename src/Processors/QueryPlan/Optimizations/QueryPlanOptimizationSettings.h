@@ -140,6 +140,7 @@ struct QueryPlanOptimizationSettings
 
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
+    bool use_top_k_dynamic_filtering_for_variable_length_types;
     bool use_skip_indexes_on_data_read;
     size_t max_limit_for_top_k_optimization = 0;
 
