@@ -2,7 +2,6 @@
 #include <chrono>
 #include <IO/CompressionMethod.h>
 #include <base/defines.h>
-#include <Common/Logger.h>
 #include "config.h"
 
 #if USE_AVRO

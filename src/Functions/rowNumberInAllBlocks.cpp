@@ -58,7 +58,14 @@ public:
 
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return ColumnUInt64::create(input_rows_count);
+        /// Dry-run callers (e.g. `ActionsDAG::evaluatePartialResult` used by JOIN-conversion optimizers
+        /// in `Processors/QueryPlan/Optimizations/Utils.cpp`) read the returned column via
+        /// `IColumn::getBool` and similar accessors. The previous implementation allocated the buffer
+        /// without filling it, so MemorySanitizer reported `use-of-uninitialized-value` (issue #100469,
+        /// STID 1499-4a82). Fill the column with zeros to keep the contract that any returned column
+        /// is fully initialized. We do not bump the global `rows` counter -- dry-run must have no side
+        /// effects.
+        return ColumnUInt64::create(input_rows_count, 0);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override

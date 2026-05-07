@@ -19,7 +19,7 @@ extern const int BAD_ARGUMENTS;
 }
 
 
-int main(int argc, char ** argv)
+int mainEntryExampleZstdBuffers(int argc, char ** argv)
 try
 {
     std::cout << std::fixed << std::setprecision(2);

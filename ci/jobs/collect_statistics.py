@@ -2,12 +2,13 @@ import json
 import sys
 from datetime import datetime
 
-from ci.praktika import Secret
 from ci.praktika.cidb import CIDB
+from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.s3 import S3
+from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell
-from ci.settings.settings import S3_REPORT_BUCKET_NAME
+from ci.praktika.settings import Settings
 
 # Job collects overall CI statistics per each job
 
@@ -110,20 +111,14 @@ def get_job_stat_for_interval(name, interval_days, overall_statistics):
 
 if __name__ == "__main__":
 
-    cidb = CIDB(
-        url=Secret.Config(
-            name="clickhouse-test-stat-url",
-            type=Secret.Type.AWS_SSM_PARAMETER,
-        ).get_value(),
-        user=Secret.Config(
-            name="clickhouse-test-stat-login",
-            type=Secret.Type.AWS_SSM_PARAMETER,
-        ).get_value(),
-        passwd=Secret.Config(
-            name="clickhouse-test-stat-password",
-            type=Secret.Type.AWS_SSM_PARAMETER,
-        ).get_value(),
+    info = Info()
+    url_secret = info.get_secret(Settings.SECRET_CI_DB_URL)
+    user_secret = info.get_secret(Settings.SECRET_CI_DB_USER)
+    passwd_secret = info.get_secret(Settings.SECRET_CI_DB_PASSWORD)
+    url, user, pwd = (
+        url_secret.join_with(user_secret).join_with(passwd_secret).get_value()
     )
+    cidb = CIDB(url=url, user=user, passwd=pwd)
 
     BASE_REF = "master"
 
@@ -171,7 +166,7 @@ if __name__ == "__main__":
     results.append(
         Result(
             name="Fetch statistics",
-            status=Result.Status.SUCCESS if is_collected else Result.Status.FAILED,
+            status=Result.Status.OK if is_collected else Result.Status.FAIL,
             results=results_stat,
         )
     )
@@ -196,13 +191,13 @@ if __name__ == "__main__":
             )
             _ = S3.copy_file_to_s3(
                 local_path=archive_name,
-                s3_path=f"{S3_REPORT_BUCKET_NAME}/statistics",
+                s3_path=f"{Settings.S3_REPORT_BUCKET}/statistics",
                 content_type="application/json",
                 content_encoding="gzip",
             )
             statistics_link = S3.copy_file_to_s3(
                 local_path=archive_name_with_date,
-                s3_path=f"{S3_REPORT_BUCKET_NAME}/statistics",
+                s3_path=f"{Settings.S3_REPORT_BUCKET}/statistics",
                 content_type="application/json",
                 content_encoding="gzip",
             )

@@ -5,6 +5,78 @@
 namespace DB
 {
 
+enum class BinaryTypeIndex : uint8_t
+{
+    Nothing = 0x00,
+    UInt8 = 0x01,
+    UInt16 = 0x02,
+    UInt32 = 0x03,
+    UInt64 = 0x04,
+    UInt128 = 0x05,
+    UInt256 = 0x06,
+    Int8 = 0x07,
+    Int16 = 0x08,
+    Int32 = 0x09,
+    Int64 = 0x0A,
+    Int128 = 0x0B,
+    Int256 = 0x0C,
+    Float32 = 0x0D,
+    Float64 = 0x0E,
+    Date = 0x0F,
+    Date32 = 0x10,
+    DateTimeUTC = 0x11,
+    DateTimeWithTimezone = 0x12,
+    DateTime64UTC = 0x13,
+    DateTime64WithTimezone = 0x14,
+    String = 0x15,
+    FixedString = 0x16,
+    Enum8 = 0x17,
+    Enum16 = 0x18,
+    Decimal32 = 0x19,
+    Decimal64 = 0x1A,
+    Decimal128 = 0x1B,
+    Decimal256 = 0x1C,
+    UUID = 0x1D,
+    Array = 0x1E,
+    UnnamedTuple = 0x1F,
+    NamedTuple = 0x20,
+    Set = 0x21,
+    Interval = 0x22,
+    Nullable = 0x23,
+    Function = 0x24,
+    AggregateFunction = 0x25,
+    LowCardinality = 0x26,
+    Map = 0x27,
+    IPv4 = 0x28,
+    IPv6 = 0x29,
+    Variant = 0x2A,
+    Dynamic = 0x2B,
+    Custom = 0x2C,
+    Bool = 0x2D,
+    SimpleAggregateFunction = 0x2E,
+    Nested = 0x2F,
+    JSON = 0x30,
+    BFloat16 = 0x31,
+    Time = 0x32,
+    /* The reason behind putting Time64 to 0x34 instead of 0x33 is following:
+    Originally, there were Time and Time64 with (and without) timezones, which were making the following indexing:
+    TimeUTC = 0x32
+    TimeWithTimezone = 0x33
+    Time64UTC = 0x34
+    Time64WithTimezone = 0x35
+
+    After that timezones became forbidden for Time[64] types, so we removed those types from here.
+    But we need to make the indexing consistent to ensure backwards compatibility.
+
+    Please don't use 0x33 and 0x35, because older client might try to serialise data as TimeWithTimezone/Time64WithTimezone, and newer server would deserialise them as incorrect types. */
+    Time64 = 0x34,
+    /// reserved = 0x35
+    QBit = 0x36
+};
+
+/// Maximum value of BinaryTypeIndex + 1, used for sizing the index array in SimpleDataTypesCache.
+inline constexpr size_t BINARY_TYPE_INDEX_SIZE = 0x37;
+
 /**
 
 Binary encoding for ClickHouse data types:

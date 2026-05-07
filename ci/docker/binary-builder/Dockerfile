@@ -89,7 +89,7 @@ RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/M
   && ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64 \
   && rm /MacOSX11.0.sdk.tar.xz
 
-ARG CLANG_TIDY_SHA1=e33c063ca6e52b48bcefbc45d46d8c150ffa81ca
+ARG CLANG_TIDY_SHA1=3880541496c7ce0d2e2830d2f525375078fe0b1f
 RUN curl -Lo /usr/bin/clang-tidy-cache.py \
         "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/src/ctcache/clang_tidy_cache.py" \
     && chmod +x /usr/bin/clang-tidy-cache.py

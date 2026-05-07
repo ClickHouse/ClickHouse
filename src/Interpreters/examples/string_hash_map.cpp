@@ -20,7 +20,7 @@
 
 using namespace std;
 
-int main()
+int generateStringHashMapData()
 {
     std::string s;
     pcg64_fast rng{randomSeed()};
@@ -115,6 +115,9 @@ Best: 1 - 593010342                 Best: 1 - 503062152                 Best: 1 
 */
 
 
+namespace
+{
+
 using Value = uint64_t;
 
 template <typename Map>
@@ -162,6 +165,8 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, DB::Arena &, co
     }
 }
 
+} /// anonymous namespace
+
 /*
 template <typename Map>
 runFromFile()
@@ -203,7 +208,7 @@ benchFromFile()
 */
 
 
-int main(int argc, char ** argv)
+int mainEntryExampleStringHashMap(int argc, char ** argv)
 {
     if (argc < 3)
     {

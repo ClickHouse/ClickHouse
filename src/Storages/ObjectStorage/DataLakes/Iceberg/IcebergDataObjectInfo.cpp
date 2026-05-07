@@ -43,7 +43,9 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           data_manifest_file_entry_->sequence_number,
           data_manifest_file_entry_->parsed_entry->file_format,
           /* position_deletes_objects */ {},
-          /* equality_deletes_objects */ {}}
+          /* equality_deletes_objects */ {},
+          data_manifest_file_entry_->parsed_entry->record_count,
+          data_manifest_file_entry_->parsed_entry->file_size_in_bytes}
 {
 }
 
@@ -137,6 +139,27 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
             }
         }
     }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_FILE_STATS)
+    {
+        if (record_count.has_value())
+        {
+            writeVarUInt(1, out);
+            writeVarInt(*record_count, out);
+        }
+        else
+        {
+            writeVarUInt(0, out);
+        }
+        if (file_size_in_bytes.has_value())
+        {
+            writeVarUInt(1, out);
+            writeVarInt(*file_size_in_bytes, out);
+        }
+        else
+        {
+            writeVarUInt(0, out);
+        }
+    }
 }
 
 void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version)
@@ -195,6 +218,33 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
                     eq_delete_obj.equality_ids->push_back(equality_id);
                 }
             }
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_FILE_STATS)
+    {
+        size_t has_record_count = 0;
+        readVarUInt(has_record_count, in);
+        if (has_record_count)
+        {
+            Int64 value = 0;
+            readVarInt(value, in);
+            record_count = value;
+        }
+        else
+        {
+            record_count = std::nullopt;
+        }
+        size_t has_file_size = 0;
+        readVarUInt(has_file_size, in);
+        if (has_file_size)
+        {
+            Int64 value = 0;
+            readVarInt(value, in);
+            file_size_in_bytes = value;
+        }
+        else
+        {
+            file_size_in_bytes = std::nullopt;
         }
     }
 }

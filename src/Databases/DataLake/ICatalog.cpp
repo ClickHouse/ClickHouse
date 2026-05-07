@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include <Common/FailPoint.h>
+#include <Poco/URI.h>
 
 namespace DB::ErrorCodes
 {
@@ -118,6 +119,7 @@ void TableMetadata::setLocation(const std::string & location_)
         /// Azure ABFSS format: extract container (before @) and account (after @)
         bucket = bucket_part.substr(0, at_pos);
         azure_account_with_suffix = bucket_part.substr(at_pos + 1);
+
         LOG_TEST(getLogger("TableMetadata"),
                  "Parsed Azure location - container: {}, account: {}, path: {}",
                  bucket, azure_account_with_suffix, path);
@@ -138,12 +140,12 @@ std::string TableMetadata::getLocation() const
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
     if (!endpoint.empty())
-        return constructLocation(endpoint);
+        return constructLocation(endpoint, DB::S3UriStyle::AUTO);
 
     return std::filesystem::path(location_without_path) / path;
 }
 
-std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_) const
+std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style) const
 {
     if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
@@ -151,10 +153,10 @@ std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_
     if (endpoint_.empty())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Passed endpoint is empty");
 
-    return constructLocation(endpoint_);
+    return constructLocation(endpoint_, uri_style);
 }
 
-std::string TableMetadata::constructLocation(const std::string & endpoint_) const
+std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const
 {
     std::string location = endpoint_;
     if (location.ends_with('/'))
@@ -165,14 +167,38 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_) cons
     /// The bucket variable contains the container name for Azure.
     if (!azure_account_with_suffix.empty())
     {
-        /// Azure storage - endpoint should be https://<account>.dfs.core.windows.net
-        /// Construct the full URL with container and path
-        if (location.ends_with(bucket))
+        if (!force_add_bucket && location.find("/" + bucket) != std::string::npos)
             return std::filesystem::path(location) / path / "";
         return std::filesystem::path(location) / bucket / path / "";
     }
 
-    if (location.ends_with(bucket))
+    if (uri_style == DB::S3UriStyle::VIRTUAL_HOSTED)
+    {
+        /// Virtual-hosted style: embed the bucket name in the hostname.
+        /// Transform https://endpoint.com[:port] -> https://bucket.endpoint.com[:port]/path/
+        /// If the endpoint hostname already starts with the bucket (already virtual-hosted), don't add it again.
+        Poco::URI endpoint_uri(location);
+        const std::string & host = endpoint_uri.getHost();
+        if (!host.starts_with(bucket + "."))
+            endpoint_uri.setHost(bucket + "." + host);
+        std::string vhosted_base = endpoint_uri.toString();
+        if (vhosted_base.ends_with('/'))
+            vhosted_base.pop_back();
+        return std::filesystem::path(vhosted_base) / path / "";
+    }
+
+    if (uri_style == DB::S3UriStyle::PATH)
+    {
+        Poco::URI endpoint_uri(location);
+        if (endpoint_uri.getHost().starts_with(bucket + "."))
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use PATH addressing style with endpoint '{}': "
+                "the hostname already embeds bucket '{}' in virtual-hosted form",
+                endpoint_uri.getHost(), bucket);
+    }
+
+    if (!force_add_bucket && location.ends_with(bucket))
         return std::filesystem::path(location) / path / "";
     return std::filesystem::path(location) / bucket / path / "";
 }
@@ -263,7 +289,7 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
 
         if (metadata_location.starts_with(data_location))
         {
-            size_t remove_slash = metadata_location[data_location.size()] == '/' ? 1 : 0;
+            size_t remove_slash = (metadata_location.size() > data_location.size() && metadata_location[data_location.size()] == '/') ? 1 : 0;
             metadata_location = metadata_location.substr(data_location.size() + remove_slash);
         }
     }

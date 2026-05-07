@@ -25,7 +25,7 @@ public:
 
     Status prepare() override;
     void work() override;
-    Processors expandPipeline() override;
+    PipelineUpdate updatePipeline() override;
 
     OutputPort & getPort() { return *main; }
     OutputPort * getTotalsPort() { return totals; }

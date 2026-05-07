@@ -1,0 +1,18 @@
+<clickhouse>
+    <s3>
+        <!-- Endpoint for test 04070_s3_disk_settings_override.
+             Sets a large max_single_part_upload_size. The disk config sets a small value.
+             The test verifies that disk config takes priority over global <s3> section. -->
+        <test_04070>
+            <endpoint>http://localhost:11111/test/04070_s3_disk_settings_override</endpoint>
+            <max_single_part_upload_size>104857600</max_single_part_upload_size>
+        </test_04070>
+        <!-- Endpoint for test 04093_s3_settings_query_override.
+             Sets a large max_single_part_upload_size. Query-level settings set a small value.
+             The test verifies that query-level settings take priority over global <s3> section. -->
+        <test_04093>
+            <endpoint>http://localhost:11111/test/04093_s3_settings_query_override</endpoint>
+            <max_single_part_upload_size>104857600</max_single_part_upload_size>
+        </test_04093>
+    </s3>
+</clickhouse>

@@ -1,14 +1,15 @@
 import pytest
 
-from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster, is_arm
+from helpers.cluster import ClickHouseCluster
 
-# For arm version see https://github.com/ClickHouse/ClickHouse/pull/59132
+# 24.1 is the oldest tag that ships a multi-arch image (see #59132); using it
+# unconditionally keeps the test working on both x86_64 and arm64 runners.
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     with_zookeeper=False,
     image="clickhouse/clickhouse-server",
-    tag="24.1" if is_arm() else CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    tag="24.1",
     stay_alive=True,
     with_installed_binary=True,
 )
@@ -16,7 +17,7 @@ node2 = cluster.add_instance(
     "node2",
     with_zookeeper=False,
     image="clickhouse/clickhouse-server",
-    tag="24.1" if is_arm() else CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    tag="24.1",
     stay_alive=True,
     with_installed_binary=True,
 )

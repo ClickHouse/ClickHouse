@@ -2,7 +2,6 @@
 
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 
 namespace DB

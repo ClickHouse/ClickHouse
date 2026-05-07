@@ -15,7 +15,7 @@ namespace ErrorCodes
 InputPorts createInputPorts(
     SharedHeader header,
     size_t num_ports,
-    IProcessor::PortNumbers delayed_ports,
+    std::vector<UInt64> delayed_ports,
     bool assert_main_ports_empty)
 {
     if (!assert_main_ports_empty)
@@ -39,13 +39,12 @@ InputPorts createInputPorts(
 }
 
 DelayedPortsProcessor::DelayedPortsProcessor(
-    SharedHeader header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty)
+    SharedHeader header, size_t num_ports, const std::vector<UInt64> & delayed_ports, bool assert_main_ports_empty)
     : IProcessor(createInputPorts(header, num_ports, delayed_ports, assert_main_ports_empty),
                  OutputPorts((assert_main_ports_empty ? delayed_ports.size() : num_ports), header))
     , num_delayed_ports(delayed_ports.size())
 {
     port_pairs.resize(num_ports);
-    output_to_pair.reserve(outputs.size());
 
     for (const auto & delayed : delayed_ports)
         port_pairs[delayed].is_delayed = true;
@@ -55,12 +54,13 @@ DelayedPortsProcessor::DelayedPortsProcessor(
     for (size_t i = 0; i < num_ports; ++i)
     {
         port_pairs[i].input_port = &*input_it;
+        input_port_to_pair[&*input_it] = i;
         ++input_it;
 
         if (port_pairs[i].is_delayed || !assert_main_ports_empty)
         {
             port_pairs[i].output_port = &*output_it;
-            output_to_pair.push_back(i);
+            output_port_to_pair[&*output_it] = i;
             ++output_it;
         }
     }
@@ -122,7 +122,7 @@ bool DelayedPortsProcessor::shouldSkipDelayed() const
     return num_finished_main_inputs + num_delayed_ports < port_pairs.size();
 }
 
-IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+IProcessor::Status DelayedPortsProcessor::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
 {
     bool skip_delayed = shouldSkipDelayed();
     bool need_data = false;
@@ -137,9 +137,9 @@ IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_in
         are_inputs_initialized = true;
     }
 
-    for (const auto & output_number : updated_outputs)
+    for (const auto * output_port : updated_outputs)
     {
-        auto & pair = port_pairs[output_to_pair[output_number]];
+        auto & pair = port_pairs[output_port_to_pair.at(output_port)];
 
         /// Finish pair of ports earlier if possible.
         if (!pair.is_finished && pair.output_port && pair.output_port->isFinished())
@@ -157,10 +157,11 @@ IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_in
         return Status::Finished;
     }
 
-    for (const auto & input_number : updated_inputs)
+    for (const auto * input_port : updated_inputs)
     {
-        if (!skip_delayed || !port_pairs[input_number].is_delayed)
-            need_data = processPair(port_pairs[input_number]) || need_data;
+        auto & pair = port_pairs[input_port_to_pair.at(input_port)];
+        if (!skip_delayed || !pair.is_delayed)
+            need_data = processPair(pair) || need_data;
     }
 
     /// In case if main streams are finished at current iteration, start processing delayed streams.

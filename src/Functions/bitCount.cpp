@@ -58,7 +58,7 @@ struct BitCountImpl
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "BitCountImpl compilation expected native integer or floating-point type");
 
-        auto * func_ctpop = llvm::Intrinsic::getDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::ctpop, {int_value->getType()});
+        auto * func_ctpop = llvm::Intrinsic::getOrInsertDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::ctpop, {int_value->getType()});
         llvm::Value * ctpop_value = b.CreateCall(func_ctpop, {int_value});
         return b.CreateZExtOrTrunc(ctpop_value, llvm::Type::getInt8Ty(b.getContext()));
     }

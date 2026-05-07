@@ -256,11 +256,7 @@ public:
     SystemTable & operator=(const SystemTable & c) = default;
     SystemTable & operator=(SystemTable && c) noexcept = default;
 
-    void setName(ExprSchemaTable * est) const
-    {
-        est->mutable_database()->set_database(schema_name);
-        est->mutable_table()->set_table(table_name);
-    }
+    void setName(ExprSchemaTable * est) const;
 };
 
 struct DiskInfo
@@ -273,6 +269,13 @@ struct DiskInfo
     bool is_encrypted = false;
     bool is_cached = false; /// true when cache_path != '' in system.disks
 };
+
+/// Escape a string for embedding inside a single-quoted SQL literal (doubles single quotes).
+String escapeSQLString(const String & s, char escape_char = '\'');
+
+/// Percent-encode a string for use as a URL query parameter value.
+/// Spaces are encoded as '+'; all other non-unreserved characters as %XX.
+String urlEncodeQueryParam(const String & s);
 
 class FuzzConfig
 {
@@ -348,6 +351,7 @@ public:
     bool enable_sync_settings = false;
     bool enable_backups = true;
     bool enable_renames = true;
+    bool allow_nasty_identifiers = false;
 
     uint64_t seed = 0;
     uint64_t min_insert_rows = 1;

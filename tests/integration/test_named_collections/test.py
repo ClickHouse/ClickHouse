@@ -566,6 +566,7 @@ def test_sql_commands(cluster, with_keeper):
             ).strip()
         )
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 1 == len(children)
             assert "collection2.sql" in children
@@ -619,6 +620,7 @@ def test_sql_commands(cluster, with_keeper):
         )
 
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 1 == len(children)
             assert "collection2.sql" in children
@@ -642,6 +644,7 @@ def test_sql_commands(cluster, with_keeper):
         )
 
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 1 == len(children)
             assert "collection2.sql" in children
@@ -697,6 +700,7 @@ def test_sql_commands(cluster, with_keeper):
         )
 
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 1 == len(children)
             assert "collection2.sql" in children
@@ -718,6 +722,7 @@ def test_sql_commands(cluster, with_keeper):
             == node.query("select name from system.named_collections").strip()
         )
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 0 == len(children)
 
@@ -763,6 +768,7 @@ def test_keeper_storage(cluster):
             ).strip()
         )
 
+        zk.sync(ZK_PATH)
         children = zk.get_children(ZK_PATH)
         assert 1 == len(children)
         assert "collection2.sql" in children
@@ -807,6 +813,7 @@ def test_keeper_storage(cluster):
         )
 
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 1 == len(children)
             assert "collection2.sql" in children
@@ -835,6 +842,7 @@ def test_keeper_storage(cluster):
             == node.query("select name from system.named_collections").strip()
         )
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 0 == len(children)
 

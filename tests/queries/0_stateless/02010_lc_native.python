@@ -197,6 +197,15 @@ def readHeader(s):
         print("Column {} type {}".format(col_name, type_name))
 
 
+def readProgress(s):
+    read_rows = readVarUInt(s)
+    read_bytes = readVarUInt(s)
+    total_rows_to_read = readVarUInt(s)
+    written_rows = readVarUInt(s)
+    written_bytes = readVarUInt(s)
+    return read_rows, read_bytes, total_rows_to_read, written_rows, written_bytes
+
+
 def readException(s):
     code = readUInt32(s)
     name = readStringBinary(s)
@@ -244,6 +253,9 @@ def insertValidLowCardinalityRow():
 
         # Fin block
         sendEmptyBlock(s)
+
+        assertPacket(readVarUInt(s), 3)  # Progress
+        readProgress(s)
 
         assertPacket(readVarUInt(s), 5)  # End of stream
         s.close()

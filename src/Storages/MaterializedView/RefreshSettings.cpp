@@ -10,6 +10,8 @@ namespace DB
     DECLARE(UInt64, refresh_retry_initial_backoff_ms, 100, "Delay before the first retry if refresh query fails (if refresh_retries setting is not zero). Each subsequent retry doubles the delay, up to refresh_retry_max_backoff_ms.", 0) \
     DECLARE(UInt64, refresh_retry_max_backoff_ms, 60'000, "Limit on the exponential growth of delay between refresh attempts, if they keep failing and refresh_retries is positive.", 0) \
     DECLARE(Bool, all_replicas, /* do not change or existing tables will break */ false, "If the materialized view is in a Replicated database, and APPEND is enabled, this flag controls whether all replicas or one replica will refresh.", 0) \
+    DECLARE(Bool, prefer_dependency_replica, false, "When enabled and the view has dependencies (DEPENDS ON), the replica that ran the parent refresh gets priority for running the dependent refresh. Other replicas delay their attempt by prefer_dependency_replica_delay_ms. Useful for SharedMergeTree to avoid replication lag causing missing data in dependent refresh chains.", 0) \
+    DECLARE(UInt64, prefer_dependency_replica_delay_ms, 2000, "How long non-preferred replicas wait before attempting to run a dependent refresh when prefer_dependency_replica is enabled. The preferred replica (the one that ran the parent) attempts immediately.", 0) \
 
 DECLARE_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS)

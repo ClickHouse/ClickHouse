@@ -160,6 +160,9 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 /// Outputs user-readable description into `out`.
 void dumpSortDescription(const SortDescription & description, WriteBuffer & out);
 
+struct ExplainFormatSettings;
+void dumpSortDescription(const SortDescription & description, ExplainFormatSettings & settings);
+
 std::string dumpSortDescription(const SortDescription & description);
 
 JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description);

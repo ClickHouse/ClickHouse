@@ -147,6 +147,11 @@ void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);
 }
 
+void ColumnFixedString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(&chars[n * begin]), n * (end - begin));
+}
+
 WeakHash32 ColumnFixedString::getWeakHash32() const
 {
     auto s = size();

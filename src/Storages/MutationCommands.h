@@ -6,7 +6,6 @@
 #include <unordered_map>
 
 #include <Core/Names.h>
-#include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/IStorage_fwd.h>

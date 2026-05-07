@@ -597,7 +597,7 @@ lambda_worker_config = Lambda.Config(
         "praktika_slack_app_token": "SLACK_BOT_TOKEN",
     },
     timeout_ms=30 * 1000,
-    memory_size_mb=128,
+    memory_size_mb=256,
 )
 
 # local tests and development

@@ -1,0 +1,118 @@
+<!-- https://clickhouse.com/docs/getting-started/example-datasets/tpcds -->
+<!-- Scale factor: 1 -->
+<test>
+
+<settings file="../benchmarks/tpc-ds/settings.json"/>
+
+<substitutions>
+    <substitution>
+        <name>table</name>
+        <values>
+            <value>tpcds</value>
+        </values>
+    </substitution>
+</substitutions>
+
+<fill_query>USE {table}</fill_query>
+
+<!-- Q1 -->  <query file="../benchmarks/tpc-ds/queries/query_01.sql"/>
+<!-- Q2 -->  <query file="../benchmarks/tpc-ds/queries/query_02.sql"/>
+<!-- Q3 -->  <query file="../benchmarks/tpc-ds/queries/query_03.sql"/>
+<!-- Q4 -->  <query file="../benchmarks/tpc-ds/queries/query_04.sql"/>
+<!-- Q5 -->  <query file="../benchmarks/tpc-ds/queries/query_05.sql"/>
+<!-- Q6 -->  <query file="../benchmarks/tpc-ds/queries/query_06.sql"/>
+<!-- Q7 -->  <query file="../benchmarks/tpc-ds/queries/query_07.sql"/>
+<!-- Q8 -->  <query file="../benchmarks/tpc-ds/queries/query_08.sql"/>
+<!-- Q9 -->  <query file="../benchmarks/tpc-ds/queries/query_09.sql"/>
+<!-- Q10 --> <query file="../benchmarks/tpc-ds/queries/query_10.sql"/>
+<!-- Q11 --> <query file="../benchmarks/tpc-ds/queries/query_11.sql"/>
+<!-- Q12 --> <query file="../benchmarks/tpc-ds/queries/query_12.sql"/>
+<!-- Q13 --> <query file="../benchmarks/tpc-ds/queries/query_13.sql"/>
+<!-- Q14 --> <query file="../benchmarks/tpc-ds/queries/query_14.sql"/>
+<!-- Q15 --> <query file="../benchmarks/tpc-ds/queries/query_15.sql"/>
+<!-- Q16 --> <query file="../benchmarks/tpc-ds/queries/query_16.sql"/>
+<!-- Q17 --> <query file="../benchmarks/tpc-ds/queries/query_17.sql"/>
+<!-- Q18 --> <query file="../benchmarks/tpc-ds/queries/query_18.sql"/>
+<!-- Q19 --> <query file="../benchmarks/tpc-ds/queries/query_19.sql"/>
+<!-- Q20 --> <query file="../benchmarks/tpc-ds/queries/query_20.sql"/>
+<!-- Q21 --> <query file="../benchmarks/tpc-ds/queries/query_21.sql"/>
+<!-- Q22 --> <query file="../benchmarks/tpc-ds/queries/query_22.sql"/>
+<!-- Q23 --> <query file="../benchmarks/tpc-ds/queries/query_23.sql"/>
+<!-- Q24 --> <query file="../benchmarks/tpc-ds/queries/query_24.sql"/>
+<!-- Q25 --> <query file="../benchmarks/tpc-ds/queries/query_25.sql"/>
+<!-- Q26 --> <query file="../benchmarks/tpc-ds/queries/query_26.sql"/>
+<!-- Q27 --> <query file="../benchmarks/tpc-ds/queries/query_27.sql"/>
+<!-- Q28 --> <query file="../benchmarks/tpc-ds/queries/query_28.sql"/>
+<!-- Q29 --> <query file="../benchmarks/tpc-ds/queries/query_29.sql"/>
+<!-- Q30 --> <query file="../benchmarks/tpc-ds/queries/query_30.sql"/>
+<!-- Q31 --> <query file="../benchmarks/tpc-ds/queries/query_31.sql"/>
+<!-- Q32 --> <query file="../benchmarks/tpc-ds/queries/query_32.sql"/>
+<!-- Q33 --> <query file="../benchmarks/tpc-ds/queries/query_33.sql"/>
+<!-- Q34 --> <query file="../benchmarks/tpc-ds/queries/query_34.sql"/>
+<!-- Q35 excluded: problematic, see tests/benchmarks/tpc-ds/README.md  --> <query>SELECT 'Q35 skipped'</query>
+<!-- Q36 --> <query file="../benchmarks/tpc-ds/queries/query_36.sql"/>
+<!-- Q37 --> <query file="../benchmarks/tpc-ds/queries/query_37.sql"/>
+<!-- Q38 --> <query file="../benchmarks/tpc-ds/queries/query_38.sql"/>
+<!-- Q39 --> <query file="../benchmarks/tpc-ds/queries/query_39.sql"/>
+<!-- Q40 --> <query file="../benchmarks/tpc-ds/queries/query_40.sql"/>
+<!-- Q41 --> <query file="../benchmarks/tpc-ds/queries/query_41.sql"/>
+<!-- Q42 --> <query file="../benchmarks/tpc-ds/queries/query_42.sql"/>
+<!-- Q43 --> <query file="../benchmarks/tpc-ds/queries/query_43.sql"/>
+<!-- Q44 --> <query file="../benchmarks/tpc-ds/queries/query_44.sql"/>
+<!-- Q45 --> <query file="../benchmarks/tpc-ds/queries/query_45.sql"/>
+<!-- Q46 --> <query file="../benchmarks/tpc-ds/queries/query_46.sql"/>
+<!-- Q47 --> <query file="../benchmarks/tpc-ds/queries/query_47.sql"/>
+<!-- Q48 --> <query file="../benchmarks/tpc-ds/queries/query_48.sql"/>
+<!-- Q49 --> <query file="../benchmarks/tpc-ds/queries/query_49.sql"/>
+<!-- Q50 --> <query file="../benchmarks/tpc-ds/queries/query_50.sql"/>
+<!-- Q51 --> <query file="../benchmarks/tpc-ds/queries/query_51.sql"/>
+<!-- Q52 --> <query file="../benchmarks/tpc-ds/queries/query_52.sql"/>
+<!-- Q53 --> <query file="../benchmarks/tpc-ds/queries/query_53.sql"/>
+<!-- Q54 --> <query file="../benchmarks/tpc-ds/queries/query_54.sql"/>
+<!-- Q55 --> <query file="../benchmarks/tpc-ds/queries/query_55.sql"/>
+<!-- Q56 --> <query file="../benchmarks/tpc-ds/queries/query_56.sql"/>
+<!-- Q57 --> <query file="../benchmarks/tpc-ds/queries/query_57.sql"/>
+<!-- Q58 --> <query file="../benchmarks/tpc-ds/queries/query_58.sql"/>
+<!-- Q59 --> <query file="../benchmarks/tpc-ds/queries/query_59.sql"/>
+<!-- Q60 --> <query file="../benchmarks/tpc-ds/queries/query_60.sql"/>
+<!-- Q61 --> <query file="../benchmarks/tpc-ds/queries/query_61.sql"/>
+<!-- Q62 --> <query file="../benchmarks/tpc-ds/queries/query_62.sql"/>
+<!-- Q63 --> <query file="../benchmarks/tpc-ds/queries/query_63.sql"/>
+<!-- Q64 --> <query file="../benchmarks/tpc-ds/queries/query_64.sql"/>
+<!-- Q65 --> <query file="../benchmarks/tpc-ds/queries/query_65.sql"/>
+<!-- Q66 --> <query file="../benchmarks/tpc-ds/queries/query_66.sql"/>
+<!-- Q67 --> <query file="../benchmarks/tpc-ds/queries/query_67.sql"/>
+<!-- Q68 --> <query file="../benchmarks/tpc-ds/queries/query_68.sql"/>
+<!-- Q69 --> <query file="../benchmarks/tpc-ds/queries/query_69.sql"/>
+<!-- Q70 --> <query file="../benchmarks/tpc-ds/queries/query_70.sql"/>
+<!-- Q71 --> <query file="../benchmarks/tpc-ds/queries/query_71.sql"/>
+<!-- Q72 --> <query file="../benchmarks/tpc-ds/queries/query_72.sql"/>
+<!-- Q73 --> <query file="../benchmarks/tpc-ds/queries/query_73.sql"/>
+<!-- Q74 --> <query file="../benchmarks/tpc-ds/queries/query_74.sql"/>
+<!-- Q75 --> <query file="../benchmarks/tpc-ds/queries/query_75.sql"/>
+<!-- Q76 --> <query file="../benchmarks/tpc-ds/queries/query_76.sql"/>
+<!-- Q77 --> <query file="../benchmarks/tpc-ds/queries/query_77.sql"/>
+<!-- Q78 --> <query file="../benchmarks/tpc-ds/queries/query_78.sql"/>
+<!-- Q79 --> <query file="../benchmarks/tpc-ds/queries/query_79.sql"/>
+<!-- Q80 --> <query file="../benchmarks/tpc-ds/queries/query_80.sql"/>
+<!-- Q81 --> <query file="../benchmarks/tpc-ds/queries/query_81.sql"/>
+<!-- Q82 --> <query file="../benchmarks/tpc-ds/queries/query_82.sql"/>
+<!-- Q83 --> <query file="../benchmarks/tpc-ds/queries/query_83.sql"/>
+<!-- Q84 --> <query file="../benchmarks/tpc-ds/queries/query_84.sql"/>
+<!-- Q85 --> <query file="../benchmarks/tpc-ds/queries/query_85.sql"/>
+<!-- Q86 --> <query file="../benchmarks/tpc-ds/queries/query_86.sql"/>
+<!-- Q87 --> <query file="../benchmarks/tpc-ds/queries/query_87.sql"/>
+<!-- Q88 --> <query file="../benchmarks/tpc-ds/queries/query_88.sql"/>
+<!-- Q89 --> <query file="../benchmarks/tpc-ds/queries/query_89.sql"/>
+<!-- Q90 --> <query file="../benchmarks/tpc-ds/queries/query_90.sql"/>
+<!-- Q91 --> <query file="../benchmarks/tpc-ds/queries/query_91.sql"/>
+<!-- Q92 --> <query file="../benchmarks/tpc-ds/queries/query_92.sql"/>
+<!-- Q93 --> <query file="../benchmarks/tpc-ds/queries/query_93.sql"/>
+<!-- Q94 --> <query file="../benchmarks/tpc-ds/queries/query_94.sql"/>
+<!-- Q95 --> <query file="../benchmarks/tpc-ds/queries/query_95.sql"/>
+<!-- Q96 --> <query file="../benchmarks/tpc-ds/queries/query_96.sql"/>
+<!-- Q97 --> <query file="../benchmarks/tpc-ds/queries/query_97.sql"/>
+<!-- Q98 --> <query file="../benchmarks/tpc-ds/queries/query_98.sql"/>
+<!-- Q99 --> <query file="../benchmarks/tpc-ds/queries/query_99.sql"/>
+
+</test>

@@ -251,53 +251,12 @@ public:
             if (path.empty())
                 return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
-            /// Extract literal subcolumn (json.path returns the scalar value at that path).
-            auto literal_type = data_type_object.getSubcolumnType(path);
-            auto literal_subcolumn = data_type_object.getSubcolumn(path, object_column);
-
-            ColumnPtr merged;
-            DataTypePtr merged_type;
-
-            /// When the path has a type hint (literal_type is not Dynamic), the subobject may not be convertible to that type.
-            /// For typed paths we skip the subobject merge and use only the literal subcolumn.
-            if (literal_type && !isDynamic(literal_type))
-            {
-                merged = literal_subcolumn;
-                merged_type = literal_type;
-            }
-            else
-            {
-                /// Extract subobject subcolumn (json.^`path` returns nested object at that path).
-                String sub_object_name = "^`" + path + "`";
-                auto sub_object_type = data_type_object.getSubcolumnType(sub_object_name);
-                ColumnPtr sub_object_subcolumn = data_type_object.getSubcolumn(sub_object_name, object_column);
-
-                /// Merge literal and subobject subcolumns (same logic as `getObjectElement' in tupleElement.cpp):
-                /// For each row: prefer literal (scalar) value, if absent, use subobject (nested JSON).
-                if (sub_object_subcolumn->getNumberOfDefaultRows() == sub_object_subcolumn->size())
-                {
-                    /// No nested subobject at this path (only literal exists).
-                    merged = literal_subcolumn;
-                    merged_type = literal_type;
-                }
-                else
-                {
-                    /// Both exist: merge row-by-row.
-                    auto casted_sub_object = castColumn({sub_object_subcolumn, sub_object_type, ""}, literal_type);
-                    auto result_col = literal_type->createColumn();
-                    for (size_t i = 0; i < input_rows_count; ++i)
-                    {
-                        if (!literal_subcolumn->isDefaultAt(i))
-                            result_col->insertFrom(*literal_subcolumn, i);
-                        else if (!sub_object_subcolumn->isDefaultAt(i))
-                            result_col->insertFrom(*casted_sub_object, i);
-                        else
-                            result_col->insertDefault();
-                    }
-                    merged = std::move(result_col);
-                    merged_type = literal_type;
-                }
-            }
+            /// Use combined `@` subcolumn that merges literal value and sub-object.
+            /// For typed paths it returns only the literal value. For non-typed paths it returns a Dynamic
+            /// column: literal if present, sub-object as JSON if not, NULL otherwise.
+            String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + path + "`";
+            auto merged_type = data_type_object.getSubcolumnType(combined_name);
+            auto merged = data_type_object.getSubcolumn(combined_name, object_column);
 
             /// For JSONExtractRaw: serialize each value as a JSON string
             constexpr bool is_extract_raw = std::string_view(TName::name) == std::string_view("JSONExtractRaw")

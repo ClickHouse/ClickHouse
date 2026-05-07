@@ -230,6 +230,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             sort_order_id = sort_order_id_value.safeGet<Int32>();
     }
 
+    const auto record_count = getValueFromRowByName(row_index, c_data_file_record_count, TypeIndex::Int64).safeGet<Int64>();
+    const auto file_size_in_bytes = getValueFromRowByName(row_index, c_data_file_file_size_in_bytes, TypeIndex::Int64).safeGet<Int64>();
+
     switch (content_type)
     {
         case FileContentType::DATA: {
@@ -247,7 +250,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 /*lower_reference_data_file_path_ = */ std::nullopt,
                 /*upper_reference_data_file_path_ = */ std::nullopt,
                 /*equality_ids*/ std::nullopt,
-                sort_order_id);
+                sort_order_id,
+                record_count,
+                file_size_in_bytes);
         }
         case FileContentType::POSITION_DELETE: {
             /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
@@ -292,7 +297,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 lower_reference_data_file_path,
                 upper_reference_data_file_path,
                 /*equality_ids*/ std::nullopt,
-                /*sort_order_id = */ std::nullopt);
+                /*sort_order_id = */ std::nullopt,
+                record_count,
+                file_size_in_bytes);
         }
         case FileContentType::EQUALITY_DELETE: {
             std::vector<Int32> equality_ids;
@@ -321,7 +328,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 /*lower_reference_data_file_path_ = */ std::nullopt,
                 /*upper_reference_data_file_path_ = */ std::nullopt,
                 equality_ids,
-                /*sort_order_id = */ std::nullopt);
+                /*sort_order_id = */ std::nullopt,
+                record_count,
+                file_size_in_bytes);
         }
     }
 }

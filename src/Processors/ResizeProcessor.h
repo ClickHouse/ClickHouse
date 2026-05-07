@@ -1,6 +1,7 @@
 #pragma once
 
 #include <queue>
+#include <unordered_map>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
@@ -29,7 +30,7 @@ public:
     String getName() const override { return "Resize"; }
 
     Status prepare() override;
-    Status prepare(const PortNumbers &, const PortNumbers &) override;
+    Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:
     InputPorts::iterator current_input;
@@ -70,6 +71,8 @@ private:
 
     std::vector<InputPortWithStatus> input_ports;
     std::vector<OutputPortWithStatus> output_ports;
+    std::unordered_map<const InputPort *, UInt64> input_port_index;
+    std::unordered_map<const OutputPort *, UInt64> output_port_index;
 };
 
 /// This is an analog of ResizeProcessor, but it tries to bind one specific input to one specific output.
@@ -95,7 +98,7 @@ public:
 
     String getName() const override { return "StrictResize"; }
 
-    Status prepare(const PortNumbers &, const PortNumbers &) override;
+    Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:
     InputPorts::iterator current_input;
@@ -136,6 +139,9 @@ private:
 
     std::vector<InputPortWithStatus> input_ports;
     std::vector<OutputPortWithStatus> output_ports;
+    std::unordered_map<const InputPort *, UInt64> input_port_index;
+    std::unordered_map<const OutputPort *, UInt64> output_port_index;
+
     /// This field contained chunks which were read for output which had became finished while reading was happening.
     /// They will be pushed to any next waiting output.
     std::vector<Port::Data> abandoned_chunks;

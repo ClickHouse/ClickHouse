@@ -89,6 +89,9 @@ public:
     /// Handle configuration reload
     void tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
 
+    /// Register an additional SSL_CTX to share certificates with the primary context
+    bool registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix);
+
     /// Handle configuration reload for all contexts
     void tryReloadAll(const Poco::Util::AbstractConfiguration & config);
 

@@ -112,6 +112,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                     String & name = it->name;
                     if ((!features.supports_settings || !features.has_builtin_setting_fn(name)) && context_settings.has(name))
                     {
+                        context_->checkSettingsConstraints(*it, SettingSource::QUERY);
                         context_->setSetting(name, it->value);
                         it = engine_settings->changes.erase(it);
                     }
@@ -122,7 +123,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                 }
 
                 if (engine_settings->changes.empty())
-                    create_query->storage->settings = nullptr;
+                    create_query->storage->reset(create_query->storage->settings);
             }
         }
     }

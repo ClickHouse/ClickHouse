@@ -9,24 +9,8 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Common/ThreadPool.h>
 
-namespace arrow
-{
-class Array;
-class DataType;
-}
-
-namespace parquet
-{
-namespace arrow
-{
-    class FileWriter;
-}
-}
-
 namespace DB
 {
-
-class CHColumnToArrowColumn;
 
 class ParquetBlockOutputFormat : public IOutputFormat
 {
@@ -114,7 +98,6 @@ private:
     void onCancel() noexcept override;
 
     void writeRowGroup(std::vector<Chunk> chunks);
-    void writeUsingArrow(std::vector<Chunk> chunks);
     void writeRowGroupInOneThread(Chunk chunk);
     void writeRowGroupInParallel(std::vector<Chunk> chunks);
 
@@ -130,9 +113,6 @@ private:
     std::vector<Chunk> staging_chunks;
     size_t staging_rows = 0;
     size_t staging_bytes = 0;
-
-    std::unique_ptr<parquet::arrow::FileWriter> file_writer;
-    std::unique_ptr<CHColumnToArrowColumn> ch_column_to_arrow_column;
 
     Parquet::WriteOptions options;
     Parquet::SchemaElements schema;

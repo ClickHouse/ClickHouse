@@ -80,6 +80,7 @@ SELECT * FROM tab ORDER BY event_id;
 **2.** Filtering on `Time` values
 
 ``` sql
+SET use_legacy_to_time = 0;
 SELECT * FROM tab WHERE time = toTime('14:30:25')
 ```
 
@@ -114,6 +115,23 @@ SELECT CAST('14:30:25' AS Time) AS column, toTypeName(column) AS type
 1. │ 14:30:25 │ Time │
    └───────────┴──────┘
 ```
+
+## Addition with Date {#addition-with-date}
+
+A [Time](time.md) value can be added to a [Date](date.md) or [Date32](date32.md) value to produce a [DateTime](datetime.md) or [DateTime64](datetime64.md):
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') as datetime;
+```
+
+```text
+   ┌────────────datetime─┐
+1. │ 2024-07-15 14:30:25 │
+   └─────────────────────┘
+```
+
+See [Date and Time Addition](../operators/index.md#date-time-addition) for details on all supported combinations and result types.
 
 ## See Also {#see-also}
 

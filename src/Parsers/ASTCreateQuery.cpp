@@ -519,7 +519,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     frame.expression_list_always_start_on_new_line = true;
 
-    if (is_ordinary_view && aliases_list && !as_table_function)
+    if ((is_ordinary_view || is_materialized_view) && aliases_list && !as_table_function)
     {
         ostr << (settings.one_line ? " (" : "\n(");
         aliases_list->format(ostr, settings, state, frame);

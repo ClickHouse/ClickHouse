@@ -117,8 +117,7 @@ def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmap
         )
     ) == [70]
 
-    # Check PREWHERE (or regular WHERE if optimize_move_to_prewhere = 0 or
-    # input_format_parquet_use_native_reader_v3 = 0)
+    # Check PREWHERE (or regular WHERE if optimize_move_to_prewhere = 0)
     assert get_array(
         instance.query(
             f"SELECT id FROM {expression} WHERE id % 3 = 0", settings=settings)) == list(range(21, 90, 3)) + list(range(102, 150, 3))
@@ -132,7 +131,6 @@ def test_position_deletes_out_of_order(started_cluster_iceberg_with_spark, use_r
 
     settings = {
         "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
-        "input_format_parquet_use_native_reader_v3": 1,
     }
 
     # There are a few flaky hacks chained together here.

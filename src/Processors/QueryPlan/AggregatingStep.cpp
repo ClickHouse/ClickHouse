@@ -14,6 +14,8 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -308,7 +310,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             pipeline.transform([&](OutputPortRawPtrs ports)
             {
                 Processors copiers;
-                copiers.reserve(ports.size());
 
                 for (auto * port : ports)
                 {
@@ -548,13 +549,15 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
 
-    params.explain(settings.out, prefix);
+    params.explain(settings);
+
     if (!sort_description_for_merging.empty())
     {
-        settings.out << prefix << "Order: " << dumpSortDescription(sort_description_for_merging) << '\n';
+        settings.out << prefix << "Order: ";
+        dumpSortDescription(sort_description_for_merging, settings);
+        settings.out << '\n';
     }
     settings.out << prefix << "Skip merging: " << skip_merging << '\n';
-    // settings.out << prefix << "Memory bound merging: " << memory_bound_merging_of_aggregation_results_enabled << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const

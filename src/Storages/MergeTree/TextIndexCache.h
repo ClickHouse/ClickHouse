@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/ColumnString.h>
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 

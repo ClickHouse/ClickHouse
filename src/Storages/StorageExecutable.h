@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Processors/Sources/ShellCommandSource.h>
 
 
@@ -13,7 +13,7 @@ struct ExecutableSettings;
  * Executable storage that will start process for read.
  * ExecutablePool storage maintain pool of processes and take process from pool for read.
  */
-class StorageExecutable final : public IStorage
+class StorageExecutable final : public StorageWithCommonVirtualColumns
 {
 public:
     StorageExecutable(
@@ -29,7 +29,9 @@ public:
 
     String getName() const override;
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & /*storage_snapshot*/,

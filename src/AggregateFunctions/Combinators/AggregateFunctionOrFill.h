@@ -4,10 +4,9 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/memory.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -53,6 +52,29 @@ public:
             return nested_function->getName() + "OrDefault";
     }
 
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (!this->haveSameDefinition(rhs))
+            return false;
+
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
+
+        const size_t rhs_size_of_data = rhs_nested->sizeOfData();
+        place[size_of_data] |= rhs_place[rhs_size_of_data];
+    }
+
     bool isVersioned() const override
     {
         return nested_function->isVersioned();
@@ -80,7 +102,8 @@ public:
 
     size_t sizeOfData() const override
     {
-        return size_of_data + sizeof(char);
+        /// Pad to alignment so that arrays of states (e.g. in -ForEach) keep each element aligned.
+        return ::Memory::alignUp(size_of_data + sizeof(char), alignOfData());
     }
 
     size_t alignOfData() const override

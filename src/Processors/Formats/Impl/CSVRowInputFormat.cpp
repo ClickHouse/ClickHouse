@@ -448,7 +448,11 @@ bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTyp
 void CSVFormatReader::skipPrefixBeforeHeader()
 {
     for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
+    {
+        if (buf->eof())
+            break;
         readRow();
+    }
 }
 
 void CSVFormatReader::setReadBuffer(ReadBuffer & in_)

@@ -613,10 +613,10 @@ public:
 class NestedSubType
 {
 public:
-    uint32_t cname;
+    String cname;
     std::unique_ptr<SQLType> subtype;
 
-    NestedSubType(const uint32_t n, std::unique_ptr<SQLType> s)
+    NestedSubType(const String n, std::unique_ptr<SQLType> s)
         : cname(n)
         , subtype(std::move(s))
     {

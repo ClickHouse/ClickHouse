@@ -1,0 +1,69 @@
+--- Simple filter ---
+Output: a, b, c
+
+ReadFromMergeTree (default.t1)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: a, b, c
+   Prewhere filter
+   Prewhere filter column:  a > 5
+--- Complex filter AND ---
+Output: a, b, c
+
+ReadFromMergeTree (default.t1)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: a, b, c
+   Prewhere filter
+   Prewhere filter column:  c + a * 2 < 100 AND (b != \'x\' OR b LIKE \'%foo%\') AND a > 1
+--- Filter with nested expression ---
+Output: a, b, c
+
+ReadFromMergeTree (default.t1)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: a, b, c
+   Prewhere filter
+   Prewhere filter column:  (a MOD 3 = 0 OR b != \'test\') AND ((a + 1) * 2 > 10 OR c / (a + 1) < 5)
+--- Prewhere ---
+Output: a, b, c
+
+Filter ((WHERE + Change column names to column identifiers))
+│  Filter column: b = \'x\'
+└──ReadFromMergeTree (default.t1)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: a, b, c
+      Prewhere filter
+      Prewhere filter column:  a > 5
+--- Prewhere with expression ---
+Output: a, b, c
+
+ReadFromMergeTree (default.t1)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: a, b, c
+   Prewhere filter
+   Prewhere filter column:  a + 1 > 5
+--- Runtime filter ---
+Output: a, b, c, x, y
+
+Join (JOIN FillRightFirst)
+│  t1 ⋈ t2
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Join conditions: a = x
+│  Output:
+│    Left:  a, b, c
+│    Right: x, y
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: a, b, c
+│     Runtime filters: RF1(a, x from default.t2)
+└──BuildRuntimeFilter (Build runtime join filter on x)
+   │  Filter id: RF1
+   │  Source table: default.t2
+   └──ReadFromMergeTree (default.t2)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: x, y

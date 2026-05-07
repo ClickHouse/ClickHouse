@@ -47,8 +47,8 @@ format(original):  SELECT * FROM tuple('42', '3141592')
 format(formatted): SELECT * FROM tuple('42', '3141592')
 
 Original:          SELECT 1 FROM VALUES (1, (NOT 1 IS NULL)) tx
-format(original):  SELECT 1 FROM VALUES(1, NOT (1 IS NULL)) AS tx
-format(formatted): SELECT 1 FROM VALUES(1, NOT (1 IS NULL)) AS tx
+format(original):  SELECT 1 FROM `VALUES`(1, NOT (1 IS NULL)) AS tx
+format(formatted): SELECT 1 FROM `VALUES`(1, NOT (1 IS NULL)) AS tx
 
 Original:          INSERT INTO tab2 SELECT * FROM tab EXCEPT SELECT * FROM tab;
 format(original):  INSERT INTO tab2 (SELECT * FROM tab) EXCEPT (SELECT * FROM tab)

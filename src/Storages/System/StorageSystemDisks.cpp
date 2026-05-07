@@ -1,10 +1,13 @@
 #include <Storages/System/StorageSystemDisks.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 
 namespace DB
 {
@@ -15,7 +18,7 @@ namespace FileCacheSetting
 }
 
 StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
@@ -29,14 +32,23 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
         {"type", std::make_shared<DataTypeString>(), "The disk type which tells where this disk stores the data - RAM, local drive or remote storage."},
         {"object_storage_type", std::make_shared<DataTypeString>(), "Type of object storage if disk type is object_storage"},
         {"metadata_type", std::make_shared<DataTypeString>(), "Type of metadata storage if disk type is object_storage"},
-        {"is_encrypted", std::make_shared<DataTypeUInt8>(), "Flag which shows whether this disk ecrypts the underlying data. "},
+        {"is_encrypted", std::make_shared<DataTypeUInt8>(), "Flag which shows whether this disk encrypts the underlying data."},
         {"is_read_only", std::make_shared<DataTypeUInt8>(), "Flag which indicates that you can only perform read operations with this disk."},
         {"is_write_once", std::make_shared<DataTypeUInt8>(), "Flag which indicates if disk is write-once. Which means that it does support BACKUP to this disk, but does not support INSERT into MergeTree table on this disk."},
         {"is_remote", std::make_shared<DataTypeUInt8>(), "Flag which indicated what operations with this disk involve network interaction."},
         {"is_broken", std::make_shared<DataTypeUInt8>(), "Flag which indicates if disk is broken. Broken disks will have 0 space and cannot be used."},
         {"cache_path", std::make_shared<DataTypeString>(), "The path to the cache directory on local drive in case when the disk supports caching."},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSystemDisks::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 Pipe StorageSystemDisks::read(

@@ -74,7 +74,7 @@ StorageSystemProjectionPartsColumns::StorageSystemProjectionPartsColumns(const S
 }
 
 void StorageSystemProjectionPartsColumns::processNextStorage(
-    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     /// Prepare information about columns in storage.
     struct ColumnInfo
@@ -83,7 +83,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         String default_expression;
     };
 
-    auto storage_metadata = info.storage->getInMemoryMetadataPtr();
+    auto storage_metadata = info.storage->getInMemoryMetadataPtr(context, false);
     std::unordered_map<String, std::unordered_map<String, ColumnInfo>> projection_columns_info;
     for (const auto & projection : storage_metadata->getProjections())
     {

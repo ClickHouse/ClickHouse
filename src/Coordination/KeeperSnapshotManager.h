@@ -7,6 +7,7 @@
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperStorage_fwd.h>
 #include <libnuraft/nuraft.hxx>
+#include <IO/WriteBuffer.h>
 
 namespace DB
 {
@@ -16,7 +17,6 @@ using SnapshotMetadataPtr = std::shared_ptr<SnapshotMetadata>;
 using ClusterConfig = nuraft::cluster_config;
 using ClusterConfigPtr = nuraft::ptr<ClusterConfig>;
 
-class WriteBuffer;
 class ReadBuffer;
 
 class KeeperContext;
@@ -49,7 +49,7 @@ struct SnapshotDeserializationResult
     SnapshotMetadataPtr snapshot_meta;
     /// Cluster config
     ClusterConfigPtr cluster_config;
-    /// container with all the paths stored in snapshot
+    /// Container with all the paths stored in snapshot
     /// used if we don't want to load entire storage from snapshot
     /// which can be useful for analyzing snapshot files
     std::vector<std::string> paths;
@@ -57,12 +57,20 @@ struct SnapshotDeserializationResult
 
 /// In memory keeper snapshot. Keeper Storage based on a hash map which can be
 /// turned into snapshot mode. This operation is fast and KeeperStorageSnapshot
-/// class do it in constructor. It also copies iterators from storage hash table
-/// up to some log index with lock. In destructor this class turn off snapshot
+/// class does it in constructor. It also copies iterators from storage hash table
+/// up to some log index with lock. In destructor this class turns off snapshot
 /// mode for KeeperStorage.
 ///
-/// This representation of snapshot have to be serialized into NuRaft
-/// buffer and send over network or saved to file.
+/// This representation of snapshot has to be serialized into NuRaft
+/// buffer and sent over network or saved to file.
+///
+/// Tricky to use correctly:
+///  * During the constructor call, storage contents must not change, and up_to_log_idx_ must match
+///    the storage's commit idx. In keeper server, this means that nuraft's commit_lock_ must be held.
+///  * At most one instance of KeeperStorageSnapshot can exist at a time, for a given KeeperStorage.
+///    NuRaft guarantees that at most one snapshotting operation can be in progress (create_snapshot
+///    is not called again until when_done callback is called).
+///  * Destructor must be called with storage mutex held (for the disableSnapshotMode() call).
 template<typename Storage>
 struct KeeperStorageSnapshot
 {
@@ -132,6 +140,41 @@ using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnaps
 #endif
 using CreateSnapshotCallback = std::function<SnapshotFileInfoPtr(KeeperStorageSnapshotPtr &&, bool)>;
 
+/// In-progress chunked snapshot receive state on the follower side.
+/// Holds the write buffer for writing chunks directly to disk and the tmp_
+/// marker path used to detect incomplete writes on restart.
+struct SnapshotReceiveCtx
+{
+    const uint64_t log_idx = 0;
+    /// The obj_id of the next chunk we expect to receive. Starts at 0, incremented after
+    /// each chunk is written. Used to detect duplicate or out-of-order chunks.
+    uint64_t expected_obj_id = 0;
+    const std::string snapshot_file_name;
+    const DiskPtr disk;
+    std::unique_ptr<WriteBuffer> write_buf;
+
+    SnapshotReceiveCtx(
+        std::unique_ptr<WriteBuffer> write_buf_,
+        DiskPtr disk_,
+        std::string snapshot_file_name_,
+        uint64_t log_idx_)
+        : log_idx(log_idx_)
+        , expected_obj_id(0)
+        , snapshot_file_name(std::move(snapshot_file_name_))
+        , disk(std::move(disk_))
+        , write_buf(std::move(write_buf_))
+    {
+    }
+
+    /// Cancel write buffer if not finalized.
+    ~SnapshotReceiveCtx()
+    {
+        if (write_buf && !write_buf->isFinalized())
+            write_buf->cancel();
+    }
+
+};
+
 /// Class responsible for snapshots serialization and deserialization. Each snapshot
 /// has it's path on disk and log index.
 template<typename Storage>
@@ -153,6 +196,13 @@ public:
 
     /// Serialize already compressed snapshot to disk (return path)
     SnapshotFileInfoPtr serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
+
+    /// Chunked snapshot receive: open the snapshot file for writing and return a receive context.
+    /// The caller appends chunks and calls finalizeSnapshotReceiveToDisk when done.
+    std::unique_ptr<SnapshotReceiveCtx> beginSnapshotReceiveToDisk(uint64_t up_to_log_idx);
+
+    /// Finalize chunked receive: sync, finalize write buffer, remove tmp marker, register snapshot.
+    SnapshotFileInfoPtr finalizeSnapshotReceiveToDisk(SnapshotReceiveCtx & ctx);
 
     /// Serialize snapshot directly to disk
     SnapshotFileInfoPtr serializeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot);
@@ -203,10 +253,10 @@ private:
     LoggerPtr log = getLogger("KeeperSnapshotManager");
 };
 
-/// Keeper create snapshots in background thread. KeeperStateMachine just create
-/// in-memory snapshot from storage and push task for it serialization into
-/// special tasks queue. Background thread check this queue and after snapshot
-/// successfully serialized notify state machine.
+/// Keeper creates snapshots in background thread. KeeperStateMachine just creates
+/// in-memory snapshot from storage and pushes task for its serialization into
+/// special tasks queue. Background thread checks this queue and after snapshot
+/// successfully serialized notifies state machine.
 struct CreateSnapshotTask
 {
     KeeperStorageSnapshotPtr snapshot;

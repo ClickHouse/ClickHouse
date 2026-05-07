@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -235,7 +236,7 @@ REGISTER_FUNCTION(NaturalSortKey)
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

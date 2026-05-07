@@ -1,5 +1,4 @@
 #pragma once
-#include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>

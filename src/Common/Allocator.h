@@ -46,7 +46,7 @@ public:
     void * alloc(size_t size, size_t alignment = 0);
 
     /// Free memory range.
-    void free(void * buf, size_t size);
+    void free(void * buf, size_t size, size_t alignment = 0);
 
     /** Enlarge memory range.
       * Data from old range is moved to the beginning of new range.
@@ -97,10 +97,10 @@ public:
         return Base::alloc(size, Alignment);
     }
 
-    void free(void * buf, size_t size)
+    void free(void * buf, size_t size, size_t alignment = 0)
     {
         if (size > initial_bytes)
-            Base::free(buf, size);
+            Base::free(buf, size, alignment);
     }
 
     void * realloc(void * buf, size_t old_size, size_t new_size)

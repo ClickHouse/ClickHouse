@@ -20,3 +20,10 @@ all_1_2_1	v2	UInt64	['TDigest','Uniq','MinMax']	4	0	6
 all_1_2_1	v3	String	['Uniq']	4	\N	\N
 200000
 3	4	4
+Nullable columns auto-get nullcount; non-Nullable does not
+a	['TDigest','Uniq','MinMax','NullCount']
+b	['Uniq','MinMax','NullCount']
+c	['Uniq','MinMax']
+d	['Uniq','MinMax','NullCount']
+nullcount disabled → not added
+a	['TDigest','Uniq','MinMax']

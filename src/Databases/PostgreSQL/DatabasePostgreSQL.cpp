@@ -464,7 +464,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     create_table_query->setTable(table_id.table_name);
     create_table_query->setDatabase(table_id.database_name);
 
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, false);
     for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
     {
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
@@ -577,7 +577,11 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             use_table_cache,
             args.uuid);
     };
-    factory.registerDatabase("PostgreSQL", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("PostgreSQL", create_fn, {
+        .supports_arguments = true,
+        .is_external = true,
+        .source_access_type = AccessTypeObjects::Source::POSTGRES,
+    });
 }
 }
 

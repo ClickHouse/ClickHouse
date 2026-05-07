@@ -51,7 +51,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         columns_list_,
         data_part->getColumnPositions(),
         metadata_snapshot_,
-        data_part->storage.getVirtualsPtr(),
         indices_to_recalc,
         data_part->getMarksFileExtension(),
         default_codec,

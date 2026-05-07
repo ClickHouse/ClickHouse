@@ -12,7 +12,7 @@
 using namespace DB;
 using Int64Interval = Interval<Int64>;
 
-int main(int, char **)
+int mainEntryExampleIntervalTree(int, char **)
 {
     {
         IntervalSet<Int64Interval> tree;

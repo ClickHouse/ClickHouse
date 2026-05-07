@@ -5,7 +5,7 @@
 #include <iostream>
 
 
-int main(int, char **)
+int mainEntryExampleIoOperators(int, char **)
 {
     {
         DB::WriteBufferFromFileDescriptor buf(STDOUT_FILENO);

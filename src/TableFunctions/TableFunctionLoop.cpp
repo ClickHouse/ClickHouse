@@ -113,7 +113,7 @@ namespace DB
         if (!storage)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
 
-        return storage->getInMemoryMetadataPtr()->getColumns();
+        return storage->getInMemoryMetadataPtr(context, false)->getColumns();
     }
 
     StoragePtr TableFunctionLoop::executeImpl(

@@ -99,6 +99,7 @@ def create_table(node, table_name, **additional_settings):
         "cleanup_delay_period": 1,
         "cleanup_delay_period_random_add": 0,
         "cleanup_thread_preferred_points_per_iteration": 0,
+        "auto_statistics_types": "",
     }
     settings.update(additional_settings)
 

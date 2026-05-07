@@ -1598,8 +1598,7 @@ String NestedType::typeName(const bool escape, const bool simplified) const
         {
             ret += ",";
         }
-        ret += "c";
-        ret += std::to_string(sub.cname);
+        ret += sub.cname;
         ret += " ";
         ret += sub.subtype->typeName(escape, simplified);
     }
@@ -2358,12 +2357,12 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               this->depth++;
               for (uint32_t i = 0; i < ncols; i++)
               {
-                  const uint32_t cname = col_counter++;
+                  const String cname = "c" + std::to_string(col_counter++);
                   TypeColumnDef * tcd = tp ? ((i == 0) ? nt->mutable_type1() : nt->add_others()) : nullptr;
 
                   if (tcd)
                   {
-                      tcd->mutable_col()->set_column("c" + std::to_string(cname));
+                      tcd->mutable_col()->set_column(cname);
                   }
                   auto k = this->randomNextType(
                       rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);

@@ -67,7 +67,7 @@
 #endif
 
 #if CLICKHOUSE_CLOUD
-    #include <Interpreters/Cache/FileCacheFactory.h>
+    #include <Interpreters/FileCache/FileCacheFactory.h>
     #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
     #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
     #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
@@ -707,15 +707,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
     }
 
+    auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
+
     MergeTreeData::IMutationsSnapshot::Params params
     {
         .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = MergeTreeData::getMinMetadataVersion(global_ctx->future_part->parts),
+        .min_part_metadata_version = parts_info.min_metadata_version,
         .min_part_data_versions = nullptr,
         .max_mutation_versions = nullptr,
         .need_data_mutations = false,
         .need_alter_mutations = !patch_parts.empty(),
         .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
     };
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
@@ -883,6 +886,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         global_ctx->merging_skip_indexes.clear();
         global_ctx->skip_indexes_by_column.clear();
+        global_ctx->text_indexes_to_merge.clear();
     }
 
     bool use_adaptive_granularity = global_ctx->new_data_part->index_granularity_info.mark_type.adaptive;
@@ -912,9 +916,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes),
         global_ctx->compression_codec,
         std::move(index_granularity_ptr),
-        global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
+        global_ctx->txn ? global_ctx->txn->tid : Tx::NonTransactionalTID,
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
-        /*reset_columns=*/ true,
+        /*reset_columns=*/true,
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
         &global_ctx->written_offset_substreams);
@@ -1195,8 +1199,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
 
         auto & projection_squash_plan = ctx->projection_squashes[i];
         projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
+        projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()});
         Chunk squashed_chunk = Squashing::squash(
-            projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}),
+            projection_squash_plan.generate(),
             projection_squash_plan.getHeader());
 
         if (squashed_chunk)
@@ -2896,7 +2901,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     if (global_ctx->deduplicate)
     {
-        const auto & virtuals = *global_ctx->data->getVirtualsPtr();
+        const auto & virtuals = global_ctx->metadata_snapshot->virtuals;
 
         /// We don't want to deduplicate by virtual persistent column.
         /// If deduplicate_by_columns is empty, add all columns except virtuals.
@@ -2904,7 +2909,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         {
             for (const auto & column : global_ctx->merging_columns)
             {
-                if (virtuals.tryGet(column.name, VirtualsKind::Persistent))
+                if (virtuals.tryGet(column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader))
                     continue;
 
                 global_ctx->deduplicate_by_columns.emplace_back(column.name);

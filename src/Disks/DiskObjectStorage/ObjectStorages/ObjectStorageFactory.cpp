@@ -46,6 +46,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+#if USE_AWS_S3
+
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsS3UriStyle uri_style;
+}
+
+#endif
+
 ObjectStorageFactory & ObjectStorageFactory::instance()
 {
     static ObjectStorageFactory factory;
@@ -90,14 +99,14 @@ ObjectStoragePtr ObjectStorageFactory::create(
 namespace
 {
 
-S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context)
+S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context, S3UriStyle uri_style)
 {
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     String endpoint_subpath;
     if (config.has(config_prefix + ".endpoint_subpath"))
         endpoint_subpath = context->getMacros()->expand(config.getString(config_prefix + ".endpoint_subpath"));
 
-    S3::URI uri(fs::path(endpoint) / endpoint_subpath);
+    S3::URI uri(fs::path(endpoint) / endpoint_subpath, false, true, uri_style);
 
     /// An empty key remains empty.
     if (!uri.key.empty() && !uri.key.ends_with('/'))
@@ -125,11 +134,11 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
-        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
+        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), Poco::URI(endpoint).getScheme(), true);
+        auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -190,7 +199,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         {
             .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
             .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true),
+            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true)
         };
 
         return std::make_shared<AzureObjectStorage>(

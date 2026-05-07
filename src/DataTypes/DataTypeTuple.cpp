@@ -14,6 +14,7 @@
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
+#include <DataTypes/Serializations/SerializationDetached.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -33,11 +34,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -58,6 +59,11 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
     {
         if (name.empty())
             return Exception(ErrorCodes::BAD_ARGUMENTS, "Names of tuple elements cannot be empty");
+
+        if (name == "null")
+            return Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Tuple element name 'null' is reserved because it would conflict with the subcolumn name "
+                "used for Nullable null maps if such a tuple is wrapped in Nullable. Please use a different name");
 
         if (!names_set.insert(name).second)
             return Exception(ErrorCodes::DUPLICATE_COLUMN, "Names of tuple elements must be unique. Duplicate name: {}", name);
@@ -214,6 +220,12 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
     /// We can have Replicated serialization over Tuple.
     if (const auto * serialization_replicated = typeid_cast<const SerializationReplicated *>(current_serialization))
         return ColumnReplicated::create(createColumn(*serialization_replicated->getNested()), ColumnUInt8::create());
+
+    /// We can have Detached serialization over Tuple (for parallel blocks marshalling).
+    /// Create the inner column; SerializationDetached::deserializeBinaryBulkWithMultipleStreams
+    /// will wrap it in ColumnBLOB during deserialization.
+    if (const auto * serialization_detached = typeid_cast<const SerializationDetached *>(current_serialization))
+        return createColumn(*serialization_detached->getNested());
 
     const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
     if (!serialization_tuple)

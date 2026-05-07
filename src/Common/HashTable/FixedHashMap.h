@@ -99,11 +99,12 @@ template <
     typename Mapped,
     typename Cell = FixedHashMapCell<Key, Mapped>,
     typename Size = FixedHashTableStoredSize<Cell>,
-    typename Allocator = HashTableAllocator>
-class FixedHashMap : public FixedHashTable<Key, Cell, Size, Allocator>
+    typename Allocator = HashTableAllocator,
+    size_t size_bits = sizeof(Key) * 8>
+class FixedHashMap : public FixedHashTable<Key, Cell, Size, Allocator, size_bits>
 {
 public:
-    using Base = FixedHashTable<Key, Cell, Size, Allocator>;
+    using Base = FixedHashTable<Key, Cell, Size, Allocator, size_bits>;
     using Self = FixedHashMap;
     using LookupResult = typename Base::LookupResult;
 
@@ -218,3 +219,12 @@ using FixedImplicitZeroHashMapWithCalculatedSize = FixedHashMap<
     FixedHashMapImplicitZeroCell<Key, Mapped>,
     FixedHashTableCalculatedSize<FixedHashMapImplicitZeroCell<Key, Mapped>>,
     Allocator>;
+
+template <typename Key, typename Mapped, size_t size_bits>
+using FixedHashMapWithSizeBits = FixedHashMap<
+    Key,
+    Mapped,
+    FixedHashMapCell<Key, Mapped>,
+    FixedHashTableStoredSize<FixedHashMapCell<Key, Mapped>>,
+    HashTableAllocator,
+    size_bits>;

@@ -5,7 +5,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -162,11 +161,7 @@ struct XorImpl
         return builder.CreateXor(a, b);
     }
 
-    static llvm::Value * ternaryApply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
-    {
-        llvm::Value * xor_result = builder.CreateXor(a, b);
-        return builder.CreateSelect(xor_result, builder.getInt8(Ternary::True), builder.getInt8(Ternary::False));
-    }
+    /// No ternaryApply: specialImplementationForNulls() is false, so the ternary path is never used.
 #endif
 };
 
@@ -240,36 +235,37 @@ public:
         assert(!values.empty());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        if (useDefaultImplementationForNulls() || !result_type->isNullable())
+        if constexpr (Impl::specialImplementationForNulls())
         {
-            llvm::Value * result = nativeBoolCast(b, values[0]);
-            for (size_t i = 1; i < values.size(); ++i)
+            if (result_type->isNullable())
             {
-                llvm::Value * casted_value = nativeBoolCast(b, values[i]);
-                result = Impl::apply(b, result, casted_value);
+                /// First we need to cast all values to ternary logic
+                llvm::Value * ternary_result = nativeTernaryCast(b, values[0]);
+                for (size_t i = 1; i < values.size(); ++i)
+                {
+                    llvm::Value * casted_value = nativeTernaryCast(b, values[i]);
+                    ternary_result = Impl::ternaryApply(b, ternary_result, casted_value);
+                }
+
+                /// Then transform ternary logic to struct which represents nullable result
+                llvm::Value * is_null = b.CreateICmpEQ(ternary_result, b.getInt8(Ternary::Null));
+                llvm::Value * is_true = b.CreateICmpEQ(ternary_result, b.getInt8(Ternary::True));
+
+                auto * nullable_result_type = toNativeType(b, result_type);
+                auto * nullable_result = llvm::Constant::getNullValue(nullable_result_type);
+                auto * nullable_result_with_value
+                    = b.CreateInsertValue(nullable_result, b.CreateSelect(is_true, b.getInt8(1), b.getInt8(0)), {0});
+                return b.CreateInsertValue(nullable_result_with_value, is_null, {1});
             }
-            return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
         }
-        else
+
+        llvm::Value * result = nativeBoolCast(b, values[0]);
+        for (size_t i = 1; i < values.size(); ++i)
         {
-            /// First we need to cast all values to ternary logic
-            llvm::Value * ternary_result = nativeTernaryCast(b, values[0]);
-            for (size_t i = 1; i < values.size(); ++i)
-            {
-                llvm::Value * casted_value = nativeTernaryCast(b, values[i]);
-                ternary_result = Impl::ternaryApply(b, ternary_result, casted_value);
-            }
-
-            /// Then transform ternary logic to struct which represents nullable result
-            llvm::Value * is_null = b.CreateICmpEQ(ternary_result, b.getInt8(Ternary::Null));
-            llvm::Value * is_true = b.CreateICmpEQ(ternary_result, b.getInt8(Ternary::True));
-
-            auto * nullable_result_type = toNativeType(b, result_type);
-            auto * nullable_result = llvm::Constant::getNullValue(nullable_result_type);
-            auto * nullable_result_with_value
-                = b.CreateInsertValue(nullable_result, b.CreateSelect(is_true, b.getInt8(1), b.getInt8(0)), {0});
-            return b.CreateInsertValue(nullable_result_with_value, is_null, {1});
+            llvm::Value * casted_value = nativeBoolCast(b, values[i]);
+            result = Impl::apply(b, result, casted_value);
         }
+        return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
     }
 #endif
 };

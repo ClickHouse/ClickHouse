@@ -52,7 +52,7 @@ private:
     bool measure_performance;
     bool compare_explain;
 
-    std::unordered_set<uint32_t> found_tables;
+    std::unordered_set<String> found_tables;
     DB::Strings nsettings;
 
     void iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules);

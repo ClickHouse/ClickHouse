@@ -8,7 +8,6 @@
 #include <Common/setThreadName.h>
 #include <Common/SharedMutex.h>
 #include <Core/NamesAndAliases.h>
-#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -25,6 +24,7 @@ struct BlobStorageLogElement
         MultiPartUploadWrite = 4,
         MultiPartUploadComplete = 5,
         MultiPartUploadAbort = 6,
+        Read = 7,
     };
 
     EventType event_type;

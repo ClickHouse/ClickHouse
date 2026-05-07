@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 
 
-int main(int argc, char ** argv)
+int mainEntryExampleField(int argc, char ** argv)
 {
     using namespace DB;
 

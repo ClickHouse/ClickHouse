@@ -98,6 +98,12 @@ void symbolizeJemallocHeapProfile(
     JemallocProfileFormat format = JemallocProfileFormat::Symbolized,
     bool symbolize_with_inline = true);
 
+/// Like symbolizeJemallocHeapProfile but returns the result as a string.
+std::string symbolizeJemallocHeapProfileToString(
+    const std::string & input_filename,
+    JemallocProfileFormat format = JemallocProfileFormat::Symbolized,
+    bool symbolize_with_inline = true);
+
 }
 
 #endif

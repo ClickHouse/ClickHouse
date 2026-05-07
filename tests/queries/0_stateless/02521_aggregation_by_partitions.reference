@@ -91,9 +91,9 @@ ExpressionTransform × 16
 -- { echoOn }
 explain pipeline select a from t4 group by a settings read_in_order_two_level_merge_threshold = 1e12;
 (Expression)
-ExpressionTransform × 4
+ExpressionTransform × 16
   (Aggregating)
-  Resize 4 → 4
+  Resize 4 → 16
     FinalizeAggregatedTransform × 4
       AggregatingInOrderTransform × 4
         (Expression)
@@ -115,9 +115,9 @@ ExpressionTransform × 4
 -- { echoOn }
 explain pipeline select a from t5 group by a settings read_in_order_two_level_merge_threshold = 1e12;
 (Expression)
-ExpressionTransform × 8
+ExpressionTransform × 16
   (Aggregating)
-  Resize 8 → 8
+  Resize 8 → 16
     FinalizeAggregatedTransform × 8
       AggregatingInOrderTransform × 8
         (Expression)

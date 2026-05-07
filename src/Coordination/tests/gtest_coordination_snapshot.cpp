@@ -4,13 +4,71 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperStateMachine.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <Coordination/KeeperStorage.h>
 
 #include <Common/SipHash.h>
+#include <Common/tests/gtest_global_context.h>
+
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
+
+#include <IO/ReadBufferFromFileBase.h>
+
+#include <Poco/Util/MapConfiguration.h>
+
+#include <base/scope_guard.h>
+
+#include <limits>
+#include <thread>
+
+namespace DB::CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
+}
 
 namespace
 {
+
+class TestLocalObjectStorage : public DB::LocalObjectStorage
+{
+public:
+    mutable std::atomic<int> read_count{0};
+
+    explicit TestLocalObjectStorage(DB::LocalObjectStorageSettings settings)
+        : DB::LocalObjectStorage(std::move(settings)) {}
+
+    std::unique_ptr<DB::ReadBufferFromFileBase> readObject( /// NOLINT
+        const DB::StoredObject & object,
+        const DB::ReadSettings & read_settings,
+        std::optional<size_t> read_hint) const override
+    {
+        ++read_count;
+        return DB::LocalObjectStorage::readObject(object, read_settings, read_hint);
+    }
+};
+
+std::pair<std::shared_ptr<DB::DiskObjectStorage>, std::shared_ptr<TestLocalObjectStorage>>
+createLocalObjectStorageDisk(const std::string & meta_path, const std::string & obj_path)
+{
+    auto obj_storage = std::make_shared<TestLocalObjectStorage>(
+        DB::LocalObjectStorageSettings("SnapshotDisk", obj_path, false));
+    std::unordered_map<DB::Location, DB::LocationInfo> cluster_locations = {{"main", {true, true, ""}}};
+    auto cluster = std::make_shared<DB::ClusterConfiguration>("SnapshotDisk", std::move(cluster_locations));
+    auto router = std::make_shared<DB::ObjectStorageRouter>(
+        std::unordered_map<DB::Location, DB::ObjectStoragePtr>{{"main", obj_storage}});
+    auto meta_disk = std::make_shared<DB::DiskLocal>("SnapshotMetaDisk", meta_path);
+    DB::MetadataStoragePtr metadata_storage = std::make_shared<DB::MetadataStorageFromDisk>(
+        meta_disk, "", obj_storage->createKeyGenerator(), /*persist_removal_queue_=*/false, /*removal_log_compaction_threshold_=*/0);
+    Poco::AutoPtr<Poco::Util::MapConfiguration> config_ptr(new Poco::Util::MapConfiguration);
+    auto disk = std::make_shared<DB::DiskObjectStorage>(
+        "SnapshotDisk", cluster, metadata_storage, router, /*wrapped_disk=*/nullptr, *config_ptr, "", /*use_fake_transaction=*/true);
+    return {disk, obj_storage};
+}
 
 struct IntNode
 {
@@ -61,7 +119,7 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapTrySnapshot)
     DB::SnapshotableHashTable<IntNode> map_snp;
     EXPECT_TRUE(map_snp.insert("/hello", 7).second);
     EXPECT_FALSE(map_snp.insert("/hello", 145).second);
-    map_snp.enableSnapshotMode(100000);
+    map_snp.enableSnapshotMode(map_snp.snapshotSizeWithVersion().second);
     EXPECT_FALSE(map_snp.insert("/hello", 145).second);
     map_snp.updateValue("/hello", [](IntNode & value) { value = 554; });
     EXPECT_EQ(map_snp.getValue("/hello"), 554);
@@ -108,6 +166,7 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapTrySnapshot)
         EXPECT_EQ(itr->isActiveInMap(), i != 3 && i != 2);
         itr = std::next(itr);
     }
+    map_snp.disableSnapshotMode();
     map_snp.clearOutdatedNodes();
 
     EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 4);
@@ -130,14 +189,12 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapTrySnapshot)
     EXPECT_EQ(itr->isActiveInMap(), true);
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
-    map_snp.disableSnapshotMode();
 }
 
 TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
 {
     /// int
     DB::SnapshotableHashTable<IntNode> hello;
-    hello.disableSnapshotMode();
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
     hello.insert("hello", 1);
@@ -153,20 +210,28 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
     hello.clear();
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
-    hello.enableSnapshotMode(10000);
+    /// Insert a node, then enable snapshot mode so the node is captured by the snapshot.
     hello.insert("hello", 1);
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
+    hello.enableSnapshotMode(hello.snapshotSizeWithVersion().second);
     hello.updateValue("hello", [](IntNode & value) { value = 2; });
     EXPECT_EQ(hello.getApproximateDataSize(), 18);
+    /// The node was already updated (version > snapshot_up_to_version),
+    /// so insertOrReplace does not create another snapshot copy.
     hello.insertOrReplace("hello", 1);
-    EXPECT_EQ(hello.getApproximateDataSize(), 27);
+    EXPECT_EQ(hello.getApproximateDataSize(), 18);
 
+    /// Must disable snapshot mode before clearing outdated nodes (matches production flow).
+    hello.disableSnapshotMode();
     hello.clearOutdatedNodes();
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
 
+    /// Enable a new snapshot to test erase keeping outdated nodes.
+    hello.enableSnapshotMode(hello.snapshotSizeWithVersion().second);
     hello.erase("hello");
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
 
+    hello.disableSnapshotMode();
     hello.clearOutdatedNodes();
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
@@ -185,7 +250,6 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
     ///       approximate for nodes with 2+ children). The approximate size is only used for
     ///       statistics accounting, so this should be okay.
 
-    world.disableSnapshotMode();
     world.insert("world", n1);
     EXPECT_GT(world.getApproximateDataSize(), 0);
     world.updateValue("world", [&](Node & value) { value = n2; });
@@ -194,19 +258,18 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
     world.erase("world");
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 
-    world.enableSnapshotMode(100000);
     world.insert("world", n1);
     EXPECT_GT(world.getApproximateDataSize(), 0);
+    world.enableSnapshotMode(world.snapshotSizeWithVersion().second);
     world.updateValue("world", [&](Node & value) { value = n2; });
     EXPECT_GT(world.getApproximateDataSize(), 0);
 
-    world.clearOutdatedNodes();
-    EXPECT_GT(world.getApproximateDataSize(), 0);
-
+    /// Erase while in snapshot mode — outdated nodes stay in list.
     world.erase("world");
     EXPECT_GT(world.getApproximateDataSize(), 0);
 
-    world.clear();
+    world.disableSnapshotMode();
+    world.clearOutdatedNodes();
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 }
 
@@ -612,6 +675,123 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
         EXPECT_EQ(restored_storage->container.size(), 5);
         EXPECT_EQ(restored_storage->container.getValue(path).acl_id, 0);
     }
+}
+
+template <typename Storage>
+static DB::KeeperContextPtr makeFollowerContext(int idx)
+{
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+#if USE_ROCKSDB
+    (*settings)[DB::CoordinationSetting::experimental_use_rocksdb] = std::is_same_v<Storage, DB::KeeperRocksStorage>;
+#else
+    (*settings)[DB::CoordinationSetting::experimental_use_rocksdb] = 0;
+#endif
+    auto ctx = std::make_shared<DB::KeeperContext>(true, settings);
+    ctx->setLocalLogsPreprocessed();
+    ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>(
+        fmt::format("SnapshotDisk_{}", idx), fmt::format("./snapshots_{}", idx)));
+    ctx->setRocksDBDisk(std::make_shared<DB::DiskLocal>(
+        fmt::format("RocksDisk_{}", idx), fmt::format("./rocksdb_{}", idx)));
+    ctx->setRocksDBOptions();
+    return ctx;
+}
+
+template <typename Storage>
+static std::string runFollower(int idx, DB::IKeeperStateMachine & leader, nuraft::snapshot & s)
+{
+    fs::create_directory(fmt::format("./snapshots_{}", idx));
+    fs::create_directory(fmt::format("./rocksdb_{}", idx));
+    SCOPE_EXIT({
+        fs::remove_all(fmt::format("./snapshots_{}", idx));
+        fs::remove_all(fmt::format("./rocksdb_{}", idx));
+    });
+
+    auto ctx = makeFollowerContext<Storage>(idx);
+    DB::ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto follower = std::make_shared<DB::KeeperStateMachine<Storage>>(queue, snapshots_queue, ctx, nullptr);
+    follower->init();
+
+    void * user_snp_ctx = nullptr;
+    uint64_t obj_id = 0;
+    bool is_last = false;
+    while (!is_last)
+    {
+        nuraft::ptr<nuraft::buffer> data_out;
+        bool is_first = (obj_id == 0);
+        if (leader.read_logical_snp_obj(s, user_snp_ctx, obj_id, data_out, is_last) < 0)
+            break;
+        std::this_thread::yield(); /// let other follower threads read from the already-loaded part
+        follower->save_logical_snp_obj(s, obj_id, *data_out, is_first, is_last);
+    }
+    leader.free_user_snp_ctx(user_snp_ctx);
+
+    EXPECT_TRUE(follower->apply_snapshot(s));
+    return std::string(follower->getStorageUnsafe().container.getValue("/hello").getData());
+}
+
+/// Verify that concurrent snapshot transfers from a leader with a remote snapshot disk work correctly.
+/// A remote disk causes `RemoteSnapshotLoader` to be used, which loads the snapshot into memory once
+/// and serves all concurrent followers from the same buffer. The test checks that all followers
+/// receive correct data and that the snapshot file is read from disk exactly once.
+TYPED_TEST(CoordinationTest, TestReadSnapshotParallelMultiChunk)
+{
+    getContext(); /// needed for DiskObjectStorage background threads
+
+    ChangelogDirTest snap_meta("./snapshots");
+    ChangelogDirTest snap_obj("./snapshots_obj");
+    ChangelogDirTest rocks("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    auto leader_settings = std::make_shared<DB::CoordinationSettings>();
+#if USE_ROCKSDB
+    (*leader_settings)[DB::CoordinationSetting::experimental_use_rocksdb] = std::is_same_v<Storage, DB::KeeperRocksStorage>;
+#else
+    (*leader_settings)[DB::CoordinationSetting::experimental_use_rocksdb] = 0;
+#endif
+    (*leader_settings)[DB::CoordinationSetting::snapshot_transfer_chunk_size] = 10;
+    auto leader_ctx = std::make_shared<DB::KeeperContext>(true, leader_settings);
+    leader_ctx->setLocalLogsPreprocessed();
+    leader_ctx->setRocksDBDisk(std::make_shared<DB::DiskLocal>("RocksDisk", "./rocksdb"));
+    leader_ctx->setRocksDBOptions();
+
+    auto [snap_disk, obj_storage] = createLocalObjectStorageDisk("./snapshots", "./snapshots_obj/");
+    leader_ctx->setSnapshotDisk(snap_disk);
+
+    DB::KeeperSnapshotManager<Storage> manager(3, leader_ctx, this->enable_compression);
+    Storage storage(500, "", leader_ctx);
+    addNode(storage, "/hello", "world");
+    DB::KeeperStorageSnapshot<Storage> snap(&storage, 50, nullptr, leader_ctx->getWriteSnapshotVersion());
+    auto snap_buf = manager.serializeSnapshotToBuffer(snap);
+    manager.serializeSnapshotBufferToDisk(*snap_buf, 50);
+
+    DB::ResponsesQueue leader_queue(std::numeric_limits<size_t>::max());
+    DB::SnapshotsQueue leader_snapshots_queue{1};
+    auto leader = std::make_shared<DB::KeeperStateMachine<Storage>>(
+        leader_queue, leader_snapshots_queue, leader_ctx, nullptr);
+    leader->init();
+
+    nuraft::snapshot s(50, 0, std::make_shared<nuraft::cluster_config>());
+
+    const int reads_after_init = obj_storage->read_count.load();
+
+    constexpr int num_threads = 10;
+    std::vector<std::string> loaded_data(num_threads);
+    {
+        std::vector<std::thread> threads;
+        threads.reserve(num_threads);
+        for (int i = 0; i < num_threads; ++i)
+            threads.emplace_back([&, i] { loaded_data[i] = runFollower<Storage>(i, *leader, s); });
+        for (auto & t : threads)
+            t.join();
+    }
+    for (int i = 0; i < num_threads; ++i)
+        EXPECT_EQ(loaded_data[i], "world") << "thread " << i;
+
+    EXPECT_EQ(obj_storage->read_count.load() - reads_after_init, 1);
+
+    snap_disk->shutdown();
 }
 
 #endif

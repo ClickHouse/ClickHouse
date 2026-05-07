@@ -1,13 +1,22 @@
 #include "config.h"
 
-#if USE_NLP
+#if USE_LIBSTEMMER
 
+#include <algorithm>
+#include <cstring>
+#include <string_view>
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
 
 #include <libstemmer.h>
@@ -15,58 +24,125 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_nlp_functions;
-}
-
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
 {
 
-struct StemImpl
+bool isValidStemWordType(const IDataType & type)
 {
-    static void vector(
-        const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
-        ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        const String & language,
-        size_t input_rows_count)
+    if (isStringOrFixedString(type))
+        return true;
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
     {
-        std::unique_ptr<sb_stemmer, void(*)(sb_stemmer*)> stemmer(
-            sb_stemmer_new(language.c_str(), "UTF_8"),
-            [](sb_stemmer * ptr){ sb_stemmer_delete(ptr); });
+        const IDataType & nested = *array_type->getNestedType();
+        if (isStringOrFixedString(nested))
+            return true;
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&nested))
+            return isStringOrFixedString(*nullable_type->getNestedType());
+    }
+    return false;
+}
 
-        if (!stemmer)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Language {} is not supported for function stem", language);
 
-        res_data.resize(data.size());
-        res_offsets.assign(offsets);
+/// RAII wrapper around sb_stemmer. Constructed from a language code; throws
+/// ILLEGAL_TYPE_OF_ARGUMENT in the constructor if the language is unsupported.
+class Stemmer
+{
+public:
+    explicit Stemmer(const String & language)
+        : handle(sb_stemmer_new(language.c_str(), "UTF_8"))
+    {
+        if (!handle)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Language '{}' is not supported for function stem",
+                language);
+    }
 
-        UInt64 data_size = 0;
-        for (UInt64 i = 0; i < input_rows_count; ++i)
+    ~Stemmer() { sb_stemmer_delete(handle); }
+
+    Stemmer(const Stemmer &) = delete;
+    Stemmer & operator=(const Stemmer &) = delete;
+
+    /// Stem a single word given as a byte range. Returns a string_view over the
+    /// stemmer's internal buffer (valid until the next call to stem).
+    /// Throws BAD_ARGUMENTS if the input contains whitespace, or
+    /// CANNOT_ALLOCATE_MEMORY if the stemmer runs out of memory.
+    /// Note: the input must be lowercase; passing uppercase characters produces undefined results.
+    std::string_view stem(std::string_view word)
+    {
+        if (std::any_of(word.begin(), word.end(), isWhitespaceASCII))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Function stem requires each input to be a single word without whitespace, "
+                "but got: '{}'",
+                String(word));
+
+        const sb_symbol * result = sb_stemmer_stem(
+            handle,
+            reinterpret_cast<const sb_symbol *>(word.data()),
+            static_cast<int>(word.size()));
+
+        if (unlikely(!result))
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Function stem failed to allocate memory");
+
+        return {reinterpret_cast<const char *>(result), static_cast<size_t>(sb_stemmer_length(handle))};
+    }
+
+    /// Stem all rows of a String or FixedString column into a new ColumnString.
+    /// Rows where null_map[i] != 0 are skipped and emitted as empty strings.
+    /// For FixedString, getDataAt returns the value with null-byte padding; trimRight removes it.
+    /// For String, trailing zero bytes are valid data and must not be trimmed.
+    /// Snowball stemming never lengthens a word, so upper_bound bytes is a safe pre-allocation.
+    MutableColumnPtr stemColumn(const IColumn & col, size_t input_rows_count, const NullMap * null_map = nullptr)
+    {
+        size_t upper_bound;
+        const bool is_fixed_string = checkAndGetColumn<ColumnFixedString>(&col) != nullptr;
+        if (const auto * col_str = checkAndGetColumn<ColumnString>(&col))
+            upper_bound = col_str->getChars().size();
+        else if (const auto * col_fixed_str = checkAndGetColumn<ColumnFixedString>(&col))
+            upper_bound = col_fixed_str->getChars().size();
+        else
+            UNREACHABLE();
+
+        auto col_res = ColumnString::create();
+        ColumnString::Chars & res_data = col_res->getChars();
+        ColumnString::Offsets & res_offsets = col_res->getOffsets();
+
+        res_data.resize(upper_bound);
+        res_offsets.resize(input_rows_count);
+
+        size_t data_size = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            /// Note that accessing -1th element is valid for PaddedPODArray.
-            size_t original_size = offsets[i] - offsets[i - 1];
-            const sb_symbol * result = sb_stemmer_stem(stemmer.get(),
-                reinterpret_cast<const uint8_t *>(data.data() + offsets[i - 1]),
-                static_cast<int>(original_size));
-            size_t new_size = sb_stemmer_length(stemmer.get());
+            if (null_map && (*null_map)[i])
+            {
+                res_offsets[i] = data_size;
+                continue;
+            }
 
-            memcpy(res_data.data() + data_size, result, new_size);
+            std::string_view word = col.getDataAt(i);
+            if (is_fixed_string)
+                trimRight(word, '\0');
+            std::string_view stemmed = stem(word);
+            chassert(data_size + stemmed.size() <= res_data.size());
 
-            data_size += new_size;
+            memcpy(res_data.data() + data_size, stemmed.data(), stemmed.size());
+            data_size += stemmed.size();
             res_offsets[i] = data_size;
         }
         res_data.resize(data_size);
+        return col_res;
     }
+
+private:
+    sb_stemmer * handle;
 };
 
 
@@ -75,57 +151,71 @@ class FunctionStem : public IFunction
 public:
     static constexpr auto name = "stem";
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        if (!context->getSettingsRef()[Setting::allow_experimental_nlp_functions])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Natural language processing function '{}' is experimental. "
-                            "Set `allow_experimental_nlp_functions` setting to enable it", name);
-
-        return std::make_shared<FunctionStem>();
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStem>(); }
 
     String getName() const override { return name; }
-
     size_t getNumberOfArguments() const override { return 2; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-        if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
-        return arguments[1];
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        FunctionArgumentDescriptors args{
+            {"word", &isValidStemWordType, nullptr, "String, FixedString, Array(String), Array(FixedString), Array(Nullable(String)), or Array(Nullable(FixedString))"},
+            {"language", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
+        };
+        validateFunctionArguments(*this, arguments, args);
+
+        const IDataType & arg0 = *arguments[0].type;
+
+        if (isStringOrFixedString(arg0))
+            return std::make_shared<DataTypeString>();
+
+        const auto & array_type = assert_cast<const DataTypeArray &>(arg0);
+        const IDataType & nested = *array_type.getNestedType();
+
+        if (isStringOrFixedString(nested))
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+
+        /// Array(Nullable(String/FixedString))
+        const auto & nullable_type = assert_cast<const DataTypeNullable &>(nested);
+        chassert(isStringOrFixedString(*nullable_type.getNestedType()));
+        return std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto & langcolumn = arguments[0].column;
-        const auto & strcolumn = arguments[1].column;
+        const ColumnConst * language_col = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
+        chassert(language_col);
 
-        const ColumnConst * lang_col = checkAndGetColumn<ColumnConst>(langcolumn.get());
-        const ColumnString * words_col = checkAndGetColumn<ColumnString>(strcolumn.get());
+        Stemmer stemmer(language_col->getValue<String>());
 
-        if (!lang_col)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
-        if (!words_col)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[1].column->getName(), getName());
+        const ColumnPtr & input_col = arguments[0].column;
 
-        String language = lang_col->getValue<String>();
+        /// Case 1: String or FixedString → String
+        if (checkAndGetColumn<ColumnString>(input_col.get()) || checkAndGetColumn<ColumnFixedString>(input_col.get()))
+            return stemmer.stemColumn(*input_col, input_rows_count);
 
-        auto col_res = ColumnString::create();
-        StemImpl::vector(words_col->getChars(), words_col->getOffsets(), col_res->getChars(), col_res->getOffsets(), language, input_rows_count);
-        return col_res;
+        /// Case 2: Array(String/FixedString/Nullable(String/FixedString)) → Array(...)
+        const auto & array_col = assert_cast<const ColumnArray &>(*input_col);
+        const IColumn & array_data = array_col.getData();
+        const size_t nested_rows = array_col.getOffsets().empty() ? 0 : array_col.getOffsets().back();
+
+        MutableColumnPtr stemmed;
+        if (const auto * nullable_nested = checkAndGetColumn<ColumnNullable>(&array_data))
+        {
+            auto stemmed_inner = stemmer.stemColumn(
+                nullable_nested->getNestedColumn(), nested_rows, &nullable_nested->getNullMapData());
+            stemmed = ColumnNullable::create(std::move(stemmed_inner), nullable_nested->getNullMapColumn().clone());
+        }
+        else
+        {
+            stemmed = stemmer.stemColumn(array_data, nested_rows);
+        }
+
+        return ColumnArray::create(std::move(stemmed), array_col.getOffsetsPtr());
     }
 };
 
@@ -134,25 +224,48 @@ public:
 REGISTER_FUNCTION(Stem)
 {
     FunctionDocumentation::Description description = R"(
-Performs stemming on a given word.
+Performs stemming on a word or an array of words using the Snowball algorithms.
+Each input string must be a single, lowercase word — strings containing whitespace cause an exception.
+Passing uppercase characters produces undefined results.
+Returns String for scalar inputs (including FixedString) and Array(String) for array inputs.
+Nullable and LowCardinality variants of String and FixedString are supported.
 )";
-    FunctionDocumentation::Syntax syntax = "stem(lang, word)";
+    FunctionDocumentation::Syntax syntax = "stem(word, language)";
     FunctionDocumentation::Arguments arguments = {
-        {"lang", "Language which rules will be applied. Use the two letter ISO 639-1 code.", {"String"}},
-        {"word", "Lowercase word that needs to be stemmed.", {"String"}}
+        {"word",
+         "A single lowercase word (or array of words) to stem. "
+         "Must be lowercase — uppercase characters produce undefined results. "
+         "Accepts String, FixedString, Array(String), Array(FixedString), "
+         "Array(Nullable(String)), or Array(Nullable(FixedString)).",
+         {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
+        {"language",
+         "Language whose stemming rules will be applied. Use the two-letter ISO 639-1 code (e.g. 'en', 'de', 'fr'), see https://en.wikipedia.org/wiki/List_of_ISO_639_language_codes.",
+         {"String"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the stemmed form of the word", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "The stemmed form of the word (String), or an array of stemmed words (Array(String)).",
+        {"String", "Array(String)"}};
     FunctionDocumentation::Examples examples = {
-    {
-        "English stemming",
-        R"(
-SELECT arrayMap(x -> stem('en', x),
-['I', 'think', 'it', 'is', 'a', 'blessing', 'in', 'disguise']) AS res
-        )",
-        R"(
-['I','think','it','is','a','bless','in','disguis']
-        )"
-    }
+        {
+            "Stemming a single word",
+            "SELECT stem('blessing', 'en') AS res",
+            "bless",
+        },
+        {
+            "Stemming an array of words",
+            "SELECT stem(['blessing', 'disguise'], 'en') AS res",
+            "['bless','disguis']",
+        },
+        {
+            "Stemming a FixedString",
+            "SELECT stem(toFixedString('blessing', 10), 'en') AS res",
+            "bless",
+        },
+        {
+            "Stemming a Nullable word",
+            "SELECT stem(toNullable('blessing'), 'en') AS res",
+            "bless",
+        },
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
@@ -163,4 +276,4 @@ SELECT arrayMap(x -> stem('en', x),
 
 }
 
-#endif
+#endif /// USE_LIBSTEMMER

@@ -239,7 +239,7 @@ IProcessor::Status SortingTransform::prepare()
     if (stage == Stage::Serialize)
     {
         if (!processors.empty())
-            return Status::ExpandPipeline;
+            return Status::UpdatePipeline;
 
         auto status = prepareSerialize();
         if (status != Status::Finished)
@@ -263,7 +263,7 @@ IProcessor::Status SortingTransform::prepare()
         return Status::Ready;
 
     if (!processors.empty())
-        return Status::ExpandPipeline;
+        return Status::UpdatePipeline;
 
     return prepareGenerate();
 }

@@ -16,20 +16,22 @@
 /// Example:
 /// for i in {6,8} {11..26}; do echo $i; for j in {1..10}; do ./radix_sort $i 65536 1000; done; echo; done
 
+namespace
+{
 
 using Key = UInt64;
 
-static void NO_INLINE sort1(Key * data, size_t size)
+void NO_INLINE sort1(Key * data, size_t size)
 {
     std::sort(data, data + size);
 }
 
-static void NO_INLINE sort2(Key * data, size_t size)
+void NO_INLINE sort2(Key * data, size_t size)
 {
     radixSortLSD(data, size);
 }
 
-static void NO_INLINE sort3(Key * data, size_t size)
+void NO_INLINE sort3(Key * data, size_t size)
 {
     std::sort(data, data + size, [](Key a, Key b)
     {
@@ -38,23 +40,23 @@ static void NO_INLINE sort3(Key * data, size_t size)
     });
 }
 
-static void NO_INLINE sort4(Key * data, size_t size)
+void NO_INLINE sort4(Key * data, size_t size)
 {
     radixSortMSD(data, size, size);
 }
 
-static void NO_INLINE sort5(Key * data, size_t size)
+void NO_INLINE sort5(Key * data, size_t size)
 {
     pdqsort(data, data + size);
 }
 
 
-static void NO_INLINE sort6(Key * data, size_t size, size_t limit)
+void NO_INLINE sort6(Key * data, size_t size, size_t limit)
 {
     std::partial_sort(data, data + limit, data + size);
 }
 
-static void NO_INLINE sort7(Key * data, size_t size, size_t limit)
+void NO_INLINE sort7(Key * data, size_t size, size_t limit)
 {
     std::partial_sort(data, data + limit, data + size, [](Key a, Key b)
     {
@@ -63,7 +65,7 @@ static void NO_INLINE sort7(Key * data, size_t size, size_t limit)
     });
 }
 
-static void NO_INLINE sort8(Key * data, size_t size, size_t limit)
+void NO_INLINE sort8(Key * data, size_t size, size_t limit)
 {
     radixSortMSD(data, size, limit);
 }
@@ -75,88 +77,89 @@ struct RadixSortTraitsWithCustomBits : RadixSortNumTraits<Key>
     static constexpr size_t PART_SIZE_BITS = N;
 };
 
-static void NO_INLINE sort11(Key * data, size_t size, size_t limit)
+void NO_INLINE sort11(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<1>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort12(Key * data, size_t size, size_t limit)
+void NO_INLINE sort12(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<2>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort13(Key * data, size_t size, size_t limit)
+void NO_INLINE sort13(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<3>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort14(Key * data, size_t size, size_t limit)
+void NO_INLINE sort14(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<4>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort15(Key * data, size_t size, size_t limit)
+void NO_INLINE sort15(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<5>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort16(Key * data, size_t size, size_t limit)
+void NO_INLINE sort16(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<6>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort17(Key * data, size_t size, size_t limit)
+void NO_INLINE sort17(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<7>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort18(Key * data, size_t size, size_t limit)
+void NO_INLINE sort18(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<8>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort19(Key * data, size_t size, size_t limit)
+void NO_INLINE sort19(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<9>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort20(Key * data, size_t size, size_t limit)
+void NO_INLINE sort20(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<10>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort21(Key * data, size_t size, size_t limit)
+void NO_INLINE sort21(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<11>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort22(Key * data, size_t size, size_t limit)
+void NO_INLINE sort22(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<12>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort23(Key * data, size_t size, size_t limit)
+void NO_INLINE sort23(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<13>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort24(Key * data, size_t size, size_t limit)
+void NO_INLINE sort24(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<14>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort25(Key * data, size_t size, size_t limit)
+void NO_INLINE sort25(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<15>>::executeMSD(data, size, limit);
 }
 
-static void NO_INLINE sort26(Key * data, size_t size, size_t limit)
+void NO_INLINE sort26(Key * data, size_t size, size_t limit)
 {
     RadixSort<RadixSortTraitsWithCustomBits<16>>::executeMSD(data, size, limit);
 }
 
+}
 
-int main(int argc, char ** argv)
+int mainEntryExampleRadixSort(int argc, char ** argv)
 {
     pcg64 rng(randomSeed());
 

@@ -132,3 +132,123 @@ def test_total_pk_bytes_in_memory_fields(started_cluster):
 
     # finally drop the table
     node.query("DROP table test_pk_bytes;")
+
+
+def test_total_proj_pk_ig_in_memory_fields(started_cluster):
+    node.query("""CREATE TABLE test_proj_pk_bytes
+    (
+       a UInt64,
+       b UInt64,
+       PROJECTION p (SELECT b, a ORDER BY b)
+    )
+    Engine=MergeTree()
+    ORDER BY a
+    SETTINGS index_granularity=1""")
+
+    query_proj_pk_bytes = "SELECT value FROM system.asynchronous_metrics WHERE metric = 'TotalProjectionPrimaryKeyBytesInMemory';"
+    query_proj_pk_bytes_allocated = """SELECT value FROM system.asynchronous_metrics
+                                  WHERE metric = 'TotalProjectionPrimaryKeyBytesInMemoryAllocated';"""
+    query_proj_ig_bytes = "SELECT value FROM system.asynchronous_metrics WHERE metric = 'TotalProjectionIndexGranularityBytesInMemory';"
+    query_proj_ig_bytes_allocated = """SELECT value FROM system.asynchronous_metrics
+                                  WHERE metric = 'TotalProjectionIndexGranularityBytesInMemoryAllocated';"""
+
+    # metrics before inserting anything
+    proj_pk_bytes_before = int(node.query(query_proj_pk_bytes).strip())
+    proj_pk_bytes_allocated_before = int(node.query(query_proj_pk_bytes_allocated).strip())
+    proj_ig_bytes_before = int(node.query(query_proj_ig_bytes).strip())
+    proj_ig_bytes_allocated_before = int(node.query(query_proj_ig_bytes_allocated).strip())
+
+    # first insert
+    node.query("""INSERT INTO test_proj_pk_bytes SELECT number, number * 2 FROM numbers(1000000)""")
+
+    # force projection PK to load
+    node.query("""SELECT b, a FROM test_proj_pk_bytes where b=1000
+                  SETTINGS optimize_use_projections=1, force_optimize_projection=1""")
+
+    def res_proj_pk_bytes():
+        return int(node.query(query_proj_pk_bytes).strip())
+
+    def res_proj_pk_bytes_allocated():
+        return int(node.query(query_proj_pk_bytes_allocated).strip())
+
+    def res_proj_ig_bytes():
+        return int(node.query(query_proj_ig_bytes).strip())
+
+    def res_proj_ig_bytes_allocated():
+        return int(node.query(query_proj_ig_bytes_allocated).strip())
+
+    # metrics should increase after first insert
+    proj_pk_bytes_before, proj_pk_bytes_after = query_until_condition(
+        proj_pk_bytes_before, res_proj_pk_bytes, condition=greater
+    )
+    assert proj_pk_bytes_after > proj_pk_bytes_before
+
+    proj_pk_bytes_allocated_before, proj_pk_bytes_allocated_after = query_until_condition(
+        proj_pk_bytes_allocated_before, res_proj_pk_bytes_allocated, condition=greater
+    )
+    assert proj_pk_bytes_allocated_after > proj_pk_bytes_allocated_before
+
+    # index granularity metrics should increase after first insert
+    proj_ig_bytes_before, proj_ig_bytes_after = query_until_condition(
+        proj_ig_bytes_before, res_proj_ig_bytes, condition=greater
+    )
+    assert proj_ig_bytes_after > proj_ig_bytes_before
+
+    proj_ig_bytes_allocated_before, proj_ig_bytes_allocated_after = query_until_condition(
+        proj_ig_bytes_allocated_before, res_proj_ig_bytes_allocated, condition=greater
+    )
+    assert proj_ig_bytes_allocated_after > proj_ig_bytes_allocated_before
+
+    # second insert
+    node.query("""INSERT INTO test_proj_pk_bytes SELECT number + 100, number * 200 FROM numbers(1000000)""")
+
+    node.query("""SELECT b, a FROM test_proj_pk_bytes where b=5000000
+                  SETTINGS optimize_use_projections=1, force_optimize_projection=1""")
+
+    # metrics should increase again
+    proj_pk_bytes_after, proj_pk_bytes_after_2 = query_until_condition(
+        proj_pk_bytes_after, res_proj_pk_bytes, condition=greater
+    )
+    assert proj_pk_bytes_after_2 > proj_pk_bytes_after
+
+    proj_pk_bytes_allocated_after, proj_pk_bytes_allocated_after_2 = query_until_condition(
+        proj_pk_bytes_allocated_after, res_proj_pk_bytes_allocated, condition=greater
+    )
+    assert proj_pk_bytes_allocated_after_2 > proj_pk_bytes_allocated_after
+
+    # index granularity metrics should increase again
+    proj_ig_bytes_after, proj_ig_bytes_after_2 = query_until_condition(
+        proj_ig_bytes_after, res_proj_ig_bytes, condition=greater
+    )
+    assert proj_ig_bytes_after_2 > proj_ig_bytes_after
+
+    proj_ig_bytes_allocated_after, proj_ig_bytes_allocated_after_2 = query_until_condition(
+        proj_ig_bytes_allocated_after, res_proj_ig_bytes_allocated, condition=greater
+    )
+    assert proj_ig_bytes_allocated_after_2 > proj_ig_bytes_allocated_after
+
+    # truncate and verify metrics decrease
+    node.query("TRUNCATE TABLE test_proj_pk_bytes;")
+
+    before_drop, after_drop = query_until_condition(
+        proj_pk_bytes_after_2, res_proj_pk_bytes, condition=lesser
+    )
+    assert before_drop > after_drop
+
+    before_drop, after_drop = query_until_condition(
+        proj_pk_bytes_allocated_after_2, res_proj_pk_bytes_allocated, condition=lesser
+    )
+    assert before_drop > after_drop
+
+    before_drop, after_drop = query_until_condition(
+        proj_ig_bytes_after_2, res_proj_ig_bytes, condition=lesser
+    )
+    assert before_drop > after_drop
+
+    before_drop, after_drop = query_until_condition(
+        proj_ig_bytes_allocated_after_2, res_proj_ig_bytes_allocated, condition=lesser
+    )
+    assert before_drop > after_drop
+
+    # finally drop the table
+    node.query("DROP TABLE test_proj_pk_bytes;")

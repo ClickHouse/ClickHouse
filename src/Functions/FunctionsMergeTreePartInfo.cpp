@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>

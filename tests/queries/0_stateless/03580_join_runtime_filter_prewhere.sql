@@ -1,5 +1,6 @@
 CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey SETTINGS auto_statistics_types='uniq,tdigest';
 CREATE TABLE customer(c_custkey Int32, c_nationkey Int32) ENGINE MergeTree ORDER BY c_custkey SETTINGS auto_statistics_types='uniq,tdigest';
+SET materialize_statistics_on_insert = 1;
 
 INSERT INTO nation VALUES (5,'ETHIOPIA'),(6,'FRANCE'),(7,'GERMANY');
 
@@ -39,7 +40,7 @@ FROM
             max(c_custkey)
         FROM nation, customer
         WHERE (c_nationkey = n_nationkey) AND (n_name = 'FRANCE')
-        SETTINGS enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_join_swap_table = 1
+        SETTINGS enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_join_swap_table = 1, query_plan_optimize_join_order_limit = 10 -- CI may inject 0; join table swap runs inside chooseJoinOrder which is skipped with limit=0
     ))
 )
 WHERE (explain LIKE '%ReadFromMergeTree%') OR (explain LIKE '%Prewhere filter column:%') OR (explain LIKE '%Build%');
@@ -52,6 +53,6 @@ FROM
     EXPLAIN actions=1
     SELECT count() FROM nation, customer
     WHERE (c_nationkey = n_nationkey) AND (n_name = 'FRANCE') AND (c_custkey%4 = 0)
-    SETTINGS enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_join_swap_table = 1, enable_multiple_prewhere_read_steps = 1
+    SETTINGS enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_join_swap_table = 1, enable_multiple_prewhere_read_steps = 1, query_plan_optimize_join_order_limit = 10 -- CI may inject 0; join table swap runs inside chooseJoinOrder which is skipped with limit=0
 )
 WHERE (explain LIKE '%ReadFromMergeTree%') OR (explain LIKE '%Prewhere filter column:%') OR (explain LIKE '%Build%');

@@ -16,7 +16,7 @@ node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
     macros={"replica": "r2"},
-    main_configs=["config/config.xml", "config/config2.xml"],
+    main_configs=["config/config.xml", "config/config2.xml", "config/named_collections.xml"],
 )
 
 
@@ -285,3 +285,87 @@ def test_named_collection_limit(started_cluster):
     finally:
         for i in range(throw_limit + 1):
             node.query(f"DROP NAMED COLLECTION IF EXISTS nc_{i}")
+
+
+def test_named_collection_if_not_exists_metric(started_cluster):
+    """
+    CREATE NAMED COLLECTION IF NOT EXISTS must not inflate the NamedCollection
+    metric when the collection already exists.
+    DROP NAMED COLLECTION IF EXISTS on a nonexistent collection must not
+    deflate the metric either.
+    https://github.com/ClickHouse/ClickHouse/issues/102507
+    """
+
+    def _get_number_of_collections():
+        return int(node.query("SELECT value FROM system.metrics WHERE name = 'NamedCollection'"))
+
+    try:
+        node.query("DROP NAMED COLLECTION IF EXISTS nc_ine_test")
+        before = _get_number_of_collections()
+
+        node.query("CREATE NAMED COLLECTION nc_ine_test AS key = 1")
+        assert _get_number_of_collections() == before + 1
+
+        # IF NOT EXISTS on an already-existing collection must not change the metric
+        node.query("CREATE NAMED COLLECTION IF NOT EXISTS nc_ine_test AS key = 2")
+        assert _get_number_of_collections() == before + 1
+
+        node.query("CREATE NAMED COLLECTION IF NOT EXISTS nc_ine_test AS key = 3")
+        assert _get_number_of_collections() == before + 1
+
+        node.query("DROP NAMED COLLECTION nc_ine_test")
+        assert _get_number_of_collections() == before
+
+        # DROP IF EXISTS on an already-dropped collection must not change the metric
+        node.query("DROP NAMED COLLECTION IF EXISTS nc_ine_test")
+        assert _get_number_of_collections() == before
+
+        node.query("DROP NAMED COLLECTION IF EXISTS nc_ine_test")
+        assert _get_number_of_collections() == before
+
+    finally:
+        node.query("DROP NAMED COLLECTION IF EXISTS nc_ine_test")
+
+
+def test_named_collection_metric_on_startup(started_cluster):
+    """
+    Collections loaded from config on startup must be reflected in the
+    NamedCollection metric. node2 starts with 2 config-defined collections
+    (from_config_1, from_config_2).
+    https://github.com/ClickHouse/ClickHouse/issues/102507
+    """
+
+    def _get_metric(n):
+        return int(n.query("SELECT value FROM system.metrics WHERE name = 'NamedCollection'"))
+
+    metric = _get_metric(node2)
+    assert metric >= 2, (
+        f"Expected NamedCollection metric >= 2 (from_config_1 + from_config_2), got {metric}"
+    )
+
+
+def test_named_collection_metric_after_config_reload(started_cluster):
+    """
+    SYSTEM RELOAD CONFIG must not break the NamedCollection metric for
+    SQL-created collections.
+    https://github.com/ClickHouse/ClickHouse/issues/102507
+    """
+
+    def _get_metric(n):
+        return int(n.query("SELECT value FROM system.metrics WHERE name = 'NamedCollection'"))
+
+    try:
+        node2.query("DROP NAMED COLLECTION IF EXISTS nc_reload_test")
+        before = _get_metric(node2)
+
+        node2.query("CREATE NAMED COLLECTION nc_reload_test AS key = 1")
+        assert _get_metric(node2) == before + 1
+
+        node2.query("SYSTEM RELOAD CONFIG")
+        assert _get_metric(node2) == before + 1
+
+        node2.query("DROP NAMED COLLECTION nc_reload_test")
+        assert _get_metric(node2) == before
+
+    finally:
+        node2.query("DROP NAMED COLLECTION IF EXISTS nc_reload_test")

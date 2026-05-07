@@ -63,7 +63,7 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
 static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
 {
     GetColumnsOptions options(GetColumnsOptions::All);
-    options.withVirtuals();
+    options.withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     options.withSubcolumns();
 
     auto columns_list = storage_snapshot->getColumns(options);

@@ -1,0 +1,455 @@
+SET parallel_replicas_local_plan = 1;
+
+-- { echo }
+
+-- Sorted: aaa-1, aaa-2, aab-1, bbb-1, bbb-2, ccc-1 (6 rows/granules)
+DROP TABLE IF EXISTS test_regex_prefix;
+CREATE TABLE test_regex_prefix (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_prefix VALUES ('aaa-1'), ('aaa-2'), ('aab-1'), ('bbb-1'), ('bbb-2'), ('ccc-1');
+
+-- No optimization: empty regex
+SELECT count() FROM test_regex_prefix WHERE match(id, '') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: only '^'
+SELECT count() FROM test_regex_prefix WHERE match(id, '^') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: no '^' anchor
+SELECT count() FROM test_regex_prefix WHERE match(id, 'aaa') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+-- Simple literal prefix
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+
+-- Longer literal prefix, tighter pruning
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa-1')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa-1') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa-1') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+
+-- No optimization: match patterns containing NUL bytes are not optimized
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\0bbb') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+-- Escaped special chars become literal prefix characters
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\.')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\.') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\.') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\|')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\|') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\|') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\(')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\(') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\(') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\)') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\)') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\\\')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\\\') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\\\') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\{')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\{') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\{') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\^')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\^') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\^') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\$')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\$') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\$') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\[')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\[') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\[') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\]')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\]') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\]') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\?')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\?') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\?') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\*')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\*') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\*') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\+')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\+') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\+') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\}')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\}') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\}') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+-- Escaped dash: prefix "aaa-" matches 2 rows
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\-')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\-') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\-') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- Non-literal escape sequences: prefix stops before the escape
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\d')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\d') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\d') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\w')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\\w') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa\\w') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+
+-- TODO: Support transparent plain groups — ^(aaa) is the same as ^aaa
+SELECT count() FROM test_regex_prefix WHERE match(id, '^(aaa)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- TODO: Support group followed by literal — ^(aaa)-1 is the same as ^aaa-1
+SELECT count() FROM test_regex_prefix WHERE match(id, '^(aaa)-1') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: non-capturing group (?:...)
+SELECT count() FROM test_regex_prefix WHERE match(id, '^(?:aaa)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- Invalid regex: malformed flag group
+SELECT count() FROM test_regex_prefix WHERE match(id, '^(?iaaa)'); -- {serverError CANNOT_COMPILE_REGEXP}
+-- No optimization: valid flag group (?i:...)
+SELECT count() FROM test_regex_prefix WHERE match(id, '^(?i:aaa)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- TODO: Support nested groups — ^((aaa)) is the same as ^aaa
+SELECT count() FROM test_regex_prefix WHERE match(id, '^((aaa))') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- TODO: Support deep nesting with suffix — ^(((aaa)))-1 is the same as ^aaa-1
+SELECT count() FROM test_regex_prefix WHERE match(id, '^(((aaa)))-1') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+-- Optional group: prefix stops at '(' so "aaa" is still extracted
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa(-1)?')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa(-1)?') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa(-1)?') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- Zero-or-more group: prefix stops at '('
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa(-1)*')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa(-1)*') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa(-1)*') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- Brace quantifier {0,N}: prefix stops at '('
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa(-1){0,2}')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa(-1){0,2}') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa(-1){0,2}') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- TODO: Support mandatory repetition — ^(aaa)+ guarantees at least one "aaa"
+SELECT count() FROM test_regex_prefix WHERE match(id, '^(aaa)+') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- TODO: Support group followed by literal — ^(aaa)bbb is the same as ^aaabbb
+SELECT count() FROM test_regex_prefix WHERE match(id, '^(aaa)bbb') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+-- No optimization: unescaped '|' outside group
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa|bbb') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- Metacharacter '[' stops prefix extraction
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa[12]')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa[12]') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa[12]') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- Metacharacter '^' mid-pattern stops prefix extraction
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa^bbb')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa^bbb') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa^bbb') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- Metacharacter '$' stops prefix extraction
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa$')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa$') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa$') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- Metacharacter '.' stops prefix extraction
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa.')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa.') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa.') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- Metacharacter '+' stops extraction but keeps last char (1-or-more)
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa+')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa+') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa+') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+
+-- '?' pops last char from prefix, widening the range
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa?')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa?') SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa?') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+-- '*' pops last char
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa*')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa*') SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa*') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+-- '{0,...}' pops last char
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa{0,5}')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa{0,5}') SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa{0,5}') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+DROP TABLE test_regex_prefix;
+
+-- Sorted: xxa-1, xxa-2, xxb-1, yyy-1 (4 rows/granules)
+DROP TABLE IF EXISTS test_regex_safety;
+CREATE TABLE test_regex_safety (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_safety VALUES ('xxa-1'), ('xxa-2'), ('xxb-1'), ('yyy-1');
+
+-- TODO: Support prefix before alternation group — ^xx(a.*|b.*) could use prefix "xx"
+SELECT count() FROM test_regex_safety WHERE match(id, '^xx(a.*|b.*)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- TODO: Support single-branch group with wildcard — ^(xxa.*) could use prefix "xxa"
+SELECT count() FROM test_regex_safety WHERE match(id, '^(xxa.*)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- TODO: Support group with escaped '|' — ^(xxa.*\\|z) could use prefix "xxa"
+SELECT count() FROM test_regex_safety WHERE match(id, '^(xxa.*\\|z)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+DROP TABLE test_regex_safety;
+
+-- Sorted: abc-xx-1, abc-xx-2, abc-yy-1, def-zz-1 (4 rows/granules)
+DROP TABLE IF EXISTS test_regex_altern;
+CREATE TABLE test_regex_altern (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_altern VALUES ('abc-xx-1'), ('abc-xx-2'), ('abc-yy-1'), ('def-zz-1');
+
+-- Alternation with common prefix across branches
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_altern WHERE match(id, '^(abc-xx|abc-yy)')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc-xx|abc-yy)') SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+SELECT * FROM test_regex_altern WHERE match(id, '^(abc-xx|abc-yy)') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+-- No optimization: branches with no common prefix
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc|def)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- Three branches
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_altern WHERE match(id, '^(abc-xx-1|abc-xx-2|abc-yy-1)')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc-xx-1|abc-xx-2|abc-yy-1)') SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+SELECT * FROM test_regex_altern WHERE match(id, '^(abc-xx-1|abc-xx-2|abc-yy-1)') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+-- Branches with different lengths
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_altern WHERE match(id, '^(abc-xx|abc-y)')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc-xx|abc-y)') SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+SELECT * FROM test_regex_altern WHERE match(id, '^(abc-xx|abc-y)') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+-- No optimization: first branch has wildcard prefix
+SELECT count() FROM test_regex_altern WHERE match(id, '^(.*abc|def-zz)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: second branch has wildcard prefix
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc|.*def)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+-- Escaped chars inside alternation branches are treated as literals
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_altern WHERE match(id, '^(abc\\-xx|abc\\-yy)')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc\\-xx|abc\\-yy)') SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+SELECT * FROM test_regex_altern WHERE match(id, '^(abc\\-xx|abc\\-yy)') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+-- TODO: Support nested groups inside alternation branches
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc(-xx)|abc(-yy))') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: nested alternation with no common prefix
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc(x|y)|def(z|w))') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: character class in branches
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc[|]x|def[|]z)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- TODO: Support character class in alternation branches
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc[^)]x|abc[^)]y)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc[]|]x|abc[]|]y)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc[\\|]x|abc[\\|]y)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+-- No optimization: optional alternation group
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc|def)?') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc|def)*') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc|def){0,1}') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- TODO: Support mandatory repetition after alternation group
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc-xx|abc-yy)+') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc-xx|abc-yy){1,3}') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- TODO: Support literal suffix after alternation group
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc-xx|abc-yy)zzz') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+-- Invalid regex: unclosed group
+SELECT count() FROM test_regex_altern WHERE match(id, '^(abc|def'); -- {serverError CANNOT_COMPILE_REGEXP}
+-- No optimization: single branch with wildcard
+SELECT count() FROM test_regex_altern WHERE match(id, '^(.*)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+DROP TABLE test_regex_altern;
+
+-- Sorted: aaa-1, bbb-1 (2 rows/granules)
+DROP TABLE IF EXISTS test_regex_handler;
+CREATE TABLE test_regex_handler (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_handler VALUES ('aaa-1'), ('bbb-1');
+
+-- Direct prefix extraction succeeds
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_handler WHERE match(id, '^aaa')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_handler WHERE match(id, '^aaa') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_handler WHERE match(id, '^aaa') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+-- No optimization: '.' immediately after '^' gives empty prefix
+SELECT count() FROM test_regex_handler WHERE match(id, '^.') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: top-level alternation
+SELECT count() FROM test_regex_handler WHERE match(id, '^aaa|bbb') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: non-capturing group
+SELECT count() FROM test_regex_handler WHERE match(id, '^(?:aaa|bbb)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- Alternation analysis finds common prefix
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_handler WHERE match(id, '^(aaa|aab)')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_handler WHERE match(id, '^(aaa|aab)') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_handler WHERE match(id, '^(aaa|aab)') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+-- No optimization: alternation with no common prefix
+SELECT count() FROM test_regex_handler WHERE match(id, '^(aaa|bbb)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+DROP TABLE test_regex_handler;
+
+-- Sorted: LONGMATCH-other, ab-LONGMATCH, cd-LONGMATCH (3 rows/granules)
+DROP TABLE IF EXISTS test_regex_wildcard_branch;
+CREATE TABLE test_regex_wildcard_branch (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_wildcard_branch VALUES ('ab-LONGMATCH'), ('cd-LONGMATCH'), ('LONGMATCH-other');
+
+-- No common prefix between "ab" and "cd": branches have wildcards, no optimization
+SELECT count() FROM test_regex_wildcard_branch WHERE match(id, '^(ab.*LONGMATCH|cd.*LONGMATCH)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- Correctness baseline with pruning disabled
+SELECT count() FROM test_regex_wildcard_branch WHERE match(id, '^(ab.*LONGMATCH|cd.*LONGMATCH)') SETTINGS use_primary_key = 0, max_rows_to_read = 3;
+SELECT * FROM test_regex_wildcard_branch WHERE match(id, '^(ab.*LONGMATCH|cd.*LONGMATCH)') ORDER BY id SETTINGS use_primary_key = 0, max_rows_to_read = 3;
+-- Optional group matches everything, no optimization
+SELECT count() FROM test_regex_wildcard_branch WHERE match(id, '^(ab.*LONGMATCH|cd.*LONGMATCH)?') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- TODO: Support branches with wildcards sharing a common prefix
+SELECT count() FROM test_regex_wildcard_branch WHERE match(id, '^(ab.*X|ab.*Y)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+DROP TABLE test_regex_wildcard_branch;
+
+-- Data with special characters: aa.bb, aabb, aa|bb, bbcc (4 rows/granules)
+DROP TABLE IF EXISTS test_regex_special;
+CREATE TABLE test_regex_special (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_special VALUES ('aa.bb'), ('aa|bb'), ('aabb'), ('bbcc');
+
+-- Escaped dot matches literal '.'
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_special WHERE match(id, '^aa\\.')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_special WHERE match(id, '^aa\\.') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_special WHERE match(id, '^aa\\.') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+-- Escaped pipe matches literal '|'
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_special WHERE match(id, '^aa\\|')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_special WHERE match(id, '^aa\\|') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_special WHERE match(id, '^aa\\|') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- Escaped backslash matches literal '\'
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_special WHERE match(id, '^aa\\\\')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_special WHERE match(id, '^aa\\\\') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+SELECT * FROM test_regex_special WHERE match(id, '^aa\\\\') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
+
+DROP TABLE test_regex_special;
+
+-- Sorted: aaa, aab, bbb (3 rows/granules)
+DROP TABLE IF EXISTS test_regex_edge;
+CREATE TABLE test_regex_edge (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_edge VALUES ('aaa'), ('aab'), ('bbb');
+
+-- TODO: Support group followed by literal — ^(aaa)b is the same as ^aaab
+SELECT count() FROM test_regex_edge WHERE match(id, '^(aaa)b') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- TODO: Support quantifier inside group — ^(aab*) could use prefix "aa"
+SELECT count() FROM test_regex_edge WHERE match(id, '^(aab*)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- Three branches with progressively shrinking common prefix
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_edge WHERE match(id, '^(aaax|aaby|aacz)')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_edge WHERE match(id, '^(aaax|aaby|aacz)') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_edge WHERE match(id, '^(aaax|aaby|aacz)') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- Common prefix equals the shorter branch
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_edge WHERE match(id, '^(aa|aab)')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_edge WHERE match(id, '^(aa|aab)') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_edge WHERE match(id, '^(aa|aab)') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- No optimization: quantifier on empty prefix
+SELECT count() FROM test_regex_edge WHERE match(id, '^?') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+DROP TABLE test_regex_edge;
+
+-- Malformed and non-optimizable patterns
+DROP TABLE IF EXISTS test_regex_negative;
+CREATE TABLE test_regex_negative (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_negative VALUES ('abc'), ('def');
+
+-- Invalid regex
+SELECT count() FROM test_regex_negative WHERE match(id, '^abc)'); -- {serverError CANNOT_COMPILE_REGEXP}
+SELECT count() FROM test_regex_negative WHERE match(id, '^abc\\'); -- {serverError CANNOT_COMPILE_REGEXP}
+SELECT count() FROM test_regex_negative WHERE match(id, '^abc[def'); -- {serverError CANNOT_COMPILE_REGEXP}
+SELECT count() FROM test_regex_negative WHERE match(id, '^(abc'); -- {serverError CANNOT_COMPILE_REGEXP}
+-- No optimization: empty alternation branch matches everything
+SELECT count() FROM test_regex_negative WHERE match(id, '^(abc|)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_negative WHERE match(id, '^(|abc)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: wildcard at start
+SELECT count() FROM test_regex_negative WHERE match(id, '^.*abc') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: character class at start
+SELECT count() FROM test_regex_negative WHERE match(id, '^[abc]def') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: dot at start
+SELECT count() FROM test_regex_negative WHERE match(id, '^.abc') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: disjoint branches
+SELECT count() FROM test_regex_negative WHERE match(id, '^(abc|def|ghi)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: top-level alternation
+SELECT count() FROM test_regex_negative WHERE match(id, '^abc|^def') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: no anchor
+SELECT count() FROM test_regex_negative WHERE match(id, '(abc|def)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: non-capturing group
+SELECT count() FROM test_regex_negative WHERE match(id, '^(?:abc|def)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- Invalid regex: unclosed group with alternation
+SELECT count() FROM test_regex_negative WHERE match(id, '^(abc|def'); -- {serverError CANNOT_COMPILE_REGEXP}
+-- No optimization: hex escape in alternation branches is not a single literal
+-- \x41 is RE2 hex escape for 'A', but we cannot safely parse multi-char escapes
+SELECT count() FROM test_regex_negative WHERE match(id, '^(\\x41foo|\\x41bar)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: \n escape (newline) is not a literal character
+SELECT count() FROM test_regex_negative WHERE match(id, '^(\\nfoo|\\nbar)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- No optimization: \d (digit class) is not a literal character
+SELECT count() FROM test_regex_negative WHERE match(id, '^(\\dfoo|\\dbar)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+DROP TABLE test_regex_negative;
+
+-- Optional group containing wildcard: "^xx(abc.*)?def"
+-- The group may or may not appear, so both "xxabcZdef" and "xxdef" match.
+-- Sorted: other, xxabcZdef, xxdef (3 rows/granules)
+DROP TABLE IF EXISTS test_regex_optgroup;
+CREATE TABLE test_regex_optgroup (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_optgroup VALUES ('xxabcZdef'), ('xxdef'), ('other');
+
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_optgroup WHERE match(id, '^xx(abc.*)?def')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_optgroup WHERE match(id, '^xx(abc.*)?def') SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+SELECT * FROM test_regex_optgroup WHERE match(id, '^xx(abc.*)?def') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+-- Confirm: same result with pruning disabled
+SELECT count() FROM test_regex_optgroup WHERE match(id, '^xx(abc.*)?def') SETTINGS use_primary_key = 0, max_rows_to_read = 3;
+
+DROP TABLE test_regex_optgroup;
+
+-- Top-level alternation with wildcard: "^ab.*|cd"
+-- Parsed as (^ab.*) | (cd) — the "cd" branch matches anywhere in the string.
+-- Sorted: abXXX, mmmmcd, zzzzcd (3 rows/granules)
+DROP TABLE IF EXISTS test_regex_toplevel_alt;
+CREATE TABLE test_regex_toplevel_alt (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_toplevel_alt VALUES ('abXXX'), ('mmmmcd'), ('zzzzcd');
+
+-- No optimization: top-level alternation
+SELECT count() FROM test_regex_toplevel_alt WHERE match(id, '^ab.*|cd') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- Correctness baseline
+SELECT count() FROM test_regex_toplevel_alt WHERE match(id, '^ab.*|cd') SETTINGS use_primary_key = 0, max_rows_to_read = 3;
+SELECT * FROM test_regex_toplevel_alt WHERE match(id, '^ab.*|cd') ORDER BY id SETTINGS use_primary_key = 0, max_rows_to_read = 3;
+
+DROP TABLE test_regex_toplevel_alt;
+
+-- Top-level alternation after a grouped alternation: "^(ab|ac)|zz"
+-- Parsed as (^(ab|ac))|(zz) — the "zz" branch is unanchored.
+-- Sorted: abXX, mmzz, zzzz (3 rows/granules)
+DROP TABLE IF EXISTS test_regex_group_then_alt;
+CREATE TABLE test_regex_group_then_alt (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_group_then_alt VALUES ('abXX'), ('mmzz'), ('zzzz');
+
+-- No optimization: top-level alternation after grouped alternation
+SELECT count() FROM test_regex_group_then_alt WHERE match(id, '^(ab|ac)|zz') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- Correctness baseline
+SELECT count() FROM test_regex_group_then_alt WHERE match(id, '^(ab|ac)|zz') SETTINGS use_primary_key = 0, max_rows_to_read = 3;
+SELECT * FROM test_regex_group_then_alt WHERE match(id, '^(ab|ac)|zz') ORDER BY id SETTINGS use_primary_key = 0, max_rows_to_read = 3;
+
+DROP TABLE test_regex_group_then_alt;
+
+-- Non-literal escape sequences in alternation branches: "^(\x41foo|\x41bar)"
+-- \x41 is RE2 hex for 'A'. Only whitelisted literal escapes are accepted.
+-- Sorted: Abar, Afoo, other (3 rows/granules)
+DROP TABLE IF EXISTS test_regex_nonliteral_escape;
+CREATE TABLE test_regex_nonliteral_escape (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_nonliteral_escape VALUES ('Afoo'), ('Abar'), ('other');
+
+-- No optimization: hex escape is not a simple literal escape
+SELECT count() FROM test_regex_nonliteral_escape WHERE match(id, '^(\\x41foo|\\x41bar)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- Correctness baseline: both 'Afoo' and 'Abar' match
+SELECT count() FROM test_regex_nonliteral_escape WHERE match(id, '^(\\x41foo|\\x41bar)') SETTINGS use_primary_key = 0, max_rows_to_read = 3;
+SELECT * FROM test_regex_nonliteral_escape WHERE match(id, '^(\\x41foo|\\x41bar)') ORDER BY id SETTINGS use_primary_key = 0, max_rows_to_read = 3;
+
+DROP TABLE test_regex_nonliteral_escape;
+
+-- Nested groups inside alternation branches are not supported.
+-- Branches contain '(' which is a metacharacter, so the pattern is rejected.
+-- Sorted: abc1X, abc2X, abc3X, abc4X, defXX (5 rows/granules)
+DROP TABLE IF EXISTS test_regex_nested_alt;
+CREATE TABLE test_regex_nested_alt (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_nested_alt VALUES ('abc1X'), ('abc2X'), ('abc3X'), ('abc4X'), ('defXX');
+
+-- TODO: Support nested groups in alternation branches
+SELECT count() FROM test_regex_nested_alt WHERE match(id, '^(abc(1|2)|abc(3|4))') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_nested_alt WHERE match(id, '^(abc((1|2)x)|abc((3|4)y))') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_nested_alt WHERE match(id, '^(abc(1|2)|def(3|4))') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+DROP TABLE test_regex_nested_alt;
+
+-- TODO: Support character classes in alternation branches
+DROP TABLE IF EXISTS test_regex_charclass;
+CREATE TABLE test_regex_charclass (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_charclass VALUES ('abc-1'), ('abc-2'), ('def-1');
+
+SELECT count() FROM test_regex_charclass WHERE match(id, '^(abc[|]1|abc[|]2)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_charclass WHERE match(id, '^(abc[)]1|abc[)]2)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_charclass WHERE match(id, '^(abc[(]1|abc[(]2)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_charclass WHERE match(id, '^(abc[^)]1|abc[^)]2)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_charclass WHERE match(id, '^(abc[]|]1|abc[]|]2)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+SELECT count() FROM test_regex_charclass WHERE match(id, '^(abc[\\|]1|abc[\\|]2)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+
+DROP TABLE test_regex_charclass;
+
+-- Escaped specials and metacharacters in alternation branches.
+-- Sorted: abc(1, abc(2, abc|1, abc|2, abc.x, abc.y, def-1 (7 rows/granules)
+DROP TABLE IF EXISTS test_regex_branch_prefix;
+CREATE TABLE test_regex_branch_prefix (id String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO test_regex_branch_prefix VALUES ('abc(1'), ('abc(2'), ('abc|1'), ('abc|2'), ('abc.x'), ('abc.y'), ('def-1');
+
+-- Escaped '(' in branches is a literal '(' — prefix "abc("
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_branch_prefix WHERE match(id, '^(abc\\(1|abc\\(2)')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_branch_prefix WHERE match(id, '^(abc\\(1|abc\\(2)') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_branch_prefix WHERE match(id, '^(abc\\(1|abc\\(2)') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- Escaped '|' in branches is a literal '|' — prefix "abc|"
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_branch_prefix WHERE match(id, '^(abc\\|1|abc\\|2)')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_branch_prefix WHERE match(id, '^(abc\\|1|abc\\|2)') SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+SELECT * FROM test_regex_branch_prefix WHERE match(id, '^(abc\\|1|abc\\|2)') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+-- No optimization: unescaped '.' is a metacharacter, branches rejected
+SELECT count() FROM test_regex_branch_prefix WHERE match(id, '^(abc.x|abc.y)') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- Identical branches with plain literals still work
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_branch_prefix WHERE match(id, '^(abc|abc)')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_branch_prefix WHERE match(id, '^(abc|abc)') SETTINGS force_primary_key = 1, max_rows_to_read = 6;
+SELECT * FROM test_regex_branch_prefix WHERE match(id, '^(abc|abc)') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 6;
+
+DROP TABLE test_regex_branch_prefix;

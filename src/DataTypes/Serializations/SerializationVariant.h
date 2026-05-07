@@ -210,18 +210,35 @@ private:
 
     static void readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, ReadBuffer * stream);
 
-    bool tryDeserializeTextEscapedImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
+    /// Shared implementation for Escaped and Raw text deserialization.
+    /// Checks for NULL representation in the raw buffer before escape processing
+    /// (using three-path approach similar to `SerializationNullable`),
+    /// then reads the field and tries to deserialize it as each variant.
+    /// ReadField signature: void(String & field, ReadBuffer & buf).
+    /// TryDeserializeVariant signature: bool(IColumn &, const SerializationPtr &, ReadBuffer &, const FormatSettings &).
+    template <typename ReadField, typename TryDeserializeVariant>
+    bool tryDeserializeTextEscapedOrRawImpl(
+        IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+        ReadField && read_field, TryDeserializeVariant && try_deserialize_variant) const;
+
+    /// Try to deserialize the field as each variant type in priority order.
+    /// Returns true if any variant matched.
+    bool tryDeserializeVariantFromField(
+        IColumn & column,
+        const String & field,
+        std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
+        const FormatSettings & settings) const;
+
     bool tryDeserializeTextQuotedImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeWholeTextImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeTextCSVImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeTextJSONImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
-    bool tryDeserializeTextRawImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
 
     bool tryDeserializeImpl(
         IColumn & column,
         const String & field,
         std::function<bool(ReadBuffer &)> check_for_null,
-        std::function<bool(IColumn & variant_columm, const SerializationPtr & nested, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
+        std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
         const FormatSettings & settings) const;
 
     DataTypes variant_types;

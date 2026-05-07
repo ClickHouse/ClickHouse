@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/assert_cast.h>
-#include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/types.h>
 #include <boost/noncopyable.hpp>

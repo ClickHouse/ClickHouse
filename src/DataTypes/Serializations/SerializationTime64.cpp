@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
 extern const int CANNOT_PARSE_DATETIME;
 extern const int CANNOT_PARSE_NUMBER;
+extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 
@@ -269,6 +270,12 @@ void SerializationTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr
         readCSVString(datetime_str, istr, settings.csv);
         ReadBufferFromString buf(datetime_str);
         readText(x, scale, buf, settings, DateLUT::instance(), DateLUT::instance());
+        if (!buf.eof())
+            throw Exception(
+                ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                "Unexpected data '{}' after parsed Time64 value '{}'",
+                String(buf.position(), buf.buffer().end()),
+                String(buf.buffer().begin(), buf.position()));
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(x);

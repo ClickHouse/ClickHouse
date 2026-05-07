@@ -290,10 +290,8 @@ def test_create_table():
         f"AzureQueue('{azure_conn_string}', 'cont', '*', 'CSV') SETTINGS mode = 'unordered', after_processing = 'move', after_processing_move_connection_string = '{azure_sas_conn_string}', after_processing_move_container = 'chprocessed'",
         f"AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '{azure_account_key}', 'CSV') SETTINGS mode = 'unordered'",
         f"AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none') SETTINGS mode = 'unordered'",
-        (
-            f"AzureBlobStorage('BlobEndpoint=https://my-endpoint/;SharedAccessSignature=sp=r&st=2025-09-29T14:58:11Z&se=2025-09-29T00:00:00Z&spr=https&sv=2022-11-02&sr=c&sig=SECRET%SECRET%SECRET%SECRET', 'exampledatasets', 'example.csv')",
-            "STD_EXCEPTION",
-        ),
+        f"AzureBlobStorage('BlobEndpoint=https://my-endpoint/;SharedAccessSignature=sp=r&st=2025-09-29T14:58:11Z&se=2025-09-29T00:00:00Z&spr=https&sv=2022-11-02&sr=c&sig=SECRET%SECRET%SECRET%SECRET', 'exampledatasets', 'example.csv')",
+        f"S3('https://my-s3-endpoint/bucket/data.csv', 'myaccess', '{password}', 'CSV')",
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '{password}', format_avro_schema_registry_url = 'http://schema_user:{password}@'",
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '{password}', format_avro_schema_registry_url = 'http://schema_user:{password}@domain.com'",
         f"S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '{password}', compression_method = 'gzip')",
@@ -398,6 +396,7 @@ def test_create_table():
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV') SETTINGS mode = 'unordered'"),
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none') SETTINGS mode = 'unordered'"),
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureBlobStorage('{masked_sas_conn_string}', 'exampledatasets', 'example.csv')"),
+            generate_create_table_numbered("(`x` int) ENGINE = S3('https://my-s3-endpoint/bucket/data.csv', 'myaccess', '[HIDDEN]', 'CSV')"),
             generate_create_table_numbered("(`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@'"),
             generate_create_table_numbered("(`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@domain.com'"),
             generate_create_table_numbered("(`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '[HIDDEN]', compression_method = 'gzip')"),
@@ -486,6 +485,7 @@ def test_create_database():
 def test_table_functions():
     password = new_password()
     has_delta_lake = int(node.query("SELECT count() FROM system.table_functions WHERE name = 'deltaLake'").strip()) > 0
+    has_paimon = int(node.query("SELECT count() FROM system.table_functions WHERE name = 'paimonS3'").strip()) > 0
     azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
     account_key_pattern = re.compile("AccountKey=.*?(;|$)")
     masked_azure_conn_string = re.sub(
@@ -556,6 +556,10 @@ def test_table_functions():
         f"odbc(named_collection_1, connection_settings = 'odbc://user:{password}@localhost:5432/mydb')",
         (f"jdbc(named_collection_1, datasource = 'DSN=mydb;Uid=user;Pwd={password}', connection_settings = 'DSN=mydb2;Uid=user2;Pwd={password}')", "ARGUMENTS"),
         (f"jdbc(named_collection_1, connection_settings = 'jdbc://user2:{password}@localhost:5432/mydb2', external_database = 'mydb', datasource = 'jdbc://user:{password}@localhost:5432/mydb')", "ARGUMENTS"),
+        f"deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_delta_lake else (f"deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_FUNCTION"),
+        f"paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_paimon else (f"paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_FUNCTION"),
+        f"paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_paimon else (f"paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_FUNCTION"),
+        f"paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')" if has_paimon else (f"paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')", "UNKNOWN_FUNCTION"),
     ]
 
     def make_test_case(i):
@@ -659,6 +663,10 @@ def test_table_functions():
             "CREATE TABLE tablefunc57 (`x` int) AS odbc(named_collection_1, connection_settings = 'odbc://user:[HIDDEN]@localhost:5432/mydb')",
             "CREATE TABLE tablefunc58 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]', connection_settings = '[HIDDEN]')",
             "CREATE TABLE tablefunc59 (`x` int) AS jdbc(named_collection_1, connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', datasource = '[HIDDEN]')",
+            "CREATE TABLE tablefunc60 (`x` int) AS deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc61 (`x` int) AS paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc62 (`x` int) AS paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            f"CREATE TABLE tablefunc63 (`x` int) AS paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
         ],
         must_not_contain=[password],
     )
@@ -693,6 +701,7 @@ def test_table_functions_object_storage_cluster():
     ch_cluster = "test_shard_localhost"
     named_collection = 'named_collection_1'
     has_delta_lake = int(node.query("SELECT count() FROM system.table_functions WHERE name = 'deltaLake'").strip()) > 0
+    has_paimon = int(node.query("SELECT count() FROM system.table_functions WHERE name = 'paimonS3Cluster'").strip()) > 0
 
     s3_url = "http://minio1:9001/root/data/test"
     s3_access_key_id = "minio"
@@ -737,6 +746,13 @@ def test_table_functions_object_storage_cluster():
             f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
         ]
 
+    if has_paimon:
+        table_functions += [
+            f"paimonCluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
+            f"paimonS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
+            f"paimonAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
+        ]
+
     for table_function in table_functions:
         node.query_and_get_answer_with_error(f"SELECT * FROM {table_function}")
 
@@ -766,6 +782,13 @@ def test_table_functions_object_storage_cluster():
             f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
             f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        ]
+
+    if has_paimon:
+        must_contain += [
+            f"paimonCluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
+            f"paimonS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
+            f"paimonAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
         ]
 
     check_logs(
@@ -840,9 +863,24 @@ def test_encryption_functions():
 def test_create_dictionary():
     password = new_password()
 
+    # ClickHouse source.
     node.query(
         f"CREATE DICTIONARY dict1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
         f"SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'user1' TABLE 'test' PASSWORD '{password}' DB 'default')) "
+        f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
+    )
+
+    # HTTP source with top-level USER/PASSWORD keys.
+    node.query(
+        f"CREATE DICTIONARY dict2 (n int DEFAULT 0) PRIMARY KEY n "
+        f"SOURCE(HTTP(url 'http://localhost:8123/dict.tsv' format 'TabSeparated' user 'huser' password '{password}')) "
+        f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
+    )
+
+    # HTTP source with nested CREDENTIALS(USER ... PASSWORD ...).
+    node.query(
+        f"CREATE DICTIONARY dict3 (n int DEFAULT 0) PRIMARY KEY n "
+        f"SOURCE(HTTP(url 'http://localhost:8123/dict.tsv' format 'TabSeparated' credentials(user 'huser' password '{password}'))) "
         f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
     )
 
@@ -853,22 +891,46 @@ def test_create_dictionary():
         )
 
         assert (
+            node.query(f"SHOW CREATE TABLE dict2 {show_secrets}={toggle}")
+            == f"CREATE DICTIONARY default.dict2\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\'))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
+        )
+
+        assert (
+            node.query(f"SHOW CREATE TABLE dict3 {show_secrets}={toggle}")
+            == f"CREATE DICTIONARY default.dict3\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\')))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
+        )
+
+        assert (
             node.query(
-                f"SELECT create_table_query FROM system.tables WHERE name = 'dict1' {show_secrets}={toggle}"
+                f"SELECT create_table_query FROM system.tables WHERE name IN ['dict1', 'dict2', 'dict3'] ORDER BY name {show_secrets}={toggle}"
             )
-            == f"CREATE DICTIONARY default.dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'{secret}\\' DB \\'default\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+            == (
+                f"CREATE DICTIONARY default.dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'{secret}\\' DB \\'default\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+                f"CREATE DICTIONARY default.dict2 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+                f"CREATE DICTIONARY default.dict3 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\'))) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+            )
         )
 
     check_logs(
         must_contain=[
             "CREATE DICTIONARY dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n "
             "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'user1' TABLE 'test' PASSWORD '[HIDDEN]' DB 'default')) "
-            "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
+            "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
+
+            "CREATE DICTIONARY dict2 (`n` int DEFAULT 0) PRIMARY KEY n "
+            "SOURCE(HTTP(URL 'http://localhost:8123/dict.tsv' FORMAT 'TabSeparated' USER 'huser' PASSWORD '[HIDDEN]')) "
+            "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
+
+            "CREATE DICTIONARY dict3 (`n` int DEFAULT 0) PRIMARY KEY n "
+            "SOURCE(HTTP(URL 'http://localhost:8123/dict.tsv' FORMAT 'TabSeparated' CREDENTIALS (USER 'huser' PASSWORD '[HIDDEN]'))) "
+            "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
         ],
         must_not_contain=[password],
     )
 
     node.query("DROP DICTIONARY dict1")
+    node.query("DROP DICTIONARY dict2")
+    node.query("DROP DICTIONARY dict3")
 
 
 def test_backup_to_s3():

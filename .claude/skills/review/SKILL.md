@@ -100,6 +100,14 @@ WHAT TO REVIEW VS WHAT TO IGNORE
 - Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present, specific, and user-readable.
 - Read the changelog-entry standards from `clickhouse-pr-description` and apply them: avoid vague text (e.g. "fix bug"), describe the exact affected feature/behavior, and for backward-incompatible changes explain old behavior, new behavior, and how to preserve old behavior when possible.
 
+**Documentation is auto-generated from source for structured parts of the system — do NOT request separate `docs/` files for these:**
+- ClickHouse auto-generates user-facing documentation for the structured surface of the system directly from the source code. This includes (non-exhaustive): SQL functions and aggregate functions (via `FunctionDocumentation` registered at function factory time), settings (via the doc-string argument of the `DECLARE(...)` macro in `src/Core/Settings.cpp`, `MergeTreeSettings.cpp`, format settings, server settings, etc.), table functions, table engines, formats, system tables, and similar registered components.
+- When a PR adds or changes a function, setting, table function, table engine, format, or system table, the correct place for documentation is **the source code registration** (e.g. `FunctionDocumentation` fields like `description`, `syntax`, `arguments`, `returned_value`, `examples`, `introduced_in`, `category`; or the doc-string in `DECLARE(...)` for settings). A separate hand-written page under `docs/` is **not required** and asking for one is a false positive.
+- Only flag missing documentation when:
+  - The structured doc fields are themselves missing, empty, or clearly inadequate (e.g. no `description`, no `examples`, no `syntax` for a new function; empty doc-string in `DECLARE` for a new setting).
+  - The change is to a **non-structured** area that has no auto-generation (e.g. high-level guides, tutorials, architecture docs, operational/admin docs, integration guides) — those do live under `docs/` and may legitimately need updates.
+- Do **not** ask the contributor to add `docs/` files for new functions, settings, dialects, or other registered components when the source-level documentation is present. If the source-level docs are weak, comment on the source-level fields directly instead.
+
 **Explicitly ignore (do not comment on these unless they indicate a bug):**
 - Commented debugging code (completely ignore for draft PR, no more than one message in total)
 - Pure formatting (whitespace, brace style, minor naming preferences).
@@ -172,11 +180,20 @@ When reading diffs, scan for these classes of bugs:
 - Watch for file paths that surface contents in error messages on parse failure — even a "read then validate" pattern can leak file contents through exceptions.
 - This applies to all code paths that use `ReadBufferFromFile`, `WriteBufferToFile`, `std::ifstream`, or similar with user-controlled paths.
 
-**9) Semantic correctness & fix completeness**
+**9) Repository bloat — large & binary files**
+- ClickHouse is a huge monorepo; every byte committed to git is cloned by every contributor forever and can never be fully removed without history rewriting.
+- **Binary blobs** (JARs, compiled executables, archives, images, dataset files, model weights) must **never** be committed directly. Flag any new binary file larger than ~100 KB as a blocker. Check `file` type and size for any non-text addition.
+- **Chunked / split binaries** are a red flag — they indicate someone tried to work around size limits while still committing the same blob.
+- **Fat dependency bundles** (uber-JARs, vendored node_modules, bundled `.so`/.`dylib` files) are never acceptable in-tree.
+- **Acceptable alternatives:** download at test time from CI artifact storage / S3 / Maven Central; build from source inside the test container; use a Docker image that already contains the dependency; use git-lfs if the project supports it (ClickHouse does not).
+- **Test data** (Parquet files, Avro files, small JSON fixtures) under ~1 MB total is usually fine, but anything larger should be generated at test time or downloaded.
+- When a PR adds new files under `tests/integration/`, `tests/queries/`, or any other directory, always scan for unexpectedly large or binary additions — contributors sometimes commit build artifacts or data files without realizing the permanent cost.
+
+**10) Semantic correctness & fix completeness**
 - **Partial / asymmetric fixes:** when a behavior is changed in one code path, check whether symmetric paths need the same change. Examples: fixing `SYSTEM STOP MERGES` for merge selection but not mutation selection; fixing `ReplicatedMergeTree` but not `SharedMergeTree`. Use `grep` to find all related call sites.
 - **Multi-instance resource selection:** when a PR adds support for multiple instances of a resource (e.g. auxiliary ZooKeeper clusters, secondary storage backends), grep for every place that accesses the resource and verify the correct instance is selected — not just in the newly added code paths.
 
-**10) Trust boundary expansion — looking beyond the diff**
+**11) Trust boundary expansion — looking beyond the diff**
 
 Trigger: a PR wraps existing internal code for a wider audience (library function → SQL function, CLI tool → server endpoint, internal reader → table function, background-only path → user-reachable query). The wrapper diff may look fine, but the callee was written with assumptions about its original callers that no longer hold.
 
@@ -196,6 +213,10 @@ Workflow:
 
 5. **Verify test coverage.** The PR's tests must include adversarial edge cases that the original caller would never produce: empty inputs, minimal-length inputs, malformed inputs, NULLs, maximum-length inputs.
 
+**12) Shell-command safety in Python / shell scripts**
+- Destructive or privileged commands (`rm -rf`, `mv`, `cp -r`, `find … -delete`, `chmod`, `chown`, `dd`, `kill`, `sudo …`) with substituted arguments passed to `shell=True` (`subprocess.run`/`Popen`, `os.system`) or to in-tree wrappers that use `shell=True` under the hood (ClickHouse's `Shell.check` / `Shell.run` / `Shell.get_output`).
+- Unquoted variables in destructive commands inside `.sh` scripts.
+- Prefer `shutil.rmtree` or argv-list `subprocess.run`; if a shell wrapper is unavoidable, use `shlex.quote` and `--`.
 
 CLICKHOUSE RULES (MANDATORY)
 - **Deletion logging**
@@ -217,6 +238,8 @@ CLICKHOUSE RULES (MANDATORY)
   Ensure incremental rollout is feasible in both OSS and Cloud (feature flags, safe defaults, non-disruptive changes).
 - **Compilation time**
   Follow checklist **7) Compilation time & build impact**. Treat violations there as ClickHouse-rule issues.
+- **No large / binary files in git**
+  Binary blobs (JARs, archives, compiled artifacts, datasets >1 MB, fat dependency bundles) must never be committed. They permanently bloat the repository for every clone and cannot be removed without history rewriting. Test dependencies should be downloaded at test time, built from source inside the test container, or pulled from Docker images. Follow checklist **9) Repository bloat**. Any violation is a blocker.
 - **PR metadata quality**
   For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes).
 
@@ -232,6 +255,8 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 - Significant performance regression in a hot path.
 - Security or privilege issues, or license incompatibility.
 - Server-side file access with user-controlled paths that bypass `user_files_path` or equivalent restrictions.
+- Large binary files (JARs, archives, datasets, compiled artifacts) committed to git — permanent, irreversible repo bloat.
+- Destructive shell commands (`rm -rf`, `mv`, `chmod`, `dd`, `sudo`, …) with unquoted substitution under `shell=True` or in shell scripts.
 
 **Majors** – serious but not catastrophic
 - Under-tested important edge cases or error paths.
@@ -296,6 +321,7 @@ Example:
 | PR metadata quality | ⚠️ | `Changelog category` does not match change type; `Changelog entry` is too vague for users |
 | Safe rollout | ➖ | |
 | Compilation time | ✅ | |
+| No large/binary files | ✅ | |
 
 **Performance & Safety** (omit if no concerns)
 - Only include this section if there are actual concerns about hot-path regressions, memory, concurrency, or failure modes.

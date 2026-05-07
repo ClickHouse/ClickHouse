@@ -1,0 +1,67 @@
+-- Tags: distributed
+
+{% for enable_analyzer in [1, 0] %}
+{% for prefer_localhost in [1, 0] %}
+
+-- { echo }
+SET enable_analyzer = {{ enable_analyzer }};
+SET prefer_localhost_replica = {{ prefer_localhost }};
+
+-- Positive OFFSET
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) OFFSET 5);
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number OFFSET 5);
+SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number OFFSET 5);
+
+-- Positive LIMIT + OFFSET
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) LIMIT 3 OFFSET 5);
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 OFFSET 5);
+SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 OFFSET 5);
+
+-- Negative LIMIT
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) LIMIT -3);
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT -3);
+SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT -3);
+
+-- Negative OFFSET
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) OFFSET -3);
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number OFFSET -3);
+SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number OFFSET -3);
+
+-- Negative LIMIT + negative OFFSET
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) LIMIT -3 OFFSET -5);
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT -3 OFFSET -5);
+SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT -3 OFFSET -5);
+
+-- Negative LIMIT + positive OFFSET
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) LIMIT -3 OFFSET 5);
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT -3 OFFSET 5);
+SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT -3 OFFSET 5);
+
+-- Positive LIMIT + negative OFFSET
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) LIMIT 3 OFFSET -5);
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 OFFSET -5);
+SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 OFFSET -5);
+
+-- Fractional LIMIT
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) LIMIT 0.5);
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 0.5);
+SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 0.5);
+
+-- Fractional OFFSET + LIMIT
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) LIMIT 3 OFFSET 0.5);
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 OFFSET 0.5);
+SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 OFFSET 0.5);
+
+-- Fractional LIMIT + fractional OFFSET
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) LIMIT 0.3 OFFSET 0.5);
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 0.3 OFFSET 0.5);
+SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 0.3 OFFSET 0.5);
+
+-- WITH TIES
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 WITH TIES);
+SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 WITH TIES);
+SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 OFFSET 2 WITH TIES);
+SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 OFFSET 2 WITH TIES);
+
+{% endfor %}
+{% endfor %}

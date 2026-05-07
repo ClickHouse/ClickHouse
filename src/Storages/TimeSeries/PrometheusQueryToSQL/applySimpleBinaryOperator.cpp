@@ -8,7 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTWithOnIgnoring.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 #include <algorithm>
 
 
@@ -100,8 +100,8 @@ namespace
 
             /// The join_group is always computed with `drop_metric_name=true` because the two sides typically
             /// have different metric names (e.g., `foo` and `bar`), so keeping `__name__` in the join key
-            /// would prevent any matches. The exception is `on(__name__, ...)`, handled inside transformGroupASTWithOnIgnoring.
-            ASTPtr join_group = transformGroupASTWithOnIgnoring(
+            /// would prevent any matches. The exception is `on(__name__, ...)`, handled inside transformGroupASTForBinaryOperator.
+            ASTPtr join_group = transformGroupASTForBinaryOperator(
                 operator_node,
                 make_intrusive<ASTIdentifier>(ColumnNames::Group),
                 /* drop_metric_name = */ true,
@@ -213,7 +213,7 @@ namespace
                 else
                 {
                     metric_name_dropped_from_result = left_argument.metric_name_dropped;
-                    new_group = transformGroupASTWithOnIgnoring(
+                    new_group = transformGroupASTForBinaryOperator(
                         operator_node,
                         make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::OriginalGroup}),
                         drop_metric_name,

@@ -195,4 +195,35 @@ SELECT * FROM mv;
 
 ## ALTER TABLE ... MODIFY REFRESH Statement {#alter-table--modify-refresh-statement}
 
-`ALTER TABLE ... MODIFY REFRESH` statement changes refresh parameters of a [Refreshable Materialized View](../create/view.md#refreshable-materialized-view). See [Changing Refresh Parameters](../create/view.md#changing-refresh-parameters).
+`ALTER TABLE ... MODIFY REFRESH` changes refresh parameters of a [Refreshable Materialized View](../create/view.md#refreshable-materialized-view), including the schedule, dependencies, randomization, and [refresh settings](../create/view.md#refresh-settings).
+
+```sql
+ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
+```
+
+The schedule (`EVERY` or `AFTER`) is mandatory: the statement replaces *all* refresh parameters at once. Any clause not specified — `RANDOMIZE FOR`, `DEPENDS ON`, or `SETTINGS` — is removed or reset to defaults. To change only refresh settings, repeat the current schedule.
+
+```sql
+-- Change the schedule.
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
+
+-- Change retry settings (schedule must be repeated).
+ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR
+SETTINGS refresh_retries = 5,
+         refresh_retry_initial_backoff_ms = 500,
+         refresh_retry_max_backoff_ms = 60000;
+
+-- Add or keep a dependency.
+ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
+
+-- Drop the dependency by omitting `DEPENDS ON`.
+ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
+```
+
+Limitations:
+
+- `ALTER TABLE ... MODIFY SETTING` is not supported on materialized views; refresh settings can only be changed via `MODIFY REFRESH`.
+- Adding or removing `APPEND` is not supported.
+- The `all_replicas` refresh setting cannot be changed after the view is created.
+
+The full list of refresh settings is documented in [Refresh Settings](../create/view.md#refresh-settings). Refresh status, including the currently applied settings, is visible in [`system.view_refreshes`](../../../operations/system-tables/view_refreshes.md).

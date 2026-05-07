@@ -13,10 +13,17 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Databases/DataLake/Common.h>
+#include <Common/FailPoint.h>
 
 namespace DB::ErrorCodes
 {
-extern const int DATALAKE_DATABASE_ERROR;
+    extern const int DATALAKE_DATABASE_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace DB::FailPoints
+{
+    extern const char check_database_datalake_negative[];
 }
 
 namespace DataLake
@@ -78,6 +85,11 @@ HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & bas
 
 bool HiveCatalog::empty() const
 {
+    fiu_do_on(DB::FailPoints::check_database_datalake_negative,
+    {
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database");
+    });
+
     std::vector<std::string> result;
 
     std::lock_guard lock(client_mutex);

@@ -1,5 +1,6 @@
 #include <DataTypes/IDataType.h>
 #include <base/Decimal.h>
+#include <Common/NaNUtils.h>
 #include <Common/TargetSpecific.h>
 #include <Common/findExtreme.h>
 
@@ -51,11 +52,28 @@ MULTITARGET_FUNCTION_X86_V3(
             if (add_all_elements || !condition_map[i] == add_if_cond_zero)
             {
                 ret = ptr[i];
-                break;
+                /// For floats, skip NaN during initialisation so the accumulator starts with a non-NaN value.
+                /// std::min/max never replace a NaN accumulator (NaN < x is always false), so a NaN start would stick through the loop.
+                /// If all valid values are NaN, ret will hold the last NaN seen, which is correct.
+                if constexpr (is_floating_point<T>)
+                {
+                    if (!isNaN(ret))
+                        break;
+                }
+                else
+                    break;
             }
         }
         if (i >= count)
+        {
+            /// For floats: if scanned all elements without finding a non-NaN, ret holds the last valid NaN. Return it (all values are NaN).
+            if constexpr (is_floating_point<T>)
+            {
+                if (isNaN(ret))
+                    return ret;
+            }
             return std::nullopt;
+        }
 
         /// Unroll the loop manually for floating point, since the compiler doesn't do it without fastmath
         /// as it might change the return value

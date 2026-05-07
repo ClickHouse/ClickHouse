@@ -277,24 +277,28 @@ private:
                 reinterpret_cast<const uint8_t *>(&data_vec[data_prev_offset]),
                 reinterpret_cast<const uint8_t *>(&data_vec[data_new_offset]));
 
-            uint8_t witness_version = have_witness_version ? static_cast<uint8_t>(witness_version_col->getUInt(i)) : default_witness_version;
-
-            /** Witness version is a versioning mechanism for Bitcoin SegWit addresses:
-              * - Version 0: Original SegWit (BIP-141, BIP-173), uses Bech32 encoding
-              * - Version 1: Taproot (BIP-341, BIP-350), uses Bech32m encoding
-              * - Versions 2-16: Reserved for future protocol upgrades
-              *
-              * The witness version must be in range [0, 16] per the SegWit specification.
-              * It also must fit in the bech32 charset which is 5 bits (0-31), otherwise
-              * indexing into the CHARSET array in bech32::encode will cause a buffer overflow.
-              */
-            if (witness_version > 16)
+            uint8_t witness_version = default_witness_version;
+            if (have_witness_version)
             {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid witness version {} for function {}, expected value in range [0, 16]",
-                    witness_version,
-                    name);
+                /** Witness version is a versioning mechanism for Bitcoin SegWit addresses:
+                  * - Version 0: Original SegWit (BIP-141, BIP-173), uses Bech32 encoding
+                  * - Version 1: Taproot (BIP-341, BIP-350), uses Bech32m encoding
+                  * - Versions 2-16: Reserved for future protocol upgrades
+                  *
+                  * The witness version must be in range [0, 16] per the SegWit specification.
+                  * It also must fit in the bech32 charset which is 5 bits (0-31), otherwise
+                  * indexing into the CHARSET array in bech32::encode will cause a buffer overflow.
+                  */
+                auto user_witness_version = witness_version_col->getUInt(i);
+                if (user_witness_version > 16)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid witness version {} for function {}, expected value in range [0, 16]",
+                        user_witness_version,
+                        name);
+                }
+                witness_version = static_cast<uint8_t>(user_witness_version);
             }
 
             bech32_data input_5bit;

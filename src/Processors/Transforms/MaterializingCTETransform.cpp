@@ -1,5 +1,6 @@
 #include <Processors/Transforms/MaterializingCTETransform.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/Logger.h>
 #include <Processors/Port.h>
@@ -24,7 +25,7 @@ MaterializingCTETransform::MaterializingCTETransform(
     , materialized_cte(std::move(materialized_cte_))
 {
     auto storage = materialized_cte->storage;
-    table_out = QueryPipeline(storage->write({}, storage->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
+    table_out = QueryPipeline(storage->write({}, storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false), nullptr, /*async_insert=*/false));
     executor = std::make_unique<PushingPipelineExecutor>(table_out);
     executor->start();
 }

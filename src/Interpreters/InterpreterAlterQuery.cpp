@@ -17,6 +17,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -31,6 +32,8 @@
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -42,12 +45,18 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
+}
+
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ServerSetting
@@ -93,9 +102,10 @@ bool hasCommands(const CommandSegments & segments)
     return std::ranges::any_of(segments, [](const auto & segment) { return std::holds_alternative<CommandsType>(segment); });
 }
 
-CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const ContextPtr & context)
+CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
 {
     SegmentsHolder segments_holder;
+    const auto & settings = context->getSettingsRef();
 
     for (const auto & child : alter.command_list->children)
     {
@@ -126,6 +136,26 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Con
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
                             command_ast->formatForErrorMessage(), rewritten_command_ast->formatForErrorMessage());
+                }
+            }
+
+            /// When session_timezone is set, string literals compared to DateTime columns
+            /// must be wrapped with explicit timezone to avoid misinterpretation in the
+            /// background mutation thread which lacks the session context.
+            const auto & session_tz = settings[Setting::session_timezone].value;
+            if (!session_tz.empty())
+            {
+                const auto & source_ast = *mutation_command->ast->as<ASTAlterCommand>();
+                auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
+                    source_ast, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
+                if (tz_rewritten_ast)
+                {
+                    auto * tz_alter_command = tz_rewritten_ast->as<ASTAlterCommand>();
+                    mutation_command = MutationCommand::parse(*tz_alter_command);
+                    if (!mutation_command)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Alter command '{}' is rewritten to invalid command '{}'",
+                            source_ast.formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
                 }
             }
 
@@ -263,9 +293,14 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(/*bypass_metadata_cache=*/true);
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             alter_commands->validate(table, context);
-            alter_commands->prepare(*metadata_snapshot);
+
+            bool share_nested = true;
+            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+            alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
             table->alter(*alter_commands, context, alter_lock);
         }
@@ -273,7 +308,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
-                auto metadata_snapshot = table->getInMemoryMetadataPtr(/*bypass_metadata_cache=*/true);
+                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
                 MutationsInterpreter::Settings mutation_settings(false);
                 MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
@@ -282,7 +317,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
         {
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(/*bypass_metadata_cache=*/true);
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
             if (!partition_commands_pipe.empty())
@@ -413,7 +448,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 
-    auto segments = parseAlterCommandSegments(alter, getContext());
+    auto segments = parseAlterCommandSegments(alter, table, getContext());
     validateSegmentsCombination(segments);
     validateMutationsAllowed(segments, database, getContext());
     validateReplicatedDatabaseSegments(segments, database);

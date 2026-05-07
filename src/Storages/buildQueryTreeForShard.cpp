@@ -23,7 +23,6 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Analyzer/UnionNode.h>
@@ -37,6 +36,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 min_external_table_block_size_rows;
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
@@ -453,7 +453,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
 
-    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context, /*async_insert=*/false);
+    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(mutable_context, false), mutable_context, /*async_insert=*/false);
 
     QueryPlanOptimizationSettings optimization_settings(mutable_context);
     BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
@@ -470,6 +470,11 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     pipeline.complete(std::move(table_out));
     CompletedPipelineExecutor executor(pipeline);
+    if (mutable_context->hasQueryContext())
+    {
+        if (auto cancel_callback = mutable_context->getQueryContext()->getInteractiveCancelCallback())
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), mutable_context->getSettingsRef()[Setting::interactive_delay] / 1000));
+    }
     executor.execute();
     mutable_context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
 
@@ -673,8 +678,6 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     if (!replacement_map.empty())
         query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
-
-    removeGroupingFunctionSpecializations(query_tree_to_modify);
 
     createUniqueAliasesIfNecessary(query_tree_to_modify, planner_context->getQueryContext());
 

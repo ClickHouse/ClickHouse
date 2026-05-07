@@ -225,7 +225,7 @@ FROM
 )
 WHERE a > 0
 ORDER BY a
-SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test"
+SETTINGS optimize_aggregators_of_group_by_keys=0, enable_optimize_predicate_expression=1, query_plan_merge_filters=1 -- CI may inject False for either; enable_optimize_predicate_expression=False: WHERE a>0 not pushed as HAVING; query_plan_merge_filters=False: WHERE+HAVING not merged into single Filter step; avoid removing any() as it depends on order and we need it for the test"
 run_query "$query"
 
 echo "-- GROUP BY in most inner query makes execution parallelized, and removing inner sorting steps will keep it that way. But need to correctly update data streams sorting properties after removing sorting steps"

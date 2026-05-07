@@ -10,14 +10,6 @@
 #include <Common/CurrentMetrics.h>
 
 
-int value = 0;
-
-static void f() { ++value; }
-static void * g(void *) { f(); return {}; }
-
-using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
-using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
-
 namespace CurrentMetrics
 {
     extern const Metric LocalThread;
@@ -33,6 +25,16 @@ namespace DB
     }
 }
 
+namespace
+{
+
+int value = 0;
+
+void f() { ++value; }
+void * g(void *) { f(); return {}; }
+
+using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
+using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
 
 template <typename F>
 void test(size_t n, const char * name, F && kernel)
@@ -68,8 +70,9 @@ void test(size_t n, const char * name, F && kernel)
         << std::endl;
 }
 
+}
 
-int main(int argc, char ** argv)
+int mainEntryExampleThreadCreationLatency(int argc, char ** argv)
 {
     size_t n = argc == 2 ? DB::parse<UInt64>(argv[1]) : 100000;
 

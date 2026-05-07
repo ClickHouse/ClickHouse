@@ -1,4 +1,5 @@
 #include <optional>
+#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/hilbertEncode2DLUT.h>
 

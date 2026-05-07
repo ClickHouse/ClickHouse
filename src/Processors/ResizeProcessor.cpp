@@ -166,21 +166,28 @@ ResizeProcessor::Status ResizeProcessor::prepare()
     return get_status_if_no_inputs();
 }
 
-IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+IProcessor::Status ResizeProcessor::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
 {
     if (!initialized)
     {
         initialized = true;
 
         for (auto & input : inputs)
+        {
+            input_port_index[&input] = input_ports.size();
             input_ports.push_back({.port = &input, .status = InputStatus::NotActive});
+        }
 
         for (auto & output : outputs)
+        {
+            output_port_index[&output] = output_ports.size();
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
+        }
     }
 
-    for (const auto & output_number : updated_outputs)
+    for (const auto * output_port : updated_outputs)
     {
+        const auto output_number = output_port_index.at(output_port);
         auto & output = output_ports[output_number];
         if (output.port->isFinished())
         {
@@ -218,8 +225,9 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
         return Status::Finished;
     }
 
-    for (const auto & input_number : updated_inputs)
+    for (const auto * input_port : updated_inputs)
     {
+        const auto input_number = input_port_index.at(input_port);
         auto & input = input_ports[input_number];
         if (input.port->isFinished())
         {
@@ -274,24 +282,31 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
     return Status::PortFull;
 }
 
-IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
 {
     if (!initialized)
     {
         initialized = true;
 
         for (auto & input : inputs)
+        {
+            input_port_index[&input] = input_ports.size();
             input_ports.push_back({.port = &input, .status = InputStatus::NotActive, .waiting_output = -1});
+        }
 
         for (UInt64 i = 0; i < input_ports.size(); ++i)
             disabled_input_ports.push(i);
 
         for (auto & output : outputs)
+        {
+            output_port_index[&output] = output_ports.size();
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
+        }
     }
 
-    for (const auto & output_number : updated_outputs)
+    for (const auto * output_port : updated_outputs)
     {
+        const auto output_number = output_port_index.at(output_port);
         auto & output = output_ports[output_number];
         if (output.port->isFinished())
         {
@@ -324,8 +339,9 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
 
     std::queue<UInt64> inputs_with_data;
 
-    for (const auto & input_number : updated_inputs)
+    for (const auto * input_port : updated_inputs)
     {
+        const auto input_number = input_port_index.at(input_port);
         auto & input = input_ports[input_number];
         if (input.port->isFinished())
         {

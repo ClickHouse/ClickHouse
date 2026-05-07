@@ -4,7 +4,7 @@
 
 #if USE_LIBPQXX
 #include <Interpreters/Context_fwd.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace Poco
 {
@@ -22,7 +22,7 @@ namespace DB
 class NamedCollection;
 struct StorageID;
 
-class StoragePostgreSQL final : public IStorage
+class StoragePostgreSQL final : public StorageWithCommonVirtualColumns
 {
 public:
     StoragePostgreSQL(
@@ -40,7 +40,9 @@ public:
 
     bool isExternalDatabase() const override { return true; }
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

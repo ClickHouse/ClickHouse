@@ -14,7 +14,7 @@
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #include <Common/HashTable/HashMap.h>
 
-int main(int argc, char ** argv)
+int mainEntryExampleStringPool(int argc, char ** argv)
 {
     if (argc < 2)
     {

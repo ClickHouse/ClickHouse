@@ -216,7 +216,7 @@ echo "> filter is pushed down before CreatingSets"
 $CLICKHOUSE_CLIENT -q "
     explain select number from (
         select number from numbers(5) where number in (select 1 + number from numbers(3))
-    ) where number != 2 settings enable_optimize_predicate_expression=0" |
+    ) where number != 2 settings enable_optimize_predicate_expression=0, query_plan_merge_filters=1" |
     grep -o "CreatingSets\|Filter"
 $CLICKHOUSE_CLIENT -q "
     select number from (

@@ -10,6 +10,7 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
                 <request_timeout_ms>20000</request_timeout_ms>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3_disk>
             <s3_plain_disk>
                 <type>s3_plain</type>
@@ -145,6 +146,12 @@
             </s3_cache_encrypted>
         </policies>
     </storage_configuration>
+    <!-- Allow data-lake table engines (Iceberg, Delta, Hudi) to use these disks via
+         `SETTINGS disk = '...'`. Used by tests like 04208_iceberg_disk_with_cache_no_bad_cast.sql.
+         The list intentionally only contains disks that wrap an `S3ObjectStorage` (raw,
+         cached, or with a non-default metadata layer) so we exercise the unwrap-before-cast
+         path in `S3StorageParsedArguments::fromDisk` without affecting other tests. -->
+    <allowed_disks_for_table_engines>s3_disk,s3_cache,s3_plain_disk,s3_plain_rewritable</allowed_disks_for_table_engines>
     <filesystem_caches>
         <cache_for_readbigat>
             <path>./cache_for_readbigat/</path>

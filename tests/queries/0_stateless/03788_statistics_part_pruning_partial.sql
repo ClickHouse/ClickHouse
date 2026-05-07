@@ -18,6 +18,7 @@ SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+SET materialize_statistics_on_insert = 1;
 
 -- Part 1 (OLD): id [0, 99], value [0, 99] - Partition 0
 INSERT INTO test_stats_pruning_partial SELECT number, number FROM numbers(100);

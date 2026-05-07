@@ -153,7 +153,6 @@ void DatabaseMemory::drop(ContextPtr local_context)
 
 void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
-    /// NOTE: It is safe to modify AST without lock since alterTable() is called under IStorage::lockForShare()
     ASTPtr create_query;
     {
         std::lock_guard lock{mutex};
@@ -165,17 +164,23 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
         if (it_query == create_queries.end() || !it_query->second)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
-        create_query = it_query->second;
+        create_query = it_query->second->clone();
     }
 
-    /// Apply metadata changes without holding a lock to avoid possible deadlock
-    /// (i.e. when ALTER contains IN (table))
+    /// Apply metadata changes to the cloned AST without holding a lock to avoid possible deadlock
+    /// (i.e. when ALTER contains IN (table)).
     applyMetadataChangesToCreateQuery(create_query, metadata, local_context, validate_new_create_query);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
+
+    {
+        std::lock_guard lock{mutex};
+        create_queries[table_id.table_name] = create_query;
+    }
+
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
 }
 

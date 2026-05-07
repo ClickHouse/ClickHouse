@@ -88,13 +88,27 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
-    bool force_fetch_latest_metadata = true);
+    bool force_fetch_latest_metadata = true,
+    bool ignore_explicit_metadata_file_path = false);
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::string normalizeUuid(const std::string & uuid);
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
+
+enum class FileCategory : uint8_t
+{
+    DATA_FILE,
+    POSITION_DELETE_FILE,
+    EQUALITY_DELETE_FILE,
+    MANIFEST_FILE,
+    MANIFEST_LIST,
+    METADATA_JSON,
+    STATISTICS_FILE,
+};
+
+FileCategory inspectFileCategory(const String & relative_path);
 
 KeyDescription getSortingKeyDescriptionFromMetadata(
     Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);

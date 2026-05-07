@@ -41,6 +41,8 @@ Use plain paragraphs. Headers like `## Motivation`, `## Changes`, `## Results` a
 
 Fill in the changelog category (delete the rest of the list), write the changelog entry, and keep the documentation checkbox.
 
+**Exception — CI Fix or Improvement:** omit the Changelog entry and Documentation entry sections entirely (they are not required). Keep the entire PR body under 100 words.
+
 ### Example of a well-written body
 
 From [#96110](https://github.com/ClickHouse/ClickHouse/pull/96110):
@@ -122,4 +124,10 @@ These patterns make PRs harder to read or signal low effort:
 
 It's fine to mention AI assistance openly. `Co-Authored-By:` in commits or acknowledgements in the PR description are acceptable — ClickHouse is open about AI-assisted development.
 
+When creating a PR, open it as a **Draft** — this prevents accidental merges.
+
 Before creating or updating the PR, check user memory for a confirmation preference. If no preference is stored and the session is interactive, ask once: "Should I always show you the description for approval before applying it, or just go ahead every time?" Save the answer to memory and apply it from then on. If the session is non-interactive, proceed directly without asking.
+
+## Fork vs upstream
+
+If the current repository is a fork (i.e. `git remote get-url origin` does not contain `ClickHouse/ClickHouse`), always target the upstream repository. Pass `--repo ClickHouse/ClickHouse` to `gh pr create` and set `--head <fork-owner>:<branch>` so the PR is opened against the canonical repo, not the fork.

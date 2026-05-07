@@ -1174,6 +1174,11 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_ptr, nested_ptr->size() - prev_size);
         }
 
+        /// Write back: nested_ptr may have been reassigned to a cached column
+        /// by insertDataFromSubstreamsCacheIfAny or by the nested deserialization.
+        /// Without this, the Map column would remain empty while its data lives
+        /// only in the local nested_ptr variable.
+        column_map.getNestedColumnPtr() = std::move(nested_ptr);
         return;
     }
 
@@ -1194,6 +1199,8 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_ptr, nested_ptr->size() - prev_size);
         }
 
+        /// Write back: nested_ptr may have been reassigned (same reason as BASIC path above).
+        column_map.getNestedColumnPtr() = std::move(nested_ptr);
         settings.path.pop_back();
     }
     /// Multiple buckets. Deserialize each bucket into a separate Map column,

@@ -79,8 +79,9 @@ namespace ProfileEvents
         /// By default, any instance have to increment global counters
         explicit Counters(VariableContext level_ = VariableContext::Thread, Counters * parent_ = &global_counters);
 
-        /// Global level static initializer
-        explicit Counters(Counter * allocated_counters) noexcept
+        /// Global level static initializer (constexpr to enable constant initialization
+        /// before any dynamic initializer can allocate memory and call ProfileEvents::increment)
+        constexpr explicit Counters(Counter * allocated_counters) noexcept
             : counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
 
         Counters(Counters && src) noexcept;

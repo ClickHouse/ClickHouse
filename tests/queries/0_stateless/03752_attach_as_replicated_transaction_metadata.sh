@@ -40,6 +40,22 @@ ${CLICKHOUSE_CLIENT} -n -q "
     INSERT INTO TABLE t0 (c0) SELECT 1 FROM numbers(322);
     INSERT INTO TABLE t0 (c0) SELECT c0 FROM generateRandom('c0 Int', 12294830401837572975, 254, 4) LIMIT 251;
     INSERT INTO TABLE t0 (c0) SELECT c0 FROM generateRandom('c0 Int', 16932182231128798796, 132, 3) LIMIT 98;
+    -- Force the merge to complete deterministically before the \`DELETE\` mutation runs.
+    -- Without this, an in-flight background merge of the source parts can race with the
+    -- mutation cloning the resulting merged part: the merge writes a transient
+    -- \`txn_version.txt.tmp\` on the merged part during \`storeInfoToDataPartStorage\`, and on
+    -- object storage the mutation's queued hardlink for that \`.tmp\` file is committed later,
+    -- after the rename completes, failing with
+    -- \`Can't create hardlink for file ... txn_version.txt.tmp (FILE_DOESNT_EXIST)\`.
+    -- \`OPTIMIZE FINAL\` is synchronous, so when \`COMMIT\` returns the merged part's metadata
+    -- is stable; \`DELETE FROM\` then operates on a single fully-committed part. After that,
+    -- only one active part remains, so no further background merges can be scheduled before
+    -- the mutation. The merge has to run inside a transaction because the table already had
+    -- transactions used on it (\`BEGIN TRANSACTION ... ROLLBACK\` above), and a non-transactional
+    -- merge is rejected with \`Cancelling merge ... transactions were enabled for this table\`.
+    BEGIN TRANSACTION;
+    OPTIMIZE TABLE t0 FINAL;
+    COMMIT;
     DELETE FROM t0 WHERE TRUE;
 
     DETACH TABLE t0 SYNC;

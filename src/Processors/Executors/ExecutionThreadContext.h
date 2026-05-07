@@ -53,9 +53,9 @@ public:
     /// Methods to access/change currently executing task.
     bool hasTask() const { return node != nullptr; }
     void setTask(ExecutingGraph::Node * task) { node = task; }
+    ExecutingGraph::Node * getTask() const { return node; }
     ExecutingGraph::Node * popTask() { return std::exchange(node, nullptr); }
     bool executeTask();
-    uint64_t getProcessorID() const { return node->processors_id; }
 
     std::unique_lock<std::mutex> lockStatus() const { return std::unique_lock(node->status_mutex); }
 

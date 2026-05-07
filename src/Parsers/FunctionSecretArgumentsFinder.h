@@ -103,16 +103,17 @@ protected:
             findMongoDBSecretArguments();
         }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
-                 (function->name() == "deltaLake") || (function->name() == "hudi") || (function->name() == "iceberg") ||
-                 (function->name() == "gcs") || (function->name() == "icebergS3") || (function->name() == "paimon") ||
-                 (function->name() == "paimonS3"))
+                 (function->name() == "deltaLake") || (function->name() == "deltaLakeS3") || (function->name() == "hudi") ||
+                 (function->name() == "iceberg") || (function->name() == "gcs") || (function->name() == "icebergS3") ||
+                 (function->name() == "paimon") || (function->name() == "paimonS3"))
         {
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
         }
         else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
                  (function ->name() == "deltaLakeCluster") || (function ->name() == "deltaLakeS3Cluster") ||
-                 (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster"))
+                 (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster") ||
+                 (function ->name() == "paimonCluster") || (function ->name() == "paimonS3Cluster"))
         {
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
@@ -123,7 +124,8 @@ protected:
             /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
         }
-        else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster") || (function->name() == "deltaLakeAzureCluster"))
+        else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster") ||
+                 (function->name() == "deltaLakeAzureCluster") || (function->name() == "paimonAzureCluster"))
         {
             /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ true);
@@ -139,6 +141,11 @@ protected:
         {
             /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
             findEncryptionFunctionSecretArguments();
+        }
+        else if (boost::iequals(function->name(), "HMAC"))
+        {
+            /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+            findHMACSecretArguments();
         }
         else if (function->name() == "url")
         {
@@ -606,6 +613,18 @@ protected:
         /// encrypt('mode', 'plaintext', 'key' [, iv, aad]) -> encrypt('mode', '[HIDDEN]')
         result.start = 1;
         result.count = function->arguments->size() - 1;
+    }
+
+    void findHMACSecretArguments()
+    {
+        if (function->arguments->size() < 3)
+            return;
+
+        /// We hide the key argument and any following for the case of mistyping or using extra arguments by mistake:
+        /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+        /// HMAC('sha256', toString(toFixedString('b', 3), 3), '(', 'this_should_be_secret') -> HMAC('sha256', toString(toFixedString('b', 3), 3), '[HIDDEN]', '[HIDDEN]')
+        result.start = 2;
+        result.count = function->arguments->size() - 2;
     }
 
     void findTableEngineSecretArguments()

@@ -1,4 +1,5 @@
 #include <Storages/StorageMergeTreeIndex.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -150,7 +151,7 @@ static NameSet getAllPossibleStreamNames(
 ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
+    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
     ColumnsDescription columns;
     for (const auto & column : StorageMergeTreeIndex::virtuals_sample_block)

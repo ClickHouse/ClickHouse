@@ -197,20 +197,12 @@ struct DNSResolver::Impl
     /// If disabled, will not make cache lookups, will resolve addresses manually on each call
     std::atomic<bool> disable_cache{false};
 
-    Impl()
-    {
-        try
-        {
-            host_name.emplace(Poco::Net::DNS::hostName());
-            auto addresses = hostByName(*host_name);
-            ::sort(addresses.begin(), addresses.end());
-            host_addresses.emplace(std::move(addresses));
-        }
-        catch (...)
-        {
-            tryLogCurrentException("DNSResolver", __PRETTY_FUNCTION__);
-        }
-    }
+    /// `host_name` is populated lazily by `getHostName`. `host_addresses`
+    /// (and a re-read of `host_name`) is populated by
+    /// `updateHostNameAndAddresses`, which is called periodically by
+    /// `DNSCacheUpdater` (server-only) and explicitly during server startup,
+    /// so non-server programs (`clickhouse-client`, `-local`, `-keeper`,
+    /// `-disks`) never trigger a DNS lookup of the local hostname here.
 };
 
 struct DNSResolver::AddressFilter

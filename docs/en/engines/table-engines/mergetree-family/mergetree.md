@@ -381,6 +381,9 @@ Data skipping indexes can also be created on composite columns:
 INDEX map_key_index mapKeys(map_column) TYPE bloom_filter
 INDEX map_value_index mapValues(map_column) TYPE bloom_filter
 
+-- on columns of type JSON:
+INDEX json_paths_index JSONAllPaths(json_column) TYPE bloom_filter
+
 -- on columns of type Tuple:
 INDEX tuple_1_index tuple_column.1 TYPE bloom_filter
 INDEX tuple_2_index tuple_column.2 TYPE bloom_filter
@@ -448,6 +451,10 @@ The following data types are supported:
 
 :::note Map data type: specifying index creation with keys or values
 For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapKeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions.
+:::
+
+:::note JSON data type: indexing JSON paths
+For the [`JSON`](/sql-reference/data-types/newjson) data type, a bloom filter index can be created on the set of paths using the [`JSONAllPaths`](/sql-reference/functions/json-functions#JSONAllPaths) function. This allows skipping granules where a queried JSON path is absent. See [Data skipping indexes for JSON](/sql-reference/data-types/newjson#data-skipping-indexes-for-json) for details.
 :::
 
 #### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
@@ -633,13 +640,16 @@ Projections can be modified or dropped with the [ALTER](/sql-reference/statement
 
 ### Projection indexes {#projection-index}
 
-Projection indexes extend the projection subsystem by providing a lightweight, explicit way to define projection-level indexes. 
-Conceptually, a projection index is still a projection, but with simplified syntax and clearer intent: it defines an expression which is dedicated to filtering, rather than serving as materialized data.
+Projection indexes extend the projection subsystem by providing a lightweight and explicit way to define projection-level indexes.
+Externally, a projection index is still a projection, but with simplified syntax and clearer intent: it defines an expression which is dedicated to filtering, rather than serving materialized data.
+Internally, a projection index does not materialize the original table in permuted row order like a regular projection.
+Instead, the permutation is stored in the form of a numeric permutation column `_part_offset`, i.e. `SELECT _part_offset ORDER BY <index_expr>`.
 
 #### Syntax {#projection-index-syntax}
+
 ```sql
 PROJECTION <name> INDEX <index_expr> TYPE <index_type>
-````
+```
 
 Example:
 
@@ -685,6 +695,12 @@ Determines the lifetime of values.
 The `TTL` clause can be set for the whole table and for each individual column. Table-level `TTL` can also specify the logic of automatic moving data between disks and volumes, or recompressing parts where all the data has been expired.
 
 Expressions must evaluate to [Date](/sql-reference/data-types/date.md), [Date32](/sql-reference/data-types/date32.md), [DateTime](/sql-reference/data-types/datetime.md) or [DateTime64](/sql-reference/data-types/datetime64.md) data type.
+
+:::tip[Avoid non-deterministic functions in TTL expressions]
+TTL is evaluated during background merges, and not at insert time.
+Functions like `rand()`, `now()`, or `now64()` will be re-evaluated on every merge, leading to unpredictable deletion behavior.
+ClickHouse blocks expressions with no column dependency at all, but does not currently reject non-deterministic functions mixed with a column reference (e.g. `ts + rand()`). TTL expressions should be based solely on deterministic, column-derived values for predictable results.
+:::
 
 **Syntax**
 
@@ -1290,6 +1306,12 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
     Syntax: `uniq`
 
+- `NullCount`
+
+    Tracks the number of `NULL` values in `Nullable` columns. Used for accurate selectivity estimation of `IS NULL`/`IS NOT NULL` predicates in PREWHERE optimization.
+
+    Syntax: `nullcount`
+
 - `CountMin`
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
@@ -1298,21 +1320,23 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Supported data types {#supported-data-types}
 
-|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
-|-----------|----------------------------------------------------|-----------------------|
-| CountMin  | ✔                                                  | ✔                     |
-| MinMax    | ✔                                                  | ✗                     |
-| TDigest   | ✔                                                  | ✗                     |
-| Uniq      | ✔                                                  | ✔                     |
+|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString | Nullable(*) / LowCardinality(Nullable(*)) |
+|-----------|----------------------------------------------------|-----------------------|--------------------------------------------------|
+| CountMin  | ✔                                                  | ✔                     | ✗                                                |
+| MinMax    | ✔                                                  | ✗                     | ✔                                                |
+| NullCount | ✗                                                  | ✗                     | ✔                                                |
+| TDigest   | ✔                                                  | ✗                     | ✔                                                |
+| Uniq      | ✔                                                  | ✔                     | ✔                                                |
 
 ### Supported operations {#supported-operations}
 
-|           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
-|-----------|-----------------------|------------------------------|
-| CountMin  | ✔                     | ✗                            |
-| MinMax    | ✗                     | ✔                            |
-| TDigest   | ✗                     | ✔                            |
-| Uniq      | ✔                     | ✗                            |
+|           | Equality filters (==) | Range filters (`>, >=, <, <=`) | `IS NULL` / `IS NOT NULL` |
+|-----------|-----------------------|------------------------------|----------------------------|
+| CountMin  | ✔                     | ✗                            | ✗                          |
+| MinMax    | ✗                     | ✔                            | ✗                          |
+| NullCount | ✗                     | ✗                            | ✔                          |
+| TDigest   | ✗                     | ✔                            | ✗                          |
+| Uniq      | ✔                     | ✗                            | ✗                          |
 
 ## Column-level settings {#column-level-settings}
 

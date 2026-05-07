@@ -1,0 +1,265 @@
+#include <Functions/FunctionBaseAI.h>
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Exception.h>
+#include <thread>
+#include <Common/logger_useful.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/RemoteHostFilter.h>
+#include <Poco/URI.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/ConnectionTimeouts.h>
+#include <Core/Settings.h>
+#include <Core/ServerSettings.h>
+namespace ProfileEvents
+{
+    extern const Event AIInputTokens;
+    extern const Event AIOutputTokens;
+    extern const Event AIAPICalls;
+    extern const Event AIRowsProcessed;
+    extern const Event AIRowsSkipped;
+}
+
+namespace DB
+{
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_ai_functions;
+    extern const SettingsUInt64 ai_function_request_timeout_sec;
+    extern const SettingsUInt64 ai_function_max_retries;
+    extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
+    extern const SettingsBool ai_function_throw_on_error;
+    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
+    extern const SettingsBool ai_function_throw_on_quota_exceeded;
+}
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+/// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
+String sanitizeTextForAI(std::string_view input)
+{
+    String output;
+    output.reserve(input.size());
+    for (unsigned char ch : input)
+    {
+        if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r')
+            output.push_back(' ');
+        else
+            output.push_back(static_cast<char>(ch));
+    }
+    return output;
+}
+
+}
+
+FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context_weak(context_)
+{
+    if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
+}
+
+FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTypeAndName & arguments) const
+{
+    ResolvedConfig config;
+
+    const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
+    if (!col_const)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument to AI function must be a named collection (constant String)");
+
+    String collection_name = col_const->getValue<String>();
+
+    getContext()->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
+
+    const auto & named_collection = NamedCollectionFactory::instance().get(collection_name);
+
+    config.provider = named_collection->getOrDefault<String>("provider", "");
+    config.endpoint = named_collection->getOrDefault<String>("endpoint", "");
+    config.model = named_collection->getOrDefault<String>("model", "");
+    config.api_key = named_collection->getOrDefault<String>("api_key", "");
+    config.api_version = named_collection->getOrDefault<String>("api_version", "");
+    config.max_tokens = named_collection->getOrDefault<UInt64>("max_tokens", DEFAULT_AI_MAX_TOKENS);
+    config.temperature = defaultTemperature();
+
+    /// Poco JSON does not support UInt64, so providers cast max_tokens to Int64 for serialization.
+    if (config.max_tokens > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}': max_tokens exceeds maximum ({})",
+            collection_name, std::numeric_limits<Int64>::max());
+
+    if (config.provider.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'provider'", collection_name);
+    if (config.endpoint.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", collection_name);
+    if (config.model.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'model'", collection_name);
+    if (config.api_key.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'api_key'", collection_name);
+
+    return config;
+}
+
+float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & arguments, const ResolvedConfig & config) const
+{
+    size_t temp_idx = temperatureArgumentIndex();
+    if (temp_idx < arguments.size() && isNumber(arguments[temp_idx].type))
+    {
+        const auto * col_const = typeid_cast<const ColumnConst *>(arguments[temp_idx].column.get());
+        if (col_const)
+            return static_cast<float>(col_const->getFloat64(0));
+    }
+
+    return config.temperature;
+}
+
+ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
+
+    /// A Nullable prompt can arrive as `ColumnNullable` or as `ColumnConst(ColumnNullable)` (e.g. `NULL::Nullable(String)`).
+    /// `convertToFullColumnIfConst` unwraps the latter into the former, so a single null-map path handles both.
+    size_t prompt_idx = promptArgumentIndex();
+    ColumnPtr prompt_column;
+    const ColumnNullable * prompt_nullable = nullptr;
+    if (prompt_idx < arguments.size() && arguments[prompt_idx].type->isNullable())
+    {
+        prompt_column = arguments[prompt_idx].column->convertToFullColumnIfConst();
+        prompt_nullable = typeid_cast<const ColumnNullable *>(prompt_column.get());
+    }
+
+    auto config = resolveConfig(arguments);
+    getContext()->getRemoteHostFilter().checkURL(Poco::URI(config.endpoint));
+    auto provider = createAIProvider(config.provider, config.endpoint, config.api_key, config.api_version);
+    float temperature = resolveTemperature(arguments, config);
+
+    const auto & settings = getContext()->getSettingsRef();
+    UInt64 timeout_sec = settings[Setting::ai_function_request_timeout_sec].value;
+    UInt64 max_retries = settings[Setting::ai_function_max_retries].value;
+    UInt64 retry_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
+
+    bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
+
+    AIQuotaTracker quota(
+        settings[Setting::ai_function_max_input_tokens_per_query].value,
+        settings[Setting::ai_function_max_output_tokens_per_query].value,
+        settings[Setting::ai_function_max_api_calls_per_query].value,
+        settings[Setting::ai_function_throw_on_quota_exceeded].value);
+
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
+    timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
+
+    String system_prompt = sanitizeTextForAI(buildSystemPrompt(arguments));
+    auto response_format = buildResponseFormat(arguments);
+
+    auto result_col = ColumnString::create();
+    auto null_map_col = prompt_nullable ? ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0)) : nullptr;
+
+    UInt64 total_api_calls = 0;
+    UInt64 total_input_tokens = 0;
+    UInt64 total_output_tokens = 0;
+    UInt64 rows_processed = 0;
+    UInt64 rows_skipped = 0;
+
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        if (prompt_nullable && prompt_nullable->getNullMapData()[i])
+        {
+            result_col->insertDefault();
+            null_map_col->getData()[i] = 1;
+            continue;
+        }
+
+        if (quota.checkQuotas())
+        {
+            result_col->insertDefault();
+            ++rows_skipped;
+            continue;
+        }
+
+        String user_message = sanitizeTextForAI(buildUserMessage(arguments, i));
+        String result;
+        bool success = false;
+
+        for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
+        {
+            try
+            {
+                AIRequest ai_request;
+                ai_request.system_prompt = system_prompt;
+                ai_request.user_message = user_message;
+                ai_request.response_format = response_format;
+                ai_request.model = config.model;
+                ai_request.temperature = temperature;
+                ai_request.max_tokens = config.max_tokens;
+
+                auto ai_response = provider->call(ai_request, timeouts);
+                ++total_api_calls;
+
+                quota.recordResponse(ai_response.input_tokens, ai_response.output_tokens);
+                total_input_tokens += ai_response.input_tokens;
+                total_output_tokens += ai_response.output_tokens;
+
+                result = postProcessResponse(ai_response.result);
+                success = true;
+                break;
+            }
+            catch (const Exception & e)
+            {
+                if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms * (1ULL << std::min(attempt, UInt64(63)))));
+                    continue;
+                }
+
+                if (!throw_on_error)
+                    break;
+
+                throw;
+            }
+            catch (...) /// Handle non-DB exceptions (e.g. Poco network/JSON errors) for throw_on_error semantics
+            {
+                if (!throw_on_error)
+                    break;
+
+                throw;
+            }
+        }
+
+        result_col->insertData(result.data(), result.size());
+        if (success)
+            ++rows_processed;
+        else
+            ++rows_skipped;
+    }
+
+    ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
+    ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
+    ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens);
+    ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
+    ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
+
+    if (result_type->isNullable())
+    {
+        if (!null_map_col)
+            null_map_col = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+        return ColumnNullable::create(std::move(result_col), std::move(null_map_col));
+    }
+    return result_col;
+}
+
+}

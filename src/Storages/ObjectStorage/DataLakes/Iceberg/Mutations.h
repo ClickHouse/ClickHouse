@@ -15,7 +15,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ExpireSnapshotsTypes.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 namespace DB::Iceberg
@@ -41,15 +40,6 @@ void alter(
     const PersistentTableComponents & persistent_table_components,
     const String & write_format);
 
-ExpireSnapshotsResult expireSnapshots(
-    const ExpireSnapshotsOptions & options,
-    ContextPtr context,
-    ObjectStoragePtr object_storage,
-    const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_table_components,
-    const String & write_format,
-    std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name);
 }
 
 #endif

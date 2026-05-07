@@ -76,6 +76,7 @@ void setUpConfig(const std::string & file_name)
                 <metadata_path>metadata_storage_dir</metadata_path>
                 <metadata_type>local</metadata_type>
                 <use_fake_transaction>false</use_fake_transaction>
+                <persistent_removal_log>true</persistent_removal_log>
                 <data_background_cleanup>
                     <enabled>true</enabled>
                     <interval_sec>1</interval_sec>
@@ -250,6 +251,7 @@ TEST_F(DiskObjectStorageTest, WriteListReadFile)
 
     std::vector<String> files;
     disk->listFiles(".", files);
+    std::erase_if(files, [](const String & file) { return file == ".metadata"; });
 
     EXPECT_EQ(files.size(), 1);
     EXPECT_EQ(files, std::vector<String>{file_name});

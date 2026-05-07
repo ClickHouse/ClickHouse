@@ -198,6 +198,19 @@ inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
     return poly;
 }
 
+inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_buffer)
+{
+    MultiLineString<CartesianPoint> result;
+    readOpenBracket(in_buffer);
+    while (true)
+    {
+        result.push_back(parseWKTLine(in_buffer));
+        if (readItemEnding(in_buffer))
+            break;
+    }
+    return result;
+}
+
 inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer)
 {
     MultiPolygon<CartesianPoint> poly;
@@ -225,7 +238,7 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
         in_buffer.ignore();
     }
 
-    while (type.back() == ' ')
+    while (!type.empty() && type.back() == ' ')
         type.pop_back();
 
     if (type == "POINT")
@@ -238,7 +251,7 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
     if (type == "POLYGON")
         return parseWKTPolygon(in_buffer);
     if (type == "MULTILINESTRING")
-        return parseWKTPolygon(in_buffer);
+        return parseWKTMultiLineString(in_buffer);
     if (type == "MULTIPOLYGON")
         return parseWKTMultiPolygon(in_buffer);
 

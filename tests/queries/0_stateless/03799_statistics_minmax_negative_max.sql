@@ -1,4 +1,5 @@
 -- Tests that min-max statistics created over negative values work
+SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS tab;
 

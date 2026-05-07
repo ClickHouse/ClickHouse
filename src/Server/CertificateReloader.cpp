@@ -233,6 +233,40 @@ void CertificateReloader::tryReloadAll(const Poco::Util::AbstractConfiguration &
 }
 
 
+bool CertificateReloader::registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix)
+{
+    if (!ctx)
+        return false;
+
+    std::lock_guard lock{data_mutex};
+
+    auto it = data_index.find(prefix);
+    if (it == data_index.end())
+    {
+        LOG_DEBUG(log, "Cannot register additional context for prefix '{}': prefix not found. "
+            "This is expected when certificate/key paths are not configured for this prefix.", prefix);
+        return false;
+    }
+
+    MultiData * pdata = &*(it->second);
+
+    /// Verify that certificate data was actually loaded, not just the entry created.
+    /// If data is null, return false so caller can use fallback (static cert loading).
+    /// This can happen if initial cert parsing failed in tryLoadImpl.
+    if (!pdata->data.get())
+    {
+        LOG_WARNING(log, "Cannot register additional context for prefix '{}': certificate data not loaded. "
+            "Falling back to static certificate loading. Hot-reload will not work for this context.", prefix);
+        return false;
+    }
+
+    SSL_CTX_set_cert_cb(ctx, callSetCertificate, reinterpret_cast<void *>(pdata));
+
+    LOG_DEBUG(log, "Registered additional SSL context for prefix '{}'", prefix);
+    return true;
+}
+
+
 CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
     : certs_chain(X509Certificate::fromFile(cert_path)), key(KeyPair::fromFile(key_path, pass_phrase))
 {

@@ -192,7 +192,7 @@ def test_doput_cmd_insert_invalid_format():
         writer.close()
         assert False, "Expected to fail because of a wrong format but succeeded"
     except flight.FlightServerError as e:
-        assert "Invalid format, only 'Arrow' format is supported" in str(e)
+        assert "Invalid format (JSON), only 'Arrow' format is supported" in str(e)
 
 
 # INSERT queries without the FORMAT clause are considered invalid.
@@ -621,13 +621,13 @@ def test_invalid_user():
     client = flight.FlightClient(
         f"grpc+tls://{node.ip_address}:8888", disable_server_verification=True
     )
-    token = client.authenticate_basic_token(b"invalid", b"password")
-    options = flight.FlightCallOptions(headers=[token])
-    ticket = flight.Ticket(b"SELECT * FROM mytable")
     try:
+        token = client.authenticate_basic_token(b"invalid", b"password")
+        options = flight.FlightCallOptions(headers=[token])
+        ticket = flight.Ticket(b"SELECT * FROM mytable")
         client.do_get(ticket, options)
         assert False, "Expected authentication failure (login and password are not correct) but succeeded"
-    except flight.FlightServerError as e:
+    except flight.FlightUnauthenticatedError as e:
         assert (
             "Authentication failed: password is incorrect, or there is no user with such name"
             in str(e)

@@ -33,8 +33,36 @@ private:
     mutable std::mutex removed_objects_mutex;
     InMemoryRemovalQueue objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
 
+    static constexpr std::string_view SYSTEM_METADATA_DIR = ".metadata";
+    static constexpr std::string_view REMOVAL_LOG_FILE = ".metadata/blobs_to_remove.log";
+
+    enum RemovalLogVersion : UInt32
+    {
+        V0 = 0, /// initial binary format
+    };
+
+    static constexpr RemovalLogVersion REMOVAL_LOG_CURRENT_VERSION = RemovalLogVersion::V0;
+
+    enum RemovalLogEntryType : UInt8
+    {
+        ADD = 0,
+        REMOVED = 1,
+    };
+
+    /// Persistence for the removal queue. Returns true if compaction is needed (version mismatch or truncated entries).
+    bool loadRemovalLog() TSA_REQUIRES(removed_objects_mutex);
+    void appendToRemovalLog(RemovalLogEntryType entry_type, const StoredObjects & blobs) TSA_REQUIRES(removed_objects_mutex);
+    void compactRemovalLog() TSA_REQUIRES(removed_objects_mutex);
+
+    /// Number of REMOVED entries in the log that haven't been compacted yet.
+    size_t removal_log_stale_entries TSA_GUARDED_BY(removed_objects_mutex) = 0;
+
+    bool persist_removal_queue;
+    size_t removal_log_compaction_threshold;
+    LoggerPtr log;
+
 public:
-    MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_);
+    MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_, bool persist_removal_queue_, size_t removal_log_compaction_threshold_);
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -86,6 +114,8 @@ public:
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
 
     bool isReadOnly() const override { return disk->isReadOnly(); }
+
+    void startup() override;
 
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;

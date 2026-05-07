@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
+#include <Server/HTTP/DeadlineReadBuffer.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/ReadHeaders.h>
 
@@ -31,6 +32,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     , max_fields_number(context->getMaxFields())
     , max_field_name_size(context->getMaxFieldNameSize())
     , max_field_value_size(context->getMaxFieldValueSize())
+    , max_request_header_size(context->getMaxRequestHeaderSize())
 {
     response.attachRequest(this);
 
@@ -41,14 +43,40 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
 
     auto receive_timeout = context->getReceiveTimeout();
     auto send_timeout = context->getSendTimeout();
+    auto headers_read_timeout = context->getHeadersReadTimeout();
 
-    session.socket().setReceiveTimeout(receive_timeout);
+    /// Use the smaller of headers_read_timeout and receive_timeout during header parsing
+    /// to enforce a total deadline on the entire handshake phase.
+    auto effective_timeout = (headers_read_timeout > Poco::Timespan(0) &&
+                              (receive_timeout <= Poco::Timespan(0) || headers_read_timeout < receive_timeout))
+        ? headers_read_timeout : receive_timeout;
+
+    session.socket().setReceiveTimeout(effective_timeout);
     session.socket().setSendTimeout(send_timeout);
 
-    auto in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
+    auto socket_in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
     socket = session.socket().impl();
 
-    readRequest(*in);  /// Try parse according to RFC7230
+    /// Wrap the socket buffer with a deadline check if configured.
+    /// The deadline is enforced in DeadlineReadBuffer::nextImpl on every buffer refill,
+    /// which protects all parsing (request line, URI, headers) automatically.
+    if (headers_read_timeout > Poco::Timespan(0))
+    {
+        auto deadline = std::chrono::steady_clock::now()
+            + std::chrono::microseconds(headers_read_timeout.totalMicroseconds());
+        DeadlineReadBuffer deadline_in(*socket_in, deadline);
+        readRequest(deadline_in);  /// Try parse according to RFC7230
+    }
+    else
+    {
+        readRequest(*socket_in);  /// Try parse according to RFC7230
+    }
+
+    /// Restore the original receive timeout for body reads.
+    session.socket().setReceiveTimeout(receive_timeout);
+
+    /// Build the body stream from the underlying socket buffer (not the deadline wrapper).
+    auto in = std::move(socket_in);
 
     /// If a client crashes, most systems will gracefully terminate the connection with FIN just like it's done on close().
     /// So we will get 0 from recv(...) and will not be able to understand that something went wrong (well, we probably
@@ -173,7 +201,7 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
 
     skipToNextLineOrEOF(in);
 
-    readHeaders(*this, in, max_fields_number, max_field_name_size, max_field_value_size);
+    readHeaders(*this, in, max_fields_number, max_field_name_size, max_field_value_size, max_request_header_size);
 
     skipToNextLineOrEOF(in);
 

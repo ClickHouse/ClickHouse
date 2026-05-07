@@ -47,11 +47,11 @@ def _parse_jepsen_output(path: Path):
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             if SUCCESSFUL_TESTS_ANCHOR in line:
-                current_type = Result.StatusExtended.OK
+                current_type = Result.Status.OK
             elif INTERMINATE_TESTS_ANCHOR in line or CRASHED_TESTS_ANCHOR in line:
-                current_type = Result.StatusExtended.ERROR
+                current_type = Result.Status.ERROR
             elif FAILED_TESTS_ANCHOR in line:
-                current_type = Result.StatusExtended.FAIL
+                current_type = Result.Status.FAIL
 
             if (
                 line.startswith("store/clickhouse") or line.startswith("clickhouse")
@@ -231,25 +231,25 @@ def main():
 
     clear_autoscaling_group()
 
-    status = Result.Status.SUCCESS
+    status = Result.Status.OK
     description = "No invalid analysis found ヽ(‘ー`)ノ"
     jepsen_log_path = result_path / "jepsen_run_all_tests.log"
     additional_data = []
     try:
         test_result = _parse_jepsen_output(jepsen_log_path)
         if len(test_result) == 0:
-            status = Result.Status.FAILED
+            status = Result.Status.FAIL
             description = "No test results found"
         elif any(r.status == "FAIL" for r in test_result):
-            status = Result.Status.FAILED
+            status = Result.Status.FAIL
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
 
         additional_data.append(Utils.compress_zst(result_path / "store"))
     except Exception as ex:
         print("Exception", ex)
-        status = Result.Status.FAILED
+        status = Result.Status.FAIL
         description = "No Jepsen output log"
-        test_result = [Result("No Jepsen output log", "FAIL")]
+        test_result = [Result("No Jepsen output log", Result.Status.FAIL)]
 
     Result.create_from(
         results=test_result,

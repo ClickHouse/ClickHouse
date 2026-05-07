@@ -29,7 +29,7 @@ public:
         SplitByString,
         Array,
         SparseGrams,
-        UnicodeWord,
+        AsciiCJK,
     };
 
     ITokenizer() = default;
@@ -406,14 +406,14 @@ private:
 /// | `a:b a:3 a: :a ::a:b:3:` | `['a:b','a','3','a','a','a:b','3']`   |
 /// | `a'b a'3 a' 'a ''a'b'3'` | `['a\'b','a','3','a','a','a\'b','3']` |
 /// | `a.b a.3 a. .a ..a.b.3.` | `['a.b','a','3','a','a','a.b','3']`   |
-struct UnicodeWordTokenizer final : public ITokenizerHelper<UnicodeWordTokenizer>
+struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
 {
-    explicit UnicodeWordTokenizer()
-        : ITokenizerHelper(Type::UnicodeWord)
+    explicit AsciiCJKTokenizer()
+        : ITokenizerHelper(Type::AsciiCJK)
     {
     }
 
-    static const char * getName() { return "unicodeWord"; }
+    static const char * getName() { return "asciiCJK"; }
     static const char * getExternalName() { return getName(); }
     String getDescription() const override { return getName(); }
 
@@ -495,10 +495,10 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             detail::forEachTokenImpl(sparse_grams_tokenizer, data, length, callback);
             return;
         }
-        case ITokenizer::Type::UnicodeWord:
+        case ITokenizer::Type::AsciiCJK:
         {
-            const auto & unicode_word_tokenizer = assert_cast<const UnicodeWordTokenizer &>(tokenizer);
-            detail::forEachTokenImpl(unicode_word_tokenizer, data, length, callback);
+            const auto & ascii_cjk_tokenizer = assert_cast<const AsciiCJKTokenizer &>(tokenizer);
+            detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
             return;
         }
     }

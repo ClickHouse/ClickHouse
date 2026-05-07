@@ -117,7 +117,8 @@ SELECT trimLeft(explain) AS explain FROM (
     ORDER BY L2Distance(vec, [0.2, 0.3])
     LIMIT 20
     )
-WHERE (explain LIKE '%_distance%');
+WHERE (explain LIKE '%_distance%')
+LIMIT 1;
 
 SELECT 'Just a test with 2 predicates';
 SELECT 'id 16 & 19 will be again output';

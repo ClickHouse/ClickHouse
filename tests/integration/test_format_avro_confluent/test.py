@@ -10,11 +10,7 @@ from confluent_kafka.avro.cached_schema_registry_client import (
 )
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
-
-# Skip on ARM due to Confluent/Kafka
-if is_arm():
-    pytestmark = pytest.mark.skip
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 
 @pytest.fixture(scope="module")

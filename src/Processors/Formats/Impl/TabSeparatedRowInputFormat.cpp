@@ -288,7 +288,11 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
 void TabSeparatedFormatReader::skipPrefixBeforeHeader()
 {
     for (size_t i = 0; i != format_settings.tsv.skip_first_lines; ++i)
+    {
+        if (buf->eof())
+            break;
         readRow();
+    }
 }
 
 void TabSeparatedRowInputFormat::syncAfterError()

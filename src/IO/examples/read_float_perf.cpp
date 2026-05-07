@@ -64,7 +64,7 @@ void NO_INLINE loop(ReadBuffer & in, WriteBuffer & out)
 }
 
 
-int main(int argc, char ** argv)
+int mainEntryExampleReadFloatPerf(int argc, char ** argv)
 try
 {
     int method = 0;

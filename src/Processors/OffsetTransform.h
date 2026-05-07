@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_map>
+
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
@@ -31,6 +33,8 @@ private:
     };
 
     std::vector<PortsData> ports_data;
+    std::unordered_map<const InputPort *, size_t> input_port_to_data;
+    std::unordered_map<const OutputPort *, size_t> output_port_to_data;
     size_t num_finished_port_pairs = 0;
 
 public:
@@ -38,7 +42,7 @@ public:
 
     String getName() const override { return "Offset"; }
 
-    Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
+    Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
     Status preparePair(PortsData & data);
     void splitChunk(PortsData & data) const;

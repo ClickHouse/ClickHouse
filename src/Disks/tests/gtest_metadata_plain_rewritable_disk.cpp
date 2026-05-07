@@ -1560,8 +1560,8 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfo)
     EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
     EXPECT_EQ(metadata->getFileSizeIfExists("/A/B/C/file"), written_bytes);
     EXPECT_EQ(metadata->getFileSize("/A/B/C/file"), written_bytes);
-    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
-    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
+    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file")->epochTime(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
+    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file")->epochTime(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
 
     EXPECT_EQ(listAllBlobs("FileRemoteInfo"), std::vector<std::string>({
         "./FileRemoteInfo/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
@@ -1575,8 +1575,8 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfo)
     EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
     EXPECT_EQ(metadata->getFileSizeIfExists("/A/B/C/file"), written_bytes);
     EXPECT_EQ(metadata->getFileSize("/A/B/C/file"), written_bytes);
-    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
-    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
+    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file")->epochTime(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
+    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file")->epochTime(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoAfterMove)

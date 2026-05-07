@@ -5,11 +5,8 @@ import pytest
 from kafka import KafkaAdminClient
 from kafka.admin import NewTopic
 
-from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-
-if is_arm():
-    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(

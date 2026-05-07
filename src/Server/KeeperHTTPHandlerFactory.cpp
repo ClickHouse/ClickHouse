@@ -21,11 +21,11 @@
 
 #include <Server/KeeperDashboardRequestHandler.h>
 #include <Server/KeeperHTTPStorageHandler.h>
+#include <Server/KeeperJemallocHandler.h>
 #include <Server/KeeperNotFoundHandler.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 #include <Common/ZooKeeper/KeeperOverDispatcher.h>
-#include <Coordination/CoordinationSettings.h>
 
 namespace DB
 {
@@ -34,11 +34,6 @@ namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-}
-
-namespace CoordinationSetting
-{
-    extern const CoordinationSettingsUInt64 max_request_size;
 }
 
 KeeperHTTPRequestHandlerFactory::KeeperHTTPRequestHandlerFactory(const std::string & name_) : log(getLogger(name_)), name(name_)
@@ -116,15 +111,46 @@ void addCommandsHandlersToFactory(
     factory.addHandler(commands_handler);
 }
 
+template <typename H>
+void addStrictHandler(KeeperHTTPRequestHandlerFactory & factory, const std::string & path)
+{
+    auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<H>>(
+        [] { return std::make_unique<H>(); });
+    handler->addFilter([path](const auto & request)
+    {
+        const auto & uri = request.getURI();
+        return uri == path
+            || (uri.size() > path.size() && uri.starts_with(path) && uri[path.size()] == '?');
+    });
+    handler->allowGetAndHeadRequest();
+    factory.addHandler(handler);
+}
+
+void addJemallocHandlersToFactory(KeeperHTTPRequestHandlerFactory & factory)
+{
+    addStrictHandler<KeeperJemallocWebUIHandler>(factory, "/jemalloc");
+    factory.addPathToHints("/jemalloc");
+
+    addStrictHandler<KeeperJemallocRedirectHandler>(factory, "/jemalloc/");
+
+#if USE_JEMALLOC
+    addStrictHandler<KeeperJemallocProfileHandler>(factory, "/jemalloc/profile");
+    addStrictHandler<KeeperJemallocStatsHandler>(factory, "/jemalloc/stats");
+    addStrictHandler<KeeperJemallocStatusHandler>(factory, "/jemalloc/status");
+#else
+    addStrictHandler<KeeperJemallocNotAvailableHandler>(factory, "/jemalloc/profile");
+    addStrictHandler<KeeperJemallocNotAvailableHandler>(factory, "/jemalloc/stats");
+    addStrictHandler<KeeperJemallocNotAvailableHandler>(factory, "/jemalloc/status");
+#endif
+}
+
 void addStorageHandlersToFactory(
     KeeperHTTPRequestHandlerFactory & factory,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     std::shared_ptr<KeeperHTTPClient> keeper_client)
 {
-    auto max_request_size = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::max_request_size];
-
-    auto creator = [keeper_client, max_request_size]() -> std::unique_ptr<KeeperHTTPStorageHandler>
-    { return std::make_unique<KeeperHTTPStorageHandler>(keeper_client, max_request_size); };
+    auto creator = [keeper_client, keeper_context = keeper_dispatcher->getKeeperContext()]() -> std::unique_ptr<KeeperHTTPStorageHandler>
+    { return std::make_unique<KeeperHTTPStorageHandler>(keeper_client, keeper_context); };
 
     auto storage_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPStorageHandler>>(std::move(creator));
     storage_handler->attachNonStrictPath("/api/v1/storage");
@@ -169,6 +195,7 @@ void addDefaultHandlersToFactory(
     addDashboardHandlersToFactory(factory, keeper_dispatcher);
     addCommandsHandlersToFactory(factory, keeper_dispatcher, keeper_client);
     addStorageHandlersToFactory(factory, keeper_dispatcher, keeper_client);
+    addJemallocHandlersToFactory(factory);
 }
 
 static auto createHandlersFactoryFromConfig(
@@ -211,6 +238,8 @@ static auto createHandlersFactoryFromConfig(
                 addCommandsHandlersToFactory(*main_handler_factory, keeper_dispatcher, keeper_client);
             else if (handler_type == "storage")
                 addStorageHandlersToFactory(*main_handler_factory, keeper_dispatcher, keeper_client);
+            else if (handler_type == "jemalloc")
+                addJemallocHandlersToFactory(*main_handler_factory);
             else
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,

@@ -3,7 +3,7 @@
 #include <iostream>
 
 
-int main(int argc, char ** argv)
+int mainEntryExampleZkutilTestAsync(int argc, char ** argv)
 try
 {
     auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zkutil::ZooKeeperArgs("localhost:2181"));

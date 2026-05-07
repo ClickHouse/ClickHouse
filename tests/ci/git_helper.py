@@ -139,7 +139,7 @@ def checkout_submodule(name: str, retry: int = 3) -> None:
             # progressive sleep before retry
             sleep(start_sleep * (n + 1))
 
-    raise subprocess.SubprocessError(f"Unable to retreive submodule {name}")
+    raise subprocess.SubprocessError(f"Unable to retrieve submodule {name}")
 
 
 def checkout_submodules() -> None:

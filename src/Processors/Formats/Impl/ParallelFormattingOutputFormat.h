@@ -3,7 +3,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 
 #include <Common/ThreadPool.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>

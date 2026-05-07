@@ -1942,6 +1942,11 @@ ActionsDAG ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
     return adding_column_action;
 }
 
+ActionsDAG ActionsDAG::makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value)
+{
+    return makeAddingColumnActions(ColumnWithTypeAndName{type->createColumnConst(0, value), type, name});
+}
+
 ActionsDAG ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
     first.mergeInplace(std::move(second));

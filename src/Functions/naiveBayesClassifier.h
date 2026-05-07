@@ -9,7 +9,6 @@
 #include <limits>
 #include <vector>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
 #include <base/StringViewHash.h>
 #include <fmt/ranges.h>
 #include <Common/Arena.h>

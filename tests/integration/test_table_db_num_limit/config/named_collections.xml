@@ -1,0 +1,10 @@
+<clickhouse>
+    <named_collections>
+        <from_config_1>
+            <key1>value1</key1>
+        </from_config_1>
+        <from_config_2>
+            <key2>value2</key2>
+        </from_config_2>
+    </named_collections>
+</clickhouse>

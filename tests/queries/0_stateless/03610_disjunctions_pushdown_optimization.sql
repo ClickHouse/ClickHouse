@@ -193,7 +193,7 @@ FROM (
         ORDER BY a ASC, c ASC
     )
 
-WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0
+WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0, query_plan_merge_filters = 1 -- CI may inject False; per-side pushed filters stay separate instead of being merged with the outer a>0/c>0 conditions
 FORMAT TSV;
 
 SELECT '--- Case D: plan (disabled) ---';

@@ -297,24 +297,36 @@ void ColumnIndex::callForIndexes(std::function<void(size_t, size_t)> && callback
     callForType(std::move(callback_for_type), size_of_type);
 }
 
-ColumnPtr ColumnIndex::removeUnusedRowsInIndexedData(const ColumnPtr & indexed_data)
+std::optional<IColumn::Filter> ColumnIndex::buildUsedRowsFilter(size_t indexed_data_size) const
 {
-    /// First, create a filter for indexed data to filter out all unused rows.
-    IColumn::Filter filter(indexed_data->size(), 0);
+    size_t used_rows = 0;
+    IColumn::Filter filter(indexed_data_size, 0);
     auto create_filter = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
     {
         const auto & data = getIndexesData<CurIndexType>();
         for (size_t i = 0; i != data.size(); ++i)
-            filter[data[i]] = 1;
+            if (!filter[data[i]])
+            {
+                filter[data[i]] = 1;
+                if (++used_rows == indexed_data_size)
+                    return;
+            }
     };
 
     callForType(std::move(create_filter), size_of_type);
 
-    /// Second, adjust indexes.
-    size_t result_size_hint = 0;
+    if (used_rows == indexed_data_size)
+        return std::nullopt;
+
+    return filter;
+}
+
+size_t ColumnIndex::compactIndexes(const IColumn::Filter & filter, size_t indexed_data_size)
+{
+    size_t result_size = 0;
     auto adjust_indexes = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
     {
-        PaddedPODArray<CurIndexType> indexes_remapping(indexed_data->size());
+        PaddedPODArray<CurIndexType> indexes_remapping(indexed_data_size);
         size_t new_index = 0;
         for (size_t i = 0; i != filter.size(); ++i)
         {
@@ -325,47 +337,72 @@ ColumnPtr ColumnIndex::removeUnusedRowsInIndexedData(const ColumnPtr & indexed_d
         for (size_t i = 0; i != data.size(); ++i)
             data[i] = indexes_remapping[data[i]];
 
-        result_size_hint = new_index;
+        result_size = new_index;
     };
 
     callForType(std::move(adjust_indexes), size_of_type);
+
+    return result_size;
+}
+
+ColumnPtr ColumnIndex::removeUnusedRowsInIndexedData(const ColumnPtr & indexed_data)
+{
+    /// First, create a filter for indexed data to filter out all unused rows.
+    size_t indexed_data_size = indexed_data->size();
+    auto filter_opt = buildUsedRowsFilter(indexed_data_size);
+    if (!filter_opt.has_value())
+        return indexed_data;
+
+    IColumn::Filter & filter = filter_opt.value();
+
+    /// Second, adjust indexes.
+    size_t result_size_hint = compactIndexes(filter, indexed_data_size);
+
     return indexed_data->filter(filter, result_size_hint);
 }
 
 void ColumnIndex::removeUnusedRowsInIndexedData(MutableColumnPtr & indexed_data)
 {
     /// First, create a filter for indexed data to filter out all unused rows.
-    IColumn::Filter filter(indexed_data->size(), 0);
-    auto create_filter = [&](auto cur_type)
-    {
-        using CurIndexType = decltype(cur_type);
-        const auto & data = getIndexesData<CurIndexType>();
-        for (size_t i = 0; i != data.size(); ++i)
-            filter[data[i]] = 1;
-    };
+    size_t indexed_data_size = indexed_data->size();
+    auto filter_opt = buildUsedRowsFilter(indexed_data_size);
+    if (!filter_opt.has_value())
+        return;
 
-    callForType(std::move(create_filter), size_of_type);
+    IColumn::Filter & filter = filter_opt.value();
 
     /// Second, adjust indexes.
-    auto adjust_indexes = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
-    {
-        PaddedPODArray<CurIndexType> indexes_remapping(indexed_data->size());
-        size_t new_index = 0;
-        for (size_t i = 0; i != filter.size(); ++i)
-        {
-            if (filter[i])
-            {
-                indexes_remapping[i] = static_cast<CurIndexType>(new_index);
-                ++new_index;
-            }
-        }
-        auto & data = getIndexesData<CurIndexType>();
-        for (size_t i = 0; i != data.size(); ++i)
-            data[i] = indexes_remapping[data[i]];
-    };
+    compactIndexes(filter, indexed_data_size);
 
-    callForType(std::move(adjust_indexes), size_of_type);
     indexed_data->filter(filter);
+}
+
+ColumnIndex::CompactIndexedColumnsResult ColumnIndex::buildCompactIndexedColumns(const Columns & indexed_columns) const
+{
+    if (indexed_columns.empty())
+        return {getIndexes(), indexed_columns};
+
+    size_t indexed_data_size = indexed_columns[0]->size();
+    for (size_t i = 1; i < indexed_columns.size(); ++i)
+        chassert(indexed_columns[i]->size() == indexed_data_size);
+
+    /// First, create a filter for indexed data to filter out all unused rows.
+    auto filter_opt = buildUsedRowsFilter(indexed_data_size);
+    if (!filter_opt.has_value())
+        return {getIndexes(), indexed_columns};
+
+    IColumn::Filter & filter = filter_opt.value();
+
+    /// Second, adjust indexes.
+    ColumnIndex compact_column_index(IColumn::mutate(getIndexes()));
+    size_t result_size_hint = compact_column_index.compactIndexes(filter, indexed_data_size);
+
+    Columns filtered_columns;
+    filtered_columns.reserve(indexed_columns.size());
+    for (const auto & column : indexed_columns)
+        filtered_columns.push_back(column->filter(filter, result_size_hint));
+
+    return {compact_column_index.getIndexes(), filtered_columns};
 }
 
 void ColumnIndex::getIndexesByMask(IColumn::Offsets & result_indexes, const PaddedPODArray<UInt8> & mask, size_t start, size_t end) const

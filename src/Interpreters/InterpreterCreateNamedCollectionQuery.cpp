@@ -50,7 +50,6 @@ BlockIO InterpreterCreateNamedCollectionQuery::execute()
     }
 
     NamedCollectionFactory::instance().createFromSQL(query);
-    CurrentMetrics::add(CurrentMetrics::NamedCollection);
 
     return {};
 }

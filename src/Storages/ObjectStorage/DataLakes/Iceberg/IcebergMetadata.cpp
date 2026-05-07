@@ -1,9 +1,11 @@
 #include <base/defines.h>
+#include <DataTypes/DataTypeString.h>
 #include <base/sleep.h>
 #include "config.h"
 #if USE_AVRO
 
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -19,7 +21,7 @@
 #include <Functions/tuple.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
@@ -32,14 +34,14 @@
 #include <Interpreters/PreparedSets.h>
 #include <Storages/ObjectStorage/Utils.h>
 
-#include <Databases/DataLake/Common.h>
-#include <Disks/DiskType.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
+#include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Disks/DiskType.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
@@ -47,6 +49,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IcebergMetadataLog.h>
+#include <Interpreters/StorageID.h>
 
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -56,12 +59,12 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/StorageID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ExecuteOptionsParser.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExpireSnapshotsExecute.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/RemoveOrphanFilesExecute.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -125,6 +128,8 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
+extern const SettingsBool allow_experimental_geo_types_in_iceberg;
+extern const SettingsBool allow_iceberg_remove_orphan_files;
 extern const SettingsBool allow_experimental_expire_snapshots;
 extern const SettingsBool iceberg_delete_data_on_drop;
 }
@@ -185,7 +190,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     }
     auto table_path = configuration->getPathForRead().path;
     return PersistentTableComponents{
-        .schema_processor = std::make_shared<IcebergSchemaProcessor>(),
+        .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]),
         .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
@@ -636,34 +641,6 @@ void IcebergMetadata::alter(const AlterCommands & params, ContextPtr context)
     Iceberg::alter(params, context, object_storage, data_lake_settings, persistent_components, write_format);
 }
 
-static Pipe expireSnapshotsResultToPipe(const Iceberg::ExpireSnapshotsResult & result)
-{
-    Block header{
-        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "metric_name"),
-        ColumnWithTypeAndName(std::make_shared<DataTypeInt64>(), "metric_value"),
-    };
-
-    MutableColumns columns = header.cloneEmptyColumns();
-
-    auto add = [&](const char * name, Int64 value)
-    {
-        columns[0]->insert(String(name));
-        columns[1]->insert(value);
-    };
-
-    add("deleted_data_files_count", result.deleted_data_files_count);
-    add("deleted_position_delete_files_count", result.deleted_position_delete_files_count);
-    add("deleted_equality_delete_files_count", result.deleted_equality_delete_files_count);
-    add("deleted_manifest_files_count", result.deleted_manifest_files_count);
-    add("deleted_manifest_lists_count", result.deleted_manifest_lists_count);
-    add("deleted_statistics_files_count", result.deleted_statistics_files_count);
-    add("dry_run", result.dry_run ? 1 : 0);
-
-    const size_t rows = columns[0]->size();
-    Chunk chunk(std::move(columns), rows);
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(header)), std::move(chunk)));
-}
-
 Pipe IcebergMetadata::executeCommand(
     const String & command_name,
     const ASTPtr & args,
@@ -691,19 +668,22 @@ Pipe IcebergMetadata::executeCommand(
                 "To allow its usage, enable setting allow_experimental_expire_snapshots");
         }
 
-        auto options = parseExpireSnapshotsOptions(args, context);
+        return Iceberg::executeExpireSnapshots(
+            args, context, object_storage_, data_lake_settings, persistent_components,
+            write_format, catalog_, storage_id.getTableName());
+    }
+    else if (command_name == "remove_orphan_files")
+    {
+        if (!context->getSettingsRef()[Setting::allow_iceberg_remove_orphan_files].value)
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "remove_orphan_files is experimental. "
+                "To allow its usage, enable setting allow_iceberg_remove_orphan_files");
+        }
 
-        auto result = Iceberg::expireSnapshots(
-            options,
-            context,
-            object_storage_,
-            data_lake_settings,
-            persistent_components,
-            write_format,
-            catalog_,
-            storage_id.getTableName());
-
-        return expireSnapshotsResultToPipe(result);
+        return Iceberg::executeRemoveOrphanFiles(
+            args, context, object_storage_, data_lake_settings, persistent_components);
     }
     else
     {

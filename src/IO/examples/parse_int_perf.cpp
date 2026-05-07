@@ -26,7 +26,7 @@ static UInt64 rdtsc()
 }
 
 
-int main(int argc, char ** argv)
+int mainEntryExampleParseIntPerf(int argc, char ** argv)
 {
     pcg64 rng;
 

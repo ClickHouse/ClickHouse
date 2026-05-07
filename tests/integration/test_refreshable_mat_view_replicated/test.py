@@ -491,6 +491,135 @@ def test_query_fail(fn3_setup_tables):
     )
 
 
+def test_prefer_dependency_replica(module_setup_tables):
+    """When prefer_dependency_replica is enabled, a dependent RMV should run on
+    the same replica that ran the parent RMV.
+
+    Deterministic strategy: stop the parent on node2 so the parent is guaranteed
+    to run on node1. The dependent on node1 gets the in-process notification
+    (notified_locally=true, no delay), while node2 gets notified via Keeper watch
+    (notified_locally=false, delayed by 2s). Node1 wins the race deterministically.
+    """
+
+    node.query("DROP TABLE IF EXISTS parent_src ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS parent_tgt ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS dep_tgt ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS parent_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS dep_rmv ON CLUSTER default SYNC")
+
+    node.query(
+        "CREATE TABLE parent_src ON CLUSTER default (x UInt64) "
+        "ENGINE = ReplicatedMergeTree ORDER BY x"
+    )
+    node.query("INSERT INTO parent_src VALUES (1)")
+    node.query(
+        "CREATE TABLE parent_tgt ON CLUSTER default (x UInt64) "
+        "ENGINE = ReplicatedMergeTree ORDER BY x"
+    )
+    node.query(
+        "CREATE TABLE dep_tgt ON CLUSTER default (x UInt64) "
+        "ENGINE = ReplicatedMergeTree ORDER BY x"
+    )
+
+    # Parent RMV: refresh far in the future so it only runs when we trigger it.
+    node.query(
+        "CREATE MATERIALIZED VIEW parent_rmv ON CLUSTER default "
+        "REFRESH EVERY 3 SECOND APPEND TO parent_tgt "
+        "EMPTY AS SELECT x FROM parent_src"
+    )
+
+    # Stop parent on node2 so the parent is guaranteed to run on node1.
+    node2.query("SYSTEM STOP VIEW parent_rmv")
+
+    # Trigger parent refresh on node1 and wait for it to complete.
+    node.query("SYSTEM WAIT VIEW parent_rmv")
+    node.query("SYSTEM REFRESH VIEW parent_rmv")
+    node.query("SYSTEM WAIT VIEW parent_rmv")
+
+    # Dependent RMV with pod affinity enabled (default 2s delay for non-preferred).
+    node.query(
+        "CREATE MATERIALIZED VIEW dep_rmv ON CLUSTER default "
+        "REFRESH EVERY 3 SECOND DEPENDS ON parent_rmv "
+        "SETTINGS prefer_dependency_replica = 1 "
+        "APPEND TO dep_tgt "
+        "EMPTY AS SELECT x FROM parent_tgt"
+    )
+
+    # Wait for 3 refreshes of the dependent view.
+    prev_time = ''
+    refresh_count = 0
+    for _ in range(30):
+        res = node.query(
+            "SELECT toInt64(last_success_time), last_refresh_replica FROM system.view_refreshes WHERE view = 'dep_rmv'"
+        )
+        if not res.startswith('\\N'):
+            (t, r) = res.split()
+            if t != prev_time:
+                prev_time = t
+                refresh_count += 1
+                assert r == '1'
+                if refresh_count >= 3:
+                    break
+        time.sleep(0.5)
+    else:
+        assert False, "Dependent RMV did not complete within timeout"
+
+    # Switch the dependency to refresh on node2
+    node.query("SYSTEM STOP VIEW parent_rmv")
+    node2.query("SYSTEM START VIEW parent_rmv")
+    node2.query("SYSTEM WAIT VIEW parent_rmv")
+    node2.query("SYSTEM REFRESH VIEW parent_rmv")
+    node2.query("SYSTEM WAIT VIEW parent_rmv")
+
+    # Wait for 2 more refreshes of the dependent view.
+    node.query("SYSTEM WAIT VIEW dep_rmv")
+    node2.query("SYSTEM WAIT VIEW dep_rmv")
+    prev_time = ''
+    refresh_count = 0
+    for _ in range(30):
+        (t, r) = node.query(
+            "SELECT toInt64(last_success_time), last_refresh_replica FROM system.view_refreshes WHERE view = 'dep_rmv'"
+        ).split()
+        if t != prev_time:
+            prev_time = t
+            refresh_count += 1
+            if refresh_count > 1: # first result may be from previous refresh before the switch
+                assert r == '2'
+            if refresh_count >= 3:
+                break
+        time.sleep(0.5)
+    else:
+        assert False, "Dependent RMV did not complete within timeout"
+
+    # Prevent dependent refreshes on node2, check that node1 refreshes instead.
+    node2.query("SYSTEM STOP VIEW dep_rmv")
+    node2.query("SYSTEM WAIT VIEW dep_rmv")
+    node.query("SYSTEM WAIT VIEW dep_rmv")
+    prev_time = ''
+    refresh_count = 0
+    for _ in range(30):
+        (t, r) = node.query(
+            "SELECT toInt64(last_success_time), last_refresh_replica FROM system.view_refreshes WHERE view = 'dep_rmv'"
+        ).split()
+        if t != prev_time:
+            prev_time = t
+            refresh_count += 1
+            if refresh_count > 1:
+                assert r == '1'
+            if refresh_count >= 3:
+                break
+        time.sleep(0.5)
+    else:
+        assert False, "Dependent RMV did not complete within timeout"
+
+    # Cleanup.
+    node.query("DROP TABLE IF EXISTS dep_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS parent_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS dep_tgt ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS parent_tgt ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS parent_src ON CLUSTER default SYNC")
+
+
 def test_query_retry(fn3_setup_tables):
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")

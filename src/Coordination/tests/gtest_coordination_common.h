@@ -78,7 +78,8 @@ public:
     {
         Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
         Poco::Logger::root().setChannel(channel);
-        Poco::Logger::root().setLevel("trace");
+        const char * log_level = std::getenv("TEST_LOG_LEVEL"); // NOLINT(concurrency-mt-unsafe)
+        Poco::Logger::root().setLevel(log_level ? log_level : "none");
 
         auto settings = std::make_shared<DB::CoordinationSettings>();
 #if USE_ROCKSDB

@@ -79,9 +79,10 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (!argument || argument->name != "equals")
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Dynamic data type argument should be in a form 'max_types=N'");
 
-    const auto * identifier = argument->arguments->children[0]->as<ASTIdentifier>();
+    const auto & identifier_node = argument->arguments->children[0];
+    const auto * identifier = identifier_node->as<ASTIdentifier>();
     if (!identifier)
-        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected Dynamic type argument: {}. Expected expression 'max_types=N'", identifier->formatForErrorMessage());
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected Dynamic type argument: {}. Expected expression 'max_types=N'", identifier_node->formatForErrorMessage());
 
     auto identifier_name = identifier->name();
     if (identifier_name != "max_types")

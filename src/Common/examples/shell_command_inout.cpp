@@ -10,7 +10,7 @@
 
 /** This example shows how we can proxy stdin to ShellCommand and obtain stdout in streaming fashion. */
 
-int main(int argc, char ** argv)
+int mainEntryExampleShellCommandInout(int argc, char ** argv)
 try
 {
     using namespace DB;

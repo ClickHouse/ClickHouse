@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -67,13 +68,14 @@ void CreatingSetStep::updateOutputHeader()
 
 void CreatingSetStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    if (!set_and_key->set)
+        return ;
+
+    const String & prefix = settings.detail_prefix;
 
     settings.out << prefix;
-    if (set_and_key->set)
-        settings.out << "Set: ";
-
-    settings.out << set_and_key->key << '\n';
+    settings.out << "Set: ";
+    settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(set_and_key->key, settings.pretty_names) : set_and_key->key) << '\n';
 }
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const

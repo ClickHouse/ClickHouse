@@ -2,7 +2,7 @@
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <csignal>
 
 namespace Poco
@@ -25,14 +25,16 @@ const int STACK_TRACE_SERVICE_SIGNAL = SIGUSR1;
 /// Allows to introspect stack trace of all server threads.
 /// It acts like an embedded debugger.
 /// More than one instance of this table cannot be used.
-class StorageSystemStackTrace final : public IStorage
+class StorageSystemStackTrace final : public StorageWithCommonVirtualColumns
 {
 public:
     explicit StorageSystemStackTrace(const StorageID & table_id_);
 
     String getName() const override { return "SystemStackTrace"; }
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

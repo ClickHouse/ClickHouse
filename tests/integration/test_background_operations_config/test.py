@@ -25,6 +25,10 @@ node5 = cluster.add_instance(
     main_configs=["configs/custom_server_config.xml"],
     user_configs=["configs/tightened_custom_profile.xml"]
 )
+# 6. [EXPECTED FAILURE] with default, then created new 'background' profile, and [EXPECTED SUCCESS] after server restart
+node6 = cluster.add_instance("node6", stay_alive=True)
+# 7. [EXPECTED FAILURE] when trying to ALTER a pre-configured profile on fly via SQL
+node7 = cluster.add_instance("node7", user_configs=["configs/empty_background_profile.xml"])
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -92,3 +96,31 @@ def test_custom_background_profile_configured(started_cluster):
   prepare_data(instance=node5)
   assert_mutate_blocking(instance=node5, sleep_sec_per_row=0.1)
   print(f"Check 5: background operation succeeds with a custom background profile configured")
+
+def test_switching_to_background_profile_in_flight(started_cluster):
+  prepare_data(instance=node6)
+  assert_mutate_blocking(instance=node6, sleep_sec_per_row=1, expected_failure=True)
+
+  # Attempt to modify 'background' profile without having it created first should fail
+  node6.query_and_get_error("ALTER SETTINGS PROFILE background SETTINGS function_sleep_max_microseconds_per_block=5000000")
+  # Now it'll work
+  node6.query("CREATE SETTINGS PROFILE background")
+  node6.query("ALTER SETTINGS PROFILE background SETTINGS function_sleep_max_microseconds_per_block=5000000")
+  # But the newly created profile won't work without server restart in such case
+  assert_mutate_blocking(instance=node6, sleep_sec_per_row=1, expected_failure=True)
+
+  # Clean up failed mutations before restart
+  node6.query(f"KILL MUTATION WHERE table = '{get_table_name(node6)}'")
+
+  node6.restart_clickhouse()
+  # And finally it works
+  assert_mutate_blocking(instance=node6, sleep_sec_per_row=1)
+  print(f"Check 6: background created in flight")
+
+def test_changing_profile_in_flight(started_cluster):
+  prepare_data(instance=node7)
+  assert_mutate_blocking(instance=node7, sleep_sec_per_row=1, expected_failure=True)
+
+  node7.query_and_get_error("ALTER SETTINGS PROFILE background SETTINGS function_sleep_max_microseconds_per_block=5000000")
+  
+  print(f"Check 7: background can't be created in config and modified via SQL")

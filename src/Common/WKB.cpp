@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -35,8 +36,21 @@ String getGeometricObjectTypeName(const GeometricObject & object)
     else if (std::holds_alternative<Polygon<CartesianPoint>>(object))
         return "Polygon";
     else if (std::holds_alternative<MultiPolygon<CartesianPoint>>(object))
-        return "Polygon";
+        return "MultiPolygon";
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometric object");
+}
+
+UInt32 effectiveLimit(UInt32 max_element_count)
+{
+    if (max_element_count == 0 || max_element_count > MAX_WKB_GEOMETRY_ELEMENTS_HARD_LIMIT)
+        return MAX_WKB_GEOMETRY_ELEMENTS_HARD_LIMIT;
+    return max_element_count;
+}
+
+void checkCount(UInt32 count, UInt32 limit, const char * what)
+{
+    if (count > limit)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many {} in WKB geometry: {} (limit: {})", what, count, limit);
 }
 
 }
@@ -50,40 +64,39 @@ inline CartesianPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to
     return CartesianPoint(x, y);
 }
 
-inline LineString<CartesianPoint> readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+inline LineString<CartesianPoint> readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
 {
     UInt32 num_points;
     readBinaryEndian(num_points, in_buffer, endian_to_read);
+    checkCount(num_points, limit, "points");
 
     LineString<CartesianPoint> line;
     line.reserve(num_points);
 
     for (UInt32 i = 0; i < num_points; ++i)
-    {
         line.push_back(readPointWKB(in_buffer, endian_to_read));
-    }
     return line;
 }
 
-inline Ring<CartesianPoint> readRingWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+inline Ring<CartesianPoint> readRingWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
 {
     UInt32 num_points;
     readBinaryEndian(num_points, in_buffer, endian_to_read);
+    checkCount(num_points, limit, "points");
 
     Ring<CartesianPoint> ring;
     ring.reserve(num_points);
 
     for (UInt32 i = 0; i < num_points; ++i)
-    {
         ring.push_back(readPointWKB(in_buffer, endian_to_read));
-    }
     return ring;
 }
 
-inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
 {
     UInt32 num_rings;
     readBinaryEndian(num_rings, in_buffer, endian_to_read);
+    checkCount(num_rings, limit, "rings");
 
     Polygon<CartesianPoint> polygon;
     if (num_rings > 1)
@@ -91,26 +104,27 @@ inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endia
     for (UInt32 i = 0; i < num_rings; ++i)
     {
         if (i == 0)
-            polygon.outer() = readRingWKB(in_buffer, endian_to_read);
+            polygon.outer() = readRingWKB(in_buffer, endian_to_read, limit);
         else
-            polygon.inners().push_back(readRingWKB(in_buffer, endian_to_read));
+            polygon.inners().push_back(readRingWKB(in_buffer, endian_to_read, limit));
     }
     return polygon;
 }
 
-GeometricObject parseWKBFormat(ReadBuffer & in_buffer);
+GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt32 max_element_count);
 
-MultiLineString<CartesianPoint> readMultiLineStringWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+MultiLineString<CartesianPoint> readMultiLineStringWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
 {
     MultiLineString<CartesianPoint> multiline;
 
     UInt32 num_rings;
     readBinaryEndian(num_rings, in_buffer, endian_to_read);
+    checkCount(num_rings, limit, "line strings");
 
     multiline.reserve(num_rings);
     for (UInt32 i = 0; i < num_rings; ++i)
     {
-        auto current_line = parseWKBFormat(in_buffer);
+        auto current_line = parseWKBFormat(in_buffer, limit);
         if (!std::holds_alternative<LineString<CartesianPoint>>(current_line))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MultiLineString contains an internal type {} that differs from LineString", getGeometricObjectTypeName(current_line));
         multiline.push_back(std::get<LineString<CartesianPoint>>(current_line));
@@ -118,17 +132,18 @@ MultiLineString<CartesianPoint> readMultiLineStringWKB(ReadBuffer & in_buffer, s
     return multiline;
 }
 
-MultiPolygon<CartesianPoint> readMultiPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+MultiPolygon<CartesianPoint> readMultiPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
 {
     MultiPolygon<CartesianPoint> multipolygon;
 
     UInt32 num_polygons;
     readBinaryEndian(num_polygons, in_buffer, endian_to_read);
+    checkCount(num_polygons, limit, "polygons");
 
     multipolygon.reserve(num_polygons);
     for (UInt32 i = 0; i < num_polygons; ++i)
     {
-        auto current_polygon = parseWKBFormat(in_buffer);
+        auto current_polygon = parseWKBFormat(in_buffer, limit);
         if (!std::holds_alternative<Polygon<CartesianPoint>>(current_polygon))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MultiPolygon contains an internal type {} that differs from Polygon", getGeometricObjectTypeName(current_polygon));
         multipolygon.push_back(std::get<Polygon<CartesianPoint>>(current_polygon));
@@ -136,8 +151,10 @@ MultiPolygon<CartesianPoint> readMultiPolygonWKB(ReadBuffer & in_buffer, std::en
     return multipolygon;
 }
 
-GeometricObject parseWKBFormat(ReadBuffer & in_buffer)
+GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt32 max_element_count)
 {
+    UInt32 limit = effectiveLimit(max_element_count);
+
     char little_endian;
     if (!in_buffer.read(little_endian) || (little_endian != 0 && little_endian != 1))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect first flag");
@@ -152,13 +169,13 @@ GeometricObject parseWKBFormat(ReadBuffer & in_buffer)
         case WKBGeometry::Point:
             return readPointWKB(in_buffer, endian_to_read);
         case WKBGeometry::LineString:
-            return readLineWKB(in_buffer, endian_to_read);
+            return readLineWKB(in_buffer, endian_to_read, limit);
         case WKBGeometry::Polygon:
-            return readPolygonWKB(in_buffer, endian_to_read);
+            return readPolygonWKB(in_buffer, endian_to_read, limit);
         case WKBGeometry::MultiLineString:
-            return readMultiLineStringWKB(in_buffer, endian_to_read);
+            return readMultiLineStringWKB(in_buffer, endian_to_read, limit);
         case WKBGeometry::MultiPolygon:
-            return readMultiPolygonWKB(in_buffer, endian_to_read);
+            return readMultiPolygonWKB(in_buffer, endian_to_read, limit);
     }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geometry type {}", geom_type);
 }

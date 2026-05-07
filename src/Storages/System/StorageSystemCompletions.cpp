@@ -23,6 +23,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/System/StorageSystemCompletions.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/Exception.h>
 #include <Common/Macros.h>
 
 
@@ -87,11 +88,8 @@ void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    auto snapshot = table->tryGetInMemoryMetadataPtr();
-    if (!snapshot)
-        return;
-
-    const auto & columns = (*snapshot)->getColumns();
+    StorageMetadataPtr snapshot = table->getInMemoryMetadataPtr(context, false);
+    const auto & columns = snapshot->getColumns();
     for (const auto & column : columns)
     {
         if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))

@@ -146,13 +146,18 @@ public:
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
-    virtual bool rightTableCanBeReranged() const { return false; }
-    virtual void tryRerangeRightTableData() {}
 
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
     virtual bool supportParallelNonJoinedBlocksProcessing() const { return false; }
+    /// This serves as a runtime check in JoiningTransform to decide whether to utilize the parallel processing of
+    /// non-joined blocks. Only relevant for joins that support parallel processing of non-joined blocks.
+    /// If the join supports parallel processing, it can still decide during build phase whether to utilize it or not.
+    /// The decision should be done at latest in onBuildPhaseFinish, after that the returned value should not change.
+    /// This is important for SpillingHashJoin, which can change algorithms runtime, and parallel non-joined blocks
+    /// processing depends on the algorithm used.
+    virtual bool isParallelNonJoinedProcessingEnabled() const { return supportParallelNonJoinedBlocksProcessing(); }
 
     /// Get non-joined blocks for a specific stream partition
     /// stream_idx is in [0, num_streams), each stream must produce a disjoint subset of rows
@@ -166,8 +171,17 @@ public:
         return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
+    /// Notify the join that the query plan requires left-side read-in-order preservation.
+    /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.
+    virtual void keepLeftPipelineInOrder() {}
+
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }
+
+    /// Called by `FillingRightJoinSideTransform` after `onBuildPhaseFinish` if the join has
+    /// a post build optimization step.
+    virtual bool hasPostBuildPhase() const { return false; }
+    virtual void runPostBuildPhase() { }
 
 private:
     Block totals;

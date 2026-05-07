@@ -1,9 +1,7 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <base/sort.h>
@@ -392,6 +390,8 @@ namespace detail
                     readBinaryLittleEndian(index, buf);
                     if (index == BIG_THRESHOLD)
                         break;
+                    if (index - SMALL_THRESHOLD >= BIG_SIZE)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect index {} in 'large' kind of quantileTiming deserialization", index);
 
                     UInt64 elem_count = 0;
                     readBinaryLittleEndian(elem_count, buf);

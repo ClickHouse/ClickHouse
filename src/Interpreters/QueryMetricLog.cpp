@@ -266,7 +266,7 @@ std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElemen
     if (query_info_time <= info.last_collect_time)
     {
         LOG_TEST(logger, "Query {} has a more recent metrics collected at {}. This metrics are from {}. Skipping this one",
-            timePointToString(info.last_collect_time), timePointToString(query_info_time), query_id);
+            query_id, timePointToString(info.last_collect_time), timePointToString(query_info_time));
         return {};
     }
 

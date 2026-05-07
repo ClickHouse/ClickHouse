@@ -127,7 +127,7 @@ ReadFromSystemPrimesStep::ReadFromSystemPrimesStep(
           context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context, false).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, {}, context, false).expression}
     , max_block_size{max_block_size_}
     , storage_limits(query_info_.storage_limits)
 {

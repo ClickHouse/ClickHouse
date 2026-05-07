@@ -18,7 +18,10 @@ struct SkipIndexReadResult
     std::vector<bool> granules_selected; /// granules selected by skip index(es) at read time
     std::shared_ptr<MergeTreeIndexBulkGranulesMinMax> min_max_index_for_top_k;
     TopKThresholdTrackerPtr threshold_tracker;
+    /// Pre-computed index granules for indexes created for the whole part.
+    IndexGranulesMap index_granules;
 };
+
 using SkipIndexReadResultPtr = std::shared_ptr<SkipIndexReadResult>;
 
 class MergeTreeSkipIndexReader

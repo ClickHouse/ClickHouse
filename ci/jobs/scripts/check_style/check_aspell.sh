@@ -41,8 +41,11 @@ if [[ ${1:-} == "-i" ]]; then
 fi
 
 STATUS=0
-for fname in ${ROOT_PATH}/docs/${CHECK_LANG}/**/*.md; do
-    errors=$(preprocess_file "$fname" \
+
+check_file() {
+    local fname=$1
+    local errors
+    errors=$(sed -E 's/\{#[^}]*\}//g' "$fname" | grep -Ev '^(slug:|import [[:alnum:]_]+ from)' \
         | aspell list \
             -W 3 \
             --personal=aspell-dict.txt \
@@ -51,13 +54,21 @@ for fname in ${ROOT_PATH}/docs/${CHECK_LANG}/**/*.md; do
             --mode=markdown \
             --lang=${CHECK_LANG} \
             --home-dir=${ASPELL_IGNORE_PATH} \
-        | sort | uniq)
-    if [ ! -z "$errors" ]; then
-        STATUS=1
-        echo "====== $fname ======"
-        echo "$errors"
+        | sort -u)
+    if [ -n "$errors" ]; then
+        printf '====== %s ======\n%s\n' "$fname" "$errors"
     fi
-done
+}
+export -f check_file
+export CHECK_LANG ASPELL_IGNORE_PATH
+
+output=$(printf '%s\0' ${ROOT_PATH}/docs/${CHECK_LANG}/**/*.md \
+    | xargs -0 -P "$(nproc)" -I{} bash -c 'check_file "$@"' _ {})
+
+if [ -n "$output" ]; then
+    STATUS=1
+    echo "$output"
+fi
 
 if (( STATUS != 0 )); then
     echo "====== Errors found ======"

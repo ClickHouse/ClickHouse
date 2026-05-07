@@ -25,6 +25,8 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/typeid_cast.h>
 #include <Common/ErrnoException.h>
+#include <base/getFQDNOrHostName.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -50,6 +52,7 @@ const DataTypePtr rowType = makeNullable(std::make_shared<DataTypeUInt64>());
 ColumnsDescription DeltaMetadataLogElement::getColumnsDescription()
 {
     return ColumnsDescription{
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Event time."},
         {"query_id", std::make_shared<DataTypeString>(), "Query id."},
@@ -61,6 +64,7 @@ ColumnsDescription DeltaMetadataLogElement::getColumnsDescription()
 void DeltaMetadataLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_index = 0;
+    columns[column_index++]->insert(getFQDNOrHostName());
     columns[column_index++]->insert(DateLUT::instance().toDayNum(current_time).toUnderType());
     columns[column_index++]->insert(current_time);
     columns[column_index++]->insert(query_id);

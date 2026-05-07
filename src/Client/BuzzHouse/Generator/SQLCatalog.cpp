@@ -136,7 +136,7 @@ bool SQLColumn::canBeInserted() const
 
 String SQLColumn::getColumnName() const
 {
-    return "c" + std::to_string(cname);
+    return cname;
 }
 
 void SQLDatabase::setRandomDatabase(RandomGenerator & rg, SQLDatabase & d)
@@ -144,9 +144,9 @@ void SQLDatabase::setRandomDatabase(RandomGenerator & rg, SQLDatabase & d)
     d.random_engine = rg.nextMediumNumber() < 4;
 }
 
-void SQLDatabase::setName(Database * db, const uint32_t name)
+void SQLDatabase::setName(SQLIdentifier * db, const String & n)
 {
-    db->set_database("d" + std::to_string(name));
+    db->set_value(n);
 }
 
 bool SQLDatabase::isAtomicDatabase() const
@@ -199,14 +199,14 @@ bool SQLDatabase::isDettached() const
     return attached != DetachStatus::ATTACHED;
 }
 
-void SQLDatabase::setName(Database * db) const
+void SQLDatabase::setName(SQLIdentifier * db) const
 {
-    SQLDatabase::setName(db, dname);
+    db->set_value(getName());
 }
 
 String SQLDatabase::getName() const
 {
-    return "d" + std::to_string(dname);
+    return name;
 }
 
 void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de)
@@ -558,10 +558,10 @@ bool SQLBase::isDettached() const
 
 String SQLBase::getDatabaseName() const
 {
-    return "d" + (db ? std::to_string(db->dname) : "efault");
+    return db ? db->getName() : "default";
 }
 
-String SQLBase::getTableName(const bool full) const
+String SQLBase::getBaseName(const bool full) const
 {
     String res;
 
@@ -569,7 +569,7 @@ String SQLBase::getTableName(const bool full) const
     {
         res += "test.";
     }
-    res += this->prefix + std::to_string(tname);
+    res += name;
     return res;
 }
 
@@ -581,7 +581,7 @@ String SQLBase::getFullName(const bool setdbname) const
     {
         res += getDatabaseName() + ".";
     }
-    res += getTableName();
+    res += getBaseName();
     return res;
 }
 
@@ -591,7 +591,7 @@ String SQLBase::getSparkCatalogName() const
     if (getLakeCatalog() == LakeCatalog::None)
     {
         /// DeltaLake tables on Spark must be on the `spark_catalog` :(
-        return isAnyIcebergEngine() ? getTableName(false) : "spark_catalog";
+        return isAnyIcebergEngine() ? getBaseName(false) : "spark_catalog";
     }
     return db->getSparkCatalogName();
 }
@@ -619,12 +619,13 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         && !partition_columns_in_data_file.has_value() && !storage_class_name.has_value());
     has_partition_by = (isRedisEngine() || isKeeperMapEngine() || isMaterializedPostgreSQLEngine() || isAnyIcebergEngine()
                         || isAzureEngine() || isS3Engine())
-        && rg.nextSmallNumber() < 4;
+        && rg.nextSmallNumber() < 3;
     has_order_by = isAnyIcebergEngine() && rg.nextSmallNumber() < 4;
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set bucket path first if possible
         String next_bucket_path;
+        const String bname = rg.nextSmallNumber() < 4 ? name : ("t" + std::to_string(counter));
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
         if (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool())
@@ -648,12 +649,12 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             {
                 /// DeltaLake tables on Spark must be on the `spark_catalog` :(
                 next_bucket_path = fmt::format(
-                    "{}{}{}{}t{}{}",
+                    "{}{}{}{}{}{}",
                     isOnLocal() ? fc.lakes_path.generic_string() : "",
                     isOnLocal() ? "/" : "",
                     (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
                     (integration == IntegrationCall::Dolor) ? "/test/" : "",
-                    tname,
+                    bname,
                     rg.nextBool() ? "/" : "");
             }
             else if (fc.dolor_server.has_value() && fc.minio_server.has_value())
@@ -680,11 +681,11 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                         UNREACHABLE();
                 }
                 next_bucket_path = fmt::format(
-                    "http://{}:{}/{}/t{}{}",
+                    "http://{}:{}/{}/{}{}",
                     fc.minio_server.value().server_hostname,
                     fc.minio_server.value().port,
                     cat->warehouse,
-                    tname,
+                    bname,
                     rg.nextBool() ? "/" : "");
             }
         }
@@ -700,7 +701,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             {
                 /// Use a subdirectory
                 next_bucket_path += "subdir";
-                next_bucket_path += rg.nextBool() ? std::to_string(tname) : "";
+                next_bucket_path += rg.nextBool() ? bname : "";
                 const bool want_partition = has_partition_by && rg.nextBool();
                 const bool want_hash = rg.nextBool();
                 next_bucket_path += placeholders(rg, want_partition, want_hash);
@@ -713,10 +714,10 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                 const bool add_before = rg.nextBool();
 
                 next_bucket_path += "file";
-                next_bucket_path += add_before ? std::to_string(tname) : "";
+                next_bucket_path += add_before ? bname : "";
                 next_bucket_path
                     += placeholders(rg, has_partition_by && !used_partition && rg.nextBool(), !used_schema_hash && rg.nextBool());
-                next_bucket_path += !add_before ? std::to_string(tname) : "";
+                next_bucket_path += !add_before ? bname : "";
                 if ((isS3QueueEngine() || isAzureQueueEngine()) && rg.nextMediumNumber() < 81)
                 {
                     next_bucket_path += "/";
@@ -737,6 +738,27 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         }
         bucket_path = std::move(next_bucket_path);
     }
+    else if (isKeeperMapEngine() || isArrowFlightEngine() || isFileEngine() || (isURLEngine() && fc.http_server.has_value()))
+    {
+        /// Nasty strings give bad URLs, so use table counter
+        const String bname = rg.nextSmallNumber() < 4 ? name : ("t" + std::to_string(counter));
+
+        if (isKeeperMapEngine() || isArrowFlightEngine())
+        {
+            bucket_path = fmt::format("/{}", bname);
+        }
+        else if (isFileEngine())
+        {
+            bucket_path = fmt::format("{}/{}", fc.server_file_path.generic_string(), bname);
+        }
+        else if (isURLEngine() && fc.http_server.has_value())
+        {
+            const ServerCredentials & sc = fc.http_server.value();
+
+            bucket_path = fmt::format("http://{}:{}/{}", sc.server_hostname, sc.port, bname);
+        }
+    }
+
     if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
     {
         /// Iceberg supports 3 formats
@@ -806,39 +828,15 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     }
 }
 
-String SQLBase::getTablePath(const FuzzConfig & fc) const
+String SQLBase::getTablePath() const
 {
-    if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
-    {
-        return bucket_path.has_value() ? bucket_path.value() : "test";
-    }
-    if (isFileEngine())
-    {
-        return fmt::format("{}/file{}", fc.server_file_path.generic_string(), tname);
-    }
-    if (isURLEngine())
-    {
-        if (fc.http_server.has_value())
-        {
-            const ServerCredentials & sc = fc.http_server.value();
-
-            return fmt::format("http://{}:{}/file{}", sc.server_hostname, sc.port, tname);
-        }
-        return "test";
-    }
-    if (isKeeperMapEngine())
-    {
-        return fmt::format("/kfile{}", tname);
-    }
-    if (isArrowFlightEngine())
-    {
-        return fmt::format("/aflight{}", tname);
-    }
-
-    UNREACHABLE();
+    chassert(
+        isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isKeeperMapEngine()
+        || isArrowFlightEngine() || isFileEngine() || isURLEngine());
+    return bucket_path.has_value() ? bucket_path.value() : "test";
 }
 
-String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
+String SQLBase::getTablePath(RandomGenerator & rg, const bool allow_not_deterministic) const
 {
     if ((isAnyS3Engine() || isAnyAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
     {
@@ -893,12 +891,7 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
         }
         return res;
     }
-    return getTablePath(fc);
-}
-
-String SQLBase::getMetadataPath(const FuzzConfig & fc) const
-{
-    return has_metadata ? fmt::format("{}/metadatat{}", fc.server_file_path.generic_string(), tname) : "";
+    return getTablePath();
 }
 
 LakeCatalog SQLBase::getLakeCatalog() const
@@ -916,32 +909,35 @@ LakeFormat SQLBase::getPossibleLakeFormat() const
     return db ? db->format : LakeFormat::All;
 }
 
-void SQLBase::setName(
-    ExprSchemaTable * est, const String & prefix, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
+void SQLBase::setName(ExprSchemaTable * est, const String & n, const bool setdbname, std::shared_ptr<SQLDatabase> database)
 {
     String res;
 
     if (database || setdbname)
     {
-        est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
+        est->mutable_database()->set_value(database ? database->getName() : "default");
     }
     if (database && database->catalog != LakeCatalog::None)
     {
         res += "test.";
     }
-    res += prefix + std::to_string(name);
-    est->mutable_table()->set_table(std::move(res));
+    res += n;
+    est->mutable_table()->set_value(std::move(res));
 }
 
 void SQLBase::setName(ExprSchemaTable * est, const bool setdbname) const
 {
-    SQLBase::setName(est, this->prefix, setdbname, db, tname);
+    if (db || setdbname)
+    {
+        est->mutable_database()->set_value(getDatabaseName());
+    }
+    est->mutable_table()->set_value(getBaseName(true));
 }
 
 void SQLBase::setName(TableEngine * te) const
 {
-    te->add_params()->mutable_database()->set_database(getDatabaseName());
-    te->add_params()->mutable_table()->set_table(getTableName());
+    te->add_params()->mutable_database()->set_value(getDatabaseName());
+    te->add_params()->mutable_table()->set_value(getBaseName());
 }
 
 size_t SQLTable::numberOfInsertableColumns(const bool all) const
@@ -987,20 +983,20 @@ bool SQLDictionary::supportsFinal() const
     return false;
 }
 
-void SQLFunction::setName(Function * f) const
+void WithCluster::setName(SQLIdentifier * f) const
 {
-    f->set_function("f" + std::to_string(fname));
-}
-
-void SQLPolicy::setName(Policy * f) const
-{
-    f->set_policy("p" + std::to_string(policy_id));
+    f->set_value(name);
 }
 
 const String & ColumnPathChain::getBottomName() const
 {
     chassert(!path.empty());
     return path[path.size() - 1].cname;
+}
+
+String ColumnPathChain::getBottomNameSQL() const
+{
+    return "`" + escapeSQLString(getBottomName(), '`') + "`";
 }
 
 SQLType * ColumnPathChain::getBottomType() const

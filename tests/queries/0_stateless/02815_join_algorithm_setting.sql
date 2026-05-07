@@ -1,5 +1,7 @@
 -- Tags: use-rocksdb
 
+SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
+
 DROP TABLE IF EXISTS rdb;
 DROP TABLE IF EXISTS t2;
 

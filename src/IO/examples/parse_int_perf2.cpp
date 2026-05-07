@@ -48,7 +48,7 @@ namespace test
 }
 
 
-int main(int, char **)
+int mainEntryExampleParseIntPerf2(int, char **)
 {
     try
     {

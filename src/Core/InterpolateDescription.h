@@ -3,7 +3,6 @@
 #include <unordered_map>
 #include <memory>
 #include <string>
-#include <Core/NamesAndTypes.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/ActionsDAG.h>
 

@@ -1,0 +1,39 @@
+-- array tokenizer (Exact direct read)
+[1,3]
+[1,3,4]
+[]
+[1,3]
+[1]
+[]
+0
+4
+-- array tokenizer: index is used
+Actions: INPUT : 0 -> __text_index_arr_idx_hasAny_07e61fa0a9933fb0ccf40b67f8b57cd3 UInt8 : 0
+Granules: 3
+Granules: 4/4
+Name: arr_idx
+Granules: 3/4
+Actions: INPUT : 0 -> __text_index_arr_idx_hasAll_4b4788174638fe6be1c1d794abd7bdb8 UInt8 : 0
+Granules: 1
+Granules: 4/4
+Name: arr_idx
+Granules: 1/4
+-- splitByNonAlpha tokenizer (per-element queries)
+[1]
+[1,3]
+[]
+[1,2,3]
+[1]
+[]
+0
+4
+-- splitByNonAlpha: index is still used
+Granules: 2
+Granules: 4/4
+Name: arr_idx
+Granules: 2/4
+Granules: 1
+INPUT : 1 -> __text_index_arr_idx_hasAll_a9f8838c2835dbe60c454853d72b330b UInt8 : 2
+Granules: 4/4
+Name: arr_idx
+Granules: 1/4

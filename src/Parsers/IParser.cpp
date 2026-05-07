@@ -1,4 +1,5 @@
 #include <Parsers/IParser.h>
+#include <cstring>
 #include <iostream>
 
 namespace DB
@@ -38,6 +39,72 @@ static bool intersects(T a_begin, T a_end, T b_begin, T b_end)
 {
     return (a_begin <= b_begin && b_begin < a_end)
         || (b_begin <= a_begin && a_begin < b_end);
+}
+
+
+std::vector<HighlightedRange> expandHighlights(const std::set<HighlightedRange> & highlights)
+{
+    std::vector<HighlightedRange> result;
+    result.reserve(highlights.size());
+
+    for (const auto & range : highlights)
+    {
+        if (range.highlight != Highlight::string
+            && range.highlight != Highlight::string_like
+            && range.highlight != Highlight::string_regexp)
+        {
+            result.push_back(range);
+            continue;
+        }
+
+        /// Split string/string_like/string_regexp into character-level sub-ranges.
+        /// Backslash escape characters are highlighted in all string types.
+        /// Metacharacters are highlighted in string_like (%_) and string_regexp (|()^$.[]?*+{:-).
+        /// The logic matches Client/ClientBaseHelpers.cpp highlight().
+        const char * metacharacters = "";
+        if (range.highlight == Highlight::string_like)
+            metacharacters = "%_";
+        else if (range.highlight == Highlight::string_regexp)
+            metacharacters = "|()^$.[]?*+{:-";
+
+        Highlight current_type = Highlight::string;
+        const char * current_start = range.begin;
+        int escaped = 0;
+
+        for (const char * pos = range.begin; pos < range.end; ++pos)
+        {
+            Highlight char_type;
+            if (*pos == '\\')
+            {
+                ++escaped;
+                char_type = Highlight::string_escape;
+            }
+            /// The counting of escape characters is quite tricky due to double escaping
+            /// of string literals + regexps, and the special logic of interpreting
+            /// escape sequences that are not interpreted by the string literals.
+            else if ((escaped % 4 == 0 || escaped % 4 == 3) && nullptr != strchr(metacharacters, *pos))
+            {
+                char_type = Highlight::string_metacharacter;
+            }
+            else
+            {
+                char_type = Highlight::string;
+                escaped = 0;
+            }
+
+            if (char_type != current_type)
+            {
+                if (pos != current_start)
+                    result.push_back({current_start, pos, current_type});
+                current_start = pos;
+                current_type = char_type;
+            }
+        }
+        if (current_start < range.end)
+            result.push_back({current_start, range.end, current_type});
+    }
+
+    return result;
 }
 
 

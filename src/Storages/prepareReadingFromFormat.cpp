@@ -39,7 +39,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
     Strings columns_to_read;
     for (const auto & column_name : requested_columns)
     {
-        if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
+        if (auto virtual_column = storage_snapshot->metadata->virtuals.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
         {
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
         }
@@ -317,8 +317,9 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
     if (!storage_ptr)
         return SerializationInfoByName{{}};
 
+    const auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
     const auto & our_columns = metadata_snapshot->getColumns();
-    const auto & storage_columns = storage_ptr->getInMemoryMetadataPtr()->getColumns();
+    const auto & storage_columns = storage_metadata_snapshot->getColumns();
     auto storage_hints = storage_ptr->getSerializationHints();
     SerializationInfoByName res({});
 

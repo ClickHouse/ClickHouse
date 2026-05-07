@@ -6,6 +6,7 @@ SET join_algorithm = 'auto';
 SET max_rows_in_join = 1000;
 SET optimize_aggregation_in_order = 1;
 SET max_block_size = 1000;
+SET max_bytes_before_external_join = 0; -- Auto spilling hash join has to be disabled to test switching to merge join.
 
 DROP TABLE IF EXISTS join_on_disk;
 

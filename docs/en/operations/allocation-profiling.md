@@ -190,11 +190,50 @@ ClickHouse provides a built-in web UI for viewing jemalloc memory statistics at 
 It displays live memory metrics with charts, including allocated, active, resident, and mapped memory, as well as per-arena and per-bin statistics.
 You can also fetch global and per-query heap profiles directly from the UI.
 
-To access it, open in your browser:
+<Tabs groupId="binary">
+<TabItem value="clickhouse" label="ClickHouse">
 
 ```text
 http://localhost:8123/jemalloc
 ```
+
+The server UI includes all tabs: Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler, and Raw Output.
+
+</TabItem>
+<TabItem value="keeper" label="Keeper">
+
+```text
+http://localhost:9182/jemalloc
+```
+
+The Keeper UI is available on the HTTP control port. This port is **disabled by default** and must be explicitly enabled by setting `keeper_server.http_control.port` in the Keeper configuration:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <http_control>
+            <port>9182</port>
+        </http_control>
+    </keeper_server>
+</clickhouse>
+```
+
+Once enabled, the UI provides the same visualizations as the server — Summary, Allocations, Arenas, Operations, Global Profiler, and Raw Output — except for the Query Profiler tab which requires SQL and `system.trace_log`.
+
+:::warning Security
+The Keeper HTTP control port does not have application-level authentication. Unlike the ClickHouse Server jemalloc UI — where all data queries go through the SQL HTTP handler and require user/password credentials — the Keeper REST API endpoints are unauthenticated. This is consistent with other Keeper HTTP control endpoints (commands, storage, dashboard).
+
+Restrict access to this port using network-level controls: bind Keeper to localhost, use firewall rules, or place it behind a reverse proxy with authentication. When no `listen_host` is configured, Keeper defaults to listening on localhost only.
+:::
+
+Keeper also exposes REST API endpoints for programmatic access:
+
+- `GET /jemalloc/stats` — raw `malloc_stats_print` output
+- `GET /jemalloc/status` — profiling state as JSON (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
+- `GET /jemalloc/profile?format={collapsed|raw}` — flushes a heap profile with server-side symbolization, returns collapsed stacks suitable for flame graph rendering (default) or the raw jemalloc dump
+
+</TabItem>
+</Tabs>
 
 ## Fetching heap profiles from SQL {#fetching-heap-profiles-from-sql}
 

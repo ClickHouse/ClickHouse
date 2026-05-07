@@ -1,15 +1,15 @@
 #pragma once
 
-#include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Cache/FileCache_fwd.h>
-#include <Interpreters/Cache/QueryLimit.h>
+#include <Interpreters/FileCache/FileCacheKey.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
+#include <Interpreters/FileCache/QueryLimit.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/FileCacheOriginInfo.h>
+#include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/SwapHelper.h>
 
 

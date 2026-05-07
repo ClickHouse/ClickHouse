@@ -13,7 +13,7 @@ A plan:
             set pr-backported label and finish
             - If not, create either cherrypick PRs or merge cherrypick (in the same
             stage, if mergable) and create backport-PRs
-            - If successfull, set pr-backported label on the PR
+            - If successful, set pr-backported label on the PR
 
         - for version-specific labels:
             - the same, check, cherry-pick, backport, pr-backported

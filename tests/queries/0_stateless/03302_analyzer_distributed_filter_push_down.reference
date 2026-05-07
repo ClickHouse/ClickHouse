@@ -184,9 +184,9 @@ Actions: INPUT : 0 -> sum(__table2.y) UInt64 : 0
          INPUT : 1 -> __table2.x UInt32 : 1
          ALIAS sum(__table2.y) :: 0 -> sum(y) UInt64 : 2
          ALIAS __table2.x :: 1 -> x UInt32 : 0
-         ALIAS sum(y) :: 2 -> __table1.sum(y) UInt64 : 1
+         ALIAS sum(y) :: 2 -> __table1.`sum(y)` UInt64 : 1
          ALIAS x :: 0 -> __table1.x UInt32 : 2
-         ALIAS __table1.sum(y) :: 1 -> sum(y) UInt64 : 0
+         ALIAS __table1.`sum(y)` :: 1 -> sum(y) UInt64 : 0
          ALIAS __table1.x :: 2 -> x UInt32 : 1
 Positions: 1 0
   MergingAggregated

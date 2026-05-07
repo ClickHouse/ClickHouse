@@ -2015,3 +2015,32 @@ def test_ignore_cluster_name_setting(started_cluster):
     # Cleanup
     for node in [main_node, dummy_node]:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_alias_with_dropped_target(started_cluster):
+    db_name = "test_alias_dropped"
+
+    main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    dummy_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+    main_node.query(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');
+        SET allow_experimental_alias_table_engine = 1;
+        CREATE TABLE {db_name}.base_table (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
+        CREATE TABLE {db_name}.alias_table ENGINE = Alias('{db_name}', 'base_table');
+        DROP TABLE {db_name}.base_table;
+        """
+    )
+
+    dummy_node.query(
+        f"""
+        DROP DATABASE IF EXISTS {db_name} SYNC;
+        CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');
+        SYSTEM SYNC DATABASE REPLICA {db_name};
+        """
+    )
+
+    # Cleanup
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

@@ -155,7 +155,7 @@ void StatementGenerator::addSargableColRef(RandomGenerator & rg, const SQLRelati
 
     if (!rel_col.rel_name.empty() && rg.nextMediumNumber() < 86)
     {
-        estc->mutable_table()->set_table(rel_col.rel_name);
+        estc->mutable_table()->set_value(rel_col.rel_name);
     }
     rel_col.AddRef(ecol);
     addFieldAccess(rg, expr, 6);
@@ -1416,7 +1416,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                     filtered_relations.emplace_back(std::ref(entry));
                 }
             }
-            expr->mutable_comp_expr()->mutable_table()->set_table(rg.pickRandomly(filtered_relations).get().name);
+            expr->mutable_comp_expr()->mutable_table()->set_value(rg.pickRandomly(filtered_relations).get().name);
             break;
         case ExpOp::LambdaExpr: {
             const uint32_t nexprs = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 3));

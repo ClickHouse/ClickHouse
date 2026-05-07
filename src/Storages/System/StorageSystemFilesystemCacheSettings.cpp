@@ -3,8 +3,8 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/Common/AccessFlags.h>

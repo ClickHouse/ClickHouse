@@ -7,11 +7,14 @@
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
 
@@ -120,6 +123,76 @@ std::string extractTableName(const std::string & nested_name)
     return split.first;
 }
 
+
+ColumnWithTypeAndName unwrapNullableTuple(const ColumnWithTypeAndName & column)
+{
+    const auto * type_nullable = typeid_cast<const DataTypeNullable *>(column.type.get());
+    if (!type_nullable)
+        return column;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type_nullable->getNestedType().get());
+    if (!tuple_type)
+        return column;
+
+    const auto & col_nullable = assert_cast<const ColumnNullable &>(*column.column);
+
+    const auto & null_map_data = col_nullable.getNullMapData();
+    bool has_nulls = !memoryIsZero(null_map_data.data(), 0, null_map_data.size());
+
+    if (!has_nulls)
+    {
+        /// No actual nulls — just strip the Nullable wrapper.
+        return {col_nullable.getNestedColumnPtr(), type_nullable->getNestedType(), column.name};
+    }
+
+    /// Propagate the struct null map to each Tuple element.
+    const auto & inner_tuple = assert_cast<const ColumnTuple &>(col_nullable.getNestedColumn());
+    const auto & null_map_ptr = col_nullable.getNullMapColumnPtr();
+    Columns new_elements;
+    DataTypes new_types;
+    for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+    {
+        auto elem_col = inner_tuple.getColumnPtr(i);
+        auto elem_type = tuple_type->getElement(i);
+        if (elem_type->isNullable())
+        {
+            /// Element already Nullable — merge null maps (struct null OR element null).
+            const auto & existing = assert_cast<const ColumnNullable &>(*elem_col);
+            auto merged = ColumnUInt8::create(null_map_ptr->size());
+            const auto & s = assert_cast<const ColumnUInt8 &>(*null_map_ptr).getData();
+            const auto & e = existing.getNullMapData();
+            auto & m = merged->getData();
+            for (size_t j = 0; j < s.size(); ++j)
+                m[j] = s[j] | e[j];
+            new_elements.push_back(ColumnNullable::create(existing.getNestedColumnPtr(), std::move(merged)));
+            new_types.push_back(elem_type);
+        }
+        else if (elem_type->canBeInsideNullable())
+        {
+            new_elements.push_back(ColumnNullable::create(elem_col, null_map_ptr));
+            new_types.push_back(std::make_shared<DataTypeNullable>(elem_type));
+        }
+        else
+        {
+            /// Array, Map, etc. — replace values at null positions with type defaults.
+            const auto & nm = col_nullable.getNullMapData();
+            auto mutable_col = elem_col->cloneEmpty();
+            for (size_t j = 0; j < elem_col->size(); ++j)
+            {
+                if (nm[j])
+                    mutable_col->insertDefault();
+                else
+                    mutable_col->insertFrom(*elem_col, j);
+            }
+            new_elements.push_back(std::move(mutable_col));
+            new_types.push_back(elem_type);
+        }
+    }
+
+    auto result_type = tuple_type->hasExplicitNames() ? std::make_shared<DataTypeTuple>(std::move(new_types), tuple_type->getElementNames())
+                                                      : std::make_shared<DataTypeTuple>(std::move(new_types));
+    return {ColumnTuple::create(std::move(new_elements)), result_type, column.name};
+}
 
 static Block flattenImpl(const Block & block, bool flatten_named_tuple)
 {

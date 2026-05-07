@@ -218,6 +218,75 @@ public:
         "#",
         "$"};
 
+    /// Parts for building nasty SQL identifiers (backtick-quoted).
+    /// Backtick inside a backtick-quoted identifier must be doubled (`` ` `` → ` `` `).
+    /// Counter appended for uniqueness.
+    const DB::Strings nasty_identifiers{
+        "0", /// 0 digit
+        "1", /// 1 digit
+        " ", /// simple space
+        " - ", /// space-hyphen-space
+        "#", /// hash
+        "@", /// at-sign
+        "$", /// dollar sign
+        "\"", /// double quote
+        "\\", /// backslash
+        "`", /// backtick (will be doubled when backtick-quoted)
+        /// Emoji and multi-codepoint sequences
+        "😉", /// emoji (U+1F609, 4-byte UTF-8)
+        "🔥💧", /// two emoji
+        "👨‍👩‍👧", /// ZWJ family sequence (multiple codepoints joined by U+200D)
+        "🇺🇸", /// flag emoji (regional indicator pair)
+        /// CJK and other scripts
+        "叫", /// Chinese character
+        "认识你很高兴", /// Chinese phrase
+        "日本語", /// Japanese
+        "한국어", /// Korean
+        "العربية", /// Arabic (RTL)
+        "עברית", /// Hebrew (RTL)
+        "हिन्दी", /// Hindi (Devanagari with combining marks)
+        /// Latin variants and diacritics
+        "é", /// accented Latin (precomposed)
+        "e\xCC\x81", /// accented Latin (decomposed: e + combining acute, U+0301)
+        "ñ", /// tilde
+        "ü", /// umlaut
+        "ß", /// German sharp-s
+        "ŀ", /// Latin with middle dot
+        /// Greek, Cyrillic
+        "α", /// Greek letter
+        "Ω", /// Greek capital omega
+        "Привет", /// Cyrillic
+        /// Special Unicode spaces and invisible characters
+        "\xE2\x80\x8B", /// zero-width space (U+200B)
+        "\xE2\x80\x8C", /// zero-width non-joiner (U+200C)
+        "\xE2\x80\x8F", /// right-to-left mark (U+200F)
+        "\xEF\xBB\xBF", /// BOM / zero-width no-break space (U+FEFF)
+        "\xC2\xA0", /// non-breaking space (U+00A0)
+        "\xE2\x80\x83", /// em space (U+2003)
+        /// Lookalike / homoglyph characters
+        "\xCF\x83", /// Greek small sigma σ (looks like o)
+        "\xD0\xBE", /// Cyrillic small o (looks like Latin o)
+        "\xE2\x84\x93", /// script small l ℓ (U+2113)
+        /// Invalid UTF-8 sequences
+        "\xFF", /// invalid UTF-8: lone 0xFF byte
+        "\xC3\x28", /// invalid UTF-8: bad 2-byte sequence
+        "\xA0\xA1", /// invalid UTF-8: continuation bytes without lead
+        "\xE2\x28\xA1", /// invalid UTF-8: bad 3-byte sequence
+        "\xF0\x28\x8C\xBC", /// invalid UTF-8: bad 4-byte sequence
+    };
+    const DB::Strings nasty_identifier_keywords{
+        "SELECT",
+        "FROM",
+        "WHERE",
+        "ORDER",
+        "GROUP",
+        "INDEX",
+        "TABLE",
+        "CREATE",
+        "DROP",
+        "PROJECTION",
+    };
+
     uint64_t getSeed() const;
 
     uint32_t nextSmallNumber();
@@ -355,6 +424,8 @@ public:
     String nextJSONCol();
 
     String nextTokenString();
+
+    String nextIdentifier(const String & prefix, uint32_t counter, bool allow_nasty);
 
     String nextString(const String & delimiter, bool allow_nasty, uint32_t limit);
 

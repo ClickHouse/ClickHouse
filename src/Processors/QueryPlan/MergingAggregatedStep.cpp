@@ -1,6 +1,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -153,11 +154,14 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
-    params.explain(settings.out, settings.detail_prefix);
+    params.explain(settings);
+
     if (!group_by_sort_description.empty())
     {
         const String & prefix = settings.detail_prefix;
-        settings.out << prefix << "Order: " << dumpSortDescription(group_by_sort_description) << '\n';
+        settings.out << prefix << "Order: ";
+        dumpSortDescription(group_by_sort_description, settings);
+        settings.out << '\n';
     }
 }
 

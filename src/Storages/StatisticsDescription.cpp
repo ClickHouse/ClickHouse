@@ -55,8 +55,10 @@ StatisticsType stringToStatisticsType(String type)
         return StatisticsType::CountMinSketch;
     if (type == "minmax")
         return StatisticsType::MinMax;
+    if (type == "nullcount")
+        return StatisticsType::NullCount;
 
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'.", type);
 }
 
 String statisticsTypeToString(StatisticsType type)
@@ -71,8 +73,10 @@ String statisticsTypeToString(StatisticsType type)
             return "countmin";
         case StatisticsType::MinMax:
             return "minmax";
+        case StatisticsType::NullCount:
+            return "nullcount";
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'.", type);
     }
 }
 
@@ -92,12 +96,8 @@ bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription &
 
 bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription & other) const
 {
-    if (!data_type)
-        return !other.data_type;
-
-    if (!other.data_type)
-        return false;
-
+    if (!data_type || !other.data_type)
+        return data_type == other.data_type;
     return types_to_desc == other.types_to_desc && data_type->equals(*other.data_type);
 }
 
@@ -228,17 +228,16 @@ ASTPtr ColumnStatisticsDescription::getAST() const
 
 String ColumnStatisticsDescription::getNameForLogs() const
 {
-    String ret;
+    String result;
     for (const auto & [tp, desc] : types_to_desc)
     {
-        ret += desc.getTypeName();
+        if (!result.empty())
+            result += ',';
+        result += desc.getTypeName();
         if (desc.is_implicit)
-            ret += "(auto)";
-        ret += ",";
+            result += "(auto)";
     }
-    if (!ret.empty())
-        ret.pop_back();
-    return ret;
+    return result;
 }
 
 

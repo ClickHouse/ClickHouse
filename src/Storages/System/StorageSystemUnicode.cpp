@@ -293,7 +293,13 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
     }
 
-    return ColumnsDescription::fromNamesAndTypes(names_and_types);
+    auto result = ColumnsDescription::fromNamesAndTypes(names_and_types);
+
+    result.modify("code_point", [](ColumnDescription & col) { col.comment = "The Unicode code point represented as U+XXXX."; });
+    result.modify("code_point_value", [](ColumnDescription & col) { col.comment = "The integer value of the Unicode code point."; });
+    result.modify("notation", [](ColumnDescription & col) { col.comment = "The character notation (visual representation of the code point)."; });
+
+    return result;
 }
 
 Block StorageSystemUnicode::getFilterSampleBlock() const

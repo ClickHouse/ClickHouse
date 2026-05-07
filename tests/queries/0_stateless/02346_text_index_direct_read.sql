@@ -57,42 +57,42 @@ SELECT '- Test direct read optimization with EXPLAIN';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT 'Test hasToken:', count() FROM tab WHERE hasToken(text, 'Alick') SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT 'Test hasToken:', count() FROM tab WHERE hasToken(text, 'Alick') SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1 -- CI may inject False; unused text index columns not pruned → extra INPUT entries in EXPLAIN actions output
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT 'Test hasAllTokens:', count() FROM tab WHERE hasAllTokens(text, ['Alick']) SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT 'Test hasAllTokens:', count() FROM tab WHERE hasAllTokens(text, ['Alick']) SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1 -- CI may inject False; unused text index columns not pruned → extra INPUT entries in EXPLAIN actions output
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT 'Test hasAnyTokens:', count() FROM tab WHERE hasAnyTokens(text, ['Alick']) SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT 'Test hasAnyTokens:', count() FROM tab WHERE hasAnyTokens(text, ['Alick']) SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1 -- CI may inject False; unused text index columns not pruned → extra INPUT entries in EXPLAIN actions output
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT 'Test hasToken + length(text):', count() FROM tab WHERE hasToken(text, 'Alick') or length(text) > 1 SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT 'Test hasToken + length(text):', count() FROM tab WHERE hasToken(text, 'Alick') or length(text) > 1 SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1 -- CI may inject False; unused text index columns not pruned → extra INPUT entries in EXPLAIN actions output
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT 'Test select text + hasAnyTokens:', text FROM tab WHERE hasAnyTokens(text, ['Alick']) SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT 'Test select text + hasAnyTokens:', text FROM tab WHERE hasAnyTokens(text, ['Alick']) SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1 -- CI may inject False; unused text index columns not pruned → extra INPUT entries in EXPLAIN actions output
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT 'Test hasToken and hasToken:', count() FROM tab WHERE hasToken(text, 'Alick') and hasToken(text, 'Blick') SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT 'Test hasToken and hasToken:', count() FROM tab WHERE hasToken(text, 'Alick') and hasToken(text, 'Blick') SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1 -- CI may inject False; unused text index columns not pruned → extra INPUT entries in EXPLAIN actions output
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT 'Test hasAnyTokens or hasToken:', count() FROM tab WHERE hasAnyTokens(text, ['Blick']) or hasToken(text, 'Alick') SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT 'Test hasAnyTokens or hasToken:', count() FROM tab WHERE hasAnyTokens(text, ['Blick']) or hasToken(text, 'Alick') SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1 -- CI may inject False; unused text index columns not pruned → extra INPUT entries in EXPLAIN actions output
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT 'Test NOT hasAllTokens:', count() FROM tab WHERE NOT hasAllTokens(text, ['Blick']) SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT 'Test NOT hasAllTokens:', count() FROM tab WHERE NOT hasAllTokens(text, ['Blick']) SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1 -- CI may inject False; unused text index columns not pruned → extra INPUT entries in EXPLAIN actions output
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 DROP TABLE tab;

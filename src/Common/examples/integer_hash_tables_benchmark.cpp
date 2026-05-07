@@ -191,7 +191,7 @@ static void NO_INLINE testForType(size_t method, size_t rows_size)
  * std::unordered_map: Elapsed: 0.585 (171059989.837 elem/sec.), map size: 19
  */
 
-int main(int argc, char ** argv)
+int mainEntryExampleIntegerHashTablesBenchmark(int argc, char ** argv)
 {
     if (argc < 4)
     {

@@ -3,6 +3,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeMap.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/System/StorageSystemHistogramMetrics.h>
 #include <Common/HistogramMetrics.h>
 
@@ -15,7 +17,7 @@ ColumnsDescription StorageSystemHistogramMetrics::getColumnsDescription()
     auto description = ColumnsDescription
     {
         {"metric", std::make_shared<DataTypeString>(), "Metric name."},
-        {"value", std::make_shared<DataTypeInt64>(), "Metric value."},
+        {"value", std::make_shared<DataTypeFloat64>(), "Metric value."},
         {"description", std::make_shared<DataTypeString>(), "Metric description."},
         {"labels", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Metric labels."},
     };
@@ -48,11 +50,21 @@ void StorageSystemHistogramMetrics::fillData(MutableColumns & res_columns, Conte
             {
                 partial_sum += metric.getCounter(counter_idx);
 
-                const String le = counter_idx < buckets.size() ? std::to_string(buckets[counter_idx]) : "+Inf";
+                String le;
+                if (counter_idx < buckets.size())
+                {
+                    WriteBufferFromOwnString wb;
+                    wb << buckets[counter_idx];
+                    le = std::move(wb.str());
+                }
+                else
+                {
+                    le = "+Inf";
+                }
                 labels_map.push_back(Tuple{"le", le});
 
                 res_columns[0]->insert(family.getName());
-                res_columns[1]->insert(partial_sum);
+                res_columns[1]->insert(static_cast<HistogramMetrics::Value>(partial_sum));
                 res_columns[2]->insert(family.getDocumentation());
                 res_columns[3]->insert(labels_map);
 

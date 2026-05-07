@@ -88,7 +88,7 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} requires step to be a positive number", getName());
 
             auto res = std::make_shared<StorageSystemNumbers>(
-                StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"}, length, offset, step);
+                StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"}, UInt128(length), offset, step);
             res->startup();
             return res;
         }

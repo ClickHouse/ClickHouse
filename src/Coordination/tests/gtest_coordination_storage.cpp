@@ -1,3 +1,4 @@
+#include <Common/ZooKeeper/IKeeper.h>
 #include "config.h"
 
 #if USE_NURAFT
@@ -7,6 +8,7 @@
 
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <unordered_set>
 
 TYPED_TEST(CoordinationTest, TestSystemNodeModify)
 {
@@ -189,7 +191,8 @@ TYPED_TEST(CoordinationTest, TestReapplyingDeltas)
     {
         const auto list_request = std::make_shared<ZooKeeperListRequest>();
         list_request->path = "/test";
-        auto responses = storage.processRequest(list_request, 1, std::nullopt, /*check_acl=*/true, /*is_local=*/true);
+        KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = 1, .request = list_request}};
+        auto responses = storage.processLocalRequests(requests, /*check_acl=*/true);
         EXPECT_EQ(responses.size(), 1);
         const auto * list_response = dynamic_cast<const ListResponse *>(responses[0].response.get());
         EXPECT_TRUE(list_response);
@@ -1071,7 +1074,8 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
     {
         auto request = std::make_shared<ZooKeeperGetRequest>();
         request->path = path;
-        auto responses = storage.processRequest(request, 0, std::nullopt, true, true);
+        KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = 0, .request = request}};
+        auto responses = storage.processLocalRequests(requests, true);
         const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
 
         if (get_response.error != Error::ZOK)
@@ -1535,6 +1539,319 @@ TYPED_TEST(CoordinationTest, TestTryRemove)
 
         ASSERT_FALSE(exists("/s2/A"));
         ASSERT_FALSE(exists("/s2/A/B"));
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestListRecursiveRequest)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb4");
+    this->setRocksDBDirectory("./rocksdb4");
+
+    Storage storage{500, "", this->keeper_context};
+
+    int32_t zxid = 0;
+
+    const auto create = [&](const String & path, int create_mode = zkutil::CreateMode::Persistent, std::optional<int> acl_mode = std::nullopt)
+    {
+        int new_zxid = ++zxid;
+
+        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+        create_request->path = path;
+        create_request->is_ephemeral = create_mode == zkutil::CreateMode::Ephemeral || create_mode == zkutil::CreateMode::EphemeralSequential;
+        create_request->is_sequential = create_mode == zkutil::CreateMode::PersistentSequential || create_mode == zkutil::CreateMode::EphemeralSequential;
+        if (acl_mode)
+        {
+            static constexpr std::string_view digest = "clickhouse:test";
+            create_request->acls = {{.permissions = *acl_mode, .scheme = "digest", .id = std::string{digest}}};
+        }
+
+        storage.preprocessRequest(create_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(create_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to create " << path;
+    };
+
+    const auto get_children_recursive = [&](const String & path, uint32_t limit) -> std::pair<Error, std::vector<String>>
+    {
+        int new_zxid = ++zxid;
+
+        auto request = std::make_shared<ZooKeeperListRecursiveRequest>();
+        request->path = path;
+        request->children_nodes_limit = limit;
+
+        storage.preprocessRequest(request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        const auto & response = dynamic_cast<ZooKeeperListRecursiveResponse &>(*responses[0].response);
+        return {response.error, response.children};
+    };
+
+    const auto get_children_recursive_error = [&](const String & path, uint32_t limit) -> Error
+    {
+        int new_zxid = ++zxid;
+
+        auto request = std::make_shared<ZooKeeperListRecursiveRequest>();
+        request->path = path;
+        request->children_nodes_limit = limit;
+
+        storage.preprocessRequest(request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error;
+    };
+
+    {
+        SCOPED_TRACE("Leaf node returns empty list");
+        create("/leaf");
+
+        auto [error, children] = get_children_recursive("/leaf", 100);
+        ASSERT_EQ(error, Error::ZOK);
+        ASSERT_EQ(children.size(), 0);
+    }
+
+    {
+        SCOPED_TRACE("Non-existent node returns ZNONODE");
+        auto error = get_children_recursive_error("/no_such_node", 100);
+        ASSERT_EQ(error, Error::ZNONODE);
+    }
+
+    {
+        SCOPED_TRACE("Single level of children");
+        create("/parent");
+        create("/parent/A");
+        create("/parent/B");
+        create("/parent/C");
+
+        auto [error, children] = get_children_recursive("/parent", 100);
+        ASSERT_EQ(error, Error::ZOK);
+        ASSERT_EQ(children.size(), 3);
+
+        std::unordered_set<String> child_set(children.begin(), children.end());
+        ASSERT_TRUE(child_set.contains("/parent/A"));
+        ASSERT_TRUE(child_set.contains("/parent/B"));
+        ASSERT_TRUE(child_set.contains("/parent/C"));
+    }
+
+    {
+        SCOPED_TRACE("Multi-level tree");
+        create("/tree");
+        create("/tree/A");
+        create("/tree/B");
+        create("/tree/A/C");
+        create("/tree/A/D");
+        create("/tree/A/C/E");
+
+        auto [error, children] = get_children_recursive("/tree", 100);
+        ASSERT_EQ(error, Error::ZOK);
+        ASSERT_EQ(children.size(), 5);
+
+        std::unordered_set<String> child_set(children.begin(), children.end());
+        ASSERT_TRUE(child_set.contains("/tree/A"));
+        ASSERT_TRUE(child_set.contains("/tree/B"));
+        ASSERT_TRUE(child_set.contains("/tree/A/C"));
+        ASSERT_TRUE(child_set.contains("/tree/A/D"));
+        ASSERT_TRUE(child_set.contains("/tree/A/C/E"));
+    }
+
+    {
+        SCOPED_TRACE("Limit exceeded returns truncated list");
+        create("/big");
+        create("/big/A");
+        create("/big/B");
+        create("/big/C");
+        create("/big/D");
+
+        auto [error, children] = get_children_recursive("/big", 3);
+        ASSERT_EQ(error, Error::ZOK);
+        ASSERT_EQ(children.size(), 3);
+    }
+
+    {
+        SCOPED_TRACE("Exact limit does not fail");
+        create("/exact");
+        create("/exact/A");
+        create("/exact/B");
+
+        auto [error, children] = get_children_recursive("/exact", 2);
+        ASSERT_EQ(error, Error::ZOK);
+        ASSERT_EQ(children.size(), 2);
+    }
+
+    {
+        SCOPED_TRACE("Does not match sibling paths with shared prefix");
+        create("/foo");
+        create("/foo/bar");
+        create("/foobar");
+
+        auto [error, children] = get_children_recursive("/foo", 100);
+        ASSERT_EQ(error, Error::ZOK);
+        ASSERT_EQ(children.size(), 1);
+
+        ASSERT_EQ(children[0], "/foo/bar");
+    }
+
+    {
+        SCOPED_TRACE("Root contains both persistent and ephemeral children");
+        create("/mixed");
+        create("/mixed/P", zkutil::CreateMode::Persistent);
+        create("/mixed/E", zkutil::CreateMode::Ephemeral);
+
+        auto [error, children] = get_children_recursive("/mixed", 100);
+        ASSERT_EQ(error, Error::ZOK);
+        ASSERT_EQ(children.size(), 2);
+
+        std::unordered_set<String> child_set(children.begin(), children.end());
+        ASSERT_TRUE(child_set.contains("/mixed/P"));
+        ASSERT_TRUE(child_set.contains("/mixed/E"));
+    }
+
+    {
+        SCOPED_TRACE("ACL check");
+        create("/mixed_acl");
+        create("/mixed_acl/P", zkutil::CreateMode::Persistent);
+        create("/mixed_acl/E", zkutil::CreateMode::Ephemeral, ACL::Admin);
+
+        auto [error, children] = get_children_recursive("/mixed_acl", 100);
+        ASSERT_EQ(error, Error::ZOK);
+        ASSERT_EQ(children.size(), 1);
+
+        std::unordered_set<String> child_set(children.begin(), children.end());
+        ASSERT_TRUE(child_set.contains("/mixed_acl/P"));
+        ASSERT_FALSE(child_set.contains("/mixed_acl/E"));
+    }
+
+}
+
+TYPED_TEST(CoordinationTest, TestListRecursiveInMultiRequest)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int zxid = 0;
+
+    const auto exists = [&](const String & path)
+    {
+        int new_zxid = ++zxid;
+
+        const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
+        exists_request->path = path;
+
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(exists_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Coordination::Error::ZOK;
+    };
+
+    {
+        const Coordination::Requests create_ops{
+            zkutil::makeCreateRequest("/M", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/M/A", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/M/A/B", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/M/C", "", zkutil::CreateMode::Persistent),
+        };
+        const auto create_request = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(create_request, 1, 0, create_zxid);
+        storage.processRequest(create_request, 1, create_zxid);
+    }
+
+    ASSERT_TRUE(exists("/M/A/B"));
+    ASSERT_TRUE(exists("/M/C"));
+
+    {
+        SCOPED_TRACE("ListRecursive in multi-read returns correct results");
+
+        auto get_req = std::make_shared<ZooKeeperListRecursiveRequest>();
+        get_req->path = "/M";
+        get_req->children_nodes_limit = 100;
+
+        const Coordination::Requests ops{get_req};
+        const auto multi_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        int new_zxid = ++zxid;
+        storage.preprocessRequest(multi_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(multi_request, 1, new_zxid);
+
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+        auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(responses[0].response);
+        ASSERT_EQ(multi_response->responses.size(), 1);
+        ASSERT_EQ(multi_response->responses[0]->error, Error::ZOK);
+
+        const auto & get_response = dynamic_cast<ZooKeeperListRecursiveResponse &>(*multi_response->responses[0]);
+        std::unordered_set<String> child_set(get_response.children.begin(), get_response.children.end());
+        ASSERT_EQ(child_set.size(), 3);
+        ASSERT_TRUE(child_set.contains("/M/A"));
+        ASSERT_TRUE(child_set.contains("/M/A/B"));
+        ASSERT_TRUE(child_set.contains("/M/C"));
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestListRecursiveAcls)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int zxid = 0;
+
+    {
+        int new_zxid = ++zxid;
+        const auto auth_request = std::make_shared<ZooKeeperAuthRequest>();
+        auth_request->scheme = "digest";
+        auth_request->data = "test_user:test_password";
+
+        storage.preprocessRequest(auth_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(auth_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+    }
+
+    {
+        int new_zxid = ++zxid;
+        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+        create_request->path = "/acl_node";
+        create_request->acls = {{.permissions = ACL::Create, .scheme = "auth", .id = ""}};
+
+        storage.preprocessRequest(create_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(create_request, 1, new_zxid);
+
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+    }
+
+    {
+        int new_zxid = ++zxid;
+
+        auto get_request = std::make_shared<ZooKeeperListRecursiveRequest>();
+        get_request->path = "/acl_node";
+        get_request->children_nodes_limit = 100;
+
+        storage.preprocessRequest(get_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(get_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZNOAUTH);
     }
 }
 

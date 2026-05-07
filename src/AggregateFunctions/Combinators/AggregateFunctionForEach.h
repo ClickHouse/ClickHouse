@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/assert_cast.h>
 #include <Common/Arena.h>
+#include <Common/memory.h>
 #include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -13,6 +14,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <absl/container/inlined_vector.h>
+
 
 namespace DB
 {
@@ -121,7 +123,9 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_, createResultType(nested_))
         , nested_func(nested_), num_arguments(arguments.size())
     {
-        nested_size_of_data = nested_func->sizeOfData();
+        /// Pad the size to a multiple of alignment so that consecutive elements in the array
+        /// are properly aligned (same principle as C++ sizeof for array element types).
+        nested_size_of_data = ::Memory::alignUp(nested_func->sizeOfData(), nested_func->alignOfData());
 
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require at least one argument", getName());
@@ -134,6 +138,40 @@ public:
     String getName() const override
     {
         return nested_func->getName() + "ForEach";
+    }
+
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (!this->haveSameDefinition(rhs))
+            return false;
+
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        return nested_func->canMergeStateFromDifferentVariant(*rhs_nested);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        const AggregateFunctionForEachData & rhs_state = data(rhs_place);
+        AggregateFunctionForEachData & state = ensureAggregateData(place, rhs_state.dynamic_array_size, *arena);
+
+        const size_t rhs_nested_size_of_data = ::Memory::alignUp(rhs_nested->sizeOfData(), rhs_nested->alignOfData());
+
+        const char * rhs_nested_state = rhs_state.array_of_aggregate_datas;
+        char * nested_state = state.array_of_aggregate_datas;
+
+        for (size_t i = 0; i < state.dynamic_array_size && i < rhs_state.dynamic_array_size; ++i)
+        {
+            nested_func->mergeStateFromDifferentVariant(nested_state, *rhs_nested, rhs_nested_state, arena);
+
+            rhs_nested_state += rhs_nested_size_of_data;
+            nested_state += nested_size_of_data;
+        }
     }
 
     static DataTypePtr createResultType(AggregateFunctionPtr nested_)

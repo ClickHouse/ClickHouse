@@ -178,6 +178,8 @@ endif()
 
 if (SANITIZE MATCHES "address")
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_ASAN)
+elseif (SANITIZE MATCHES "memory")
+    target_compile_definitions(_boost_context PUBLIC BOOST_USE_MSAN)
 elseif (SANITIZE MATCHES "thread")
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_TSAN)
 endif()

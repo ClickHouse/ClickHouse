@@ -4,18 +4,10 @@
 
 #if USE_AWS_S3
 
-namespace ErrorCodes
-{
-    extern const int S3_ERROR;
-}
-
-
 namespace ProfileEvents
 {
-    extern const Event S3GetObject;
     extern const Event S3GetObjectTagging;
     extern const Event S3HeadObject;
-    extern const Event DiskS3GetObject;
     extern const Event DiskS3GetObjectTagging;
     extern const Event DiskS3HeadObject;
 }
@@ -81,6 +73,7 @@ namespace
         const auto & result = outcome.GetResult();
         ObjectInfo object_info;
         object_info.size = static_cast<size_t>(result.GetContentLength());
+        object_info.is_size_known = result.ContentLengthHasBeenSet();
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
 

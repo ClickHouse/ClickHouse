@@ -1,0 +1,2 @@
+Header: count(plus(__table1.v0, __table1.v1)) AggregateFunction(count, UInt64)
+Header: v0 AggregateFunction(count, UInt64)

@@ -53,17 +53,17 @@ TEST(SupportsTrivialCountOptimization, NullMutationsSnapshot)
 
     /// ORDER BY tuple() — empty sorting key.
     auto order_by_ast = makeASTFunction("tuple");
-    metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_by_ast, metadata.columns, context, {});
-    metadata.primary_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, context);
+    metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
+    metadata.primary_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
     metadata.primary_key.definition_ast = nullptr;
 
     /// PARTITION BY — empty partition key.
-    metadata.partition_key = KeyDescription::getKeyFromAST(nullptr, metadata.columns, context);
+    metadata.partition_key = KeyDescription::getKeyFromAST(nullptr, metadata.columns, {}, context);
 
     auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
     auto partition_key = metadata.partition_key.expression_list_ast->clone();
     metadata.minmax_count_projection.emplace(
-        ProjectionDescription::getMinMaxCountProjection(columns, partition_key, minmax_columns, metadata.primary_key, context));
+        ProjectionDescription::getMinMaxCountProjection(columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
 
     auto storage_settings = std::make_unique<MergeTreeSettings>(context->getMergeTreeSettings());
 
@@ -78,7 +78,7 @@ TEST(SupportsTrivialCountOptimization, NullMutationsSnapshot)
         MergeTreeData::MergingParams{},
         std::move(storage_settings));
 
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
     /// Case 1: Null StorageSnapshot entirely (already handled by existing code before our fix).
     {

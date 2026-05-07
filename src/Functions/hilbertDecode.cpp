@@ -1,4 +1,5 @@
 #include <limits>
+#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/BitHelpers.h>
 #include <Functions/hilbertDecode2DLUT.h>

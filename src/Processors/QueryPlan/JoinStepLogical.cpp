@@ -1,5 +1,6 @@
 #include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 #include <base/scope_guard.h>
 
@@ -16,7 +17,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsComparison.h>
+#include <Functions/ComparisonNames.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/isNotDistinctFrom.h>

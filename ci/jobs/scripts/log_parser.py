@@ -99,10 +99,13 @@ class FuzzerLogParser:
                 )
             else:
                 if flag_name == "is_sanitizer_error":
-                    assert self.stderr_log
+                    if not self.stderr_log:
+                        # stderr.log may be absent when stress_runner.sh exits early (e.g. server failed to restart).
+                        # Skip sanitizer patterns and let the loop check the server log for other error types.
+                        continue
                     file = self.stderr_log
                 else:
-                    assert self.server_log
+                    assert self.server_log, "No server log provided"
                     file = self.server_log
                 output = Shell.get_output(
                     f"rg --text -A 10 -o '{pattern}' {file} | head -n10",
@@ -285,33 +288,64 @@ class FuzzerLogParser:
         return result_name, info, files
 
     def get_sanitizer_stack_trace(self):
-        # return all lines after Sanitizer error starting with "    #DIGITS "
+        # Extract the full sanitizer report: description, all stack traces,
+        # origin chains (e.g. "Uninitialized value was created by..."),
+        # and the SUMMARY line.
         def _extract_sanitizer_trace(log_file):
-            lines = []
-            stack_frame_pattern = re.compile(r"^\s+#\d+\s+")
-            stack_frame_pattern_1st_line = re.compile(r"^\s+#0\s")
-            # Pattern to remove ANSI escape codes (colors from tools like ripgrep)
             ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
+            sanitizer_start = re.compile(
+                r"(==\d+==\s*)?(ERROR|WARNING): \w+Sanitizer:|: runtime error: "
+            )
+            summary_pattern = re.compile(r"SUMMARY: \w+Sanitizer:")
+            # ClickHouse log line: "2024.01.15 12:34:56.789 [ 123 ] {id} <Level>"
+            clickhouse_log_line = re.compile(
+                r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+\s+\["
+            )
 
             with open(log_file, "r", errors="replace") as file:
                 all_lines = file.readlines()
 
-            in_sanitizer_trace = False
-            for line in all_lines:
-                # Strip ANSI color codes before pattern matching
-                clean_line = ansi_escape.sub("", line)
+            result_lines = []
+            in_report = False
+            is_runtime_error = False
+            consecutive_blank = 0
 
-                if not in_sanitizer_trace:
-                    if stack_frame_pattern_1st_line.search(clean_line):
-                        in_sanitizer_trace = True
-                        lines.append(clean_line.strip())
+            for line in all_lines:
+                clean_line = ansi_escape.sub("", line)
+                stripped = clean_line.strip()
+
+                if not in_report:
+                    if sanitizer_start.search(clean_line):
+                        in_report = True
+                        is_runtime_error = ": runtime error: " in clean_line
+                        result_lines.append(stripped)
+                        consecutive_blank = 0
                 else:
-                    if stack_frame_pattern.match(clean_line):
-                        lines.append(clean_line.strip())
-                    elif in_sanitizer_trace:
-                        # End of stack trace
+                    if summary_pattern.search(stripped):
+                        result_lines.append(stripped)
                         break
-            return lines
+                    elif not stripped:
+                        consecutive_blank += 1
+                        if consecutive_blank >= 2:
+                            break
+                        result_lines.append("")
+                    elif is_runtime_error and (
+                        clickhouse_log_line.search(stripped)
+                        or sanitizer_start.search(stripped)
+                    ):
+                        # In runtime-error mode, stop at ClickHouse log lines
+                        # or new sanitizer reports since UBSan may not emit
+                        # a SUMMARY line.
+                        break
+                    else:
+                        consecutive_blank = 0
+                        result_lines.append(stripped)
+
+            # Clean up trailing blank lines
+            while result_lines and not result_lines[-1]:
+                result_lines.pop()
+
+            return result_lines
 
         lines = []
 
@@ -499,7 +533,7 @@ class FuzzerLogParser:
             return None
         print(f"Query id: {query_id}")
         query_command = Shell.get_output(
-            f"grep -a '{query_id}' {self.server_log} | head -n1"
+            f"grep -a '{query_id}.* executeQuery:' {self.server_log} | tail -n1"
         )
         if not query_command:
             print("Query not found in server log by query id")

@@ -42,7 +42,7 @@ protected:
     void serialize() override;
     void generate() override;
 
-    Processors expandPipeline() override;
+    PipelineUpdate updatePipeline() override;
 
 private:
     size_t max_bytes_before_remerge;

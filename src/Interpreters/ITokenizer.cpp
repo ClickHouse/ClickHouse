@@ -173,7 +173,7 @@ namespace
 {
 
 /// Shared implementation of `substringToBloomFilter` for word-boundary tokenizers
-/// (`SplitByNonAlphaTokenizer`, `UnicodeWordTokenizer`).
+/// (`SplitByNonAlphaTokenizer`, `AsciiCJKTokenizer`).
 ///
 /// In order to avoid filter updates with incomplete tokens, the first token is
 /// ignored unless the substring is a prefix, and the last token is ignored unless
@@ -467,7 +467,7 @@ void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, 
         });
 }
 
-bool UnicodeWordTokenizer::nextInString(
+bool AsciiCJKTokenizer::nextInString(
     const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
 {
     token_length = 0;
@@ -573,7 +573,7 @@ bool UnicodeWordTokenizer::nextInString(
     return false;
 }
 
-bool UnicodeWordTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
+bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
 {
     token.clear();
     size_t token_start;
@@ -722,13 +722,13 @@ bool UnicodeWordTokenizer::nextInStringLike(const char * data, size_t length, si
     return false;
 }
 
-void UnicodeWordTokenizer::substringToBloomFilter(
+void AsciiCJKTokenizer::substringToBloomFilter(
     const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
 {
     wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
 }
 
-void UnicodeWordTokenizer::substringToTokens(
+void AsciiCJKTokenizer::substringToTokens(
     const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
 {
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);

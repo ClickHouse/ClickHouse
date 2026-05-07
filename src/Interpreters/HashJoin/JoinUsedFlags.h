@@ -44,6 +44,18 @@ public:
         }
     }
 
+    /// Update size for vector with flags same as `reinit` but allows the updated size to be smaller.
+    /// Must be called only before using this structure.
+    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    void reinitAllowShrinking(size_t size)
+    {
+        if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
+        {
+            need_flags = true;
+            per_offset_flags = std::vector<std::atomic_bool>(size);
+        }
+    }
+
     template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
     void reinit(const Columns * columns, const ScatteredBlock::Selector & selector)
     {

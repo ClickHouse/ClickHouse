@@ -4,7 +4,7 @@
 #include <Common/Stopwatch.h>
 
 
-int main(int, char **)
+int mainEntryExampleStopwatch(int, char **)
 {
     static constexpr size_t num_threads = 10;
     static constexpr size_t num_iterations = 3;

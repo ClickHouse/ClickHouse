@@ -11,7 +11,6 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Algorithms.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/arithmeticOverflow.h>
 

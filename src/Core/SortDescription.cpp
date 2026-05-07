@@ -7,6 +7,7 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include "config.h"
@@ -25,8 +26,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
+void dumpSortDescription(const SortDescription & description, ExplainFormatSettings & settings)
 {
+    auto & out = settings.out;
     bool first = true;
 
     for (const auto & desc : description)
@@ -35,7 +37,7 @@ void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
             out << ", ";
         first = false;
 
-        out << desc.column_name;
+        out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(desc.column_name, settings.pretty_names) : desc.column_name);
 
         if (desc.direction > 0)
             out << " ASC";
@@ -225,7 +227,9 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 std::string dumpSortDescription(const SortDescription & description)
 {
     WriteBufferFromOwnString wb;
-    dumpSortDescription(description, wb);
+    ExplainFormatSettings settings{.out = wb, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
+
+    dumpSortDescription(description, settings);
     return wb.str();
 }
 

@@ -1,7 +1,7 @@
 #pragma once
 #include <libnuraft/log_store.hxx>
-#include <mutex>
 #include <Core/Types.h>
+#include <Common/SharedMutex.h>
 #include <Coordination/Changelog.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/Keeper4LWInfo.h>
@@ -81,7 +81,7 @@ public:
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
 private:
-    mutable std::mutex changelog_lock;
+    mutable SharedMutex changelog_lock;
     LoggerPtr log;
     Changelog changelog TSA_GUARDED_BY(changelog_lock);
 };

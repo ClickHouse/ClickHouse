@@ -364,4 +364,18 @@ void SerializationReplicated::serializeTextXML(const IColumn & column, size_t ro
     nested->serializeTextXML(*column_replicated.getNestedColumn(), column_replicated.getIndexes().getIndexAt(row_num), ostr, settings);
 }
 
+void SerializationReplicated::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_replicated = assert_cast<const ColumnReplicated &>(column);
+    nested->serializeTextRaw(*column_replicated.getNestedColumn(), column_replicated.getIndexes().getIndexAt(row_num), ostr, settings);
+}
+
+void SerializationReplicated::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserialize(column, [&](auto & nested_column)
+    {
+        nested->deserializeTextRaw(nested_column, istr, settings);
+    });
+}
+
 }

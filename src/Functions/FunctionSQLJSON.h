@@ -2,21 +2,25 @@
 
 #include <sstream>
 #include <type_traits>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/JSONPath/Generator/GeneratorJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadHelpers.h>
 #include <base/range.h>
 
 #include "config.h"
@@ -118,10 +122,10 @@ private:
 
 };
 
-
 class FunctionSQLJSONHelpers
 {
 public:
+    /// Single-path executor: parses one JSONPath, applies Impl per row.
     template <typename Name, typename Impl, class JSONParser>
     class Executor
     {
@@ -150,12 +154,15 @@ public:
             if (!isString(json_path_column.type))
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "JSONPath functions require second argument "
-                                "to be JSONPath of type string, illegal type: {}", json_path_column.type->getName());
+                                "Second argument of JSONPath functions must be a String JSONPath, "
+                                "a Tuple(String) of JSONPaths, or an Array(String) of JSONPaths, illegal type: {}",
+                                json_path_column.type->getName());
             }
             if (!isColumnConst(*json_path_column.column))
             {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (JSONPath) must be constant string");
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Second argument of JSONPath functions must be a constant String, "
+                                "a Tuple(String) of JSONPaths, or an Array(String) of JSONPaths");
             }
 
             /// Prepare to parse 1 argument (JSONPath)
@@ -204,6 +211,254 @@ public:
             return to;
         }
     };
+
+    /// Multi-path executor: the second argument is a nested Tuple/Array/String structure.
+    /// Each string leaf is a JSONPath. The result mirrors the structure shape, with each leaf
+    /// replaced by the result of applying the Impl to that path.
+    ///
+    /// The shape of the nested structure is analyzed once before the row loop.
+    /// A "plan" is built: a tree of nodes, each knowing its kind (Leaf/Tuple/Array),
+    /// its children, and pointers to the destination columns. The per-row loop
+    /// follows this plan without any type checks.
+    template <typename Impl, class JSONParser>
+    class MultiPathExecutor
+    {
+    public:
+        using Element = typename JSONParser::Element;
+
+        static ColumnPtr run(
+            const ColumnsWithTypeAndName & arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            uint32_t parse_depth,
+            uint32_t parse_backtracks,
+            bool function_json_value_return_type_allow_complex)
+        {
+            const auto & json_column = arguments[0];
+            const auto & path_column = arguments[1];
+
+            if (!isString(json_column.type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument of JSONPath functions must be a String, got: {}", json_column.type->getName());
+
+            if (!isColumnConst(*path_column.column))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument of JSONPath functions must be a constant String, "
+                    "a Tuple(String) of JSONPaths, or an Array(String) of JSONPaths");
+
+            const auto & const_col = assert_cast<const ColumnConst &>(*path_column.column);
+            const auto & const_data = const_col.getDataColumn();
+
+            MutableColumnPtr to = result_type->createColumn();
+            to->reserve(input_rows_count);
+
+            /// Build the execution plan: parse the structure once, collect generators and column pointers.
+            std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> generators;
+            PlanNode plan = buildPlan(*to, const_data, path_column.type, 0, parse_depth, parse_backtracks, generators);
+
+            JSONParser json_parser;
+            Element document;
+            Impl impl;
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                std::string_view json = json_column.column->getDataAt(i);
+                bool document_ok = json_parser.parse(json, document);
+
+                size_t gen_idx = 0;
+                executePlan(plan, document, generators, gen_idx, document_ok, impl, function_json_value_return_type_allow_complex);
+            }
+            return to;
+        }
+
+    private:
+        enum class NodeKind : uint8_t { Leaf, Tuple, Array };
+
+        struct PlanNode
+        {
+            NodeKind kind;
+            IColumn * dest = nullptr;           /// destination column for this node
+            size_t array_size = 0;              /// for Array nodes: constant number of elements
+            IColumn::Offsets * array_offsets = nullptr; /// for Array nodes: offsets column
+            std::vector<PlanNode> children;     /// for Tuple: one child per element; for Array: single child (the element plan)
+        };
+
+        static std::shared_ptr<GeneratorJSONPath<JSONParser>> parseJSONPath(
+            std::string_view query, uint32_t parse_depth, uint32_t parse_backtracks)
+        {
+            Tokens tokens(query.data(), query.data() + query.size());
+            IParser::Pos token_iterator(tokens, parse_depth, parse_backtracks);
+            Expected expected;
+            ASTPtr res;
+            ParserJSONPath parser;
+            if (!parser.parse(token_iterator, res, expected))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse JSONPath");
+            return std::make_shared<GeneratorJSONPath<JSONParser>>(res);
+        }
+
+        /// Build the plan tree: analyze the structure once, collecting generators and column pointers.
+        /// `index` is the row index within `path_data` to read structure from.
+        static PlanNode buildPlan(
+            IColumn & dest,
+            const IColumn & path_data,
+            const DataTypePtr & path_type,
+            size_t index,
+            uint32_t parse_depth,
+            uint32_t parse_backtracks,
+            std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generators)
+        {
+            if (isString(path_type))
+            {
+                PlanNode node;
+                node.kind = NodeKind::Leaf;
+                node.dest = &dest;
+                generators.push_back(parseJSONPath(path_data.getDataAt(index), parse_depth, parse_backtracks));
+                return node;
+            }
+
+            if (checkAndGetDataType<DataTypeTuple>(path_type.get()))
+            {
+                const auto & tuple_col = assert_cast<const ColumnTuple &>(path_data);
+                const auto & tuple_type = assert_cast<const DataTypeTuple &>(*path_type);
+                auto & dest_tuple = assert_cast<ColumnTuple &>(dest);
+
+                PlanNode node;
+                node.kind = NodeKind::Tuple;
+                node.dest = &dest;
+                node.children.reserve(tuple_col.tupleSize());
+                for (size_t i = 0; i < tuple_col.tupleSize(); ++i)
+                    node.children.push_back(buildPlan(
+                        dest_tuple.getColumn(i), tuple_col.getColumn(i),
+                        tuple_type.getElement(i), index, parse_depth, parse_backtracks, generators));
+                return node;
+            }
+
+            if (const auto * array_type = checkAndGetDataType<DataTypeArray>(path_type.get()))
+            {
+                const auto & array_path = assert_cast<const ColumnArray &>(path_data);
+                auto & dest_array = assert_cast<ColumnArray &>(dest);
+
+                size_t offset = index == 0 ? 0 : array_path.getOffsets()[index - 1];
+                size_t array_size = array_path.getOffsets()[index] - offset;
+
+                PlanNode node;
+                node.kind = NodeKind::Array;
+                node.dest = &dest;
+                node.array_size = array_size;
+                node.array_offsets = &dest_array.getOffsets();
+
+                /// Each array element gets its own child plan node (they may reference different generators).
+                node.children.reserve(array_size);
+                for (size_t i = 0; i < array_size; ++i)
+                    node.children.push_back(buildPlan(
+                        dest_array.getData(), array_path.getData(),
+                        array_type->getNestedType(), offset + i,
+                        parse_depth, parse_backtracks, generators));
+                return node;
+            }
+
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "JSONPath structure must contain only String, Tuple, or Array elements, got: {}",
+                path_type->getName());
+        }
+
+        /// Execute the plan for one row. No type checks — just follows the pre-built tree.
+        static void executePlan(
+            const PlanNode & node,
+            const Element & document,
+            const std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generators,
+            size_t & gen_idx,
+            bool document_ok,
+            Impl & impl,
+            bool function_json_value_return_type_allow_complex)
+        {
+            switch (node.kind)
+            {
+                case NodeKind::Leaf:
+                {
+                    if (!document_ok)
+                    {
+                        node.dest->insertDefault();
+                        ++gen_idx;
+                        return;
+                    }
+                    auto & generator = *generators[gen_idx];
+                    generator.reinitialize();
+                    bool added = impl.insertResultToColumn(*node.dest, document, generator, function_json_value_return_type_allow_complex);
+                    if (!added)
+                        node.dest->insertDefault();
+                    ++gen_idx;
+                    return;
+                }
+
+                case NodeKind::Tuple:
+                {
+                    for (const auto & child : node.children)
+                        executePlan(child, document, generators, gen_idx, document_ok, impl, function_json_value_return_type_allow_complex);
+                    return;
+                }
+
+                case NodeKind::Array:
+                {
+                    for (const auto & child : node.children)
+                        executePlan(child, document, generators, gen_idx, document_ok, impl, function_json_value_return_type_allow_complex);
+
+                    size_t base = node.array_offsets->empty() ? 0 : node.array_offsets->back();
+                    node.array_offsets->push_back(base + node.array_size);
+                    return;
+                }
+            }
+        }
+    };
+
+    /// Build a return type that mirrors the path argument structure,
+    /// replacing each String leaf with `leaf_type`.
+    static DataTypePtr buildReturnType(const DataTypePtr & path_type, const DataTypePtr & leaf_type)
+    {
+        if (isString(path_type))
+            return leaf_type;
+
+        if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(path_type.get()))
+        {
+            DataTypes element_types;
+            element_types.reserve(tuple_type->getElements().size());
+            for (const auto & elem : tuple_type->getElements())
+                element_types.push_back(buildReturnType(elem, leaf_type));
+            if (tuple_type->hasExplicitNames())
+                return std::make_shared<DataTypeTuple>(element_types, tuple_type->getElementNames());
+            return std::make_shared<DataTypeTuple>(element_types);
+        }
+
+        if (const auto * array_type = checkAndGetDataType<DataTypeArray>(path_type.get()))
+            return std::make_shared<DataTypeArray>(buildReturnType(array_type->getNestedType(), leaf_type));
+
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "JSONPath structure must contain only String, Tuple, or Array elements, got {}",
+            path_type->getName());
+    }
+
+    /// Check whether a type is a nested structure (Tuple/Array) with String leaves,
+    /// i.e., suitable as a multi-path argument.
+    static bool isMultiPathType(const DataTypePtr & type)
+    {
+        if (isString(type))
+            return false; /// A plain String is not multi-path, it's the normal single-path case.
+
+        if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(type.get()))
+        {
+            if (tuple_type->getElements().empty())
+                return false; /// Empty Tuple() is not a valid multi-path structure.
+            for (const auto & elem : tuple_type->getElements())
+                if (!isString(elem) && !isMultiPathType(elem))
+                    return false;
+            return true;
+        }
+
+        if (const auto * array_type = checkAndGetDataType<DataTypeArray>(type.get()))
+            return isString(array_type->getNestedType()) || isMultiPathType(array_type->getNestedType());
+
+        return false;
+    }
 };
 
 template <typename Name, template <typename, typename> typename Impl>
@@ -245,14 +500,11 @@ public:
         unsigned parse_backtracks = static_cast<unsigned>(max_parser_backtracks);
 #if USE_SIMDJSON
         if (allow_simdjson)
-            return FunctionSQLJSONHelpers::Executor<
-                Name,
-                Impl<SimdJSONParser, JSONStringSerializer<SimdJSONParser::Element, SimdJSONElementFormatter>>,
-                SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
-#endif
-        return FunctionSQLJSONHelpers::
-            Executor<Name, Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>, DummyJSONParser>::run(
+            return Impl<SimdJSONParser, JSONStringSerializer<SimdJSONParser::Element, SimdJSONElementFormatter>>::execute(
                 arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+#endif
+        return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::execute(
+            arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
     }
 private:
     const size_t max_parser_depth;
@@ -283,7 +535,16 @@ class JSONExistsImpl
 public:
     using Element = typename JSONParser::Element;
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, bool) { return std::make_shared<DataTypeUInt8>(); }
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool)
+    {
+        if (arguments.size() < 2)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function JSON_EXISTS requires at least 2 arguments");
+
+        if (FunctionSQLJSONHelpers::isMultiPathType(arguments[1].type))
+            return FunctionSQLJSONHelpers::buildReturnType(arguments[1].type, std::make_shared<DataTypeUInt8>());
+
+        return std::make_shared<DataTypeUInt8>();
+    }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
@@ -313,6 +574,17 @@ public:
         }
         return true;
     }
+
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
+                             uint32_t parse_depth, uint32_t parse_backtracks, bool function_json_value_return_type_allow_complex)
+    {
+        if (FunctionSQLJSONHelpers::isMultiPathType(arguments[1].type))
+            return FunctionSQLJSONHelpers::MultiPathExecutor<JSONExistsImpl, JSONParser>::run(
+                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+
+        return FunctionSQLJSONHelpers::Executor<NameJSONExists, JSONExistsImpl, JSONParser>::run(
+            arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+    }
 };
 
 template <typename JSONParser, typename JSONStringSerializer>
@@ -321,8 +593,19 @@ class JSONValueImpl
 public:
     using Element = typename JSONParser::Element;
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, bool function_json_value_return_type_allow_nullable)
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool function_json_value_return_type_allow_nullable)
     {
+        if (arguments.size() < 2)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function JSON_VALUE requires at least 2 arguments");
+
+        if (FunctionSQLJSONHelpers::isMultiPathType(arguments[1].type))
+        {
+            DataTypePtr leaf_type = std::make_shared<DataTypeString>();
+            if (function_json_value_return_type_allow_nullable)
+                leaf_type = makeNullable(leaf_type);
+            return FunctionSQLJSONHelpers::buildReturnType(arguments[1].type, leaf_type);
+        }
+
         if (function_json_value_return_type_allow_nullable)
         {
             DataTypePtr string_type = std::make_shared<DataTypeString>();
@@ -385,6 +668,17 @@ public:
         json_serializer.commit();
         return true;
     }
+
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
+                             uint32_t parse_depth, uint32_t parse_backtracks, bool function_json_value_return_type_allow_complex)
+    {
+        if (FunctionSQLJSONHelpers::isMultiPathType(arguments[1].type))
+            return FunctionSQLJSONHelpers::MultiPathExecutor<JSONValueImpl, JSONParser>::run(
+                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+
+        return FunctionSQLJSONHelpers::Executor<NameJSONValue, JSONValueImpl, JSONParser>::run(
+            arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+    }
 };
 
 /**
@@ -397,7 +691,16 @@ class JSONQueryImpl
 public:
     using Element = typename JSONParser::Element;
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, bool) { return std::make_shared<DataTypeString>(); }
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool)
+    {
+        if (arguments.size() < 2)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function JSON_QUERY requires at least 2 arguments");
+
+        if (FunctionSQLJSONHelpers::isMultiPathType(arguments[1].type))
+            return FunctionSQLJSONHelpers::buildReturnType(arguments[1].type, std::make_shared<DataTypeString>());
+
+        return std::make_shared<DataTypeString>();
+    }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
@@ -440,6 +743,17 @@ public:
         json_serializer.addRawData(array_end, 1);
         json_serializer.commit();
         return true;
+    }
+
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
+                             uint32_t parse_depth, uint32_t parse_backtracks, bool function_json_value_return_type_allow_complex)
+    {
+        if (FunctionSQLJSONHelpers::isMultiPathType(arguments[1].type))
+            return FunctionSQLJSONHelpers::MultiPathExecutor<JSONQueryImpl, JSONParser>::run(
+                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+
+        return FunctionSQLJSONHelpers::Executor<NameJSONQuery, JSONQueryImpl, JSONParser>::run(
+            arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
     }
 };
 

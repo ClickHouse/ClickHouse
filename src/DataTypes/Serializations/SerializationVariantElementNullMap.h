@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypeNullable.h>

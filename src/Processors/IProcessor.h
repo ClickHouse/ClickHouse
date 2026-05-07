@@ -3,6 +3,7 @@
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
+#include <atomic>
 #include <list>
 #include <memory>
 #include <vector>
@@ -29,7 +30,7 @@ using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
 
 /** Processor is an element (low level building block) of a query execution pipeline.
   * It has zero or more input ports and zero or more output ports.
@@ -154,9 +155,9 @@ public:
         /// You need to poll this descriptor and call work() afterwards.
         Async,
 
-        /// Processor wants to add other processors to pipeline.
-        /// New processors must be obtained by expandPipeline() call.
-        ExpandPipeline,
+        /// Processor wants to add new processors and/or remove finished neighbours.
+        /// Update must be obtained by updatePipeline() call.
+        UpdatePipeline,
     };
 
     static std::string statusToName(std::optional<Status> status);
@@ -181,10 +182,10 @@ public:
       */
     virtual Status prepare();
 
-    using PortNumbers = std::vector<UInt64>;
-
     /// Optimization for prepare in case we know ports were updated.
-    virtual Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) { return prepare(); }
+    using UpdatedInputPorts  = std::vector<InputPort *>;
+    using UpdatedOutputPorts = std::vector<OutputPort *>;
+    virtual Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) { return prepare(); }
 
     /** You may call this method if 'prepare' returned Ready.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
@@ -234,21 +235,38 @@ public:
      */
     virtual void onAsyncJobReady() {}
 
-    /** You must call this method if 'prepare' returned ExpandPipeline.
+    /** You must call this method if 'prepare' returned UpdatePipeline.
       * This method cannot access any port, but it can create new ports for current processor.
       *
-      * Method should return set of new already connected processors.
-      * All added processors must be connected only to each other or current processor.
+      * Method should return set of new already connected processors or disconnected finished processors.
+      * All returned processors must be connected only to each other or current processor.
       *
-      * Method can't remove or reconnect existing ports, move data from/to port or perform calculations.
-      * 'prepare' should be called again after expanding pipeline.
+      * Method can't move data from/to port or perform calculations.
+      * 'prepare' should be called again after this operation.
       */
-    virtual Processors expandPipeline();
+    struct PipelineUpdate
+    {
+        Processors to_add;
+        Processors to_remove;
+    };
+    virtual PipelineUpdate updatePipeline();
+
+    /// Why the processor is being cancelled, chosen by the caller of cancel.
+    enum class CancelReason : uint8_t
+    {
+        NotCancelled,           /// Default state: no cancellation happened yet.
+        Unknown,                /// Cancelled without a specific reason (legacy callers).
+        CancelledByUser,        /// User killed the query or closed the session.
+        CancelledByTimeout,     /// Query time limit exceeded.
+        PartialResult,          /// Consumer has enough data; stop ingress and drain compute.
+        Exception,              /// Pipeline is being torn down due to an error.
+    };
 
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
-    void cancel() noexcept;
+    virtual void cancel(CancelReason reason) noexcept;
+    void cancel() noexcept { cancel(CancelReason::Unknown); }
 
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.

@@ -1,0 +1,35 @@
+--- Part 1: Direct read works with use_skip_indexes_on_data_read = 0
+0	xyzspecial hello
+1	xyzspecial world
+0
+1
+--- Part 2: EXPLAIN indexes shows granule filtering (use_skip_indexes_on_data_read = 0)
+Actions: INPUT : 0 -> __text_index_idx_message_hasAllTokens_0f7345644adb0992857049f7ce3d0420 UInt8 : 0
+Parts: 1
+Granules: 1
+Parts: 1/1
+Granules: 5/5
+Name: idx_message
+Description: text GRANULARITY 100000000
+Parts: 1/1
+Granules: 1/5
+--- Part 3: Both indexes filter (use_skip_indexes_on_data_read = 0)
+Parts: 1
+Granules: 1
+Actions: INPUT : 0 -> __text_index_idx_category_hasAllTokens_5825496a1e8288284e664f128adddff3 UInt8 : 0
+INPUT : 1 -> __text_index_idx_message_hasAllTokens_0f7345644adb0992857049f7ce3d0420 UInt8 : 1
+Parts: 1/1
+Granules: 5/5
+Name: idx_category
+Description: text GRANULARITY 100000000
+Parts: 1/1
+Granules: 5/5
+Name: idx_message
+Description: text GRANULARITY 100000000
+Parts: 1/1
+Granules: 1/5
+--- Part 4: SelectedMarks profile events
+2
+2
+1	2
+1	2

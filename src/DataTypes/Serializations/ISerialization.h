@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 
 #include <boost/noncopyable.hpp>
+#include <map>
 #include <unordered_map>
 #include <functional>
 #include <memory>
@@ -643,6 +644,7 @@ public:
         explicit StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings);
 
         bool escape_variant_substreams = true;
+        bool share_nested_offsets = true;
     };
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);

@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
 class Collator;

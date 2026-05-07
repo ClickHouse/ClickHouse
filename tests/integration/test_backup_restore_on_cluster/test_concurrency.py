@@ -16,7 +16,7 @@ from .concurrency_helper import (
 
 cluster = ClickHouseCluster(__file__)
 
-num_nodes = 10
+num_nodes = 4  # Kept equal to num_concurrent_backups to reduce memory usage under sanitizers
 
 
 main_configs = [

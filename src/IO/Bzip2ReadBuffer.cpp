@@ -88,6 +88,15 @@ bool Bzip2ReadBuffer::nextImpl()
             in->nextIfAtEnd();
             bz->stream.avail_in = static_cast<unsigned>(in->buffer().end() - in->position());
             bz->stream.next_in = in->position();
+
+            /// If the inner stream is completely empty (e.g. a URL returned 404
+            /// and http_skip_not_found_url_for_globs is set), there is nothing to decompress.
+            if (!bz->stream.avail_in && in->eof()
+                && bz->stream.total_in_lo32 == 0 && bz->stream.total_in_hi32 == 0)
+            {
+                eof_flag = true;
+                return false;
+            }
         }
 
         bz->stream.avail_out = static_cast<unsigned>(internal_buffer.size());

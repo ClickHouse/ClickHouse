@@ -24,7 +24,7 @@ namespace DB::QueryPlanOptimizations
 ///     ORDER BY distance_function(vec, reference_vec), [...]
 ///     LIMIT N
 /// where
-/// - distance_function is function 'L2Distance' or 'cosineDistance',
+/// - distance_function is function 'L2Distance', 'cosineDistance', or 'dotProduct',
 /// - vec is a column of tab (*),
 /// - reference_vec is a literal of type Array(Float32/Float64)
 ///
@@ -131,9 +131,18 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     /// Extract distance_function
     const String & function_name = sort_column_node->function_base->getName();
     String distance_function;
-    if (function_name == "L2Distance" || function_name == "cosineDistance")
+    if (function_name == "L2Distance" || function_name == "cosineDistance" || function_name == "dotProduct")
         distance_function = function_name;
     else
+        return no_layers_updated;
+
+    /// Validate sort direction:
+    /// - L2Distance and cosineDistance require ascending sort order (smaller means more similar)
+    /// - dotProduct requires descending sort order (larger means more similar)
+    const int sort_direction = sort_description.front().direction;
+    if ((distance_function == "L2Distance" || distance_function == "cosineDistance") && sort_direction != 1)
+        return no_layers_updated;
+    if (distance_function == "dotProduct" && sort_direction != -1)
         return no_layers_updated;
 
     /// Extract stuff from the ORDER BY clause. It is expected to look like this: ORDER BY cosineDistance(vec1, [1.0, 2.0 ...])
@@ -448,6 +457,10 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
         new_step->setStepDescription(*expression_node->step);
         expression_node->step = std::move(new_step);
+
+        /// The SortingStep's input header must reflect the new ExpressionStep output header
+        /// (which now has _distance consumed and L2Distance(...) produced via ALIAS).
+        sorting_step->updateInputHeader(expression_node->step->getOutputHeader());
     }
 
     return true;

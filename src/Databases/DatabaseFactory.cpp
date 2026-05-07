@@ -137,6 +137,14 @@ DatabaseFactory & DatabaseFactory::instance()
     return db_fact;
 }
 
+bool DatabaseFactory::isDatabaseExternal(const String & engine_name) const
+{
+    auto it = database_engines.find(engine_name);
+    if (it == database_engines.end())
+        return false;
+    return it->second.features.is_external;
+}
+
 DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
     auto * storage = create.storage;

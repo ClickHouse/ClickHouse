@@ -41,6 +41,7 @@ public:
     int startBlockingLoop();
 
     void stopLoop();
+    void stopBlockingLoop();
 
     bool connectionRunning() const { return connection_running.load(); }
     bool loopRunning() const { return loop_running.load(); }

@@ -1,0 +1,14 @@
+lsr explicit path
+/test-keeper-client-default/T
+/test-keeper-client-default/T/A
+/test-keeper-client-default/T/A/B
+/test-keeper-client-default/T/C
+lsr path 2
+/test-keeper-client-default/T
+/test-keeper-client-default/T/A
+lsr from cwd
+/test-keeper-client-default/T
+/test-keeper-client-default/T/A
+/test-keeper-client-default/T/A/B
+/test-keeper-client-default/T/C
+cleanup

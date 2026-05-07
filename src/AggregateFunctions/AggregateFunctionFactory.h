@@ -35,6 +35,9 @@ using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String
 struct AggregateFunctionWithProperties
 {
     AggregateFunctionCreator creator;
+    /// Optional override to prefer in window context (OVER (...))
+    /// See TheilsU aggregate function for an example.
+    AggregateFunctionCreator window_creator;
     FunctionDocumentation documentation;
     AggregateFunctionProperties properties;
 
@@ -44,8 +47,8 @@ struct AggregateFunctionWithProperties
 
     template <typename Creator>
     requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
-    AggregateFunctionWithProperties(Creator creator_, FunctionDocumentation documentation_, AggregateFunctionProperties properties_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), documentation(std::move(documentation_)), properties(std::move(properties_))
+    AggregateFunctionWithProperties(Creator creator_, FunctionDocumentation documentation_, AggregateFunctionProperties properties_ = {}, AggregateFunctionCreator window_creator_ = {}) /// NOLINT
+        : creator(std::forward<Creator>(creator_)), window_creator(std::move(window_creator_)), documentation(std::move(documentation_)), properties(std::move(properties_))
     {
     }
 };
@@ -72,12 +75,20 @@ public:
     void registerNullsActionTransformation(const String & source_ignores_nulls, const String & target_respect_nulls);
 
     /// Throws an exception if not found.
+    ///
+    /// The `state_variant` parameter selects which implementation to resolve for functions
+    /// that have a dedicated implementation for window execution (OVER (...)) with different
+    /// performance characteristics on add()/getResult().
+    ///   - Aggregation: resolve the normal GROUP BY implementation.
+    ///   - Window: prefer a window-specific implementation if registered (via `window_creator`),
+    ///     falling back to the normal implementation if absent.
     AggregateFunctionPtr
     get(const String & name,
         NullsAction action,
         const DataTypes & argument_types,
         const Array & parameters,
-        AggregateFunctionProperties & out_properties) const;
+        AggregateFunctionProperties & out_properties,
+        AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation) const;
 
     /// Get properties if the aggregate function exists.
     std::optional<AggregateFunctionProperties> tryGetProperties(String name, NullsAction action) const;
@@ -93,7 +104,8 @@ private:
         const DataTypes & argument_types,
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
-        bool has_null_arguments) const;
+        bool has_null_arguments,
+        AggregateFunctionStateVariant state_variant) const;
 
     using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using ActionMap = std::unordered_map<String, String>; // STYLE_CHECK_ALLOW_STD_CONTAINERS

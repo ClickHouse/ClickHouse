@@ -7,7 +7,7 @@ SET session_timezone = 'UTC';
 SET enable_analyzer = 1;
 SET use_variant_as_common_type = 0;
 
--- Time + DateTime → DateTime
+-- Time + DateTime → DateTime64(0) (DateTime is UInt32, cannot hold negative Time values)
 SELECT 'Time + DateTime supertype';
 SELECT toTypeName(if(1, CAST('10:00:00', 'Time'), toDateTime('2025-01-01 00:00:00')));
 

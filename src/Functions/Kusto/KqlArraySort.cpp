@@ -17,15 +17,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-template <typename Name, bool is_desc>
 class FunctionKqlArraySort : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
-    explicit FunctionKqlArraySort(ContextPtr context_) : context(context_) { }
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionKqlArraySort>(context); }
+    explicit FunctionKqlArraySort(ContextPtr context_, const String & name_, bool is_desc_)
+        : context(context_), function_name(name_), is_desc(is_desc_) { }
 
-    String getName() const override { return name; }
+    String getName() const override { return function_name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -233,20 +231,9 @@ public:
 
 private:
     ContextPtr context;
+    String function_name;
+    bool is_desc;
 };
-
-struct NameKqlArraySortAsc
-{
-    static constexpr auto name = "kql_array_sort_asc";
-};
-
-struct NameKqlArraySortDesc
-{
-    static constexpr auto name = "kql_array_sort_desc";
-};
-
-using FunctionKqlArraySortAsc = FunctionKqlArraySort<NameKqlArraySortAsc, false>;
-using FunctionKqlArraySortDesc = FunctionKqlArraySort<NameKqlArraySortDesc, true>;
 
 REGISTER_FUNCTION(KqlArraySort)
 {
@@ -265,7 +252,10 @@ Sorts one or more arrays in ascending order. The first array is sorted, and subs
     FunctionDocumentation::Category category_asc = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_asc = {description_asc, syntax_asc, arguments_asc, {}, returned_value_asc, examples_asc, introduced_in_asc, category_asc};
 
-    factory.registerFunction<FunctionKqlArraySortAsc>(documentation_asc);
+    factory.registerFunction("kql_array_sort_asc", [](ContextPtr context) -> FunctionPtr
+    {
+        return std::make_shared<FunctionKqlArraySort>(context, "kql_array_sort_asc", /* is_desc = */ false);
+    }, documentation_asc);
 
     FunctionDocumentation::Description description_desc = R"(
 Sorts one or more arrays in descending order. The first array is sorted, and subsequent arrays are reordered to match the first array's sorted order. Null values are placed at the end. This is a KQL (Kusto Query Language) compatibility function.
@@ -282,7 +272,10 @@ Sorts one or more arrays in descending order. The first array is sorted, and sub
     FunctionDocumentation::Category category_desc = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_desc = {description_desc, syntax_desc, arguments_desc, {}, returned_value_desc, examples_desc, introduced_in_desc, category_desc};
 
-    factory.registerFunction<FunctionKqlArraySortDesc>(documentation_desc);
+    factory.registerFunction("kql_array_sort_desc", [](ContextPtr context) -> FunctionPtr
+    {
+        return std::make_shared<FunctionKqlArraySort>(context, "kql_array_sort_desc", /* is_desc = */ true);
+    }, documentation_desc);
 }
 
 }

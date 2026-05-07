@@ -442,17 +442,24 @@ def test_executable_function_python_exception_in_query_log(started_cluster):
         assert component in exception_text, f"Missing required component: {component}"
 
 
-def test_executable_function_default_stderr_reaction(started_cluster):
-    '''Test that UDFs writing to stderr succeed under default stderr_reaction (log_last) when exit code is 0'''
+@pytest.mark.parametrize("func_name", [
+    "test_function_stderr_log_last_reaction",
+    "test_function_stderr_log_first_reaction",
+    "test_function_stderr_none_reaction",
+])
+def test_executable_function_stderr_no_throw_on_success(started_cluster, func_name):
+    '''Test that UDFs writing to stderr succeed under log_last/log_first/none when exit code is 0'''
     skip_test_msan(node)
 
-    # input_always_error.py writes "Fake error" to stderr but exits 0
-    # With default stderr_reaction (log_last), this should NOT throw
-    assert node.query("SELECT test_function_stderr_default_reaction('abc')") == "Key abc\n"
+    assert node.query(f"SELECT {func_name}('abc')") == "Key abc\n"
 
 
-def test_executable_function_python_exception_log_last_in_query_log(started_cluster):
-    '''Test that stderr content appears in exception when exit code != 0 under log_last mode'''
+@pytest.mark.parametrize("func_name,mode", [
+    ("test_function_python_exception_log_last", "log_last"),
+    ("test_function_python_exception_log_first", "log_first"),
+])
+def test_executable_function_stderr_in_exception_on_failure(started_cluster, func_name, mode):
+    '''Test that stderr content appears in exception when exit code != 0 under log_last/log_first'''
     skip_test_msan(node)
 
     node.query("SYSTEM FLUSH LOGS")
@@ -460,11 +467,10 @@ def test_executable_function_python_exception_log_last_in_query_log(started_clus
     query_id = uuid.uuid4().hex
 
     try:
-        node.query("SELECT test_function_python_exception_log_last(1)", query_id=query_id)
+        node.query(f"SELECT {func_name}(1)", query_id=query_id)
         assert False, "Exception should have been thrown"
     except Exception as ex:
         assert "DB::Exception" in str(ex)
-        # Under log_last mode, exit code exception is enriched with stderr
         assert "Child process was exited with return code 1" in str(ex)
 
     node.query("SYSTEM FLUSH LOGS")
@@ -479,7 +485,6 @@ def test_executable_function_python_exception_log_last_in_query_log(started_clus
 
     exception_text = TSV(result).lines[0]
 
-    # Verify stderr content is included in the exit code exception
     required_components = [
         "Stderr:",
         "in process_data",
@@ -488,4 +493,4 @@ def test_executable_function_python_exception_log_last_in_query_log(started_clus
     ]
 
     for component in required_components:
-        assert component in exception_text, f"Missing required component: {component}"
+        assert component in exception_text, f"Missing required component in {mode}: {component}"

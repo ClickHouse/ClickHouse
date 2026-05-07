@@ -15,8 +15,8 @@ namespace DB
 
 using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
 
-struct KeeperConfigurationAndSettings;
-using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAndSettings>;
+struct KeeperConfiguration;
+using KeeperConfigurationPtr = std::shared_ptr<KeeperConfiguration>;
 
 class KeeperServer
 {
@@ -80,7 +80,7 @@ private:
     const bool enable_reconfiguration;
 public:
     KeeperServer(
-        const KeeperConfigurationAndSettingsPtr & settings_,
+        const KeeperConfigurationPtr & server_config,
         const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
@@ -91,9 +91,8 @@ public:
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
 
-    /// Put local read request and execute in state machine directly and response into
-    /// responses queue
-    void putLocalReadRequest(const KeeperRequestForSession & request);
+    /// Execute read requests directly in the local state machine. Put response into responses queue.
+    void putLocalReadRequests(const KeeperRequestsForSessions & requests);
 
     bool isRecovering() const { return is_recovering; }
     bool reconfigEnabled() const { return enable_reconfiguration; }

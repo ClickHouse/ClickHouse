@@ -1,4 +1,6 @@
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -8,10 +10,15 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsBool variant_throw_on_type_mismatch;
+}
 
 namespace ErrorCodes
 {
@@ -20,6 +27,19 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TYPE_MISMATCH;
 extern const int CANNOT_CONVERT_TYPE;
 extern const int NO_COMMON_TYPE;
+}
+
+ExecutableFunctionVariantAdaptor::ExecutableFunctionVariantAdaptor(
+    std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
+    size_t variant_argument_index_)
+    : function_overload_resolver(std::move(function_overload_resolver_))
+    , variant_argument_index(variant_argument_index_)
+{
+    if (CurrentThread::isInitialized())
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            throw_on_type_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
+    }
 }
 
 /// Strip LowCardinality wrapper from nested function result if present.
@@ -47,6 +67,26 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
 
     const auto & variant_type = assert_cast<const DataTypeVariant &>(*arguments[variant_argument_index].type);
     const auto & variant_types = variant_type.getVariants();
+
+    /// Helper: build function base for the given arguments, respecting throw_on_type_mismatch.
+    /// Returns nullptr if the type is incompatible and throwing is disabled; otherwise throws.
+    auto try_build = [&](const ColumnsWithTypeAndName & args) -> FunctionBasePtr
+    {
+        if (throw_on_type_mismatch)
+            return function_overload_resolver->build(args);
+
+        try
+        {
+            return function_overload_resolver->build(args);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+            return nullptr;
+        }
+    };
 
     /// We use default implementation for Variant type only when default implementation for NULLs is used.
     /// If current column contains only NULLs, result column will also contain only NULLs.
@@ -84,7 +124,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
 
         /// Execute function on new arguments.
-        auto func_base = function_overload_resolver->build(new_arguments);
+        auto func_base = try_build(new_arguments);
+        if (!func_base)
+        {
+            /// Type is incompatible and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(variant_column.size());
+            return res;
+        }
         DataTypePtr nested_result_type = func_base->getResultType();
         ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, variant_column.size(), dry_run);
         removeLowCardinalityFromResult(nested_result_type, nested_result);
@@ -113,6 +160,12 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
+                    /// Only wrap type-conversion errors as LOGICAL_ERROR.
+                    /// Other exceptions (e.g. MEMORY_LIMIT_EXCEEDED) should propagate as-is.
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -135,6 +188,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -185,7 +242,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
 
         /// Execute function on new arguments.
-        auto func_base = function_overload_resolver->build(new_arguments);
+        auto func_base = try_build(new_arguments);
+        if (!func_base)
+        {
+            /// Type is incompatible and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(variant_column.size());
+            return res;
+        }
         DataTypePtr nested_result_type = func_base->getResultType();
         ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run)
                             ->convertToFullColumnIfConst();
@@ -226,6 +290,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -251,6 +319,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             }
             catch (const Exception & e)
             {
+                if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                    && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                    throw;
+
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -270,6 +342,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -360,7 +436,13 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         if (!variants[i].column)
             continue;
 
-        auto func_base = function_overload_resolver->build(variants_arguments[i]);
+        auto func_base = try_build(variants_arguments[i]);
+        if (!func_base)
+        {
+            /// Type is incompatible and throw_on_type_mismatch is false — treat as NULL result.
+            variants_results[i] = nullptr;
+            continue;
+        }
         auto nested_result_type = func_base->getResultType();
         auto nested_result
             = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)
@@ -389,6 +471,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -545,6 +631,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",

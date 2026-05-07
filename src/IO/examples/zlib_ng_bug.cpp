@@ -5,7 +5,7 @@
 #include <zlib.h>
 
 /// https://github.com/zlib-ng/zlib-ng/issues/494
-int main(int, char **)
+int mainEntryExampleZlibNgBug(int, char **)
 {
     std::vector<unsigned char> in(1048576);
     std::vector<unsigned char> out(1048576);

@@ -11,19 +11,19 @@
  * -------------------------------
  *
  *   # Simple query
- *   echo 'SELECT 1;' | ./parser_memory_profiler
+ *   echo 'SELECT 1;' | ./clickhouse-examples parser_memory_profiler
  *   # Output: 9    2437760    2441632    3872
  *   # Format: query_length \t before \t after \t diff (bytes)
  *
  *   # Complex query
- *   echo 'SELECT a, b, c FROM t1 JOIN t2 ON t1.id = t2.id WHERE x > 10;' | ./parser_memory_profiler
+ *   echo 'SELECT a, b, c FROM t1 JOIN t2 ON t1.id = t2.id WHERE x > 10;' | ./clickhouse-examples parser_memory_profiler
  *
  *
  * WITH HEAP PROFILING (generates .heap files for jeprof analysis)
  * ---------------------------------------------------------------
  *
  *   MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0 \
- *       ./parser_memory_profiler --profile /tmp/query_ <<< 'SELECT 1;'
+ *       ./clickhouse-examples parser_memory_profiler --profile /tmp/query_ <<< 'SELECT 1;'
  *
  *   # This generates:
  *   #   /tmp/query_before.<pid>.0.heap  - heap state before parsing
@@ -36,19 +36,19 @@
  *   # Text report showing allocation diff:
  *   jeprof --text --show_bytes \
  *       --base=/tmp/query_before.*.heap \
- *       ./parser_memory_profiler \
+ *       ./clickhouse-examples \
  *       /tmp/query_after.*.heap
  *
  *   # Generate SVG call graph:
  *   jeprof --svg --show_bytes \
  *       --base=/tmp/query_before.*.heap \
- *       ./parser_memory_profiler \
+ *       ./clickhouse-examples \
  *       /tmp/query_after.*.heap > /tmp/parser.svg
  *
  *   # Generate flame graph:
  *   jeprof --collapsed --show_bytes \
  *       --base=/tmp/query_before.*.heap \
- *       ./parser_memory_profiler \
+ *       ./clickhouse-examples \
  *       /tmp/query_after.*.heap | \
  *       flamegraph.pl --title "Parser Memory" > /tmp/flame.svg
  *
@@ -58,7 +58,7 @@
  *
  *   # Process multiple queries from a file:
  *   while IFS= read -r query; do
- *       echo "$query" | ./parser_memory_profiler
+ *       echo "$query" | ./clickhouse-examples parser_memory_profiler
  *   done < queries.txt
  *
  *   # See run_profiler.sh and generate_report.py for full batch processing
@@ -227,7 +227,7 @@ void printProfilingStatus()
 }
 
 
-int main(int argc, char ** argv)
+int mainEntryExampleParserMemoryProfiler(int argc, char ** argv)
 try
 {
     using namespace DB;

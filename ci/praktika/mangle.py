@@ -210,7 +210,7 @@ def _update_workflow_with_native_jobs(workflow):
 
         assert docker_job_names, "Docker job names are empty, BUG?"
         for job in workflow.jobs[len(docker_job_names) :]:
-            job.requires.extend(docker_job_names)
+            job.run_after.extend(docker_job_names)
 
     if workflow._enabled_workflow_config():
         from .native_jobs import _workflow_config_job
@@ -222,7 +222,7 @@ def _update_workflow_with_native_jobs(workflow):
         aux_job = copy.deepcopy(_workflow_config_job)
         workflow.jobs.insert(0, aux_job)
         for job in workflow.jobs[1:]:
-            job.requires.append(aux_job.name)
+            job.run_after.append(aux_job.name)
 
     if (
         workflow.enable_merge_ready_status
@@ -236,6 +236,6 @@ def _update_workflow_with_native_jobs(workflow):
             print(f"Enable native job [{_final_job.name}] for [{workflow.name}]")
         aux_job = copy.deepcopy(_final_job)
         for job in workflow.jobs:
-            aux_job.requires.append(job.name)
+            aux_job.run_after.append(job.name)
         workflow.jobs.append(aux_job)
 
