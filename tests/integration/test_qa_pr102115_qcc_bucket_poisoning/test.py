@@ -1,45 +1,12 @@
-"""
-Proof-of-concept test for suspected bug in PR #102115:
-
-  Cluster mode with `cluster_table_function_split_granularity=BUCKET`
-  poisons the query condition cache by writing 'no match' for row groups
-  assigned to *other* workers.
-
-Root cause (StorageObjectStorageSource.cpp:524):
-
-    size_t total_groups = buckets_opt->second;          // = full file row-group count
-    ...
-    for (size_t i = 0; i < total_groups; ++i)
-        if (!matched_set.contains(i))
-            unmatched_ranges.push_back({i, i + 1});      // (1) BUG: includes
-                                                         //     row groups that
-                                                         //     were never read
-                                                         //     by *this* worker
-
-    query_condition_cache->write(... unmatched_ranges, total_groups, false);
-
-`getMatchedBuckets()` only reports row groups that this worker actually
-processed (`row_group.need_to_process`). With BUCKET split granularity each
-worker processes a strict subset of the file's row groups; the worker then
-writes "all the *other* workers' row groups didn't match the predicate" into
-the query condition cache.
-
-Test strategy:
-  1. Create an iceberg table via DataLakeCatalog (REST catalog) so the
-     storage_id has a stable UUID — required for the cache write to be
-     persisted (`QueryConditionCache::write` early-returns on UUIDHelpers::Nil).
-  2. Append a single parquet file with many row groups and a selective
-     predicate that matches rows in *every* row group.
-  3. Run the query with `cluster_table_function_split_granularity=bucket`
-     across two replicas, with `use_query_condition_cache=1`.
-     Each worker writes (poisoned) "no match" entries for the buckets it
-     didn't own.
-  4. Run the *same* query a second time. With the bug, the QCC says "no
-     row groups match" -> the file is entirely skipped -> result is 0
-     instead of the true count.
-
-Bug signature: result_2 is strictly smaller than result_1.
-"""
+# Proof test for suspected bug in PR #102115: cluster mode with
+# `cluster_table_function_split_granularity=BUCKET` poisons the query
+# condition cache.  Each worker computes the QCC "unmatched" set as
+# (whole-file row-group count) \ (this worker's matched row groups), so
+# every worker writes "no match" entries for row groups assigned to the
+# *other* worker.  A second run of the same predicate then reads the
+# poisoned cache and skips row groups that actually contain matches.
+# Root cause: src/Storages/ObjectStorage/StorageObjectStorageSource.cpp:524.
+# Bug signature: result_2 < result_1 for an idempotent SELECT count() ... WHERE.
 
 import logging
 import time
@@ -61,6 +28,10 @@ CATALOG_NAME = "demo"
 
 @pytest.fixture(scope="module")
 def started_cluster():
+    # Two-replica cluster_simple (see configs/cluster.xml) wired together with
+    # with_iceberg_catalog=True so an iceberg-rest container + minio are spun
+    # up alongside ClickHouse.  Both replicas must be present, otherwise the
+    # BUCKET-level splitter has only one worker and the bug cannot manifest.
     cluster = ClickHouseCluster(__file__)
     try:
         cluster.add_instance(
