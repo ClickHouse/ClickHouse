@@ -3,6 +3,7 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 
@@ -89,6 +90,27 @@ bool dagContainsNonReadySet(const ActionsDAG & dag)
     return false;
 }
 
+bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
+{
+    /// We are interested in functions that are non-deterministic *within* a single query --
+    /// i.e. functions whose per-row output cannot be predicted from a single plan-time
+    /// evaluation. `rand`, `rowNumberInAllBlocks`, `blockNumber`, `nowInBlock` etc. fall in
+    /// this group. Functions like `now`/`today`/`yesterday`/`currentUser` are not
+    /// deterministic across queries (`isDeterministic() == false`) but they return the same
+    /// value for all rows in a single query (`isDeterministicInScopeOfQuery() == true`), so
+    /// the optimizer can soundly use their plan-time value and they should NOT block the
+    /// JOIN-conversion rewrite.
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        {
+            if (!node.function_base->isDeterministicInScopeOfQuery())
+                return true;
+        }
+    }
+    return false;
+}
+
 FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
@@ -98,6 +120,25 @@ FilterResult filterResultForNotMatchedRows(
 {
     /// If the filter DAG contains IN subquery sets that are not yet built - we cannot evaluate the filter result
     if (dagContainsNonReadySet(filter_dag))
+        return FilterResult::UNKNOWN;
+
+    /// `ActionsDAG::evaluatePartialResult` (called below) routes every function node through
+    /// `IFunction::executeImplDryRun` with `input_rows_count=1`. For functions that are not
+    /// deterministic within a single query (`rand`, `nowInBlock`, `rowNumberInAllBlocks`,
+    /// `blockNumber`, ...) this single dry-run row is not representative of the runtime
+    /// behaviour: at runtime each row may produce a different value. Functions like `now` /
+    /// `today` / `currentUser` are not deterministic across queries but ARE deterministic
+    /// within a single query (`isDeterministicInScopeOfQuery() == true`), so their plan-time
+    /// value is faithful for all rows and they do NOT trip the guard below.
+    ///
+    /// Even with a fully-initialized dry-run output (e.g. `rowNumberInAllBlocks::executeImplDryRun`
+    /// returning `[0]`), a filter such as `rowNumberInAllBlocks() = 1` evaluates to FALSE on the
+    /// dry-run row but TRUE for the second runtime row. Without this guard the JOIN-conversion
+    /// optimizer (`tryConvertAnyOuterJoinToInnerJoin` /
+    /// `tryConvertAnyJoinToSemiOrAntiJoin`) concludes the filter is always FALSE for not-matched
+    /// rows and silently converts `ANY OUTER JOIN` to `INNER`/`SEMI`/`ANTI`, dropping rows that
+    /// would have survived. Bail out to `UNKNOWN` so the JOIN is left unchanged.
+    if (dagContainsNonDeterministicFunction(filter_dag))
         return FilterResult::UNKNOWN;
 
     ActionsDAG::IntermediateExecutionResult filter_input;
