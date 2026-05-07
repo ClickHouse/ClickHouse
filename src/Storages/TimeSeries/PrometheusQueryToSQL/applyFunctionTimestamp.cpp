@@ -81,6 +81,71 @@ namespace
         res.select_query = builder.getSelectQuery();
         return dropMetricName(std::move(res), context);
     }
+
+    const PQT::InstantSelector * getInstantSelectorArgument(const PQT::Function * function_node)
+    {
+        const auto & function_arguments = function_node->getArguments();
+        if (function_arguments.size() != 1)
+            return nullptr;
+
+        const auto * argument_node = function_arguments[0];
+        if (argument_node->node_type != NodeType::InstantSelector)
+            return nullptr;
+
+        return static_cast<const PQT::InstantSelector *>(argument_node);
+    }
+
+    SQLQueryPiece makeTimestampResultForInstantSelector(
+        const PQT::Function * function_node,
+        const PQT::InstantSelector * instant_selector,
+        ConverterContext & context)
+    {
+        auto node_range = context.node_range_getter.get(function_node);
+        auto selector_range = context.node_range_getter.get(instant_selector);
+        if (node_range.empty() || selector_range.empty())
+            return SQLQueryPiece{function_node, function_node->result_type, StoreMethod::EMPTY};
+
+        const auto instant_selector_text = instant_selector->toString(*context.promql_tree);
+
+        SelectQueryBuilder raw_builder;
+        raw_builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
+        raw_builder.select_list.back()->setAlias(ColumnNames::Group);
+        raw_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+        raw_builder.select_list.push_back(makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp)));
+        raw_builder.select_list.back()->setAlias(ColumnNames::Value);
+        raw_builder.from_table_function = makeASTFunction(
+            "timeSeriesSelector",
+            make_intrusive<ASTLiteral>(context.time_series_storage_id.getDatabaseName()),
+            make_intrusive<ASTLiteral>(context.time_series_storage_id.getTableName()),
+            make_intrusive<ASTLiteral>(String{instant_selector_text}),
+            timeSeriesTimestampToAST(selector_range.start_time - selector_range.window + 1, context.timestamp_data_type),
+            timeSeriesTimestampToAST(selector_range.end_time, context.timestamp_data_type));
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), raw_builder.getSelectQuery(), SQLSubqueryType::TABLE});
+
+        SelectQueryBuilder grid_builder;
+        grid_builder.from_table = context.subqueries.back().name;
+        grid_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        grid_builder.select_list.push_back(addParametersToAggregateFunction(
+            makeASTFunction(
+                "timeSeriesLastToGrid",
+                make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
+                make_intrusive<ASTIdentifier>(ColumnNames::Value)),
+            timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(node_range.step, context.timestamp_data_type),
+            timeSeriesDurationToAST(selector_range.window, context.timestamp_data_type)));
+        grid_builder.select_list.back()->setAlias(ColumnNames::Values);
+        grid_builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+
+        SQLQueryPiece res{function_node, function_node->result_type, StoreMethod::VECTOR_GRID};
+        res.select_query = grid_builder.getSelectQuery();
+        res.start_time = node_range.start_time;
+        res.end_time = node_range.end_time;
+        res.step = node_range.step;
+        res.metric_name_dropped = false;
+        return dropMetricName(std::move(res), context);
+    }
 }
 
 
@@ -95,6 +160,9 @@ SQLQueryPiece applyFunctionTimestamp(const PQT::Function * function_node, std::v
     checkArgumentTypes(function_node, arguments, context);
 
     auto & argument = arguments[0];
+    if (const auto * instant_selector = getInstantSelectorArgument(function_node))
+        return makeTimestampResultForInstantSelector(function_node, instant_selector, context);
+
     SQLQueryPiece res{function_node, function_node->result_type, argument.store_method};
     res.start_time = argument.start_time;
     res.end_time = argument.end_time;
@@ -135,6 +203,8 @@ SQLQueryPiece applyFunctionTimestamp(const PQT::Function * function_node, std::v
             builder.from_table = context.subqueries.back().name;
             builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
+            /// Computed vectors have samples at the evaluation timestamp.
+            /// Keep NULL positions so the normal vector-grid finalizer preserves PromQL sparsity.
             builder.select_list.push_back(makeASTFunction(
                 "arrayMap",
                 makeASTFunction(
