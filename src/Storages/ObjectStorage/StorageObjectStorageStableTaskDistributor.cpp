@@ -47,13 +47,16 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t numb
 
     saveLastNodeActivity(number_of_current_replica);
 
-    auto processed_file_list_ptr = replica_to_files_to_be_processed.find(number_of_current_replica);
-    if (processed_file_list_ptr == replica_to_files_to_be_processed.end())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Replica number {} was marked as lost, can't set task for it anymore",
-            number_of_current_replica
-        );
+    {
+        std::lock_guard lock(mutex);
+        auto processed_file_list_ptr = replica_to_files_to_be_processed.find(number_of_current_replica);
+        if (processed_file_list_ptr == replica_to_files_to_be_processed.end())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Replica number {} was marked as lost, can't set task for it anymore",
+                number_of_current_replica
+            );
+    }
 
     // 1. Check pre-queued files first
     auto file = getPreQueuedFile(number_of_current_replica);
@@ -65,7 +68,19 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t numb
         file = getAnyUnprocessedFile(number_of_current_replica);
 
     if (file)
-        processed_file_list_ptr->second.push_back(file);
+    {
+        std::lock_guard lock(mutex);
+        auto processed_file_list_ptr = replica_to_files_to_be_processed.find(number_of_current_replica);
+        if (processed_file_list_ptr == replica_to_files_to_be_processed.end())
+        { // It is possible that replica was lost after check in the begining of the method
+            auto file_identifier = getFileIdentifier(file);
+            auto file_replica_idx = getReplicaForFile(file_identifier);
+            unprocessed_files.emplace(file_identifier, std::make_pair(file, file_replica_idx));
+            connection_to_files[file_replica_idx].push_back(file);
+        }
+        else
+            processed_file_list_ptr->second.push_back(file);
+    }
 
     return file;
 }
@@ -123,7 +138,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t
         auto next_file = files.back();
         files.pop_back();
 
-        auto file_identifier = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getIdentifier();
+        auto file_identifier = getFileIdentifier(next_file);
         auto it = unprocessed_files.find(file_identifier);
         if (it == unprocessed_files.end())
             continue;
@@ -168,18 +183,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
             }
         }
 
-        String file_identifier;
-        if (send_over_whole_archive && object_info->isArchive())
-        {
-            file_identifier = object_info->getPathOrPathToArchiveIfArchive();
-            LOG_TEST(log, "Will send over the whole archive {} to replicas. "
-                     "This will be suboptimal, consider turning on "
-                     "cluster_function_process_archive_on_multiple_nodes setting", file_identifier);
-        }
-        else
-        {
-            file_identifier = object_info->getIdentifier();
-        }
+        String file_identifier = getFileIdentifier(object_info, true);
 
         if (iceberg_read_optimization_enabled)
         {
@@ -192,7 +196,13 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
             }
         }
 
-        size_t file_replica_idx = getReplicaForFile(file_identifier);
+        size_t file_replica_idx;
+
+        {
+            std::lock_guard lock(mutex);
+            file_replica_idx = getReplicaForFile(file_identifier);
+        }
+
         if (file_replica_idx == number_of_current_replica)
         {
             LOG_TRACE(
@@ -248,7 +258,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
                 auto next_file = it->second.first;
                 unprocessed_files.erase(it);
 
-                auto file_path = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getPath();
+                auto file_path = getFileIdentifier(next_file);
                 LOG_TRACE(
                     log,
                     "Iterator exhausted. Assigning unprocessed file {} to replica {} from matched replica {}",
@@ -312,10 +322,27 @@ void StorageObjectStorageStableTaskDistributor::rescheduleTasksFromReplica(size_
     replica_to_files_to_be_processed.erase(number_of_current_replica);
     for (const auto & file : files)
     {
-        auto file_replica_idx = getReplicaForFile(file->getPath());
-        unprocessed_files.emplace(file->getPath(), std::make_pair(file, file_replica_idx));
+        auto file_identifier = getFileIdentifier(file);
+        auto file_replica_idx = getReplicaForFile(file_identifier);
+        unprocessed_files.emplace(file_identifier, std::make_pair(file, file_replica_idx));
         connection_to_files[file_replica_idx].push_back(file);
     }
+}
+
+String StorageObjectStorageStableTaskDistributor::getFileIdentifier(ObjectInfoPtr file_object, bool write_to_log) const
+{
+    if (send_over_whole_archive && file_object->isArchive())
+    {
+        auto file_identifier = file_object->getPathOrPathToArchiveIfArchive();
+        if (write_to_log)
+        {
+            LOG_TEST(log, "Will send over the whole archive {} to replicas. "
+                        "This will be suboptimal, consider turning on "
+                        "cluster_function_process_archive_on_multiple_nodes setting", file_identifier);
+        }
+        return file_identifier;
+    }
+    return file_object->getIdentifier();
 }
 
 }
