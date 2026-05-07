@@ -980,6 +980,7 @@ def test_expire_snapshots_keeps_existing_entries_readable(started_cluster_iceber
         TABLE_NAME,
         args=[f"snapshot_ids = [{', '.join(map(str, expired_snapshot_ids))}]"],
     )
+    instance.query("SYSTEM FLUSH LOGS error_log")
     assert instance.query(
         f"""
         SELECT *
@@ -991,6 +992,15 @@ def test_expire_snapshots_keeps_existing_entries_readable(started_cluster_iceber
     ) == "1\n2\n"
 
     instance.query("SYSTEM FLUSH LOGS")
+    assert instance.query(
+        f"""
+        SELECT count()
+        FROM system.error_log
+        WHERE error = 'ICEBERG_SPECIFICATION_VIOLATION'
+          AND last_error_query_id = '{query_id}'
+        """
+    ) == "0\n"
+
     manifest_entries = [
         json.loads(content)
         for content in instance.query(
