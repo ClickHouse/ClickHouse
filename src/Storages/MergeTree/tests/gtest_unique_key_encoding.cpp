@@ -498,7 +498,7 @@ void expectBlockEncodesAs(const std::vector<String> & inputs)
 
 }
 
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_NoEmbeddedNull)
+TEST(UniqueKeyEncoding, StringEncoderByteEquivalentNoEmbeddedNull)
 {
     /// Standard widths covering both small (<= 32) and larger (>= 64, 256)
     /// inputs to exercise the bulk-memcpy fast path on different vector lanes
@@ -517,7 +517,7 @@ TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_NoEmbeddedNull)
     }
 }
 
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_EmptyString)
+TEST(UniqueKeyEncoding, StringEncoderByteEquivalentEmptyString)
 {
     /// Empty input must still emit the 2-byte terminator "\0\0".
     expectEncodesAs(String(), referenceEscape(nullptr, 0));
@@ -530,28 +530,28 @@ TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_EmptyString)
     EXPECT_EQ(got[1], '\0');
 }
 
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_EmbeddedNullAtStart)
+TEST(UniqueKeyEncoding, StringEncoderByteEquivalentEmbeddedNullAtStart)
 {
     /// "\0abc" -> "\0\x01" + "abc" + "\0\x00"
     String s("\x00""abc", 4);
     expectEncodesAs(s, referenceEscape(s.data(), s.size()));
 }
 
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_EmbeddedNullAtEnd)
+TEST(UniqueKeyEncoding, StringEncoderByteEquivalentEmbeddedNullAtEnd)
 {
     /// "abc\0" -> "abc" + "\0\x01" + "\0\x00"
     String s("abc\x00", 4);
     expectEncodesAs(s, referenceEscape(s.data(), s.size()));
 }
 
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_EmbeddedNullInMiddle)
+TEST(UniqueKeyEncoding, StringEncoderByteEquivalentEmbeddedNullInMiddle)
 {
     /// "abc\0def" -> "abc" + "\0\x01" + "def" + "\0\x00"
     String s("abc\x00""def", 7);
     expectEncodesAs(s, referenceEscape(s.data(), s.size()));
 }
 
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_AllNulls)
+TEST(UniqueKeyEncoding, StringEncoderByteEquivalentAllNulls)
 {
     /// All-'\0' inputs at widths 1, 4, 16 — every byte triggers an escape;
     /// verifies the slow-path loop terminates correctly when the very last
@@ -564,7 +564,7 @@ TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_AllNulls)
     }
 }
 
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_AlternatingNulls)
+TEST(UniqueKeyEncoding, StringEncoderByteEquivalentAlternatingNulls)
 {
     /// Mixed '\0' and printable bytes at varying positions — exercises both
     /// trailing-segment and adjacent-'\0' branches of the slow path.
@@ -578,7 +578,7 @@ TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_AlternatingNulls)
         expectEncodesAs(s, referenceEscape(s.data(), s.size()));
 }
 
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_Random)
+TEST(UniqueKeyEncoding, StringEncoderByteEquivalentRandom)
 {
     /// Fuzz: random strings of varying widths, ~25% of bytes are '\0'.
     /// Exercises every branch of the slow path on a wide distribution of
@@ -602,7 +602,7 @@ TEST(UniqueKeyEncoding, StringEncoderByteEquivalent_Random)
     }
 }
 
-TEST(UniqueKeyEncoding, StringBlockEncoderByteEquivalent_EdgeCases)
+TEST(UniqueKeyEncoding, StringBlockEncoderByteEquivalentEdgeCases)
 {
     /// Targeted block-level coverage for `encodeBlock` →
     /// `appendStringColumn` → `appendEscapedString`. Mirrors the per-row
@@ -622,7 +622,7 @@ TEST(UniqueKeyEncoding, StringBlockEncoderByteEquivalent_EdgeCases)
     });
 }
 
-TEST(UniqueKeyEncoding, StringBlockEncoderByteEquivalent_Widths)
+TEST(UniqueKeyEncoding, StringBlockEncoderByteEquivalentWidths)
 {
     /// Block of mixed-width rows — exercises bulk-memcpy fast path lengths
     /// across cache lines.
@@ -639,7 +639,7 @@ TEST(UniqueKeyEncoding, StringBlockEncoderByteEquivalent_Widths)
     expectBlockEncodesAs(rows);
 }
 
-TEST(UniqueKeyEncoding, FixedStringBlockEncoderByteEquivalent_EmbeddedNull)
+TEST(UniqueKeyEncoding, FixedStringBlockEncoderByteEquivalentEmbeddedNull)
 {
     /// FixedString rows can legally contain '\0' bytes (zero-padded short
     /// values). `appendFixedStringColumn` appends the raw N bytes per row
@@ -972,7 +972,7 @@ TEST(UniqueKeyEncoding, EncodeBlockEmptyBlock)
 /// ---------------------------------------------------------------------------
 /// Microbenchmarks — informational only; no gate.
 /// ---------------------------------------------------------------------------
-TEST(UniqueKeyEncoding, MicrobenchUInt64_1M)
+TEST(UniqueKeyEncoding, MicrobenchUInt641M)
 {
     constexpr size_t N = 1'000'000;
     auto col = ColumnUInt64::create();
@@ -991,7 +991,7 @@ TEST(UniqueKeyEncoding, MicrobenchUInt64_1M)
     EXPECT_EQ(out.size(), N);
 }
 
-TEST(UniqueKeyEncoding, MicrobenchString32_1M)
+TEST(UniqueKeyEncoding, MicrobenchString321M)
 {
     constexpr size_t N = 1'000'000;
     auto col = ColumnString::create();
@@ -1015,7 +1015,7 @@ TEST(UniqueKeyEncoding, MicrobenchString32_1M)
     EXPECT_EQ(out.size(), N);
 }
 
-TEST(UniqueKeyEncoding, MicrobenchCompoundUInt64String_1M)
+TEST(UniqueKeyEncoding, MicrobenchCompoundUInt64String1M)
 {
     constexpr size_t N = 1'000'000;
     auto col_u = ColumnUInt64::create();
