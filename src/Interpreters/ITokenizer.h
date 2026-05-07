@@ -30,6 +30,7 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+        Segmentation,
     };
 
     ITokenizer() = default;
@@ -362,6 +363,47 @@ private:
     mutable size_t previous_len = 0;
 };
 
+/// Segmentation tokenizer for structured entity strings (IPv4, IPv6, MAC, UUID, URI, timestamp, etc.).
+struct SegmentationTokenizer final : public ITokenizerHelper<SegmentationTokenizer>
+{
+    SegmentationTokenizer() : ITokenizerHelper(Type::Segmentation) {}
+
+    static const char * getBloomFilterIndexName() { return "segmentation"; }
+    static const char * getName() { return "segmentation"; }
+    static const char * getExternalName() { return getName(); }
+
+    String getDescription() const override;
+    bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
+    std::vector<String> compactTokens(const std::vector<String> & tokens) const override;
+
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+    bool supportsStringLike() const override { return true; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+private:
+    std::pair<size_t, size_t> convertPartPositionsToTokensPositions(size_t part_start, size_t part_count) const;
+
+    static constexpr const char split_chars[] = {'.', ',', ':', '-', '/', ' '};
+    static bool isSplitChar(char c)
+    {
+        for (char s : split_chars)
+            if (c == s)
+                return true;
+        return false;
+    }
+
+    mutable std::vector<size_t> part_starts;
+    mutable std::vector<size_t> part_lengths;
+
+    void buildStateIfNeeded(const char * data, size_t length) const;
+
+    mutable const char * previous_data = nullptr;
+    mutable size_t previous_len = 0;
+    mutable size_t current_part_i = 0;
+    mutable size_t current_part_j = 1;
+};
+
+
 /// Split text into tokens using Unicode word boundary rules, similar to UAX #29.
 /// 1. ASCII Alphanumeric Tokens
 ///
@@ -499,6 +541,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         {
             const auto & ascii_cjk_tokenizer = assert_cast<const AsciiCJKTokenizer &>(tokenizer);
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
+            return;
+        }
+        case ITokenizer::Type::Segmentation:
+        {
+            const auto & seg_tokenizer = assert_cast<const SegmentationTokenizer &>(tokenizer);
+            detail::forEachTokenImpl(seg_tokenizer, data, length, callback);
             return;
         }
     }
