@@ -29,7 +29,7 @@ AGGRESSIVE_RETENTION = {
 def _read_iceberg_metadata(instance, table_name):
     metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
     latest = instance.exec_in_container(
-        ["bash", "-c", f"ls -v {metadata_dir}/v*.metadata.json | tail -1"]
+        ["bash", "-c", f"ls -v {metadata_dir}/*metadata.json | tail -1"]
     ).strip()
     raw = instance.exec_in_container(["cat", latest])
     return json.loads(raw), latest
@@ -937,6 +937,80 @@ def test_expire_snapshots_shared_manifest_no_double_count(started_cluster_iceber
     )
     assert counts["deleted_manifest_lists_count"] >= 1, \
         "Expected at least one manifest list deleted (ML1 shared by S1 and S2)"
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_expire_snapshots_keeps_existing_entries_readable(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = make_table_name("test_expire_existing_entry", storage_type)
+    query_id = f"{TABLE_NAME}_read"
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (x INT) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '2',
+            'commit.manifest-merge.enabled' = 'false'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1)")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2)")
+    spark.sql(f"CALL system.rewrite_manifests('{TABLE_NAME}')")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    meta = read_iceberg_metadata(instance, TABLE_NAME)
+    expired_snapshot_ids = [
+        snapshot["snapshot-id"]
+        for snapshot in meta["snapshots"]
+        if snapshot["snapshot-id"] != meta["current-snapshot-id"]
+    ]
+    assert len(expired_snapshot_ids) >= 2
+
+    expire_snapshots(
+        instance,
+        TABLE_NAME,
+        args=[f"snapshot_ids = [{', '.join(map(str, expired_snapshot_ids))}]"],
+    )
+    assert instance.query(
+        f"""
+        SELECT *
+        FROM {TABLE_NAME}
+        ORDER BY x
+        SETTINGS iceberg_metadata_log_level = 'manifest_file_entry'
+        """,
+        query_id=query_id,
+    ) == "1\n2\n"
+
+    instance.query("SYSTEM FLUSH LOGS")
+    manifest_entries = [
+        json.loads(content)
+        for content in instance.query(
+            f"""
+            SELECT content
+            FROM system.iceberg_metadata_log
+            WHERE content_type = 'ManifestFileEntry'
+              AND query_id = '{query_id}'
+              AND content != ''
+            """
+        ).splitlines()
+    ]
+    expired_snapshot_id_set = set(expired_snapshot_ids)
+    existing_entry_snapshot_ids = {
+        entry.get("snapshot_id")
+        for entry in manifest_entries
+        # Iceberg manifest entry status: 0 = EXISTING.
+        if entry.get("status") == 0
+    }
+    assert existing_entry_snapshot_ids & expired_snapshot_id_set
 
 
 # ---------------------------------------------------------------------------
