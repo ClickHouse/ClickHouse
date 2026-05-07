@@ -427,7 +427,25 @@ SELECT count() FROM tab WHERE val LIKE '%jumping%';   -- 0
 
 DROP TABLE tab;
 
-SELECT '15. mapContainsValue / mapContainsValueLike: needle is stemmed for index on mapValues.';
+SELECT '15. mapContainsKey / mapContainsKeyLike: needle is stemmed for index on mapKeys.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Map(String, String),
+    INDEX idx(mapKeys(val)) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(val), 'en'))
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, {'running': 'a'}), (2, {'walking': 'a'});
+
+SELECT count() FROM tab WHERE mapContainsKey(val, 'running');         -- 1
+SELECT count() FROM tab WHERE mapContainsKey(val, 'walking');         -- 1
+SELECT count() FROM tab WHERE mapContainsKey(val, 'jumping');         -- 0
+SELECT count() FROM tab WHERE mapContainsKeyLike(val, '%running%');   -- 1
+
+DROP TABLE tab;
+
+SELECT '16. mapContainsValue / mapContainsValueLike: needle is stemmed for index on mapValues.';
 
 CREATE TABLE tab
 (

@@ -710,9 +710,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// mapContainsKey* can be used only with an index defined as `mapKeys(Map(String, ...))`
         if (has_map_keys_column)
         {
-            /// Map keys are stored as raw elements (array tokenizer): bypass both transforms.
             if (function_name == "mapContainsKey" || function_name == "has")
-                return make_map_function(stringToTokens(value_field, false, false));
+                return make_map_function(stringToTokens(value_field, true, true));
             if (function_name == "mapContainsKeyLike" && tokenizer->supportsStringLike())
                 return make_map_function(stringLikeToTokens(value_field, true, true));
         }
@@ -1122,8 +1121,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (result_column->getBool(0))
         return false;
 
-    /// Map keys are stored as raw elements (array tokenizer): bypass both transforms.
-    auto tokens = stringToTokens(*key_const_value, false, false);
+    auto tokens = stringToTokens(*key_const_value, true, true);
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>("mapContainsKey", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
     return true;

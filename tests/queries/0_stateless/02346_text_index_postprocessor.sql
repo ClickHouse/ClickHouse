@@ -600,7 +600,43 @@ SELECT count() FROM tab WHERE hasAllTokens(val, ['foo']);  -- 0
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '23. Negative tests.';
+SELECT '23. Map column + postprocessor: mapContainsKey / mapContainsKeyLike normalize the needle.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Map(String, String),
+    INDEX idx(mapKeys(val)) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val))
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, {'FOO': 'a'}), (2, {'BAR': 'a'});
+
+-- Postprocessor on needle: 'FOO' -> 'foo'; index has 'foo'; row-level matches the literal key.
+SELECT count() FROM tab WHERE mapContainsKey(val, 'FOO');         -- 1
+-- Index keeps the granule, but the literal key 'foo' is absent from the map.
+SELECT count() FROM tab WHERE mapContainsKey(val, 'foo');         -- 0
+SELECT count() FROM tab WHERE mapContainsKeyLike(val, '%FOO%');   -- 1
+
+DROP TABLE tab;
+
+SELECT '24. Map column + postprocessor: mapContainsValue / mapContainsValueLike normalize the needle.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Map(String, String),
+    INDEX idx(mapValues(val)) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val))
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, {'a': 'FOO'}), (2, {'a': 'BAR'});
+
+SELECT count() FROM tab WHERE mapContainsValue(val, 'FOO');         -- 1
+SELECT count() FROM tab WHERE mapContainsValue(val, 'foo');         -- 0
+SELECT count() FROM tab WHERE mapContainsValueLike(val, '%FOO%');   -- 1
+
+DROP TABLE tab;
+
+SELECT '25. Negative tests.';
 
 SELECT '- The postprocessor expression must reference the index column';
 CREATE TABLE tab

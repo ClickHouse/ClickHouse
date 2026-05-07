@@ -143,7 +143,15 @@ FUNCTION and(__text_index_idx_endsWith_62c031dd56b3d56d129e8b959a74ec3e :: 2, en
 2
 2
 0
-23. Negative tests.
+23. Map column + postprocessor: mapContainsKey / mapContainsKeyLike normalize the needle.
+1
+0
+1
+24. Map column + postprocessor: mapContainsValue / mapContainsValueLike normalize the needle.
+1
+0
+1
+25. Negative tests.
 - The postprocessor expression must reference the index column
 - The postprocessor expression must be a function, not an identifier
 - The postprocessor expression must return String

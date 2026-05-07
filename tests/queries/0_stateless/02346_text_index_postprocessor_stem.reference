@@ -94,7 +94,12 @@ studi	1
 1
 1
 0
-15. mapContainsValue / mapContainsValueLike: needle is stemmed for index on mapValues.
+15. mapContainsKey / mapContainsKeyLike: needle is stemmed for index on mapKeys.
+1
+1
+0
+1
+16. mapContainsValue / mapContainsValueLike: needle is stemmed for index on mapValues.
 1
 1
 0
