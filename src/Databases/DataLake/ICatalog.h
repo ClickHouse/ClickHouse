@@ -33,10 +33,7 @@ public:
     TableMetadata & withSchema() { with_schema = true; return *this; }
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
     TableMetadata & withDataLakeSpecificProperties() { with_datalake_specific_metadata = true; return *this; }
-    /// Enable Polaris/ADLS Gen2 convention: when `setLocation` sees an ABFSS URL where the
-    /// first path segment equals the container name, treat it as a redundant prefix and record
-    /// it so that `constructLocation` and `getMetadataLocation` can strip it.
-    TableMetadata & withPolarisStyleAbfssPaths() { polaris_style_abfss_paths = true; return *this; }
+    TableMetadata & withForceAddBucket() { force_add_bucket = true; return *this; }
 
     bool hasLocation() const;
     bool hasSchema() const;
@@ -59,6 +56,9 @@ public:
 
     void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
     std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
+
+    void setTableUUID(const std::string & uuid_) { table_uuid = uuid_; }
+    std::optional<std::string> getTableUUID() const { return table_uuid; }
 
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
@@ -97,16 +97,7 @@ private:
     /// For Azure ABFSS URLs: stores the account with suffix (e.g., "account.dfs.core.windows.net")
     /// This is extracted from URLs like: abfss://container@account.dfs.core.windows.net/path
     std::string azure_account_with_suffix;
-    /// True when `setLocation` detected that the ABFSS path starts with the container name
-    /// as a redundant first segment — a convention used by some catalogs (e.g. Apache Polaris /
-    /// ADLS Gen2 filesystem paths).
-    /// Example: abfss://c@account.dfs.core.windows.net/c/actual/path — `c` appears in both
-    /// the authority and the first path segment.
-    /// When set, `constructLocation` and `getMetadataLocation` strip that prefix when building
-    /// Azure HTTPS URLs or comparing metadata-file prefixes, but `path` itself is left intact so
-    /// that `getLocation` remains a round-trip of `setLocation`.
-    bool polaris_style_abfss_paths = false;
-    bool abfss_has_container_path_prefix = false;
+    bool force_add_bucket = false;
     /// Endpoint is set and used in case we have non-AWS storage implementation, for example, Minio.
     /// Also not all catalogs support non-AWS storages.
     std::string endpoint;
@@ -118,6 +109,7 @@ private:
     std::optional<DataLakeSpecificProperties> data_lake_specific_metadata;
 
     std::string reason_why_table_is_not_readable;
+    std::optional<std::string> table_uuid;
 
     bool is_default_readable_table = true;
 
