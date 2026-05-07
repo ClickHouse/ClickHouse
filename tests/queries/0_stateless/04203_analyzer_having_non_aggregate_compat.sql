@@ -125,6 +125,16 @@ SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING servi
 ORDER BY category
 SETTINGS enable_analyzer = 0, enable_optimize_predicate_expression = 1;
 
+SELECT 'A.1 legacy parity';
+SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING service = 'svc1'
+ORDER BY category
+SETTINGS enable_analyzer = 0, enable_optimize_predicate_expression = 1, group_by_use_nulls = 1;
+
+SELECT 'A.1 legacy parity';
+SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING service = 'svc1'
+ORDER BY category
+SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1, group_by_use_nulls = 1;
+
 -- Setting enabled but without GROUP BY/aggregates: setting is a no-op.
 SELECT 'no-aggregation no-op';
 SELECT count() FROM test_a1 SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
