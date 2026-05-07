@@ -6,6 +6,7 @@
 #include <Columns/ColumnSparse.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -51,6 +52,26 @@ void StatisticsUniq::build(const ColumnPtr & column)
 void StatisticsUniq::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsUniq * other = typeid_cast<const StatisticsUniq *>(other_stats.get());
+    if (!other)
+        return;
+
+    /// Concurrent ALTER MODIFY COLUMN can produce parts whose statistics were built
+    /// against different argument types (e.g. Float64 vs String). The aggregate
+    /// function state layout depends on the argument type, so merging mismatched
+    /// states would read garbage. A subsequent MUTATE rebuilds statistics
+    /// consistently, so it is safe to skip the merge here.
+    if (!collector->haveSameStateRepresentation(*other->collector))
+    {
+        LOG_WARNING(
+            getLogger("StatisticsUniq"),
+            "Skipping merge of {} statistics with incompatible state representations: {} vs {}. "
+            "This is expected if the column type was changed concurrently by ALTER MODIFY COLUMN.",
+            collector->getName(),
+            collector->getStateType()->getName(),
+            other->collector->getStateType()->getName());
+        return;
+    }
+
     collector->merge(data, other->data, arena.get());
 }
 
