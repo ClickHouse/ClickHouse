@@ -87,7 +87,8 @@ node_http_handlers = cluster.add_instance(
 )
 
 # Node 6: root mount (`<http_path_prefix>/</http_path_prefix>`). The auto-mount must produce
-# routes that match `/<db>/<table>/...` with a single leading slash, NOT `//<db>/<table>/...`.
+# routes for `/write`, `/read`, `/api/v1/...` with query-based table routing (single leading
+# slash before each protocol segment), not doubled slashes before `write`.
 node_root_prefix = cluster.add_instance(
     "node_root_prefix",
     main_configs=["configs/prometheus_http_port_root_prefix.xml"],
