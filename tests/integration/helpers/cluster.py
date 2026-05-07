@@ -28,6 +28,8 @@ from typing import Any, List, Sequence, Tuple, Union
 import requests
 import urllib3
 
+temp_dir = "../../ci/tmp"
+
 try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
@@ -147,6 +149,7 @@ def run_and_check(
     args: Union[Sequence[str], str],
     env=None,
     shell=False,
+    input=None,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
     timeout=300,
@@ -175,6 +178,7 @@ def run_and_check(
     try:
         res = subprocess.run(
             args,
+            input=input,
             stdout=stdout,
             stderr=stderr,
             env=env,
@@ -636,6 +640,8 @@ class ClickHouseCluster:
         self.instances: dict[str, ClickHouseInstance] = {}
         self.with_arrowflight = False
         self.arrowflight_host = "arrowflight1"
+        self._arrowflight_port = 0
+        self._arrowflight_auth_port = 0
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
@@ -1054,6 +1060,20 @@ class ClickHouseCluster:
             return self._nats_port
         self._nats_port = self.port_pool.get_port()
         return self._nats_port
+
+    @property
+    def arrowflight_port(self):
+        if self._arrowflight_port:
+            return self._arrowflight_port
+        self._arrowflight_port = self.port_pool.get_port()
+        return self._arrowflight_port
+
+    @property
+    def arrowflight_auth_port(self):
+        if self._arrowflight_auth_port:
+            return self._arrowflight_auth_port
+        self._arrowflight_auth_port = self.port_pool.get_port()
+        return self._arrowflight_auth_port
 
     @property
     def ytsaurus_port(self):
@@ -1542,6 +1562,17 @@ class ClickHouseCluster:
         env_variables["SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT"] = str(
             self.schema_registry_auth_port
         )
+        if is_arm():
+            env_variables["KAFKA_IMAGE_TAG"] = "7.9.0"
+            env_variables["KAFKA_SCHEMA_REGISTRY_IMAGE_TAG"] = "7.9.0"
+            env_variables["KAFKA_ZOOKEEPER_IMAGE_TAG"] = "3.8"
+            # The `zookeeper:3.4.9` image put `clientPort=2181` into zoo.cfg itself,
+            # but starting from 3.5 the only way to set it is the `;<port>` suffix in
+            # ZOO_SERVERS. Without it the client port is not bound and Kafka cannot
+            # connect.
+            env_variables["KAFKA_ZOOKEEPER_SERVERS"] = (
+                "server.1=kafka_zookeeper:2888:3888;2181"
+            )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka.yml")]
         )
@@ -1694,6 +1725,10 @@ class ClickHouseCluster:
 
     def setup_arrowflight_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_arrowflight = True
+        env_variables["ARROWFLIGHT_EXTERNAL_PORT"] = str(self.arrowflight_port)
+        env_variables["ARROWFLIGHT_AUTH_EXTERNAL_PORT"] = str(
+            self.arrowflight_auth_port
+        )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml")]
         )
@@ -3028,20 +3063,6 @@ class ClickHouseCluster:
 
         raise RuntimeError("Cannot wait RabbitMQ container")
 
-    @contextmanager
-    def pause_rabbitmq(self, timeout=120):
-        run_rabbitmqctl(
-            self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
-        )
-
-        try:
-            yield
-        finally:
-            run_rabbitmqctl(
-                self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
-            )
-            self.wait_rabbitmq_to_start(timeout)
-
     def reset_rabbitmq(self, timeout=120):
         try:
             resp = requests.get(f"http://{self.rabbitmq_ip}:{self.rabbitmq_management_port}/api/overview",
@@ -3407,6 +3428,31 @@ class ClickHouseCluster:
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
 
+    def login_to_ecr(self):
+        if Path(f"{temp_dir}/ecr_token.json").exists():
+            with open(f"{temp_dir}/ecr_token.json", "r") as f:
+                tokens = json.load(f)
+
+            registries = set()
+            for i in self.instances.values():
+                registries.add(i.image.split("/", 1)[0])
+
+            for instance_registry in registries:
+                for region in tokens.keys():
+                    if region in instance_registry:
+                        user, password = (
+                            base64.b64decode(tokens[region])
+                            .decode("utf-8")
+                            .split(":", 1)
+                        )
+                        logging.info(
+                            f"Logging into {instance_registry}"
+                        )
+                        run_and_check(
+                            ["docker", "login", instance_registry, "-u", user, "--password-stdin"],
+                            input=password.encode(),
+                        )
+
     def start(self, connection_timeout=None):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
@@ -3472,6 +3518,7 @@ class ClickHouseCluster:
                         "Got exception pulling images: %s", kwargs["exception"]
                     )
 
+            self.login_to_ecr()
             retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, timeout=180)
 
             def logging_compose_up(**kwargs):
@@ -3517,6 +3564,11 @@ class ClickHouseCluster:
                     os.makedirs(dir)
 
                 if self.use_keeper:  # TODO: remove hardcoded paths from here
+                    nuraft_streaming_mode = (
+                        random.randint(0, 1)
+                        if self.keeper_randomize_feature_flags
+                        else 0
+                    )
                     for i in range(1, 4):
                         current_keeper_config_dir = os.path.join(
                             f"{self.keeper_instance_dir_prefix}{i}", "config"
@@ -3566,6 +3618,16 @@ class ClickHouseCluster:
                                 ]:
                                     ff_config.write(
                                         f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
+                                    )
+
+                                if self.keeper_randomize_feature_flags:
+                                    indentation = 4 * " "
+                                    ff_config.write(
+                                        f"{indentation}coordination_settings:\n"
+                                    )
+                                    indentation *= 2
+                                    ff_config.write(
+                                        f"{indentation}nuraft_streaming_mode: {nuraft_streaming_mode}\n"
                                     )
                         else:
                             basename = os.path.basename(
@@ -3959,6 +4021,7 @@ class ClickHouseCluster:
                 )
             )
             self.up_called = True
+
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
@@ -4176,22 +4239,113 @@ class ClickHouseCluster:
     def _unpause_container_using_signal(self, instance_name):
         subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGCONT", instance_name])
 
+    def _wait_for_pause_effective(self, instance_name, timeout):
+        """Block until pausing `instance_name` is observably effective for
+        fresh client connections.
+
+        Docker's cgroup freezer (and `SIGSTOP`) suspends user-space tasks
+        asynchronously with respect to in-flight TCP traffic. After
+        `docker compose pause` returns, the kernel can still complete the
+        TCP three-way handshake for new connections — and a short
+        application-level greeting that is already buffered in the socket
+        can still flow back to the client — for a brief window before the
+        freeze fully blocks the server's accept/read/write loop. Tests
+        that assert on connection failure under `pause_container` can
+        therefore see the very first probe succeed, producing chronic
+        flakes (see issues `#103819`, `#103820`).
+
+        For ClickHouse instances, poll a sibling ClickHouse node with a
+        tight `remote(<paused>:9000, system.one)` probe until it raises a
+        `QueryRuntimeException`. That event deterministically establishes
+        that fresh connections to the paused container can no longer
+        complete the ClickHouse handshake, which is the property every
+        existing caller actually depends on.
+
+        For non-ClickHouse containers (Kafka, MongoDB, etc.) we cannot
+        speak the application protocol from a sibling node, so we skip
+        the wait. The current Kafka callers do not assert on the timing
+        of the freeze — they wait for log lines that the paused side
+        emits well after the freeze is effective — so the absence of a
+        global probe is benign for them.
+        """
+        if instance_name not in self.instances:
+            return
+        probers = [
+            inst
+            for name, inst in self.instances.items()
+            if name != instance_name and inst.is_up
+        ]
+        if not probers:
+            return
+        prober = probers[0]
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                prober.query(
+                    f"SELECT 1 FROM remote('{instance_name}:9000', system.one) "
+                    "SETTINGS connect_timeout_with_failover_ms=200, "
+                    "handshake_timeout_ms=200, "
+                    "connections_with_failover_max_tries=1",
+                    timeout=2,
+                )
+            except QueryRuntimeException:
+                return
+            time.sleep(0.1)
+        raise Exception(
+            f"pause_container({instance_name!r}) did not become observably "
+            f"effective within {timeout}s — connections to {instance_name} "
+            f"from {prober.name!r} still succeed"
+        )
+
     @contextmanager
-    def pause_container(self, instance_name):
+    def pause_container(self, instance_name, wait_for_paused=True, wait_timeout=30.0):
         """Use it as following:
         with cluster.pause_container(name):
             useful_stuff()
+
+        When `instance_name` refers to a ClickHouse instance and another
+        ClickHouse instance is available to probe with, this helper blocks
+        until the pause is observably effective for fresh TCP-plus-
+        ClickHouse-handshake connections, removing a chronic race where
+        Docker's cgroup freezer takes effect asynchronously with respect
+        to in-flight traffic. Set `wait_for_paused=False` to opt out and
+        keep the older non-blocking behavior.
+
+        Cleanup: once the container has been paused (whether via
+        `docker compose pause` or the `SIGSTOP` fallback), unpausing must
+        always run on context exit — even if `_wait_for_pause_effective`
+        times out. Otherwise a probe failure would leave the container
+        permanently paused and cascade into unrelated test failures in
+        the same suite.
         """
-        self._pause_container(instance_name)
+        used_signal = False
         try:
+            self._pause_container(instance_name)
+        except Exception as e:
+            logging.warning(
+                "docker compose pause failed for %s: %s, falling back to SIGSTOP",
+                instance_name,
+                e,
+            )
+            self._pause_container_using_signal(instance_name)
+            used_signal = True
+
+        try:
+            if wait_for_paused:
+                self._wait_for_pause_effective(instance_name, wait_timeout)
             yield
         finally:
-            self._unpause_container(instance_name)
+            if used_signal:
+                self._unpause_container_using_signal(instance_name)
+            else:
+                self._unpause_container(instance_name)
 
     @contextmanager
-    def pause_container_using_signal(self, instance_name):
+    def pause_container_using_signal(self, instance_name, wait_for_paused=True, wait_timeout=30.0):
         self._pause_container_using_signal(instance_name)
         try:
+            if wait_for_paused:
+                self._wait_for_pause_effective(instance_name, wait_timeout)
             yield
         finally:
             self._unpause_container_using_signal(instance_name)
@@ -5639,7 +5793,7 @@ class ClickHouseInstance:
                         f.write(key + "=" + value + "\n")
 
     @contextmanager
-    def with_replace_config(self, path, replacement):
+    def with_replace_config(self, path, replacement, reload_before=False, reload_after=False):
         """Create a copy of existing config (if exists) and revert on leaving the context"""
         _directory, filename = os.path.split(path)
         basename, extension = os.path.splitext(filename)
@@ -5651,12 +5805,16 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
         )
+        if reload_before:
+            self.query("SYSTEM RELOAD CONFIG")
         try:
             yield
         finally:
             self.exec_in_container(
                 ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
             )
+            if reload_after:
+                self.query("SYSTEM RELOAD CONFIG")
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(
@@ -6149,4 +6307,4 @@ class ClickHouseKiller(object):
 
 @cache
 def is_arm():
-    return any(arch in platform.processor().lower() for arch in ("arm, aarch"))
+    return platform.machine().lower() in ("arm64", "aarch64")

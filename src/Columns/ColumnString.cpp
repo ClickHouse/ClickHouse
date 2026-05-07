@@ -47,6 +47,12 @@ void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t l
 void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
 #endif
 {
+    /// Inserting zero copies is a no-op regardless of `position`. Returning early avoids
+    /// eagerly reading `offsets[position - 1]` below, which would go out of bounds on
+    /// a caller-side garbage `position` (e.g. from a `size_t` underflow).
+    if (length == 0)
+        return;
+
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
     const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
     const size_t src_buf_size
@@ -787,6 +793,14 @@ void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
     /// This is for compatibility
     hash.update(UInt8(0));
+}
+
+void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    size_t chars_begin = offsetAt(begin);
+    size_t chars_end = offsetAt(end);
+    hash.update(reinterpret_cast<const char *>(&chars[chars_begin]), chars_end - chars_begin);
+    hash.update(reinterpret_cast<const char *>(&offsets[begin]), (end - begin) * sizeof(offsets[0]));
 }
 
 void ColumnString::updateHashFast(SipHash & hash) const
