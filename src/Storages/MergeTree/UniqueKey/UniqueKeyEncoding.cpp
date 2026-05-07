@@ -5,6 +5,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <Core/TypeId.h>
 #include <DataTypes/IDataType.h>
