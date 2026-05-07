@@ -1,64 +1,10 @@
 1
 [1,5]
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.t_s2_poly)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 5/5
-        Granules: 5/5
-      Ranges: 2
-    Projections:
-      Name: s2_proj
-        Description: Projection has been analyzed and will be applied during reading
-        Condition: __s2CoveringIntersects
-        Search Algorithm: generic exclusion search
-        Parts: 2
-        Marks: 14
-        Ranges: 5
-        Rows: 14
-        Filtered Parts: 3
 1
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.t_s2_poly)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 5/5
-        Granules: 5/5
-      Ranges: 2
-    Projections:
-      Name: s2_proj
-        Description: Projection has been analyzed and will be applied during reading
-        Condition: __s2CoveringIntersects
-        Search Algorithm: generic exclusion search
-        Parts: 2
-        Marks: 14
-        Ranges: 5
-        Rows: 14
-        Filtered Parts: 3
 1
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.t_s2_multi)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 2/2
-      Ranges: 1
-    Projections:
-      Name: s2_proj
-        Description: Projection has been analyzed and will be applied during reading
-        Condition: __s2CoveringIntersects
-        Search Algorithm: generic exclusion search
-        Parts: 1
-        Marks: 2
-        Ranges: 1
-        Rows: 2
-        Filtered Parts: 0
+1
+1
+1
 1
 [1,5]
 1

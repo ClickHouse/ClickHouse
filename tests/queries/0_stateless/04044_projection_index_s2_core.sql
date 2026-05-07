@@ -8,6 +8,8 @@ SET optimize_use_projections = 1;
 SET optimize_use_projection_filtering = 1;
 SET query_plan_filter_push_down = 1;
 SET query_plan_split_filter = 0;
+SET query_plan_merge_expressions = 1;
+SET query_plan_merge_filters = 1;
 
 -- ── Table 1: Polygon — polygonsIntersectSpherical ───────────────────────────────
 
@@ -54,13 +56,20 @@ SELECT groupArray(id) FROM
 );
 
 -- 3. EXPLAIN: projection index in use for polygonsIntersectSpherical
-EXPLAIN indexes = 1, projections = 1
-SELECT id FROM t_s2_poly
-WHERE polygonsIntersectSpherical(polygon,
-    CAST([[(0.0060, 0.0060), (0.0120, 0.0060), (0.0120, 0.0120), (0.0060, 0.0120), (0.0060, 0.0060)]], 'Polygon'))
-SETTINGS min_table_rows_to_use_projection_index = 0, max_projection_rows_to_use_projection_index = 1000000,
-    optimize_use_projections = 1, optimize_use_projection_filtering = 1, enable_s2_index_pruning = 1,
-    query_plan_filter_push_down = 1, query_plan_split_filter = 0;
+SELECT
+    countIf(explain LIKE '%Name: s2_proj%') > 0
+    AND countIf(explain LIKE '%Condition: __s2CoveringIntersects%') > 0
+FROM
+(
+    EXPLAIN indexes = 1, projections = 1
+    SELECT id FROM t_s2_poly
+    WHERE polygonsIntersectSpherical(polygon,
+        CAST([[(0.0060, 0.0060), (0.0120, 0.0060), (0.0120, 0.0120), (0.0060, 0.0120), (0.0060, 0.0060)]], 'Polygon'))
+    SETTINGS min_table_rows_to_use_projection_index = 0, max_projection_rows_to_use_projection_index = 1000000,
+        optimize_use_projections = 1, optimize_use_projection_filtering = 1, enable_s2_index_pruning = 1,
+        query_plan_filter_push_down = 1, query_plan_split_filter = 0,
+        query_plan_merge_expressions = 1, query_plan_merge_filters = 1
+);
 
 -- 4. No false negatives: polygonsWithinSpherical
 SELECT
@@ -74,13 +83,20 @@ SELECT
      SETTINGS enable_s2_index_pruning = 0);
 
 -- 5. EXPLAIN: projection index in use for polygonsWithinSpherical
-EXPLAIN indexes = 1, projections = 1
-SELECT id FROM t_s2_poly
-WHERE polygonsWithinSpherical(polygon,
-    CAST([[(0.0060, 0.0060), (0.0120, 0.0060), (0.0120, 0.0120), (0.0060, 0.0120), (0.0060, 0.0060)]], 'Polygon'))
-SETTINGS min_table_rows_to_use_projection_index = 0, max_projection_rows_to_use_projection_index = 1000000,
-    optimize_use_projections = 1, optimize_use_projection_filtering = 1, enable_s2_index_pruning = 1,
-    query_plan_filter_push_down = 1, query_plan_split_filter = 0;
+SELECT
+    countIf(explain LIKE '%Name: s2_proj%') > 0
+    AND countIf(explain LIKE '%Condition: __s2CoveringIntersects%') > 0
+FROM
+(
+    EXPLAIN indexes = 1, projections = 1
+    SELECT id FROM t_s2_poly
+    WHERE polygonsWithinSpherical(polygon,
+        CAST([[(0.0060, 0.0060), (0.0120, 0.0060), (0.0120, 0.0120), (0.0060, 0.0120), (0.0060, 0.0060)]], 'Polygon'))
+    SETTINGS min_table_rows_to_use_projection_index = 0, max_projection_rows_to_use_projection_index = 1000000,
+        optimize_use_projections = 1, optimize_use_projection_filtering = 1, enable_s2_index_pruning = 1,
+        query_plan_filter_push_down = 1, query_plan_split_filter = 0,
+        query_plan_merge_expressions = 1, query_plan_merge_filters = 1
+);
 
 DROP TABLE t_s2_poly;
 
@@ -128,13 +144,20 @@ SELECT
      SETTINGS enable_s2_index_pruning = 0);
 
 -- 5. EXPLAIN: projection index in use for MultiPolygon
-EXPLAIN indexes = 1, projections = 1
-SELECT id FROM t_s2_multi
-WHERE polygonsIntersectSpherical(mp,
-    CAST([[(0.0010, 0.0010), (0.0090, 0.0010), (0.0090, 0.0090), (0.0010, 0.0090), (0.0010, 0.0010)]], 'Polygon'))
-SETTINGS min_table_rows_to_use_projection_index = 0, max_projection_rows_to_use_projection_index = 1000000,
-    optimize_use_projections = 1, optimize_use_projection_filtering = 1, enable_s2_index_pruning = 1,
-    query_plan_filter_push_down = 1, query_plan_split_filter = 0;
+SELECT
+    countIf(explain LIKE '%Name: s2_proj%') > 0
+    AND countIf(explain LIKE '%Condition: __s2CoveringIntersects%') > 0
+FROM
+(
+    EXPLAIN indexes = 1, projections = 1
+    SELECT id FROM t_s2_multi
+    WHERE polygonsIntersectSpherical(mp,
+        CAST([[(0.0010, 0.0010), (0.0090, 0.0010), (0.0090, 0.0090), (0.0010, 0.0090), (0.0010, 0.0010)]], 'Polygon'))
+    SETTINGS min_table_rows_to_use_projection_index = 0, max_projection_rows_to_use_projection_index = 1000000,
+        optimize_use_projections = 1, optimize_use_projection_filtering = 1, enable_s2_index_pruning = 1,
+        query_plan_filter_push_down = 1, query_plan_split_filter = 0,
+        query_plan_merge_expressions = 1, query_plan_merge_filters = 1
+);
 
 DROP TABLE t_s2_multi;
 
