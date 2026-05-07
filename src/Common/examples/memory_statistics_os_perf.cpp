@@ -4,7 +4,7 @@
 
 #endif
 
-int main([[maybe_unused]] int argc, [[maybe_unused]] char ** argv)
+int mainEntryExampleMemoryStatisticsOsPerf([[maybe_unused]] int argc, [[maybe_unused]] char ** argv)
 {
 #if defined(OS_LINUX)
     using namespace DB;
