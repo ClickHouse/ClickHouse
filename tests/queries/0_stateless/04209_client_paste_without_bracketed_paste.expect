@@ -1,0 +1,61 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+
+# When a multi-line query is pasted into clickhouse-client without bracketed
+# paste support, every embedded newline arrives as a normal Enter event. The
+# client used to commit each partial line and switch to the ":-] " continuation
+# prompt for the next one, so the paste was scattered across several prompts.
+# After the fix, while bytes are still queued in the TTY (i.e. the paste is in
+# progress), Enter is folded into the same replxx edit buffer instead, so the
+# whole paste is shown under a single prompt and arrow keys can navigate
+# between its lines.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+# Send a multi-line query in a single write. The pty queues all bytes at once,
+# so when the client processes the first Enter, hasInputData() is true and the
+# embedded newline is folded into the edit buffer instead of committing.
+send -- "SELECT 1,\r2,\r3;\r"
+expect {
+    ":-] "                  { send_user "FAIL: continuation prompt appeared during paste\n"; exit 1 }
+    "│ 1 │ 2 │ 3 │" { }
+}
+expect ":) "
+
+# Sanity check: a query terminated with a semicolon on the same line still
+# commits as a single statement.
+send -- "SELECT 42;\r"
+expect "│ 42 │"
+expect ":) "
+
+# Backslash-extender continuation must still produce the ":-] " prompt — the
+# fix is intentionally narrow and only affects paste-in-progress.
+send -- "SELECT 1\\\r"
+expect ":-] "
+send -- ", 2;\r"
+expect "│ 1 │ 2 │"
+expect ":) "
+
+send -- ""
+expect eof
