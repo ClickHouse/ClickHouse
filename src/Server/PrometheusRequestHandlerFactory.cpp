@@ -464,8 +464,8 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
     const Poco::Util::AbstractConfiguration & config,
     const AsynchronousMetrics & asynchronous_metrics)
 {
-    /// The "defaults" HTTP handler should serve the prometheus exposing metrics protocol on the http port
-    /// only if it isn't already served on its own port <prometheus.port> and if there is no <prometheus.handlers> section.
+    /// Optional scrape on http_port: only when scrape is not already on <prometheus.port> and
+    /// <prometheus.handlers> does not take over handler wiring (see header comment).
     if (!config.has("prometheus") || config.getInt("prometheus.port", 0) || config.has("prometheus.handlers"))
         return nullptr;
 

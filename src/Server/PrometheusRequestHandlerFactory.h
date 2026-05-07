@@ -100,8 +100,12 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
 /// Auto-mounts the three dynamic-routing Prometheus protocol rules (remote_write, remote_read,
 /// query_api) on @p factory under the prefix configured by @c prometheus.http_path_prefix
 /// (default @c /prometheus). No-op when @c prometheus is not configured or the prefix is empty.
-/// @c expose_metrics is NOT registered here -- that has its own @c /metrics auto-mount via
-/// createPrometheusHandlerFactoryForHTTPRuleDefaults().
+///
+/// @c expose_metrics (Prometheus text scrape) is intentionally NOT registered here. When
+/// @c prometheus.port is non-zero, scrape is served only on that dedicated listener at
+/// @c prometheus.endpoint . Optional registration of scrape on @c http_port (same endpoint path)
+/// happens only via createPrometheusHandlerFactoryForHTTPRuleDefaults() when @c prometheus.port
+/// is zero and there is no @c prometheus.handlers section.
 void addPrometheusProtocolsToHTTPDefaults(
     HTTPRequestHandlerFactoryMain & factory,
     IServer & server,
@@ -123,10 +127,10 @@ void addPrometheusProtocolsToHTTPDefaults(
 ///     <errors>true</errors>
 /// </prometheus>
 ///
-/// The "defaults" HTTP handler should serve the prometheus exposing metrics protocol on the http port
-/// only if it isn't already served on its own port <prometheus.port>,
-/// and also if there is no <prometheus.handlers> section in the configuration
-/// (because if that section exists then it must be in charge of how prometheus protocols are handled).
+/// Optional backward-compatible path: registers text scrape on @c http_port only when
+/// @c prometheus.port is zero and there is no @c prometheus.handlers section (see implementation).
+/// When a dedicated @c prometheus.port is configured, this returns nullptr so scrape is not
+/// duplicated on @c http_port — use the dedicated listener for @c expose_metrics in that case.
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,

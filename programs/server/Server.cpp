@@ -3728,23 +3728,27 @@ void Server::createServers(
 
             const char * handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
 
-            /// The dedicated `<prometheus><port>` listener is kept for back-compat with
-            /// fixed-table `<prometheus><handlers>` configurations, but new deployments should
-            /// use the auto-mounted Prometheus routes on the main HTTP port under
-            /// `<prometheus><http_path_prefix>` (default `/prometheus`), passing `database` and
-            /// `table` as query parameters (or `X-ClickHouse-Database` / `X-ClickHouse-Table`).
+            /// The dedicated `<prometheus><port>` listener is kept for back-compat (including
+            /// serving Prometheus text scrape only on this port when configured). New deployments
+            /// should prefer auto-mounted **remote_write**, **remote_read**, and Query API routes
+            /// on the main HTTP port under `<prometheus><http_path_prefix>` (default `/prometheus`),
+            /// passing `database` and `table` as query parameters (or `X-ClickHouse-Database` /
+            /// `X-ClickHouse-Table`). Text scrape is not part of that auto-mount and stays here when
+            /// `<prometheus><port>` is non-zero (it is not duplicated on `<http_port>` in that case).
             /// Use a `call_once` so the warning is emitted only the first time we start the
             /// listener for this process even if the servers are reloaded.
             {
                 static std::once_flag prometheus_dedicated_port_deprecation_warning;
                 std::call_once(prometheus_dedicated_port_deprecation_warning, [this, handler_name] {
                     LOG_WARNING(&logger(),
-                        "The dedicated <prometheus><port> listener (handler: {}) is deprecated. "
-                        "Prefer the auto-mounted Prometheus protocols on the main HTTP port "
-                        "(configure <prometheus><http_path_prefix>, default /prometheus), for "
-                        "example /prometheus/write?database=...&table=... . All TimeSeries tables "
-                        "are opted in by default; set prometheus_url_routing_enabled = 0 on a "
-                        "table to opt it out.",
+                        "The dedicated <prometheus><port> listener (handler: {}) is deprecated for "
+                        "protocol APIs (remote_write, remote_read, Query API)—prefer those auto-mounted "
+                        "on the main HTTP port (<prometheus><http_path_prefix>, default /prometheus), "
+                        "e.g. /prometheus/write?database=...&table=.... Prometheus text scrape "
+                        "(expose_metrics) remains on this listener when <prometheus><port> is set and "
+                        "is not registered on <http_port> in that configuration. All TimeSeries tables "
+                        "are opted in by default; set prometheus_url_routing_enabled = 0 on a table "
+                        "to opt it out.",
                         handler_name);
                 });
             }

@@ -1294,25 +1294,33 @@ Settings:
 - `port` – Port for `endpoint`.
 
   :::warning Deprecated
-  The dedicated `<port>` listener is deprecated for **new** setups in favor of auto-mounting
-  the same protocols on `<http_port>`, but it is **not removed**: keeping Prometheus on its
-  own port remains valid for isolation or fixed-table `<prometheus><handlers>` configurations.
-  The Prometheus protocol handlers (`remote_write`, `remote_read`, and the Query API) can be
-  auto-mounted on the main `<http_port>` under `<http_path_prefix>` (default `/prometheus`);
-  see below. The dedicated listener still works for backward compatibility and logs a
-  one-shot startup warning the first time it binds.
+  The dedicated `<port>` listener is deprecated for new setups in favor of auto-mounting
+  remote_write, remote_read, and the Query API on `<http_port>` under
+  `<http_path_prefix>` (default `/prometheus`); see below. It is not removed: keeping
+  Prometheus on its own port remains valid for isolation, fixed-table
+  `<prometheus><handlers>` configurations, or serving only the Prometheus text scrape
+  (`expose_metrics`) there. The text scrape endpoint is not part of that HTTP-port
+  auto-mount: when `<prometheus><port>` is non-zero, scrape is served only on that listener
+  at `<endpoint>` (default `/metrics`), and the main `<http_port>` default rule does not
+  register a second copy of `<endpoint>` for scrape. The dedicated listener logs a one-shot
+  startup warning the first time it binds.
   :::
 
 - `http_path_prefix` – URL prefix used to auto-mount the Prometheus `remote_write`,
   `remote_read`, and Query API handlers on the main `<http_port>`. Defaults to
   `/prometheus`. After that prefix, paths such as `/write`, `/read`, and `/api/v1/query`
-  identify the protocol. The target database and table are **not** part of the path:
+  identify the protocol. The target database and table are not part of the path:
   pass them as `database` and `table` query parameters (for example
   `http://<host>:<http_port>/prometheus/write?database=mydb&table=metrics`), or set the
   `X-ClickHouse-Database` and `X-ClickHouse-Table` HTTP headers when the corresponding
   query parameters are absent.
   These routes are registered only for URLs under `<http_path_prefix>`; they do not replace
   or intercept ordinary ClickHouse HTTP usage such as `/?query=SELECT 1` on `<http_port>`.
+  They do not register the Prometheus text scrape (`expose_metrics`). Scrape stays on the
+  dedicated `<prometheus><port>` when it is non-zero (see `<endpoint>` above); only when
+  `<prometheus><port>` is zero and there is no `<prometheus.handlers>` section does the
+  server optionally attach `<endpoint>` on `<http_port>` for backward-compatible single-port
+  setups.
   Set to an empty string to opt out of the auto-mount entirely. The target table must
   be a `TimeSeries` engine table; URL-routed access is on by default for every
   `TimeSeries` table and can be disabled per table by setting
@@ -1323,14 +1331,14 @@ Settings:
   The dynamic-routing protocol handlers can also be mounted manually under
   [`<http_handlers>`](#http_handlers) using the explicit handler types
   `prometheus_remote_write`, `prometheus_remote_read`, and `prometheus_query_api`. Match the
-  `<url>` rule to the protocol path **after** `<http_path_prefix>` only—for example
+  `<url>` rule to the protocol path after `<http_path_prefix>` only—for example
   `regex:^/foo/write$` together with `<http_path_prefix>/foo</http_path_prefix>` for
   remote write—because `database` and `table` are query parameters or headers, not path
   segments. The legacy `<type>prometheus</type>` handler in `<http_handlers>` is unchanged and
   still serves the expose-metrics protocol on its configured URL.
 
   When `keeper_metrics_only` is `true`, the dedicated Prometheus listener is limited to
-  keeper-related scrape metrics, and the HTTP-port auto-mount described above is **not**
+  keeper-related scrape metrics, and the HTTP-port auto-mount described above is not
   registered (so `remote_write`/`remote_read`/Query API URLs on `<http_port>` are not opened
   in that mode).
 - `metrics` – Expose metrics from the [system.metrics](/operations/system-tables/metrics) table.
