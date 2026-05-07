@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPrePostProcessorUtils.h>
 
+#include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <Interpreters/Block.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
