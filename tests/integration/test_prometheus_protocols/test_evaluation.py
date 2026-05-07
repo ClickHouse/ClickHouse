@@ -1658,6 +1658,25 @@ def test_conversion_functions():
     )
 
     do_query_test(
+        "timestamp(test)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [160, "140"]}]}',
+        [["[]", "1970-01-01 00:02:40.000", 140]],
+    )
+
+    do_query_test(
+        "timestamp(test)[40:10]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "140"], [160, "140"], [170, "140"], [180, "140"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',140),('1970-01-01 00:02:40.000',140),('1970-01-01 00:02:50.000',140),('1970-01-01 00:03:00.000',140)]",
+            ]
+        ],
+    )
+
+    do_query_test(
         "scalar(vector(1))",
         180,
         '{"resultType": "scalar", "result": [180, "1"]}',
