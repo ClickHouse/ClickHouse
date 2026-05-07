@@ -131,6 +131,7 @@ namespace DB
         {"Date", arrow::date32()},
         {"DateTime", arrow::uint32()},  /// uint32 is used instead of date64, because we don't need milliseconds.
         {"Date32", arrow::date32()},
+        {"Time", arrow::time32(arrow::TimeUnit::type::SECOND)},
 
         {"String", arrow::binary()},
         {"FixedString", arrow::binary()},
@@ -320,6 +321,87 @@ namespace DB
                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 
                 status = builder.Append(value);
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+    }
+
+    static void fillArrowArrayWithTime64ColumnData(
+        const DataTypePtr & type,
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder * array_builder,
+        size_t start,
+        size_t end)
+    {
+        const auto * time64_type = assert_cast<const DataTypeTime64 *>(type.get());
+        const auto & column = assert_cast<const ColumnDecimal<Time64> &>(*write_column);
+        arrow::Status status;
+
+        auto scale = time64_type->getScale();
+        bool need_rescale = scale % 3;
+        auto rescale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(3 - scale % 3);
+
+        bool to_arrow_time32 = (scale <= 3);
+        if (to_arrow_time32)
+        {
+            auto & builder = assert_cast<arrow::Time32Builder &>(*array_builder);
+
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if (null_bytemap && (*null_bytemap)[value_i])
+                {
+                    status = builder.AppendNull();
+                }
+                else
+                {
+                    auto value = static_cast<Int32>(column[value_i].safeGet<DecimalField<Time64>>().getValue());
+                    if (need_rescale)
+                    {
+                        if (common::mulOverflow(value, rescale_multiplier, value))
+                            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                    }
+                    status = builder.Append(value);
+                }
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+        else
+        {
+            auto & builder = assert_cast<arrow::Time64Builder &>(*array_builder);
+            if (null_bytemap || need_rescale)
+            {
+                for (size_t value_i = start; value_i < end; ++value_i)
+                {
+                    if (null_bytemap && (*null_bytemap)[value_i])
+                    {
+                        status = builder.AppendNull();
+                    }
+                    else
+                    {
+                        auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<Time64>>().getValue());
+                        if (need_rescale)
+                        {
+                            if (common::mulOverflow(value, rescale_multiplier, value))
+                                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                        }
+                        status = builder.Append(value);
+                    }
+                    checkStatus(status, write_column->getName(), format_name);
+                }
+            }
+            else
+            {
+                PaddedPODArray<Int64> values;
+                values.reserve(end - start);
+
+                for (size_t value_i = start; value_i < end; ++value_i)
+                {
+                    values.emplace_back(static_cast<Int64>(column[value_i].safeGet<DecimalField<Time64>>().getValue()));
+                }
+
+                status = builder.AppendValues(values.data(), values.size());
                 checkStatus(status, write_column->getName(), format_name);
             }
         }
@@ -1103,6 +1185,36 @@ namespace DB
         }
     }
 
+    static void fillArrowArrayWithTimeColumnData(
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder* array_builder,
+        size_t start,
+        size_t end)
+    {
+        const PaddedPODArray<Int32> & internal_data = assert_cast<const ColumnVector<Int32> &>(*write_column).getData();
+        arrow::Time32Builder & builder = assert_cast<arrow::Time32Builder &>(*array_builder);
+        arrow::Status status;
+
+        if (null_bytemap)
+        {
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if ((*null_bytemap)[value_i])
+                    status = builder.AppendNull();
+                else
+                    status = builder.Append(internal_data[value_i]);
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+        else
+        {
+            status = builder.AppendValues(internal_data.data() + start, end - start);
+            checkStatus(status, write_column->getName(), format_name);
+        }
+    }
+
     template <typename DataType, typename FieldType, typename ArrowDecimalType, typename ArrowBuilder>
     static void fillArrowArrayWithDecimalColumnData(
         ColumnPtr write_column,
@@ -1226,6 +1338,9 @@ namespace DB
             case TypeIndex::Date32:
                 fillArrowArrayWithDate32ColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 break;
+            case TypeIndex::Time:
+                fillArrowArrayWithTimeColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                break;
             case TypeIndex::Array:
                 arrow_array = buildArrowListArrayWithArrayColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, settings, dictionary_values);
                 break;
@@ -1269,6 +1384,9 @@ namespace DB
                 break;
             case TypeIndex::DateTime64:
                 fillArrowArrayWithDateTime64ColumnData(column_type, column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::Time64:
+                fillArrowArrayWithTime64ColumnData(column_type, column, null_bytemap, format_name, array_builder, start, end);
                 break;
             case TypeIndex::UInt8:
             {
@@ -1368,7 +1486,13 @@ namespace DB
         }
     }
 
-    static arrow::TimeUnit::type getArrowTimeUnit(const DataTypeDateTime64 * type)
+    template <class T>
+    concept is_decimal_time =
+        std::is_same_v<T, DateTime64> ||
+        std::is_same_v<T, Time64>;
+
+    template <is_decimal_time CHDataType>
+    static arrow::TimeUnit::type getArrowTimeUnit(const DataTypeDecimalBase<CHDataType> * type)
     {
         UInt32 scale = type->getScale();
         if (scale == 0)
@@ -1498,6 +1622,15 @@ namespace DB
         {
             const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_type.get());
             return arrow::timestamp(getArrowTimeUnit(datetime64_type), datetime64_type->getTimeZone().getTimeZone());
+        }
+
+        if (isTime64(column_type))
+        {
+            const auto * time64_type = assert_cast<const DataTypeTime64 *>(column_type.get());
+            auto arrow_time_unit = getArrowTimeUnit(time64_type);
+            if (arrow_time_unit == arrow::TimeUnit::SECOND || arrow_time_unit == arrow::TimeUnit::MILLI)
+                return arrow::time32(arrow_time_unit);
+            return arrow::time64(arrow_time_unit);
         }
 
         if (isFixedString(column_type) && settings.output_fixed_string_as_fixed_byte_array)
