@@ -201,7 +201,20 @@ void MemoryReservation::decreaseApproved(const DecreaseRequest & decrease)
     approved_increment.sub(decrease.size);
     decrease_enqueued = false;
     if (decrease.removing_allocation)
+    {
+        // The queue cancels any pending increase as part of the removal path
+        // (`processActivation` unlinks from `increasing_allocations` without calling
+        // `increaseApproved`). Roll back the demand metric and clear
+        // `increase_enqueued` so threads blocked on the serialization barrier in
+        // `syncWithMemoryTracker` are released and do not wait forever.
+        if (increase_enqueued)
+        {
+            demand_increment.sub(enqueued_demand);
+            enqueued_demand = 0;
+            increase_enqueued = false;
+        }
         removed = true;
+    }
     cv.notify_all();
 }
 
