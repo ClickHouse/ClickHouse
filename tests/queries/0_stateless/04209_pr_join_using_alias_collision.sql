@@ -8,6 +8,10 @@ INSERT INTO t_pr_join_alias VALUES (1, 2, 3);
 
 SELECT *
 FROM (SELECT * FROM t_pr_join_alias) ANY LEFT JOIN (SELECT * FROM t_pr_join_alias) USING id
-SETTINGS joined_subquery_requires_alias = 0;
+SETTINGS
+    enable_parallel_replicas = 1,
+    cluster_for_parallel_replicas = 'parallel_replicas',
+    parallel_replicas_for_non_replicated_merge_tree = 1,
+    joined_subquery_requires_alias = 0;
 
 DROP TABLE t_pr_join_alias;
