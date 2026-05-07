@@ -76,3 +76,26 @@
 collect	1
 run	3
 studi	1
+10. val IN (...) routes set elements through the stem postprocessor.
+2
+11. equals: needle is stemmed before index lookup so morphologically equivalent rows are not pruned.
+1
+1
+0
+12. hasPhrase: phrase tokens are stemmed before index lookup.
+1
+1
+0
+13. startsWith / endsWith: prefix/suffix tokens are stemmed for the hint lookup.
+1
+1
+0
+14. like: HINT-mode pattern tokens are stemmed.
+1
+1
+0
+15. mapContainsValue / mapContainsValueLike: needle is stemmed for index on mapValues.
+1
+1
+0
+1

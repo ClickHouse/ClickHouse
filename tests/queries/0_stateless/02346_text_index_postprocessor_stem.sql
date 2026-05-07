@@ -335,3 +335,112 @@ ORDER BY token;
 
 SYSTEM START MERGES tab;
 DROP TABLE tab;
+
+SELECT '10. val IN (...) routes set elements through the stem postprocessor.';
+-- Without postprocessor-aware set tokenization, the index would look up the raw needle
+-- (e.g. 'running') and miss the stemmed token ('run'), pruning matching rows.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(val), 'en'))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'running'), (2, 'studies'), (3, 'collection');
+
+-- Row-level IN exact-matches the stored words; the index must not prune those rows.
+SELECT count() FROM tab WHERE val IN ('running', 'collection');   -- 2
+
+DROP TABLE tab;
+
+SELECT '11. equals: needle is stemmed before index lookup so morphologically equivalent rows are not pruned.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(val), 'en'))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'running'), (2, 'cat');
+
+SELECT count() FROM tab WHERE val = 'running';   -- 1
+SELECT count() FROM tab WHERE val = 'cat';       -- 1
+SELECT count() FROM tab WHERE val = 'walking';   -- 0
+
+DROP TABLE tab;
+
+SELECT '12. hasPhrase: phrase tokens are stemmed before index lookup.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(val), 'en'))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'running fast'), (2, 'walking slowly');
+
+SELECT count() FROM tab WHERE hasPhrase(val, 'running fast');     -- 1
+SELECT count() FROM tab WHERE hasPhrase(val, 'walking slowly');   -- 1
+SELECT count() FROM tab WHERE hasPhrase(val, 'jumping high');     -- 0
+
+DROP TABLE tab;
+
+SELECT '13. startsWith / endsWith: prefix/suffix tokens are stemmed for the hint lookup.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(val), 'en'))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'running fast'), (2, 'cat dog');
+
+SELECT count() FROM tab WHERE startsWith(val, 'running fast');   -- 1
+SELECT count() FROM tab WHERE endsWith(val, 'cat dog');          -- 1
+SELECT count() FROM tab WHERE startsWith(val, 'jumping high');   -- 0
+
+DROP TABLE tab;
+
+SELECT '14. like: HINT-mode pattern tokens are stemmed.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(val), 'en'))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'running fast'), (2, 'walking slowly');
+
+SELECT count() FROM tab WHERE val LIKE '%running%';   -- 1
+SELECT count() FROM tab WHERE val LIKE '%walking%';   -- 1
+SELECT count() FROM tab WHERE val LIKE '%jumping%';   -- 0
+
+DROP TABLE tab;
+
+SELECT '15. mapContainsValue / mapContainsValueLike: needle is stemmed for index on mapValues.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Map(String, String),
+    INDEX idx(mapValues(val)) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(val), 'en'))
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, {'a': 'running'}), (2, {'a': 'walking'});
+
+SELECT count() FROM tab WHERE mapContainsValue(val, 'running');         -- 1
+SELECT count() FROM tab WHERE mapContainsValue(val, 'walking');         -- 1
+SELECT count() FROM tab WHERE mapContainsValue(val, 'jumping');         -- 0
+SELECT count() FROM tab WHERE mapContainsValueLike(val, '%running%');   -- 1
+
+DROP TABLE tab;
