@@ -940,11 +940,15 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
 
             geometry = buildBoxGeometry(xmin, ymin, xmax, ymax);
         }
-        /// Path 3: ST_DWithin(source_column, const_geometry, distance_meters)
-        ///          or ST_DWithin(const_geometry, source_column, distance_meters)
+        /// Path 3: spherical ST_DWithin(source_column, const_geometry, distance_meters)
+        ///          or spherical ST_DWithin(const_geometry, source_column, distance_meters)
         /// Build an S2 covering for const_geometry, then expand it by the distance
-        /// buffer using S2CellUnion::Expand.
-        else if ((func_name == "geoDWithinCartesian" || func_name == "geoDWithinSpherical") && fn->children.size() == 3)
+        /// buffer (meters) using S2CellUnion::Expand.
+        ///
+        /// Note: `geoDWithinCartesian` distance is in cartesian coordinate units,
+        /// not meters, so it cannot be safely converted to an S2 angular buffer.
+        /// Skip cartesian variant to preserve conservative pruning.
+        else if (func_name == "geoDWithinSpherical" && fn->children.size() == 3)
         {
             const ActionsDAG::Node * geometry_const = nullptr;
             if (isSourceColumnNode(fn->children[0], params.source_column))
@@ -1049,6 +1053,9 @@ Block ProjectionIndexS2::calculate(
     const IColumnPermutation * perm_ptr) const
 {
 #if !USE_S2_GEOMETRY
+    (void)block;
+    (void)starting_offset;
+    (void)perm_ptr;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "ProjectionIndexS2 requires S2 support (USE_S2_GEOMETRY)");
 #else
     if (!block.has(params.source_column))
