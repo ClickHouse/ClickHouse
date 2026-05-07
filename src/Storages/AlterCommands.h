@@ -180,6 +180,9 @@ struct AlterCommand
     /// Checks that only comment changed by alter
     bool isCommentAlter() const;
 
+    /// Checks that only table comment (not column comment) changed by alter
+    bool isTableCommentAlter() const;
+
     /// Checks that any TTL changed by alter
     bool isTTLAlter(const StorageInMemoryMetadata & metadata) const;
 
@@ -229,6 +232,9 @@ public:
 
     /// All commands modify comments only.
     bool isCommentAlter() const;
+
+    /// All commands modify only table comments (not column comments).
+    bool isTableCommentAlter() const;
 
     /// Return mutation commands which some storages may execute as part of
     /// alter. If alter can be performed as pure metadata update, than result is

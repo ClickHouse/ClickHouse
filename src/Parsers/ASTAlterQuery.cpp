@@ -655,6 +655,11 @@ bool ASTAlterQuery::isCommentAlter() const
     return isOneCommandTypeOnly(ASTAlterCommand::COMMENT_COLUMN) || isOneCommandTypeOnly(ASTAlterCommand::MODIFY_COMMENT);
 }
 
+bool ASTAlterQuery::isTableCommentAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::MODIFY_COMMENT);
+}
+
 bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const
 {
     if (command_list)

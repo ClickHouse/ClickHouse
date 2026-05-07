@@ -272,6 +272,8 @@ public:
 
     bool isCommentAlter() const;
 
+    bool isTableCommentAlter() const;
+
     String getID(char) const override;
 
     ASTPtr clone() const override;
