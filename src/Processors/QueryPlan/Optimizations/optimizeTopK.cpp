@@ -132,10 +132,18 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     /// Dynamic and Variant columns cannot be reliably filtered: their lessOrEquals
     /// returns Nullable(UInt8) rather than UInt8, causing an "Unexpected return type"
     /// logical error when the prewhere filter is executed. Skip the optimization for them.
+    ///
+    /// For variable-length types (e.g. String, Array, Map, Tuple containing variable-length
+    /// elements), the per-row threshold comparison cost can exceed its savings — most notably
+    /// when the column's lex-min value dominates and few granules can be skipped. Gate that
+    /// path behind an explicit opt-in. Nullable and Tuple of fixed-length types are still
+    /// considered fixed-length (haveMaximumSizeOfValue forwards through them).
+    const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
         && !read_from_mergetree_step->getPrewhereInfo()
         && !isDynamic(sort_column.type)
-        && !isVariant(sort_column.type);
+        && !isVariant(sort_column.type)
+        && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
     /// When read-in-order optimization is enabled and the sort column is a prefix
     /// of the storage's sorting key, the engine will read data in sorted order.
