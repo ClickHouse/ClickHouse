@@ -90,31 +90,7 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');
 
 DROP TABLE tab;
 
-SELECT '4. Stop-word filtering postprocessor.';
-
--- Tokens that map to empty string are excluded from the index.
--- Searching a needle that contains a stop word correctly ignores it.
-CREATE TABLE tab
-(
-    id UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'the', '', val))
-)
-ENGINE = MergeTree ORDER BY id;
-
-INSERT INTO tab VALUES (1, 'hello world'), (2, 'foo bar');
-
--- 'hello' and 'world' are stored normally; 'foo' and 'bar' too.
-SELECT count() FROM tab WHERE hasToken(val, 'hello');
-SELECT count() FROM tab WHERE hasToken(val, 'world');
--- When 'the' appears in the needle string, it is filtered from the search tokens.
--- hasAllTokens(val, 'hello the world') is equivalent to hasAllTokens(val, 'hello world').
-SELECT count() FROM tab WHERE hasAllTokens(val, 'hello world');
-SELECT count() FROM tab WHERE hasAllTokens(val, 'hello the world');
-
-DROP TABLE tab;
-
-SELECT '5. Regex-based postprocessor.';
+SELECT '4. Regex-based postprocessor.';
 
 -- Strips the suffix 'ing' from each token (simple unstemming).
 CREATE TABLE tab
@@ -134,6 +110,45 @@ SELECT count() FROM tab WHERE hasToken(val, 'run');
 SELECT count() FROM tab WHERE hasToken(val, 'walking');
 SELECT count() FROM tab WHERE hasToken(val, 'cat');
 
+DROP TABLE tab;
+
+SELECT '5. Timestamp removal: postprocessor uses parseDateTimeOrNull to drop timestamp tokens.';
+
+-- Log lines are split by whitespace (splitByString default tokenizer), so the ISO timestamp
+-- becomes a single token per line. The postprocessor uses parseDateTimeOrNull with an explicit
+-- format to detect and drop timestamp-format tokens (mapping them to '').
+-- Non-timestamp tokens are kept unchanged.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(
+        tokenizer    = 'splitByString',
+        postprocessor = if(isNotNull(parseDateTimeOrNull(val, '%Y-%m-%dT%H:%i:%S')), '', val)
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES
+    (1, '2024-01-15T10:23:45 ERROR connection failed'),
+    (2, '2024-01-15T10:23:46 INFO server started'),
+    (3, '2024-01-15T10:23:47 ERROR disk full');
+
+-- Searching by message content finds rows.
+SELECT count() FROM tab WHERE hasToken(val, 'ERROR');                -- 2
+SELECT count() FROM tab WHERE hasToken(val, 'connection');           -- 1
+SELECT count() FROM tab WHERE hasToken(val, 'server');               -- 1
+-- The timestamp token maps to '' via the postprocessor; the index never stored it.
+SELECT count() FROM tab WHERE hasToken(val, '2024-01-15T10:23:45'); -- 0
+
+-- The index stores only message-level tokens.
+SELECT token, cardinality
+FROM mergeTreeTextIndex(currentDatabase(), tab, idx)
+ORDER BY token;
+
+SYSTEM START MERGES tab;
 DROP TABLE tab;
 
 SELECT '6. Combined preprocessor and postprocessor.';
@@ -164,86 +179,31 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');
 
 DROP TABLE tab;
 
-SELECT '7. Partially materialized index.';
+SELECT '7. Stop-word filtering postprocessor.';
 
--- The index is added after the initial insert, so old parts have no index.
--- The postprocessor is applied to the needle at the query plan level in both cases:
--- for new parts the index is used; for old parts the postprocessed needle is used in a row scan.
-DROP TABLE IF EXISTS tab;
-CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+-- Tokens that map to empty string are excluded from the index.
+-- Searching a needle that contains a stop word correctly ignores it.
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'the', '', val))
+)
+ENGINE = MergeTree ORDER BY id;
 
-SYSTEM STOP MERGES tab;
+INSERT INTO tab VALUES (1, 'hello world'), (2, 'foo bar');
 
-INSERT INTO tab VALUES (1, 'foo'), (2, 'bar');
+-- 'hello' and 'world' are stored normally; 'foo' and 'bar' too.
+SELECT count() FROM tab WHERE hasToken(val, 'hello');
+SELECT count() FROM tab WHERE hasToken(val, 'world');
+-- When 'the' appears in the needle string, it is filtered from the search tokens.
+-- hasAllTokens(val, 'hello the world') is equivalent to hasAllTokens(val, 'hello world').
+SELECT count() FROM tab WHERE hasAllTokens(val, 'hello world');
+SELECT count() FROM tab WHERE hasAllTokens(val, 'hello the world');
 
-ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val));
-
-INSERT INTO tab VALUES (3, 'baz'), (4, 'QUX');
-
--- Old parts (no index): row-level scan uses the postprocessed (lowercased) needle.
-SELECT count() FROM tab WHERE hasToken(val, 'foo');
-SELECT count() FROM tab WHERE hasToken(val, 'FOO');
-SELECT count() FROM tab WHERE hasToken(val, 'bar');
--- New parts (with index): postprocessed needle used for index lookup.
-SELECT count() FROM tab WHERE hasToken(val, 'baz');
-SELECT count() FROM tab WHERE hasToken(val, 'QUX');
-SELECT count() FROM tab WHERE hasToken(val, 'qux');
-SELECT count() FROM tab WHERE hasToken(val, 'xyz');
-
-SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '8. Negative tests.';
-
-SELECT '- The postprocessor expression must reference the index column';
-CREATE TABLE tab
-(
-    id UInt64,
-    val String,
-    other_str String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(other_str))
-)
-ENGINE = MergeTree ORDER BY tuple();  -- { serverError UNKNOWN_IDENTIFIER }
-
-SELECT '- The postprocessor expression must be a function, not an identifier';
-CREATE TABLE tab
-(
-    id UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = val)
-)
-ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
-
-SELECT '- The postprocessor expression must return String';
-CREATE TABLE tab
-(
-    id UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = length(val))
-)
-ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
-
-SELECT '- The postprocessor must not contain non-deterministic functions';
-CREATE TABLE tab
-(
-    id UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = concat(val, toString(rand())))
-)
-ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
-
-SELECT '- The postprocessor must not contain arrayJoin';
-CREATE TABLE tab
-(
-    id UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = arrayJoin(array(val)))
-)
-ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
-
-DROP TABLE IF EXISTS tab;
-
-SELECT '9. Stop-word postprocessor: empty-mapped tokens must never match vacuously.';
+SELECT '8. Stop-word postprocessor: empty-mapped tokens must never match vacuously.';
 
 CREATE TABLE tab
 (
@@ -263,7 +223,7 @@ SELECT count() FROM tab WHERE hasToken(val, 'quick');
 
 DROP TABLE tab;
 
-SELECT '10. hasAllTokens / hasAnyTokens when all array elements are filtered out.';
+SELECT '9. hasAllTokens / hasAnyTokens when all array elements are filtered out.';
 
 CREATE TABLE tab
 (
@@ -287,7 +247,7 @@ SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop', 'foo']);
 
 DROP TABLE tab;
 
-SELECT '11. Index-build path and row-scan path agree when postprocessor drops tokens.';
+SELECT '10. Index-build path and row-scan path agree when postprocessor drops tokens.';
 
 CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
 
@@ -313,7 +273,7 @@ SELECT count() FROM tab WHERE hasToken(val, 'world');  -- row 3, new part (index
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '12. Array tokenizer + postprocessor: has() / hasAll() / hasAny() bypass the postprocessor.';
+SELECT '11. Array tokenizer + postprocessor: has() / hasAll() / hasAny() bypass the postprocessor.';
 -- The array tokenizer stores raw elements; the postprocessor is not applied to them.
 -- has/hasAll/hasAny compare against the raw stored elements exactly.
 -- The postprocessor is irrelevant for these functions.
@@ -332,6 +292,28 @@ SELECT count() FROM tab WHERE has(val, 'Foo');   -- 1: exact match 'Foo'
 SELECT count() FROM tab WHERE has(val, 'BAR');   -- 1: exact match 'BAR'
 SELECT count() FROM tab WHERE has(val, 'foo');   -- 0: 'foo' ≠ 'Foo', postprocessor not applied
 SELECT count() FROM tab WHERE has(val, 'xyz');   -- 0
+
+DROP TABLE tab;
+
+SELECT '12. Array tokenizer + preprocessor: has() / hasAll() / hasAny() bypass the preprocessor.';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Array(String),
+    INDEX idx(val) TYPE text(tokenizer = 'array', preprocessor = lower(val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
+
+-- The index stores preprocessed elements, but these functions use raw array semantics.
+SELECT count() FROM tab WHERE has(val, 'Foo');         -- 1
+SELECT count() FROM tab WHERE has(val, 'foo');         -- 0
+SELECT count() FROM tab WHERE hasAll(val, ['BAR']);    -- 1
+SELECT count() FROM tab WHERE hasAll(val, ['bar']);    -- 0
+SELECT count() FROM tab WHERE hasAny(val, ['baz']);    -- 1
+SELECT count() FROM tab WHERE hasAny(val, ['BAZ']);    -- 0
 
 DROP TABLE tab;
 
@@ -365,7 +347,36 @@ SELECT count() FROM tab WHERE hasAllTokens(val, 'running cat');      -- 0
 
 DROP TABLE tab;
 
-SELECT '14. Partially materialized index + postprocessor: haystack is not postprocessed on row-scan.';
+SELECT '14. Partially materialized index.';
+
+-- The index is added after the initial insert, so old parts have no index.
+-- The postprocessor is applied to the needle at the query plan level in both cases:
+-- for new parts the index is used; for old parts the postprocessed needle is used in a row scan.
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES (1, 'foo'), (2, 'bar');
+
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val));
+
+INSERT INTO tab VALUES (3, 'baz'), (4, 'QUX');
+
+-- Old parts (no index): row-level scan uses the postprocessed (lowercased) needle.
+SELECT count() FROM tab WHERE hasToken(val, 'foo');
+SELECT count() FROM tab WHERE hasToken(val, 'FOO');
+SELECT count() FROM tab WHERE hasToken(val, 'bar');
+-- New parts (with index): postprocessed needle used for index lookup.
+SELECT count() FROM tab WHERE hasToken(val, 'baz');
+SELECT count() FROM tab WHERE hasToken(val, 'QUX');
+SELECT count() FROM tab WHERE hasToken(val, 'qux');
+SELECT count() FROM tab WHERE hasToken(val, 'xyz');
+
+SYSTEM START MERGES tab;
+DROP TABLE tab;
+
+SELECT '15. Partially materialized index + postprocessor: haystack is not postprocessed on row-scan.';
 
 -- Old parts use row-level scan. The postprocessor is applied to the needle only,
 -- never to the haystack. When old-part data is uppercase and the postprocessor lowercases
@@ -391,7 +402,7 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');  -- 0
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '15. Partially materialized index + non-trivial postprocessor: postprocessed needle vs. raw haystack token.';
+SELECT '16. Partially materialized index + non-trivial postprocessor: postprocessed needle vs. raw haystack token.';
 
 -- When the postprocessor significantly transforms tokens (here: strips the suffix "ing"),
 -- the postprocessed needle no longer matches the raw token in an unindexed part.
@@ -418,7 +429,7 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');      -- 0
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '16. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.';
+SELECT '17. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.';
 
 CREATE TABLE tab
 (
@@ -434,28 +445,6 @@ INSERT INTO tab VALUES (1, 'running walking'), (2, 'cat dog');
 SELECT count() FROM tab WHERE hasPhrase(val, 'running walking');  -- 1
 SELECT count() FROM tab WHERE startsWith(val, 'running');         -- 1
 SELECT count() FROM tab WHERE endsWith(val, 'walking');           -- 1
-
-DROP TABLE tab;
-
-SELECT '17. Array tokenizer + preprocessor: has() / hasAll() / hasAny() bypass the preprocessor.';
-
-CREATE TABLE tab
-(
-    id UInt64,
-    val Array(String),
-    INDEX idx(val) TYPE text(tokenizer = 'array', preprocessor = lower(val))
-)
-ENGINE = MergeTree ORDER BY id;
-
-INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
-
--- The index stores preprocessed elements, but these functions use raw array semantics.
-SELECT count() FROM tab WHERE has(val, 'Foo');         -- 1
-SELECT count() FROM tab WHERE has(val, 'foo');         -- 0
-SELECT count() FROM tab WHERE hasAll(val, ['BAR']);    -- 1
-SELECT count() FROM tab WHERE hasAll(val, ['bar']);    -- 0
-SELECT count() FROM tab WHERE hasAny(val, ['baz']);    -- 1
-SELECT count() FROM tab WHERE hasAny(val, ['BAZ']);    -- 0
 
 DROP TABLE tab;
 
@@ -536,46 +525,7 @@ SELECT count() FROM tab WHERE endsWith(val, 'running walking');    -- 2
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '21. Timestamp removal: postprocessor uses parseDateTimeOrNull to drop timestamp tokens.';
-
--- Log lines are split by whitespace (splitByString default tokenizer), so the ISO timestamp
--- becomes a single token per line. The postprocessor uses parseDateTimeOrNull with an explicit
--- format to detect and drop timestamp-format tokens (mapping them to '').
--- Non-timestamp tokens are kept unchanged.
-
-CREATE TABLE tab
-(
-    id UInt64,
-    val String,
-    INDEX idx(val) TYPE text(
-        tokenizer    = 'splitByString',
-        postprocessor = if(isNotNull(parseDateTimeOrNull(val, '%Y-%m-%dT%H:%i:%S')), '', val)
-    )
-)
-ENGINE = MergeTree ORDER BY id;
-SYSTEM STOP MERGES tab;
-
-INSERT INTO tab VALUES
-    (1, '2024-01-15T10:23:45 ERROR connection failed'),
-    (2, '2024-01-15T10:23:46 INFO server started'),
-    (3, '2024-01-15T10:23:47 ERROR disk full');
-
--- Searching by message content finds rows.
-SELECT count() FROM tab WHERE hasToken(val, 'ERROR');                -- 2
-SELECT count() FROM tab WHERE hasToken(val, 'connection');           -- 1
-SELECT count() FROM tab WHERE hasToken(val, 'server');               -- 1
--- The timestamp token maps to '' via the postprocessor; the index never stored it.
-SELECT count() FROM tab WHERE hasToken(val, '2024-01-15T10:23:45'); -- 0
-
--- The index stores only message-level tokens.
-SELECT token, cardinality
-FROM mergeTreeTextIndex(currentDatabase(), tab, idx)
-ORDER BY token;
-
-SYSTEM START MERGES tab;
-DROP TABLE tab;
-
-SELECT '22. val IN (...) routes set elements through the postprocessor.';
+SELECT '21. val IN (...) routes set elements through the postprocessor.';
 -- The bug: tryPrepareSetForTextSearch built set tokens with preprocessor + tokenizer
 -- only, ignoring the postprocessor. Index stored 'foo' (postprocessed); a query
 -- val IN ('FOO') would search for token 'FOO', miss, prune the granule, and drop
@@ -647,3 +597,53 @@ SELECT count() FROM tab WHERE val IN ('cat');           -- 1
 SELECT count() FROM tab WHERE val IN ('the', 'cat');    -- 2
 
 DROP TABLE tab;
+
+SELECT '22. Negative tests.';
+
+SELECT '- The postprocessor expression must reference the index column';
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    other_str String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(other_str))
+)
+ENGINE = MergeTree ORDER BY tuple();  -- { serverError UNKNOWN_IDENTIFIER }
+
+SELECT '- The postprocessor expression must be a function, not an identifier';
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = val)
+)
+ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
+
+SELECT '- The postprocessor expression must return String';
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = length(val))
+)
+ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
+
+SELECT '- The postprocessor must not contain non-deterministic functions';
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = concat(val, toString(rand())))
+)
+ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
+
+SELECT '- The postprocessor must not contain arrayJoin';
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = arrayJoin(array(val)))
+)
+ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
+
+DROP TABLE IF EXISTS tab;

@@ -28,55 +28,61 @@
 2
 1
 0
-4. Stop-word filtering postprocessor.
-1
-1
-1
-1
-5. Regex-based postprocessor.
+4. Regex-based postprocessor.
 1
 0
 1
 1
+5. Timestamp removal: postprocessor uses parseDateTimeOrNull to drop timestamp tokens.
+2
+1
+1
+0
+ERROR	2
+INFO	1
+connection	1
+disk	1
+failed	1
+full	1
+server	1
+started	1
 6. Combined preprocessor and postprocessor.
 1
 1
 1
 1
 0
-7. Partially materialized index.
+7. Stop-word filtering postprocessor.
 1
 1
 1
 1
-1
-1
-0
-8. Negative tests.
-- The postprocessor expression must reference the index column
-- The postprocessor expression must be a function, not an identifier
-- The postprocessor expression must return String
-- The postprocessor must not contain non-deterministic functions
-- The postprocessor must not contain arrayJoin
-9. Stop-word postprocessor: empty-mapped tokens must never match vacuously.
+8. Stop-word postprocessor: empty-mapped tokens must never match vacuously.
 0
 1
 1
-10. hasAllTokens / hasAnyTokens when all array elements are filtered out.
+9. hasAllTokens / hasAnyTokens when all array elements are filtered out.
 0
 0
 1
 1
-11. Index-build path and row-scan path agree when postprocessor drops tokens.
+10. Index-build path and row-scan path agree when postprocessor drops tokens.
 0
 1
 1
 1
 1
-12. Array tokenizer + postprocessor: has() / hasAll() / hasAny() bypass the postprocessor.
+11. Array tokenizer + postprocessor: has() / hasAll() / hasAny() bypass the postprocessor.
 1
 1
 0
+0
+12. Array tokenizer + preprocessor: has() / hasAll() / hasAny() bypass the preprocessor.
+0
+0
+0
+0
+1
 0
 13. String tokenizer + non-commutative postprocessor: row-scan matches index.
 1
@@ -85,25 +91,26 @@
 0
 1
 0
-14. Partially materialized index + postprocessor: haystack is not postprocessed on row-scan.
+14. Partially materialized index.
+1
+1
+1
+1
 1
 1
 0
-15. Partially materialized index + non-trivial postprocessor: postprocessed needle vs. raw haystack token.
+15. Partially materialized index + postprocessor: haystack is not postprocessed on row-scan.
+1
+1
+0
+16. Partially materialized index + non-trivial postprocessor: postprocessed needle vs. raw haystack token.
 1
 2
 0
-16. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.
+17. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.
 1
 1
 1
-17. Array tokenizer + preprocessor: has() / hasAll() / hasAny() bypass the preprocessor.
-0
-0
-0
-0
-1
-0
 18. startsWith / endsWith use hint with postprocessor when normalized tokens survive.
 1
 1
@@ -120,20 +127,7 @@ FUNCTION and(__text_index_idx_endsWith_62c031dd56b3d56d129e8b959a74ec3e :: 2, en
 2
 2
 2
-21. Timestamp removal: postprocessor uses parseDateTimeOrNull to drop timestamp tokens.
-2
-1
-1
-0
-ERROR	2
-INFO	1
-connection	1
-disk	1
-failed	1
-full	1
-server	1
-started	1
-22. val IN (...) routes set elements through the postprocessor.
+21. val IN (...) routes set elements through the postprocessor.
 1
 1
 1
@@ -147,3 +141,9 @@ started	1
 1
 1
 2
+22. Negative tests.
+- The postprocessor expression must reference the index column
+- The postprocessor expression must be a function, not an identifier
+- The postprocessor expression must return String
+- The postprocessor must not contain non-deterministic functions
+- The postprocessor must not contain arrayJoin
