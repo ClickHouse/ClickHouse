@@ -45,6 +45,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_prefer_local_replica", true, true, "New setting. When disabled, replicas for parallel reading are selected purely by the load balancing algorithm without forcing the local replica into the set."},
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
             {"allow_experimental_geo_types_in_iceberg", false, false, "New setting to allow parsing Iceberg geometry/geography fields as Geometry type."},
+            {"enable_s2_index_pruning", false, false, "New setting to enable S2 spatial functions as primary key conditions for granule-level index pruning."},
+            {"s2_max_covering_cells", 8, 8, "New setting to control the maximum number of S2 cells used to approximate the query region for `enable_s2_index_pruning`."},
+            {"st_function_use_spherical", true, true, "New setting. Controls whether ST_* geo functions use spherical (default) or Cartesian coordinates."},
             {"output_format_parquet_use_custom_encoder", true, true, "Obsolete setting, the custom encoder is now always used."},
             {"output_format_parquet_version", "2.latest", "2.latest", "Obsolete setting, the custom encoder always writes Parquet V2.6+."},
             {"output_format_parquet_compliant_nested_types", true, true, "Obsolete setting, the custom encoder always uses compliant nested types."},
@@ -142,8 +145,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_expire_default_max_ref_age_ms", 9223372036854775807, 9223372036854775807, "New setting."},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
-            {"enable_s2_index_pruning", false, false, "New setting to enable S2 spatial functions as primary key conditions for granule-level index pruning."},
-            {"s2_max_covering_cells", 8, 8, "New setting to control the maximum number of S2 cells used to approximate the query region for `enable_s2_index_pruning`."},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -221,7 +222,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
-            {"st_function_use_spherical", true, true, "New setting. Controls whether ST_* geo functions use spherical (default) or Cartesian coordinates."},
             {"format_binary_max_object_size", 100000, 100000, "New setting that limits the maximum size of object during JSON type binary deserialization"},
             {"max_streams_for_files_processing_in_cluster_functions", 0, 0, "Add a new setting that allows to limit number of streams for files processing in *Cluster table functions"},
             {"max_reverse_dictionary_lookup_cache_size_bytes", 100 * 1024 * 1024, 100 * 1024 * 1024, "New setting. Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query."},
