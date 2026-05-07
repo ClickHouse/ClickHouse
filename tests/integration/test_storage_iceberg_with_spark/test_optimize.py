@@ -2,6 +2,7 @@ import gzip
 import json
 import os
 import pytest
+import threading
 from datetime import datetime, timezone
 import time
 
@@ -356,6 +357,144 @@ def test_optimize_manifest_files_partitioned(started_cluster_iceberg_with_spark,
         },
     )
     assert "OPTIMIZE MANIFEST is incompatible with FINAL, PARTITION, DEDUPLICATE, CLEANUP, and DRY RUN options" in error_message
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_optimize_manifest_files_partitioned_concurrent(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_manifests_concurrent_" + storage_type + "_" + get_uuid_str()
+
+    REGIONS = ["eu", "us", "ap"]
+    NUM_PARTITIONS = len(REGIONS)
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string, region string)
+        USING iceberg
+        PARTITIONED BY (region)
+        TBLPROPERTIES (
+            'format-version' = '2',
+            'write.update.mode'  = 'merge-on-read',
+            'write.delete.mode'  = 'merge-on-read',
+            'write.merge.mode'   = 'merge-on-read'
+        )
+        """
+    )
+
+    # Initial insert – one batch per partition.
+    for region in REGIONS:
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} "
+            f"SELECT id, char(id + ascii('a')), '{region}' "
+            f"FROM range(0, 30)"
+        )
+
+    # Many more small inserts to create many manifest files (>> compaction threshold).
+    for batch_start in range(30, 90, 10):
+        for region in REGIONS:
+            spark.sql(
+                f"INSERT INTO {TABLE_NAME} "
+                f"SELECT id, char(id + ascii('a')), '{region}' "
+                f"FROM range({batch_start}, {batch_start + 10})"
+            )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    # 30 initial + 6 × 10 additional rows per region.
+    expected_per_region = 90
+    total_rows = expected_per_region * NUM_PARTITIONS
+
+    # Sanity check before launching threads.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == total_rows
+
+    NUM_READER_THREADS = 4
+    NUM_OPTIMIZE_THREADS = 2
+    DURATION_SECONDS = 5
+
+    stop_event = threading.Event()
+    errors = []
+    errors_lock = threading.Lock()
+    optimize_attempts = [0] * NUM_OPTIMIZE_THREADS
+    reader_attempts = [0] * NUM_READER_THREADS
+
+    def report_error(label, exc):
+        with errors_lock:
+            errors.append(f"{label}: {type(exc).__name__}: {exc}")
+
+    def reader_loop(idx):
+        try:
+            while not stop_event.is_set():
+                got_total = int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
+                if got_total != total_rows:
+                    raise AssertionError(
+                        f"SELECT count() returned {got_total}, expected {total_rows}"
+                    )
+                region = REGIONS[idx % NUM_PARTITIONS]
+                got_part = int(instance.query(
+                    f"SELECT count() FROM {TABLE_NAME} WHERE region = '{region}'"
+                ))
+                if got_part != expected_per_region:
+                    raise AssertionError(
+                        f"count(WHERE region={region}) returned {got_part}, "
+                        f"expected {expected_per_region}"
+                    )
+                reader_attempts[idx] += 1
+        except Exception as exc:
+            report_error(f"reader-{idx}", exc)
+
+    def optimize_loop(idx):
+        try:
+            while not stop_event.is_set():
+                instance.query(
+                    f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+                    settings={
+                        "allow_experimental_iceberg_compaction": 1,
+                        "iceberg_manifest_min_count_to_compact": 2,
+                    },
+                )
+                optimize_attempts[idx] += 1
+        except Exception as exc:
+            report_error(f"optimize-{idx}", exc)
+
+    readers = [
+        threading.Thread(target=reader_loop, args=(i,), daemon=True)
+        for i in range(NUM_READER_THREADS)
+    ]
+    optimizers = [
+        threading.Thread(target=optimize_loop, args=(i,), daemon=True)
+        for i in range(NUM_OPTIMIZE_THREADS)
+    ]
+
+    for t in optimizers:
+        t.start()
+    for t in readers:
+        t.start()
+
+    time.sleep(DURATION_SECONDS)
+    stop_event.set()
+
+    for t in optimizers + readers:
+        t.join(timeout=60)
+        assert not t.is_alive(), "Worker thread did not finish in time"
+
+    assert not errors, "Concurrent run produced errors:\n" + "\n".join(errors)
+    assert sum(reader_attempts) > 0, "No reads were performed"
+    assert sum(optimize_attempts) > 0, "No optimize calls completed"
+
+    # Final consistency check.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == total_rows
+    for region in REGIONS:
+        assert int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME} WHERE region = '{region}'"
+        )) == expected_per_region
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
