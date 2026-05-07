@@ -239,9 +239,51 @@ class GH:
                 except Exception:
                     pass
 
+    @classmethod
+    def post_pr_line_comment(
+        cls,
+        body_file,
+        commit_id,
+        path,
+        line,
+        side="RIGHT",
+        pr=None,
+        repo=None,
+    ):
+        """Post an inline review comment on a specific line of a PR diff.
+
+        The body is read from ``body_file`` and passed via ``-F body=@<file>``,
+        which avoids two classes of bugs we have hit before:
+          1) Newlines collapsing to literal `\\n` when the body is inlined.
+          2) The body being posted as the literal `@<file>` string when a
+             caller mistakenly uses `-f` (raw field) instead of `-F` (typed
+             field with `@file` expansion).
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        if not os.path.exists(body_file):
+            raise FileNotFoundError(f"Body file [{body_file}] not found")
+        if os.path.getsize(body_file) == 0:
+            raise ValueError(f"Body file [{body_file}] is empty")
+
+        cmd = (
+            f"gh api -X POST "
+            f'-H "Accept: application/vnd.github.v3+json" '
+            f'"/repos/{repo}/pulls/{pr}/comments" '
+            f"-F body=@{shlex.quote(body_file)} "
+            f"-f commit_id={shlex.quote(commit_id)} "
+            f"-f path={shlex.quote(path)} "
+            f"-F line={int(line)} "
+            f"-f side={shlex.quote(side)}"
+        )
+        return cls.do_command_with_retries(cmd)
+
     '''
     TODO: @maxknv
-    The fact that a comment can get lost is also an issue for other CI automated comments. 
+    The fact that a comment can get lost is also an issue for other CI automated comments.
     I think it makes sense to make this the default behavior for post_updateable_comment() and avoid introducing another method.
     '''
     @classmethod
@@ -920,6 +962,33 @@ if __name__ == "__main__":
         help="Only update an existing comment; do not create a new one",
     )
 
+    line_parser = subparsers.add_parser(
+        "post-pr-line-comment",
+        help="Post an inline review comment on a specific line of a PR diff",
+    )
+    line_parser.add_argument(
+        "--file",
+        required=True,
+        dest="body_file",
+        help="Path to file containing the comment body (read via -F body=@<file>)",
+    )
+    line_parser.add_argument(
+        "--commit", required=True, help="Commit SHA the comment refers to"
+    )
+    line_parser.add_argument(
+        "--path", required=True, help="Path of the file to comment on"
+    )
+    line_parser.add_argument(
+        "--line", required=True, type=int, help="Line number in the PR diff"
+    )
+    line_parser.add_argument(
+        "--side", default="RIGHT", choices=["RIGHT", "LEFT"], help="Diff side"
+    )
+    line_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    line_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+
     args = parser.parse_args()
 
     if args.command == "post-or-update":
@@ -934,6 +1003,20 @@ if __name__ == "__main__":
         if args.repo is not None:
             kwargs["repo"] = args.repo
         ok = GH.post_updateable_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    elif args.command == "post-pr-line-comment":
+        kwargs = dict(
+            body_file=args.body_file,
+            commit_id=args.commit,
+            path=args.path,
+            line=args.line,
+            side=args.side,
+        )
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        ok = GH.post_pr_line_comment(**kwargs)
         sys.exit(0 if ok else 1)
     else:
         parser.print_help()
