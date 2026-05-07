@@ -499,19 +499,27 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
         select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(expression_list_ast));
     }
 
-    auto projection_ast = getProjection().toAST(options);
+    const auto & projection = getProjection();
+    auto projection_ast = projection.toAST(options);
     auto & projection_expression_list_ast = projection_ast->as<ASTExpressionList &>();
     size_t projection_expression_list_ast_children_size = projection_expression_list_ast.children.size();
-    if (projection_expression_list_ast_children_size != getProjection().getNodes().size())
+    if (projection_expression_list_ast_children_size != projection.getNodes().size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query node invalid projection conversion to AST");
 
     if (!projection_columns.empty())
     {
+        const auto & projection_nodes = projection.getNodes();
         for (size_t i = 0; i < projection_expression_list_ast_children_size; ++i)
         {
             auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(projection_expression_list_ast.children[i].get());
+            if (!ast_with_alias)
+                continue;
 
-            if (ast_with_alias)
+            /// Skip redundant alias when a column reference's own name already matches:
+            /// repeating it causes MULTIPLE_EXPRESSIONS_FOR_ALIAS when the same name appears
+            /// twice (e.g. SELECT * over a JOIN) and the AST is re-resolved on a remote replica.
+            const auto * column_node = projection_nodes[i]->as<ColumnNode>();
+            if (!column_node || column_node->getColumnName() != projection_columns[i].name)
                 ast_with_alias->setAlias(projection_columns[i].name);
         }
     }
