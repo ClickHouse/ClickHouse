@@ -87,7 +87,7 @@ void tryOptimizeSelfJoinSharedScan(
 
     if (rmt_l->getStorageID().uuid != rmt_r->getStorageID().uuid)
         return;
-    if (rmt_l->getStorageSnapshot() != rmt_r->getStorageSnapshot())
+    if (rmt_l->getStorageMetadata() != rmt_r->getStorageMetadata())
         return;
     if (!isPlainScan(rmt_l) || !isPlainScan(rmt_r))
         return;
