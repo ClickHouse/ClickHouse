@@ -442,7 +442,10 @@ void registerDataTypeEnum(DataTypeFactory & factory)
     {
         return createExact<DataTypeEnum8>(arguments, false);
     });
-    factory.registerDataType("Enum16", [](const ASTPtr & arguments){return createExact<DataTypeEnum16>(arguments, false);});
+    factory.registerDataType("Enum16", [](const ASTPtr & arguments)
+    {
+        return createExact<DataTypeEnum16>(arguments, false);
+    });
     factory.registerDataType("Enum", [](const ASTPtr & arguments){return create(arguments, false);});
 
     /// MySQL
