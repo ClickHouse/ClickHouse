@@ -119,16 +119,27 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 90
 
+@pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3"])
-def test_optimize_manifest_files(started_cluster_iceberg_with_spark, storage_type):
+def test_optimize_manifest_files(started_cluster_iceberg_with_spark, storage_type, format_version):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
-    TABLE_NAME = "test_optimize_manifests_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_optimize_manifests_v" + format_version + "_" + storage_type + "_" + get_uuid_str()
+
+    # Merge-on-read modes are only valid for v2 tables; v1 has no row-level deletes.
+    if format_version == "2":
+        tbl_properties = (
+            "'format-version' = '2', "
+            "'write.update.mode' = 'merge-on-read', "
+            "'write.delete.mode' = 'merge-on-read', "
+            "'write.merge.mode' = 'merge-on-read'"
+        )
+    else:
+        tbl_properties = "'format-version' = '1'"
 
     spark.sql(
         f"""
-        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'=
-        'merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES ({tbl_properties})
         """
     )
     spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10, 100)")
