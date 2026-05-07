@@ -1,3 +1,4 @@
+import gzip
 import json
 import os
 import pytest
@@ -13,6 +14,17 @@ from helpers.iceberg_utils import (
 )
 
 
+def _open_metadata_file(filepath):
+    """Open an Iceberg metadata file, transparently handling gzip compression.
+
+    ClickHouse writes compressed metadata as `v<N>.gz.metadata.json` (compression
+    suffix in the middle of the name), so the filename still ends with `.json`.
+    """
+    if ".gz." in os.path.basename(filepath):
+        return gzip.open(filepath, "rt")
+    return open(filepath, "r")
+
+
 def get_current_snapshot_summary(path_to_table):
     """Return the summary dict of the current snapshot from the latest metadata file."""
     metadata_dir = f"{path_to_table}/metadata/"
@@ -21,7 +33,7 @@ def get_current_snapshot_summary(path_to_table):
     for filename in os.listdir(metadata_dir):
         if filename.endswith(".json"):
             filepath = os.path.join(metadata_dir, filename)
-            with open(filepath, "r") as f:
+            with _open_metadata_file(filepath) as f:
                 data = json.load(f)
             ts = data.get("last-updated-ms", 0)
             if ts > last_timestamp:
@@ -452,3 +464,138 @@ def test_optimize_manifest_totals_invariant(started_cluster_iceberg_with_spark, 
 
     # Data must still be correct after all compaction rounds.
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 50
+
+
+@pytest.mark.parametrize("compression_method", ["", "gzip"])
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_optimize_manifest_totals_invariant_schema_evolution(
+    started_cluster_iceberg_with_spark, storage_type, compression_method
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    suffix = compression_method or "none"
+    TABLE_NAME = f"test_optimize_totals_se_{suffix}_{storage_type}_{get_uuid_str()}"
+    TABLE_PATH = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+
+    base_settings = {"allow_insert_into_iceberg": 1}
+    if compression_method:
+        base_settings["iceberg_metadata_compression_method"] = compression_method
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        "(x Nullable(Int32))",
+        format_version=2,
+        compression_method=compression_method if compression_method else None,
+    )
+
+    # Schema evolution: widen, add, then drop a column to produce non-trivial metadata.
+    instance.query(
+        f"ALTER TABLE {TABLE_NAME} MODIFY COLUMN x Nullable(Int64);",
+        settings=base_settings,
+    )
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(0, 10);",
+        settings=base_settings,
+    )
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(10, 10);",
+        settings=base_settings,
+    )
+
+    instance.query(
+        f"ALTER TABLE {TABLE_NAME} ADD COLUMN y Nullable(Float64);",
+        settings=base_settings,
+    )
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} SELECT number, number + 0.5 FROM numbers(20, 10);",
+        settings=base_settings,
+    )
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} SELECT number, number + 0.5 FROM numbers(30, 10);",
+        settings=base_settings,
+    )
+
+    instance.query(
+        f"ALTER TABLE {TABLE_NAME} DROP COLUMN x;",
+        settings=base_settings,
+    )
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} SELECT number + 0.5 FROM numbers(40, 10);",
+        settings=base_settings,
+    )
+
+    total_rows = 50
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == total_rows
+
+    optimize_settings = dict(base_settings)
+    optimize_settings.update({
+        "allow_experimental_iceberg_compaction": 1,
+        "iceberg_manifest_min_count_to_compact": 2,
+    })
+
+    # First compaction — consolidates manifests.
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings=optimize_settings,
+    )
+    default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+    summary_after_first = get_current_snapshot_summary(TABLE_PATH)
+    assert summary_after_first, (
+        f"Could not read snapshot summary after first compaction "
+        f"(compression='{compression_method}')"
+    )
+    assert summary_after_first.get("operation") == "replace", (
+        f"Expected operation='replace', got: {summary_after_first.get('operation')}"
+    )
+
+    total_files_1 = int(summary_after_first.get("total-data-files", -1))
+    total_records_1 = int(summary_after_first.get("total-records", -1))
+    total_size_1 = int(summary_after_first.get("total-files-size", -1))
+
+    assert total_files_1 >= 0
+    assert total_records_1 == total_rows
+
+    # Second compaction — already optimal, totals must stay identical.
+    optimize_settings["iceberg_manifest_min_count_to_compact"] = 1
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings=optimize_settings,
+    )
+    default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+    summary_after_second = get_current_snapshot_summary(TABLE_PATH)
+    assert summary_after_second, (
+        f"Could not read snapshot summary after second compaction "
+        f"(compression='{compression_method}')"
+    )
+
+    total_files_2 = int(summary_after_second.get("total-data-files", -1))
+    total_records_2 = int(summary_after_second.get("total-records", -1))
+    total_size_2 = int(summary_after_second.get("total-files-size", -1))
+
+    assert total_files_2 == total_files_1, (
+        f"total-data-files inflated (compression='{compression_method}'): "
+        f"{total_files_1} -> {total_files_2}"
+    )
+    assert total_records_2 == total_records_1, (
+        f"total-records inflated (compression='{compression_method}'): "
+        f"{total_records_1} -> {total_records_2}"
+    )
+    assert total_size_2 == total_size_1, (
+        f"total-files-size inflated (compression='{compression_method}'): "
+        f"{total_size_1} -> {total_size_2}"
+    )
+
+    # Data must still be correct after compaction.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == total_rows
