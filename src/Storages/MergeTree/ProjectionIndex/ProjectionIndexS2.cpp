@@ -160,7 +160,7 @@ void validateParams(const S2Params & params)
 /// the mapping accounts for row reordering so that projection rows correctly
 /// reference their parent rows after sorting.
 
-PaddedPODArray<UInt64> buildParentOffsets(size_t rows, UInt64 starting_offset, const IColumnPermutation * perm_ptr)
+[[maybe_unused]] PaddedPODArray<UInt64> buildParentOffsets(size_t rows, UInt64 starting_offset, const IColumnPermutation * perm_ptr)
 {
     PaddedPODArray<UInt64> res;
     res.resize(rows);
@@ -188,7 +188,7 @@ PaddedPODArray<UInt64> buildParentOffsets(size_t rows, UInt64 starting_offset, c
 /// data is stored in primary key order. This enables efficient index pruning when
 /// the rewritten __s2CoveringIntersects predicate is evaluated against the projection.
 
-void sortProjectionIndexS2Block(Block & out)
+[[maybe_unused]] void sortProjectionIndexS2Block(Block & out)
 {
     if (out.rows() == 0)
         return;
@@ -349,7 +349,7 @@ bool tryDecodeTypedColumn(
 /// Bulk-decode an entire column of geometry values into a cache.
 /// Supports Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, and Geometry (Variant).
 /// Returns nullopt if the column type is not a supported geometry type.
-std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & column, const DataTypePtr & type, bool strict_mode)
+[[maybe_unused]] std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & column, const DataTypePtr & type, bool strict_mode)
 {
     ColumnPtr full_column = column->convertToFullColumnIfConst();
 
@@ -439,7 +439,7 @@ std::optional<GeometryDecodeCache> prepareGeometryDecodeCache(const ColumnPtr & 
 }
 
 /// Extract a single decoded geometry from the cache by row index.
-std::optional<DecodedGeometry> tryDecodeGeometry(const GeometryDecodeCache & cache, size_t row, bool strict_mode)
+[[maybe_unused]] std::optional<DecodedGeometry> tryDecodeGeometry(const GeometryDecodeCache & cache, size_t row, bool strict_mode)
 {
     if (row >= cache.rows)
     {
