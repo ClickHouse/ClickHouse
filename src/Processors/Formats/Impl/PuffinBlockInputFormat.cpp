@@ -1,10 +1,14 @@
 #include <cstring>
 #include <vector>
+#include <roaring/roaring.hh>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
@@ -33,7 +37,6 @@ namespace
 {
 
 constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
-constexpr UInt32 ROARING_SERIAL_COOKIE = 12346;
 
 struct PuffinBlob
 {
@@ -44,6 +47,7 @@ struct PuffinBlob
     Int64 offset = 0;
     Int64 length = 0;
     String compression_codec;
+    std::map<String, String> properties;
 };
 
 struct PuffinFooter
@@ -77,6 +81,10 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_
         blob.length = blob_obj->getValue<Int64>("length");
         blob.compression_codec = blob_obj->optValue<String>("compression-codec", "");
 
+        if (auto props_obj = blob_obj->getObject("properties"))
+            for (const auto & [key, val] : *props_obj)
+                blob.properties.emplace(key, val.extract<String>());
+
         if (auto fields_arr = blob_obj->getArray("fields"))
         {
             for (size_t j = 0; j < fields_arr->size(); ++j)
@@ -92,6 +100,37 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_
     return blobs;
 }
 
+std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size)
+{
+    if (file_size < 16)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
+
+    seekable.seek(0, SEEK_SET);
+    char magic_buf[4];
+    seekable.readStrict(magic_buf, 4);
+    checkMagic(reinterpret_cast<const UInt8 *>(magic_buf), "header");
+
+    seekable.seek(static_cast<off_t>(file_size - 12), SEEK_SET);
+    Int32 footer_length_signed = 0;
+    readBinaryLittleEndian(footer_length_signed, seekable);
+
+    seekable.seek(static_cast<off_t>(file_size - 4), SEEK_SET);
+    char trailing_buf[4];
+    seekable.readStrict(trailing_buf, 4);
+    checkMagic(reinterpret_cast<const UInt8 *>(trailing_buf), "trailing");
+
+    if (footer_length_signed <= 0
+        || static_cast<size_t>(footer_length_signed) + 12 > file_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin footer length: {}", footer_length_signed);
+
+    const size_t footer_length = static_cast<size_t>(footer_length_signed);
+    String footer_json(footer_length, '\0');
+    seekable.seek(static_cast<off_t>(file_size - 12 - footer_length), SEEK_SET);
+    seekable.readStrict(footer_json.data(), footer_length);
+
+    return parseFooterJSON(footer_json, file_size);
+}
+
 PuffinFooter readPuffinFooter(ReadBuffer & buf)
 {
     PuffinFooter result;
@@ -101,63 +140,19 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf)
 
     if (seekable && file_size_opt)
     {
-        const size_t file_size = *file_size_opt;
-        if (file_size < 12)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
-
-        seekable->seek(0, SEEK_SET);
-        char magic_buf[4];
-        seekable->readStrict(magic_buf, 4);
-        checkMagic(reinterpret_cast<const UInt8 *>(magic_buf), "header");
-
-        seekable->seek(static_cast<off_t>(file_size - 8), SEEK_SET);
-        Int32 footer_length_signed = 0;
-        readBinaryLittleEndian(footer_length_signed, *seekable);
-        char trailing_buf[4];
-        seekable->readStrict(trailing_buf, 4);
-        checkMagic(reinterpret_cast<const UInt8 *>(trailing_buf), "trailing");
-
-        if (footer_length_signed <= 0
-            || static_cast<size_t>(footer_length_signed) + 8 > file_size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin footer length: {}", footer_length_signed);
-
-        const size_t footer_length = static_cast<size_t>(footer_length_signed);
-        String footer_json(footer_length, '\0');
-        seekable->seek(static_cast<off_t>(file_size - 8 - footer_length), SEEK_SET);
-        seekable->readStrict(footer_json.data(), footer_length);
-
-        result.blobs = parseFooterJSON(footer_json, file_size);
+        result.blobs = readPuffinFooterFromSeekable(*seekable, *file_size_opt);
     }
     else
     {
-        // Fallback: materialize the whole file
+        std::vector<UInt8> tmp(DEFAULT_BLOCK_SIZE);
+        while (!buf.eof())
         {
-            std::vector<UInt8> tmp(DEFAULT_BLOCK_SIZE);
-            while (!buf.eof())
-            {
-                size_t n = buf.read(reinterpret_cast<char *>(tmp.data()), tmp.size());
-                result.data.insert(result.data.end(), tmp.data(), tmp.data() + n);
-            }
+            size_t n = buf.read(reinterpret_cast<char *>(tmp.data()), tmp.size());
+            result.data.insert(result.data.end(), tmp.data(), tmp.data() + n);
         }
 
-        const auto & data = result.data;
-        if (data.size() < 12)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
-
-        checkMagic(data.data(), "header");
-        checkMagic(data.data() + data.size() - 4, "trailing");
-
-        Int32 footer_length_signed = 0;
-        std::memcpy(&footer_length_signed, data.data() + data.size() - 8, 4);
-        if (footer_length_signed <= 0
-            || static_cast<size_t>(footer_length_signed) + 8 > data.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin footer length: {}", footer_length_signed);
-
-        const size_t footer_length = static_cast<size_t>(footer_length_signed);
-        const size_t footer_start = data.size() - 8 - footer_length;
-        String footer_json(reinterpret_cast<const char *>(data.data() + footer_start), footer_length);
-
-        result.blobs = parseFooterJSON(footer_json, data.size());
+        ReadBufferFromMemory mem_buf(result.data.data(), result.data.size());
+        result.blobs = readPuffinFooterFromSeekable(mem_buf, result.data.size());
     }
 
     return result;
@@ -179,95 +174,17 @@ BlobBufPtr readBlobBytes(
     };
 }
 
-std::vector<UInt64> deserializeRoaring(ReadBuffer & buf)
+std::vector<UInt64> deserializeRoaring(ReadBuffer & buf, size_t size)
 {
-    UInt32 cookie;
-    readBinaryLittleEndian(cookie, buf);
+    String blob_data(size, '\0');
+    buf.readStrict(blob_data.data(), size);
 
-    bool has_run_containers = (cookie & 0xFFFF) == ROARING_SERIAL_COOKIE;
-    UInt32 num_containers;
-    if (has_run_containers)
-        num_containers = (cookie >> 16) + 1;
-    else
-        readBinaryLittleEndian(num_containers, buf);
-
-    if (num_containers > 65536)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Roaring bitmap: too many containers ({})", num_containers);
-
-    std::vector<std::pair<UInt16, UInt32>> descs(num_containers);
-    for (UInt32 i = 0; i < num_containers; ++i)
-    {
-        UInt16 key;
-        UInt16 card_minus1;
-        readBinaryLittleEndian(key, buf);
-        readBinaryLittleEndian(card_minus1, buf);
-        descs[i] = {key, static_cast<UInt32>(card_minus1) + 1};
-    }
-
-    std::vector<bool> run_flags(num_containers, false);
-    if (has_run_containers)
-    {
-        UInt32 bitset_bytes = (num_containers + 7) / 8;
-        std::vector<UInt8> flag_bytes(bitset_bytes);
-        buf.readStrict(reinterpret_cast<char *>(flag_bytes.data()), bitset_bytes);
-        for (UInt32 i = 0; i < num_containers; ++i)
-            run_flags[i] = (flag_bytes[i / 8] >> (i % 8)) & 1;
-    }
-    else
-    {
-        for (UInt32 i = 0; i < num_containers; ++i)
-        {
-            UInt32 dummy;
-            readBinaryLittleEndian(dummy, buf);
-        }
-    }
+    roaring::Roaring bitmap = roaring::Roaring::readSafe(blob_data.data(), size);
 
     std::vector<UInt64> result;
-
-    for (UInt32 i = 0; i < num_containers; ++i)
-    {
-        auto [key, card] = descs[i];
-        UInt64 base = static_cast<UInt64>(key) << 16;
-
-        if (run_flags[i])
-        {
-            UInt16 num_runs;
-            readBinaryLittleEndian(num_runs, buf);
-            for (UInt16 r = 0; r < num_runs; ++r)
-            {
-                UInt16 start;
-                UInt16 len_minus1;
-                readBinaryLittleEndian(start, buf);
-                readBinaryLittleEndian(len_minus1, buf);
-                for (UInt32 v = start; v <= static_cast<UInt32>(start) + len_minus1; ++v)
-                    result.push_back(base | v);
-            }
-        }
-        else if (card <= 4096)
-        {
-            for (UInt32 j = 0; j < card; ++j)
-            {
-                UInt16 val;
-                readBinaryLittleEndian(val, buf);
-                result.push_back(base | val);
-            }
-        }
-        else
-        {
-            for (UInt32 word_idx = 0; word_idx < 1024; ++word_idx)
-            {
-                UInt64 word;
-                readBinaryLittleEndian(word, buf);
-                while (word)
-                {
-                    UInt32 bit = __builtin_ctzll(word);
-                    result.push_back(base | (word_idx * 64 + bit));
-                    word &= word - 1;
-                }
-            }
-        }
-    }
-
+    result.reserve(bitmap.cardinality());
+    for (const uint32_t val : bitmap)
+        result.push_back(static_cast<UInt64>(val));
     return result;
 }
 
@@ -281,6 +198,7 @@ NamesAndTypesList getPuffinMetadataSchema()
         {"offset", std::make_shared<DataTypeInt64>()},
         {"length", std::make_shared<DataTypeInt64>()},
         {"compression_codec", std::make_shared<DataTypeString>()},
+        {"properties", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
     };
 }
 
@@ -317,8 +235,12 @@ Chunk PuffinMetadataInputFormat::read()
     auto col_offset = ColumnInt64::create();
     auto col_length = ColumnInt64::create();
     auto col_codec = ColumnString::create();
+    auto col_props_keys = ColumnString::create();
+    auto col_props_vals = ColumnString::create();
+    auto col_props_offsets = ColumnArray::ColumnOffsets::create();
 
     ColumnArray::Offset fields_offset = 0;
+    ColumnArray::Offset props_offset = 0;
     for (const auto & blob : footer.blobs)
     {
         col_type->insertData(blob.type.data(), blob.type.size());
@@ -331,19 +253,40 @@ Chunk PuffinMetadataInputFormat::read()
         col_offset->insertValue(blob.offset);
         col_length->insertValue(blob.length);
         col_codec->insertData(blob.compression_codec.data(), blob.compression_codec.size());
+        for (const auto & [k, v] : blob.properties)
+        {
+            col_props_keys->insertData(k.data(), k.size());
+            col_props_vals->insertData(v.data(), v.size());
+        }
+        props_offset += blob.properties.size();
+        col_props_offsets->insertValue(props_offset);
     }
 
     auto col_fields = ColumnArray::create(std::move(col_fields_data), std::move(col_fields_offsets));
+    MutableColumns prop_cols;
+    prop_cols.push_back(std::move(col_props_keys));
+    prop_cols.push_back(std::move(col_props_vals));
+    MutableColumnPtr col_props_tuple = ColumnTuple::create(std::move(prop_cols));
+    MutableColumnPtr col_props_arr = ColumnArray::create(std::move(col_props_tuple), std::move(col_props_offsets));
+    MutableColumnPtr col_props = ColumnMap::create(std::move(col_props_arr));
 
-    MutableColumns cols;
-    cols.push_back(std::move(col_type));
-    cols.push_back(std::move(col_snap));
-    cols.push_back(std::move(col_seq));
-    cols.push_back(std::move(col_fields));
-    cols.push_back(std::move(col_offset));
-    cols.push_back(std::move(col_length));
-    cols.push_back(std::move(col_codec));
-    return Chunk(std::move(cols), n);
+    // Select only the columns present in the output header (subset-of-columns support).
+    const Block & out_header = getPort().getHeader();
+    MutableColumns result;
+    result.reserve(out_header.columns());
+    for (const auto & col_with_name : out_header)
+    {
+        const String & name = col_with_name.name;
+        if (name == "blob_type")          result.push_back(std::move(col_type));
+        else if (name == "snapshot_id")   result.push_back(std::move(col_snap));
+        else if (name == "sequence_number") result.push_back(std::move(col_seq));
+        else if (name == "fields")        result.push_back(std::move(col_fields));
+        else if (name == "offset")        result.push_back(std::move(col_offset));
+        else if (name == "length")        result.push_back(std::move(col_length));
+        else if (name == "compression_codec") result.push_back(std::move(col_codec));
+        else if (name == "properties")    result.push_back(std::move(col_props));
+    }
+    return Chunk(std::move(result), n);
 }
 
 PuffinInputFormat::PuffinInputFormat(ReadBuffer & buf, SharedHeader header_)
@@ -371,7 +314,7 @@ Chunk PuffinInputFormat::read()
         if (blob.type.find("deletion-vector") != String::npos && blob.length > 0)
         {
             auto blob_buf = readBlobBytes(blob, *in, footer.data);
-            auto rows = deserializeRoaring(*blob_buf);
+            auto rows = deserializeRoaring(*blob_buf, static_cast<size_t>(blob.length));
             for (UInt64 r : rows)
                 col_rows_data->insertValue(r);
             rows_offset += rows.size();
