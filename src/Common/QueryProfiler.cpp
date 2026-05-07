@@ -91,11 +91,6 @@ namespace
 #if defined(THREAD_SANITIZER)
         /// Under TSan, use abseil's frame-pointer-based unwinding (via the default
         /// StackTrace constructor) instead of the ucontext_t constructor which uses libunwind.
-        /// TSan intercepts signal delivery via CallUserSignalHandler, and defers SI_TIMER
-        /// signals to interceptor boundaries. This makes libunwind unsafe (non-reentrant
-        /// with TSan's own unwinding) and sigsetjmp unusable (siglongjmp across TSan's
-        /// signal frames corrupts its state). Abseil's walk from the current frame works
-        /// because TSan's deferral places the interrupted code on the current stack.
         UNUSED(context);
         stack_trace.emplace();
 #else
@@ -242,7 +237,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
     : log(getLogger("QueryProfiler")), pause_signal(pause_signal_)
 {
 #if defined(SIGEV_THREAD_ID)
-    /// Under sanitizers we use frame-pointer-based unwinding (via abseil) which does not
+    /// Under TSan we use frame-pointer-based unwinding (via abseil) which does not
     /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed for
     /// stack capture. Symbolization happens later in a normal thread context.
 #if !defined(THREAD_SANITIZER)
