@@ -511,13 +511,16 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
         /// Collect projection column names that appear more than once. Repeating
         /// `AS <name>` for different expressions (e.g. `SELECT *` over a JOIN)
         /// triggers MULTIPLE_EXPRESSIONS_FOR_ALIAS when the AST is re-resolved on
-        /// a remote replica. Skip the alias for those names.
+        /// a remote replica. Skip the alias only for duplicated column references
+        /// whose own name already matches the projection name; other expressions
+        /// (functions, constants) need the alias to keep the result-column name.
         std::unordered_set<std::string_view> seen;
         std::unordered_set<std::string_view> duplicate_names;
         for (const auto & col : projection_columns)
             if (!seen.insert(col.name).second)
                 duplicate_names.insert(col.name);
 
+        const auto & projection_nodes = projection.getNodes();
         for (size_t i = 0; i < projection_expression_list_ast_children_size; ++i)
         {
             auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(projection_expression_list_ast.children[i].get());
@@ -525,7 +528,11 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
                 continue;
 
             if (duplicate_names.contains(projection_columns[i].name))
-                continue;
+            {
+                const auto * column_node = projection_nodes[i]->as<ColumnNode>();
+                if (column_node && column_node->getColumnName() == projection_columns[i].name)
+                    continue;
+            }
 
             ast_with_alias->setAlias(projection_columns[i].name);
         }
