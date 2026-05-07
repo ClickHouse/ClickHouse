@@ -446,7 +446,10 @@ void registerDataTypeEnum(DataTypeFactory & factory)
     {
         return createExact<DataTypeEnum16>(arguments, false);
     });
-    factory.registerDataType("Enum", [](const ASTPtr & arguments){return create(arguments, false);});
+    factory.registerDataType("Enum", [](const ASTPtr & arguments)
+    {
+        return create(arguments, false);
+    });
 
     /// MySQL
     factory.registerAlias("ENUM", "Enum", DataTypeFactory::Case::Insensitive);
