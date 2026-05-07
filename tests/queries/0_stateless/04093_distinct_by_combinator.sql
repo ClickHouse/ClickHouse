@@ -54,14 +54,14 @@ CREATE TABLE test_distinct_by_num
 
 INSERT INTO test_distinct_by_num
 SELECT grp, sumDistinctByState(k, k)
-FROM (SELECT number % 3 AS grp, number % 5 AS k FROM numbers_mt(15000))
+FROM (SELECT number % 3 AS grp, toUInt64(number % 5) AS k FROM numbers_mt(15000))
 GROUP BY grp;
 
 SELECT grp, sumDistinctByMerge(s) FROM test_distinct_by_num GROUP BY grp ORDER BY grp;
 
 INSERT INTO test_distinct_by_num
 SELECT grp, sumDistinctByState(k, k)
-FROM (SELECT number % 3 AS grp, (number % 5) + 5 AS k FROM numbers_mt(15000))
+FROM (SELECT number % 3 AS grp, toUInt64((number % 5) + 5) AS k FROM numbers_mt(15000))
 GROUP BY grp;
 
 OPTIMIZE TABLE test_distinct_by_num FINAL;
@@ -106,14 +106,14 @@ CREATE TABLE test_distinct_by_str
 
 INSERT INTO test_distinct_by_str
 SELECT grp, sumDistinctByState(k, toString(k))
-FROM (SELECT number % 3 AS grp, number % 5 AS k FROM numbers_mt(15000))
+FROM (SELECT number % 3 AS grp, toUInt64(number % 5) AS k FROM numbers_mt(15000))
 GROUP BY grp;
 
 SELECT grp, sumDistinctByMerge(s) FROM test_distinct_by_str GROUP BY grp ORDER BY grp;
 
 INSERT INTO test_distinct_by_str
 SELECT grp, sumDistinctByState(k, toString(k))
-FROM (SELECT number % 3 AS grp, (number % 5) + 5 AS k FROM numbers_mt(15000))
+FROM (SELECT number % 3 AS grp, toUInt64((number % 5) + 5) AS k FROM numbers_mt(15000))
 GROUP BY grp;
 
 OPTIMIZE TABLE test_distinct_by_str FINAL;
