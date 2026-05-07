@@ -756,9 +756,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
-<<<<<<< HEAD
         ("one-time-password", po::value<std::string>(), "Time-based one-time password (TOTP) for two-factor authentication")
-=======
         ("login", po::value<std::string>()->implicit_value(""),
             "Authenticate via OAuth2. Optional mode: 'browser' (auth-code + PKCE, opens browser) "
             "or 'device' (device flow, prints URL + code). "
@@ -767,7 +765,6 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("oauth-credentials", po::value<std::string>(),
             "Path to OAuth credentials JSON file "
             "(default: ~/.clickhouse-client/oauth_client.json)")
->>>>>>> 67683cd1b46 (Merge pull request #1606 from Altinity/feature/client-IdP)
 #if USE_JWT_CPP && USE_SSL
         ("oauth-url", po::value<std::string>(), "The base URL for the OAuth 2.0 authorization server")
         ("oauth-client-id", po::value<std::string>(), "The client ID for the OAuth 2.0 application")

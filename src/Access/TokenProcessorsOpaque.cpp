@@ -117,9 +117,6 @@ bool GoogleTokenProcessor::resolveAndValidate(TokenCredentials & credentials) co
 
     auto token_info = getObjectFromURI(Poco::URI("https://www.googleapis.com/oauth2/v3/tokeninfo"), token);
     if (token_info.contains("exp"))
-<<<<<<< HEAD
-        credentials.setExpiresAt(std::chrono::system_clock::from_time_t(static_cast<time_t>(getValueByKey<int64_t>(token_info, "exp").value())));
-=======
     {
         /// picojson stores all numerics as double; we need to validate the
         /// value is a finite, positive Unix timestamp that fits in time_t
@@ -133,7 +130,6 @@ bool GoogleTokenProcessor::resolveAndValidate(TokenCredentials & credentials) co
                 processor_name, exp);
         credentials.setExpiresAt(std::chrono::system_clock::from_time_t(static_cast<time_t>(exp)));
     }
->>>>>>> 67683cd1b46 (Merge pull request #1606 from Altinity/feature/client-IdP)
 
     /// Groups info can only be retrieved if user email is known.
     /// If no email found in user info, we skip this step and there are no external roles for the user.
