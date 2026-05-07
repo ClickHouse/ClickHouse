@@ -605,7 +605,12 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
 
-    size_t discriminators_offset = col.getLocalDiscriminators().size() - num_read_discriminators;
+    /// Use the const overload via `getLocalDiscriminatorsPtr` (which returns the underlying
+    /// `ColumnPtr` without going through `WrappedPtr`'s mutable accessors). The non-const
+    /// `getLocalDiscriminators` would `chassert(use_count() == 1)` via `assumeMutableRef`,
+    /// which fires when the cache stored a reference to `local_discriminators` above
+    /// (the `rows_offset == 0` branch).
+    size_t discriminators_offset = col.getLocalDiscriminatorsPtr()->size() - num_read_discriminators;
 
     /// Second, calculate offsets and limits for each variant by iterating through new discriminators
     /// if we didn't do it during discriminators deserialization.
@@ -638,7 +643,9 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     if (variant_limits.empty())
     {
         variant_limits.resize(variant_serializations.size(), 0);
-        auto & discriminators_data = col.getLocalDiscriminators();
+        /// Read-only access — use the const overload to avoid `chassert(use_count() == 1)`
+        /// when the substream cache holds a reference to `local_discriminators`.
+        const auto & discriminators_data = std::as_const(col).getLocalDiscriminators();
 
         for (size_t i = discriminators_offset ; i != discriminators_data.size(); ++i)
         {
