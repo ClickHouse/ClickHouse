@@ -127,6 +127,7 @@ namespace ServerSetting
     extern const ServerSettingsBool process_query_plan_packet;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
+    extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
 }
 
 namespace FailPoints
@@ -355,6 +356,11 @@ void TCPHandler::runImpl()
 
     in = std::make_shared<ReadBufferFromPocoSocketChunked>(socket(), read_event);
 
+    /// Limit the total wall-clock time for the handshake phase to prevent
+    /// slowloris-style attacks from holding a thread indefinitely.
+    UInt64 handshake_timeout_ms = server.context()->getServerSettings()[ServerSetting::handshake_timeout_milliseconds];
+    in->setHandshakeTimeout(handshake_timeout_ms);
+
     /// Support for PROXY protocol
     if (parse_proxy_protocol && !receiveProxyHeader())
         return;
@@ -383,6 +389,8 @@ void TCPHandler::runImpl()
 
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
+
+        in->clearHandshakeTimeout();
 
         {
             /// Server side of chunked protocol negotiation.
@@ -1860,6 +1868,11 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 }
 
 
+/// Maximum size of a string field during the Hello handshake.
+/// Applied before authentication to prevent unauthenticated clients
+/// from consuming excessive memory. See #52501.
+static constexpr size_t MAX_HELLO_STRING_SIZE = 64 * 1024;
+
 void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
@@ -1886,16 +1899,16 @@ void TCPHandler::receiveHello()
                                "Unexpected packet from client (expected Hello, got {})", packet_type);
     }
 
-    readStringBinary(client_name, *in);
+    readStringBinary(client_name, *in, MAX_HELLO_STRING_SIZE);
     readVarUInt(client_version_major, *in);
     readVarUInt(client_version_minor, *in);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     readVarUInt(client_tcp_protocol_version, *in);
-    readStringBinary(default_db, *in);
+    readStringBinary(default_db, *in, MAX_HELLO_STRING_SIZE);
     if (!default_db.empty())
         default_database = default_db;
-    readStringBinary(user, *in);
-    readStringBinary(password, *in);
+    readStringBinary(user, *in, MAX_HELLO_STRING_SIZE);
+    readStringBinary(password, *in, MAX_HELLO_STRING_SIZE);
 
     if (user.empty())
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
@@ -1999,7 +2012,7 @@ void TCPHandler::receiveHello()
         readVarUInt(packet_type, *in);
         if (packet_type != Protocol::Client::SSHChallengeResponse)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
-        readStringBinary(signature, *in);
+        readStringBinary(signature, *in, MAX_HELLO_STRING_SIZE);
 
         auto prepare_string_for_ssh_validation = [&](const String & username, const String & challenge_)
         {
@@ -2041,15 +2054,15 @@ void TCPHandler::receiveHello()
 void TCPHandler::receiveAddendum()
 {
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
-        readStringBinary(quota_key, *in);
+        readStringBinary(quota_key, *in, MAX_HELLO_STRING_SIZE);
 
     if (!is_interserver_mode)
         session->setQuotaClientKey(quota_key);
 
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
     {
-        readStringBinary(proto_send_chunked_cl, *in);
-        readStringBinary(proto_recv_chunked_cl, *in);
+        readStringBinary(proto_send_chunked_cl, *in, MAX_HELLO_STRING_SIZE);
+        readStringBinary(proto_recv_chunked_cl, *in, MAX_HELLO_STRING_SIZE);
     }
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
@@ -2062,13 +2075,13 @@ void TCPHandler::processUnexpectedHello()
     UInt64 skip_uint_64;
     String skip_string;
 
-    readStringBinary(skip_string, *in);
+    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
     readVarUInt(skip_uint_64, *in);
     readVarUInt(skip_uint_64, *in);
     readVarUInt(skip_uint_64, *in);
-    readStringBinary(skip_string, *in);
-    readStringBinary(skip_string, *in);
-    readStringBinary(skip_string, *in);
+    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
+    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
+    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
 
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Hello received from client");
 }
@@ -2203,7 +2216,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
 
 void TCPHandler::processClusterNameAndSalt()
 {
-    readStringBinary(cluster, *in);
+    readStringBinary(cluster, *in, MAX_HELLO_STRING_SIZE);
     readStringBinary(salt, *in, 32);
 }
 
