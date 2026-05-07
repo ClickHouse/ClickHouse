@@ -544,6 +544,7 @@ void StorageObjectStorage::read(
     configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
+        storage_id,
         object_storage,
         configuration,
         column_names,
