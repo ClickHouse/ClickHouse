@@ -217,36 +217,70 @@ int64_t MetadataStorageInMemory::recordAsRemoved(const StoredObjects & blobs)
     return recorded_count;
 }
 
-std::unordered_map<std::string, MetadataStorageInMemory::FileEntry> MetadataStorageInMemory::cloneFiles() const
-{
-    std::unordered_map<std::string, FileEntry> result;
-    result.reserve(files.size());
-
-    /// Preserve sharing: if multiple `FileEntry` instances reference the same `BlobGroup`,
-    /// they should still share a (single, freshly cloned) `BlobGroup` in the snapshot.
-    std::unordered_map<BlobGroup *, std::shared_ptr<BlobGroup>> clones;
-
-    for (const auto & [path, entry] : files)
-    {
-        FileEntry copy = entry;
-        if (entry.blob_group)
-        {
-            auto [it, inserted] = clones.try_emplace(entry.blob_group.get(), nullptr);
-            if (inserted)
-                it->second = std::make_shared<BlobGroup>(*entry.blob_group);
-            copy.blob_group = it->second;
-        }
-        result.emplace(path, std::move(copy));
-    }
-
-    return result;
-}
-
 /// ==================== Transaction ====================
 
 MetadataStorageInMemoryTransaction::MetadataStorageInMemoryTransaction(MetadataStorageInMemory & metadata_storage_)
     : metadata_storage(metadata_storage_)
 {
+}
+
+void MetadataStorageInMemoryTransaction::recordFileBefore(const std::string & path)
+{
+    if (files_undo.contains(path))
+        return;
+    auto it = metadata_storage.files.find(path);
+    if (it == metadata_storage.files.end())
+        files_undo.emplace(path, std::nullopt);
+    else
+        files_undo.emplace(path, it->second);
+}
+
+void MetadataStorageInMemoryTransaction::recordBlobGroupBefore(const std::shared_ptr<MetadataStorageInMemory::BlobGroup> & group)
+{
+    if (!group)
+        return;
+    auto [it, inserted] = blob_group_undo.try_emplace(group.get());
+    if (inserted)
+        it->second = BlobGroupSnapshot{group, *group};
+}
+
+void MetadataStorageInMemoryTransaction::recordDirInsert(const std::string & dir)
+{
+    /// Net effect tracking: if we previously erased this dir, the insert cancels it
+    /// (state returns to pre-transaction); otherwise note it so rollback can erase.
+    if (dirs_erased.erase(dir) > 0)
+        return;
+    if (!metadata_storage.directories.contains(dir))
+        dirs_inserted.insert(dir);
+}
+
+void MetadataStorageInMemoryTransaction::recordDirErase(const std::string & dir)
+{
+    if (dirs_inserted.erase(dir) > 0)
+        return;
+    if (metadata_storage.directories.contains(dir))
+        dirs_erased.insert(dir);
+}
+
+void MetadataStorageInMemoryTransaction::rollback()
+{
+    /// Restore in-place `BlobGroup` content first, so subsequent file restoration
+    /// re-attaches entries to groups whose `ref_count`/`objects` are already correct.
+    for (auto & [ptr, snap] : blob_group_undo)
+        *snap.alive = std::move(snap.snapshot);
+
+    for (auto & [path, opt_entry] : files_undo)
+    {
+        if (opt_entry)
+            metadata_storage.files[path] = std::move(*opt_entry);
+        else
+            metadata_storage.files.erase(path);
+    }
+
+    for (const auto & dir : dirs_inserted)
+        metadata_storage.directories.erase(dir);
+    for (const auto & dir : dirs_erased)
+        metadata_storage.directories.insert(dir);
 }
 
 void MetadataStorageInMemoryTransaction::commit(const TransactionCommitOptionsVariant & options)
@@ -257,12 +291,11 @@ void MetadataStorageInMemoryTransaction::commit(const TransactionCommitOptionsVa
     {
         std::unique_lock lock(metadata_storage.metadata_mutex);
 
-        /// Snapshot state before applying, so we can restore on partial failure.
-        /// Deep-clone `files` so that in-place mutations of `BlobGroup`
-        /// (e.g. `ref_count`, `objects`) by individual operations are also reverted.
-        auto files_backup = metadata_storage.cloneFiles();
-        auto directories_backup = metadata_storage.directories;
-
+        /// Operation-level rollback: each operation records the pre-mutation state of
+        /// every entry it touches into `files_undo` / `blob_group_undo` / `dirs_inserted`
+        /// / `dirs_erased`. On a partial-failure exception, `rollback` replays only those
+        /// touched entries, keeping commit cost proportional to changed entries instead
+        /// of the whole `files` map (which can be very large for `borrow_from_cache`).
         try
         {
             for (auto & op : operations)
@@ -270,8 +303,7 @@ void MetadataStorageInMemoryTransaction::commit(const TransactionCommitOptionsVa
         }
         catch (...)
         {
-            metadata_storage.files = std::move(files_backup);
-            metadata_storage.directories = std::move(directories_backup);
+            rollback();
             throw;
         }
     }
@@ -303,6 +335,7 @@ void MetadataStorageInMemoryTransaction::writeInlineDataToFile(const std::string
         auto * entry = metadata_storage.findFile(path);
         if (!entry)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
+        recordBlobGroupBefore(entry->blob_group);
         entry->blob_group->inline_data = data;
     });
 }
@@ -313,7 +346,10 @@ void MetadataStorageInMemoryTransaction::setLastModified(const std::string & pat
     {
         auto * entry = metadata_storage.findFile(path);
         if (entry)
+        {
+            recordBlobGroupBefore(entry->blob_group);
             entry->blob_group->last_modified = timestamp;
+        }
     });
 }
 
@@ -328,6 +364,9 @@ void MetadataStorageInMemoryTransaction::unlinkFile(const std::string & path, bo
                 return;
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
         }
+
+        recordFileBefore(path);
+        recordBlobGroupBefore(it->second.blob_group);
 
         auto & blob_group = it->second.blob_group;
         blob_group->ref_count -= 1;
@@ -374,6 +413,7 @@ void MetadataStorageInMemoryTransaction::createDirectory(const std::string & pat
             }
         }
 
+        recordDirInsert(normalized);
         metadata_storage.directories.insert(normalized);
     });
 }
@@ -402,6 +442,7 @@ void MetadataStorageInMemoryTransaction::createDirectoryRecursive(const std::str
                 throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
                     "Cannot create directory {}: a file exists at intermediate path {}", path, without_trailing_slash);
 
+            recordDirInsert(accumulated);
             metadata_storage.directories.insert(accumulated);
         }
     });
@@ -429,6 +470,7 @@ void MetadataStorageInMemoryTransaction::removeDirectory(const std::string & pat
         if (dir_it != metadata_storage.directories.end() && dir_it->starts_with(normalized))
             throw Exception(ErrorCodes::CANNOT_RMDIR, "Directory is not empty: {}", path);
 
+        recordDirErase(normalized);
         metadata_storage.directories.erase(normalized);
     });
 }
@@ -448,6 +490,9 @@ void MetadataStorageInMemoryTransaction::removeRecursive(
         {
             if (it->first.starts_with(prefix) || it->first == path)
             {
+                recordFileBefore(it->first);
+                recordBlobGroupBefore(it->second.blob_group);
+
                 auto & blob_group = it->second.blob_group;
                 blob_group->ref_count -= 1;
 
@@ -470,9 +515,13 @@ void MetadataStorageInMemoryTransaction::removeRecursive(
         /// Remove directories with this prefix
         auto dir_it = metadata_storage.directories.lower_bound(prefix);
         while (dir_it != metadata_storage.directories.end() && dir_it->starts_with(prefix))
+        {
+            recordDirErase(*dir_it);
             dir_it = metadata_storage.directories.erase(dir_it);
+        }
 
         /// Also remove the directory itself
+        recordDirErase(prefix);
         metadata_storage.directories.erase(prefix);
     });
 }
@@ -503,6 +552,9 @@ void MetadataStorageInMemoryTransaction::createHardLink(const std::string & path
         if (metadata_storage.directories.contains(path_to + "/"))
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
                 "Cannot create hardlink at {}: a directory already exists at this path", path_to);
+
+        recordFileBefore(path_to);
+        recordBlobGroupBefore(entry->blob_group);
 
         /// Share the blob group between source and destination so all hardlinks observe
         /// the same object list, inline data, and modification time (matching disk inode semantics).
@@ -540,6 +592,9 @@ void MetadataStorageInMemoryTransaction::moveFile(const std::string & path_from,
         if (metadata_storage.directories.contains(path_to + "/"))
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
                 "Cannot move file to {}: a directory already exists at this path", path_to);
+
+        recordFileBefore(path_from);
+        recordFileBefore(path_to);
 
         metadata_storage.files[path_to] = std::move(it_from->second);
         metadata_storage.files.erase(it_from);
@@ -611,6 +666,8 @@ void MetadataStorageInMemoryTransaction::moveDirectory(const std::string & path_
             if (it->first.starts_with(prefix_from))
             {
                 std::string new_path = prefix_to + it->first.substr(prefix_from.size());
+                recordFileBefore(it->first);
+                recordFileBefore(new_path);
                 to_move.emplace_back(new_path, std::move(it->second));
                 it = metadata_storage.files.erase(it);
             }
@@ -628,13 +685,19 @@ void MetadataStorageInMemoryTransaction::moveDirectory(const std::string & path_
         while (dir_it != metadata_storage.directories.end() && dir_it->starts_with(prefix_from))
         {
             dirs_to_add.push_back(prefix_to + dir_it->substr(prefix_from.size()));
+            recordDirErase(*dir_it);
             dir_it = metadata_storage.directories.erase(dir_it);
         }
         for (auto & d : dirs_to_add)
+        {
+            recordDirInsert(d);
             metadata_storage.directories.insert(std::move(d));
+        }
 
         /// Replace directory entry itself
+        recordDirErase(prefix_from);
         metadata_storage.directories.erase(prefix_from);
+        recordDirInsert(prefix_to);
         metadata_storage.directories.insert(prefix_to);
     });
 }
@@ -669,9 +732,13 @@ void MetadataStorageInMemoryTransaction::replaceFile(const std::string & path_fr
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
                 "Cannot replace file at {}: a directory already exists at this path", path_to);
 
+        recordFileBefore(path_from);
+        recordFileBefore(path_to);
+
         auto it_to = metadata_storage.files.find(path_to);
         if (it_to != metadata_storage.files.end())
         {
+            recordBlobGroupBefore(it_to->second.blob_group);
             auto & blob_group = it_to->second.blob_group;
             blob_group->ref_count -= 1;
             if (blob_group->ref_count == 0)
@@ -721,6 +788,7 @@ void MetadataStorageInMemoryTransaction::createMetadataFile(const std::string & 
             /// metadata via any link is observable from every other link (see `TestHardlinkRewrite`
             /// in `gtest_metadata_local_disk.cpp`). Update the shared `BlobGroup` in place
             /// instead of replacing the pointer for just this path.
+            recordBlobGroupBefore(it->second.blob_group);
             auto & blob_group = it->second.blob_group;
             for (const auto & obj : blob_group->objects)
                 objects_to_remove.push_back(obj);
@@ -730,6 +798,7 @@ void MetadataStorageInMemoryTransaction::createMetadataFile(const std::string & 
         }
         else
         {
+            recordFileBefore(path);
             auto & entry = metadata_storage.files[path];
             entry.blob_group->objects = objects;
             entry.blob_group->last_modified = Poco::Timestamp();
@@ -764,9 +833,11 @@ void MetadataStorageInMemoryTransaction::addBlobToMetadata(const std::string & p
             }
 
             /// Create new file entry if it doesn't exist
+            recordFileBefore(path);
             metadata_storage.files[path] = MetadataStorageInMemory::FileEntry{};
             entry = &metadata_storage.files[path];
         }
+        recordBlobGroupBefore(entry->blob_group);
         entry->blob_group->objects.push_back(object);
         entry->blob_group->last_modified = Poco::Timestamp();
     });
@@ -779,6 +850,8 @@ void MetadataStorageInMemoryTransaction::truncateFile(const std::string & path, 
         auto * entry = metadata_storage.findFile(path);
         if (!entry)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
+
+        recordBlobGroupBefore(entry->blob_group);
 
         size_t accumulated_size = 0;
         StoredObjects new_objects;

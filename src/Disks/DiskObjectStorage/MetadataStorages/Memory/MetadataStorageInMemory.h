@@ -87,11 +87,6 @@ private:
 
     FileEntry * findFile(const std::string & path) const;
 
-    /// Deep clone of `files`: copies entries and produces independent `BlobGroup` instances,
-    /// preserving sharing so that hardlinked entries still point to the same cloned `BlobGroup`.
-    /// Caller must hold `metadata_mutex` exclusively.
-    std::unordered_map<std::string, FileEntry> cloneFiles() const;
-
     mutable SharedMutex metadata_mutex;
 
     const std::string compatible_key_prefix;
@@ -149,6 +144,38 @@ private:
     using Operation = std::function<void()>;
     std::vector<Operation> operations;
     StoredObjects objects_to_remove;
+
+    /// Operation-level rollback journal. Each operation records, before mutating,
+    /// what is needed to restore the original state of the touched entries.
+    /// On a partial-failure exception we replay these in reverse, so commit cost
+    /// stays proportional to changed entries instead of the whole `files` map.
+    /// All `record*` helpers are idempotent within a transaction, so multiple
+    /// operations touching the same key (or shared `BlobGroup`) preserve only the
+    /// pre-transaction state.
+    void recordFileBefore(const std::string & path);
+    void recordBlobGroupBefore(const std::shared_ptr<MetadataStorageInMemory::BlobGroup> & group);
+    void recordDirInsert(const std::string & dir);
+    void recordDirErase(const std::string & dir);
+    void rollback();
+
+    /// Pre-mutation snapshot of every file entry touched by this transaction.
+    /// `nullopt` means the path did not exist before the transaction started.
+    std::unordered_map<std::string, std::optional<MetadataStorageInMemory::FileEntry>> files_undo;
+    /// Pre-mutation content of every `BlobGroup` mutated in place. The `shared_ptr` copy
+    /// in `BlobGroupSnapshot::alive` keeps the group alive across the whole transaction:
+    /// without it, a group whose only reference is erased mid-transaction can be freed,
+    /// then a new allocation may reuse the same address, causing the rollback step to
+    /// dereference an unrelated `BlobGroup`.
+    struct BlobGroupSnapshot
+    {
+        std::shared_ptr<MetadataStorageInMemory::BlobGroup> alive;
+        MetadataStorageInMemory::BlobGroup snapshot;
+    };
+    std::unordered_map<MetadataStorageInMemory::BlobGroup *, BlobGroupSnapshot> blob_group_undo;
+    /// Directory entries inserted by this transaction (rollback: erase).
+    std::set<std::string> dirs_inserted;
+    /// Directory entries erased by this transaction (rollback: re-insert).
+    std::set<std::string> dirs_erased;
 
     MetadataStorageInMemory & metadata_storage;
 };
