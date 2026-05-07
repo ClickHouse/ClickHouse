@@ -22,6 +22,16 @@ namespace DB::QueryPlanOptimizations
 
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
+    /// The dynamic-filtering path injects an internal `__topKFilter` function that
+    /// is created on demand with a runtime threshold tracker and is not registered
+    /// in `FunctionFactory`. The skip-index-on-data-read path likewise relies on a
+    /// `TopKThresholdTracker` shared between `SortingStep` and `ReadFromMergeTree`.
+    /// None of this can be transmitted to remote workers, so when the plan is
+    /// going to be distributed, the remote node would fail to deserialize the
+    /// plan with `Unknown function __topKFilter` (or run with stale state).
+    if (settings.make_distributed_plan)
+        return 0;
+
     QueryPlan::Node * node = parent_node;
 
     auto * limit_step = typeid_cast<LimitStep *>(node->step.get());
