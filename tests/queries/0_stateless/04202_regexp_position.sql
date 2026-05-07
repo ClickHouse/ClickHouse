@@ -26,6 +26,9 @@ SELECT regexpPosition('aXbXcXd', 'X', 1, 2, 1);
 SELECT regexpPosition('Hello WORLD', 'world');
 SELECT regexpPosition('Hello WORLD', 'world', 1, 1, 0, 'i');
 SELECT regexpPosition('Hello WORLD', 'WORLD', 1, 1, 0, 'c');
+-- Conflicting case flags follow left-to-right precedence (PostgreSQL "last wins").
+SELECT regexpPosition('Hello WORLD', 'world', 1, 1, 0, 'ic');
+SELECT regexpPosition('Hello WORLD', 'world', 1, 1, 0, 'ci');
 
 -- subexpression
 SELECT regexpPosition('foo123bar456', '([a-z]+)([0-9]+)', 1, 1, 0, '', 0);

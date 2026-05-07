@@ -92,7 +92,7 @@ public:
             flags = col_flags->getValue<String>();
         }
 
-        const String prepared_pattern = applyFlagsToPattern(pattern, flags);
+        const String prepared_pattern = applyFlagsToPattern(pattern, flags, getName());
 
         const OptimizedRegularExpression regexp(prepared_pattern, OptimizedRegularExpression::RE_DOT_NL);
         const unsigned num_captures = regexp.getNumberOfSubpatterns();
@@ -164,37 +164,51 @@ public:
     }
 
 private:
-    static String applyFlagsToPattern(const String & pattern, const String & flags)
+    static String applyFlagsToPattern(const String & pattern, const String & flags, const String & function_name)
     {
         if (flags.empty())
             return pattern;
 
-        String inline_flags_on;
-        String inline_flags_off;
+        /// Track effective state in scan order so conflicting flags follow PostgreSQL's "last one wins" rule (e.g. `ic` is case-sensitive, `ci` is case-insensitive).
+        bool case_insensitive = false;
+        bool multiline = false;
+        bool dot_nl = false;
+        bool extended = false;
         for (char c : flags)
         {
             switch (c)
             {
-                case 'i': inline_flags_on  += 'i'; break;
-                case 'c': inline_flags_off += 'i'; break;
+                case 'i': case_insensitive = true; break;
+                case 'c': case_insensitive = false; break;
                 case 'm': /* fallthrough */
-                case 'n': inline_flags_on  += 'm'; break;
-                case 's': inline_flags_on  += 's'; break;
-                case 'x': inline_flags_on  += 'x'; break;
+                case 'n': multiline = true; break;
+                case 's': dot_nl = true; break;
+                case 'x': extended = true; break;
                 default:
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Unknown regex flag '{}' for function regexpPosition. Supported flags are 'i', 'c', 'm', 'n', 's', 'x'.",
-                        String(1, c));
+                        "Unknown regex flag '{}' for function {}. Supported flags are 'i', 'c', 'm', 'n', 's', 'x'.",
+                        String(1, c),
+                        function_name);
             }
         }
 
+        String inline_on;
+        String inline_off;
+        (case_insensitive ? inline_on : inline_off) += 'i';
+        if (multiline)
+            inline_on += 'm';
+        if (dot_nl)
+            inline_on += 's';
+        if (extended)
+            inline_on += 'x';
+
         String prefix = "(?";
-        prefix += inline_flags_on;
-        if (!inline_flags_off.empty())
+        prefix += inline_on;
+        if (!inline_off.empty())
         {
             prefix += '-';
-            prefix += inline_flags_off;
+            prefix += inline_off;
         }
         prefix += ')';
         return prefix + pattern;
@@ -226,7 +240,7 @@ private:
                     return 0;
                 const auto & m = matches[subexpression];
                 const size_t abs_offset = cur_offset + m.offset;
-                return static_cast<UInt64>(abs_offset + (return_after_match ? m.length : 0) + 1);
+                return abs_offset + (return_after_match ? m.length : 0) + 1;
             }
 
             /// Advance past this match. Avoid infinite loop on zero-length matches.
