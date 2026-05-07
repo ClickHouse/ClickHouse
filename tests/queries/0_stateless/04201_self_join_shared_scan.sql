@@ -58,6 +58,20 @@ FROM (
     SELECT a.x, b.y FROM t_sjss AS a LEFT JOIN t_sjss AS b ON a.x = b.x
 );
 
+-- Non-hash algorithm (full_sorting_merge) must NOT trigger optimization,
+-- and must not error out with "Can't execute any of specified join algorithms".
+SELECT a.x, b.y FROM t_sjss AS a INNER JOIN t_sjss AS b ON a.x = b.x ORDER BY a.x
+SETTINGS join_algorithm = 'full_sorting_merge';
+
+SELECT
+    countIf(explain LIKE '%ReadFromMergeTree%') AS rmt_count,
+    countIf(explain LIKE '%ReadFromCommonBuffer%') AS read_count
+FROM (
+    EXPLAIN actions = 0
+    SELECT a.x, b.y FROM t_sjss AS a INNER JOIN t_sjss AS b ON a.x = b.x
+    SETTINGS join_algorithm = 'full_sorting_merge'
+);
+
 -- Setting off must keep two scans.
 SELECT
     countIf(explain LIKE '%ReadFromMergeTree%') AS rmt_count,

@@ -91,7 +91,11 @@ void tryOptimizeSelfJoinSharedScan(
 
     if (rmt_l->getStorageID().uuid != rmt_r->getStorageID().uuid)
         return;
-    if (rmt_l->getStorageMetadata() != rmt_r->getStorageMetadata())
+    /// Require the exact same StorageSnapshot (pointer equality), not just matching metadata.
+    /// With `enable_shared_storage_snapshot_in_query = 0` the two scans may otherwise observe
+    /// different part sets, and forcing them through a single shared buffer would change
+    /// query semantics under concurrent part changes.
+    if (rmt_l->getStorageSnapshot() != rmt_r->getStorageSnapshot())
         return;
     if (!isPlainScan(rmt_l) || !isPlainScan(rmt_r))
         return;
