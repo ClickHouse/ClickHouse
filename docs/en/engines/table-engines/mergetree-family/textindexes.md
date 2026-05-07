@@ -410,7 +410,7 @@ CREATE TABLE table
     str String,
     INDEX idx(str) TYPE text(
         tokenizer = 'splitByNonAlpha',
-        postprocessor = stem('en', str)
+        postprocessor = stem(str, 'en')
     )
 )
 ENGINE = MergeTree
