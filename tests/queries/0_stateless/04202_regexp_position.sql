@@ -49,6 +49,8 @@ SELECT regexpPosition(s, 'b+') FROM (SELECT arrayJoin(['abc', 'aaabbb', 'xyz', '
 -- Constant haystack with vector numeric arguments (regression: previously read past end of const column).
 SELECT regexpPosition('abc', 'a', number + 1) FROM numbers(3);
 SELECT regexpPosition('aXbXcXd', 'X', 1, number + 1) FROM numbers(4);
+SELECT regexpPosition('hello world', 'world', number + 1) FROM numbers(8);
+SELECT regexpPosition('hello world', '', number + 1) FROM numbers(14);
 
 -- Boundary: start position at and past `length + 1` with an empty pattern.
 -- Empty match is allowed exactly at `length + 1`; anything larger must return 0.
@@ -56,6 +58,19 @@ SELECT regexpPosition('abc', '', 3);
 SELECT regexpPosition('abc', '', 4);
 SELECT regexpPosition('abc', '', 5);
 SELECT regexpPosition('abc', '', 6);
+
+-- Zero-length pattern with repeated occurrences.
+SELECT regexpPosition('abc', '', 1, 1);
+SELECT regexpPosition('abc', '', 1, 2);
+SELECT regexpPosition('abc', '', 1, 3);
+SELECT regexpPosition('abc', '', 1, 4);
+SELECT regexpPosition('abc', '', 1, 5);
+SELECT regexpPosition('abc', '', 1, 4, 1);
+
+-- Optional capture groups with zero-length/repeated matches.
+SELECT regexpPosition('ab', '(a)?', 1, 1, 0, '', 1);
+SELECT regexpPosition('ab', '(a)?', 1, 2, 0, '', 1);
+SELECT regexpPosition('ab', '(a)?', 1, 3, 0, '', 1);
 
 -- Errors.
 SELECT regexpPosition('abc', 'a', 0); -- { serverError BAD_ARGUMENTS }
