@@ -57,6 +57,9 @@ public:
     void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
     std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
 
+    void setTableUUID(const std::string & uuid_) { table_uuid = uuid_; }
+    std::optional<std::string> getTableUUID() const { return table_uuid; }
+
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
     bool requiresCredentials() const { return with_storage_credentials; }
@@ -106,6 +109,7 @@ private:
     std::optional<DataLakeSpecificProperties> data_lake_specific_metadata;
 
     std::string reason_why_table_is_not_readable;
+    std::optional<std::string> table_uuid;
 
     bool is_default_readable_table = true;
 
