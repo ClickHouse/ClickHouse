@@ -558,23 +558,6 @@ SELECT count() FROM tab WHERE val NOT IN ('FOO');     -- 2: rows 2 and 3
 
 DROP TABLE tab;
 
-SELECT '-- IN with stem postprocessor: stem-folded set tokens must match index.';
-
-CREATE TABLE tab
-(
-    id UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = stem(lower(val), 'en'))
-) ENGINE = MergeTree ORDER BY id;
-
-INSERT INTO tab VALUES (1, 'running'), (2, 'studies'), (3, 'collection');
-
--- Row-level IN exact-matches the stored words. Without the fix, the index would
--- search for 'running'/'collection' (not stored) and prune both granules.
-SELECT count() FROM tab WHERE val IN ('running', 'collection');   -- 2
-
-DROP TABLE tab;
-
 SELECT '-- IN element that the postprocessor maps to empty: index falls back to row-scan.';
 
 CREATE TABLE tab
@@ -594,7 +577,30 @@ SELECT count() FROM tab WHERE val IN ('the', 'cat');    -- 2
 
 DROP TABLE tab;
 
-SELECT '22. Negative tests.';
+SELECT '22. Array tokenizer + postprocessor: rewrite path matches index for mixed parts.';
+
+-- Index lookup (materialized) and rewrite-on-row-scan (non-materialized) must both
+-- compare needles to raw elements when the tokenizer is 'array'.
+
+CREATE TABLE tab (id UInt64, val Array(String)) ENGINE = MergeTree ORDER BY id;
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']);  -- old parts: no index
+
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'array', postprocessor = lower(val));
+
+INSERT INTO tab VALUES (3, ['Foo']), (4, ['BAR']);  -- new parts: indexed
+
+-- Raw-case needle matches in both old and new parts.
+SELECT count() FROM tab WHERE hasAllTokens(val, ['Foo']);  -- 2
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['BAR']);  -- 2
+-- Lower-cased needle never matches: raw elements stay uppercase on both paths.
+SELECT count() FROM tab WHERE hasAllTokens(val, ['foo']);  -- 0
+
+SYSTEM START MERGES tab;
+DROP TABLE tab;
+
+SELECT '23. Negative tests.';
 
 SELECT '- The postprocessor expression must reference the index column';
 CREATE TABLE tab

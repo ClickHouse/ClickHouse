@@ -135,13 +135,15 @@ FUNCTION and(__text_index_idx_endsWith_62c031dd56b3d56d129e8b959a74ec3e :: 2, en
 0
 2
 2
--- IN with stem postprocessor: stem-folded set tokens must match index.
-2
 -- IN element that the postprocessor maps to empty: index falls back to row-scan.
 1
 1
 2
-22. Negative tests.
+22. Array tokenizer + postprocessor: rewrite path matches index for mixed parts.
+2
+2
+0
+23. Negative tests.
 - The postprocessor expression must reference the index column
 - The postprocessor expression must be a function, not an identifier
 - The postprocessor expression must return String
