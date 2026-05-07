@@ -65,12 +65,7 @@ struct ExternalQueryBuilder
 
 
 protected:
-    const FormatSettings format_settings = []
-    {
-        FormatSettings settings;
-        settings.values.escape_quote_with_quote = true;
-        return settings;
-    }();
+    FormatSettings format_settings;
 
     virtual void composeLoadAllQuery(WriteBuffer & out) const;
 

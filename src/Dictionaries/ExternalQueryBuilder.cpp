@@ -41,6 +41,10 @@ ExternalQueryBuilder::ExternalQueryBuilder(
     , where(where_)
     , quoting_style(quoting_style_)
 {
+    // PostgreSQL (standard_conforming_strings = on since 9.1) treats '\' as literal, not as an escape;
+    // ClickHouse and MySQL use backslash escaping, so ''‐style quoting would misparse strings with backslashes.
+    format_settings.values.escape_quote_with_quote = (quoting_style == IdentifierQuotingStyle::DoubleQuotes);
+
     if (table.empty() && query.empty())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Setting `table` or `query` must be non empty");
 
