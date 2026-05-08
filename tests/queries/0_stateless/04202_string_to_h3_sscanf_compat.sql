@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Tests that stringToH3 matches glibc sscanf("%" PRIx64) semantics for
 -- "0x"/"0X" prefixes that are not followed by any hex digit.
 -- glibc sscanf returns success with value 0 in those cases; the H3 backend
