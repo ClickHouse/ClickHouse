@@ -2479,8 +2479,27 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
     /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
     auto zookeeper = getZooKeeper();
-    UInt32 snapshot_version = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
+    Coordination::Stat initial_stat;
+    UInt32 snapshot_version = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr", &initial_stat));
     auto snapshot = getConsistentMetadataSnapshotImpl(zookeeper, filter, /* max_retries= */ 20, snapshot_version);
+
+    /// Identity check that survives full database recreation regardless of whether the new
+    /// `/max_log_ptr` value ended up below or above the snapshot version we observed initially.
+    /// `czxid` of `/max_log_ptr` is set when the node is created and is stable across `Set`s, so
+    /// any change here implies the entire database subtree was dropped and a new database was
+    /// created at the same Keeper path during the snapshot. The in-loop rollback guard inside
+    /// `getConsistentMetadataSnapshotImpl` only catches the case where the new pointer is below
+    /// the old one; this re-read also catches the case where the recreated database advanced past
+    /// the old pointer before the snapshot iteration read it.
+    Coordination::Stat final_stat;
+    zookeeper->get(zookeeper_path + "/max_log_ptr", &final_stat);
+    if (final_stat.czxid != initial_stat.czxid)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+            "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+            "(Keeper path identity changed)");
+    }
 
     std::vector<std::pair<ASTPtr, StoragePtr>> res;
     for (const auto & [table_name, metadata] : snapshot)
