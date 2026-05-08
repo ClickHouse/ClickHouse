@@ -54,6 +54,47 @@ namespace
             "Wildcard expansion for `url` from HTTP index pages is experimental. "
             "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
     }
+
+    ASTs makeWebObjectStorageEngineArgs(
+        const String & source,
+        const String & format,
+        const String & structure,
+        const String & compression_method,
+        const HTTPHeaderEntries & headers)
+    {
+        ASTs engine_args;
+        engine_args.emplace_back(make_intrusive<ASTLiteral>(source));
+        engine_args.emplace_back(make_intrusive<ASTLiteral>(format));
+
+        if (structure != "auto" || compression_method != "auto")
+            engine_args.emplace_back(make_intrusive<ASTLiteral>(structure));
+        if (compression_method != "auto")
+            engine_args.emplace_back(make_intrusive<ASTLiteral>(compression_method));
+
+        if (!headers.empty())
+        {
+            ASTs header_equals;
+            header_equals.reserve(headers.size());
+            for (const auto & [header_name, header_value] : headers)
+            {
+                ASTs equals_args;
+                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_name));
+                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_value));
+                header_equals.emplace_back(makeASTOperator("equals", std::move(equals_args)));
+            }
+
+            auto headers_list = make_intrusive<ASTExpressionList>();
+            headers_list->children = std::move(header_equals);
+
+            auto headers_func = make_intrusive<ASTFunction>();
+            headers_func->name = "headers";
+            headers_func->arguments = headers_list;
+            headers_func->children.push_back(headers_func->arguments);
+            engine_args.emplace_back(std::move(headers_func));
+        }
+
+        return engine_args;
+    }
 }
 
 std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
@@ -171,37 +212,7 @@ StoragePtr TableFunctionURL::getStorage(
         checkExperimentalURLWildcardFromIndexPages(context);
         auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
 
-        ASTs engine_args;
-        engine_args.emplace_back(make_intrusive<ASTLiteral>(source));
-        engine_args.emplace_back(make_intrusive<ASTLiteral>(format_));
-
-        if (structure != "auto" || compression_method_ != "auto")
-            engine_args.emplace_back(make_intrusive<ASTLiteral>(structure));
-        if (compression_method_ != "auto")
-            engine_args.emplace_back(make_intrusive<ASTLiteral>(compression_method_));
-
-        if (!configuration.headers.empty())
-        {
-            ASTs header_equals;
-            header_equals.reserve(configuration.headers.size());
-            for (const auto & [header_name, header_value] : configuration.headers)
-            {
-                ASTs equals_args;
-                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_name));
-                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_value));
-                header_equals.emplace_back(makeASTOperator("equals", std::move(equals_args)));
-            }
-
-            auto headers_list = make_intrusive<ASTExpressionList>();
-            headers_list->children = std::move(header_equals);
-
-            auto headers_func = make_intrusive<ASTFunction>();
-            headers_func->name = "headers";
-            headers_func->arguments = headers_list;
-            headers_func->children.push_back(headers_func->arguments);
-            engine_args.emplace_back(std::move(headers_func));
-        }
-
+        auto engine_args = makeWebObjectStorageEngineArgs(source, format_, structure, compression_method_, configuration.headers);
         StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
 
         ObjectStoragePtr object_storage = object_storage_configuration->createObjectStorage(context, /* is_readonly */ true, std::nullopt);
@@ -247,8 +258,30 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
     if (structure == "auto")
     {
         ColumnsDescription columns;
+        String sample_path = filename;
 
-        if (format == "auto")
+        if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
+        {
+            checkExperimentalURLWildcardFromIndexPages(context);
+
+            auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
+            auto engine_args = makeWebObjectStorageEngineArgs(filename, format, structure, compression_method, configuration.headers);
+            StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
+
+            auto object_storage = object_storage_configuration->createObjectStorage(context, /* is_readonly */ true, std::nullopt);
+            if (format == "auto")
+            {
+                auto schema_and_format = StorageObjectStorage::resolveSchemaAndFormatFromData(
+                    object_storage, object_storage_configuration, std::nullopt, sample_path, context);
+                columns = std::move(schema_and_format.first);
+            }
+            else
+            {
+                columns = StorageObjectStorage::resolveSchemaFromData(
+                    object_storage, object_storage_configuration, std::nullopt, sample_path, context);
+            }
+        }
+        else if (format == "auto")
         {
             columns = StorageURL::getTableStructureAndFormatFromData(
                 filename,
@@ -269,7 +302,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
 
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
             columns,
-            filename,
+            sample_path,
             /* inferred_schema */ true,
             /* format_settings */ std::nullopt,
             context);

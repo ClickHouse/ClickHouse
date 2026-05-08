@@ -125,6 +125,18 @@ def test_url_wildcard_from_index_pages():
     assert result.strip() == "12"
 
 
+def test_url_wildcard_schema_inference():
+    result = node1.query(
+        with_url_wildcard_setting("DESCRIBE TABLE url('http://resolver:8087/data/**/part*.tsv', 'TSV')")
+    )
+    assert result == TSV([["c1", "Nullable(Int64)"]])
+
+    result = node1.query(
+        with_url_wildcard_setting("SELECT sum(c1) FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV')")
+    )
+    assert result.strip() == "12"
+
+
 def test_url_wildcard_size_virtual_column():
     result = node1.query(
         with_url_wildcard_setting("SELECT sum(size) FROM ("
