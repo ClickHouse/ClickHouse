@@ -711,7 +711,11 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
             variant_offsets.push_back(const_col.getVariantByLocalDiscriminator(i).size() - variant_limits[i]);
         }
 
-        auto & discriminators_data = col.getLocalDiscriminators();
+        /// Read discriminators via the const overload — `local_discriminators` may be
+        /// referenced by the substream cache (so its `use_count() >= 2`), which would
+        /// trip `chassert(use_count() == 1)` in the non-const `getLocalDiscriminators`
+        /// (it goes through `WrappedPtr::operator*` -> `assumeMutableRef`).
+        const auto & discriminators_data = const_col.getLocalDiscriminators();
         auto & offsets = col.getOffsets();
         size_t prev_size = offsets.size();
         size_t num_new_offsets = discriminators_data.size() - offsets.size();
