@@ -2108,8 +2108,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         {
                             const auto & table_expression_data = table_expression_data_it->second;
                             const auto & column_name = using_column_from_table.getColumnName();
-                            /// `column_names` is the always-populated set; use it instead of forcing
-                            /// the lazy `column_name_to_column_node` map to be built just for `contains`.
+                            /// Use `column_names` (cheap to populate) rather than forcing the
+                            /// `column_name_to_column_node` map to be built just for a `contains` check.
+                            table_expression_data.ensureColumnMembershipSetsArePopulated();
                             return !table_expression_data.column_names.contains(column_name);
                         }
                         return false;
@@ -3983,17 +3984,9 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
         }
     }
 
-    /// `column_names` and `column_identifier_first_parts` are the membership-check sets.
-    /// They never need a `ColumnNode` and so are always populated eagerly from
-    /// `column_names_and_types` regardless of which branch above set the latter.
-    table_expression_data.column_names.reserve(table_expression_data.column_names_and_types.size());
-    table_expression_data.column_identifier_first_parts.reserve(table_expression_data.column_names_and_types.size());
-    for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
-    {
-        table_expression_data.column_names.insert(column_name_and_type.name);
-        Identifier column_name_identifier(column_name_and_type.name);
-        table_expression_data.column_identifier_first_parts.insert(column_name_identifier.at(0));
-    }
+    /// `column_names` and `column_identifier_first_parts` are populated lazily by
+    /// `ensureColumnMembershipSetsArePopulated()`; they're only consulted when a
+    /// query references columns from this table (skipped for `SELECT count() FROM t`).
 
     if (auto * scope_query_node = scope.scope_node->as<QueryNode>())
     {
