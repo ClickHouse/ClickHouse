@@ -489,10 +489,10 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     else
         metadata_json_str = create_fn();
 
-    raw_json_out = metadata_json_str;
+    raw_json_out = std::move(metadata_json_str);
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-    Poco::Dynamic::Var json = parser.parse(metadata_json_str);
+    Poco::Dynamic::Var json = parser.parse(raw_json_out);
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
