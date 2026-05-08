@@ -1,9 +1,9 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <boost/functional/hash.hpp>
 
 #include <Common/callOnce.h>
@@ -59,7 +59,10 @@ struct FileCacheReserveStat
     };
 
     Stat total_stat;
-    std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
+    std::array<Stat, magic_enum::enum_count<FileSegmentKind>()> stat_by_kind{};
+
+    Stat & getStatByKind(FileSegmentKind kind) { return stat_by_kind[static_cast<uint8_t>(kind)]; }
+    const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
 
     enum class State
     {
@@ -74,8 +77,8 @@ struct FileCacheReserveStat
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
         total_stat += other.total_stat;
-        for (const auto & [name, stat_] : other.stat_by_kind)
-            stat_by_kind[name] += stat_;
+        for (size_t i = 0; i < stat_by_kind.size(); ++i)
+            stat_by_kind[i] += other.stat_by_kind[i];
         return *this;
     }
 };
@@ -251,7 +254,7 @@ private:
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
     std::atomic<size_t> background_download_max_file_segment_size;
-    size_t load_metadata_threads;
+    UInt64 load_metadata_threads;
     const bool load_metadata_asynchronously;
     std::atomic<bool> stop_loading_metadata = false;
     ThreadFromGlobalPool load_metadata_main_thread;
@@ -321,7 +324,7 @@ private:
 
     void loadMetadata();
     void loadMetadataImpl();
-    void loadMetadataForKeys(const std::filesystem::path & keys_dir, const OriginInfo & origin);
+    void loadMetadataForKey(const std::filesystem::path & key_dir, const OriginInfo & origin);
 
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit

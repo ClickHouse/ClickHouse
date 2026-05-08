@@ -71,6 +71,10 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
+if (ENABLE_EXAMPLES)
+    add_subdirectory (Examples)
+endif()
+
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     # Files inherited via extract_into_parent_list that would be marked to remove heavy symbols otherwise
     set_source_files_properties(
@@ -305,6 +309,7 @@ add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
 add_object_library(clickhouse_interpreters_wasm Interpreters/WebAssembly)
+add_object_library(clickhouse_interpreters_merge_tree_transaction Interpreters/MergeTreeTransaction)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
@@ -354,6 +359,9 @@ set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEP
 set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/keeper/dashboard.html")
 
+set_source_files_properties(Server/KeeperJemallocHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
+
 # Common/FrequencyHolder.cpp embeds files from contrib/nlp-data/ via #embed.
 # Add OBJECT_DEPENDS only if the submodule is checked out.
 set(_nlp_charset "${CMAKE_SOURCE_DIR}/contrib/nlp-data/charset.zst")
@@ -380,6 +388,9 @@ if (ENABLE_SSL)
 endif()
 if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_server_ssh Server/SSH)
+endif()
+if (TARGET ch_contrib::arrow_flight)
+    add_object_library(clickhouse_server_arrowflight Server/ArrowFlight)
 endif()
 add_object_library(clickhouse_server_embedded_client Server/ClientEmbedded)
 add_object_library(clickhouse_formats Formats)
@@ -715,8 +726,11 @@ target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 target_link_libraries(clickhouse_common_io PUBLIC boost::context)
 target_link_libraries(dbms PUBLIC boost::context)
 
-if (ENABLE_NLP)
+if (TARGET ch_contrib::stemmer)
     target_link_libraries(dbms PUBLIC ch_contrib::stemmer)
+endif()
+
+if (ENABLE_NLP)
     target_link_libraries(dbms PUBLIC ch_contrib::wnb)
     target_link_libraries(dbms PUBLIC ch_contrib::lemmagen)
 endif()

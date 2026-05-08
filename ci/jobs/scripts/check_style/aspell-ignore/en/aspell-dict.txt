@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3881
+personal_ws-1.1 en 3885
 AArch
 ABIs
 ACLs
@@ -516,6 +516,7 @@ IDE
 IDEs
 IDNA
 IMDS
+IMDSv
 INFILE
 INSERTed
 INSERTs
@@ -734,6 +735,7 @@ LinfNorm
 LinfNormalize
 LinksDeployment
 Linq
+LiteLLM
 ListObject
 ListObjects
 Lisu
@@ -916,6 +918,7 @@ NonMonotonic
 NonZeroUInt
 Nonspacing
 NotPruned
+NullCount
 NuRaft
 Nukta
 NumHexagons
@@ -998,6 +1001,7 @@ Observability
 Octonica
 Ogham
 Ok
+Ollama
 OnTime
 Onal
 OneLake
@@ -1102,6 +1106,7 @@ PrettySpaceNoEscapesMonoBlock
 Prewhere
 PrivateKeyPassphraseHandler
 PrivatePreviewBadge
+ProfileEvent
 ProfileEvents
 Profiler
 Proleptic
@@ -2438,6 +2443,7 @@ hasAllTokens
 hasAny
 hasAnyTokens
 hasColumnInTable
+hasPhrase
 hasSubsequence
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF
@@ -3798,6 +3804,7 @@ uuid
 uuids
 uuidv
 vCPU
+vLLM
 varPop
 varPopStable
 varSamp

@@ -23,6 +23,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -502,32 +503,41 @@ Aggregator::AggregateColumnsConstData makeAggregateColumnsData(const Columns & c
     return aggregate_columns;
 }
 
-void Aggregator::Params::explain(WriteBuffer & out, const std::string & prefix) const
+void Aggregator::Params::explain(ExplainFormatSettings & settings) const
 {
+    const String & prefix = settings.detail_prefix;
+    auto & out = settings.out;
+
+    out << prefix << "Keys:";
+    bool first = true;
+    for (const auto & key : keys)
     {
-        /// Dump keys.
-        out << prefix << "Keys:";
-
-        bool first = true;
-        for (const auto & key : keys)
-        {
-            if (first)
-                out << " ";
-            else
-                out << ", ";
-            first = false;
-            out << key;
-        }
-
-        out << '\n';
+        out << (first ? " " : ", ");
+        first = false;
+        out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(key, settings.pretty_names) : key);
     }
+    out << '\n';
 
     if (!aggregates.empty())
     {
-        out << prefix << "Aggregates:\n";
-
-        for (const auto & aggregate : aggregates)
-            aggregate.explain(out, prefix, 4);
+        if (settings.pretty)
+        {
+            out << prefix << "Aggregates:";
+            first = true;
+            for (const auto & aggregate : aggregates)
+            {
+                out << (first ? " " : ", ");
+                first = false;
+                aggregate.explainPretty(settings);
+            }
+            out << '\n';
+        }
+        else
+        {
+            out << prefix << "Aggregates:\n";
+            for (const auto & aggregate : aggregates)
+                aggregate.explain(out, prefix, 4);
+        }
     }
 }
 

@@ -379,6 +379,8 @@ public:
 
         TransactionID getTID() const;
 
+        MergeTreeTransaction * getMergeTreeTransaction() const { return txn; }
+
     private:
         friend class MergeTreeData;
 
@@ -485,7 +487,7 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const StorageID & table_id_,
-                  const StorageInMemoryMetadata & metadata_,
+                  StorageInMemoryMetadata metadata_,
                   ContextMutablePtr context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,
@@ -560,6 +562,7 @@ public:
             bool need_data_mutations = false;
             bool need_alter_mutations = false;
             bool need_patch_parts = false;
+            bool has_lightweight_delete_parts = false;
         };
 
         static Int64 getMinPartDataVersionForPartition(const Params & params, const String & partition_id);
@@ -581,6 +584,7 @@ public:
         virtual bool hasDataMutations() const = 0;
         virtual bool hasAlterMutations() const = 0;
         virtual bool hasMetadataMutations() const = 0;
+        virtual bool hasLightweightDeletedMask() const = 0;
     };
 
     struct MutationsSnapshotBase : public IMutationsSnapshot
@@ -601,6 +605,7 @@ public:
         bool hasAlterMutations() const final { return counters.num_alter > 0; }
         bool hasMetadataMutations() const final { return counters.num_metadata > 0; }
         bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
+        bool hasLightweightDeletedMask() const final { return params.has_lightweight_delete_parts; }
 
     protected:
         NameSet getColumnsUpdatedInPatches() const;
@@ -929,7 +934,7 @@ public:
     size_t clearEmptyParts();
 
     /// Moves to outdated state patch parts that do not need to be applied to regular parts.
-    size_t clearUnusedPatchParts();
+    virtual size_t clearUnusedPatchParts();
 
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
@@ -980,7 +985,7 @@ public:
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder);
 
-    static std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings);
+    std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// Should be called if part data is suspected to be corrupted.
@@ -1197,11 +1202,16 @@ public:
     /// Returns a snapshot of mutations that probably will be applied on the fly to parts during reading.
     virtual MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const = 0;
 
-    /// Returns the minimum version of metadata among parts.
-    static Int64 getMinMetadataVersion(const DataPartsVector & parts);
+    /// Computes snapshot-related part statistics in a single pass:
+    /// min metadata version, per-partition min data version, and whether any part has a lightweight delete mask.
+    struct PartsSnapshotInfo
+    {
+        Int64 min_metadata_version = -1;
+        PartitionIdToMinBlockPtr min_data_versions;
+        bool has_lightweight_delete_parts = false;
+    };
 
-    /// Returns minimum data version among parts inside each of the partitions.
-    static PartitionIdToMinBlockPtr getMinDataVersionForEachPartition(const DataPartsVector & parts);
+    static PartsSnapshotInfo getPartsSnapshotInfo(const DataPartsVector & parts);
 
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(
@@ -1289,7 +1299,9 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
-    /// True if at least one part contains lightweight delete.
+    /// True if at least one part contains a lightweight delete mask.
+    /// Used as a fallback in `supportsTrivialCountOptimization` when
+    /// no storage snapshot is available (e.g. from `StorageMerge`).
     mutable std::atomic_bool has_lightweight_delete_parts = false;
 
     /// Parts that currently moving from disk/volume to another.
@@ -1371,7 +1383,7 @@ public:
 
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
-    static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
+    static VirtualColumnsDescription createVirtuals(const KeyDescription * partition_key);
 
     /// Load/unload primary keys of all data parts
     void loadPrimaryKeys() const;
@@ -1391,6 +1403,10 @@ protected:
     friend class IPartMetadataManager;
     friend class IMergedBlockOutputStream; // for access to log
     friend struct DataPartsLock; // for access to shared_parts_list/shared_ranges_in_parts
+    friend class VersionMetadata; // for access to log
+    friend class VersionMetadataOnDisk; // for access to log
+    friend class VersionMetadataOnKeeper; // for access to log
+    friend class MutationsState; // for access to log
 
     bool require_part_metadata;
 

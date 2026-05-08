@@ -1,30 +1,32 @@
+#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Core/Settings.h>
 
 #include <stack>
 
@@ -73,7 +75,8 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
         for (const auto & table : tables)
         {
             auto storage = std::get<StoragePtr>(table);
-            const auto & sorting_key = storage->getInMemoryMetadataPtr(merge->getContext(), false)->getSortingKey();
+            const auto storage_metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
+            const auto & sorting_key = storage_metadata->getSortingKey();
             if (sorting_key.column_names.empty())
                 return nullptr;
         }
@@ -126,6 +129,8 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
         return findReadingStep(*node.children.front(), data);
 
+    if (typeid_cast<CreatingSetsStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step))
+        return findReadingStep(*node.children.front(), data);
 
     if (data.read_in_order_through_join)
     {
@@ -222,10 +227,10 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
+void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
 {
     IQueryPlanStep * step = node.step.get();
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
+    if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         if (const auto prewhere_info = reading->getPrewhereInfo())
         {
@@ -250,7 +255,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
         return;
     }
 
-    if (typeid_cast<JoinStep *>(step) || typeid_cast<FilledJoinStep *>(step))
+    if (typeid_cast<const JoinStep *>(step) || typeid_cast<const FilledJoinStep *>(step))
     {
         limit = 0;
     }
@@ -260,12 +265,12 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
 
     buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
 
-    if (typeid_cast<DistinctStep *>(step))
+    if (typeid_cast<const DistinctStep *>(step))
     {
         limit = 0;
     }
 
-    if (auto * expression = typeid_cast<ExpressionStep *>(step))
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
     {
         const auto & actions = expression->getExpression();
 
@@ -276,7 +281,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
         appendExpression(dag, actions);
     }
 
-    if (auto * filter = typeid_cast<FilterStep *>(step))
+    if (const auto * filter = typeid_cast<const FilterStep *>(step))
     {
         /// Should ignore limit if there is filtering.
         limit = 0;
@@ -286,7 +291,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
             appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
     }
 
-    if (auto * array_join = typeid_cast<ArrayJoinStep *>(step))
+    if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
     {
         /// Should ignore limit because ARRAY JOIN can reduce the number of rows in case of empty array.
         /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger.
@@ -1030,7 +1035,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
     for (const auto & table : tables)
     {
         auto storage = std::get<StoragePtr>(table);
-        const auto & sorting_key = storage->getInMemoryMetadataPtr(merge->getContext(), false)->getSortingKey();
+        const auto storage_metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
+        const auto & sorting_key = storage_metadata->getSortingKey();
         const auto & sorting_key_columns = sorting_key.column_names;
 
         if (sorting_key_columns.empty())
@@ -1390,6 +1396,35 @@ bool readingFromParallelReplicas(const QueryPlan::Node * node)
     return typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step);
 }
 
+}
+
+bool wouldReadInOrderBeUseful(
+    const SortingStep & sorting,
+    const KeyDescription & sorting_key,
+    const QueryPlan::Node & subtree_above_reading)
+{
+    if (sorting.getType() != SortingStep::Type::Full)
+        return false;
+    if (sorting_key.column_names.empty())
+        return false;
+
+    std::optional<ActionsDAG> dag;
+    FixedColumns fixed_columns;
+    size_t limit = sorting.getLimit();
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+
+    if (dag && !fixed_columns.empty())
+        enrichFixedColumns(*dag, fixed_columns);
+
+    auto order_info = buildInputOrderFromSortDescription(
+        fixed_columns,
+        dag,
+        sorting.getSortDescription(),
+        sorting_key,
+        sorting_key.column_names,
+        limit);
+
+    return order_info.input_order != nullptr;
 }
 
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)

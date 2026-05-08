@@ -6,4 +6,4 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-$CLICKHOUSE_LOCAL -q "select * from numbers(10) settings max_block_size=1, output_format_parquet_use_custom_encoder=1, max_threads=1 format Parquet" | $CLICKHOUSE_LOCAL -q "select * from table" --input-format=Parquet
+$CLICKHOUSE_LOCAL -q "select * from numbers(10) settings max_block_size=1, max_threads=1 format Parquet" | $CLICKHOUSE_LOCAL -q "select * from table" --input-format=Parquet

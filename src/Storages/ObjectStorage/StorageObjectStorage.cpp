@@ -310,7 +310,7 @@ StorageObjectStorage::StorageObjectStorage(
     if (configuration->partition_strategy)
         metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+    metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         metadata.columns,
         context,
         format_settings,
@@ -397,7 +397,11 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
             new_metadata = *metadata_snapshot;
     }
 
-    setInMemoryMetadata(new_metadata);
+    setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        new_metadata.columns,
+        query_context,
+        format_settings,
+        configuration->partition_strategy_type)));
 }
 
 
@@ -524,10 +528,11 @@ void StorageObjectStorage::read(
     configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
+        storage_id,
         object_storage,
         configuration,
         column_names,
-        getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         query_info,
         storage_snapshot,
         modified_format_settings,
@@ -777,6 +782,14 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
+    /// For datalake tables (e.g. Iceberg), refresh external metadata so that the
+    /// storage snapshot contains the `datalake_table_state`. Without this the mutation
+    /// pipeline will hit a `LOGICAL_ERROR` exception in `iterate` when building the read side.
+    /// Normally `updateExternalDynamicMetadataIfExists` is called by the
+    /// analyzer/interpreter for `SELECT` and `INSERT` queries, but `InterpreterAlterQuery`
+    /// does not call it before invoking `mutate`.
+    updateExternalDynamicMetadataIfExists(context_);
+
     auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto storage = getStorageID();
     configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
