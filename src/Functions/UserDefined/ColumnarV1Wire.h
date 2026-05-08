@@ -274,9 +274,9 @@ inline uint32_t buildColDescriptor(
     {
         uint32_t base_type = is_nullable ? COL_NULL_BYTES : COL_BYTES;
 
-        // COL_IS_REPEAT detection for non-const string columns.
+        // COL_IS_REPEAT detection for non-const, non-nullable string columns.
         // offsets_offset stores R (the period); string offsets + chars live in the data block.
-        if (!is_const && num_rows > 1)
+        if (!is_const && !is_nullable && num_rows > 1)
         {
             uint32_t r = detectPeriod(str_col, num_rows);
             if (r > 0 && r < num_rows)
@@ -332,8 +332,8 @@ inline uint32_t buildColDescriptor(
     else if (wire_elem_size == 4) base_type = is_nullable ? COL_NULL_FIXED32 : COL_FIXED32;
     else                          base_type = is_nullable ? COL_NULL_FIXED64 : COL_FIXED64;
 
-    // COL_IS_REPEAT detection for non-const fixed-width columns.
-    if (!is_const && num_rows > 1)
+    // COL_IS_REPEAT detection for non-const, non-nullable fixed-width columns.
+    if (!is_const && !is_nullable && num_rows > 1)
     {
         uint32_t r = detectPeriod(col, num_rows);
         if (r > 0 && r < num_rows)
@@ -525,7 +525,8 @@ inline MutableColumnPtr readColumnarOutput(
         throw Exception(ErrorCodes::WASM_ERROR,
             "COLUMNAR_V1 output buffer too small: {} bytes", buf.size());
 
-    uint32_t num_rows, num_cols;
+    uint32_t num_rows;
+    uint32_t num_cols;
     std::memcpy(&num_rows, buf.data(),     4);
     std::memcpy(&num_cols, buf.data() + 4, 4);
 
@@ -541,8 +542,21 @@ inline MutableColumnPtr readColumnarOutput(
 
     uint32_t raw_type = desc.type & ~(COL_IS_CONST | COL_IS_REPEAT);
 
+    auto checkRange = [&](uint64_t offset, uint64_t size, const char * what)
+    {
+        if (offset + size > static_cast<uint64_t>(buf.size()))
+            throw Exception(ErrorCodes::WASM_ERROR,
+                "COLUMNAR_V1: {} range overflows buffer ({}+{} > {})",
+                what, offset, size, buf.size());
+    };
+
     if (raw_type == COL_BYTES || raw_type == COL_NULL_BYTES)
     {
+        checkRange(desc.offsets_offset, (static_cast<uint64_t>(num_rows) + 1) * 4, "string offsets");
+        checkRange(desc.data_offset, desc.data_size, "string data");
+        if (raw_type == COL_NULL_BYTES && desc.null_offset)
+            checkRange(desc.null_offset, num_rows, "string null map");
+
         const uint32_t * wire_offsets = reinterpret_cast<const uint32_t *>(buf.data() + desc.offsets_offset);
         const uint8_t * data = buf.data() + desc.data_offset;
 
@@ -556,6 +570,9 @@ inline MutableColumnPtr readColumnarOutput(
         {
             uint32_t wire_end   = wire_offsets[i + 1];
             uint32_t wire_start = wire_offsets[i];
+            if (wire_end > desc.data_size || wire_start > wire_end)
+                throw Exception(ErrorCodes::WASM_ERROR,
+                    "COLUMNAR_V1: string wire offset out of range at row {}", i);
             uint32_t str_len    = wire_end - wire_start;
             if (str_len > 0) str_len--;
             chars.resize(ch_pos + str_len);
@@ -575,20 +592,33 @@ inline MutableColumnPtr readColumnarOutput(
 
     if (raw_type == COL_FIXED8 || raw_type == COL_NULL_FIXED8)
     {
-        auto col_u8 = ColumnUInt8::create(num_rows);
-        std::memcpy(col_u8->getData().data(), buf.data() + desc.data_offset, num_rows);
+        checkRange(desc.data_offset, num_rows, "fixed8 data");
+        if (raw_type == COL_NULL_FIXED8 && desc.null_offset)
+            checkRange(desc.null_offset, num_rows, "fixed8 null map");
+
+        const DataTypePtr & base_type = (raw_type == COL_NULL_FIXED8)
+            ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
+            : result_type;
+        auto col8 = base_type->createColumn();
+        col8->insertManyDefaults(num_rows);
+        std::memcpy(const_cast<char *>(col8->getRawData().data()),
+                    buf.data() + desc.data_offset, num_rows);
         if (raw_type == COL_NULL_FIXED8 && desc.null_offset)
         {
             auto null_col = ColumnUInt8::create(num_rows);
             std::memcpy(null_col->getData().data(), buf.data() + desc.null_offset, num_rows);
-            return ColumnNullable::create(std::move(col_u8), std::move(null_col));
+            return ColumnNullable::create(std::move(col8), std::move(null_col));
         }
-        return col_u8;
+        return col8;
     }
 
     // Fixed32 — create column matching the declared return type (Int32, UInt32, Float32, etc.)
     if (raw_type == COL_FIXED32 || raw_type == COL_NULL_FIXED32)
     {
+        checkRange(desc.data_offset, static_cast<uint64_t>(num_rows) * 4, "fixed32 data");
+        if (raw_type == COL_NULL_FIXED32 && desc.null_offset)
+            checkRange(desc.null_offset, num_rows, "fixed32 null map");
+
         const DataTypePtr & base_type = (raw_type == COL_NULL_FIXED32)
             ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
             : result_type;
@@ -607,6 +637,10 @@ inline MutableColumnPtr readColumnarOutput(
 
     if (raw_type == COL_FIXED64 || raw_type == COL_NULL_FIXED64)
     {
+        checkRange(desc.data_offset, static_cast<uint64_t>(num_rows) * 8, "fixed64 data");
+        if (raw_type == COL_NULL_FIXED64 && desc.null_offset)
+            checkRange(desc.null_offset, num_rows, "fixed64 null map");
+
         const DataTypePtr & base_type = (raw_type == COL_NULL_FIXED64)
             ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
             : result_type;
@@ -696,5 +730,5 @@ inline MutableColumnPtr readColumnarOutput(
     throw Exception(ErrorCodes::WASM_ERROR, "COLUMNAR_V1: unsupported output ColType {}", raw_type);
 }
 
-} // namespace ColumnarV1
-} // namespace DB
+}
+}
