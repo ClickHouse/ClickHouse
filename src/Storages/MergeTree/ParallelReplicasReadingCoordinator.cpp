@@ -211,6 +211,12 @@ public:
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
     virtual bool isReadingCompleted() const = 0;
     virtual bool initializedWithEmptyRanges() const { return false; }
+    /// The post-normalization working set of parts for this stream — what the coordinator will
+    /// actually serve in handleRequest. This may be a subset of the first announcement's
+    /// description (e.g. InOrderCoordinator drops parts that are covered/covering existing ones)
+    /// and is what we must echo back to followers as the authoritative set, so they don't
+    /// build phantom consumers for dropped parts.
+    virtual RangesInDataPartsDescription getRegisteredParts() const = 0;
 
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
     {
@@ -271,6 +277,14 @@ public:
     bool isReadingCompleted() const override;
 
     bool initializedWithEmptyRanges() const override { return state_initialized && all_parts_to_read.empty(); }
+
+    RangesInDataPartsDescription getRegisteredParts() const override
+    {
+        RangesInDataPartsDescription result;
+        for (const auto & part : all_parts_to_read)
+            result.push_back(part.description);
+        return result;
+    }
 
 private:
     /// This many granules will represent a single segment of marks that will be assigned to a replica
@@ -941,6 +955,14 @@ public:
     void markReplicaAsUnavailable(size_t replica_number) override;
     bool isReadingCompleted() const override;
 
+    RangesInDataPartsDescription getRegisteredParts() const override
+    {
+        RangesInDataPartsDescription result;
+        for (const auto & part : all_parts_to_read)
+            result.push_back(part.description);
+        return result;
+    }
+
     Parts all_parts_to_read;
     size_t total_rows_to_read = 0;
     bool state_initialized{false};
@@ -1201,12 +1223,7 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
         }
     }
 
-    /// On the very first (snapshot replica's) announcement for a stream, capture its parts
-    /// list as the authoritative set; subsequent announcements (from followers) get this
-    /// echoed back in their response so they can prune their per-part state.
     const bool first_announcement_for_stream = !stream_to_coordinator.contains(announcement.stream_id);
-    if (first_announcement_for_stream)
-        stream_to_registered_parts[announcement.stream_id] = announcement.description;
 
     auto coordinator = getOrCreateCoordinator(announcement.stream_id, announcement.mode);
 
@@ -1214,6 +1231,16 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
         return response;
 
     coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
+
+    /// Capture the authoritative parts list AFTER the coordinator has processed the first
+    /// announcement: InOrderCoordinator drops parts that are covered/covering existing ones
+    /// during normalization, so the coordinator's working set may be smaller than the raw
+    /// announcement payload. Echoing back the pre-normalized payload would leave followers
+    /// holding consumers for parts that the coordinator never registered, and those consumers
+    /// would issue read requests that handleRequest silently skips (continue) — wasted work
+    /// at best, and a phantom-pruning bug at worst.
+    if (first_announcement_for_stream)
+        stream_to_registered_parts[response.stream_id] = coordinator->getRegisteredParts();
 
     if (auto it = stream_to_registered_parts.find(response.stream_id); it != stream_to_registered_parts.end())
         response.parts = it->second;
