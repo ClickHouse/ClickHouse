@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageFilesystem.h>
@@ -22,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 void registerTableFunctionFilesystem(TableFunctionFactory & factory)
@@ -163,6 +166,33 @@ ColumnsDescription TableFunctionFilesystem::getActualTableStructure(ContextPtr /
 StoragePtr TableFunctionFilesystem::executeImpl(const ASTPtr &, ContextPtr context, const std::string & table_name, ColumnsDescription, bool is_insert_query) const
 {
     bool local_mode = context->getApplicationType() == Context::ApplicationType::LOCAL;
+
+    /// `StorageFilesystem` performs all access via local filesystem APIs (`fs::directory_iterator`,
+    /// `fileOrSymlinkPathStartsWith`). With `user_files_policy` configured on multiple disks - or
+    /// any non-local disk such as `s3_plain` - a single local prefix cannot represent the full
+    /// authorized set, and remote disk roots are not usable through local APIs. Reject up front
+    /// rather than silently authorizing only the first disk.
+    if (!local_mode)
+    {
+        if (auto user_files_volume = context->getUserFilesVolume())
+        {
+            const auto & disks = user_files_volume->getDisks();
+            for (const auto & disk : disks)
+            {
+                if (disk->isRemote())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "`filesystem` table function is not supported with non-local "
+                                    "`user_files_policy` disks (disk `{}` is remote)",
+                                    disk->getName());
+            }
+
+            if (disks.size() > 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "`filesystem` table function is not supported with multi-disk "
+                                "`user_files_policy` (the policy has {} disks)",
+                                disks.size());
+        }
+    }
 
     /// Keep `user_files_path` in the same lexical namespace as user input: `fileOrSymlinkPathStartsWith`
     /// compares lexically-normalized absolute paths, so canonicalizing the prefix would reject otherwise
