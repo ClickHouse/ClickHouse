@@ -1,0 +1,71 @@
+--- mysqlDayOfWeekTextShort: %a ---
+2000-01-03 00:00:00
+2000-01-04 00:00:00
+2000-01-05 00:00:00
+--- mysqlDayOfWeekTextShort: unknown text ---
+--- mysqlDayOfWeekTextLong: %W ---
+2000-01-03 00:00:00
+2000-01-04 00:00:00
+2000-01-05 00:00:00
+2000-01-09 00:00:00
+--- mysqlDayOfWeekTextLong: unknown 3-letter prefix ---
+--- mysqlMonthOfYearTextShort: %b ---
+2000-01-01 00:00:00
+2000-02-01 00:00:00
+2000-12-01 00:00:00
+--- mysqlMonthOfYearTextShort: unknown ---
+--- mysqlMonthOfYearTextLong: %M ---
+2000-01-01 00:00:00
+2000-02-01 00:00:00
+2000-09-01 00:00:00
+--- mysqlMonthOfYearTextLong: unknown ---
+--- mysqlDayOfYear: %j ---
+2000-01-01 00:00:00
+2000-04-09 00:00:00
+2000-12-30 00:00:00
+--- mysqlDayOfWeek: %w ---
+2000-01-05 00:00:00
+2000-01-09 00:00:00
+--- mysqlISO8601Year4: %Y (extra edge: setYear boundaries) ---
+1970-01-01 00:00:00
+2106-01-01 00:00:00
+--- mysqlYear2: %y ---
+1999-01-01 00:00:00
+2000-01-01 00:00:00
+1970-01-01 00:00:00
+--- mysqlISO8601Week: %V ---
+2000-01-31 00:00:00
+--- Unsupported MySQL specifiers ---
+--- Unknown MySQL specifier ---
+--- mysqlAmericanDate: %D (mm/dd/yy) ---
+2099-01-02 00:00:00
+2000-12-31 00:00:00
+--- 12-hour format: %h / %I + %p ---
+1970-01-01 23:30:00
+1970-01-01 11:30:00
+1970-01-01 00:00:00
+1970-01-01 12:00:00
+--- %s timestamp: out-of-range, malformed ---
+--- Error fallback: parseDateTimeOrZero / parseDateTimeOrNull ---
+1970-01-01 00:00:00
+\N
+1970-01-01 00:00:00
+\N
+--- Timezone argument ---
+2023-01-02 03:04:05
+2023-01-02 03:04:05
+--- Literal characters in format ---
+2023-01-02 00:00:00
+--- Joda literals: escaping and missing quotes ---
+2023-01-01 00:00:00
+--- Joda fields ---
+2023-01-02 00:00:00
+2023-01-02 03:04:05
+--- parseDateTime64 variants ---
+2023-01-02 03:04:05.123456
+1970-01-01 00:00:00.000000
+\N
+2023-01-02 03:04:05.123456
+1970-01-01 00:00:00
+\N
+--- parseDateTime64 wrong type argument ---

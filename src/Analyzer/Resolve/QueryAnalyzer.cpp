@@ -54,6 +54,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <Access/EnabledRowPolicies.h>
 
@@ -72,6 +73,7 @@ namespace Setting
     extern const SettingsBool analyzer_inline_views;
     extern const SettingsBool asterisk_include_alias_columns;
     extern const SettingsBool asterisk_include_materialized_columns;
+    extern const SettingsBool asterisk_include_virtual_columns;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_materialized_cte;
@@ -592,8 +594,22 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
 void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
 {
     const auto & settings = scope.context->getSettingsRef();
-    if (!settings[Setting::enable_positional_arguments] || scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+    if (!settings[Setting::enable_positional_arguments])
         return;
+    const bool is_view_inner = scope.context->isViewInnerQuery();
+    if (!is_view_inner)
+    {
+        /// Skip resolution on distributed/parallel-replicas local plan nodes: the initiator
+        /// already resolved positional arguments in the outer query. View-inner contexts are
+        /// exempt because views are expanded on the local node and were never resolved by the
+        /// initiator.
+        if (scope.context->isPositionalArgumentsAlreadyResolved())
+            return;
+        /// Skip on remote shard execution (SECONDARY_QUERY): same reasoning as above for
+        /// paths not covered by setPositionalArgumentsAlreadyResolved.
+        if (scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+            return;
+    }
 
     auto & node_list_typed = node_list->as<ListNode &>();
 
@@ -1557,6 +1573,7 @@ GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & match
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
     UInt8 get_columns_options_kind = GetColumnsOptions::AllPhysicalAndAliases;
+    VirtualsKind virtuals_kind = VirtualsKind::None;
 
     if (matcher_node_typed.isAsteriskMatcher())
     {
@@ -1569,9 +1586,12 @@ GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & match
 
         if (settings[Setting::asterisk_include_materialized_columns])
             get_columns_options_kind |= GetColumnsOptions::Kind::Materialized;
+
+        if (settings[Setting::asterisk_include_virtual_columns])
+            virtuals_kind = VirtualsKind::All;
     }
 
-    return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind));
+    return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind)).withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
 }
 
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
@@ -3784,7 +3804,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         if (storage_snapshot->storage.supportsSubcolumns())
         {
             get_column_options.withSubcolumns();

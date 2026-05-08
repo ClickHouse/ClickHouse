@@ -19,7 +19,6 @@
 
 #if USE_AVRO && USE_PARQUET
 
-#include <Access/Common/HTTPAuthenticationScheme.h>
 #include <Core/Settings.h>
 
 #include <Databases/DatabaseFactory.h>
@@ -47,6 +46,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Common/FailPoint.h>
+#include <Common/HTTPHeaderFilter.h>
 
 namespace DB
 {
@@ -58,6 +58,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
+    extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
     extern const DatabaseDataLakeSettingsString oauth_server_uri;
     extern const DatabaseDataLakeSettingsBool oauth_server_use_request_body;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
@@ -79,6 +80,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
+    extern const DatabaseDataLakeSettingsBool force_add_bucket;
 }
 
 namespace Setting
@@ -475,7 +477,7 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
     auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
     if (endpoint_from_settings.empty())
         return table_metadata.getLocation();
-    return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
+    return table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
 }
 
 bool DatabaseDataLake::empty() const
@@ -498,6 +500,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
+    if (settings[DatabaseDataLakeSetting::force_add_bucket])
+        table_metadata.withForceAddBucket();
 
     /// This is added to test that lightweight queries like 'SHOW TABLES' dont end up fetching the table
     fiu_do_on(FailPoints::lightweight_show_tables,
@@ -663,9 +667,12 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
+    const auto catalog_uuid = table_metadata.getTableUUID();
+    const UUID table_uuid = catalog_uuid ? parseFromString<UUID>(*catalog_uuid) : UUIDHelpers::Nil;
+
     if (can_use_parallel_replicas && !is_secondary_query)
     {
-        auto storage_id = StorageID(getDatabaseName(), name);
+        auto storage_id = StorageID(getDatabaseName(), name, table_uuid);
         auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
             configuration,
@@ -689,9 +696,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
+        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name, table_uuid))),
         context_copy,
-        StorageID(getDatabaseName(), name),
+        StorageID(getDatabaseName(), name, table_uuid),
         /* columns */columns,
         /* constraints */ConstraintsDescription{},
         /* comment */"",
@@ -871,6 +878,8 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
+    if (settings[DatabaseDataLakeSetting::force_add_bucket])
+        table_metadata.withForceAddBucket();
 
     const auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
@@ -942,6 +951,23 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         DatabaseDataLakeSettings database_settings;
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
+
+        const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
+        if (!auth_header_str.empty())
+        {
+            /// Validate `auth_header` against the forbidden HTTP header filter at creation time.
+            /// Only headers with a valid `name: value` format are accepted.
+            auto pos = auth_header_str.find(':');
+            if (pos != std::string::npos)
+            {
+                DB::HTTPHeaderEntries header_entries{{auth_header_str.substr(0, pos), auth_header_str.substr(pos + 1)}};
+                args.context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auth header format. Expected 'HeaderName: HeaderValue'");
+            }
+        }
 
         auto catalog_type = database_settings[DB::DatabaseDataLakeSetting::catalog_type].value;
         /// Glue catalog is one per region, so it's fully identified by aws keys and region
@@ -1062,7 +1088,14 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             std::move(engine_for_tables),
             args.uuid);
     };
-    factory.registerDatabase("DataLakeCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });
+    /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
+    /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
+    /// for runtime-dependent or composite source checks exist.
+    factory.registerDatabase("DataLakeCatalog", create_fn, {
+        .supports_arguments = true,
+        .supports_settings = true,
+        .is_external = true,
+    });
 }
 
 }
