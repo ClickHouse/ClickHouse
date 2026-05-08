@@ -127,6 +127,47 @@ std::string getStats();
 
 }
 
+/// RAII guard that switches the calling thread's preferred jemalloc arena.
+///
+/// Allocations made by the calling thread inside the scope (including those that go through
+/// global `operator new`/`malloc`, e.g. from third-party libraries or unrelated container code)
+/// land in `arena_idx`. Frees automatically return memory to whichever arena originally owned the
+/// pointer (jemalloc looks this up from per-extent metadata), so only allocation paths need scoping.
+///
+/// On construction, the thread's previous preferred arena is captured and restored on destruction.
+/// Use this around tightly-bounded blocks of allocations whose lifetime differs from typical
+/// query-processing work; do not hold across calls that allocate ClickHouse data structures
+/// unrelated to the target subsystem.
+///
+/// No-op when `arena_idx == 0` or when jemalloc is not compiled in.
+class ScopedJemallocThreadArena
+{
+public:
+    explicit ScopedJemallocThreadArena(unsigned arena_idx);
+    ~ScopedJemallocThreadArena();
+
+    ScopedJemallocThreadArena(const ScopedJemallocThreadArena &) = delete;
+    ScopedJemallocThreadArena & operator=(const ScopedJemallocThreadArena &) = delete;
+
+private:
+    unsigned previous_arena = 0;
+    bool active = false;
+};
+
+}
+
+#else
+
+namespace DB
+{
+
+/// No-op fallback when jemalloc is not compiled in.
+class ScopedJemallocThreadArena
+{
+public:
+    explicit ScopedJemallocThreadArena(unsigned /*arena_idx*/) {}
+};
+
 }
 
 #endif

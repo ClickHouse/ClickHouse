@@ -730,6 +730,7 @@ class CHServer:
             stderr=subprocess.STDOUT,
             stdout=self.log_fd,
             shell=True,
+            start_new_session=True,
         )
         time.sleep(2)
         retcode = self.proc.poll()
@@ -756,7 +757,11 @@ class CHServer:
         print("Command: ", self.start_cmd)
         self.log_fd = open(self.log_file, "w")
         self.proc = subprocess.Popen(
-            self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
+            self.start_cmd,
+            stderr=subprocess.STDOUT,
+            stdout=self.log_fd,
+            shell=True,
+            start_new_session=True,
         )
         time.sleep(2)
         retcode = self.proc.poll()

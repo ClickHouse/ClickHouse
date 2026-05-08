@@ -830,6 +830,8 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
 
 String SQLBase::getTablePath() const
 {
+    /// Only engines that own a `bucket_path` should be calling this. Object-storage queues
+    /// (S3Queue, AzureQueue) are covered by isAnyS3Engine()/isAnyAzureEngine().
     chassert(
         isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isKeeperMapEngine()
         || isArrowFlightEngine() || isFileEngine() || isURLEngine());

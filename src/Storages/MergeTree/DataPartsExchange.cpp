@@ -26,6 +26,8 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
 
@@ -794,11 +796,19 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     auto part_dir = tmp_prefix + part_name;
     auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? MergeTreeData::DETACHED_DIR_NAME : "");
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
 
-    /// Create temporary part storage to write sent files.
-    /// Actual part storage will be initialized later from metadata.
-    auto part_storage_for_loading = std::make_shared<DataPartStorageOnDiskFull>(volume, part_relative_path, part_dir);
+    /// Same rationale as `MergeTreeData::loadDataPart`: the `SingleDiskVolume` and the
+    /// `DataPartStorageOnDiskFull` below are stored on the resulting part and live for its
+    /// lifetime. Only this two-line scope is wrapped — the actual fetch I/O buffers below
+    /// are short-lived and stay in the default arena.
+    auto [volume, part_storage_for_loading] = [&]
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        auto v = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+        auto s = std::make_shared<DataPartStorageOnDiskFull>(v, part_relative_path, part_dir);
+        return std::pair{std::move(v), std::move(s)};
+    }();
+
     part_storage_for_loading->beginTransaction();
 
     if (part_storage_for_loading->exists())

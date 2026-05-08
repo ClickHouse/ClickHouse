@@ -132,7 +132,7 @@ struct FormatSettings
         AUTO, /// First tries to match case-sensitively, if fails, tries to match case-insensitively
     };
 
-    InputFormatColumnMatchingCaseSensitivity input_format_column_matching_case_sensitivity = InputFormatColumnMatchingCaseSensitivity::MATCH_CASE;
+    InputFormatColumnMatchingCaseSensitivity input_format_column_matching_case_sensitivity = InputFormatColumnMatchingCaseSensitivity::AUTO;
 
     UInt64 client_protocol_version = 0;
 

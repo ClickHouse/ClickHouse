@@ -18,7 +18,8 @@ allowed-tools: Task, Bash, Read, Glob, Grep, WebFetch, AskUserQuestion
 - Fetch PR metadata (title, description, base/head refs, changed files).
 - Fetch the full PR diff.
 - Note the PR title, description, and linked issues
-- Validate PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`:
+- **Detect revert PRs** before validating template metadata. A PR is a revert when the title starts with `Revert "..."` (the GitHub default), or the body matches `Reverts ClickHouse/ClickHouse#<N>` / `This reverts commit <sha>`. Revert PRs are **exempt** from PR template validation: skip all `Changelog category`, `Changelog entry`, and documentation checkbox checks for them, and do not flag missing template fields. Only verify that the body identifies the reverted PR or commit.
+- For non-revert PRs, validate PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`:
   - `Changelog category` is present, valid, and semantically correct for the actual code change.
   - `Changelog entry` is present and user-readable when required by the selected category.
   - `Changelog entry` quality follows ClickHouse expectations: specific user-facing impact, no vague wording, and migration guidance for backward-incompatible changes.
@@ -97,7 +98,7 @@ WHAT TO REVIEW VS WHAT TO IGNORE
 - Scan all changed lines for typos in comments, variable names, string literals, log messages, error messages, and documentation.
 - Report all typos found with suggested corrections.
 - Check that error messages are clear, informative, and help the user understand what went wrong and how to fix it.
-- Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present, specific, and user-readable.
+- Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present, specific, and user-readable. **Skip this entirely for revert PRs** (see "Obtaining the Diff" for detection).
 - Read the changelog-entry standards from `clickhouse-pr-description` and apply them: avoid vague text (e.g. "fix bug"), describe the exact affected feature/behavior, and for backward-incompatible changes explain old behavior, new behavior, and how to preserve old behavior when possible.
 
 **Documentation is auto-generated from source for structured parts of the system — do NOT request separate `docs/` files for these:**
@@ -241,7 +242,7 @@ CLICKHOUSE RULES (MANDATORY)
 - **No large / binary files in git**
   Binary blobs (JARs, archives, compiled artifacts, datasets >1 MB, fat dependency bundles) must never be committed. They permanently bloat the repository for every clone and cannot be removed without history rewriting. Test dependencies should be downloaded at test time, built from source inside the test container, or pulled from Docker images. Follow checklist **9) Repository bloat**. Any violation is a blocker.
 - **PR metadata quality**
-  For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes).
+  For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes). **Revert PRs are exempt** from this rule — mark the row as ➖ and do not produce findings about missing template fields.
 
 SEVERITY MODEL – WHAT DESERVES A COMMENT
 
@@ -278,7 +279,7 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 **Summary**
 - One paragraph explaining what the PR does and your high-level verdict.
 
-**PR Metadata** (omit if no issues found)
+**PR Metadata** (omit if no issues found; **always omit for revert PRs**)
 - State whether `Changelog category` is correct for the actual change.
 - State whether `Changelog entry` is required by the chosen category, and whether the provided entry satisfies that requirement.
 - Evaluate `Changelog entry` quality using `clickhouse-pr-description` criteria (specific change, user impact, and migration guidance for backward-incompatible changes).

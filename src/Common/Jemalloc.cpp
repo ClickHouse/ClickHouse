@@ -256,6 +256,28 @@ std::string_view getLastFlushProfileForThread()
 
 }
 
+ScopedJemallocThreadArena::ScopedJemallocThreadArena(unsigned arena_idx)
+{
+    if (arena_idx == 0)
+        return;
+
+    /// `thread.arena` returns the previous value via the read pointer and sets the new one.
+    size_t previous_size = sizeof(previous_arena);
+    int err = je_mallctl("thread.arena", &previous_arena, &previous_size, &arena_idx, sizeof(arena_idx));
+    /// We deliberately don't throw here: if jemalloc rejects the switch (e.g. arena doesn't exist),
+    /// fall back to the previous behavior of allocating in the default arena. The cost is fragmentation,
+    /// not correctness.
+    active = (err == 0);
+}
+
+ScopedJemallocThreadArena::~ScopedJemallocThreadArena()
+{
+    if (!active)
+        return;
+
+    je_mallctl("thread.arena", nullptr, nullptr, &previous_arena, sizeof(previous_arena));
+}
+
 }
 
 #endif

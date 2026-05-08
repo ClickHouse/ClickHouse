@@ -1,0 +1,63 @@
+-- { echo }
+
+SET enable_analyzer = 1;
+SET optimize_or_like_chain = 0;
+DROP TABLE IF EXISTS pruning_ref;
+DROP TABLE IF EXISTS pruning_data;
+DROP DICTIONARY IF EXISTS pruning_dict;
+CREATE TABLE pruning_ref (id UInt64, name String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO pruning_ref VALUES (4242, 'match');
+CREATE DICTIONARY pruning_dict (id UInt64, name String)
+PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'pruning_ref')) LAYOUT(HASHED()) LIFETIME(0);
+CREATE TABLE pruning_data (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 100, add_minmax_index_for_numeric_columns = 0;
+SYSTEM STOP MERGES pruning_data;
+INSERT INTO pruning_data SELECT number FROM numbers(10000);
+-- With optimization: predicate becomes `id IN (SELECT id FROM dictionary(...) WHERE name = 'match')`.
+SET optimize_inverse_dictionary_lookup = 1;
+EXPLAIN indexes = 1
+SELECT count() FROM pruning_data
+WHERE dictGetString('pruning_dict', 'name', id) = 'match';
+CreatingSets (Create sets before main query execution)
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression (Before GROUP BY)
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.pruning_data)
+          Indexes:
+            PrimaryKey
+              Keys:
+                id
+              Condition: (id in 1-element set)
+              Parts: 1/1
+              Granules: 1/100
+              Search Algorithm: binary search
+            Ranges: 1
+-- Without optimization: `dictGet(...)` is stays, so all granules are scanned.
+SET optimize_inverse_dictionary_lookup = 0;
+EXPLAIN indexes = 1
+SELECT count() FROM pruning_data
+WHERE dictGetString('pruning_dict', 'name', id) = 'match';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.pruning_data)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 100/100
+          Ranges: 1
+-- Result are same
+SET optimize_inverse_dictionary_lookup = 1;
+SELECT count() FROM pruning_data
+WHERE dictGetString('pruning_dict', 'name', id) = 'match';
+1
+SET optimize_inverse_dictionary_lookup = 0;
+SELECT count() FROM pruning_data
+WHERE dictGetString('pruning_dict', 'name', id) = 'match';
+1
+DROP DICTIONARY pruning_dict;
+DROP TABLE pruning_data;
+DROP TABLE pruning_ref;

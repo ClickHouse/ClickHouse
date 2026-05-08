@@ -190,7 +190,7 @@ class JobConfigs:
     ci_tests = Job.Config(
         name=JobNames.CI_TESTS,
         runs_on=RunnerLabels.ARM_LARGE,
-        command="python3 ./ci/jobs/ci_tests_job.py --skip test_cleanup_kills_orphaned_test_process",
+        command="python3 ./ci/jobs/ci_tests_job.py",
         timeout=1200,
         run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
         digest_config=Job.CacheDigestConfig(include_paths=["./ci"]),

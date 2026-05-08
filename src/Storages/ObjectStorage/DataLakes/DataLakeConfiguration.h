@@ -22,6 +22,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <optional>
 #include <memory>
 #include <string>
 #include <type_traits>

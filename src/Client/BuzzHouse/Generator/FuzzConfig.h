@@ -337,6 +337,7 @@ public:
     bool allow_client_restarts = false;
     bool enable_fault_injection_settings = false;
     bool enable_force_settings = false;
+    bool enable_time_settings = false;
     bool allow_hardcoded_inserts = true;
     bool allow_async_requests = false;
     bool truncate_output = false;

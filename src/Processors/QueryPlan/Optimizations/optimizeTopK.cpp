@@ -62,6 +62,15 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     if (!read_from_mergetree_step)
         return 0;
 
+    /// FINAL queries deduplicate overlapping parts via merging sorted transforms
+    /// (e.g. `ReplacingSortedTransform`, `CollapsingSortedTransform`) which require
+    /// reading all matching rows in primary-key order to determine the winning row
+    /// per key. Both the dynamic prewhere filter and minmax-based granule skipping
+    /// can drop rows that are needed for correct deduplication, producing wrong
+    /// results when these rows are duplicates of a row that survives the top-K.
+    if (read_from_mergetree_step->isQueryWithFinal())
+        return 0;
+
     size_t n = limit_step->getLimitForSorting();
     if (!n || (settings.max_limit_for_top_k_optimization && n > settings.max_limit_for_top_k_optimization))
         return 0;

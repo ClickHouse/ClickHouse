@@ -10,6 +10,8 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -395,6 +397,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         */
 
     auto component_guard = Coordination::setCurrentComponent("registerStorageMergeTree::create");
+
+    /// Route every long-lived allocation built up while constructing this MergeTree-family
+    /// storage into the dedicated MergeTree arena. This covers the `MergeTreeSettings` deep
+    /// copy a few dozen lines below (`make_unique<MergeTreeSettings>(*initial_storage_settings)`),
+    /// the `StorageInMemoryMetadata` populated here (columns, partition / sorting / sampling
+    /// keys, secondary indices, projections, TTLs, comment), the `MergingParams` constructed
+    /// for {Summing,Replacing,...}MergeTree, and the AST clones for keys/expressions stored
+    /// on the resulting metadata. All of these are subsequently moved into the storage object
+    /// (see the `make_shared<Storage{Replicated,}MergeTree>(... metadata, ... storage_settings)`
+    /// at the bottom) and live for the table's lifetime. The deeper `MergeTreeData::setProperties`
+    /// has its own `ScopedJemallocThreadArena`; nesting is a no-op (RAII saves/restores the
+    /// previous index), so this does not break that wrapping.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     bool is_extended_storage_def = args.engine_args.empty() || isExtendedStorageDef(args.query);
 
     const Settings & local_settings = args.getLocalContext()->getSettingsRef();

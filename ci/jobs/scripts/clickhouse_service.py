@@ -28,7 +28,6 @@ class ClickHouseService:
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.user_files_path = f"{run_path}/user_files"
         self._proc = None
-        self._log_fd = None
 
     def __enter__(self):
         Utils.add_to_PATH(temp_dir)
@@ -79,14 +78,14 @@ class ClickHouseService:
             "--logger.stderr", f"{self.log_dir}/stderr.log",
         ]
         print(f"Starting ClickHouse server: {shlex.join(argv)}")
-        self._log_fd = open(f"{self.log_dir}/clickhouse-server.log", "w")
-        self._proc = subprocess.Popen(
-            argv,
-            stderr=subprocess.STDOUT,
-            stdout=self._log_fd,
-            start_new_session=True,
-            cwd=self.run_path,
-        )
+        with open(f"{self.log_dir}/clickhouse-server.log", "w") as log_fd:
+            self._proc = subprocess.Popen(
+                argv,
+                stderr=subprocess.STDOUT,
+                stdout=log_fd,
+                start_new_session=True,
+                cwd=self.run_path,
+            )
 
         try:
             self._wait_ready()
@@ -111,9 +110,6 @@ class ClickHouseService:
             except ProcessLookupError:
                 pass
             self._proc.wait()
-        if self._log_fd is not None:
-            self._log_fd.close()
-            self._log_fd = None
 
     @staticmethod
     def _download_binary() -> None:
@@ -133,8 +129,6 @@ class ClickHouseService:
 
     def _print_server_log(self) -> None:
         log_path = Path(self.log_dir) / "clickhouse-server.log"
-        if self._log_fd is not None:
-            self._log_fd.flush()
         if log_path.exists():
             print(f"--- {log_path} ---")
             print(log_path.read_text(errors="replace")[-4096:])

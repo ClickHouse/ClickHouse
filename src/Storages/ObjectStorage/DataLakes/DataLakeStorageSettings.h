@@ -65,6 +65,24 @@ Get latest metadata path from version-hint.text file.
     DECLARE(NonZeroUInt64, iceberg_format_version, 2, R"(
 Metadata format version.
 )", 0) \
+    DECLARE(Bool, paimon_incremental_read, false, R"(
+Enable incremental read mode for Paimon tables. When enabled, the table will track the last committed snapshot
+in Keeper and only read new data since that snapshot. This is similar to Kafka streaming consumption.
+)", 0) \
+    DECLARE(Int64, paimon_metadata_refresh_interval_sec, 30, R"(
+Background metadata refresh interval for Paimon tables (seconds).
+0 disables background refresh. When >0, a background task periodically calls
+metadata update to pull latest snapshot/schema. Queries still trigger update
+as usual. Use cautiously on many tables to avoid excessive object storage/Keeper I/O.
+Default: 30
+)", 0) \
+    DECLARE(String, paimon_keeper_path, "", R"(
+Keeper path for Paimon incremental read state. Must be unique per table.
+If empty, incremental read is not allowed.
+)", 0) \
+    DECLARE(String, paimon_replica_name, "", R"(
+Replica name for Paimon incremental read state. Must be set and unique per replica.
+)", 0) \
     DECLARE(DatabaseDataLakeCatalogType, storage_catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
     DECLARE(String, storage_catalog_credential, "", "", 0)             \
     DECLARE(String, storage_auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \

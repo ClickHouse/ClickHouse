@@ -443,7 +443,7 @@ class Runner:
                 settings = rewritten_settings
 
             local_env_flag = f"--env-file {self.LOCAL_ENV_FILE}" if Path(self.LOCAL_ENV_FILE).exists() else ""
-            cmd = f"docker run {tty} --rm --oom-score-adj=1000 --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' {local_env_flag} --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --init --oom-score-adj=1000 --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' {local_env_flag} --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")

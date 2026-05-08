@@ -37,6 +37,13 @@ void serializeDataLakeTableStateSnapshot(DataLakeTableStateSnapshot state, Write
         std::get<DeltaLake::TableStateSnapshot>(state).serialize(out);
     }
 #endif
+#if USE_AVRO
+    else if (std::holds_alternative<Paimon::TableStateSnapshot>(state))
+    {
+        writeVarInt(PAIMON_TABLE_STATE_SNAPSHOT, out);
+        std::get<Paimon::TableStateSnapshot>(state).serialize(out);
+    }
+#endif
     else
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization for this DataLakeTableStateSnapshot type is not implemented");
@@ -65,6 +72,12 @@ DataLakeTableStateSnapshot deserializeDataLakeTableStateSnapshot(ReadBuffer & in
         else if (type == DELTA_LAKE_TABLE_STATE_SNAPSHOT)
         {
             return DeltaLake::TableStateSnapshot::deserialize(in, protocol_version);
+        }
+#endif
+#if USE_AVRO
+        else if (type == PAIMON_TABLE_STATE_SNAPSHOT)
+        {
+            return Paimon::TableStateSnapshot::deserialize(in, protocol_version);
         }
 #endif
         else
