@@ -385,6 +385,7 @@ void registerStorageIceberg(StorageFactory & factory)
         });
 }
 
+void registerStoragePaimon(StorageFactory & factory);
 void registerStoragePaimon(StorageFactory & factory)
 {
     auto check_paimon_storage_engine_enabled = [](const StorageFactory::Arguments & args)
