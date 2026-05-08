@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-
 # Verify that PostgreSQL and MySQL databases (and other external databases) are hidden
 # from system.tables / system.columns by default, and shown when
 # `show_external_databases_in_system_tables = 1`.
