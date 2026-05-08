@@ -22,7 +22,6 @@ namespace ErrorCodes
 
 namespace
 {
-
 class FunctionRegexpPosition : public IFunction
 {
 public:
