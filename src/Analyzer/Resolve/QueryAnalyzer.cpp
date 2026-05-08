@@ -3170,34 +3170,76 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
     validateTreeSize(node, scope.context->getSettingsRef()[Setting::max_expanded_ast_elements], node_to_tree_size);
 
-    /// Lambda can be inside the aggregate function, so we should check parent scopes.
-    /// Most likely only the root scope can have an aggregate function, but let's check all just in case.
-    bool in_aggregate_function_scope = false;
+    /// Apply `group_by_use_nulls` Nullable wrapping for this node based on the GROUP BY
+    /// keys recorded in the enclosing scopes' `nullable_group_by_keys` sets.
+    ///
+    /// Non-correlated case (existing behaviour, preserved):
+    ///     SELECT max(c0), c0 FROM t GROUP BY c0 SETTINGS group_by_use_nulls = 1
+    /// The projection's `c0` becomes Nullable post-rollup, but the `c0` inside `max(...)`
+    /// must keep its original type because the aggregate operates on per-group raw rows.
+    /// This is why the loop below skips a scope's set whenever its expression-resolve
+    /// stack already contains an aggregate function — the `c0` we're resolving lives
+    /// inside that aggregate's argument list and the aggregate "consumes" the GROUP BY
+    /// nullability boundary.
+    ///
+    /// Correlated case (new): when a subquery references an outer column that is a
+    /// GROUP BY key of an outer query under `group_by_use_nulls`, the actual values
+    /// fed into the inner subquery are post-rollup `Nullable`s. The walk below continues
+    /// past the inner `QUERY` scope so that the outer scope's `nullable_group_by_keys`
+    /// is consulted — but only when the `node` is a column whose source table expression
+    /// is NOT registered in the inner scope's FROM (i.e. the column is correlated).
+    /// At each scope, the aggregate-function exclusion is evaluated against THAT scope's
+    /// expression-resolve stack: an outer scope's `nullable_group_by_keys` may apply
+    /// even when the inner subquery is currently inside an aggregate function call,
+    /// because the inner aggregate is operating on the outer's already-Nullable values.
+    ///
+    /// In the correlated case the matching node is mutated in place rather than replaced
+    /// with a clone of the GROUP BY key. The same `shared_ptr` is referenced by the
+    /// enclosing `QueryNode`'s `correlated_columns` list (registered via
+    /// `addCorrelatedColumn`). Cloning would leave the planner's
+    /// `ColumnNodePtrWithHashSet correlated_columns_set` pointing to the original
+    /// non-Nullable node and `PlannerActionsVisitor::visitColumn` would fail to identify
+    /// the projected column as correlated, missing the PLACEHOLDER step that the
+    /// decorrelation pass replaces.
+    QueryTreeNodePtr column_source;
+    if (auto * column_node = node->as<ColumnNode>())
+        column_source = column_node->getColumnSourceOrNull();
+
     for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
     {
-        in_aggregate_function_scope = in_aggregate_function_scope || scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction();
-
-        /// Check parent scopes until find current query scope.
-        if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
-            break;
-    }
-
-    if (!in_aggregate_function_scope)
-    {
-        for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+        if (!scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction())
         {
             auto it = scope_ptr->nullable_group_by_keys.find(node);
             if (it != scope_ptr->nullable_group_by_keys.end())
             {
-                node = it->node->clone();
-                node->convertToNullable();
+                bool is_correlated_to_outer_scope = column_source
+                    && !scope.registered_table_expression_nodes.contains(column_source)
+                    && scope_ptr != &scope;
+                if (is_correlated_to_outer_scope)
+                {
+                    node->convertToNullable();
+                }
+                else
+                {
+                    node = it->node->clone();
+                    node->convertToNullable();
+                }
                 break;
             }
-
-            /// Check parent scopes until find current query scope.
-            if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
-                break;
         }
+
+        /// For lambda scopes inside a query, keep walking — same as before.
+        if (scope_ptr->scope_node->getNodeType() != QueryTreeNodeType::QUERY)
+            continue;
+
+        /// We've reached an enclosing `QUERY` scope. Stop here unless this `node` is a
+        /// column whose source table expression is registered in an even deeper outer
+        /// scope (i.e. a correlated reference) — in that case continue the walk so
+        /// the outer scope's `nullable_group_by_keys` is consulted.
+        if (!column_source)
+            break;
+        if (scope_ptr->registered_table_expression_nodes.contains(column_source))
+            break;
     }
 
     resolved_expressions.emplace(node, result_projection_names);

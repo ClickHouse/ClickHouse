@@ -1,0 +1,42 @@
+-- ROLLUP ---
+true
+\N
+-- CUBE ---
+true
+\N
+-- GROUPING SETS ---
+true
+-- numeric ---
+1
+\N
+-- complex expression ---
+2
+\N
+-- modulo ---
+1
+\N
+-- multiple GROUP BY keys ---
+0	0	0
+1	1	1
+2	0	2
+\N	\N	3
+-- aggregate over correlated column ---
+0	0
+1	1
+2	2
+\N	\N
+-- HAVING with correlated subquery ---
+0	0
+1	1
+2	2
+-- WHERE with correlated subquery ---
+0	0
+1	1
+2	2
+\N	3
+-- Nullable source ---
+true
+\N
+-- non-correlated subquery ---
+inner
+inner
