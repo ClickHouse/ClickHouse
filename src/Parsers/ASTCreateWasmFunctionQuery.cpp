@@ -20,7 +20,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -126,7 +125,7 @@ static String getAstAsStringLiteral(const ASTPtr & ast)
 {
     if (const auto * literal = typeid_cast<const ASTLiteral *>(ast.get()))
         return literal->value.safeGet<String>();
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTLiteral, got '{}'", ast->formatForErrorMessage());
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTLiteral, got '{}'", ast->formatForErrorMessage());
 }
 
 void ASTCreateWasmFunctionQuery::setModuleHash(String hash_str)
