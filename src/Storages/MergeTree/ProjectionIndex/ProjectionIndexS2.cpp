@@ -893,19 +893,27 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
     if (!filter_node)
         return std::nullopt;
 
-    /// Only spherical predicates can be safely pruned with S2 covering:
+    /// Supported spatial predicates can be pruned with S2 covering:
     /// if the predicate is true, the geometries must have spatial overlap,
     /// so S2 cell intersection is a necessary condition (no false negatives).
-    /// Cartesian predicates are intentionally excluded.
     static const std::unordered_set<std::string> supported_two_arg_functions = {
+        "polygonsIntersectCartesian",
         "polygonsIntersectSpherical",
+        "polygonsWithinCartesian",
         "polygonsWithinSpherical",
+        "geoContainsCartesian",
         "geoContainsSpherical",
+        "geoCoveredByCartesian",
         "geoCoveredBySpherical",
+        "geoCoversCartesian",
         "geoCoversSpherical",
+        "geoEqualsCartesian",
         "geoEqualsSpherical",
+        "geoIntersectsCartesian",
         "geoIntersectsSpherical",
+        "geoTouchesCartesian",
         "geoTouchesSpherical",
+        "geoWithinCartesian",
         "geoWithinSpherical",
     };
 
@@ -963,8 +971,8 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
 
             geometry = decodeGeometryFromField(geometry_field, geometry_type);
         }
-        /// Path 2: spherical ST_IntersectsBox(source_column, xmin, ymin, xmax, ymax)
-        else if (func_name == "geoIntersectsBoxSpherical" && fn->children.size() == 5)
+        /// Path 2: ST_IntersectsBox(source_column, xmin, ymin, xmax, ymax)
+        else if ((func_name == "geoIntersectsBoxCartesian" || func_name == "geoIntersectsBoxSpherical") && fn->children.size() == 5)
         {
             if (!isSourceColumnNode(fn->children[0], params.source_column))
                 continue;
@@ -979,7 +987,7 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
                 || !tryGetConstantFloat64(fn->children[4], ymax))
                 continue;
 
-            geometry = buildBoxGeometry(xmin, ymin, xmax, ymax, /* is_spherical */ true);
+            geometry = buildBoxGeometry(xmin, ymin, xmax, ymax, /* is_spherical */ func_name == "geoIntersectsBoxSpherical");
         }
         /// Path 3: spherical ST_DWithin(source_column, const_geometry, distance_meters)
         ///          or spherical ST_DWithin(const_geometry, source_column, distance_meters)
