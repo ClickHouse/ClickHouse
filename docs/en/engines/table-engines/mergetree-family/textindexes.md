@@ -293,11 +293,11 @@ Typical use cases for the postprocessor argument include:
 1. **Filtering stop words (extremely frequent tokens)**. Very common tokens such as "the", "a", and "is" carry little search relevancy and inflate the index.
    You can use the postprocessor to discard them by converting them to empty tokens — empty tokens are ignored, i.e., not added to the index.
    Example: `if(col IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', col)`
-2. **Timestamp removal**. Log lines often begin with a structured timestamp such as `2024-01-15T10:23:45`.
+2. **Timestamp removal**. Log lines often begin with or contain a structured timestamp such as `2024-01-15T10:23:45`.
    Indexing timestamp tokens bloats the index with strings that carry no search relevance.
-   There are two complementary approaches:
+   There are two complementary approaches to ignore timestamps:
    - **Postprocessor approach**: use the `splitByString` tokenizer (whitespace split) so that the entire timestamp becomes a single token, then use `parseDateTimeOrNull` to detect and drop it.
-     Example: `if(isNotNull(parseDateTimeOrNull(col, '%Y-%m-%dT%H:%i:%S')), '', col)`
+     Example: `if(isNull(parseDateTimeOrNull(col, '%Y-%m-%dT%H:%i:%S')), col, '')`
      For timestamps with timezone offsets or fractional seconds, use `parseDateTimeBestEffortOrNull(col)` without an explicit format string.
    - **Preprocessor approach**: strip the timestamp from the full log line *before* tokenization with a regular expression.
      Example: `replaceRegexpAll(col, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
@@ -311,7 +311,7 @@ Typical use cases for the postprocessor argument include:
    We generally recommend using a corresponding preprocessor for lower- and upper-casing.
 
 The postprocessor expression transforms tokens of type [String](/sql-reference/data-types/string.md) to tokens of type [String](/sql-reference/data-types/string.md).
-The expression must reference the same column (or expression) on which the text index is defined.
+Also, the postprocessor expression must only reference the column or expression on top of which the text index is defined.
 When the column is of type `Array(String)`, the postprocessor still operates on individual tokens as plain `String` values.
 
 Usage of non-deterministic functions is disallowed.
@@ -319,7 +319,8 @@ Usage of non-deterministic functions is disallowed.
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens), [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), and [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) apply the postprocessor to search tokens before looking them up in the index.
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
-Functions [equals](/sql-reference/functions/comparison-functions.md/#equals) (`=`), [IN](/sql-reference/operators/in.md), [mapContainsKey](/sql-reference/functions/tuple-map-functions#mapContainsKey), [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike), [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue), and [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike) also apply the postprocessor to the needle for the granule lookup. Row-level evaluation of these predicates remains literal — the index simply prunes granules whose stored (postprocessed) tokens cannot match a postprocessed needle.
+Functions [equals](/sql-reference/functions/comparison-functions.md/#equals) (`=`), [IN](/sql-reference/operators/in.md), [mapContainsKey](/sql-reference/functions/tuple-map-functions#mapContainsKey), [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike), [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue), and [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike) also apply the postprocessor to the needle for the granule lookup.
+Row-level evaluation of these predicates remains literal — the index simply prunes granules whose stored (postprocessed) tokens cannot match a postprocessed needle.
 
 Functions [has](/sql-reference/functions/array-functions.md/#has), [hasAll](/sql-reference/functions/array-functions.md/#hasAll), and [hasAny](/sql-reference/functions/array-functions.md/#hasAny) do **not** apply the postprocessor.
 `has`, `hasAll`, and `hasAny` operate directly on array elements, bypassing the entire tokenization pipeline (tokenizer, preprocessor, and postprocessor).
@@ -354,7 +355,7 @@ CREATE TABLE logs
     line String,
     INDEX idx(line) TYPE text(
         tokenizer    = 'splitByString',
-        postprocessor = if(isNotNull(parseDateTimeOrNull(line, '%Y-%m-%dT%H:%i:%S')), '', line)
+        postprocessor = if(isNull(parseDateTimeOrNull(line, '%Y-%m-%dT%H:%i:%S')), line, '')
     )
 )
 ENGINE = MergeTree ORDER BY id;

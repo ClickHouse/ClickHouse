@@ -541,7 +541,9 @@ private:
         {
             if (needles_field.getType() == Field::Types::String)
             {
-                /// hasToken case: single token string.
+                /// hasToken case: single token string. If the postprocessor drops the needle (stop-word
+                /// filter, etc.), the empty needle is fine — hasToken returns 0 on it, matching the
+                /// index-condition empty-sentinel that no granule contains.
                 auto tokens = postprocessor->processTokens({needles_field.safeGet<String>()});
                 needles_field = tokens.empty() ? String{} : tokens.front();
             }
