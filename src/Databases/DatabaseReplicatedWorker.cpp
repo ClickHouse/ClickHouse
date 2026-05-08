@@ -544,7 +544,7 @@ static bool getRMVCoordinationInfo(
         String data;
         if (!zookeeper->tryGet(*coordination_path, data, &stats))
             return false;
-        coordination_znode.parse(data, /*running_znode_exists=*/ false, log);
+        coordination_znode.parse(data);
         return true;
     }
     catch (...)
