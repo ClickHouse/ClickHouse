@@ -312,7 +312,7 @@ In this example, the total memory reserved by all queries and background activit
 
 If memory pressure arises, testing workload allocations will be evicted first. Then, if more memory needs to be freed, staging workload allocations will be evicted before production workload allocations if they exceed their guarantees. Note that pending queries in production and staging can evict running allocations in testing workload to free memory, but they cannot evict each other because they have the same precedence. In case of memory pressure, they will wait in queues, which allows the system to avoid MEMORY_LIMIT_EXCEEDED errors due to too many concurrently executing queries.
 
-Note that system workload has precedence 0 (default), which is higher than production, staging and testing workloads, but they are not sibling workload. The least common ancestor is workload all, both children of which has equal precedence. So pending system workload cannot evict any of them, and vice versa. This ensures that system activities cannot easily be evicted.
+Note that system workload has precedence 0 (default), which is higher than production, staging and testing workloads, but they are not sibling workloads. The least common ancestor is workload all, both children of which have equal precedence. So pending system workload cannot evict any of them, and vice versa. This ensures that system activities cannot easily be evicted.
 
 ## Query slot scheduling {#query_scheduling}
 
