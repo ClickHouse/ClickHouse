@@ -772,8 +772,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetNotMonotonic)
     outer_offs[1] = 3;
     outer_offs[2] = 1;
 
-    DataTypes nested = {std::make_shared<DataTypeUInt64>()};
-    auto arr_type = std::make_shared<DataTypeArray>(nested);
+    auto arr_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
 }
 
@@ -803,8 +802,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetExceedsTotal)
     outer_offs[1] = 10;  // exceeds total_elems = 5
     outer_offs[2] = 5;
 
-    DataTypes nested = {std::make_shared<DataTypeUInt64>()};
-    auto arr_type = std::make_shared<DataTypeArray>(nested);
+    auto arr_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
 }
 
@@ -833,8 +831,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexStringOffsetNotMonotonic)
     wire_offs[1] = 4;
     wire_offs[2] = 2;  // not monotonic
 
-    DataTypes nested = {std::make_shared<DataTypeString>()};
-    auto arr_type = std::make_shared<DataTypeArray>(nested);
+    auto arr_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
 }
 
@@ -862,8 +859,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexStringOffsetExceedsTotal)
     wire_offs[1] = 10;  // exceeds total_chars = 2
     wire_offs[2] = 2;
 
-    DataTypes nested = {std::make_shared<DataTypeString>()};
-    auto arr_type = std::make_shared<DataTypeArray>(nested);
+    auto arr_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
 }
 
@@ -892,8 +888,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexTotalElemsExceedsData)
     outer_offs[1] = 0;
     outer_offs[2] = 0xFFFFFFFF;
 
-    DataTypes nested = {std::make_shared<DataTypeUInt64>()};
-    auto arr_type = std::make_shared<DataTypeArray>(nested);
+    auto arr_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
 }
 
@@ -922,7 +917,6 @@ TEST(ColumnarV1Wire, BoundsCheckComplexDataEndTruncated)
     uint32_t val = 42;
     std::memcpy(buf.data() + data_off + 4, &val, 4);
 
-    DataTypes nested = {std::make_shared<DataTypeUInt64>()};
-    auto arr_type = std::make_shared<DataTypeArray>(nested);
+    auto arr_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
 }

@@ -353,8 +353,16 @@ inline uint32_t buildColDescriptor(
     }
 
     desc.type         = base_type | (is_const ? COL_IS_CONST : 0u);
-    desc.null_offset  = 0;
     desc.offsets_offset = 0;
+    if (is_nullable)
+    {
+        desc.null_offset = write_cursor;
+        write_cursor += num_rows;
+    }
+    else
+    {
+        desc.null_offset = 0;
+    }
     desc.data_offset  = write_cursor;
     desc.data_size    = num_rows * wire_elem_size;
     write_cursor     += num_rows * wire_elem_size;
