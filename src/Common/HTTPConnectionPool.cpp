@@ -892,6 +892,9 @@ private:
                 /// failures are not per-address routing problems and would be reproduced on
                 /// any other resolved address. Propagate immediately without `setFail`, which
                 /// would otherwise pessimize a healthy address based on a config-level error.
+                /// Call `setUnused` so the `Entry` destructor does not record a spurious
+                /// `setSuccess` for an address whose connect/handshake just failed.
+                address.setUnused();
                 ProfileEvents::increment(getMetrics().errors);
                 (*connection).reset();
                 throw;
