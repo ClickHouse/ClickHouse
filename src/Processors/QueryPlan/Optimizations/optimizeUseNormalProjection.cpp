@@ -339,7 +339,6 @@ std::optional<String> optimizeUseNormalProjections(
         candidate.stat = &stat;
 
         size_t parent_reading_marks = parent_reading_select_result->selected_marks;
-        bool sort_order_helps = projection_sort_order_useful(projection);
 
         /// When use_skip_indexes_on_data_read is enabled, the parent's mark count was estimated
         /// by primary-key analysis only — skip indexes are deferred to data-read time. If the
@@ -426,29 +425,54 @@ std::optional<String> optimizeUseNormalProjections(
             }
         }
 
+        /// Comparison against parent_reading_marks is deferred to a single post-loop pass.
+        /// The skip-index filtering above can shrink the parent's selected_marks after some
+        /// candidates have already been analyzed; comparing here would judge early candidates
+        /// against a stale (larger) parent and could leave one as best_candidate even when the
+        /// refined parent count would reject it.
+
+        /// All parts have been filtered out; no further candidate can produce a useful comparison.
+        if (parent_reading_marks == 0)
+            break;
+    }
+
+    /// parent_reading_select_result->selected_marks has now settled (no further skip-index
+    /// passes will run). Evaluate every analyzed candidate against this final mark count
+    /// and pick the best one — this gives every candidate a uniform threshold regardless
+    /// of the order in which they were analyzed.
+    size_t final_parent_marks = parent_reading_select_result->selected_marks;
+    for (auto & candidate : candidates)
+    {
+        /// Skip candidates that did not reach the comparison stage (failed analysis or
+        /// had no useful PK condition).
+        if (!candidate.stat)
+            continue;
+
+        bool sort_order_helps = projection_sort_order_useful(candidate.projection);
+
         /// Consider projections with equal read cost only if:
         /// - `force_optimize_projection` is enabled, or
         /// - the parent reading's `selected_marks` becomes zero, or
         /// - the projection's sort order matches the query's ORDER BY,
-        if (candidate.sum_marks > parent_reading_marks)
+        if (candidate.sum_marks > final_parent_marks)
         {
-            stat.description = fmt::format(
+            candidate.stat->description = fmt::format(
                 "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
-                parent_reading_marks);
+                final_parent_marks);
 
-            LOG_DEBUG(logger, "{}", stat.description);
+            LOG_DEBUG(logger, "{}", candidate.stat->description);
             continue;
         }
-        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection && !sort_order_helps)
+        else if (candidate.sum_marks == final_parent_marks && final_parent_marks > 0 && !force_optimize_projection && !sort_order_helps)
         {
-            stat.description = fmt::format(
+            candidate.stat->description = fmt::format(
                 "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",
                 candidate.projection->name,
                 candidate.sum_marks);
 
-            LOG_DEBUG(logger, "{}", stat.description);
+            LOG_DEBUG(logger, "{}", candidate.stat->description);
             continue;
         }
 
@@ -456,10 +480,6 @@ std::optional<String> optimizeUseNormalProjections(
             || candidate.sum_marks < best_candidate->sum_marks
             || (candidate.sum_marks == best_candidate->sum_marks && sort_order_helps && !projection_sort_order_useful(best_candidate->projection)))
             best_candidate = &candidate;
-
-        /// All parts has been filtered out; no need to analyze further projections.
-        if (parent_reading_marks == 0)
-            break;
     }
 
     if (!best_candidate)
