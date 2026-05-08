@@ -61,6 +61,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"send_table_structure_on_insert_with_inline_data", true, true, "New setting to control whether server sends table structure for INSERT queries with inline data."},
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
+            {"optimize_projection_skip_index_ratio", 0.5, 0.5, "New setting to help projection selection."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -98,7 +99,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_inline_views", false, false, "New setting"},
             {"distributed_cache_write_request_max_tries", 10, 10, "New setting"},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
-            {"optimize_projection_skip_index_ratio", 0.5, 0.5, "New setting to help projection selection."},
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
             {"input_format_column_name_matching_mode", "match_case", "match_case", "New setting."},
