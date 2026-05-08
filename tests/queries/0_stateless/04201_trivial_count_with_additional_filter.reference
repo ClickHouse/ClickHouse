@@ -2,8 +2,10 @@ baseline
       (ReadFromPreparedSource)
       SourceFromSingleChunk 0 → 1
 filtered_this_table
+      (Filter)
+      FilterTransform
         (ReadFromMergeTree)
         MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 filter_other_table
-      (ReadFromPreparedSource)
-      SourceFromSingleChunk 0 → 1
+      (ReadFromMergeTree)
+        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
