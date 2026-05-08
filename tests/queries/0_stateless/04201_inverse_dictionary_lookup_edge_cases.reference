@@ -321,7 +321,7 @@ short-circuited bad-regex match: optimization on, returns 0, opt off
 short-circuited bad-regex match, no rewrite - plan
 SELECT count() AS `count()`
 FROM default.data_ops AS __table1
-WHERE (__table1.id < 0) AND match(dictGetString(\'dict_ops\', \'name\', __table1.id), \'[unclosed\')
+WHERE 0
 SETTINGS optimize_inverse_dictionary_lookup = 1
 max_rows_in_set + break, no rewrite - plan
 SELECT groupArray(__table1.id) AS `groupArray(id)`
