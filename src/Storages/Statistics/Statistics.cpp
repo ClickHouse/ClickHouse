@@ -626,7 +626,7 @@ ColumnStatisticsDescription::StatisticsTypeDescMap MergeTreeStatisticsFactory::g
     {
         auto it = validators.find(type);
         if (it == validators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'nullcount', 'uniqhll12', 'tdigest' and 'uniq'", type);
 
         auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
         SingleStatisticsDescription desc(type, ast, false);
