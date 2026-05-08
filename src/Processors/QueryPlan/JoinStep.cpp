@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -25,7 +26,7 @@ namespace ErrorCodes
 namespace
 {
 
-std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join, bool pretty = false)
+std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join, const ExplainFormatSettings & settings)
 {
     std::vector<std::pair<String, String>> description;
     const auto & table_join = join->getTableJoin();
@@ -39,7 +40,7 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join,
     String kind = toString(table_join.kind());
     String strictness = toString(table_join.strictness());
 
-    if (pretty)
+    if (settings.pretty)
     {
         to_lower(kind);
         to_lower(strictness);
@@ -52,9 +53,13 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join,
     if (table_join.strictness() == JoinStrictness::Asof)
         description.emplace_back("ASOF inequality", toString(table_join.getAsofInequality()));
 
-    std::string_view join_conditions_label = pretty ? "Join conditions" : "Clauses";
     if (!table_join.getClauses().empty())
-        description.emplace_back(join_conditions_label, TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
+    {
+        if (settings.pretty)
+            description.emplace_back("Join conditions", TableJoin::formatClausesPretty(table_join.getClauses(), settings));
+        else
+            description.emplace_back("Clauses", TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
+    }
 
     if (const auto & mixed_expression = table_join.getMixedJoinExpression())
         description.emplace_back("Residual filter", mixed_expression->getSampleBlock().dumpNames());
@@ -118,6 +123,8 @@ JoinStep::JoinStep(
     , use_join_disjunctions_push_down(use_join_disjunctions_push_down_)
     , disjunctions_optimization_applied(false)
 {
+    if (keep_left_read_in_order)
+        join->keepLeftPipelineInOrder();
     updateInputHeaders({left_header_, right_header_});
 }
 
@@ -222,6 +229,7 @@ void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
         min_block_size_bytes = 0;
     }
     keep_left_read_in_order = true;
+    join->keepLeftPipelineInOrder();
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
@@ -233,7 +241,7 @@ void JoinStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
 
-    auto description = describeJoinActions(join, settings.pretty);
+    auto description = describeJoinActions(join, settings);
     const size_t inline_count = settings.pretty ? 3 : 0;
 
     if (settings.pretty)
@@ -263,7 +271,6 @@ void JoinStep::describeActions(FormatSettings & settings) const
         const auto & [name, value] = description[i];
         settings.out << prefix << name << ": " << value << '\n';
     }
-
     if (swap_streams)
         settings.out << prefix << "Swapped: true\n";
     if (!primary_key_sharding.empty())
@@ -288,7 +295,10 @@ void JoinStep::describeActions(FormatSettings & settings) const
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    for (const auto & [name, value] : describeJoinActions(join))
+    WriteBufferFromOwnString dummy;
+    ExplainFormatSettings dummy_settings{.out = dummy, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
+
+    for (const auto & [name, value] : describeJoinActions(join, dummy_settings))
         map.add(name, value);
     if (swap_streams)
         map.add("Swapped", true);
@@ -311,6 +321,8 @@ void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
     join_algorithm_header.reset();
     swap_streams = swap_streams_;
     join = std::move(join_);
+    if (keep_left_read_in_order)
+        join->keepLeftPipelineInOrder();
     updateOutputHeader();
 }
 
@@ -400,13 +412,16 @@ void FilledJoinStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
 
-    for (const auto & [name, value] : describeJoinActions(join))
+    for (const auto & [name, value] : describeJoinActions(join, settings))
         settings.out << prefix << name << ": " << value << '\n';
 }
 
 void FilledJoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    for (const auto & [name, value] : describeJoinActions(join))
+    WriteBufferFromOwnString dummy;
+    ExplainFormatSettings dummy_settings{.out = dummy, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
+
+    for (const auto & [name, value] : describeJoinActions(join, dummy_settings))
         map.add(name, value);
 }
 

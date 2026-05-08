@@ -205,12 +205,12 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.sampling_key.definition_ast)
                 storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
             else if (storage_ast.sample_by != nullptr) /// SAMPLE BY was removed
-                storage_ast.sample_by = nullptr;
+                storage_ast.reset(storage_ast.sample_by);
 
             if (metadata.table_ttl.definition_ast)
                 storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
             else if (storage_ast.ttl_table != nullptr) /// TTL was removed
-                storage_ast.ttl_table = nullptr;
+                storage_ast.reset(storage_ast.ttl_table);
 
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
@@ -313,10 +313,10 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
     if (!query.isView())
-        query.select = nullptr;
+        query.reset(query.select);
 
-    query.format_ast = nullptr;
-    query.out_file = nullptr;
+    query.reset(query.format_ast);
+    query.reset(query.out_file);
 }
 
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path)
