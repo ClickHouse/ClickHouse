@@ -692,6 +692,11 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         variant_offsets.reserve(variant_serializations.size());
         size_t num_non_empty_variants = 0;
         ColumnVariant::Discriminator last_non_empty_discr = 0;
+        /// Read variant sizes via the const overload — variant subcolumns may be referenced
+        /// by the substream cache (so their `use_count() >= 2`), which would trip
+        /// `chassert(use_count() == 1)` in the non-const `getVariantByLocalDiscriminator`
+        /// (it goes through `WrappedPtr::operator*` -> `assumeMutableRef`).
+        const auto & const_col = std::as_const(col);
         for (ColumnVariant::Discriminator i = 0; i != variant_serializations.size(); ++i)
         {
             if (variant_limits[i])
@@ -700,10 +705,10 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
                 last_non_empty_discr = i;
             }
 
-            if (col.getVariantByLocalDiscriminator(i).size() < variant_limits[i])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of variant {} is expected to be not less than {} according to discriminators, but it is {}", variant_names[i], variant_limits[i], col.getVariantByLocalDiscriminator(i).size());
+            if (const_col.getVariantByLocalDiscriminator(i).size() < variant_limits[i])
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of variant {} is expected to be not less than {} according to discriminators, but it is {}", variant_names[i], variant_limits[i], const_col.getVariantByLocalDiscriminator(i).size());
 
-            variant_offsets.push_back(col.getVariantByLocalDiscriminator(i).size() - variant_limits[i]);
+            variant_offsets.push_back(const_col.getVariantByLocalDiscriminator(i).size() - variant_limits[i]);
         }
 
         auto & discriminators_data = col.getLocalDiscriminators();
@@ -719,7 +724,8 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         /// If there is only 1 variant and no NULLs was read, fill offsets with sequential offsets of this variant.
         else if (num_non_empty_variants == 1 && variant_limits[last_non_empty_discr] == num_new_offsets)
         {
-            size_t first_offset = col.getVariantByLocalDiscriminator(last_non_empty_discr).size() - num_new_offsets;
+            /// Same const-overload reasoning as above.
+            size_t first_offset = const_col.getVariantByLocalDiscriminator(last_non_empty_discr).size() - num_new_offsets;
             for (size_t i = 0; i != num_new_offsets; ++i)
                 offsets.push_back(first_offset + i);
         }
