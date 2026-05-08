@@ -27,10 +27,13 @@ public:
     /// If no expression was provided, returns the tokens unchanged.
     std::vector<String> processTokens(std::vector<String> tokens) const;
 
-    /// Processes a flat ColumnString of tokens in one vectorized ExpressionActions execution.
-    /// Returns a new column of transformed tokens. Preferred over processToken for
-    /// indexing because it amortizes expression execution overhead over all tokens
-    /// in a document rather than paying it once per token.
+    /// Processes a flat ColumnString in which each row holds a single token
+    /// (tokens of all documents are concatenated into one column, in order).
+    /// The postprocessor expression is applied to the whole column in a single
+    /// vectorized ExpressionActions execution. Returns a new ColumnString of
+    /// transformed tokens, one per row, in the same order as the input.
+    /// Preferred over processTokens because it amortizes expression-execution
+    /// overhead over all tokens rather than paying it once per token.
     ColumnPtr processTokensBatch(const ColumnString * tokens) const;
 
     /// Processes a ColumnArray(String) where each row is an array of tokens for one document.
