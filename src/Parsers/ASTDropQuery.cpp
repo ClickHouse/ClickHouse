@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -86,12 +87,14 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     cluster = r.getString("cluster");
 
     String kind_str = r.getString("kind");
-    if (kind_str == "Detach")
+    if (kind_str == "Drop")
+        kind = Kind::Drop;
+    else if (kind_str == "Detach")
         kind = Kind::Detach;
     else if (kind_str == "Truncate")
         kind = Kind::Truncate;
     else
-        kind = Kind::Drop;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown DropQuery kind: '{}'", kind_str);
 
     if_exists = r.getBool("if_exists");
     if_empty = r.getBool("if_empty");

@@ -1,10 +1,16 @@
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 String ASTDeleteQuery::getID(char delim) const
 {
@@ -80,14 +86,16 @@ void ASTDeleteQuery::readJSON(const Poco::JSON::Object & json)
     if (database)
         children.push_back(database);
     table = r.readChild("table");
-    if (table)
-        children.push_back(table);
+    if (!table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'table' in DeleteQuery JSON");
+    children.push_back(table);
     partition = r.readChild("partition");
     if (partition)
         children.push_back(partition);
     predicate = r.readChild("predicate");
-    if (predicate)
-        children.push_back(predicate);
+    if (!predicate)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'predicate' in DeleteQuery JSON");
+    children.push_back(predicate);
     settings_ast = r.readChild("settings_ast");
     if (settings_ast)
         children.push_back(settings_ast);
