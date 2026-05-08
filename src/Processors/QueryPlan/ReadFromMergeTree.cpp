@@ -750,7 +750,12 @@ Pipe ReadFromMergeTree::readInOrder(
     {
         const auto & part_with_ranges = parts_with_ranges[i];
 
-        if (pr_in_order_pool && pr_in_order_pool->isPhantomPart(part_with_ranges.data_part->info))
+        /// For projection parts, the authoritative set is keyed by the parent part's info
+        /// (same convention used in the pool's announcement and getTask).
+        const auto & part_info_for_phantom_check = part_with_ranges.data_part->isProjectionPart()
+            ? part_with_ranges.parent_part->info
+            : part_with_ranges.data_part->info;
+        if (pr_in_order_pool && pr_in_order_pool->isPhantomPart(part_info_for_phantom_check))
             continue;
 
         UInt64 total_rows = part_with_ranges.getRowsCount();
