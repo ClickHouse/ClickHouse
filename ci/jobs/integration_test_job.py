@@ -660,7 +660,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 args.test
             ), "--test must be provided for flaky or bugfix job flavor with local run"
         else:
-            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels and Labels.PR_CRITICAL_BUGFIX not in info.pr_labels:
                 # Not a bugfix PR - run a simple sanity test
                 changed_test_modules = ["test_accept_invalid_certificate/test.py"]
             else:
@@ -1017,7 +1017,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
-    if is_bugfix_validation and Labels.PR_BUGFIX in info.pr_labels:
+    if is_bugfix_validation and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"

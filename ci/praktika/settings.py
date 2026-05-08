@@ -65,6 +65,8 @@ class _Settings:
     USE_CUSTOM_GH_AUTH: bool = False
     SECRET_GH_APP_ID: str = ""
     SECRET_GH_APP_PEM_KEY: str = ""
+    SECRET_GH_APP_INSTALLATION_ID: str = ""
+    SECRET_GH_APP_REGION: str = ""
 
     ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
     WORKFLOW_JOB_FILE: str = f"{TEMP_DIR}/workflow_job.json"
@@ -83,7 +85,9 @@ class _Settings:
     ######################################
     #        Report settings             #
     ######################################
-    HTML_S3_PATH: str = ""
+    S3_REPORT_BUCKET: str = ""
+    # Optional: upstream report bucket to merge issue catalogs from (e.g. "clickhouse-test-reports")
+    S3_UPSTREAM_REPORT_BUCKET: str = ""
     HTML_PAGE_FILE: str = "./ci/praktika/json.html"
     S3_BUCKET_TO_HTTP_ENDPOINT: Optional[Dict[str, str]] = None
     TEXT_CONTENT_EXTENSIONS: Iterable[str] = frozenset([".txt", ".log"])
@@ -128,7 +132,8 @@ class _Settings:
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
     "CACHE_S3_PATH",
-    "HTML_S3_PATH",
+    "S3_REPORT_BUCKET",
+    "S3_UPSTREAM_REPORT_BUCKET",
     "CLOUD_INFRASTRUCTURE_CONFIG_PATH",
     "EVENT_FEED_S3_PATH",
     "AWS_REGION",
@@ -165,6 +170,8 @@ _USER_DEFINED_SETTINGS = [
     "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",
+    "SECRET_GH_APP_INSTALLATION_ID",
+    "SECRET_GH_APP_REGION",
     "MAIN_BRANCH",
     "DISABLED_WORKFLOWS",
     "ENABLED_WORKFLOWS",

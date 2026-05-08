@@ -1,5 +1,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -166,6 +167,7 @@ VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode h
 {
     VirtualColumnsDescription desc;
     desc.addEphemeral("_subject", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {

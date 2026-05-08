@@ -765,6 +765,7 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     desc.addEphemeral(PartDataVersionColumn::name, std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
     desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name");
     desc.addEphemeral("_distance", std::make_shared<DataTypeFloat32>(), "Pre-computed distance for vector search queries");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
 
     if (metadata.hasPartitionKey())
     {
@@ -8713,15 +8714,18 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             minmax_columns_types = getMinMaxColumnsTypes(partition_key);
 
             ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
+            bool skip_partition_analysis = !query_context->getSettingsRef()[Setting::use_partition_pruning];
             minmax_idx_condition.emplace(
                 inverted_dag, query_context, minmax_columns_names,
-                getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)));
+                getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)),
+                /* single_point_ = */ false,
+                /* skip_analysis_ = */ skip_partition_analysis);
             partition_pruner.emplace(
                 metadata_snapshot,
                 inverted_dag,
                 query_context,
                 false /* strict */,
-                !query_context->getSettingsRef()[Setting::use_partition_pruning] /* skip_analysis */);
+                skip_partition_analysis);
         }
 
         const auto * predicate = filter_dag->getOutputs().at(0);

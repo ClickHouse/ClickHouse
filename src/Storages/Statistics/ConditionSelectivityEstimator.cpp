@@ -1,6 +1,7 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <stack>
+#include <cmath>
 #include <iostream>
 
 #include <Common/logger_useful.h>
@@ -144,7 +145,12 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     final_element->finalize(column_estimators, metadata);
     RelationProfile result;
     Float64 final_rows = final_element->selectivity * static_cast<Float64>(total_rows);
-    final_rows = std::max<Float64>(final_rows, 0);
+    /// Clamp to [0, total_rows] and handle NaN/Inf to avoid undefined behavior
+    /// in the float-to-UInt64 cast below (UBSAN float-cast-overflow).
+    if (!std::isfinite(final_rows) || final_rows < 0)
+        final_rows = 0;
+    else if (final_rows > static_cast<Float64>(total_rows))
+        final_rows = static_cast<Float64>(total_rows);
     result.rows = static_cast<UInt64>(final_rows);
     for (const auto & [column_name, estimator] : column_estimators)
     {
@@ -412,7 +418,9 @@ Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const Pla
             result += static_cast<Float64>(stats->getNumRows()) * default_cond_range_factor;
     }
     Float64 selectivity = result / static_cast<Float64>(stats->getNumRows());
-    return std::max<Float64>(selectivity, 0);
+    /// Clamp to [0, 1]. Selectivity can exceed 1 when summing estimates across
+    /// multiple ranges (e.g. IN with many values) that together exceed total rows.
+    return std::max(0.0, std::min(1.0, selectivity));
 }
 
 UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
@@ -607,5 +615,14 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
     }
     if (function == FUNCTION_OR)
         selectivity = 1 - selectivity;
+
+    /// Clamp to valid probability range. Selectivity can exceed [0, 1] when
+    /// estimateRanges() sums individual range estimates that together exceed the
+    /// total row count (e.g. IN with many values and over-counting statistics),
+    /// or become NaN from floating-point edge cases.
+    if (!std::isfinite(selectivity))
+        selectivity = default_unknown_cond_factor;
+    else
+        selectivity = std::max(0.0, std::min(1.0, selectivity));
 }
 }

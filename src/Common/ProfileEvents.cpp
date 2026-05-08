@@ -537,9 +537,7 @@
     M(DictCacheRequestTimeNs, "Number of nanoseconds spend in querying the external data sources for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
     M(DictCacheRequests, "Number of bulk requests to the external data sources for the dictionaries of 'cache' types.", ValueType::Number) \
     M(DictCacheLockWriteNs, "Number of nanoseconds spend in waiting for write lock to update the data for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
-    M(DictCacheLockWriteHoldNs, "Number of nanoseconds spent holding write lock for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
     M(DictCacheLockReadNs, "Number of nanoseconds spend in waiting for read lock to lookup the data for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
-    M(DictCacheLockReadHoldNs, "Number of nanoseconds spent holding read lock for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
     \
     M(DistributedSyncInsertionTimeoutExceeded, "A timeout has exceeded while waiting for shards during synchronous insertion into a Distributed table (with 'distributed_foreground_insert' = 1)", ValueType::Number) \
     M(DistributedAsyncInsertionFailures, "Number of failures for asynchronous insertion into a Distributed table (with 'distributed_foreground_insert' = 0)", ValueType::Number) \
@@ -952,19 +950,12 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperProcessElapsedMicroseconds, "Keeper commit latency for a single request", ValueType::Microseconds) \
     M(KeeperPreprocessElapsedMicroseconds, "Keeper preprocessing latency for a single request", ValueType::Microseconds) \
     M(KeeperStorageLockWaitMicroseconds, "Time spent waiting for acquiring Keeper storage lock", ValueType::Microseconds) \
-    M(KeeperStorageLockHoldMicroseconds, "Time spent holding Keeper storage lock", ValueType::Microseconds) \
     M(KeeperStorageSharedLockWaitMicroseconds, "Time spent waiting for acquiring Keeper storage shared lock", ValueType::Microseconds) \
-    M(KeeperStorageSharedLockHoldMicroseconds, "Time spent holding Keeper storage shared lock", ValueType::Microseconds) \
     M(KeeperChangelogLockWaitMicroseconds, "Time spent waiting for acquiring Keeper changelog lock", ValueType::Microseconds) \
-    M(KeeperChangelogLockHoldMicroseconds, "Time spent holding Keeper changelog lock", ValueType::Microseconds) \
     M(KeeperServerWriteLockWaitMicroseconds, "Time spent waiting for acquiring Keeper server write lock", ValueType::Microseconds) \
-    M(KeeperServerWriteLockHoldMicroseconds, "Time spent holding Keeper server write lock", ValueType::Microseconds) \
     M(KeeperSessionCallbackLockWaitMicroseconds, "Time spent waiting for acquiring Keeper session callback lock", ValueType::Microseconds) \
-    M(KeeperSessionCallbackLockHoldMicroseconds, "Time spent holding Keeper session callback lock", ValueType::Microseconds) \
     M(KeeperReadRequestQueueLockWaitMicroseconds, "Time spent waiting for acquiring Keeper read request queue lock", ValueType::Microseconds) \
-    M(KeeperReadRequestQueueLockHoldMicroseconds, "Time spent holding Keeper read request queue lock", ValueType::Microseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds, "Time spent waiting for acquiring Keeper process and responses lock", ValueType::Microseconds) \
-    M(KeeperProcessAndResponsesLockHoldMicroseconds, "Time spent holding Keeper process and responses lock", ValueType::Microseconds) \
     M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Microseconds) \
     M(KeeperBatchMaxCount, "Number of times the size of batch was limited by the amount", ValueType::Number) \
     M(KeeperBatchMaxTotalSize, "Number of times the size of batch was limited by the total bytes size", ValueType::Number) \
@@ -974,7 +965,12 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperSnapshotCreationsFailed, "Number of failed snapshot creations", ValueType::Number) \
     M(KeeperSnapshotApplys, "Number of snapshot applying", ValueType::Number) \
     M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying", ValueType::Number) \
-    M(KeeperReadSnapshot, "Number of snapshot read(serialization)", ValueType::Number) \
+    M(KeeperReadSnapshot, "Number of completed snapshot reads", ValueType::Number) \
+    M(KeeperReadSnapshotObject, "Number of snapshot objects sent to followers", ValueType::Number) \
+    M(KeeperReadSnapshotFailed, "Number of failed snapshot reads", ValueType::Number) \
+    M(KeeperSnapshotRemoteLoaderErrors, "Number of remote read errors in RemoteSnapshotLoader while serving a snapshot to a follower", ValueType::Number) \
+    M(KeeperSaveSnapshotObject, "Number of snapshot objects received from leader", ValueType::Number) \
+    M(KeeperSaveSnapshotFailed, "Number of failed snapshot saves", ValueType::Number) \
     M(KeeperSaveSnapshot, "Number of snapshot save", ValueType::Number) \
     M(KeeperCreateRequest, "Number of create requests", ValueType::Number) \
     M(KeeperRemoveRequest, "Number of remove requests", ValueType::Number) \
@@ -993,7 +989,6 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount, "Number requests that have been rejected due to soft memory limit exceeded", ValueType::Number) \
     M(KeeperStaleRequestsSkipped, "Number of Keeper requests skipped because the session is no longer live", ValueType::Number) \
     M(KeeperLiveSessionsLockWaitMicroseconds, "Time spent waiting to acquire Keeper live sessions lock", ValueType::Microseconds) \
-    M(KeeperLiveSessionsLockHoldMicroseconds, "Time spent holding Keeper live sessions lock", ValueType::Microseconds) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \
@@ -1085,9 +1080,14 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheRangeResetBackward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheRangeResetForward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheReconnectsAfterTimeout, "Distributed Cache read buffer event. The number of reconnects after timeout", ValueType::Number) \
-    M(DistrCacheServerUpdates, "Distributed Cache read buffer event. The number of server updates because server is not longer registered in keeper", ValueType::Number) \
+    M(DistrCacheServerUpdates, "Distributed Cache event. The number of server switches during read or write because the hash-chosen server changed (e.g. due to server deregistration)", ValueType::Number) \
     M(DistrCacheReadErrors, "Distributed Cache read buffer event. Number of distributed cache errors during read", ValueType::Number) \
     M(DistrCacheWriteErrors, "Distributed Cache write buffer event. Number of distributed cache errors during write", ValueType::Number) \
+    M(DistrCacheWriteReconnectsAfterTimeout, "Distributed Cache write buffer event. The number of reconnects after timeout", ValueType::Number) \
+    M(DistrCacheWriteMicroseconds, "Distributed Cache write buffer event. Time spent in WriteBufferFromDistributedCache::writeToFileSegment", ValueType::Microseconds) \
+    M(DistrCacheWriteBytes, "Distributed Cache write buffer event. Number of bytes written to distributed cache", ValueType::Bytes) \
+    M(DistrCacheObjectStorageWriteMicroseconds, "Distributed Cache write buffer event. Time spent writing to object storage", ValueType::Microseconds) \
+    M(DistrCacheObjectStorageWriteBytes, "Distributed Cache write buffer event. Number of bytes written to object storage", ValueType::Bytes) \
     \
     M(DistrCacheGetResponseMicroseconds, "Distributed Cache client event. Time spend to wait for response from distributed cache", ValueType::Microseconds) \
     M(DistrCacheMakeRequestErrors, "Distributed Cache client event. Number of distributed cache errors when making a request", ValueType::Number) \
@@ -1403,9 +1403,9 @@ namespace ProfileEvents
 constexpr Event END = Event(__COUNTER__);
 
 /// Global variable, initialized by zeros.
-static Counter global_counters_array[END] {};
-/// Initialize global counters statically
-Counters global_counters(global_counters_array);
+static constinit Counter global_counters_array[END] {};
+/// Constant-initialized so it is ready before any dynamic initializer can allocate memory.
+constinit Counters global_counters(global_counters_array);
 
 const Event Counters::num_counters = END;
 
