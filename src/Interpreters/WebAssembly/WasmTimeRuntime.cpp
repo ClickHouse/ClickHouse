@@ -543,7 +543,14 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view modu
         throw Exception(ErrorCodes::WASM_ERROR, "pthread_create failed: {}", rc);
 
     if (int rc = pthread_join(thread, nullptr); rc != 0)
-        throw Exception(ErrorCodes::WASM_ERROR, "pthread_join failed: {}", rc);
+    {
+        /// pthread_join failure is unrecoverable: the worker may still be running
+        /// and writing to task. Throwing here would destroy task during stack
+        /// unwinding, causing a data race or use-after-free. Treat as fatal —
+        /// pthread_join can only fail if the thread is not joinable or another
+        /// thread is already waiting, neither of which can happen here.
+        std::terminate();
+    }
 
     if (task.exception)
         std::rethrow_exception(task.exception);
