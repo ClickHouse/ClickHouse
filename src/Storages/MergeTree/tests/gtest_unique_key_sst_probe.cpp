@@ -461,7 +461,8 @@ TEST_F(SSTFixture, WriteFromBlockProducesSortedSST)
 
 /// Caller permutation values are used as direct indices into
 /// `source_to_part_offset`; an out-of-range entry must be rejected with
-/// LOGICAL_ERROR rather than producing OOB writes.
+/// BAD_ARGUMENTS rather than producing OOB writes. (BAD_ARGUMENTS, not
+/// LOGICAL_ERROR, because debug/sanitizer builds abort on LOGICAL_ERROR.)
 TEST_F(SSTFixture, UnsortedPermutationOutOfRangeRejected)
 {
     auto type_u64 = std::make_shared<DataTypeUInt64>();
@@ -480,7 +481,7 @@ TEST_F(SSTFixture, UnsortedPermutationOutOfRangeRejected)
 }
 
 /// Duplicate permutation values silently drop a source-row mapping;
-/// reject with LOGICAL_ERROR.
+/// reject with BAD_ARGUMENTS.
 TEST_F(SSTFixture, UnsortedPermutationDuplicateRejected)
 {
     auto type_u64 = std::make_shared<DataTypeUInt64>();
