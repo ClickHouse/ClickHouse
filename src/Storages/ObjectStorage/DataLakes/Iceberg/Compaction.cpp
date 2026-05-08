@@ -124,85 +124,43 @@ struct Plan
     } partition_encoder;
 };
 
-struct ManifestStats
-{
-    size_t num_manifest_files = 0;
-    size_t num_unique_partitions = 0;
-};
-
-ManifestStats getManifestStats(
+/// Cheap pre-check used by compactIcebergManifests: read just the current manifest list
+/// (one Avro file) and return its length. This avoids walking every manifest entry on every
+/// retry, which under contention (e.g. concurrent OPTIMIZE ... MANIFEST) would amplify
+/// storage reads quadratically. The companion "are manifests already optimal?" check is
+/// done lazily inside writeConsolidatedManifestFile from the data it has to read anyway.
+size_t getCurrentManifestListLength(
     Poco::JSON::Object::Ptr metadata_object,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
     ContextPtr context)
 {
-    LoggerPtr log = getLogger("IcebergCompaction::getManifestStats");
-
-    auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
+    LoggerPtr log = getLogger("IcebergCompaction::getCurrentManifestListLength");
 
     if (!metadata_object->has(Iceberg::f_current_snapshot_id))
-    {
-        LOG_DEBUG(log, "No current snapshot found, nothing to compact");
-        return {};
-    }
+        return 0;
     Int64 current_snapshot_id = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
     if (current_snapshot_id < 0)
-    {
-        LOG_DEBUG(log, "No current snapshot found, nothing to compact");
-        return {};
-    }
+        return 0;
 
     String current_manifest_list_path;
+    auto snapshots = metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    for (size_t i = 0; i < snapshots->size(); ++i)
     {
-        auto snapshots = metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
-        for (size_t i = 0; i < snapshots->size(); ++i)
+        const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        if (snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == current_snapshot_id)
         {
-            const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-            if (snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == current_snapshot_id)
-            {
-                current_manifest_list_path = snapshot->getValue<String>(Iceberg::f_manifest_list);
-                break;
-            }
+            current_manifest_list_path = snapshot->getValue<String>(Iceberg::f_manifest_list);
+            break;
         }
     }
-
     if (current_manifest_list_path.empty())
-    {
-        LOG_DEBUG(log, "No current snapshot found, nothing to compact");
-        return {};
-    }
+        return 0;
 
-    std::unordered_set<String> unique_partitions;
-
-    LOG_TEST(log, "Reading manifest list for current snapshot_id {}", current_snapshot_id);
     auto manifest_list = getManifestList(
-        object_storage, persistent_table_components, context, IcebergPathFromMetadata::deserialize(current_manifest_list_path), log);
-
-    size_t num_manifest_files = manifest_list.size();
-
-    for (const auto & manifest_file : manifest_list)
-    {
-        LOG_TEST(log, "Manifest file path {}", manifest_file.manifest_file_path);
-        auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_table_components, context, log, manifest_file, current_schema_id);
-        for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
-        {
-            String partition_key;
-            for (const auto & val : data_file->parsed_entry->partition_key_value)
-                partition_key += val.dump() + "|";
-            unique_partitions.insert(partition_key);
-        }
-    }
-
-    ManifestStats stats;
-    stats.num_manifest_files = num_manifest_files;
-    stats.num_unique_partitions = unique_partitions.size();
-
-    LOG_DEBUG(log, "Found {} manifest files and {} unique partitions in current snapshot",
-              stats.num_manifest_files,
-              stats.num_unique_partitions);
-
-    return stats;
+        object_storage, persistent_table_components, context,
+        IcebergPathFromMetadata::deserialize(current_manifest_list_path), log);
+    return manifest_list.size();
 }
 
 Plan getPlan(
@@ -543,6 +501,16 @@ bool writeConsolidatedManifestFile(
                 ++total_data_files;
             }
         }
+    }
+
+    /// Manifests are already optimally consolidated (at most one per unique partition):
+    /// rewriting cannot reduce the count, so skip the write and report success to the caller.
+    /// Returning true here means the outer retry loop terminates instead of re-walking on conflict.
+    if (partitions_map.size() >= current_manifest_list.size())
+    {
+        LOG_INFO(log, "Manifests already optimally consolidated ({} manifests, {} unique partitions); nothing to do",
+                 current_manifest_list.size(), partitions_map.size());
+        return true;
     }
 
     const auto & path_resolver = persistent_table_components.path_resolver;
@@ -969,24 +937,18 @@ void compactIcebergManifests(
             persistent_table_components.metadata_compression_method,
             persistent_table_components.table_uuid);
 
-        // Check if compaction is still needed after a concurrent write may have modified things
-        auto stats = getManifestStats(metadata_object, persistent_table_components, object_storage_, context_);
-        const size_t total_manifest_files_before = stats.num_manifest_files;
-        const size_t num_unique_partitions = stats.num_unique_partitions;
+        /// Cheap pre-check: read just the current manifest list (one Avro file) to
+        /// decide whether the table is below the configured threshold. The companion
+        /// "are manifests already optimal?" check is done lazily inside
+        /// writeConsolidatedManifestFile from the data files it has to read anyway,
+        /// so a wasted retry under contention does not re-walk every manifest entry.
+        const size_t total_manifest_files_before = getCurrentManifestListLength(
+            metadata_object, persistent_table_components, object_storage_, context_);
 
         if (total_manifest_files_before <= min_count_to_compact)
         {
             LOG_INFO(log, "Manifest compaction is not needed. Total manifest files: {} (threshold: {})",
                      total_manifest_files_before, min_count_to_compact);
-            return;
-        }
-
-        // If the number of manifest files already equals the number of unique partitions,
-        // the manifests are already optimally consolidated (one per partition) — nothing to do.
-        if (total_manifest_files_before <= num_unique_partitions)
-        {
-            LOG_INFO(log, "Manifest compaction is not needed. Manifest files ({}) already equal unique partitions ({})",
-                     total_manifest_files_before, num_unique_partitions);
             return;
         }
 

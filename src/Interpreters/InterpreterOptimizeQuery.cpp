@@ -50,8 +50,6 @@ BlockIO InterpreterOptimizeQuery::execute()
         if (ast.final || ast.partition || ast.deduplicate || ast.cleanup || ast.dry_run)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE MANIFEST is incompatible with FINAL, PARTITION, DEDUPLICATE, CLEANUP, and DRY RUN options");
 
-        // Manifest compaction is handled through the optimize() call with special flag
-        // The storage will check if it's a data lake table and perform manifest-only compaction
         table->optimizeManifestFiles(metadata_snapshot, getContext());
         return {};
     }

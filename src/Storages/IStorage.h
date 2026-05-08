@@ -530,9 +530,7 @@ public:
         bool /*cleanup*/,
         ContextPtr /*context*/);
 
-    /** Perform any background work. For example, combining parts in a MergeTree type table.
-      * Returns whether any work has been done.
-      */
+    /// Compact metadata-only manifests for data-lake tables that support it (currently Iceberg).
     virtual bool optimizeManifestFiles(
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/);
