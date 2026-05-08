@@ -220,14 +220,14 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.ARM_TIDY,
             provides=[],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
     )
     tidy_build_amd_jobs = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_TIDY,
             provides=[],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
     )
     build_jobs = common_build_job_config.set_post_hooks(
@@ -239,7 +239,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
             provides=[ArtifactNames.CH_AMD_DEBUG, ArtifactNames.DEB_AMD_DEBUG],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ASAN,
@@ -248,7 +248,7 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_ASAN,
                 ArtifactNames.UNITTEST_AMD_ASAN,
             ],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_TSAN,
@@ -257,7 +257,7 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_TSAN,
                 ArtifactNames.UNITTEST_AMD_TSAN,
             ],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_MSAN,
@@ -266,7 +266,7 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_MSAN,
                 ArtifactNames.UNITTEST_AMD_MSAN,
             ],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_UBSAN,
@@ -275,12 +275,12 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_UBSAN,
                 ArtifactNames.UNITTEST_AMD_UBSAN,
             ],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_BINARY,
             provides=[ArtifactNames.CH_AMD_BINARY],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN,
@@ -296,7 +296,7 @@ class JobConfigs:
                 ArtifactNames.CH_ARM_BINARY,
                 ArtifactNames.PARSER_MEMORY_PROFILER,
             ],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
     )
     coverage_build_jobs = common_build_job_config.parametrize(
@@ -340,8 +340,8 @@ class JobConfigs:
     )
     extra_validation_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
-            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
-            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+            # "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            # "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
         ],
     ).parametrize(
         Job.ParamSet(
@@ -354,14 +354,14 @@ class JobConfigs:
     )
     special_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
-            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
-            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+            # "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            # "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
         ],
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DARWIN,
             provides=[ArtifactNames.CH_AMD_DARWIN_BIN],
-            runs_on=RunnerLabels.AMD_LARGE,  # cannot crosscompile on arm
+            runs_on=RunnerLabels.BUILDER_AMD,  # cannot crosscompile on arm
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DARWIN,
@@ -376,37 +376,37 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_FREEBSD,
             provides=[ArtifactNames.CH_AMD_FREEBSD],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.PPC64LE,
             provides=[ArtifactNames.CH_PPC64LE],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_COMPAT,
             provides=[ArtifactNames.CH_AMD_COMPAT],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_MUSL,
             provides=[ArtifactNames.CH_AMD_MUSL],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.RISCV64,
             provides=[ArtifactNames.CH_RISCV64],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.S390X,
             provides=[ArtifactNames.CH_S390X],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.LOONGARCH64,
             provides=[ArtifactNames.CH_LOONGARCH64],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_FUZZERS,
@@ -914,7 +914,7 @@ class JobConfigs:
                 ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
                 ArtifactNames.UNITTEST_LLVM_COVERAGE,
             ],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.BUILDER_AMD,
         ),
     )
 
