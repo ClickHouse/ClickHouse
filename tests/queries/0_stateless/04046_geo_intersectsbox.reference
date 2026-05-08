@@ -13,7 +13,10 @@ polygon outside box
 0
 multipolygon intersecting box
 1
-inverted xmin/xmax
+wrapped longitude xmin/xmax
+0
+wrapped longitude intersects
+1
 inverted ymin/ymax
 --- geoIntersectsBoxCartesian ---
 point inside box

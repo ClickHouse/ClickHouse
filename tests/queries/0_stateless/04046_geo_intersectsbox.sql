@@ -37,10 +37,15 @@ SELECT geoIntersectsBoxSpherical(
     CAST([[[(5.0, 5.0), (6.0, 5.0), (6.0, 6.0), (5.0, 6.0), (5.0, 5.0)]], [[(50.0, 50.0), (51.0, 50.0), (51.0, 51.0), (50.0, 51.0), (50.0, 50.0)]]], 'MultiPolygon'),
     0.0, 0.0, 10.0, 10.0);
 
-SELECT 'inverted xmin/xmax';
+SELECT 'wrapped longitude xmin/xmax';
 SELECT geoIntersectsBoxSpherical(
     CAST((5.0, 5.0), 'Point'),
-    10.0, 0.0, 0.0, 10.0); -- { serverError BAD_ARGUMENTS }
+    10.0, 0.0, 0.0, 10.0);
+
+SELECT 'wrapped longitude intersects';
+SELECT geoIntersectsBoxSpherical(
+    CAST((170.0, 5.0), 'Point'),
+    10.0, 0.0, 0.0, 10.0);
 
 SELECT 'inverted ymin/ymax';
 SELECT geoIntersectsBoxSpherical(
