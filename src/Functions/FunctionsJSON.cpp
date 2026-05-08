@@ -271,6 +271,44 @@ public:
                 return result;
             }
 
+            /// JSONExtractBool must be UInt8 {0,1} with boolean semantics. The generic `else` below
+            /// would cast the value to UInt8 and return e.g. 15 for `{"k":15}` instead of 1.
+            /// Match `JSONExtractBoolImpl` on String JSON: Bool/Int/UInt → != 0, everything else → 0.
+            constexpr bool is_extract_bool = std::string_view(TName::name) == std::string_view("JSONExtractBool")
+                        || std::string_view(TName::name) == std::string_view("JSONExtractBoolCaseInsensitive");
+
+            if constexpr (is_extract_bool)
+            {
+                auto result = ColumnVector<UInt8>::create(input_rows_count);
+                auto & data = result->getData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    UInt8 v = 0;
+                    if (!merged->isDefaultAt(i))
+                    {
+                        Field field;
+                        merged->get(i, field);
+                        switch (field.getType())
+                        {
+                            case Field::Types::Bool:
+                                v = field.safeGet<bool>() ? 1 : 0;
+                                break;
+                            case Field::Types::Int64:
+                                v = field.safeGet<Int64>() != 0 ? 1 : 0;
+                                break;
+                            case Field::Types::UInt64:
+                                v = field.safeGet<UInt64>() != 0 ? 1 : 0;
+                                break;
+                            default:
+                                v = 0;
+                                break;
+                        }
+                    }
+                    data[i] = v;
+                }
+                return result;
+            }
+
             /// For JSONExtractRaw: serialize each value as a JSON string
             constexpr bool is_extract_raw = std::string_view(TName::name) == std::string_view("JSONExtractRaw")
                         || std::string_view(TName::name) == std::string_view("JSONExtractRawCaseInsensitive");
