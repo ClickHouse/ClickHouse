@@ -25,11 +25,13 @@
 #include <vector>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -518,4 +520,135 @@ TEST(ColumnarV1Wire, VariantUInt64String)
     const char * str_chars = reinterpret_cast<const char *>(buf.data() + inner1.data_offset);
     EXPECT_EQ(std::string_view(str_chars, 2), "hi");
     EXPECT_EQ(str_chars[2], '\0');
+}
+
+// ── Nullable periodic string: must NOT use COL_IS_REPEAT ──────────────────────
+//
+// A Nullable(String) column whose inner strings are periodic should fall through
+// to the normal COL_NULL_BYTES path.  Before the fix, COL_IS_REPEAT was applied
+// and null_offset was set to 0, silently dropping the null map.
+
+TEST(ColumnarV1Wire, NullablePeriodicStringNotRepeatEncoded)
+{
+    auto str = ColumnString::create();
+    for (int i = 0; i < 6; ++i)
+        str->insertData(i % 2 == 0 ? "foo" : "bar", 3);
+
+    ColDescriptor desc{};
+    uint32_t cursor = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    cursor = buildColDescriptor(str.get(), /*is_const=*/false, /*is_nullable=*/true, 6, cursor, desc);
+
+    EXPECT_EQ(desc.type & COL_IS_REPEAT, 0u);   // repeat must be suppressed
+    EXPECT_EQ(desc.type, COL_NULL_BYTES);
+    EXPECT_NE(desc.null_offset, 0u);             // null_offset must be allocated
+}
+
+// ── Nullable periodic UInt64: must NOT use COL_IS_REPEAT ─────────────────────
+
+TEST(ColumnarV1Wire, NullablePeriodicFixed64NotRepeatEncoded)
+{
+    auto col = ColumnUInt64::create();
+    for (int rep = 0; rep < 3; ++rep)
+        for (uint64_t v : {10ULL, 20ULL, 30ULL})
+            col->getData().push_back(v);
+
+    ColDescriptor desc{};
+    uint32_t cursor = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    cursor = buildColDescriptor(col.get(), /*is_const=*/false, /*is_nullable=*/true, 9, cursor, desc);
+
+    EXPECT_EQ(desc.type & COL_IS_REPEAT, 0u);
+    EXPECT_EQ(desc.type, COL_NULL_FIXED64);
+    EXPECT_NE(desc.null_offset, 0u);
+}
+
+// ── COL_FIXED8 decode: result_type drives column type, not always ColumnUInt8 ─
+//
+// Int8 values {-1, 0, 127} encoded as COL_FIXED8; decoder must produce
+// ColumnVector<Int8>, not ColumnUInt8.
+
+TEST(ColumnarV1Wire, DecodeFixed8AsInt8)
+{
+    const uint32_t num_rows = 3;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    std::vector<uint8_t> buf(data_off + num_rows, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_FIXED8;
+    desc.data_offset = data_off;
+    desc.data_size   = num_rows;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    int8_t vals[3] = {-1, 0, 127};
+    std::memcpy(buf.data() + data_off, vals, 3);
+
+    auto result_type = std::make_shared<DataTypeInt8>();
+    auto decoded = readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows);
+
+    const auto * col = typeid_cast<const ColumnVector<Int8> *>(decoded.get());
+    ASSERT_NE(col, nullptr);
+    EXPECT_EQ(col->getData()[0], int8_t(-1));
+    EXPECT_EQ(col->getData()[1], int8_t(0));
+    EXPECT_EQ(col->getData()[2], int8_t(127));
+}
+
+// ── Bounds check: data range overflows buffer ─────────────────────────────────
+//
+// COL_FIXED64 descriptor claims data_size = 3*8 = 24 bytes, but the buffer
+// only has 10 bytes of payload → readColumnarOutput must throw WASM_ERROR.
+
+TEST(ColumnarV1Wire, BoundsCheckDataOverflow)
+{
+    const uint32_t num_rows = 3;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    std::vector<uint8_t> buf(data_off + 10, 0);  // too small for 3×uint64
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_FIXED64;
+    desc.data_offset = data_off;
+    desc.data_size   = num_rows * 8u;  // 24 — exceeds actual payload
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    auto result_type = std::make_shared<DataTypeUInt64>();
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
+                 DB::Exception);
+}
+
+// ── Bounds check: per-row wire offset points beyond data block ────────────────
+//
+// COL_BYTES: the offsets array is valid, but wire_offsets[1] = 100, which
+// is larger than data_size = 5 → must throw WASM_ERROR.
+
+TEST(ColumnarV1Wire, BoundsCheckWireOffsetOutOfRange)
+{
+    const uint32_t num_rows    = 1;
+    const uint32_t offsets_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off    = offsets_off + (num_rows + 1u) * 4u;
+    const uint32_t data_size   = 5u;
+
+    std::vector<uint8_t> buf(data_off + data_size, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    ColDescriptor desc{};
+    desc.type           = COL_BYTES;
+    desc.offsets_offset = offsets_off;
+    desc.data_offset    = data_off;
+    desc.data_size      = data_size;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    uint32_t wire_offs[2] = {0, 100};  // 100 >> data_size (5)
+    std::memcpy(buf.data() + offsets_off, wire_offs, 8);
+
+    auto result_type = std::make_shared<DataTypeString>();
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
+                 DB::Exception);
 }
