@@ -851,7 +851,11 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
         else if (ReadBuffer * stream = settings.getter(settings.path))
         {
             size_t prev_size = column->size();
-            auto mutable_column = column->assumeMutable();
+            /// Use `IColumn::mutate` rather than `assumeMutable` because the caller may pass in a column
+            /// that is shared (e.g. `SerializationQBit` first copies `column_qbit.getTuple()` into a local
+            /// `ColumnPtr` and then calls this function on it, so `use_count() >= 2`). `assumeMutable`
+            /// would `chassert(use_count() == 1)` and abort; `IColumn::mutate` clones if shared.
+            auto mutable_column = IColumn::mutate(std::move(column));
             auto ignored_size = stream->tryIgnore(rows_offset + limit);
             auto delta = ignored_size < rows_offset ? 0 : ignored_size - rows_offset;
             typeid_cast<ColumnTuple &>(*mutable_column).addSize(delta);
@@ -864,7 +868,9 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
 
     auto * tuple_state = checkAndGetState<DeserializeBinaryBulkStateTuple>(state);
 
-    auto mutable_column = column->assumeMutable();
+    /// Same `IColumn::mutate` reasoning as above — caller may pass a shared column (e.g. via
+    /// `SerializationQBit`).
+    auto mutable_column = IColumn::mutate(std::move(column));
     auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);
 
     for (size_t i = 0; i < elems.size(); ++i)
@@ -873,15 +879,23 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             column_tuple.getColumnPtr(i), rows_offset, limit, settings, tuple_state->states[i], cache);
     }
 
-    /// Verify that all Tuple elements have the same size.
-    size_t expected_size = column_tuple.getColumn(0).size();
+    /// Verify that all Tuple elements have the same size. Use the const overload via `std::as_const`
+    /// to avoid `chassert(use_count() == 1)` in `assumeMutableRef` — after the recursive deserialize,
+    /// the substream cache may hold references to the inner subcolumns, so non-const `getColumn(i)`
+    /// would trip the assertion.
+    const auto & const_column_tuple = std::as_const(column_tuple);
+    size_t expected_size = const_column_tuple.getColumn(0).size();
     for (size_t i = 1; i < elems.size(); ++i)
     {
-        if (column_tuple.getColumn(i).size() != expected_size)
-            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, column_tuple.getColumn(i).size(), expected_size);
+        if (const_column_tuple.getColumn(i).size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, const_column_tuple.getColumn(i).size(), expected_size);
     }
 
-    typeid_cast<ColumnTuple &>(*mutable_column).addSize(column_tuple.getColumn(0).size());
+    typeid_cast<ColumnTuple &>(*mutable_column).addSize(const_column_tuple.getColumn(0).size());
+
+    /// Write back. `IColumn::mutate` may have cloned the input column when it was shared, so the
+    /// caller's `column` reference must be updated to point to the (possibly cloned) `mutable_column`.
+    column = std::move(mutable_column);
 }
 
 size_t SerializationTuple::getPositionByName(const String & name) const
