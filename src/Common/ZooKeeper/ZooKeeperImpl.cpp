@@ -914,6 +914,11 @@ void ZooKeeper::receiveThread()
     {
         const auto session_timeout_us = std::chrono::microseconds(
             static_cast<Int64>(args.session_timeout_ms) * 1000);
+        /// Hard cap per request. Mirrors `waitForFutureWithProgress` in the sync
+        /// wrappers and protects async callers (those using bare `future.get()`):
+        /// without this, a single request lost by the server while heartbeats and
+        /// other responses keep arriving would let async callers hang forever.
+        const auto request_hard_cap_us = 3 * session_timeout_us;
 
         while (!requests_queue.isFinished())
         {
@@ -924,12 +929,38 @@ void ZooKeeper::receiveThread()
 
             Int64 last_ts = last_received_at.load(std::memory_order_relaxed);
             auto last_received_time = clock::time_point(std::chrono::microseconds(last_ts));
-            auto deadline = last_received_time + session_timeout_us;
+            auto idle_deadline = last_received_time + session_timeout_us;
+
+            /// If any operation is in flight, also bound how long it can wait. When the
+            /// hard cap fires, finalize the session — a request stuck for that long on
+            /// an otherwise alive connection indicates a real session-level problem.
+            auto stuck_deadline = clock::time_point::max();
+            ZooKeeperRequestPtr stuck_request;
+            {
+                std::lock_guard lock(operations_mutex);
+                if (!operations.empty())
+                {
+                    const auto & earliest = operations.begin()->second;
+                    stuck_deadline = earliest.request->create_ts + request_hard_cap_us;
+                    stuck_request = earliest.request;
+                }
+            }
+
+            auto deadline = std::min(idle_deadline, stuck_deadline);
 
             if (now >= deadline)
+            {
+                if (now >= idle_deadline)
+                    throw Exception(Error::ZOPERATIONTIMEOUT,
+                        "Nothing is received in session timeout of {} ms",
+                        args.session_timeout_ms);
+
                 throw Exception(Error::ZOPERATIONTIMEOUT,
-                    "Nothing is received in session timeout of {} ms",
-                    args.session_timeout_ms);
+                    "Request {} for path {} stuck for over {} ms despite global progress — finalizing session",
+                    stuck_request->getOpNum(),
+                    stuck_request->getPath(),
+                    3 * args.session_timeout_ms);
+            }
 
             /// Safe: the `now >= deadline` guard above guarantees `deadline - now > 0`.
             auto wait_us = static_cast<UInt64>(
