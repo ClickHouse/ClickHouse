@@ -136,4 +136,6 @@ private:
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };
 
+std::string convertMergeConstraintsToString(const MergeConstraints & constraints);
+
 }

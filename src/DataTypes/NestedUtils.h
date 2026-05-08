@@ -37,6 +37,14 @@ namespace Nested
     /// Columns: "a.x", "b", "c". Name: "a.x.y.z". Result: "a.x".
     std::string_view getColumnFromSubcolumn(std::string_view name, const NameSet & storage_columns);
 
+    /// Given all existing columns, return column name, or the name of the subcolumn with specified name in storage.
+    /// Returns std::nullopt if column or subcolumn is not in the storage.
+    /// For example:
+    /// Columns: "a.x", "b", "c".
+    /// Name: "a.x.y.z". Result: "a.x".
+    /// Name: "b". Result "b";
+    std::optional<String> tryGetColumnNameInStorage(const String & name, const NameSet & storage_columns);
+
     /// Returns the prefix of the name to the first '.'. Or the name is unchanged if there is no dot.
     std::string extractTableName(const std::string & nested_name);
 
@@ -53,6 +61,13 @@ namespace Nested
 
     /// Convert old-style nested (single arrays with same prefix, `n.a`, `n.b`...) to subcolumns of data type Nested.
     NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types);
+
+    /// Unwrap Nullable(Tuple(...)) into Tuple(...) by propagating the struct-level null map
+    /// to each element. Scalar elements become Nullable(T), already-Nullable elements get merged
+    /// null maps, and non-nullable-compatible elements (Array, Map) get defaults at null positions.
+    /// When there are no actual nulls, simply strips the Nullable wrapper.
+    /// Used by format readers (Arrow, ORC) to convert Nullable struct elements for Nested flattening.
+    ColumnWithTypeAndName unwrapNullableTuple(const ColumnWithTypeAndName & column);
 
     /// Check that sizes of arrays - elements of nested data structures - are equal.
     void validateArraySizes(const Block & block);

@@ -1,5 +1,6 @@
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
@@ -33,7 +34,7 @@ FileLogSource::FileLogSource(
     , max_streams_number(max_streams_number_)
     , handle_error_mode(handle_error_mode_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
-    , virtual_header(storage_snapshot->virtual_columns->getSampleBlock())
+    , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
 {
     consumer = std::make_unique<FileLogConsumer>(storage, max_block_size, poll_time_out, context, stream_number_, max_streams_number_);
 
@@ -134,21 +135,23 @@ Chunk FileLogSource::generate()
             {
                 virtual_columns[0]->insert(file_name);
                 virtual_columns[1]->insert(offset);
+                virtual_columns[2]->insert(storage.getStorageID().getTableName());
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
                         const auto & current_record = consumer->getCurrentRecord();
-                        virtual_columns[2]->insertData(current_record.data(), current_record.size());
-                        virtual_columns[3]->insertData(exception_message->data(), exception_message->size());
+                        virtual_columns[3]->insertData(current_record.data(), current_record.size());
+                        virtual_columns[4]->insertData(exception_message->data(), exception_message->size());
                     }
                     else
                     {
-                        virtual_columns[2]->insertDefault();
                         virtual_columns[3]->insertDefault();
+                        virtual_columns[4]->insertDefault();
                     }
                 }
             }
+
             total_rows = total_rows + new_rows;
         }
         else /// poll succeed, but parse failed

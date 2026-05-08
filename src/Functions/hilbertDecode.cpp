@@ -1,4 +1,5 @@
 #include <limits>
+#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/BitHelpers.h>
 #include <Functions/hilbertDecode2DLUT.h>
@@ -136,7 +137,7 @@ CREATE TABLE hilbert_numbers(
     n2 UInt32
 )
 ENGINE=MergeTree()
-ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+ORDER BY n1 SETTINGS index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 
 -- Use column names instead of constants as function arguments

@@ -49,6 +49,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
@@ -56,6 +57,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
+#include <Common/ErrnoException.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 
@@ -158,7 +160,7 @@ void listFilesWithRegexpMatchingImpl(
             /// We use fs::canonical to resolve the canonical path and check if the file does exists
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            fs::canonical(path_for_ls + for_match);
+            (void)fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             result.push_back(absolute_path.string());
@@ -197,8 +199,14 @@ void listFilesWithRegexpMatchingImpl(
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
     const fs::directory_iterator end;
-    for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
+    std::error_code ec;
+    for (fs::directory_iterator it(prefix_without_globs, ec); it != end; it.increment(ec))
     {
+        if (ec)
+        {
+            return;
+        }
+
         const std::string full_path = it->path().string();
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
@@ -208,7 +216,13 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
-                total_bytes_to_read += it->file_size();
+                total_bytes_to_read += it->file_size(ec);
+                if (ec)
+                {
+                    ec.clear();
+                    continue;
+                }
+
                 result.push_back(it->path().string());
             }
         }
@@ -592,25 +606,13 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
                 return;
 
             /// For union mode, schema can be different for different files, so we need to
             /// cache last inferred schema only for last processed file.
             auto cache_key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext());
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            /// For default mode we cache resulting schema for all paths.
-            auto cache_keys = getKeysForSchemaCache(paths, *format, format_settings, getContext());
-            StorageFile::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
         }
 
         String getLastFilePath() const override
@@ -858,8 +860,7 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
                 return;
 
             /// For union mode, schema can be different for different files in archive, so we need to
@@ -867,22 +868,6 @@ namespace
             auto & schema_cache = StorageFile::getSchemaCache(getContext());
             auto cache_key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
             schema_cache.addColumns(cache_key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            /// For default mode we cache resulting schema for all paths.
-            /// Also add schema for initial paths (maybe with globes) in cache,
-            /// so next time we won't iterate through files (that can be expensive).
-            for (const auto & archive : archive_info.paths_to_archives)
-                paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive, archive_info.path_in_archive));
-            auto & schema_cache = StorageFile::getSchemaCache(getContext());
-            auto cache_keys = getKeysForSchemaCache(paths_for_schema_cache, *format, format_settings, getContext());
-            schema_cache.addManyColumns(cache_keys, columns);
         }
 
         void setFormatName(const String & format_name) override
@@ -1148,13 +1133,13 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 {
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
     /// and columns taken from file path (hive partitioning).
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
 {
     /// Reporting some fake sizes to enable prewhere optimization.
-    return getInMemoryMetadataPtr()->getFakeColumnSizes();
+    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
 }
 
 bool StorageFile::prefersLargeBlocks() const
@@ -1295,7 +1280,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         format_settings,
         args.getContext());
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
+    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
     setInMemoryMetadata(storage_metadata);
 
     supports_prewhere = format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
@@ -1562,6 +1547,15 @@ Chunk StorageFileSource::generate()
                             progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
                     }
                 }
+                else if (fixed_file_path.has_value())
+                {
+                    /// This source was assigned to one specific (file, bucket) pair.
+                    /// Consume it exactly once.
+                    if (fixed_file_consumed)
+                        return {};
+                    fixed_file_consumed = true;
+                    current_path = *fixed_file_path;
+                }
                 else
                 {
                     current_path = files_iterator->next();
@@ -1588,7 +1582,11 @@ Chunk StorageFileSource::generate()
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
 
-                if (need_only_count && tryGetCountFromCache(file_stat))
+                /// The count cache stores the file's total row count. When this source
+                /// only reads a subset of the file (file_bucket_info is set), the cache
+                /// is inapplicable — using it would have every source report the full
+                /// total and produce a count that's multiplied by the number of buckets.
+                if (need_only_count && !file_bucket_info && tryGetCountFromCache(file_stat))
                     continue;
 
                 read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
@@ -1616,6 +1614,12 @@ Chunk StorageFileSource::generate()
                 need_only_count);
 
             input_format->setSerializationHints(serialization_hints);
+
+            /// If this source was assigned to read only a subset of the file's buckets
+            /// (used to read one large file with multiple parallel sources), pass the
+            /// bucket assignment to the format before it starts reading.
+            if (file_bucket_info)
+                input_format->setBucketsToRead(file_bucket_info);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -1669,9 +1673,10 @@ Chunk StorageFileSource::generate()
                 chunk, requested_virtual_columns,
                 {
                     .path = current_path,
+                    .storage_id = storage->getStorageID(),
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
-                    .last_modified = current_file_last_modified
+                    .last_modified = current_file_last_modified,
                 }, getContext());
 
             return chunk;
@@ -1682,7 +1687,8 @@ Chunk StorageFileSource::generate()
             finished_generate = true;
 
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()))
+            && (!format_filter_info || !format_filter_info->hasFilter())
+            && !file_bucket_info)
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1838,7 +1844,8 @@ void StorageFile::read(
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
     bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
-        && context->getSettingsRef()[Setting::optimize_count_from_files];
+        && context->getSettingsRef()[Setting::optimize_count_from_files]
+        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto reading = std::make_unique<ReadFromFile>(
         column_names,
@@ -1863,7 +1870,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->paths,
         storage->archive_info,
         predicate,
-        storage->getVirtualsList(),
+        storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing);
@@ -1884,10 +1891,54 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
 
+    auto ctx = getContext();
+
+    /// If we are reading exactly one local file in a splittable format (e.g. Parquet),
+    /// we can split it into multiple buckets (row group ranges) and create one source
+    /// per bucket. This recovers the parallelism we'd otherwise have only when reading
+    /// many files at once. Without this, a single big Parquet file feeds the whole
+    /// downstream pipeline through a single source/Resize(1->N) — leaving most of the
+    /// CPU idle on machines with many cores.
+    ///
+    /// We use the file list from `files_iterator` rather than `storage->paths`: the
+    /// iterator has already pruned files by `_path`/`_file` virtual-column predicates
+    /// (`createPathAndFileFilterDAG`), so the optimization respects that pruning. If
+    /// the predicate excludes the only path the file is not read at all. It also
+    /// means a query against many paths whose predicate prunes down to a single file
+    /// still benefits from the split.
+    std::vector<FileBucketInfoPtr> per_source_buckets;
+    String single_file_path;
+    if (max_num_streams > 1
+        && !storage->archive_info
+        && !storage->use_table_fd
+        && !storage->has_peekable_read_buffer_from_fd.load()
+        && !storage->distributed_processing
+        && storage->compression_method == "auto"
+        && FormatFactory::instance().checkFormatHasSplitter(storage->format_name)
+        && FormatFactory::instance().checkParallelizeOutputAfterReading(storage->format_name, ctx)
+        && files_iterator->getFiles().size() == 1)
+    {
+        auto splitter = FormatFactory::instance().getSplitter(storage->format_name);
+        single_file_path = files_iterator->getFiles().front();
+        struct stat file_stat = getFileStat(single_file_path, false, -1, storage->getName());
+        if (file_stat.st_size > 0)
+        {
+            auto buf = createReadBuffer(
+                single_file_path, file_stat, false, -1, storage->compression_method, ctx);
+            auto buckets = splitter->splitToBucketsByCount(
+                max_num_streams, *buf,
+                storage->format_settings.value_or(getFormatSettings(ctx)));
+
+            if (buckets.size() >= 2)
+            {
+                per_source_buckets = std::move(buckets);
+                num_streams = per_source_buckets.size();
+            }
+        }
+    }
+
     Pipes pipes;
     pipes.reserve(num_streams);
-
-    auto ctx = getContext();
 
     /// Set total number of bytes to process. For progress bar.
     auto progress_callback = ctx->getFileProgressCallback();
@@ -1919,13 +1970,19 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             parser_shared_resources,
             format_filter_info);
 
+        if (i < per_source_buckets.size())
+        {
+            source->fixed_file_path = single_file_path;
+            source->file_bucket_info = per_source_buckets[i];
+        }
+
         pipes.emplace_back(std::move(source));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = ctx->getSettingsRef()[Setting::parallelize_output_from_storages];
-    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < max_num_streams)
+    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports != max_num_streams)
         pipe.resize(max_num_streams);
 
     if (pipe.empty())
@@ -2338,7 +2395,7 @@ void StorageFile::truncate(
 void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     if (checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "format") == "auto")
-        args[0] = std::make_shared<ASTLiteral>(format_name);
+        args[0] = make_intrusive<ASTLiteral>(format_name);
 }
 
 void registerStorageFile(StorageFactory & factory)

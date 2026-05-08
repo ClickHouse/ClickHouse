@@ -19,6 +19,10 @@ public:
     ChunkInfo(ChunkInfo&&) = default;
 
     virtual Ptr clone() const = 0;
+    virtual Ptr merge(const Ptr & right) const
+    {
+        return right; // merge left into right by default returns right
+    }
     virtual ~ChunkInfo() = default;
 };
 
@@ -164,6 +168,9 @@ using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;
 void convertToFullIfConst(Chunk & chunk);
 void convertToFullIfSparse(Chunk & chunk);
 void removeSpecialColumnRepresentations(Chunk & chunk);
+
+/// Analog of materializeBlock: converts const columns to full and removes sparse/replicated representations.
+void materializeChunk(Chunk & chunk);
 
 /// Creates a chunk with the same columns but makes them constants with a default value and a specified number of rows.
 Chunk cloneConstWithDefault(const Chunk & chunk, size_t num_rows);

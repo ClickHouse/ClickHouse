@@ -1,8 +1,10 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
@@ -22,6 +24,20 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+}
+
+UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & function_, const String & type_name_, size_t version_)
+{
+    SipHash hash;
+    hash.update("AggregateFunction");
+    auto state_type_name = function_->getStateType()->getName();
+    hash.update(state_type_name.size());
+    hash.update(state_type_name);
+    hash.update(type_name_.size());
+    hash.update(type_name_);
+    hash.update(version_);
+    hash.update(static_cast<UInt8>(function_->getStateVariant()));
+    return hash.get128();
 }
 
 namespace
@@ -247,6 +263,11 @@ static String serializeToString(const AggregateFunctionPtr & function, const ICo
 }
 
 
+SerializationPtr SerializationAggregateFunction::create(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
+{
+    return ISerialization::pooled(getHash(function_, type_name_, version_), [&] { return new SerializationAggregateFunction(function_, std::move(type_name_), version_); });
+}
+
 void SerializationAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(serializeToString(function, column, row_num, version), ostr);
@@ -359,6 +380,11 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
 
     auto method = DESERIALIZE_METHOD(deserializeTextCSV);
     deserializeFromValues<method>(column, istr, settings, function);
+}
+
+size_t SerializationAggregateFunction::allocatedBytes() const
+{
+    return sizeof(*this) + type_name.capacity();
 }
 
 }

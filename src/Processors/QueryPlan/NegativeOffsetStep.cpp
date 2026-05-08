@@ -2,6 +2,7 @@
 #include <Processors/NegativeOffsetTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -40,7 +41,8 @@ void NegativeOffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, cons
 
 void NegativeOffsetStep::describeActions(FormatSettings & settings) const
 {
-    settings.out << String(settings.offset, ' ') << "Negative Offset " << offset << '\n';
+    const auto & prefix = settings.detail_prefix;
+    settings.out << prefix << "Negative Offset " << offset << '\n';
 }
 
 void NegativeOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -53,7 +55,7 @@ void NegativeOffsetStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> NegativeOffsetStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr NegativeOffsetStep::deserialize(Deserialization & ctx)
 {
     UInt64 offset;
     readVarUInt(offset, ctx.in);

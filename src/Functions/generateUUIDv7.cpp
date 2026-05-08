@@ -21,7 +21,7 @@ uint64_t getTimestampMillisecond()
 
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
-DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
+DECLARE_X86_64_V3_SPECIFIC_CODE(__VA_ARGS__)
 
 DECLARE_SEVERAL_IMPLEMENTATIONS(
 
@@ -88,8 +88,8 @@ public:
         selector.registerImplementation<TargetArch::Default, Parent>();
 
 #if USE_MULTITARGET_CODE
-        using ParentAVX2 = TargetSpecific::AVX2::FunctionGenerateUUIDv7Base;
-        selector.registerImplementation<TargetArch::AVX2, ParentAVX2>();
+        using Parentv3 = TargetSpecific::x86_64_v3::FunctionGenerateUUIDv7Base;
+        selector.registerImplementation<TargetArch::x86_64_v3, Parentv3>();
 #endif
     }
 
@@ -110,7 +110,7 @@ private:
 REGISTER_FUNCTION(GenerateUUIDv7)
 {
     /// generateUUIDv7 documentation
-    FunctionDocumentation::Description description_generateUUIDv7 = R"(
+    FunctionDocumentation::Description description = R"(
 Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](../data-types/uuid.md).
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
@@ -119,12 +119,12 @@ See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID struct
 As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
 :::
     )";
-    FunctionDocumentation::Syntax syntax_generateUUIDv7 = "generateUUIDv7([expr])";
-    FunctionDocumentation::Arguments arguments_generateUUIDv7 = {
+    FunctionDocumentation::Syntax syntax = "generateUUIDv7([expr])";
+    FunctionDocumentation::Arguments arguments = {
         {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_generateUUIDv7 = {"Returns a UUIDv7.", {"UUID"}};
-    FunctionDocumentation::Examples examples_generateUUIDv7 = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a UUIDv7.", {"UUID"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -150,11 +150,11 @@ SELECT generateUUIDv7(1), generateUUIDv7(1);
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_generateUUIDv7 = {24, 5};
-    FunctionDocumentation::Category category_generateUUIDv7 = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_generateUUIDv7 = {description_generateUUIDv7, syntax_generateUUIDv7, arguments_generateUUIDv7, {}, returned_value_generateUUIDv7, examples_generateUUIDv7, introduced_in_generateUUIDv7, category_generateUUIDv7};
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionGenerateUUIDv7Base>(documentation_generateUUIDv7);
+    factory.registerFunction<FunctionGenerateUUIDv7Base>(documentation);
 }
 }
 }

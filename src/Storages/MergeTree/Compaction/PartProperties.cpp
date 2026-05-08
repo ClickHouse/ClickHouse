@@ -78,6 +78,7 @@ PartProperties buildPartProperties(
         .is_in_volume_where_merges_avoid = !part->shallParticipateInMerges(storage_policy),
         .size = part->getExistingBytesOnDisk(),
         .age = current_time - part->modification_time,
+        .rows = part->rows_count,
         .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
         .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
     };

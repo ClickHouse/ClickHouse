@@ -36,6 +36,8 @@ FROM
 )
 WHERE explain LIKE '%InReverseOrder%';
 
+SET automatic_parallel_replicas_mode = 0;
+
 SELECT check_start_time, check_name, test_name, test_status, check_status
 FROM checks
 WHERE 1

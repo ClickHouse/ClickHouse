@@ -350,6 +350,14 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
 }
 
+ReservationPtr DiskEncrypted::reserve(UInt64 bytes, const ReservationConstraints & constraints)
+{
+    auto reservation = delegate->reserve(bytes, constraints);
+    if (!reservation)
+        return {};
+    return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
+}
+
 
 void DiskEncrypted::copyDirectoryContent(
     const String & from_dir,
@@ -435,6 +443,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     auto encryption_settings = current_settings.get();
     FileEncryption::Header header = readHeader(*buffer);
     String key = encryption_settings->findKeyByFingerprint(header.key_fingerprint, path);
+    chassert(settings.local_fs_buffer_size != 0);
     return std::make_unique<ReadBufferFromEncryptedFile>(path, settings.local_fs_buffer_size, std::move(buffer), key, header);
 }
 

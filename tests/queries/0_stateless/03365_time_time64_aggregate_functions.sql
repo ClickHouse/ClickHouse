@@ -16,4 +16,4 @@ SELECT min(time)
 FROM dt;
 
 SELECT avg(time)
-FROM dt; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+FROM dt;

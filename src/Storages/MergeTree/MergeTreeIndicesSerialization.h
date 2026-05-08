@@ -29,6 +29,13 @@ struct MergeTreeIndexSubstream
     String suffix;
     /// Extension of the index substream's file with data. Encodes the serialization version (".idx", "idx2", etc.)
     String extension;
+
+    static bool isCompressed(Type type)
+    {
+        /// Text index postings are not compressed by write buffer,
+        /// because the compression is implicitly applied during building them.
+        return type != Type::TextIndexPostings;
+    }
 };
 
 using MergeTreeIndexSubstreams = std::vector<MergeTreeIndexSubstream>;
@@ -42,7 +49,7 @@ struct MergeTreeIndexFormat
     explicit operator bool() const { return version != 0; }
 };
 
-using MergeTreeIndexWriterStream = MergeTreeWriterStream<false>;
+using MergeTreeIndexWriterStream = MergeTreeWriterStream;
 using MergeTreeIndexOutputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexWriterStream *>;
 
 using MergeTreeIndexReaderStream = MergeTreeReaderStream;
@@ -54,7 +61,6 @@ struct MergeTreeIndexDeserializationState
     const IMergeTreeIndexCondition * condition;
     const IMergeTreeDataPart & part;
     const IMergeTreeIndex & index;
-    size_t index_mark;
 };
 
 }
