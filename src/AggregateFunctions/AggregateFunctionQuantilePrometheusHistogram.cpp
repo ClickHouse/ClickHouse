@@ -7,8 +7,6 @@
 
 #include <numeric>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
 
 namespace DB
 {
@@ -156,6 +154,8 @@ private:
     }
 
     /// Calculate quantile, using linear interpolation between the bucket's lower and upper bound
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
     Value quantileInterpolated(const Pair * array, size_t size, Float64 position) const
     {
         const auto * upper_bound_it = std::lower_bound(array, array + size, position, [](const Pair & a, Float64 b) { return static_cast<Float64>(a.second) < b; });
@@ -187,6 +187,7 @@ private:
         // Interpolate between the lower and upper bounds of the bucket that the position is in.
         return static_cast<Value>(histogram_bucket_lower_bound + (histogram_bucket_upper_bound - histogram_bucket_lower_bound) * (position - static_cast<Float64>(histogram_bucket_lower_value)) / static_cast<Float64>(histogram_bucket_upper_value - histogram_bucket_lower_value));
     }
+#pragma clang diagnostic pop
 };
 
 template <typename Value, typename CumulativeHistogramValue>
@@ -296,5 +297,3 @@ FROM VALUES('bucket_upper_bound Float64, cumulative_bucket_value UInt64', (0, 6)
 }
 
 }
-
-#pragma clang diagnostic pop
