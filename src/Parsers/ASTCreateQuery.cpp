@@ -8,6 +8,7 @@
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -423,6 +424,8 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("is_clone_as", is_clone_as);
     w.writeBool("replace_view", replace_view);
     w.writeBool("has_uuid", has_uuid);
+    if (uuid != UUIDHelpers::Nil)
+        w.writeString("uuid", toString(uuid));
     w.writeBool("is_dictionary", is_dictionary);
     w.writeBool("is_watermark_strictly_ascending", is_watermark_strictly_ascending);
     w.writeBool("is_watermark_ascending", is_watermark_ascending);
@@ -432,6 +435,8 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("replace_table", replace_table);
     w.writeBool("create_or_replace", create_or_replace);
     w.writeBool("has_attach_from_path", has_attach_from_path);
+    if (attach_as_replicated.has_value())
+        w.writeBool("attach_as_replicated", *attach_as_replicated);
 
     w.writeChild("columns_list", columns_list);
     w.writeChild("aliases_list", aliases_list);
@@ -476,6 +481,8 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     is_clone_as = r.getBool("is_clone_as");
     replace_view = r.getBool("replace_view");
     has_uuid = r.getBool("has_uuid");
+    if (r.has("uuid"))
+        uuid = parseFromString<UUID>(r.getString("uuid"));
     is_dictionary = r.getBool("is_dictionary");
     is_watermark_strictly_ascending = r.getBool("is_watermark_strictly_ascending");
     is_watermark_ascending = r.getBool("is_watermark_ascending");
@@ -485,6 +492,8 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     replace_table = r.getBool("replace_table");
     create_or_replace = r.getBool("create_or_replace");
     has_attach_from_path = r.getBool("has_attach_from_path");
+    if (r.has("attach_as_replicated"))
+        attach_as_replicated = r.getBool("attach_as_replicated");
 
     auto child = r.readChild("columns_list");
     if (child)
