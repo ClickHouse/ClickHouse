@@ -271,16 +271,17 @@ void PipelineExecutor::finalizeExecution()
     if (!is_cancelled && !all_processors_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
 
-    /// Ensure source processors' onCancel() handlers have run before collecting progress.
+    /// Ensure remote source processors' onCancel() handlers have run before collecting progress.
     /// For cancelled pipelines, `graph->cancel` was already called in `cancel`.
     /// For normal completion (e.g. `LIMIT` satisfied with parallel replicas), we cancel
-    /// with `PartialResult`, which only acts on source processors (`IProcessor::cancel`
-    /// returns early for non-sources when reason is `PartialResult`). `RemoteSource::onCancel`
-    /// calls `query_executor->finish` which drains remaining packets (including `Progress`)
-    /// from replica connections. Non-source processors must not be cancelled on the
-    /// successful completion path — their `onCancel` handlers are not designed as
-    /// post-success cleanup hooks and may have unintended side effects.
-    /// This is safe because all worker threads have been joined by this point.
+    /// with `PartialResult`. Both `IProcessor::cancel` (non-sources) and `ISource::cancel`
+    /// (sources without explicit `PartialResult` support) return early for `PartialResult`,
+    /// so only `RemoteSource` (which overrides `cancel` to handle `PartialResult`) reacts:
+    /// `RemoteSource::onCancel` calls `query_executor->finish` which drains remaining packets
+    /// (including `Progress`) from replica connections. This avoids triggering `onCancel`
+    /// handlers of unrelated sources (e.g. `SQLiteSource::onCancel` calls `sqlite3_interrupt`)
+    /// on the successful completion path. This is safe because all worker threads have been
+    /// joined by this point.
     if (!is_cancelled)
         graph->cancel(IProcessor::CancelReason::PartialResult);
 
