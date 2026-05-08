@@ -36,19 +36,27 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_)
 ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offsets_, size_t size_)
     : values(std::move(values_)), offsets(std::move(offsets_)), _size(size_)
 {
-    const ColumnUInt64 * offsets_concrete = typeid_cast<const ColumnUInt64 *>(offsets.get());
+    /// Use `std::as_const` for read-only validation: a non-const `WrappedPtr::get`/
+    /// `operator->` goes through `assumeMutableRef`, which `chassert(use_count() == 1)`.
+    /// This constructor is reached from `ColumnSparse::create(const ColumnPtr &, ...)`
+    /// where the caller may keep a reference to `values_`/`offsets_`, so `use_count()`
+    /// is `> 1` and the assertion would fire.
+    const auto & const_offsets = std::as_const(offsets);
+    const auto & const_values = std::as_const(values);
+
+    const ColumnUInt64 * offsets_concrete = typeid_cast<const ColumnUInt64 *>(const_offsets.get());
 
     if (!offsets_concrete)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "'offsets' column must be a ColumnUInt64, got: {}", offsets->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "'offsets' column must be a ColumnUInt64, got: {}", const_offsets->getName());
 
     /// 'values' should contain one extra element: default value at 0 position.
-    if (offsets->size() + 1 != values->size())
+    if (const_offsets->size() + 1 != const_values->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Values size ({}) is inconsistent with offsets size ({})", values->size(), offsets->size());
+            "Values size ({}) is inconsistent with offsets size ({})", const_values->size(), const_offsets->size());
 
-    if (_size < offsets->size())
+    if (_size < const_offsets->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Size of sparse column ({}) cannot be lower than number of non-default values ({})", _size, offsets->size());
+            "Size of sparse column ({}) cannot be lower than number of non-default values ({})", _size, const_offsets->size());
 
     if (!offsets_concrete->empty() && _size <= offsets_concrete->getData().back())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
