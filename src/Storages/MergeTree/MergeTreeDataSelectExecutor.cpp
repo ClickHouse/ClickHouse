@@ -766,12 +766,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
+    const Names used_columns = statistics_pruner.getUsedColumns();
 
     for (const auto & part : parts)
     {
         try
         {
-            auto estimates = part.data_part->getEstimates();
+            auto estimates = part.data_part->getEstimates(used_columns);
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
             {
                 LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);

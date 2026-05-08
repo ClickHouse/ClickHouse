@@ -294,21 +294,66 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     return aggregation_stats;
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr)
+/// Collect names of every INPUT node reachable from `root`.
+static void collectReachableInputs(const ActionsDAG::Node * root, NameSet & out)
+{
+    std::vector<const ActionsDAG::Node *> stack = {root};
+    while (!stack.empty())
+    {
+        const auto * n = stack.back();
+        stack.pop_back();
+        if (n->type == ActionsDAG::ActionType::INPUT)
+            out.insert(n->result_name);
+        for (const auto * child : n->children)
+            stack.push_back(child);
+    }
+}
+
+/// For each `output_names` entry that names an output of `dag`, append the names of
+/// the source-side INPUT columns it transitively depends on. Names not present in
+/// `dag.outputs` are passed through unchanged. Used to translate names a parent
+/// step asked stats for from this DAG's outputs to its inputs.
+static void translateToInputColumns(const ActionsDAG & dag, const Names & output_names, NameSet & out)
+{
+    for (const auto & name : output_names)
+    {
+        if (const auto * output_node = dag.tryFindInOutputs(name))
+            collectReachableInputs(output_node, out);
+        else
+            out.insert(name);
+    }
+}
+
+/// `extra_required_columns` are the column names a parent step asked stats for; as we
+/// descend through the plan we translate them at each renaming step (Expression / Filter)
+/// back to the input names of the underlying read.
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, Names extra_required_columns = {}, bool load_statistics = true)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         String table_display_name = reading->getStorageID().getTableName();
 
-        if (reading->getContext()->getSettingsRef()[Setting::use_statistics])
+        auto prewhere_info = reading->getPrewhereInfo();
+        const ActionsDAG::Node * prewhere_node = prewhere_info
+            ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+            : nullptr;
+
+        NameSet required_columns(extra_required_columns.begin(), extra_required_columns.end());
+        if (prewhere_info)
         {
-            if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames()))
+            for (const auto & column_name : prewhere_info->prewhere_actions.getRequiredColumnsNames())
+                required_columns.insert(column_name);
+        }
+
+        Names statistics_columns;
+        if (!required_columns.empty())
+            statistics_columns = Names(required_columns.begin(), required_columns.end());
+
+        if (load_statistics && reading->getContext()->getSettingsRef()[Setting::use_statistics] && !statistics_columns.empty())
+        {
+            if (auto estimator = reading->getConditionSelectivityEstimator(statistics_columns))
             {
-                auto prewhere_info = reading->getPrewhereInfo();
-                const ActionsDAG::Node * prewhere_node = prewhere_info
-                    ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
-                    : nullptr;
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                 RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
@@ -364,7 +409,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
+        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter, std::move(extra_required_columns), load_statistics);
     }
 
     if (node.children.size() != 1)
@@ -372,7 +417,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
+        auto estimated = estimateReadRowsCount(*node.children.front(), filter, std::move(extra_required_columns), load_statistics);
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
@@ -381,7 +426,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        Names mapped_columns;
+        if (!extra_required_columns.empty())
+        {
+            NameSet mapped;
+            translateToInputColumns(expression_step->getExpression(), extra_required_columns, mapped);
+            mapped_columns.assign(mapped.begin(), mapped.end());
+        }
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, std::move(mapped_columns), load_statistics);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
@@ -390,14 +442,26 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+
+        NameSet required_columns;
+        translateToInputColumns(dag, extra_required_columns, required_columns);
+
+        /// Add only the input columns the filter predicate actually depends on.
+        if (predicate)
+        {
+            auto split = dag.splitActionsForFilter(filter_step->getFilterColumnName());
+            for (auto & name : split.first.getRequiredColumnsNames())
+                required_columns.insert(std::move(name));
+        }
+
+        auto stats = estimateReadRowsCount(*node.children.front(), predicate, Names(required_columns.begin(), required_columns.end()), load_statistics);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, std::move(extra_required_columns), load_statistics);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
     }
@@ -412,7 +476,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, std::move(extra_required_columns), load_statistics);
         if (sorting_step->getLimit())
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
@@ -689,7 +753,9 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
     }
 
     graph.inputs.push_back(node);
-    RelationStats stats = estimateReadRowsCount(*node);
+    /// Don't load statistics here - refreshQueryGraphRelationStats will reload them
+    /// with proper column sets (join keys + filter columns) after the graph is built.
+    RelationStats stats = estimateReadRowsCount(*node, nullptr, {}, /*load_statistics=*/false);
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
@@ -918,6 +984,51 @@ static const ActionsDAG::Node * trackInputColumn(const ActionsDAG::Node * node)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} has {} non const children, expected 1", node->result_name, non_const_children);
     }
     return node;
+}
+
+static void refreshQueryGraphRelationStats(QueryGraphBuilder & query_graph)
+{
+    /// Collect input column names of `relation_id` referenced as equi-join keys.
+    auto join_keys_for_relation = [&](size_t relation_id)
+    {
+        NameSet required;
+        auto add_side = [&](const JoinActionRef & action)
+        {
+            auto resolved = action.resolveAliases();
+            auto source_relation = resolved.getSourceRelations().getSingleBit();
+            if (source_relation && *source_relation == relation_id)
+                collectReachableInputs(resolved.getNode(), required);
+        };
+
+        for (const auto & edge : query_graph.join_edges)
+        {
+            if (!edge)
+                continue;
+            auto [op, lhs, rhs] = edge.asBinaryPredicate();
+            if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+                continue;
+            add_side(lhs);
+            add_side(rhs);
+        }
+        return Names(required.begin(), required.end());
+    };
+
+    for (size_t relation_id = 0; relation_id < query_graph.inputs.size() && relation_id < query_graph.relation_stats.size(); ++relation_id)
+    {
+        RelationStats stats = estimateReadRowsCount(*query_graph.inputs[relation_id], nullptr, join_keys_for_relation(relation_id));
+
+        std::optional<size_t> num_rows_from_cache = query_graph.context->statistics_context.getCachedHint(query_graph.inputs[relation_id]);
+        if (query_graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
+            stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
+
+        if (!query_graph.relation_stats[relation_id].table_name.empty())
+            stats.table_name = query_graph.relation_stats[relation_id].table_name;
+
+        if (UInt64 seed = query_graph.context->effective_randomize_seed)
+            stats = getRandomizedStats(seed, relation_id, stats.table_name, *query_graph.inputs[relation_id]->step->getOutputHeader());
+
+        query_graph.relation_stats[relation_id] = std::move(stats);
+    }
 }
 
 constexpr bool isSwapOnlyJoinKind(JoinKind kind)
@@ -1334,6 +1445,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         query_graph_size_limit = 2;
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
+    refreshQueryGraphRelationStats(query_graph_builder);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
 }
 

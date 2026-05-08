@@ -1388,6 +1388,7 @@ The server successfully detected this situation and will download merged part fr
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
+    M(LoadedStatisticsColumns, "Number of per-column statistics deserialized when loading statistics from parts.", ValueType::Number) \
     \
     M(RuntimeDataflowStatisticsInputBytes, "Collected statistics on the number of bytes replicas would read if the query was executed with parallel replicas", ValueType::Number) \
     M(RuntimeDataflowStatisticsOutputBytes, "Collected statistics on the number of bytes replicas would send to the initiator if the query was executed with parallel replicas", ValueType::Number) \

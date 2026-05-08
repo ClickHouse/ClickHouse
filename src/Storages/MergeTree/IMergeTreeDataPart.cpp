@@ -89,6 +89,7 @@ namespace ProfileEvents
     extern const Event LoadedPrimaryIndexFiles;
     extern const Event LoadedPrimaryIndexRows;
     extern const Event LoadedPrimaryIndexBytes;
+    extern const Event LoadedStatisticsColumns;
 }
 
 namespace DimensionalMetrics
@@ -1094,6 +1095,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         {
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             result.emplace(column_desc->name, std::move(column_stat));
+            ProfileEvents::increment(ProfileEvents::LoadedStatisticsColumns);
         }
         catch (...)
         {
@@ -1125,6 +1127,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         {
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             result.emplace(column_desc->name, std::move(column_stat));
+            ProfileEvents::increment(ProfileEvents::LoadedStatisticsColumns);
         }
         catch (...)
         {
@@ -1154,6 +1157,12 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_columns) const
 {
+    fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+    {
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Injected failure in loadStatistics");
+    });
+
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
@@ -1163,27 +1172,54 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_colu
     return loadStatisticsWide(required_columns_set);
 }
 
-Estimates IMergeTreeDataPart::getEstimates() const
+Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns) const
 {
     std::lock_guard lock(estimates_mutex);
 
-    if (estimates.has_value())
-        return *estimates;
+    /// Empty `required_columns` means "load and cache every column with statistics".
+    Names missing;
+    if (!estimates_fully_loaded && !required_columns.empty())
+    {
+        for (const auto & column_name : required_columns)
+            if (!estimates.contains(column_name))
+                missing.push_back(column_name);
+    }
 
-    Estimates new_estimates;
-    auto statistics = loadStatistics();
+    bool need_load = required_columns.empty() ? !estimates_fully_loaded : !missing.empty();
+    if (need_load)
+    {
+        /// Build a fresh map first; commit to `estimates` only after all per-column
+        /// `getEstimate()` calls succeed so that a failure does not poison the cache.
+        auto statistics = required_columns.empty() ? loadStatistics() : loadStatistics(missing);
 
-    for (const auto & [column_name, stats] : statistics)
-        new_estimates.emplace(column_name, stats->getEstimate());
+        Estimates fresh;
+        fresh.reserve(statistics.size());
+        for (const auto & [column_name, stats] : statistics)
+            fresh.emplace(column_name, stats->getEstimate());
 
-    estimates = std::move(new_estimates);
-    return *estimates;
+        for (auto & [column_name, estimate] : fresh)
+            estimates.insert_or_assign(column_name, std::move(estimate));
+
+        if (required_columns.empty())
+            estimates_fully_loaded = true;
+    }
+
+    if (required_columns.empty())
+        return estimates;
+
+    Estimates result;
+    result.reserve(required_columns.size());
+    for (const auto & column_name : required_columns)
+        if (auto it = estimates.find(column_name); it != estimates.end())
+            result.emplace(column_name, it->second);
+    return result;
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 {
     std::lock_guard lock(estimates_mutex);
     estimates = new_estimates;
+    estimates_fully_loaded = true;
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)

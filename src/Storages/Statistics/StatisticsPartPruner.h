@@ -26,7 +26,15 @@ public:
     bool isUseless() const { return useless; }
 
     /// Get the list of column names used in the filter condition that have statistics.
-    Names getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
+    /// Returns all filter columns with MinMax statistics (known at construction time).
+    Names getUsedColumns() const
+    {
+        Names result;
+        result.reserve(stats_column_name_to_type_map.size());
+        for (const auto & [name, _] : stats_column_name_to_type_map)
+            result.push_back(name);
+        return result;
+    }
 
 private:
     /// Get or create a KeyCondition for the given columns, using cache to avoid recreating for each part.

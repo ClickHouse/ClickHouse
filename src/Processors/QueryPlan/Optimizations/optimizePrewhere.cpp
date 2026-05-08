@@ -186,10 +186,18 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     const bool has_multiple_conditions = filter_root_node.type == ActionsDAG::ActionType::FUNCTION
         && filter_root_node.function_base && filter_root_node.function_base->getName() == "and";
 
+    /// Load stats only for inputs the filter predicate actually reads.
+    Names statistics_columns;
+    if (has_multiple_conditions && read_from_merge_tree_step)
+    {
+        auto split = filter_step->getExpression().splitActionsForFilter(filter_step->getFilterColumnName());
+        statistics_columns = split.first.getRequiredColumnsNames();
+    }
+
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_snapshot,
-        (has_multiple_conditions && read_from_merge_tree_step) ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns) : nullptr,
+        (has_multiple_conditions && read_from_merge_tree_step) ? read_from_merge_tree_step->getConditionSelectivityEstimator(statistics_columns) : nullptr,
         queried_columns,
         storage.supportedPrewhereColumns(),
         getLogger("QueryPlanOptimizePrewhere")};
