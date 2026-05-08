@@ -20,7 +20,7 @@ IcebergMetadataFilesCache makeCache()
 TEST(IcebergMetadataCache, GetKeyComposesUuidAndPath)
 {
     auto key = IcebergMetadataFilesCache::getKey("uuid-123", "path/to/metadata.json");
-    EXPECT_EQ(key, "uuid-123path/to/metadata.json");
+    EXPECT_EQ(key, "uuid-123:path/to/metadata.json");
 }
 
 TEST(IcebergMetadataCache, GetKeyDifferentUuidsSamePathProduceDifferentKeys)
@@ -34,6 +34,15 @@ TEST(IcebergMetadataCache, GetKeySameUuidDifferentPathsProduceDifferentKeys)
 {
     auto key1 = IcebergMetadataFilesCache::getKey("uuid-123", "meta/v1.metadata.json");
     auto key2 = IcebergMetadataFilesCache::getKey("uuid-123", "meta/v2.metadata.json");
+    EXPECT_NE(key1, key2);
+}
+
+TEST(IcebergMetadataCache, GetKeyIsCollisionFree)
+{
+    // Different (uuid, path) pairs must never produce the same key.
+    // Without a delimiter, ("a", "bc") and ("ab", "c") would collide.
+    auto key1 = IcebergMetadataFilesCache::getKey("a", "bc");
+    auto key2 = IcebergMetadataFilesCache::getKey("ab", "c");
     EXPECT_NE(key1, key2);
 }
 
