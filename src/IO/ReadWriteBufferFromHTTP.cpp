@@ -527,8 +527,7 @@ bool ReadWriteBufferFromHTTP::nextImpl()
         /*on_retry=*/ [&] ()
         {
             impl.reset();
-        },
-        /*mute_logging=*/false);
+        });
 
     return next_result;
 }
@@ -589,8 +588,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
             to += bytes_copied;
             n -= bytes_copied;
             bytes_copied = 0;
-        },
-        /*mute_logging=*/false);
+        });
 
     chassert(total_bytes_copied == initial_n || is_canceled);
     return total_bytes_copied;
