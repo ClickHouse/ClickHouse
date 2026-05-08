@@ -222,9 +222,11 @@ public:
                             dst_data.insert(hindex);
                         }
                     }
-
-                    dst_offsets[row] = current_offset;
                 }
+
+                /// Set the offset once per row, including for empty geometries — otherwise
+                /// the offset stays default-initialized (`0`) and breaks `ColumnArray` invariants.
+                dst_offsets[row] = current_offset;
             }
         });
 
