@@ -14,9 +14,6 @@ ORDER BY
 Equality, LHS
 1	a
 3	c
-Equality, LHS, opt off
-1	a
-3	c
 Equality, RHS - plan
 SELECT
     __table1.color_id AS color_id,
@@ -33,47 +30,60 @@ ORDER BY
 Equality, RHS
 1	a
 3	c
-Equality, RHS, opt off
+Inequality <, LHS - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.n < 10
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Inequality <, LHS
 1	a
+2	b
+4	d
+5	R
+Inequality <, RHS - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE 10 > __table1.n
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Inequality <, RHS
+1	a
+2	b
+4	d
+5	R
+Type variant cast, >= Int32 - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE _CAST(__table1.n, \'Int32\') >= 2
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Type variant cast, >= Int32
+1	a
+2	b
 3	c
-Inequality <, LHS, no rewrite (default 0 < 10) - plan
-SELECT
-    __table1.color_id AS color_id,
-    __table1.payload AS payload
-FROM default.t AS __table1
-WHERE dictGetUInt64(\'colors\', \'n\', __table1.color_id) < 10
-ORDER BY
-    __table1.color_id ASC,
-    __table1.payload ASC
-Inequality <, LHS, no rewrite (default 0 < 10)
-1	a
-2	b
-4	d
 5	R
-Inequality <, RHS, no rewrite (default 0 < 10) - plan
-SELECT
-    __table1.color_id AS color_id,
-    __table1.payload AS payload
-FROM default.t AS __table1
-WHERE 10 > dictGetUInt64(\'colors\', \'n\', __table1.color_id)
-ORDER BY
-    __table1.color_id ASC,
-    __table1.payload ASC
-Inequality <, RHS, no rewrite (default 0 < 10)
-1	a
-2	b
-4	d
-5	R
-Type mismatch not allowed, >= Int32 - plan
-SELECT
-    __table1.color_id AS color_id,
-    __table1.payload AS payload
-FROM default.t AS __table1
-WHERE dictGetInt32(\'colors\', \'n\', __table1.color_id) >= 2
-ORDER BY
-    __table1.color_id ASC,
-    __table1.payload ASC
-Type mismatch not allowed, >= Int32
 LIKE - plan
 SELECT
     __table1.color_id AS color_id,
@@ -88,9 +98,6 @@ ORDER BY
     __table1.color_id ASC,
     __table1.payload ASC
 LIKE
-1	a
-3	c
-LIKE, opt off
 1	a
 3	c
 ILIKE - plan
@@ -110,10 +117,6 @@ ILIKE
 1	a
 3	c
 5	R
-ILIKE, opt off
-1	a
-3	c
-5	R
 equals() - plan
 SELECT __table1.color_id AS color_id
 FROM default.t AS __table1
@@ -126,45 +129,54 @@ ORDER BY __table1.color_id ASC
 equals()
 1
 3
-equals(), opt off
-1
-3
-notEquals, no rewrite (default empty string != red) - plan
+notEquals - plan
 SELECT
     __table1.color_id AS color_id,
     __table1.payload AS payload
 FROM default.t AS __table1
-WHERE dictGetString(\'colors\', \'name\', __table1.color_id) != \'red\'
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name != \'red\'
+)
 ORDER BY
     __table1.color_id ASC,
     __table1.payload ASC
-notEquals, no rewrite (default empty string != red)
+notEquals
 2	b
 4	d
 5	R
-NOT LIKE r%, no rewrite (default empty string NOT LIKE r%) - plan
+NOT LIKE r% - plan
 SELECT
     __table1.color_id AS color_id,
     __table1.payload AS payload
 FROM default.t AS __table1
-WHERE dictGetString(\'colors\', \'name\', __table1.color_id) NOT LIKE \'r%\'
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name NOT LIKE \'r%\'
+)
 ORDER BY
     __table1.color_id ASC,
     __table1.payload ASC
-NOT LIKE r%, no rewrite (default empty string NOT LIKE r%)
+NOT LIKE r%
 2	b
 4	d
 5	R
-NOT ILIKE r%, no rewrite (default empty string NOT ILIKE r%) - plan
+NOT ILIKE r% - plan
 SELECT
     __table1.color_id AS color_id,
     __table1.payload AS payload
 FROM default.t AS __table1
-WHERE dictGetString(\'colors\', \'name\', __table1.color_id) NOT ILIKE \'r%\'
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name NOT ILIKE \'r%\'
+)
 ORDER BY
     __table1.color_id ASC,
     __table1.payload ASC
-NOT ILIKE r%, no rewrite (default empty string NOT ILIKE r%)
+NOT ILIKE r%
 2	b
 4	d
 match ^r - plan
@@ -181,9 +193,6 @@ ORDER BY
     __table1.color_id ASC,
     __table1.payload ASC
 match ^r
-1	a
-3	c
-match ^r, opt off
 1	a
 3	c
 NOT recursion - plan
@@ -203,10 +212,6 @@ NOT recursion
 2	b
 4	d
 5	R
-NOT recursion, opt off
-2	b
-4	d
-5	R
 AND/OR recursion - plan
 SELECT
     __table1.color_id AS color_id,
@@ -216,7 +221,11 @@ WHERE ((__table1.color_id IN (
     SELECT __table1.id AS id
     FROM dictionary(\'colors\') AS __table1
     WHERE __table1.name = \'red\'
-)) AND (dictGetUInt64(\'colors\', \'n\', __table1.color_id) < 10)) OR (__table1.color_id IN (
+)) AND (__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.n < 10
+))) OR (__table1.color_id IN (
     SELECT __table1.id AS id
     FROM dictionary(\'colors\') AS __table1
     WHERE __table1.name = \'green\'
@@ -227,10 +236,7 @@ ORDER BY
 AND/OR recursion
 1	a
 4	d
-AND/OR recursion, opt off
-1	a
-4	d
-NULL constant, no rewrite - plan
+NULL constant - plan
 SELECT
     __table1.color_id AS color_id,
     __table1.payload AS payload
@@ -239,7 +245,7 @@ WHERE _CAST(NULL, \'Nullable(Nothing)\')
 ORDER BY
     __table1.color_id ASC,
     __table1.payload ASC
-NULL constant, no rewrite
+NULL constant
 PREWHERE - plan
 SELECT __table1.color_id AS color_id
 FROM default.t AS __table1
@@ -250,9 +256,6 @@ PREWHERE __table1.color_id IN (
 )
 ORDER BY __table1.color_id ASC
 PREWHERE
-1
-3
-PREWHERE, opt off
 1
 3
 QUALIFY - plan
@@ -271,9 +274,6 @@ ORDER BY
 QUALIFY
 1	1
 3	3
-QUALIFY, opt off
-1	1
-3	3
 Empty result set - plan
 SELECT __table1.color_id AS color_id
 FROM default.t AS __table1
@@ -284,7 +284,6 @@ WHERE __table1.color_id IN (
 )
 ORDER BY __table1.color_id ASC
 Empty result set
-Empty result set, opt off
 HAVING - plan
 SELECT
     __table1.color_id AS color_id,
@@ -296,11 +295,10 @@ HAVING __table1.color_id IN (
     FROM dictionary(\'colors\') AS __table1
     WHERE __table1.name = \'red\'
 )
-ORDER BY __table1.color_id ASC
+ORDER BY
+    __table1.color_id ASC,
+    count() ASC
 HAVING
-1	1
-3	1
-HAVING, opt off
 1	1
 3	1
 JOIN ON (INNER) - plan
@@ -321,9 +319,6 @@ ORDER BY
 JOIN ON (INNER)
 1	a	a
 3	c	c
-JOIN ON (INNER), opt off
-1	a	a
-3	c	c
 JOIN ON (LEFT) - plan
 SELECT
     __table1.color_id AS color_id,
@@ -340,12 +335,6 @@ ORDER BY
     __table1.payload ASC,
     __table2.payload ASC
 JOIN ON (LEFT)
-1	a	a
-2	b	
-3	c	c
-4	d	
-5	R	
-JOIN ON (LEFT), opt off
 1	a	a
 2	b	
 3	c	c
@@ -375,12 +364,6 @@ SELECT multiIf
 3	c	match
 4	d	no_match
 5	R	no_match
-SELECT multiIf, opt off
-1	a	match
-2	b	no_match
-3	c	match
-4	d	no_match
-5	R	no_match
 countIf - plan
 SELECT countIf(__table1.color_id IN (
         SELECT __table1.id AS id
@@ -390,8 +373,6 @@ SELECT countIf(__table1.color_id IN (
 FROM default.t AS __table1
 countIf
 2
-countIf, opt off
-2
 sumIf - plan
 SELECT sumIf(__table1.color_id, (__table1.color_id IN (
         SELECT __table1.id AS id
@@ -400,8 +381,6 @@ SELECT sumIf(__table1.color_id, (__table1.color_id IN (
     ))) AS sum_id_match
 FROM default.t AS __table1
 sumIf
-4
-sumIf, opt off
 4
 ORDER BY - plan
 SELECT
@@ -422,12 +401,6 @@ ORDER BY
 2	b
 4	d
 5	R
-ORDER BY, opt off
-1	a
-3	c
-2	b
-4	d
-5	R
 GROUP BY - plan
 SELECT
     __table1.color_id IN (
@@ -442,15 +415,14 @@ GROUP BY __table1.color_id IN (
         FROM dictionary(\'colors\') AS __table1
         WHERE __table1.name = \'red\'
     )
-ORDER BY __table1.color_id IN (
+ORDER BY
+    __table1.color_id IN (
         SELECT __table1.id AS id
         FROM dictionary(\'colors\') AS __table1
         WHERE __table1.name = \'red\'
-    ) ASC
+    ) ASC,
+    count() ASC
 GROUP BY
-0	3
-1	2
-GROUP BY, opt off
 0	3
 1	2
 LIMIT BY - plan
@@ -467,9 +439,6 @@ LIMIT _CAST(1, \'UInt64\') BY __table1.color_id IN (
         WHERE __table1.name = \'red\'
     )
 LIMIT BY
-1	a
-2	b
-LIMIT BY, opt off
 1	a
 2	b
 WINDOW PARTITION BY - plan
@@ -494,16 +463,9 @@ WINDOW PARTITION BY
 3	2
 4	2
 5	3
-WINDOW PARTITION BY, opt off
-1	1
-2	1
-3	2
-4	2
-5	3
 Negative: non-constant RHS - plan
 SELECT __table1.color_id AS color_id
 FROM default.t AS __table1
 WHERE dictGetString(\'colors\', \'name\', __table1.color_id) = __table1.payload
 ORDER BY __table1.color_id ASC
 Negative: non-constant RHS
-Negative: non-constant RHS, opt off

@@ -2,10 +2,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
-#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
@@ -124,7 +121,7 @@ protected:
 
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context, *table_settings, query_info);
 
-        StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr();
         const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
         if (!merge_tree_data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", storage->getName());
@@ -143,7 +140,7 @@ protected:
             QueryAnalyzer analyzer(false);
             analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
 
-            GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+            GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
             auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
             collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
@@ -158,16 +155,14 @@ protected:
             correlated_subtrees.assertEmpty("in constant expression without query context");
 
             auto subquery_options = SelectQueryOptions{}.subquery();
-            subquery_options.forceMaterializeCTE();
             subquery_options.ignore_limits = false;
             for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
             {
                 auto query_tree = subquery->detachQueryTree();
-                createUniqueAliasesIfNecessary(query_tree, execution_context);
                 Planner subquery_planner(
                     query_tree,
                     subquery_options,
-                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
                 subquery_planner.buildQueryPlanIfNeeded();
 
                 auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
@@ -297,10 +292,10 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     const StorageID & table_id_,
     const StoragePtr & source_table_,
     const ColumnsDescription & columns,
-    std::vector<String> parts_,
+    const String & parts_regexp_,
     const ASTPtr & predicate_,
     const OptionalVectorSearchParameters & vector_search_parameters_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , source_table(source_table_)
     , predicate(predicate_)
     , vector_search_parameters(vector_search_parameters_)
@@ -311,29 +306,20 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
 
     data_parts = merge_tree_data->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
-    if (!parts_.empty())
+    if (!parts_regexp_.empty())
     {
-        std::unordered_set<String> parts_set(std::make_move_iterator(parts_.begin()), std::make_move_iterator(parts_.end()));
-        std::erase_if(data_parts, [&](const MergeTreeData::DataPartPtr & part) { return !parts_set.contains(part->name); });
+        OptimizedRegularExpression regexp(parts_regexp_);
+        std::erase_if(data_parts, [&](const MergeTreeData::DataPartPtr & part) { return !regexp.match(part->name); });
     }
 
     table_settings = merge_tree_data->getSettings();
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-VirtualColumnsDescription StorageMergeTreeAnalyzeIndexes::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
-void StorageMergeTreeAnalyzeIndexes::readImpl(
+void StorageMergeTreeAnalyzeIndexes::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
