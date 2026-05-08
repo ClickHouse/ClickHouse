@@ -8,7 +8,7 @@ PARTITION BY toDate(event_time)
 ORDER BY (tenant_id, id, event_time)
 SETTINGS
     index_granularity = 512,
-    primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.0001;
+    primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 1;
 
 INSERT INTO test_order_by
 SELECT

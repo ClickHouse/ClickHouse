@@ -119,12 +119,18 @@ public:
     /// data_types - the types of the key columns.
     /// Argument initial_mask is used for early exiting the implementation when we do not care about
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
+    /// Argument column_bounds is an optional per-key tighter fallback bound derived from
+    /// the part's minmax index. When the hyperrectangle decomposition would otherwise widen a
+    /// suffix column to (-inf, +inf) - because the prefix differs between left_keys and right_keys
+    /// or the open boundary recursion has no other side to constrain - the corresponding entry of
+    /// column_bounds is used instead. Pass nullptr (default) to preserve the default behaviour.
     BoolMask checkInRange(
         size_t used_key_size,
         const FieldRef * left_keys,
         const FieldRef * right_keys,
         const DataTypes & data_types,
-        BoolMask initial_mask = BoolMask(false, false)) const;
+        BoolMask initial_mask = BoolMask(false, false),
+        const Hyperrectangle * column_bounds = nullptr) const;
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
     /// This is more efficient than checkInRange(...).can_be_true.
