@@ -805,8 +805,8 @@ def test_promql_compliance():
     if result.unsupported_deferred:
         print("Unsupported/deferred categories remain visible in the breakdown below")
 
+    categories = {}  # (kind, category) -> [failure]
     if result.failures:
-        categories = {}  # (kind, category) -> [failure]
         for failure in result.failures:
             categories.setdefault((failure["kind"], failure["category"]), []).append(failure)
 
@@ -833,5 +833,20 @@ def test_promql_compliance():
                     reason_short = reason if len(reason) <= 100 else reason[:97] + "..."
                     print(f"             {query_short}")
                     print(f"               → {reason_short}")
+
+    breakdown = {f"{kind}: {category}": len(entries) for (kind, category), entries in categories.items()}
+    out_path = os.environ.get("COMPLIANCE_RESULT_FILE")
+    if out_path:
+        record = {
+            "passed": result.passed,
+            "failed": result.failed,
+            "unsupported": result.unsupported,
+            "total": result.total,
+            "pct": round(result.score, 4),
+            "breakdown": breakdown,
+        }
+        with open(out_path, "w") as out_f:
+            json.dump(record, out_f, indent=2)
+            out_f.write("\n")
 
     print()
