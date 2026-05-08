@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int ILLEGAL_COLUMN;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -190,7 +191,14 @@ public:
                     GeoPolygonContainer polygon_wrapper(std::move(exterior), std::move(holes));
 
                     int64_t polygon_size = 0;
-                    maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution, 0, &polygon_size);
+                    /// Surface backend errors (including panics caught at the FFI boundary, see
+                    /// `rust/workspace/h3o/src/lib.rs`) as exceptions instead of silently producing
+                    /// an empty result.
+                    if (H3Error err = maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution, 0, &polygon_size); err != E_SUCCESS)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Function {} failed to estimate polygon size for resolution {}: H3 error code {}",
+                            getName(), toString(resolution), toString(static_cast<UInt32>(err)));
                     const size_t vec_size = static_cast<size_t>(polygon_size);
                     if (vec_size > MAX_ARRAY_SIZE)
                         throw Exception(
@@ -199,7 +207,11 @@ public:
                             getName(), vec_size, toString(resolution));
 
                     hindex_vec.assign(vec_size, 0);
-                    polygonToCells(polygon_wrapper.unwrap(), resolution, 0, hindex_vec.data());
+                    if (H3Error err = polygonToCells(polygon_wrapper.unwrap(), resolution, 0, hindex_vec.data()); err != E_SUCCESS)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Function {} failed to compute polygon cells for resolution {}: H3 error code {}",
+                            getName(), toString(resolution), toString(static_cast<UInt32>(err)));
 
                     dst_data.reserve(dst_data.size() + vec_size);
                     for (auto hindex : hindex_vec)
