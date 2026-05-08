@@ -6,6 +6,11 @@ INSERT INTO ts_data_nullable SELECT id, timestamp, value FROM ts_data ARRAY JOIN
 
 SET allow_experimental_time_series_aggregate_functions = 1;
 
+-- Duplicate sample timestamps can occur after merges; prefer the numeric sample over NaN regardless of insertion order.
+SELECT timeSeriesQuantileToGrid(100, 100, 0, 60, 0.5)([100, 100]::Array(UInt32), [nan, 1]::Array(Float64));
+SELECT timeSeriesQuantileToGrid(100, 100, 0, 60, 0.5)([100, 100]::Array(UInt32), [1, nan]::Array(Float64));
+SELECT timeSeriesQuantileToGridArray(100, 100, 0, 0, 3.4028234663852886e38)([100, 100]::Array(UInt32), [0., -inf]::Array(Float64));
+
 -- Fail because of rows with non-matching lengths of timestamps and values
 SELECT timeSeriesResampleToGridWithStaleness(10, 120, 10, 10)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
 SELECT timeSeriesRateToGrid(10, 120, 10, 10)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
