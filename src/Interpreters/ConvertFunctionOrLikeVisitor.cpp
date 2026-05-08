@@ -1,4 +1,6 @@
 #include <Interpreters/ConvertFunctionOrLikeVisitor.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <Functions/checkHyperscanRegexp.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -17,6 +19,28 @@ namespace DB
 
 namespace
 {
+
+/// Returns true if any function in the AST subtree is non-deterministic within a query
+/// (e.g. `rand`, `generateUUIDv4`). Used to avoid grouping LIKE patterns whose left-hand
+/// side renders to the same text but evaluates to different values across occurrences.
+bool isExpressionNonDeterministic(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (!ast || !context)
+        return false;
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context))
+            if (!resolver->isDeterministicInScopeOfQuery())
+                return true;
+    }
+
+    for (const auto & child : ast->children)
+        if (isExpressionNonDeterministic(child, context))
+            return true;
+
+    return false;
+}
 
 /// Stores information about a single LIKE/ILIKE/match pattern
 struct PatternData
@@ -170,6 +194,13 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                     auto identifier = arguments[0];
                     auto * literal = arguments[1]->as<ASTLiteral>();
                     if (!identifier || !literal || literal->value.getType() != Field::Types::String)
+                        continue;
+
+                    /// Don't merge `f(x) LIKE 'a%' OR f(x) LIKE 'b%'` when `f` is non-deterministic
+                    /// (e.g. `rand`). Both branches would render to the same `getAliasOrColumnName`
+                    /// key, but at runtime they evaluate independently — collapsing them into one
+                    /// `multiSearchAny`/`multiMatchAny` call would change query results.
+                    if (isExpressionNonDeterministic(identifier, context))
                         continue;
 
                     const String & pattern_str = literal->value.safeGet<String>();

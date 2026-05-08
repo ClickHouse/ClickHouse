@@ -41,6 +41,30 @@ namespace Setting
 namespace
 {
 
+/// Returns true if the QueryTree subtree contains any function call that is non-deterministic
+/// within a single query (e.g. `rand`, `generateUUIDv4`). Used to avoid grouping LIKE patterns
+/// whose left-hand side is structurally identical but evaluates to different values across
+/// occurrences — collapsing them into one `multiSearchAny`/`multiMatchAny` call would change
+/// query results.
+bool isExpressionNonDeterministic(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (auto * function = node->as<FunctionNode>())
+    {
+        if (function->isResolved())
+            if (auto func = function->getFunctionOrThrow(); !func->isDeterministicInScopeOfQuery())
+                return true;
+
+        for (const auto & argument : function->getArguments())
+            if (isExpressionNonDeterministic(argument))
+                return true;
+    }
+
+    return false;
+}
+
 /// Stores information about a single LIKE/ILIKE/match pattern
 struct PatternData
 {
@@ -223,6 +247,12 @@ public:
             const auto & like_first_argument = like_arguments[0];
             const auto * pattern = like_arguments[1]->as<ConstantNode>();
             if (!pattern || !isString(pattern->getResultType()))
+                continue;
+
+            /// Don't merge `f(x) LIKE 'a%' OR f(x) LIKE 'b%'` when `f` is non-deterministic
+            /// (e.g. `rand`). The structural hash treats both branches as equal, but at runtime
+            /// they evaluate independently — collapsing would change query results.
+            if (isExpressionNonDeterministic(like_first_argument))
                 continue;
 
             const String & pattern_str = pattern->getValue().safeGet<String>();

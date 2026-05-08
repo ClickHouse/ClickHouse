@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -31,6 +32,7 @@ public:
     size_t max_hyperscan_regexp_length = 0;
     size_t max_hyperscan_regexp_total_length = 0;
     bool reject_expensive_hyperscan_regexps = true;
+    ContextPtr context;
 
     void visit(ASTFunction & function, ASTPtr & ast) const;
 };
