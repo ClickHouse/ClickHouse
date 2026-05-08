@@ -2059,7 +2059,8 @@ void registerStorageURL(StorageFactory & factory)
                     /* distributed_processing */ false);
             }
 
-            checkExperimentalURLWildcardFromIndexPages(context);
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
+                checkExperimentalURLWildcardFromIndexPages(context);
 
             auto configuration = std::make_shared<StorageWebConfiguration>();
             StorageObjectStorageConfiguration::initialize(*configuration, engine_args, context, /* with_table_structure */ false);
