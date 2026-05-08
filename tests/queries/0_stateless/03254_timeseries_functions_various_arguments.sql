@@ -9,6 +9,7 @@ SET allow_experimental_time_series_aggregate_functions = 1;
 -- Duplicate sample timestamps can occur after merges; prefer the numeric sample over NaN regardless of insertion order.
 SELECT timeSeriesQuantileToGrid(100, 100, 0, 60, 0.5)([100, 100]::Array(UInt32), [nan, 1]::Array(Float64));
 SELECT timeSeriesQuantileToGrid(100, 100, 0, 60, 0.5)([100, 100]::Array(UInt32), [1, nan]::Array(Float64));
+SELECT timeSeriesQuantileToGridArray(100, 100, 0, 0, 3.4028234663852886e38)([100, 100]::Array(UInt32), [0., -inf]::Array(Float64));
 SELECT timeSeriesAvgOverTimeToGrid(90, 210, 15, 45)([110, 120, 130, 140, 190, 200, 210]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8]::Array(Float64));
 SELECT timeSeriesMaxOverTimeToGrid(90, 210, 15, 45)([110, 120, 130, 140, 190, 200, 210]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8]::Array(Float64));
 SELECT timeSeriesAvgOverTimeToGrid(0, 30, 10, 10)([0, 10, 20, 30]::Array(UInt32), [nan, 1, 2, 3]::Array(Float64));

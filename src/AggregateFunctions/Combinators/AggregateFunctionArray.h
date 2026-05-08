@@ -13,7 +13,6 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
@@ -30,37 +29,13 @@ private:
     size_t num_arguments;
 
 public:
-    AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_, createResultType(nested_))
+    AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array &)
+        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, nested_->getParameters(), createResultType(nested_))
         , nested_func(nested_), num_arguments(arguments.size())
     {
-        if (parameters != nested_func->getParameters())
-        {
-            /// This invariant should always hold: the Array combinator does not transform
-            /// parameters, so the wrapped function must have been created with the same
-            /// parameter set. If this fires, it means some code path in
-            /// AggregateFunctionFactory or a combinator wrapper lost/modified parameters.
-            /// The diagnostic info below will identify the exact mismatch.
-            String outer_params_str;
-            String nested_params_str;
-            for (const auto & p : parameters)
-            {
-                if (!outer_params_str.empty()) outer_params_str += ", ";
-                outer_params_str += p.dump();
-            }
-            for (const auto & p : nested_func->getParameters())
-            {
-                if (!nested_params_str.empty()) nested_params_str += ", ";
-                nested_params_str += p.dump();
-            }
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "AggregateFunctionArray: parameters mismatch between Array wrapper '{}' "
-                "and nested function '{}'. Wrapper has {} parameter(s): [{}], "
-                "nested function has {} parameter(s): [{}]",
-                getName(), nested_func->getName(),
-                parameters.size(), outer_params_str,
-                nested_func->getParameters().size(), nested_params_str);
-        }
+        /// Some aggregate functions canonicalize parameters while they are created, for example by normalizing
+        /// timestamp parameters to the timestamp argument scale. The Array combinator must expose the same
+        /// effective parameters as its nested function because both use the same state representation.
         for (const auto & type : arguments)
             if (!isArray(type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for aggregate function {} must be arrays", getName());
