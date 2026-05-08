@@ -74,7 +74,7 @@ namespace Paimon
         }
     }
 
-    bool PartitionPruner::canBePruned(const DB::PaimonManifestEntry & manifest_entry)
+    bool PartitionPruner::canBePruned(const DB::PaimonManifestEntry & manifest_entry) const
     {
         if (!key_condition.has_value())
             return false;
