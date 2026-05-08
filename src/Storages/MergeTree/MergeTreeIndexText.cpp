@@ -1414,7 +1414,8 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
             TokenToPostingsBuilderMap::LookupResult it;
             ArenaKeyHolder key_holder{std::string_view(token_start, token_length), *arena};
             tokens_map.emplace(key_holder, it, inserted);
-            it->getMapped().add(static_cast<UInt32>(current_row), posting_lists);
+            auto & posting_list_builder = it->getMapped();
+            posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
             ++num_processed_tokens;
             return false;
         });
