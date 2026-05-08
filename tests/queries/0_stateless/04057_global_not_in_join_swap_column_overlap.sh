@@ -51,6 +51,7 @@ SETTINGS enable_analyzer = 1
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE test_table"
 
 # Second reproducer from https://github.com/ClickHouse/ClickHouse/issues/100422
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS temp"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE temp (x Decimal(38, 2), y Nullable(Decimal(38, 2))) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO temp VALUES (32, 32), (64, 64), (128, 128), (256, 256)"
 
