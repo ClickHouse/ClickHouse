@@ -41,6 +41,79 @@ namespace
         return res;
     }
 
+    bool canUseIdenticalVectorFastPath(
+        const PQT::BinaryOperator * operator_node,
+        const SQLQueryPiece & left_argument,
+        const SQLQueryPiece & right_argument,
+        const ConverterContext & context)
+    {
+        if (operator_node->on || operator_node->ignoring || operator_node->group_left || operator_node->group_right || !operator_node->extra_labels.empty())
+            return false;
+
+        return getPromQLText(left_argument, context) == getPromQLText(right_argument, context);
+    }
+
+    SQLQueryPiece applyOperatorToIdenticalVectors(
+        const PQT::BinaryOperator * operator_node,
+        SQLQueryPiece && argument,
+        ConverterContext & context,
+        std::function<ASTPtr(ASTPtr, ASTPtr)> apply_function_to_ast,
+        bool drop_metric_name)
+    {
+        argument = toVectorGrid(std::move(argument), context);
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
+        const String source = context.subqueries.back().name;
+
+        bool metric_name_dropped_from_result = argument.metric_name_dropped;
+        bool check_no_duplicate_groups = false;
+
+        ASTPtr group = make_intrusive<ASTIdentifier>(ColumnNames::Group);
+        if (drop_metric_name && !metric_name_dropped_from_result)
+        {
+            group = makeASTFunction("timeSeriesRemoveTag", std::move(group), make_intrusive<ASTLiteral>(kMetricName));
+            metric_name_dropped_from_result = true;
+            check_no_duplicate_groups = true;
+        }
+
+        ASTPtr values = makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                apply_function_to_ast(make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("x"))),
+            make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+        if (check_no_duplicate_groups)
+            values = makeASTFunction("any", std::move(values));
+
+        SelectQueryBuilder builder;
+        builder.select_list.push_back(std::move(group));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.select_list.push_back(std::move(values));
+        builder.select_list.back()->setAlias(ColumnNames::Values);
+        builder.from_table = source;
+
+        if (check_no_duplicate_groups)
+        {
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.having = makeASTFunction(
+                "equals",
+                makeASTFunction(
+                    "timeSeriesThrowDuplicateSeriesIf",
+                    makeASTFunction("greater", makeASTFunction("count"), make_intrusive<ASTLiteral>(1u)),
+                    make_intrusive<ASTIdentifier>(ColumnNames::Group)),
+                make_intrusive<ASTLiteral>(0u));
+        }
+
+        SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::VECTOR_GRID};
+        res.select_query = builder.getSelectQuery();
+        res.start_time = argument.start_time;
+        res.end_time = argument.end_time;
+        res.step = argument.step;
+        res.metric_name_dropped = metric_name_dropped_from_result;
+        return res;
+    }
+
     /// Applies a simple operator if both operands are instant vectors.
     SQLQueryPiece applyOperatorToVectors(
         const PQT::BinaryOperator * operator_node,
@@ -55,6 +128,16 @@ namespace
         if ((left_argument.store_method == StoreMethod::EMPTY) || (right_argument.store_method == StoreMethod::EMPTY))
         {
             return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+        }
+
+        if (canUseIdenticalVectorFastPath(operator_node, left_argument, right_argument, context))
+        {
+            return applyOperatorToIdenticalVectors(
+                operator_node,
+                std::move(left_argument),
+                context,
+                std::move(apply_function_to_ast),
+                drop_metric_name);
         }
 
         String sides[2];
