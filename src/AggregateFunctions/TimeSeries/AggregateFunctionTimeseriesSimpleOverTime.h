@@ -3,13 +3,13 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 
 #include <Common/DequeWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <absl/container/flat_hash_map.h>
 
 #include <cmath>
 #include <limits>
-#include <set>
 
 
 namespace DB
@@ -154,7 +154,7 @@ public:
         size_t nan_count = 0;
         size_t positive_infinity_count = 0;
         size_t negative_infinity_count = 0;
-        std::multiset<ValueType, ValueLess> window_values;
+        MultiSetWithMemoryTracking<ValueType, ValueLess> window_values;
 
         auto add_avg_value = [&](ValueType value)
         {
