@@ -2857,7 +2857,7 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
 
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, bool query_has_limit, bool apply_pk_selectivity_check)
 {
-    /// if dirction is not set, use current one
+    /// if direction is not set, use current one
     if (!direction)
         direction = getSortDirection();
 
