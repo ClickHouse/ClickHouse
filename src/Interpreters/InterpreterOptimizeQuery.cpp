@@ -44,7 +44,7 @@ BlockIO InterpreterOptimizeQuery::execute()
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 
-    // Handle OPTIMIZE TABLE ... MANIFEST for Iceberg tables
+    /// Handle OPTIMIZE TABLE ... MANIFEST for Iceberg tables
     if (ast.manifest)
     {
         if (ast.final || ast.partition || ast.deduplicate || ast.cleanup || ast.dry_run)

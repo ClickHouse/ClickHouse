@@ -180,7 +180,6 @@ def test_optimize_manifest_files(started_cluster_iceberg_with_spark, storage_typ
     spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(300, 400)")
     spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(400, 500)")
 
-    # spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
@@ -421,21 +420,30 @@ def test_optimize_manifest_files_partitioned_concurrent(started_cluster_iceberg_
 
     NUM_READER_THREADS = 4
     NUM_OPTIMIZE_THREADS = 2
-    DURATION_SECONDS = 5
+    # Iteration-bounded rather than wall-clock-bounded: a slow CI runner
+    # would otherwise truncate the test to a handful of iterations and miss
+    # the conflict windows we're trying to exercise.
+    OPTIMIZE_ITERATIONS_PER_THREAD = 5
 
-    stop_event = threading.Event()
     errors = []
     errors_lock = threading.Lock()
     optimize_attempts = [0] * NUM_OPTIMIZE_THREADS
     reader_attempts = [0] * NUM_READER_THREADS
+
+    optimizers_done_event = threading.Event()
+    finished_optimizers = [0]
+    finished_lock = threading.Lock()
 
     def report_error(label, exc):
         with errors_lock:
             errors.append(f"{label}: {type(exc).__name__}: {exc}")
 
     def reader_loop(idx):
+        # Readers run as long as any optimizer is still in flight, so the
+        # exposure to the conflict window scales with the optimize workload
+        # rather than with wall-clock time.
         try:
-            while not stop_event.is_set():
+            while not optimizers_done_event.is_set():
                 got_total = int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
                 if got_total != total_rows:
                     raise AssertionError(
@@ -456,7 +464,7 @@ def test_optimize_manifest_files_partitioned_concurrent(started_cluster_iceberg_
 
     def optimize_loop(idx):
         try:
-            while not stop_event.is_set():
+            for _ in range(OPTIMIZE_ITERATIONS_PER_THREAD):
                 instance.query(
                     f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
                     settings={
@@ -467,6 +475,13 @@ def test_optimize_manifest_files_partitioned_concurrent(started_cluster_iceberg_
                 optimize_attempts[idx] += 1
         except Exception as exc:
             report_error(f"optimize-{idx}", exc)
+        finally:
+            # Wake the readers as soon as the last optimizer is done so the
+            # whole test ends in bounded time even if an optimizer raised.
+            with finished_lock:
+                finished_optimizers[0] += 1
+                if finished_optimizers[0] == NUM_OPTIMIZE_THREADS:
+                    optimizers_done_event.set()
 
     readers = [
         threading.Thread(target=reader_loop, args=(i,), daemon=True)
@@ -482,16 +497,18 @@ def test_optimize_manifest_files_partitioned_concurrent(started_cluster_iceberg_
     for t in readers:
         t.start()
 
-    time.sleep(DURATION_SECONDS)
-    stop_event.set()
-
+    # Generous per-thread join timeout so a slow CI runner does not flake;
+    # the test itself completes as soon as all threads finish their bounded work.
     for t in optimizers + readers:
-        t.join(timeout=60)
+        t.join(timeout=300)
         assert not t.is_alive(), "Worker thread did not finish in time"
 
     assert not errors, "Concurrent run produced errors:\n" + "\n".join(errors)
     assert sum(reader_attempts) > 0, "No reads were performed"
-    assert sum(optimize_attempts) > 0, "No optimize calls completed"
+    assert sum(optimize_attempts) == NUM_OPTIMIZE_THREADS * OPTIMIZE_ITERATIONS_PER_THREAD, (
+        f"Expected {NUM_OPTIMIZE_THREADS * OPTIMIZE_ITERATIONS_PER_THREAD} OPTIMIZE iterations, "
+        f"got {sum(optimize_attempts)}"
+    )
 
     # Final consistency check.
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == total_rows
