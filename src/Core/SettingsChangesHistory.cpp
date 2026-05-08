@@ -41,6 +41,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.5",
         {
+            {"paimon_target_snapshot_id", -1, -1, "New setting."},
+            {"max_consume_snapshots", 0, 0, "New setting."},
+            {"allow_experimental_paimon_storage_engine", false, false, "New setting."},
+
             {"optimize_dictget_tuple_element", false, true, "Rewrite tupleElement(dictGet(..., tuple_of_attrs, ...), N) into a single-attribute dictGet call."},
             {"parallel_replicas_prefer_local_replica", true, true, "New setting. When disabled, replicas for parallel reading are selected purely by the load balancing algorithm without forcing the local replica into the set."},
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
@@ -50,8 +54,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_compliant_nested_types", true, true, "Obsolete setting, the custom encoder always uses compliant nested types."},
             {"output_format_parquet_unsupported_types_as_binary", false, false, "Obsolete setting, the native writer always throws UNKNOWN_TYPE for unsupported types."},
             {"input_format_parquet_use_native_reader_v3", true, true, "Obsolete setting, the native reader v3 is now always used."},
-            {"max_bytes_ratio_before_external_join", 0., 0., "New setting: ratio of available memory used as the spill threshold for hash joins. Combined with the absolute `max_bytes_before_external_join` (the smaller of the two applies)."},
+            {"max_bytes_ratio_before_external_join", 0., 0.5, "New setting: ratio of available memory used as the spill threshold for hash joins. Enabled by default at `0.5`, mirroring `max_bytes_ratio_before_external_group_by` and `max_bytes_ratio_before_external_sort`. Combined with the absolute `max_bytes_before_external_join` (the smaller of the two applies)."},
             {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
+            {"use_skip_indexes_for_top_k", false, true, "Enable using data skipping indexes for TopK filtering by default"},
+            {"use_top_k_dynamic_filtering", false, true, "Enable dynamic filtering optimization for TopK queries by default"},
             {"url_base", "", "", "New setting to specify the base URL for resolving relative URLs in the url table function and URL table engine."},
             {"max_threads_min_free_memory_per_thread", 0, 1073741824, "New setting to limit the number of threads based on available free memory"},
             {"max_insert_threads_min_free_memory_per_thread", 0, 4294967296, "New setting to limit the number of insert threads based on available free memory"},
@@ -61,6 +67,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"send_table_structure_on_insert_with_inline_data", true, true, "New setting to control whether server sends table structure for INSERT queries with inline data."},
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
+            {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
