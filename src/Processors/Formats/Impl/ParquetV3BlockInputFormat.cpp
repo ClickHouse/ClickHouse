@@ -132,8 +132,23 @@ Chunk ParquetV3BlockInputFormat::read()
         temp_prefetcher.init(in, read_options, parser_shared_resources);
         parquet::format::FileMetaData file_metadata = getFileMetadata(temp_prefetcher);
 
+        size_t num_rows = 0;
+        if (buckets_to_read)
+        {
+            /// Only count rows in the assigned row groups. Otherwise multiple sources
+            /// reading buckets of the same file would each report the file's total.
+            for (size_t rg : buckets_to_read->row_group_ids)
+            {
+                if (rg < file_metadata.row_groups.size())
+                    num_rows += size_t(file_metadata.row_groups[rg].num_rows);
+            }
+        }
+        else
+        {
+            num_rows = size_t(file_metadata.num_rows);
+        }
 
-        auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
+        auto chunk = getChunkForCount(num_rows);
         chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
@@ -145,6 +160,32 @@ Chunk ParquetV3BlockInputFormat::read()
     previous_block_missing_values = res.block_missing_values;
     previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
     return std::move(res.chunk);
+}
+
+std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
+{
+    if (!reader)
+        return std::nullopt;
+    std::vector<size_t> matched;
+    for (const auto & row_group : reader->reader.row_groups)
+    {
+        if (!row_group.need_to_process)
+            continue;
+
+        bool produced_rows = false;
+        for (const auto & subgroup : row_group.subgroups)
+        {
+            if (subgroup.filter.rows_pass > 0)
+            {
+                produced_rows = true;
+                break;
+            }
+        }
+
+        if (produced_rows)
+            matched.push_back(row_group.row_group_idx);
+    }
+    return std::make_pair(std::move(matched), reader->reader.file_metadata.row_groups.size());
 }
 
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
@@ -239,6 +280,22 @@ ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_gro
 {
 }
 
+std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const
+{
+    if (matching_row_groups.empty())
+        return nullptr;
+    if (row_group_ids.empty())
+        return std::make_shared<ParquetFileBucketInfo>(matching_row_groups);
+    std::unordered_set<size_t> matching_set(matching_row_groups.begin(), matching_row_groups.end());
+    std::vector<size_t> filtered;
+    for (size_t rg : row_group_ids)
+        if (matching_set.contains(rg))
+            filtered.push_back(rg);
+    if (filtered.empty())
+        return nullptr;
+    return std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
+}
+
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
 {
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
@@ -277,6 +334,35 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     for (const auto & bucket : buckets)
     {
         result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket));
+    }
+    return result;
+}
+
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_)
+{
+    std::atomic<int> is_stopped = false;
+    auto arrow_file = asArrowFile(buf, format_settings_, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, nullptr);
+    auto metadata = parquet::ReadMetaData(arrow_file);
+    const size_t num_row_groups = metadata->num_row_groups();
+
+    if (target_count == 0 || num_row_groups == 0)
+        return {};
+
+    /// Distribute row groups across at most target_count contiguous chunks. Each
+    /// chunk becomes a single ParquetFileBucketInfo containing several row groups,
+    /// so the caller gets one source per chunk and no row group is dropped.
+    const size_t num_chunks = std::min(target_count, num_row_groups);
+    std::vector<FileBucketInfoPtr> result;
+    result.reserve(num_chunks);
+    for (size_t g = 0; g < num_chunks; ++g)
+    {
+        size_t lo = g * num_row_groups / num_chunks;
+        size_t hi = (g + 1) * num_row_groups / num_chunks;
+        std::vector<size_t> ids;
+        ids.reserve(hi - lo);
+        for (size_t k = lo; k < hi; ++k)
+            ids.push_back(k);
+        result.push_back(std::make_shared<ParquetFileBucketInfo>(ids));
     }
     return result;
 }

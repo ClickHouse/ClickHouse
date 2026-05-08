@@ -338,12 +338,12 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 {
     std::vector<FailPointInfo> result;
 
-#define SUB_M(NAME, TP)                                 \
-    result.push_back(                                   \
-        FailPointInfo{                                  \
-            .name = FailPoints::NAME,                   \
-            .type = FailPointType::TP,                  \
-            .enabled = fiu_fail(FailPoints::NAME) != 0, \
+#define SUB_M(NAME, TP)                                   \
+    result.push_back(                                     \
+        FailPointInfo{                                    \
+            .name = FailPoints::NAME,                     \
+            .type = FailPointType::TP,                    \
+            .enabled = fiu_status(FailPoints::NAME) != 0, \
         });
 #define ADD_ONCE(NAME) SUB_M(NAME, Once)
 #define ADD_REGULAR(NAME) SUB_M(NAME, Regular)
