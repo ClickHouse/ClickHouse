@@ -1,3 +1,8 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: dictionaries created in the test database are not
+-- propagated to parallel replica worker nodes, so `dictGetOrNull('d_73633', ...)`
+-- fails with `BAD_ARGUMENTS: Dictionary not found` on the workers.
+
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/73633
 --
 -- `dictGetOrNull` with a `Nullable` key column was silently overwriting other
