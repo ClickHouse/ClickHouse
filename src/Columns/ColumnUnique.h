@@ -333,7 +333,15 @@ void ColumnUnique<ColumnType>::updateNullMask()
         size_t size = getRawColumnPtr()->size();
 
         if (nested_null_mask->size() != size)
-            assert_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
+        {
+            /// `nested_null_mask` is intentionally shared with `nested_column_nullable`
+            /// (see `createNullMask`), so its `use_count` is normally `>= 2`. Access via
+            /// the const overload + `const_cast` to bypass the `use_count() == 1`
+            /// assertion in `assumeMutableRef`. `ColumnUnique` is the sole writer.
+            const auto & const_null_mask = std::as_const(*this).nested_null_mask;
+            auto & null_mask_data = const_cast<ColumnUInt8 &>(assert_cast<const ColumnUInt8 &>(*const_null_mask)).getData();
+            null_mask_data.resize_fill(size);
+        }
     }
 }
 
