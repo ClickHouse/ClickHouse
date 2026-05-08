@@ -652,3 +652,98 @@ TEST(ColumnarV1Wire, BoundsCheckWireOffsetOutOfRange)
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
                  DB::Exception);
 }
+
+// ── COL_COMPLEX bounds: array outer offsets overflow buffer ───────────────────
+//
+// COL_COMPLEX describing Array(UInt64) for 3 rows but the data section is
+// truncated so there is no room for the 4 outer uint32 offsets.
+
+TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetsOverflow)
+{
+    const uint32_t num_rows = 3;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_size = 4u;  // only 4 bytes — too small for (3+1)×4 = 16 offset bytes
+
+    std::vector<uint8_t> buf(data_off + data_size, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_COMPLEX;
+    desc.data_offset = data_off;
+    desc.data_size   = data_size;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    auto result_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
+                 DB::Exception);
+}
+
+// ── COL_COMPLEX bounds: string chars overflow buffer ─────────────────────────
+//
+// COL_COMPLEX describing Array(String) for 1 row with 1 element.
+// Outer offsets claim total_elems = 1; string offsets are valid but
+// wire_offs[1] reports more chars than what remain in the buffer.
+
+TEST(ColumnarV1Wire, BoundsCheckComplexStringCharsOverflow)
+{
+    // Layout: outer_offsets[2] + inner_offsets[2] + (truncated chars)
+    // outer: {0, 1} — 1 string element in row 0
+    // inner: {0, 9999} — claims 9999 chars, but buffer has none
+    const uint32_t num_rows   = 1;
+    const uint32_t data_off   = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_size  = 2u * 4u + 2u * 4u;  // outer[2] + inner[2], no char bytes
+
+    std::vector<uint8_t> buf(data_off + data_size, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_COMPLEX;
+    desc.data_offset = data_off;
+    desc.data_size   = data_size;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    // outer offsets: {0, 1}
+    uint32_t outer[2] = {0, 1};
+    std::memcpy(buf.data() + data_off, outer, 8);
+
+    // inner offsets: {0, 9999} — chars claim 9999 bytes that don't exist
+    uint32_t inner[2] = {0, 9999};
+    std::memcpy(buf.data() + data_off + 8, inner, 8);
+
+    auto result_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
+                 DB::Exception);
+}
+
+// ── COL_COMPLEX bounds: fixed-width data overflow buffer ─────────────────────
+//
+// COL_COMPLEX describing Tuple(UInt64, UInt64) for 2 rows.
+// First field (UInt64, 2×8 = 16 bytes) fits; second field claims another
+// 16 bytes that don't exist in the truncated buffer.
+
+TEST(ColumnarV1Wire, BoundsCheckComplexFixedDataOverflow)
+{
+    const uint32_t num_rows  = 2;
+    const uint32_t data_off  = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_size = 16u;  // room for only 1 field (2×8), not 2
+
+    std::vector<uint8_t> buf(data_off + data_size, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_COMPLEX;
+    desc.data_offset = data_off;
+    desc.data_size   = data_size;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    DataTypes fields = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()};
+    auto result_type = std::make_shared<DataTypeTuple>(fields);
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
+                 DB::Exception);
+}

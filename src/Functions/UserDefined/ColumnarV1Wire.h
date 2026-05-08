@@ -659,15 +659,22 @@ inline MutableColumnPtr readColumnarOutput(
 
     if (raw_type == COL_COMPLEX)
     {
+        checkRange(desc.data_offset, desc.data_size, "complex data");
+
         const uint8_t * data_ptr = buf.data() + desc.data_offset;
+        const uint8_t * data_end = buf.data() + buf.size();
 
         std::function<MutableColumnPtr(const uint8_t *&, const DataTypePtr &, uint32_t)> decode;
         decode = [&](const uint8_t *& p, const DataTypePtr & type, uint32_t n) -> MutableColumnPtr
         {
             if (const auto * arr_type = typeid_cast<const DataTypeArray *>(type.get()))
             {
+                uint64_t offsets_bytes = (static_cast<uint64_t>(n) + 1u) * sizeof(uint32_t);
+                if (static_cast<uint64_t>(data_end - p) < offsets_bytes)
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "COLUMNAR_V1 COL_COMPLEX: array outer offsets overflow buffer");
                 const uint32_t * outer_offs = reinterpret_cast<const uint32_t *>(p);
-                p += (n + 1u) * sizeof(uint32_t);
+                p += offsets_bytes;
                 uint32_t total_elems = outer_offs[n];
 
                 auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
@@ -691,10 +698,17 @@ inline MutableColumnPtr readColumnarOutput(
 
             if (typeid_cast<const DataTypeString *>(type.get()))
             {
+                uint64_t offsets_bytes = (static_cast<uint64_t>(n) + 1u) * sizeof(uint32_t);
+                if (static_cast<uint64_t>(data_end - p) < offsets_bytes)
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "COLUMNAR_V1 COL_COMPLEX: string offsets overflow buffer");
                 const uint32_t * wire_offs = reinterpret_cast<const uint32_t *>(p);
-                p += (n + 1u) * sizeof(uint32_t);
-                const uint8_t * chars_src = p;
+                p += offsets_bytes;
                 uint32_t total_chars = wire_offs[n];
+                if (static_cast<uint64_t>(data_end - p) < total_chars)
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "COLUMNAR_V1 COL_COMPLEX: string chars overflow buffer");
+                const uint8_t * chars_src = p;
                 p += total_chars;
 
                 auto col_str = ColumnString::create();
@@ -706,6 +720,9 @@ inline MutableColumnPtr readColumnarOutput(
                 {
                     uint32_t wire_end   = wire_offs[i + 1u];
                     uint32_t wire_start = wire_offs[i];
+                    if (wire_end > total_chars || wire_start > wire_end)
+                        throw Exception(ErrorCodes::WASM_ERROR,
+                            "COLUMNAR_V1 COL_COMPLEX: string wire offset out of range at row {}", i);
                     uint32_t str_len    = wire_end - wire_start;
                     if (str_len > 0u) str_len--;
                     chars.resize(ch_pos + str_len);
@@ -719,8 +736,12 @@ inline MutableColumnPtr readColumnarOutput(
             auto col = type->createColumn();
             col->insertManyDefaults(n);
             uint32_t elem_bytes = static_cast<uint32_t>(type->getSizeOfValueInMemory());
-            std::memcpy(const_cast<char *>(col->getRawData().data()), p, n * elem_bytes);
-            p += n * elem_bytes;
+            uint64_t data_bytes = static_cast<uint64_t>(n) * elem_bytes;
+            if (static_cast<uint64_t>(data_end - p) < data_bytes)
+                throw Exception(ErrorCodes::WASM_ERROR,
+                    "COLUMNAR_V1 COL_COMPLEX: fixed data overflow buffer");
+            std::memcpy(const_cast<char *>(col->getRawData().data()), p, data_bytes);
+            p += data_bytes;
             return col;
         };
 
