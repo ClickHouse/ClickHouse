@@ -34,6 +34,25 @@ MemoryTracker * getMemoryTracker()
     return nullptr;
 }
 
+/// Per-thread last-seen view of the per-CPU counters. To be moved into
+/// `ThreadStatus` later; kept locally for now.
+thread_local DB::PerCPUMemoryBudget::PerCPUMemoryBudgetState per_cpu_state;
+
+/// If we have migrated to a new CPU since the last op, rebind state.cpu and
+/// signal the caller to flush via the unified branch
+/// (`migrated || flush_per_cpu || over_limit`). State's nallocs/nfrees are
+/// deliberately *not* refreshed here — `chargeAlloc`/`chargeFree` overwrite
+/// them on every call, so the first post-migration op self-corrects the
+/// baseline. Any spurious crossing the stale baseline produces is harmless
+/// because we're flushing anyway.
+inline bool rebindPerCPUStateOnMigration(int cpu)
+{
+    if (per_cpu_state.cpu == cpu)
+        return false;
+    per_cpu_state.cpu = cpu;
+    return true;
+}
+
 }
 
 using DB::current_thread;
@@ -68,25 +87,18 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
+        int cpu = DB::PerCPUMemoryBudget::currentCPU();
+        bool migrated = (cpu >= 0) && rebindPerCPUStateOnMigration(cpu);
+
         Int64 previous_untracked_memory = current_thread->untracked_memory;
         current_thread->untracked_memory += size;
 
-        /// `charge()` returns true (flush-needed) in two cases:
-        ///   * the slice was applied and ended up exactly inside [0, 2*SLICE] — never,
-        ///     since we now refuse rather than overcommit;
-        ///   * the slice would have escaped [0, 2*SLICE] and we refused to apply.
-        /// In the refused case `size` is *not* in the slice, so the counter-charge
-        /// below uses `untracked_memory - size` (the previously-accumulated portion
-        /// that the slice does carry) instead of the full `untracked_memory`.
-        bool flush_per_cpu = DB::PerCPUMemoryBudget::charge(size);
-        je_malloc(20);
+        bool flush_per_cpu = (cpu >= 0) && DB::PerCPUMemoryBudget::chargeAlloc(size, per_cpu_state);
 
-        if (current_thread->untracked_memory > current_thread->untracked_memory_limit || flush_per_cpu)
+        if (current_thread->untracked_memory > current_thread->untracked_memory_limit || flush_per_cpu || migrated)
         {
             Int64 current_untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
-            Int64 in_slice = flush_per_cpu ? (current_untracked_memory - size) : current_untracked_memory;
-            DB::PerCPUMemoryBudget::charge(-in_slice);
 
             try
             {
@@ -97,8 +109,9 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             }
             catch (...)
             {
-                current_thread->untracked_memory += previous_untracked_memory;
-                DB::PerCPUMemoryBudget::charge(previous_untracked_memory);
+                /// nallocs / per_cpu_state.nallocs already advanced; leave them.
+                /// The next op may flush slightly sooner, no correctness loss.
+                current_thread->untracked_memory = previous_untracked_memory;
                 throw;
             }
         }
@@ -141,18 +154,16 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        current_thread->untracked_memory -= size;
-        /// See note in allocImpl: when `charge` refuses (`flush_per_cpu == true`),
-        /// the slice does not carry the current `-size`, so counter-charge by
-        /// `untracked_memory + size` (the previously-accumulated part).
-        bool flush_per_cpu = DB::PerCPUMemoryBudget::charge(-size);
+        int cpu = DB::PerCPUMemoryBudget::currentCPU();
+        bool migrated = (cpu >= 0) && rebindPerCPUStateOnMigration(cpu);
 
-        if (current_thread->untracked_memory < -current_thread->untracked_memory_limit || flush_per_cpu)
+        current_thread->untracked_memory -= size;
+        bool flush_per_cpu = (cpu >= 0) && DB::PerCPUMemoryBudget::chargeFree(size, per_cpu_state);
+
+        if (current_thread->untracked_memory < -current_thread->untracked_memory_limit || flush_per_cpu || migrated)
         {
             Int64 untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
-            Int64 in_slice = flush_per_cpu ? (untracked_memory + size) : untracked_memory;
-            DB::PerCPUMemoryBudget::charge(-in_slice);
             if (untracked_memory > 0)
                 return memory_tracker->allocImpl(untracked_memory, /*throw_if_memory_exceeded=*/ false);
             else

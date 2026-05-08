@@ -11,7 +11,6 @@
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/PageCache.h>
-#include <Common/PerCPUMemoryBudget.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
@@ -515,8 +514,6 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
 
 void MemoryTracker::adjustWithUntrackedMemory(Int64 untracked_memory)
 {
-    DB::PerCPUMemoryBudget::charge(-untracked_memory);
-
     if (untracked_memory > 0)
         std::ignore = allocImpl(untracked_memory, /*throw_if_memory_exceeded*/ false);
     else

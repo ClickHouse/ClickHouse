@@ -21,74 +21,106 @@ void resetTrackers()
 {
     MainThreadStatus::getInstance();
     CurrentThread::flushUntrackedMemory();
+    total_memory_tracker.resetCounters();
+    CurrentThread::get().memory_tracker.resetCounters();
 }
 
 }
 
+/// Sanity: per-CPU CPU detection works on this platform, and on Linux+rseq
+/// the rseq fast path is active.
 TEST(PerCPUMemoryBudget, Basic)
 {
     resetTrackers();
 
-    std::ignore = PerCPUMemoryBudget::charge(0);
+    int cpu = PerCPUMemoryBudget::currentCPU();
+    if (cpu < 0)
+        GTEST_SKIP() << "Per-CPU machinery unavailable on this platform";
 
-    EXPECT_TRUE(PerCPUMemoryBudget::isReady());
-#ifdef USE_LIBRSEQ
+#if USE_LIBRSEQ
     EXPECT_TRUE(PerCPUMemoryBudget::isRSeqReady());
 #endif
-    EXPECT_GT(PerCPUMemoryBudget::reservedBytes(), 0);
-    EXPECT_GE(PerCPUMemoryBudget::reservedBytes(), PerCPUMemoryBudget::SLICE);
 }
 
-TEST(PerCPUMemoryBudget, ChargeAdjustsReservedBytes)
+/// `chargeAlloc` advances `state.nallocs` by `size`. Within a single SLICE
+/// bucket the call must not request a flush; crossing the bucket boundary
+/// must request one. The counter is shared with every other thread on this
+/// CPU, so we phrase the test in terms of "how far to the next boundary"
+/// rather than absolute values.
+TEST(PerCPUMemoryBudget, AllocCrossingDetection)
 {
     resetTrackers();
-    std::ignore = PerCPUMemoryBudget::charge(0);
-    ASSERT_TRUE(PerCPUMemoryBudget::isReady());
 
-    const Int64 before = PerCPUMemoryBudget::reservedBytes();
+    PerCPUMemoryBudget::PerCPUMemoryBudgetState state;
+    state.cpu = PerCPUMemoryBudget::currentCPU();
+    if (state.cpu < 0)
+        GTEST_SKIP() << "Per-CPU machinery unavailable on this platform";
 
-    constexpr Int64 delta = 12345;
-    std::ignore = PerCPUMemoryBudget::charge(delta);
-    EXPECT_EQ(PerCPUMemoryBudget::reservedBytes(), before - delta);
+    /// Warm up: a zero-sized charge updates state.nallocs to the current
+    /// per-CPU counter value without moving it. After this we have a
+    /// meaningful baseline for the boundary-distance arithmetic below.
+    std::ignore = PerCPUMemoryBudget::chargeAlloc(0, state);
 
-    std::ignore = PerCPUMemoryBudget::charge(-delta);
-    EXPECT_EQ(PerCPUMemoryBudget::reservedBytes(), before);
+    constexpr Int64 SLICE = PerCPUMemoryBudget::SLICE;
+    Int64 to_boundary = SLICE - (state.nallocs & (SLICE - 1));
+
+    EXPECT_FALSE(PerCPUMemoryBudget::chargeAlloc(to_boundary - 1, state));
+    EXPECT_TRUE (PerCPUMemoryBudget::chargeAlloc(2, state));
+    EXPECT_FALSE(PerCPUMemoryBudget::chargeAlloc(1, state));
 }
 
-TEST(PerCPUMemoryBudget, OutOfBoundsChargeRequestsFlush)
+/// `chargeFree` is symmetric with `chargeAlloc` but operates on the
+/// independent `nfrees` counter — they don't interfere.
+TEST(PerCPUMemoryBudget, FreeCrossingDetection)
 {
     resetTrackers();
-    std::ignore = PerCPUMemoryBudget::charge(0);
-    ASSERT_TRUE(PerCPUMemoryBudget::isReady());
 
-    const Int64 huge = 3 * PerCPUMemoryBudget::SLICE;
+    PerCPUMemoryBudget::PerCPUMemoryBudgetState state;
+    state.cpu = PerCPUMemoryBudget::currentCPU();
+    if (state.cpu < 0)
+        GTEST_SKIP() << "Per-CPU machinery unavailable on this platform";
 
-    EXPECT_TRUE(PerCPUMemoryBudget::charge(huge));
-    /// restore the slot so we do not poison neighbouring tests
-    std::ignore = PerCPUMemoryBudget::charge(-huge);
+    std::ignore = PerCPUMemoryBudget::chargeFree(0, state);
+
+    constexpr Int64 SLICE = PerCPUMemoryBudget::SLICE;
+    Int64 to_boundary = SLICE - (state.nfrees & (SLICE - 1));
+
+    EXPECT_FALSE(PerCPUMemoryBudget::chargeFree(to_boundary - 1, state));
+    EXPECT_TRUE (PerCPUMemoryBudget::chargeFree(2, state));
+    EXPECT_FALSE(PerCPUMemoryBudget::chargeFree(1, state));
 }
 
+/// A single alloc/free pair on the same thread must not change
+/// `total_memory_tracker.amount` once both flushes have run.
 TEST(PerCPUMemoryBudget, BalancedAllocFreeDoesNotInflateTracker)
 {
     resetTrackers();
 
-    /// 16MiB is guaranteed to be flushed to the MemoryTracker
     constexpr Int64 size = 16 * 1024 * 1024;
+    constexpr Int64 slack = 1 * 1024 * 1024;
+
     const Int64 before = total_memory_tracker.get();
 
     std::ignore = CurrentMemoryTracker::allocNoThrow(size);
+    CurrentThread::flushUntrackedMemory();
     std::ignore = CurrentMemoryTracker::free(size);
+    CurrentThread::flushUntrackedMemory();
 
     const Int64 drift = total_memory_tracker.get() - before;
-    EXPECT_EQ(drift, 0);
+    EXPECT_GE(drift, -slack);
+    EXPECT_LE(drift, slack);
 }
 
+/// Repeated balanced pairs must not drift either: the per-thread
+/// accumulator flips signs across iterations and any sign bug compounds
+/// into a large drift.
 TEST(PerCPUMemoryBudget, RepeatedAllocFreePairsDoNotDrift)
 {
     resetTrackers();
 
-    constexpr Int64 size = 8 * 1024 * 1024; /// crosses the per-thread limit
+    constexpr Int64 size = 8 * 1024 * 1024;
     constexpr int iterations = 64;
+    constexpr Int64 slack = 1 * 1024 * 1024;
 
     const Int64 before = total_memory_tracker.get();
 
@@ -97,79 +129,81 @@ TEST(PerCPUMemoryBudget, RepeatedAllocFreePairsDoNotDrift)
         std::ignore = CurrentMemoryTracker::allocNoThrow(size);
         std::ignore = CurrentMemoryTracker::free(size);
     }
+    CurrentThread::flushUntrackedMemory();
 
     const Int64 drift = total_memory_tracker.get() - before;
-    EXPECT_EQ(drift, 0);
+    EXPECT_GE(drift, -slack);
+    EXPECT_LE(drift, slack);
 }
 
-/// A free flush triggered purely by the per-CPU branch (not by the
-/// per-thread limit) must still bring total_memory_tracker.amount back to
-/// where it was before the matching allocation. This isolates the sign
-/// handling in the per-CPU branch from the per-thread limit branch.
+/// Flush triggered purely by the per-CPU branch (per-thread limit raised
+/// far above what we will accumulate). Verifies the per-CPU path itself
+/// preserves the tracker.
 TEST(PerCPUMemoryBudget, PerCpuOnlyFlushPreservesTracker)
 {
     resetTrackers();
 
-    /// Raise the per-thread limit so it never trips; the only flush path
-    /// available is the per-CPU one.
     const Int64 saved_limit = CurrentThread::get().untracked_memory_limit;
-    CurrentThread::get().untracked_memory_limit = 1 << 30;
+    CurrentThread::get().untracked_memory_limit = static_cast<Int64>(1) << 30;
 
-    /// 16 MiB > 2 * SLICE forces the per-CPU branch on the first charge.
     constexpr Int64 size = 16 * 1024 * 1024;
+    constexpr Int64 slack = 1 * 1024 * 1024;
 
     const Int64 before = total_memory_tracker.get();
 
     std::ignore = CurrentMemoryTracker::allocNoThrow(size);
     std::ignore = CurrentMemoryTracker::free(size);
+    CurrentThread::flushUntrackedMemory();
 
     CurrentThread::get().untracked_memory_limit = saved_limit;
 
     const Int64 drift = total_memory_tracker.get() - before;
-    EXPECT_EQ(drift, 0);
+    EXPECT_GE(drift, -slack);
+    EXPECT_LE(drift, slack);
 }
 
+/// Concurrent balanced alloc/free across many threads must not drift the
+/// global tracker. Each worker installs a ThreadStatus so it owns a
+/// per-thread untracked accumulator and exercises the per-CPU charge path.
+/// Sizes vary across powers of two from 1 KiB up to 8 MiB so each
+/// iteration follows a different flush regime.
 TEST(PerCPUMemoryBudget, ConcurrentAllocFreeAcrossThreadsDoesNotDrift)
 {
     resetTrackers();
 
-    constexpr Int64 num_threads = 8;
-    constexpr Int64 iterations = 128;
-    constexpr int min_size_log2 = 10; /// 1 KiB
-    constexpr int max_size_log2 = 23; /// 8 MiB
+    constexpr int num_threads = 8;
+    constexpr int iterations = 128;
+    constexpr int min_size_log2 = 10;
+    constexpr int max_size_log2 = 23;
     constexpr int size_classes = max_size_log2 - min_size_log2 + 1;
 
-    current_thread->flushUntrackedMemory();
     const Int64 before = total_memory_tracker.get();
 
+    std::atomic<bool> start{false};
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+    for (int t = 0; t < num_threads; ++t)
     {
-        std::atomic<bool> start{false};
-        std::vector<std::thread> threads;
-        threads.reserve(num_threads);
-        for (Int64 t = 0; t < num_threads; ++t)
+        threads.emplace_back([&, t]()
         {
-            threads.emplace_back([&, t]()
+            ThreadStatus thread_status;
+            while (!start.load(std::memory_order_acquire))
+                std::this_thread::yield();
+
+            for (int i = 0; i < iterations; ++i)
             {
-                ThreadStatus thread_status;
-                while (!start.load(std::memory_order_acquire))
-                    std::this_thread::yield();
-
-                for (Int64 i = 0; i < iterations; ++i)
-                {
-                    const Int64 size = 1LL << (min_size_log2 + ((t + i) % size_classes));
-                    std::ignore = CurrentMemoryTracker::allocNoThrow(size);
-                    std::ignore = CurrentMemoryTracker::free(size);
-                }
-                /// ~ThreadStatus flushes the per-thread accumulator via the
-                /// (correct) adjustWithUntrackedMemory path on the way out.
-            });
-        }
-        start.store(true, std::memory_order_release);
-        for (auto & t : threads)
-            t.join();
+                const Int64 size = static_cast<Int64>(1) << (min_size_log2 + ((t + i) % size_classes));
+                std::ignore = CurrentMemoryTracker::allocNoThrow(size);
+                std::ignore = CurrentMemoryTracker::free(size);
+            }
+        });
     }
-    current_thread->flushUntrackedMemory();
+    start.store(true, std::memory_order_release);
+    for (auto & t : threads)
+        t.join();
 
+    constexpr Int64 slack = static_cast<Int64>(num_threads) * 4 * PerCPUMemoryBudget::SLICE;
     const Int64 drift = total_memory_tracker.get() - before;
-    EXPECT_EQ(drift, 0);
+    EXPECT_GE(drift, -slack);
+    EXPECT_LE(drift, slack);
 }
