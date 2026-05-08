@@ -157,9 +157,9 @@ public:
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(std::string_view database_name) const;
-    /// External databases (data lake catalogs, MySQL, PostgreSQL) are implement at IDatabase level in ClickHouse.
+    /// External databases (data lake catalogs, MySQL, PostgreSQL) are implemented at IDatabase level in ClickHouse.
     /// Listing their tables typically requires calls to a remote service (sometimes paid).
-    /// With this flag we explicitly protect ourself to not accidentally query the external service for
+    /// With this flag we explicitly protect ourselves from accidentally querying the external service for
     /// trivial things like autocompletion hints or system.tables / system.columns queries.
     /// The `show_external_databases_in_system_tables` setting allows the user to opt in.
     /// Note: system.databases always passes with_external_databases = true because listing a database

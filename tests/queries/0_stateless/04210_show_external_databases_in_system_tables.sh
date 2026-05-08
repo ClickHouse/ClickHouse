@@ -42,6 +42,9 @@ SELECT count() FROM system.tables WHERE database = '${MYSQL_DB}' SETTINGS show_e
 SELECT '--- system.columns hides external databases by default ---';
 SELECT count() FROM system.columns WHERE database IN ('${PG_DB}', '${MYSQL_DB}') SETTINGS show_external_databases_in_system_tables = 0;
 
+SELECT '--- system.completions does not list external databases by default (count must be 0 without contacting the server) ---';
+SELECT count() FROM system.completions WHERE word IN ('${PG_DB}', '${MYSQL_DB}') AND context = 'database' SETTINGS show_external_databases_in_system_tables = 0;
+
 SELECT '--- the old setting name still works as an alias ---';
 SELECT count() FROM system.tables WHERE database IN ('${PG_DB}', '${MYSQL_DB}') SETTINGS show_data_lake_catalogs_in_system_tables = 0;
 

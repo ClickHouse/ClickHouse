@@ -2241,7 +2241,7 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 {
     /// load all available databases from the DatabaseCatalog instance
     auto & database_catalog = DatabaseCatalog::instance();
-    /// NOTE Skip datalake catalogs to avoid unnecessary access to remote catalogs (can be expensive)
+    /// NOTE Skip external databases (data lake catalogs, MySQL, PostgreSQL) to avoid unnecessary access to remote services (can be expensive)
     auto all_databases = database_catalog.getDatabases(GetDatabasesOptions{.with_external_databases = false});
 
     for (const auto & [db_name, db] : all_databases)
