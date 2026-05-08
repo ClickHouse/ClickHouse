@@ -2694,11 +2694,15 @@ private:
     bool has_case_expr;
 };
 
-/// Layer for table function 'view' and 'viewIfPermitted'
+/// Layer for table functions that accept a `SELECT` query argument.
 class ViewLayer : public Layer
 {
 public:
-    explicit ViewLayer(bool if_permitted_) : if_permitted(if_permitted_) {}
+    explicit ViewLayer(String function_name_, bool if_permitted_)
+        : function_name(std::move(function_name_))
+        , if_permitted(if_permitted_)
+    {
+    }
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
@@ -2762,13 +2766,68 @@ protected:
         if (if_permitted)
             node = makeASTFunction("viewIfPermitted", std::move(elements));
         else
-            node = makeASTFunction("view", std::move(elements));
+            node = makeASTFunction(function_name, std::move(elements));
 
         return true;
     }
 
 private:
+    String function_name;
     bool if_permitted;
+};
+
+/// Layer for table function `eval`, which accepts either a usual expression
+/// list or a bare `SELECT` query argument.
+class EvalLayer : public Layer
+{
+public:
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        if (state == 0)
+        {
+            state = 1;
+
+            ASTPtr query;
+            auto select_pos = pos;
+            auto select_expected = expected;
+
+            if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
+            {
+                pos = select_pos;
+                expected = select_expected;
+                elements = {std::move(query)};
+                finished = true;
+                return true;
+            }
+        }
+
+        if (ParserToken(TokenType::Comma).ignore(pos, expected))
+        {
+            action = Action::OPERAND;
+            return mergeElement();
+        }
+
+        if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+        {
+            action = Action::OPERATOR;
+
+            if (!isCurrentElementEmpty() || !elements.empty())
+                if (!mergeElement())
+                    return false;
+
+            finished = true;
+        }
+
+        return true;
+    }
+
+private:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction("eval", std::move(elements));
+        return true;
+    }
 };
 
 /// Layer for table function 'kql'
@@ -2864,9 +2923,11 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
     if (is_table_function)
     {
         if (function_name_lowercase == "view")
-            return std::make_unique<ViewLayer>(false);
+            return std::make_unique<ViewLayer>("view", false);
         if (function_name_lowercase == "viewifpermitted")
-            return std::make_unique<ViewLayer>(true);
+            return std::make_unique<ViewLayer>("viewIfPermitted", true);
+        if (function_name_lowercase == "eval")
+            return std::make_unique<EvalLayer>();
         if (function_name_lowercase == "kql")
             return std::make_unique<KustoLayer>();
     }

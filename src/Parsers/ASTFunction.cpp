@@ -62,7 +62,7 @@ void ASTFunction::setNoEmptyArgs(bool value)
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     /// These functions contain some unexpected ASTs in arguments (e.g. SETTINGS or even a SELECT query)
-    if (name == "view" || name == "viewIfPermitted" || name == "mysql" || name == "postgresql" || name == "mongodb" || name == "s3")
+    if (name == "view" || name == "viewIfPermitted" || name == "eval" || name == "mysql" || name == "postgresql" || name == "mongodb" || name == "s3")
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Table function '{}' cannot be used as an expression", name);
 
     /// If function can be converted to literal it will be parsed as literal after formatting.

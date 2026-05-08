@@ -8099,6 +8099,9 @@ Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 t
     DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
+Enable experimental table function `eval`.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* AI function settings */ \
