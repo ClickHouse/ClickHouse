@@ -361,8 +361,8 @@ CREATE TABLE logs
 ENGINE = MergeTree ORDER BY id;
 
 -- Only message-level words are indexed; timestamp tokens are not stored.
-SELECT count() FROM logs WHERE hasToken(line, 'ERROR');       -- fast index lookup
-SELECT count() FROM logs WHERE hasToken(line, '2024-01-15T10:23:45');  -- returns 0: token was never indexed
+SELECT count() FROM logs WHERE hasAllTokens(line, ['ERROR']);       -- fast index lookup
+SELECT count() FROM logs WHERE hasAllTokens(line, ['2024-01-15T10:23:45']);  -- returns 0: token was never indexed
 ```
 
 Example for timestamp removal — preprocessor approach:
@@ -404,7 +404,7 @@ ENGINE = MergeTree ORDER BY id;
 -- After preprocessor:  'error connection failed'
 -- After tokenization:  ['error', 'connection', 'failed']
 -- After postprocessor: ['connection', 'failed']   ← 'error' dropped as severity word
-SELECT count() FROM logs WHERE hasToken(line, 'connection');
+SELECT count() FROM logs WHERE hasAllTokens(line, ['connection']);
 ```
 
 Example for stemming:
@@ -423,7 +423,7 @@ ORDER BY tuple();
 
 -- The query token 'running' is stemmed to 'run' before the lookup,
 -- matching rows that contain 'run', 'runs', 'ran', 'running', etc.
-SELECT count() FROM table WHERE hasToken(str, 'running');
+SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ```
 
 **Other arguments (optional)**.
