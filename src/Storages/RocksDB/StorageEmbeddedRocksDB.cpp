@@ -42,6 +42,8 @@
 #include <Common/logger_useful.h>
 
 #include <Disks/DiskLocal.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <IO/SharedThreadPools.h>
 #include <base/sort.h>
 
@@ -255,6 +257,26 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     else
     {
         bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
+
+        /// `rocksdb::DB::Open` and `fs::create_directories` require a local-filesystem
+        /// path. With `user_files_policy` configured on a non-local disk (e.g. `s3_plain`),
+        /// `getUserFilesPaths` resolves to disk roots that are not usable via local APIs.
+        /// Reject up front instead of failing later with an opaque I/O error.
+        if (!is_local)
+        {
+            if (auto user_files_volume = context_->getUserFilesVolume())
+            {
+                for (const auto & disk : user_files_volume->getDisks())
+                {
+                    if (disk->isRemote())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "EmbeddedRocksDB engine is not supported "
+                                        "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                                        disk->getName());
+                }
+            }
+        }
+
         const auto user_files_paths = is_local ? Strings{""} : getContext()->getUserFilesPaths();
         if (fs::path(rocksdb_dir).is_relative())
         {
