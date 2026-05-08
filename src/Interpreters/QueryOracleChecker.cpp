@@ -124,21 +124,30 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast)
 /// Split a string by newline into individual rows, ignoring trailing empty line.
 std::vector<String> splitIntoRows(const String & output)
 {
+    /// Split TabSeparated output into rows. ClickHouse always terminates a TSV
+    /// row with `\n`, so the canonical form is `<row1>\n<row2>\n...\n<rowN>\n`.
+    /// Strip exactly one trailing `\n` if present (it terminates the last row,
+    /// not a separator), then split the rest on `\n`. This produces the right
+    /// number of rows even when many of them are empty strings (e.g. unmatched
+    /// LEFT JOIN rows for a `String` right-side column come out as empty).
     std::vector<String> rows;
     if (output.empty())
         return rows;
 
+    std::string_view sv{output};
+    if (sv.back() == '\n')
+        sv.remove_suffix(1);
+
     size_t start = 0;
-    while (start < output.size())
+    while (true)
     {
-        size_t end = output.find('\n', start);
-        if (end == String::npos)
+        size_t end = sv.find('\n', start);
+        if (end == std::string_view::npos)
         {
-            rows.push_back(output.substr(start));
+            rows.emplace_back(sv.substr(start));
             break;
         }
-        if (end > start || end + 1 < output.size()) /// skip trailing empty line
-            rows.push_back(output.substr(start, end - start));
+        rows.emplace_back(sv.substr(start, end - start));
         start = end + 1;
     }
 
