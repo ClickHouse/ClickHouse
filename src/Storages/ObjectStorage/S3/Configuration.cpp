@@ -330,6 +330,12 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
 void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure)
 {
     auto object_storage = disk->getObjectStorage();
+    /// Unwrap decorator object storages (e.g. `CachedObjectStorage`) before the cast.
+    /// `assert_cast` checks `typeid` exactly, so calling it on a wrapper would throw a
+    /// LOGICAL_ERROR even though the wrapper exposes the same interface and ultimately
+    /// holds an `S3ObjectStorage`. See https://github.com/ClickHouse/ClickHouse/issues/89300.
+    while (auto inner = object_storage->getUnderlying())
+        object_storage = std::move(inner);
     const auto & s3_object_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
     s3_settings = std::make_unique<S3Settings>();
     *s3_settings = s3_object_storage.getS3Settings();

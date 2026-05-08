@@ -412,20 +412,19 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     const auto schema_id_opt = schema_processor_ptr->tryGetSchemaIdForSnapshot(resolved_snapshot_id);
     if (!schema_id_opt.has_value())
     {
-        /// Error logged but not thrown to avoid breaking whole query because of backward compatibility reasons.
-        /// That's actually an error because it can lead to incorrect query results, so we are creating an exception to put it to system.error_log.
-        try
-        {
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
-                path_to_manifest_file,
-                resolved_snapshot_id);
-        }
-        catch (const Exception &)
-        {
-            tryLogCurrentException("ICEBERG_SPECIFICATION_VIOLATION", "", LogsLevel::error);
-        }
+        /// This is expected when the referenced snapshot was expired by the catalog (snapshot expiry is a
+        /// normal Iceberg housekeeping operation). For example, after a compaction ("replace" operation),
+        /// the new snapshot's manifest list inherits manifests from the now-expired parent snapshot, and
+        /// those manifests still carry the original snapshot_id. The manifest file's own Avro header
+        /// records the correct schema_id for the data files it describes, so falling back to
+        /// manifest_schema_id is safe and correct in this case.
+        LOG_DEBUG(
+            getLogger("ManifestFileIterator"),
+            "Manifest file '{}' has entry with snapshot_id '{}' whose snapshot metadata is not present "
+            "(snapshot may have been expired by the catalog). Falling back to manifest schema_id {}.",
+            path_to_manifest_file,
+            resolved_snapshot_id,
+            manifest_schema_id);
     }
     const auto resolved_schema_id = schema_id_opt.has_value() ? *schema_id_opt : manifest_schema_id;
 
