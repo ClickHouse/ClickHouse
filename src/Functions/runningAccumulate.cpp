@@ -146,7 +146,11 @@ public:
             }
 
             agg_func.merge(place.data(), state_to_add, arena.get());
-            agg_func.insertResultInto(place.data(), result_column, arena.get());
+            /// `insertMergeResultInto` (instead of `insertResultInto`) is required when the result type
+            /// is `AggregateFunction` (i.e. the input was wrapped with a `-State` combinator):
+            /// it copies the state into the result column instead of pushing a raw pointer to `place`,
+            /// which becomes dangling once `place` is destroyed at the end of this function.
+            agg_func.insertMergeResultInto(place.data(), result_column, arena.get());
 
             ++row_number;
         }
