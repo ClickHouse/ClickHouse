@@ -125,11 +125,17 @@ void AllocationQueue::purgeQueue()
     /// Only detached queue can be purged to keep parents consistent it also means there is no scheduled activation
     chassert(parent == nullptr);
 
-    // Fail all allocations
+    // Fail all allocations so their owners (e.g. MemoryReservation) mark themselves
+    // as removed/failed and do not call back into the queue from their destructors.
+    // Note: increasing_allocations and decreasing_allocations are subsets of running_allocations.
+    auto reason = std::make_exception_ptr(
+        Exception(ErrorCodes::INVALID_SCHEDULER_NODE,
+            "Allocation queue is about to be destructed for workload '{}'",
+            getWorkloadName()));
     for (ResourceAllocation & allocation : pending_allocations)
-        allocation.allocationFailed(std::make_exception_ptr(
-            Exception(ErrorCodes::INVALID_SCHEDULER_NODE,
-                "Queue for pending allocation is about to be destructed")));
+        allocation.allocationFailed(reason);
+    for (ResourceAllocation & allocation : running_allocations)
+        allocation.allocationFailed(reason);
 
     // NOTE: Queue never owns allocations, so they are not destructed here, just detached
     pending_allocations.clear();

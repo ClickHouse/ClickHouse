@@ -28,8 +28,9 @@ void AllocationLimit::updateLimit(UInt64 new_max_allocated)
 {
     max_allocated = new_max_allocated;
     // Propagate new effective limit to children
-    if (child)
-        child->updateMinMaxAllocated(std::min(min_max_allocated, max_allocated));
+    if (!child)
+        return;
+    child->updateMinMaxAllocated(std::min(min_max_allocated, max_allocated));
     // WARNING: We do not force eviction here in cases there is no pending increase request to simplify logic.
     // WARNING: Eventually on the first increase request the limit will be applied.
     if (setIncrease(child->increase, true))
@@ -69,13 +70,15 @@ void AllocationLimit::removeChild(ISchedulerNode * child_)
 
 ISchedulerNode * AllocationLimit::getChild(const String & child_name)
 {
-    if (child->basename == child_name)
+    if (child && child->basename == child_name)
         return child.get();
     return nullptr;
 }
 
 ResourceAllocation * AllocationLimit::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
+    if (!child)
+        return nullptr;
     return child->selectAllocationToKill(killer, limit, details);
 }
 
