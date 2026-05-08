@@ -25,11 +25,21 @@ bool isRSeqReady();
 ///   alloc:  charge(+size)
 ///   free:   charge(-size)
 ///
-/// Returns true when the slice has drifted out of `[0, 2 * SLICE]` — the
-/// caller flushes its own per-thread `untracked_memory` to the tracker
-/// chain (which counter-charges the slice back toward `SLICE`):
-///   * slice < 0          — alloc-heavy: pending allocs exceed reservation
-///   * slice > 2 * SLICE  — free-heavy: pending frees exceed reservation
+/// `charge()` keeps the slice strictly inside `[0, 2 * SLICE]` — it refuses
+/// to apply `delta` if doing so would cross either bound, and returns true
+/// in that case. The caller treats the return value as "flush needed":
+///   * if `delta` was applied (return false), the slice is in bounds and
+///     no flush is required;
+///   * if `delta` was refused (return true), the caller flushes its
+///     `untracked_memory` to the tracker chain. Because `delta` (the
+///     current op's size) was *not* subtracted from the slice, only the
+///     previously-accumulated portion `untracked_memory - delta` is
+///     counter-charged back to the slice; the full `untracked_memory` is
+///     applied to `total_memory_tracker`.
+///
+/// Refusing instead of overcommitting prevents slices from getting stuck
+/// far OOB and turning every subsequent op on that CPU into a forced
+/// flush.
 bool charge(Int64 delta);
 
 /// Σ slice values across all CPUs — diagnostic for `system.asynchronous_metrics`.

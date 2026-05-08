@@ -159,6 +159,10 @@ bool chargeRseq(Int64 delta)
             return false;
         Int64 current = __atomic_load_n(&slots[cpu].value, __ATOMIC_RELAXED);
         Int64 next = current - delta;
+        /// Refuse rather than overcommit. Caller will flush via the per-thread
+        /// path with a partial counter-charge (see header).
+        if (outOfBounds(next))
+            return true;
         intptr_t * slot_ptr = reinterpret_cast<intptr_t *>(&slots[cpu].value);
         int r = rseq_load_cbne_store__ptr(
             RSEQ_MO_RELAXED,
@@ -168,7 +172,7 @@ bool chargeRseq(Int64 delta)
             static_cast<intptr_t>(next),
             cpu);
         if (r == 0)
-            return outOfBounds(next);
+            return false;
     }
 }
 #endif
@@ -178,8 +182,17 @@ bool chargeAtomic(Int64 delta)
     int cpu = currentCPU();
     if (cpu >= slot_count)
         return false;
-    Int64 next = __atomic_sub_fetch(&slots[cpu].value, delta, __ATOMIC_RELAXED);
-    return outOfBounds(next);
+    Int64 current = __atomic_load_n(&slots[cpu].value, __ATOMIC_RELAXED);
+    while (true)
+    {
+        Int64 next = current - delta;
+        if (outOfBounds(next))
+            return true;
+        if (__atomic_compare_exchange_n(&slots[cpu].value, &current, next,
+                                        /*weak=*/true, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+            return false;
+        /// `current` was reloaded by compare_exchange on failure; loop.
+    }
 }
 
 }
