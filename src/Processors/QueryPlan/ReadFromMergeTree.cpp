@@ -41,6 +41,7 @@
 #include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
@@ -1996,7 +1997,8 @@ void ReadFromMergeTree::buildIndexes(
 
     const auto & settings = query_context->getSettingsRef();
 
-    ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr), query_context);
+    auto filter_dag_ptr = std::make_shared<ActionsDAGWithInversionPushDown>(filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr, query_context);
+    const auto & filter_dag = *filter_dag_ptr;
 
     indexes.emplace(
         ReadFromMergeTree::Indexes{KeyCondition{
@@ -2068,24 +2070,34 @@ void ReadFromMergeTree::buildIndexes(
 
         auto index_helper = MergeTreeIndexFactory::instance().get(index);
 
-        MergeTreeIndexConditionPtr condition;
+        ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory;
         if (index_helper->isVectorSimilarityIndex())
         {
 #if USE_USEARCH
-            if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
-                condition = vector_similarity_index->createIndexCondition(filter_dag.predicate, query_context, vector_search_parameters);
+            const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get());
+            chassert(vector_similarity_index);
+
+            factory = [vector_similarity_index, query_context, vector_search_parameters](const ActionsDAG::Node * predicate)
+            {
+                return vector_similarity_index->createIndexCondition(predicate, query_context, vector_search_parameters);
+            };
 #endif
-            if (!condition)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
         }
         else
         {
-            if (filter_dag.predicate)
-                condition = index_helper->createIndexCondition(filter_dag.predicate, query_context);
+            factory = [index_helper, query_context](const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
+            {
+                if (!predicate)
+                    return nullptr;
+                return index_helper->createIndexCondition(predicate, query_context);
+            };
         }
 
-        if (condition && !condition->alwaysUnknownOrTrue())
-            skip_indexes.useful_indices.emplace_back(index_helper, condition);
+        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(filter_dag_ptr, std::move(factory), metadata_snapshot, query_context);
+
+        const auto & unsubstituted = condition_template->generateUnsubstituted();
+        if (unsubstituted && !unsubstituted->alwaysUnknownOrTrue())
+            skip_indexes.useful_indices.emplace_back(index_helper, std::move(condition_template));
 
         auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
         {

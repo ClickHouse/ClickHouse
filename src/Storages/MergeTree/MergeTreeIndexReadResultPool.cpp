@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -68,7 +69,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
-            index_and_condition.condition,
+            index_and_condition.condition_template->generateForPart(*part.data_part),
             key_condition_rpn_template,
             part.data_part,
             ranges,
