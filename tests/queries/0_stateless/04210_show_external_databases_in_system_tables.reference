@@ -1,7 +1,11 @@
---- system.databases always shows the database, regardless of the setting ---
+--- system.databases always shows external databases, regardless of the setting ---
+MySQL
 PostgreSQL
+MySQL
 PostgreSQL
---- system.tables hides external databases by default (count must be 0 without contacting the server) ---
+--- system.tables hides PostgreSQL by default (count must be 0 without contacting the server) ---
+0
+--- system.tables hides MySQL by default ---
 0
 --- system.columns hides external databases by default ---
 0
