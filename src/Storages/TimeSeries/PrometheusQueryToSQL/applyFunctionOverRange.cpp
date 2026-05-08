@@ -300,9 +300,8 @@ namespace
 
             {"avg_over_time",
              {
-                 "",
+                 "timeSeriesAvgOverTimeToGrid",
                  /* drop_metric_name = */ true,
-                 SimpleOverTimeFunction::Avg,
              }},
 
             {"min_over_time",
@@ -314,9 +313,8 @@ namespace
 
             {"max_over_time",
              {
-                 "",
+                 "timeSeriesMaxOverTimeToGrid",
                  /* drop_metric_name = */ true,
-                 SimpleOverTimeFunction::Max,
              }},
 
             {"sum_over_time",
