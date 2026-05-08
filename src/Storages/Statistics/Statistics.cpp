@@ -182,10 +182,21 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
     if (val.isNaN())
         return 0;
 
-    if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
+    /// Returns the cardinality estimate from whichever HLL-based statistic is present
+    /// (preferring the more accurate `uniq` over `uniqhll12`), or nullopt if neither exists.
+    auto get_uniq_cardinality = [&]() -> std::optional<UInt64>
+    {
+        if (stats.contains(StatisticsType::Uniq))
+            return stats.at(StatisticsType::Uniq)->estimateCardinality();
+        if (stats.contains(StatisticsType::UniqHLL12))
+            return stats.at(StatisticsType::UniqHLL12)->estimateCardinality();
+        return std::nullopt;
+    };
+
+    if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
-        if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
+        if (auto cardinality = get_uniq_cardinality(); cardinality && *cardinality < 2048)
         {
             return stats.at(StatisticsType::TDigest)->estimateEqual(val);
         }
@@ -196,13 +207,12 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
     }
 #endif
-    if (stats.contains(StatisticsType::Uniq))
+    if (auto cardinality = get_uniq_cardinality())
     {
-        UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
         UInt64 non_null_rows = getNonNullRowCount();
-        if (cardinality == 0 || non_null_rows == 0)
+        if (*cardinality == 0 || non_null_rows == 0)
             return 0;
-        return static_cast<Float64>(non_null_rows) / static_cast<Float64>(cardinality); /// assume uniform distribution
+        return static_cast<Float64>(non_null_rows) / static_cast<Float64>(*cardinality); /// assume uniform distribution
     }
 
     return std::nullopt;

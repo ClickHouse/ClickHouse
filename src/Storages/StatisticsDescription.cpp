@@ -60,7 +60,7 @@ StatisticsType stringToStatisticsType(String type)
     if (type == "nullcount")
         return StatisticsType::NullCount;
 
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'.", type);
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'nullcount', 'tdigest', 'UniqHLL112' and 'uniq'.", type);
 }
 
 String statisticsTypeToString(StatisticsType type)
@@ -80,7 +80,7 @@ String statisticsTypeToString(StatisticsType type)
         case StatisticsType::NullCount:
             return "nullcount";
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'.", type);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'nullcount', 'tdigest', 'UniqHLL112' and 'uniq'.", type);
     }
 }
 
