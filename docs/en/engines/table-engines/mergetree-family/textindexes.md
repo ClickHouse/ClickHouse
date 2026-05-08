@@ -324,9 +324,9 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | Function | Preprocessor | Compatible tokenizers | Postprocessor |
 |---|---|---|---|
 | `=`, `IN` | yes | any | yes |
-| [`hasToken`](/sql-reference/functions/string-search-functions.md/#hasToken), `hasTokenOrNull`, `hasTokenCaseInsensitive`, `hasTokenCaseInsensitiveOrNull` | yes | any (designed for `splitByNonAlpha`) | yes |
+| [`hasToken`](/sql-reference/functions/string-search-functions.md/#hasToken) | yes | any (designed for `splitByNonAlpha`) | yes |
 | [`hasAnyTokens(col, str)`](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), [`hasAllTokens(col, str)`](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | yes | any | yes (skipped for `array`) |
-| `hasAnyTokens(col, arr)`, `hasAllTokens(col, arr)` | no (array elements are tokens as-is) | any | yes (skipped for `array`) |
+| [`hasAnyTokens(col, arr)`](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), [`hasAllTokens(col, arr)`](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | no (array elements are tokens as-is) | any | yes (skipped for `array`) |
 | [`hasPhrase`](/sql-reference/functions/string-search-functions.md/#hasPhrase) | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
 | [`startsWith`](/sql-reference/functions/string-functions.md/#startsWith), [`endsWith`](/sql-reference/functions/string-functions.md/#endsWith) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | `LIKE`, `ILIKE`, `match` | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
