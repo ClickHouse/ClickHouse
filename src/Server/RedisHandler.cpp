@@ -1,17 +1,31 @@
 #include <Server/RedisHandler.h>
 
+#include <Columns/ColumnString.h>
 #include <Common/Exception.h>
+#include <Common/PODArray.h>
+#include <Common/typeid_cast.h>
+#include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/StorageID.h>
+#include <Processors/Chunk.h>
 #include <Server/IServer.h>
 #include <Server/RedisProtocol.h>
 #include <Server/TCPServer.h>
+#include <Storages/IStorage.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <charconv>
 #include <memory>
+#include <string_view>
 #include <system_error>
 
 namespace DB
@@ -60,7 +74,204 @@ bool RedisHandler::selectDatabase(const String & db_index)
 
     selected_db = parsed_db;
     selected_target = std::move(target);
+    has_selected_target = true;
     return true;
+}
+
+void RedisHandler::getKey(WriteBuffer & out, const String & key)
+{
+    if (!has_selected_target)
+    {
+        RedisProtocol::writeError(out, "ERR no Redis DB selected");
+        return;
+    }
+
+    try
+    {
+        ContextPtr context = server.context();
+        StoragePtr storage = DatabaseCatalog::instance().getTable(
+            StorageID(selected_target.database, selected_target.table),
+            context);
+
+        auto key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage);
+        if (!key_value)
+        {
+            RedisProtocol::writeError(out, "ERR target table does not support key-value lookup");
+            return;
+        }
+
+        Names primary_keys = key_value->getPrimaryKey();
+        if (primary_keys.size() != 1)
+        {
+            RedisProtocol::writeError(out, "ERR only single-column primary key is supported");
+            return;
+        }
+
+        Names required_columns{selected_target.default_column};
+        Block sample_block = key_value->getSampleBlock(required_columns);
+        size_t key_pos = sample_block.getPositionByName(primary_keys.front());
+        size_t value_pos = sample_block.getPositionByName(selected_target.default_column);
+
+        if (sample_block.getByPosition(key_pos).type->getTypeId() != TypeIndex::String)
+        {
+            RedisProtocol::writeError(out, "ERR only String key column is supported");
+            return;
+        }
+
+        if (sample_block.getByPosition(value_pos).type->getTypeId() != TypeIndex::String)
+        {
+            RedisProtocol::writeError(out, "ERR only String value column is supported");
+            return;
+        }
+
+        auto key_column = ColumnString::create();
+        key_column->insertData(key.data(), key.size());
+
+        ColumnsWithTypeAndName keys;
+        keys.push_back({std::move(key_column), std::make_shared<DataTypeString>(), primary_keys.front()});
+
+        PaddedPODArray<UInt8> found_map;
+        IColumn::Offsets offsets;
+        Chunk chunk = key_value->getByKeys(keys, required_columns, found_map, offsets);
+
+        if (!offsets.empty() || chunk.getNumRows() != 1 || found_map.size() != 1 || chunk.getNumColumns() <= value_pos)
+        {
+            RedisProtocol::writeError(out, "ERR unexpected key-value lookup result");
+            return;
+        }
+
+        if (!found_map[0])
+        {
+            RedisProtocol::writeNullBulkString(out);
+            return;
+        }
+
+        const auto * value_column = typeid_cast<const ColumnString *>(chunk.getColumns()[value_pos].get());
+        if (!value_column)
+        {
+            RedisProtocol::writeError(out, "ERR value column is not String");
+            return;
+        }
+
+        std::string_view value = value_column->getDataAt(0);
+        RedisProtocol::writeBulkString(out, value);
+    }
+    catch (const Exception & e)
+    {
+        LOG_TRACE(
+            log,
+            "Redis GET failed. Id: {}. Target: {}.{}. Column: {}. Error: {}",
+            connection_id,
+            selected_target.database,
+            selected_target.table,
+            selected_target.default_column,
+            e.message());
+        RedisProtocol::writeError(out, "ERR " + e.message());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Redis GET failed with unexpected exception");
+        RedisProtocol::writeError(out, "ERR failed to execute GET");
+    }
+}
+
+void RedisHandler::getKeys(WriteBuffer & out, const std::vector<String> & keys_to_get)
+{
+    if (!has_selected_target)
+    {
+        RedisProtocol::writeError(out, "ERR no Redis DB selected");
+        return;
+    }
+
+    try
+    {
+        ContextPtr context = server.context();
+        StoragePtr storage = DatabaseCatalog::instance().getTable(
+            StorageID(selected_target.database, selected_target.table),
+            context);
+
+        auto key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage);
+        if (!key_value)
+        {
+            RedisProtocol::writeError(out, "ERR target table does not support key-value lookup");
+            return;
+        }
+
+        Names primary_keys = key_value->getPrimaryKey();
+        if (primary_keys.size() != 1)
+        {
+            RedisProtocol::writeError(out, "ERR only single-column primary key is supported");
+            return;
+        }
+
+        Names required_columns{selected_target.default_column};
+        Block sample_block = key_value->getSampleBlock(required_columns);
+        size_t key_pos = sample_block.getPositionByName(primary_keys.front());
+        size_t value_pos = sample_block.getPositionByName(selected_target.default_column);
+
+        if (sample_block.getByPosition(key_pos).type->getTypeId() != TypeIndex::String)
+        {
+            RedisProtocol::writeError(out, "ERR only String key column is supported");
+            return;
+        }
+
+        if (sample_block.getByPosition(value_pos).type->getTypeId() != TypeIndex::String)
+        {
+            RedisProtocol::writeError(out, "ERR only String value column is supported");
+            return;
+        }
+
+        auto key_column = ColumnString::create();
+        for (const auto & key : keys_to_get)
+            key_column->insertData(key.data(), key.size());
+
+        ColumnsWithTypeAndName keys;
+        keys.push_back({std::move(key_column), std::make_shared<DataTypeString>(), primary_keys.front()});
+
+        PaddedPODArray<UInt8> found_map;
+        IColumn::Offsets offsets;
+        Chunk chunk = key_value->getByKeys(keys, required_columns, found_map, offsets);
+
+        const size_t requested_keys = keys_to_get.size();
+        if (!offsets.empty() || chunk.getNumRows() != requested_keys || found_map.size() != requested_keys || chunk.getNumColumns() <= value_pos)
+        {
+            RedisProtocol::writeError(out, "ERR unexpected key-value lookup result");
+            return;
+        }
+
+        const auto * value_column = typeid_cast<const ColumnString *>(chunk.getColumns()[value_pos].get());
+        if (!value_column)
+        {
+            RedisProtocol::writeError(out, "ERR value column is not String");
+            return;
+        }
+
+        RedisProtocol::writeArrayHeader(out, requested_keys);
+        for (size_t i = 0; i < requested_keys; ++i)
+        {
+            if (!found_map[i])
+                RedisProtocol::writeNullBulkString(out);
+            else
+                RedisProtocol::writeBulkString(out, value_column->getDataAt(i));
+        }
+    }
+    catch (const Exception & e)
+    {
+        LOG_TRACE(
+            log,
+            "Redis MGET failed. Id: {}. Target: {}.{}. Column: {}. Error: {}",
+            connection_id,
+            selected_target.database,
+            selected_target.table,
+            selected_target.default_column,
+            e.message());
+        RedisProtocol::writeError(out, "ERR " + e.message());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Redis MGET failed with unexpected exception");
+        RedisProtocol::writeError(out, "ERR failed to execute MGET");
+    }
 }
 
 void RedisHandler::run()
@@ -119,6 +330,20 @@ void RedisHandler::run()
                         RedisProtocol::writeError(*out, "ERR Redis DB " + std::to_string(parsed_db) + " is not configured");
                     }
                 }
+            }
+            else if (command.name == "GET")
+            {
+                if (command.arguments.size() != 1)
+                    RedisProtocol::writeError(*out, "ERR wrong number of arguments for 'get' command");
+                else
+                    getKey(*out, command.arguments.front());
+            }
+            else if (command.name == "MGET")
+            {
+                if (command.arguments.empty())
+                    RedisProtocol::writeError(*out, "ERR wrong number of arguments for 'mget' command");
+                else
+                    getKeys(*out, command.arguments);
             }
             else
             {
