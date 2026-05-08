@@ -366,9 +366,9 @@ CREATE FUNCTION as_greet
 This ABI is experimental and subject to change in future releases.
 :::
 
-A high-performance ABI that passes columnar data directly in WASM linear memory without any (de)serialization overhead.
+A high-performance ABI that passes columnar data directly in WASM linear memory without (de)serialization overhead.
 
-Instead of serializing data through MsgPack or RowBinary, ClickHouse writes columns in a compact columnar wire format and passes pointers to the WASM module. The guest code reads columns directly from memory and writes results back in the same format. This eliminates serialization/deserialization costs, which can be significant for large blocks.
+Unlike `BUFFERED_V1`, which serializes each row as a self-contained block, ClickHouse writes entire columns in a compact wire format and passes pointers to the WASM module. The guest code reads columns directly from memory and writes results back in the same format. This eliminates per-row serialization and deserialization costs, which can be significant for large blocks.
 
 The module exports the same buffer allocation functions as `BUFFERED_V1`:
 
