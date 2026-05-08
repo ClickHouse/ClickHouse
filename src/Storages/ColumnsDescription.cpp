@@ -255,6 +255,43 @@ void ColumnDescription::readText(ReadBuffer & buf)
     }
 }
 
+ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & other)
+{
+    if (this != &other)
+    {
+        columns = other.columns;
+        subcolumns = other.subcolumns;
+        invalidateGetCache();
+    }
+    return *this;
+}
+
+ColumnsDescription & ColumnsDescription::operator=(ColumnsDescription && other) noexcept
+{
+    if (this != &other)
+    {
+        columns = std::move(other.columns);
+        subcolumns = std::move(other.subcolumns);
+        invalidateGetCache();
+    }
+    return *this;
+}
+
+ColumnsDescription::GetCacheKey ColumnsDescription::makeGetCacheKey(const GetColumnsOptions & options)
+{
+    return GetCacheKey{
+        static_cast<UInt8>(options.kind),
+        static_cast<UInt8>(options.virtuals_kind),
+        static_cast<UInt8>(options.virtuals_place),
+        static_cast<UInt8>((options.with_subcolumns ? 1 : 0) | (options.with_dynamic_subcolumns ? 2 : 0))};
+}
+
+void ColumnsDescription::invalidateGetCache() const
+{
+    std::lock_guard lock(get_cache_mutex);
+    get_cache.clear();
+}
+
 ColumnsDescription::ColumnsDescription(std::initializer_list<ColumnDescription> ordinary)
 {
     for (auto && elem : ordinary)
@@ -360,6 +397,7 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
     if (add_subcolumns && column.default_desc.kind != ColumnDefaultKind::Alias)
         addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
+    invalidateGetCache();
 }
 
 void ColumnsDescription::remove(const String & column_name)
@@ -375,6 +413,7 @@ void ColumnsDescription::remove(const String & column_name)
         removeSubcolumns(list_it->name);
         list_it = columns.get<0>().erase(list_it);
     }
+    invalidateGetCache();
 }
 
 void ColumnsDescription::rename(const String & column_from, const String & column_to)
@@ -390,6 +429,7 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     {
         old_name = column_to;
     });
+    invalidateGetCache();
 }
 
 void ColumnsDescription::modifyColumnOrder(const String & column_name, const String & after_column, bool first)
@@ -414,6 +454,7 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
     if (first)
     {
         reorder_column([&]() { return columns.cbegin(); });
+        invalidateGetCache();
     }
     else if (!after_column.empty() && column_name != after_column)
     {
@@ -423,6 +464,7 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Wrong column name. Cannot find column {} to insert after", after_column);
 
         reorder_column([&]() { return getNameRange(columns, after_column).second; });
+        invalidateGetCache();
     }
 }
 
@@ -475,6 +517,7 @@ void ColumnsDescription::flattenNested()
             columns.get<0>().insert(it, std::move(nested_column));
         }
     }
+    invalidateGetCache();
 }
 
 
@@ -567,6 +610,22 @@ void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) co
 
 NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) const
 {
+    /// `get(options)` is hot: analyzer + planner together call it 2-3 times per query
+    /// with the same options, and rebuilding the list iterates the columns multi-index
+    /// and runs `addSubcolumnsToList` (linear hash lookups per row). Memoize on
+    /// `ColumnsDescription` so the result is shared across queries on the same metadata
+    /// version. The cache is invalidated by every mutator that touches `columns` or
+    /// `subcolumns`.
+    auto key = makeGetCacheKey(options);
+    {
+        std::lock_guard lock(get_cache_mutex);
+        for (const auto & entry : get_cache)
+        {
+            if (entry.first == key)
+                return *entry.second;
+        }
+    }
+
     NamesAndTypesList res;
     switch (options.kind)
     {
@@ -623,7 +682,18 @@ NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) con
     if (options.with_subcolumns)
         addSubcolumnsToList(res);
 
-    return res;
+    auto cached = std::make_shared<const NamesAndTypesList>(std::move(res));
+    {
+        std::lock_guard lock(get_cache_mutex);
+        /// Re-check under the lock: another thread may have populated the same key.
+        for (const auto & entry : get_cache)
+        {
+            if (entry.first == key)
+                return *entry.second;
+        }
+        get_cache.emplace_back(key, cached);
+    }
+    return *cached;
 }
 
 bool ColumnsDescription::has(const String & column_name) const
@@ -954,13 +1024,17 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
         /// Here, `attribute.values` is the column, **but**, `attribute` will have a `values` subcolumn.
         subcolumns.get<0>().insert(std::move(subcolumn));
     }, ISerialization::SubstreamData(type_in_storage->getDefaultSerialization()).withType(type_in_storage));
+    invalidateGetCache();
 }
 
 void ColumnsDescription::removeSubcolumns(const String & name_in_storage)
 {
     auto range = subcolumns.get<1>().equal_range(name_in_storage);
     if (range.first != range.second)
+    {
         subcolumns.get<1>().erase(range.first, range.second);
+        invalidateGetCache();
+    }
 }
 
 std::vector<String> ColumnsDescription::getAllRegisteredNames() const

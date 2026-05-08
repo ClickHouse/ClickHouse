@@ -20,6 +20,7 @@
 #include <boost/multi_index/sequenced_index.hpp>
 #include <boost/multi_index_container.hpp>
 
+#include <mutex>
 #include <optional>
 
 
@@ -126,6 +127,13 @@ class ColumnsDescription : public IHints<>
 {
 public:
     ColumnsDescription() = default;
+
+    /// Mutable cache members (`get_cache_mutex`, `get_cache`) are non-copyable; define
+    /// explicit copy / move so a copied / moved instance starts with an empty cache.
+    ColumnsDescription(const ColumnsDescription & other) : columns(other.columns), subcolumns(other.subcolumns) {}
+    ColumnsDescription(ColumnsDescription && other) noexcept : columns(std::move(other.columns)), subcolumns(std::move(other.subcolumns)) {}
+    ColumnsDescription & operator=(const ColumnsDescription & other);
+    ColumnsDescription & operator=(ColumnsDescription && other) noexcept;
 
     static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
 
@@ -280,6 +288,26 @@ private:
     void removeSubcolumns(const String & name_in_storage);
 
     std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name, const GetColumnsOptions & options) const;
+
+    /// `get(options)` is called repeatedly with the same options across analyzer
+    /// and planner of every query, and rebuilding the result iterates the columns
+    /// multi-index plus runs `addSubcolumnsToList` on every row. The cache lives on
+    /// `ColumnsDescription` (which is owned by an immutable `StorageInMemoryMetadata`
+    /// snapshot) so the result is reused across queries on the same metadata version.
+    /// Any mutator that alters `columns` or `subcolumns` calls `invalidateGetCache`.
+    struct GetCacheKey
+    {
+        UInt8 kind;
+        UInt8 virtuals_kind;
+        UInt8 virtuals_place;
+        UInt8 flags; /// bit 0: with_subcolumns, bit 1: with_dynamic_subcolumns
+        bool operator==(const GetCacheKey & other) const = default;
+    };
+    static GetCacheKey makeGetCacheKey(const GetColumnsOptions & options);
+    void invalidateGetCache() const;
+
+    mutable std::mutex get_cache_mutex;
+    mutable std::vector<std::pair<GetCacheKey, std::shared_ptr<const NamesAndTypesList>>> get_cache;
 };
 
 class ASTColumnDeclaration;
