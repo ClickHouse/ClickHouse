@@ -127,6 +127,7 @@ CREATE OR REPLACE FUNCTION is_prime AS x -> x + 1;
 DELETE FROM system.webassembly_modules WHERE name like 'module1'; -- { serverError BAD_ARGUMENTS }
 DELETE FROM system.webassembly_modules WHERE code == '123'; -- { serverError BAD_ARGUMENTS }
 DELETE FROM system.webassembly_modules WHERE hash == 1; -- { serverError BAD_ARGUMENTS }
+DELETE FROM system.webassembly_modules WHERE 1=1; -- { serverError BAD_ARGUMENTS }
 
 DELETE FROM system.webassembly_modules WHERE name = 'module1';
 

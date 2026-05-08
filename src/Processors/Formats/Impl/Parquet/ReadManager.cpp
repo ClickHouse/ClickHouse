@@ -64,26 +64,8 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     reader.prefilterAndInitRowGroups(row_groups_to_read);
     reader.preparePrewhere();
 
-    /// Profile events must reflect only the row groups that belong to this bucket, otherwise
-    /// every bucket of a single-file split would report the file's totals and the events would
-    /// be multiplied by the number of buckets.
-    size_t read_count;
-    size_t total_in_partition;
-    if (row_groups_to_read.has_value())
-    {
-        read_count = 0;
-        for (const auto & rg : reader.row_groups)
-            if (rg.need_to_process)
-                ++read_count;
-        total_in_partition = row_groups_to_read->size();
-    }
-    else
-    {
-        read_count = reader.row_groups.size();
-        total_in_partition = reader.file_metadata.row_groups.size();
-    }
-    ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, read_count);
-    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, total_in_partition - read_count);
+    ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, reader.row_groups.size());
+    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, reader.file_metadata.row_groups.size() - reader.row_groups.size());
 
     size_t num_row_groups = reader.row_groups.size();
     for (size_t i = size_t(ReadStage::NotStarted) + 1; i < size_t(ReadStage::Deliver); ++i)

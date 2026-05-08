@@ -30,11 +30,9 @@ void AsyncReadCounters::dumpToMapColumn(IColumn * column) const
         }
     };
 
-    std::lock_guard lock(mutex);
-
-    load_if_not_empty("max_parallel_read_tasks", max_parallel_read_tasks);
-    load_if_not_empty("max_parallel_prefetch_tasks", max_parallel_prefetch_tasks);
-    load_if_not_empty("total_prefetch_tasks", total_prefetch_tasks);
+    load_if_not_empty("max_parallel_read_tasks", max_parallel_read_tasks.load(std::memory_order_relaxed));
+    load_if_not_empty("max_parallel_prefetch_tasks", max_parallel_prefetch_tasks.load(std::memory_order_relaxed));
+    load_if_not_empty("total_prefetch_tasks", total_prefetch_tasks.load(std::memory_order_relaxed));
 
     offsets.push_back(offsets.back() + size);
 }

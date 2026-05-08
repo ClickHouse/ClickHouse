@@ -1149,6 +1149,14 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
             /// See setting `allow_experimental_alter_materialized_view_structure`
             LOG_INFO(logger, "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
                 parent, current, select_table_id);
+            /// The storage was tentatively recorded above before this check; back it out so that
+            /// downstream passes (e.g. the `supportsParallelInsert` scan in the constructor) do
+            /// not invoke methods on a materialized view that has been rejected as unrelated to
+            /// the current insert path. Such methods may dereference stale `target_table_id`
+            /// values and throw.
+            storages.erase(current);
+            metadata_snapshots.erase(current);
+            storage_locks.erase(current);
             return false;
         }
 

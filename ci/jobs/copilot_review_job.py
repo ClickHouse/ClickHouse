@@ -150,24 +150,65 @@ def pre():
 
     _reauth_gh()
     os.makedirs("./ci/tmp", exist_ok=True)
-    prompt = (
-        f"Follow the Review Instructions in .claude/skills/review/SKILL.md. "
-        f"Review PR {info.pr_url}. Repo is checked out at PR head. "
-        f"Post findings as individual inline review comments on specific lines. "
-        f"Prefix every gh call with `env -u GH_CONFIG_DIR`. "
-        f"IMPORTANT — to post an inline review comment, write the body to a file and call: "
-        f"`env -u GH_CONFIG_DIR python3 ci/praktika/gh.py post-pr-line-comment "
-        f"--file <body.md> --commit <sha> --path <file> --line <N> [--side RIGHT|LEFT]`. "
-        f"This wrapper handles `-F body=@<file>` correctly so the file content is uploaded as the body. "
-        f"Do NOT call `gh api .../pulls/.../comments` directly — past runs have posted the literal "
-        f"`@<file>` string as the body when the wrong gh flag was used. "
-        f"Do NOT use `gh pr review` (that posts a single batched review, not individual line comments). "
-        f"Read inline comments already posted by clickhouse-gh[bot]; do not post a new comment if a similar one already exists. "
-        f"Write a self-contained summary of ALL findings (regardless of previous summaries) "
-        f"as plain Markdown to {REVIEW_FILE} using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SKILL.md — "
-        f"start with `---\n#### AI Review`, then use ##### for section headers. "
-        f"Do NOT post the summary yourself — the job script will post it after you finish."
-    )
+    prompt = f"""\
+Follow the Review Instructions in .claude/skills/review/SKILL.md.
+Review PR {info.pr_url}. Repo is checked out at PR head.
+Post findings as individual inline review comments on specific lines.
+Prefix every gh call with `env -u GH_CONFIG_DIR`.
+
+IMPORTANT: to post an inline review comment, write the body to a file and call:
+`env -u GH_CONFIG_DIR python3 ci/praktika/gh.py post-pr-line-comment --file <body.md> --commit <sha> --path <file> --line <N> [--side RIGHT|LEFT]`.
+This wrapper handles `-F body=@<file>` correctly so the file content is uploaded as the body.
+Do NOT call `gh api .../pulls/.../comments` directly: past runs have posted the literal `@<file>`
+string as the body when the wrong gh flag was used.
+Do NOT use `gh pr review` (that posts a single batched review, not individual line comments).
+
+Before reviewing, fetch all prior discussion on this PR.
+Inline review threads come from
+`env -u GH_CONFIG_DIR python3 ci/praktika/gh.py list-pr-review-threads --pr {info.pr_number}`
+(returns JSON; each thread carries its node `id`, `isResolved`, `path`, `line`, and `comments.nodes`
+with author, body, and `databaseId`).
+Top-level conversation comes from
+`env -u GH_CONFIG_DIR gh api '/repos/{{owner}}/{{repo}}/issues/{info.pr_number}/comments' --paginate`.
+
+Read every reply on every thread before deciding to raise a point.
+A reply from the author is not by itself a resolution.
+Judge it on its merits: an explanation that holds up, a pointer to a commit that actually fixes
+the issue, or a tradeoff you agree with means drop the point.
+A handwave, a misunderstanding of what was originally flagged, a 'will fix later' that never
+landed, or a claim that contradicts the code as it stands now means the issue is still live.
+In that case, push back: reply on the existing thread, restate the concern with the relevant code,
+and explain why the previous answer does not resolve it.
+
+To reply on a thread, use the same wrapper with `--reply-to <parent_databaseId>` (the `databaseId`
+of the first comment on the thread) and omit `--commit`/`--path`/`--line`:
+`env -u GH_CONFIG_DIR python3 ci/praktika/gh.py post-pr-line-comment --file <body.md> --reply-to <parent_databaseId>`.
+Do not open a fresh inline comment for a point that already has a thread; reply on the thread instead.
+Apply the same judgment to your own prior summary: drop findings that have genuinely been addressed,
+keep or sharpen the ones that have not.
+
+After reviewing, mark threads as resolved or unresolved based on the current code.
+Only act on threads you created yourself: that means threads where the first comment in
+`comments.nodes` was authored by `clickhouse-gh[bot]`.
+Never resolve or unresolve threads where the first comment was authored by anyone else
+(other reviewers, the PR author, other bots), even when the code suggests the thread should
+be resolved or re-opened.
+For each bot-authored thread that is not already resolved, if the issue you flagged no longer
+holds in the current code, resolve it via
+`env -u GH_CONFIG_DIR python3 ci/praktika/gh.py resolve-pr-review-thread --thread-id <thread_node_id>`.
+If a bot-authored thread was already resolved (by you or someone else) but the current code still
+has the issue, you can re-open it via
+`env -u GH_CONFIG_DIR python3 ci/praktika/gh.py unresolve-pr-review-thread --thread-id <thread_node_id>`
+and post a follow-up reply explaining what is still wrong.
+Verify the state by reading the current code at the thread's path and line, not by trusting
+the author's reply.
+
+Write a self-contained summary of ALL findings (regardless of previous summaries) as plain Markdown
+to {REVIEW_FILE} using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SKILL.md:
+start with `---
+#### AI Review`, then use ##### for section headers.
+Do NOT post the summary yourself: the job script will post it after you finish.
+"""
     _run(prompt)
 
 
@@ -181,16 +222,17 @@ def post():
     os.makedirs("./ci/tmp", exist_ok=True)
     ci_report_url = info.get_report_url()
 
-    prompt = (
-        f"Fetch CI results: node .claude/tools/fetch_ci_report.js '{ci_report_url}' --failed --links "
-        f"(use --all, --test <name>, or --download-logs for deeper investigation). "
-        f"If all checks passed — stop. "
-        f"Otherwise review the PR {info.pr_url} diff and match each failure to the code changes. "
-        f"Write a self-contained summary as plain Markdown to {REVIEW_FILE} — "
-        f"start with `---\n### AI Review`, then use #### headers for sections only if needed. "
-        f"Do NOT post the summary yourself — the job script will post it after you finish. "
-        f"Do not post inline comments."
-    )
+    prompt = f"""\
+Fetch CI results: node .claude/tools/fetch_ci_report.js '{ci_report_url}' --failed --links
+(use --all, --test <name>, or --download-logs for deeper investigation).
+If all checks passed: stop.
+Otherwise review the PR {info.pr_url} diff and match each failure to the code changes.
+Write a self-contained summary as plain Markdown to {REVIEW_FILE}:
+start with `---
+### AI Review`, then use #### headers for sections only if needed.
+Do NOT post the summary yourself: the job script will post it after you finish.
+Do not post inline comments.
+"""
     _run(prompt)
 
 

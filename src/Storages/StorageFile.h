@@ -25,9 +25,6 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IInputFormat;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
-struct FileBucketInfo;
-using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
-
 class PullingPipelineExecutor;
 
 class StorageFile final : public IStorage
@@ -251,11 +248,6 @@ public:
         }
 
         const String & getFileNameInArchive();
-
-        /// Returns the (possibly virtual-column-filtered) list of files this iterator
-        /// will produce. Only meaningful when not reading from an archive and not
-        /// using distributed_processing.
-        const std::vector<std::string> & getFiles() const { return files; }
 private:
         std::vector<std::string> files;
 
@@ -319,17 +311,6 @@ private:
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
-
-    /// Optional subset-of-file assignment. When set, the input format only reads
-    /// these buckets (e.g. for Parquet — only the listed row groups). This is how
-    /// a single big file is processed in parallel by multiple sources.
-    FileBucketInfoPtr file_bucket_info;
-
-    /// When this source has been assigned a specific (file, bucket) pair, it
-    /// reads only that one file (once) and ignores the shared FilesIterator.
-    /// Set together with `file_bucket_info`.
-    std::optional<String> fixed_file_path;
-    bool fixed_file_consumed = false;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;

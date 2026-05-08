@@ -1,6 +1,6 @@
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
-SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
 SET query_plan_join_shard_by_pk_ranges = 0; -- adds 'Sharding:' lines to EXPLAIN output when enabled
 SET query_plan_merge_filter_into_join_condition = 0; -- absorbing WHERE into ON clause prevents outer→inner join conversion

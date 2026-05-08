@@ -1,4 +1,8 @@
 <test>
+    <settings>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    </settings>
+
     <create_query>CREATE TABLE build_5k (id0 Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE build_10k (id1 Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE build_50k (id2 Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>

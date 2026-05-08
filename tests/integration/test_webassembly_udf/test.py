@@ -164,6 +164,14 @@ def test_enabled(start_cluster):
     result = node1.query("SELECT name FROM system.webassembly_modules ORDER BY name")
     assert result == "add_or_sub\nisprime\n"
 
+    # DELETE from system.webassembly_modules with a non-identifier predicate
+    # (e.g. WHERE 1=1) must return an error, not crash the server.
+    error = node1.query_and_get_error(
+        "DELETE FROM system.webassembly_modules WHERE 1=1"
+    )
+    assert "Only deletion of a module by name is supported" in error
+    assert node1.query("SELECT 1").strip() == "1"
+
     # Cleanup
     node1.query("DROP FUNCTION IF EXISTS is_prime")
     node1.query("DROP FUNCTION IF EXISTS add_or_sub")
