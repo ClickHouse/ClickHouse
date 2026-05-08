@@ -743,112 +743,118 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
 
 void ColumnArray::filter(const Filter & filt)
 {
-    if (typeid_cast<const ColumnUInt8 *>(data.get()))
+    /// `data.get()` from a non-const method goes through `WrappedPtr::operator->` ->
+    /// `assumeMutableRef`, which `chassert(use_count() == 1)`. The typeid checks below
+    /// are read-only — use the const overload via `std::as_const` so callers passing
+    /// a column whose `data` is referenced elsewhere (e.g. via substream cache) do not
+    /// fire the assertion.
+    const auto * data_ptr = std::as_const(data).get();
+    if (typeid_cast<const ColumnUInt8 *>(data_ptr))
     {
         filterNumber<UInt8>(filt);
         return;
     }
-    if (typeid_cast<const ColumnUInt16 *>(data.get()))
+    if (typeid_cast<const ColumnUInt16 *>(data_ptr))
     {
         filterNumber<UInt16>(filt);
         return;
     }
-    if (typeid_cast<const ColumnUInt32 *>(data.get()))
+    if (typeid_cast<const ColumnUInt32 *>(data_ptr))
     {
         filterNumber<UInt32>(filt);
         return;
     }
-    if (typeid_cast<const ColumnUInt64 *>(data.get()))
+    if (typeid_cast<const ColumnUInt64 *>(data_ptr))
     {
         filterNumber<UInt64>(filt);
         return;
     }
-    if (typeid_cast<const ColumnUInt128 *>(data.get()))
+    if (typeid_cast<const ColumnUInt128 *>(data_ptr))
     {
         filterNumber<UInt128>(filt);
         return;
     }
-    if (typeid_cast<const ColumnUInt256 *>(data.get()))
+    if (typeid_cast<const ColumnUInt256 *>(data_ptr))
     {
         filterNumber<UInt256>(filt);
         return;
     }
-    if (typeid_cast<const ColumnInt8 *>(data.get()))
+    if (typeid_cast<const ColumnInt8 *>(data_ptr))
     {
         filterNumber<Int8>(filt);
         return;
     }
-    if (typeid_cast<const ColumnInt16 *>(data.get()))
+    if (typeid_cast<const ColumnInt16 *>(data_ptr))
     {
         filterNumber<Int16>(filt);
         return;
     }
-    if (typeid_cast<const ColumnInt32 *>(data.get()))
+    if (typeid_cast<const ColumnInt32 *>(data_ptr))
     {
         filterNumber<Int32>(filt);
         return;
     }
-    if (typeid_cast<const ColumnInt64 *>(data.get()))
+    if (typeid_cast<const ColumnInt64 *>(data_ptr))
     {
         filterNumber<Int64>(filt);
         return;
     }
-    if (typeid_cast<const ColumnInt128 *>(data.get()))
+    if (typeid_cast<const ColumnInt128 *>(data_ptr))
     {
         filterNumber<Int128>(filt);
         return;
     }
-    if (typeid_cast<const ColumnInt256 *>(data.get()))
+    if (typeid_cast<const ColumnInt256 *>(data_ptr))
     {
         filterNumber<Int256>(filt);
         return;
     }
-    if (typeid_cast<const ColumnBFloat16 *>(data.get()))
+    if (typeid_cast<const ColumnBFloat16 *>(data_ptr))
     {
         filterNumber<BFloat16>(filt);
         return;
     }
-    if (typeid_cast<const ColumnFloat32 *>(data.get()))
+    if (typeid_cast<const ColumnFloat32 *>(data_ptr))
     {
         filterNumber<Float32>(filt);
         return;
     }
-    if (typeid_cast<const ColumnFloat64 *>(data.get()))
+    if (typeid_cast<const ColumnFloat64 *>(data_ptr))
     {
         filterNumber<Float64>(filt);
         return;
     }
-    if (typeid_cast<const ColumnDecimal<Decimal32> *>(data.get()))
+    if (typeid_cast<const ColumnDecimal<Decimal32> *>(data_ptr))
     {
         filterNumber<Decimal32>(filt);
         return;
     }
-    if (typeid_cast<const ColumnDecimal<Decimal64> *>(data.get()))
+    if (typeid_cast<const ColumnDecimal<Decimal64> *>(data_ptr))
     {
         filterNumber<Decimal64>(filt);
         return;
     }
-    if (typeid_cast<const ColumnDecimal<Decimal128> *>(data.get()))
+    if (typeid_cast<const ColumnDecimal<Decimal128> *>(data_ptr))
     {
         filterNumber<Decimal128>(filt);
         return;
     }
-    if (typeid_cast<const ColumnDecimal<Decimal256> *>(data.get()))
+    if (typeid_cast<const ColumnDecimal<Decimal256> *>(data_ptr))
     {
         filterNumber<Decimal256>(filt);
         return;
     }
-    if (typeid_cast<const ColumnString *>(data.get()))
+    if (typeid_cast<const ColumnString *>(data_ptr))
     {
         filterString(filt);
         return;
     }
-    if (typeid_cast<const ColumnTuple *>(data.get()))
+    if (typeid_cast<const ColumnTuple *>(data_ptr))
     {
         filterTuple(filt);
         return;
     }
-    if (typeid_cast<const ColumnNullable *>(data.get()))
+    if (typeid_cast<const ColumnNullable *>(data_ptr))
     {
         filterNullable(filt);
         return;
