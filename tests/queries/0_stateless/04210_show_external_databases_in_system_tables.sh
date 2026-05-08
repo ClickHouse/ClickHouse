@@ -20,20 +20,22 @@ $CLICKHOUSE_CLIENT -q "
 CREATE DATABASE ${NEW_DB} ENGINE = PostgreSQL('192.0.2.1:5432', 'fake_db', 'user', 'password');
 "
 
-# system.databases always shows the database, regardless of the setting.
-$CLICKHOUSE_CLIENT -q "SELECT engine FROM system.databases WHERE name = '${NEW_DB}' SETTINGS show_external_databases_in_system_tables = 0;"
-$CLICKHOUSE_CLIENT -q "SELECT engine FROM system.databases WHERE name = '${NEW_DB}' SETTINGS show_external_databases_in_system_tables = 1;"
+$CLICKHOUSE_CLIENT -q "
+SELECT '--- system.databases always shows the database, regardless of the setting ---';
+SELECT engine FROM system.databases WHERE name = '${NEW_DB}' SETTINGS show_external_databases_in_system_tables = 0;
+SELECT engine FROM system.databases WHERE name = '${NEW_DB}' SETTINGS show_external_databases_in_system_tables = 1;
 
-# system.tables hides the database by default; counting must be 0 without contacting the server.
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = '${NEW_DB}' SETTINGS show_external_databases_in_system_tables = 0;"
+SELECT '--- system.tables hides external databases by default (count must be 0 without contacting the server) ---';
+SELECT count() FROM system.tables WHERE database = '${NEW_DB}' SETTINGS show_external_databases_in_system_tables = 0;
 
-# system.columns hides the database by default.
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.columns WHERE database = '${NEW_DB}' SETTINGS show_external_databases_in_system_tables = 0;"
+SELECT '--- system.columns hides external databases by default ---';
+SELECT count() FROM system.columns WHERE database = '${NEW_DB}' SETTINGS show_external_databases_in_system_tables = 0;
 
-# The old setting name still works as an alias.
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = '${NEW_DB}' SETTINGS show_data_lake_catalogs_in_system_tables = 0;"
+SELECT '--- the old setting name still works as an alias ---';
+SELECT count() FROM system.tables WHERE database = '${NEW_DB}' SETTINGS show_data_lake_catalogs_in_system_tables = 0;
 
-# system.settings exposes both the new name and the alias.
-$CLICKHOUSE_CLIENT -q "SELECT name, alias_for FROM system.settings WHERE name IN ('show_external_databases_in_system_tables', 'show_data_lake_catalogs_in_system_tables') ORDER BY name;"
+SELECT '--- system.settings exposes both the new name and the alias ---';
+SELECT name, alias_for FROM system.settings WHERE name IN ('show_external_databases_in_system_tables', 'show_data_lake_catalogs_in_system_tables') ORDER BY name;
+"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${NEW_DB};"
