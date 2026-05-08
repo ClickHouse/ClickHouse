@@ -465,12 +465,14 @@ SELECT count() FROM tab WHERE startsWith(val, 'running walking');  -- 1
 SELECT count() FROM tab WHERE endsWith(val, 'cat dog');            -- 1
 
 -- Index hint is used: the virtual column __text_index appears in the plan.
+-- Pin enable_multiple_prewhere_read_steps = 0 so the actions DAG stays a single
+-- step regardless of randomized planner settings in CI.
 SELECT trimLeft(explain) FROM
-(EXPLAIN indexes = 1, actions = 1 SELECT count() FROM tab WHERE startsWith(val, 'running walking'))
+(EXPLAIN indexes = 1, actions = 1 SELECT count() FROM tab WHERE startsWith(val, 'running walking') SETTINGS enable_multiple_prewhere_read_steps = 0)
 WHERE explain LIKE '%__text_index%';
 
 SELECT trimLeft(explain) FROM
-(EXPLAIN indexes = 1, actions = 1 SELECT count() FROM tab WHERE endsWith(val, 'cat dog'))
+(EXPLAIN indexes = 1, actions = 1 SELECT count() FROM tab WHERE endsWith(val, 'cat dog') SETTINGS enable_multiple_prewhere_read_steps = 0)
 WHERE explain LIKE '%__text_index%';
 
 DROP TABLE tab;
