@@ -811,6 +811,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         Result.create_from(
             status=Result.Status.ERROR,
             info="Failed to pre-pull Docker images needed by the test batch",
+            labels=[Result.Label.INFRA],
         ).complete_job()
 
     test_env = {
@@ -823,6 +824,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
+        # PromQL compliance: deterministic JSON for post-hook (see promql_compliance_hook.py).
+        "COMPLIANCE_RESULT_FILE": os.environ.get(
+            "COMPLIANCE_RESULT_FILE", os.path.join(temp_path, "promql_compliance_result.json")
+        ),
     }
     if is_llvm_coverage:
         test_env["LLVM_PROFILE_FILE"] = f"it-%4m.profraw"
