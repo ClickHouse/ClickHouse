@@ -142,7 +142,7 @@
 	url = https://github.com/ClickHouse/rocksdb
 [submodule "contrib/xz"]
 	path = contrib/xz
-	url = https://github.com/xz-mirror/xz
+	url = https://github.com/tukaani-project/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
 	url = https://github.com/ClickHouse/abseil-cpp.git
@@ -345,15 +345,6 @@
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git
-[submodule "contrib/wasmedge"]
-	path = contrib/wasmedge
-	url = https://github.com/WasmEdge/WasmEdge.git
-[submodule "contrib/spdlog"]
-	path = contrib/spdlog
-	url = https://github.com/gabime/spdlog.git
-[submodule "contrib/wasmtime"]
-	path = contrib/wasmtime
-	url = https://github.com/bytecodealliance/wasmtime.git
 [submodule "contrib/delta-kernel-rs"]
 	path = contrib/delta-kernel-rs
 	url = https://github.com/ClickHouse/delta-kernel-rs.git

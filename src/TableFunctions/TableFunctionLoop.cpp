@@ -149,8 +149,7 @@ namespace DB
         }
         auto res = std::make_shared<StorageLoop>(
                 StorageID(getDatabaseName(), table_name),
-                storage,
-                inner_table_function_ast ? inner_table_function_ast->clone() : nullptr
+                storage
         );
         res->startup();
         return res;
@@ -159,17 +158,17 @@ namespace DB
     void registerTableFunctionLoop(TableFunctionFactory & factory)
     {
         factory.registerFunction<TableFunctionLoop>(
-                {
-                    .description=R"(The table function can be used to continuously output query results in an infinite loop.)",
-                    .examples{{"loop", "SELECT * FROM loop((numbers(3)) LIMIT 7", "0"
-                                "1"
-                                "2"
-                                "0"
-                                "1"
-                                "2"
-                                "0"}},
-                    .category = FunctionDocumentation::Category::TableFunction
-                });
+                {.documentation
+                = {.description=R"(The table function can be used to continuously output query results in an infinite loop.)",
+                                .examples{{"loop", "SELECT * FROM loop((numbers(3)) LIMIT 7", "0"
+                                                                                              "1"
+                                                                                              "2"
+                                                                                              "0"
+                                                                                              "1"
+                                                                                              "2"
+                                                                                              "0"}},
+                 .category = FunctionDocumentation::Category::TableFunction
+                        }});
     }
 
 }

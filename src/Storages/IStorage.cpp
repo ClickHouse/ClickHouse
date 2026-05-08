@@ -302,11 +302,6 @@ void IStorage::mutate(const MutationCommands &, ContextPtr)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
 }
 
-Pipe IStorage::executeCommand(const String & command_name, const ASTPtr & /*args*/, ContextPtr /*context*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by storage {}", command_name, getName());
-}
-
 CancellationCode IStorage::killMutation(const String & /*mutation_id*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
@@ -356,7 +351,8 @@ Names IStorage::getAllRegisteredNames() const
 NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
 {
     NameDependencies name_deps;
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(storage_id);
+    auto current_storage_id = getStorageID();
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(current_storage_id);
     for (const auto & view_id : view_ids)
     {
         auto view = DatabaseCatalog::instance().getTable(view_id, context);
@@ -368,7 +364,7 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
             {
                 auto interpreter = InterpreterSelectQueryAnalyzer(select_query, context, SelectQueryOptions{}.noModify());
                 auto query_tree = interpreter.getQueryTree();
-                required_columns = collectSelectedColumnsFromTable(query_tree, storage_id, context);
+                required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, context);
             }
             else
             {

@@ -1,4 +1,3 @@
-#include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
 #include <Poco/JSON/Array.h>

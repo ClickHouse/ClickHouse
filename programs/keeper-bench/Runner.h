@@ -91,8 +91,6 @@ private:
     void runBenchmarkWithGenerator();
     void runBenchmarkFromLog();
 
-    void writeOutputString(const std::string & output_string, int64_t start_timestamp_ms);
-
     void createConnections();
     std::vector<std::shared_ptr<Coordination::ZooKeeper>> refreshConnections();
     std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx) const;
@@ -115,9 +113,9 @@ private:
     std::atomic<bool> shutdown = false;
 
     std::shared_ptr<Stats> info;
-    bool print_to_stdout = false;
+    bool print_to_stdout;
     std::optional<std::filesystem::path> file_output;
-    bool output_file_with_timestamp = false;
+    bool output_file_with_timestamp;
 
     Stopwatch total_watch;
     Stopwatch delay_watch;

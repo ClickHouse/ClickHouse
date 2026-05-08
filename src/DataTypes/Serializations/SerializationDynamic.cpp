@@ -85,7 +85,7 @@ void SerializationDynamic::enumerateStreams(
         return;
 
     const auto & variant_type = column_dynamic ? column_dynamic->getVariantInfo().variant_type : checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(deserialize_state->structure_state)->variant_type;
-    auto variant_serialization = variant_type->getSerialization(serialization_info_settings);
+    auto variant_serialization = variant_type->getDefaultSerialization();
 
     settings.path.push_back(Substream::DynamicData);
     auto variant_data = SubstreamData(variant_serialization)
@@ -159,7 +159,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         for (const auto & type : flattened_column.types)
         {
             if (settings.native_format && settings.format_settings && settings.format_settings->native.encode_types_in_binary_format)
-                encodeDataType(type);
+                encodeDataType(type, *stream);
             else
                 writeStringBinary(type->getName(), *stream);
         }
@@ -302,7 +302,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         dynamic_state->recalculate_statistics = true;
     }
 
-    dynamic_state->variant_serialization = dynamic_state->variant_type->getSerialization(serialization_info_settings);
+    dynamic_state->variant_serialization = dynamic_state->variant_type->getDefaultSerialization();
     settings.path.push_back(Substream::DynamicData);
     dynamic_state->variant_serialization->serializeBinaryBulkStatePrefix(variant_column, settings, dynamic_state->variant_state);
     settings.path.pop_back();
@@ -338,7 +338,7 @@ void SerializationDynamic::deserializeBinaryBulkStatePrefix(
         return;
     }
 
-    dynamic_state->variant_serialization = structure_state_typed->variant_type->getSerialization(serialization_info_settings);
+    dynamic_state->variant_serialization = structure_state_typed->variant_type->getDefaultSerialization();
 
     settings.path.push_back(Substream::DynamicData);
 
@@ -1167,11 +1167,6 @@ void SerializationDynamic::serializeTextXML(const IColumn & column, size_t row_n
     };
 
     serializeTextImpl(column, row_num, ostr, nested_serialize);
-}
-
-SerializationPtr SerializationDynamic::createSerializationForType(const DataTypePtr & type) const
-{
-    return type->getSerialization(serialization_info_settings);
 }
 
 }

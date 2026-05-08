@@ -347,7 +347,7 @@ void LocalConnection::sendQuery(
         state->io.onException();
         state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
     }
-    catch (...) // Ok: wrap unknown exception for the client
+    catch (...)
     {
         state->io.onException();
         state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
@@ -469,7 +469,7 @@ bool LocalConnection::poll(size_t)
             state->io.onException();
             state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
         }
-        catch (...) // Ok: wrap unknown exception for the client
+        catch (...)
         {
             state->io.onException();
             state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));

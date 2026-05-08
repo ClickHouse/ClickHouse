@@ -395,7 +395,7 @@ def test_executable_function_query_cache(started_cluster):
     node.query("SYSTEM CLEAR QUERY CACHE");
 
 def test_executable_function_python_exception_in_query_log(started_cluster):
-    '''Test that Python exceptions with tracebacks appear in query_log when stderr_reaction defaults to throw'''
+    '''Test that Python exceptions with tracebacks appear in query_log when stderr_reaction is configured as throw'''
     skip_test_msan(node)
 
     # Clear query log
@@ -433,6 +433,55 @@ def test_executable_function_python_exception_in_query_log(started_cluster):
     # UDF stderr must contain complete Python traceback
     required_components = [
         "Executable generates stderr: Traceback (most recent call last):",
+        "in process_data",
+        "result = int(value) / 0",
+        "ZeroDivisionError: division by zero",
+    ]
+
+    for component in required_components:
+        assert component in exception_text, f"Missing required component: {component}"
+
+
+def test_executable_function_default_stderr_reaction(started_cluster):
+    '''Test that UDFs writing to stderr succeed under default stderr_reaction (log_last) when exit code is 0'''
+    skip_test_msan(node)
+
+    # input_always_error.py writes "Fake error" to stderr but exits 0
+    # With default stderr_reaction (log_last), this should NOT throw
+    assert node.query("SELECT test_function_stderr_default_reaction('abc')") == "Key abc\n"
+
+
+def test_executable_function_python_exception_log_last_in_query_log(started_cluster):
+    '''Test that stderr content appears in exception when exit code != 0 under log_last mode'''
+    skip_test_msan(node)
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    query_id = uuid.uuid4().hex
+
+    try:
+        node.query("SELECT test_function_python_exception_log_last(1)", query_id=query_id)
+        assert False, "Exception should have been thrown"
+    except Exception as ex:
+        assert "DB::Exception" in str(ex)
+        # Under log_last mode, exit code exception is enriched with stderr
+        assert "Child process was exited with return code 1" in str(ex)
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    result = node.query(f"""
+        SELECT exception
+        FROM system.query_log
+        WHERE query_id = '{query_id}'
+          AND type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')
+        FORMAT TabSeparated
+    """)
+
+    exception_text = TSV(result).lines[0]
+
+    # Verify stderr content is included in the exit code exception
+    required_components = [
+        "Stderr:",
         "in process_data",
         "result = int(value) / 0",
         "ZeroDivisionError: division by zero",

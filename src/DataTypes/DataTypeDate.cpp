@@ -10,7 +10,7 @@ bool DataTypeDate::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this);
 }
 
-SerializationPtr DataTypeDate::doGetSerialization(const SerializationInfoSettings &) const
+SerializationPtr DataTypeDate::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationDate>();
 }

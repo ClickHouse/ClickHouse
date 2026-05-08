@@ -297,6 +297,11 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
                 all_inputs_present = false;
                 break;
             }
+            if (!input->result_type->equals(*header.getByName(input->result_name).type))
+            {
+                all_inputs_present = false;
+                break;
+            }
         }
 
         if (all_inputs_present)
@@ -1283,10 +1288,6 @@ void addWindowSteps(QueryPlan & query_plan,
         if (need_sort)
         {
             SortingStep::Settings sort_settings(query_context->getSettingsRef());
-
-            /// Window functions require fully sorted input. Applying sort_overflow_mode = 'break'
-            /// would produce incomplete data and cause the pipeline to get stuck.
-            sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),

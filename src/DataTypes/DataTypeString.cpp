@@ -33,9 +33,15 @@ bool DataTypeString::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this);
 }
 
-SerializationPtr DataTypeString::doGetSerialization(const SerializationInfoSettings & settings) const
+SerializationPtr DataTypeString::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationString>(settings.string_serialization_version);
+    return std::make_shared<SerializationString>();
+}
+
+SerializationPtr DataTypeString::getSerialization(const SerializationInfo & info) const
+{
+    return IDataType::getSerialization(
+        info.getKindStack(), info.getSettings(), std::make_shared<SerializationString>(info.getSettings().string_serialization_version));
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

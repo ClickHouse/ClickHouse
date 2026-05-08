@@ -54,9 +54,6 @@ bool makeFilterNodeOnTopOf(
     return makeExpressionNodeOnTopOfImpl<FilterStep>(node, std::move(actions_dag), nodes, std::move(step_description), filter_column_name, remove_filer);
 }
 
-namespace QueryPlanOptimizations
-{
-
 FilterResult getFilterResult(const ColumnWithTypeAndName & column)
 {
     if (!column.column)
@@ -123,7 +120,7 @@ FilterResult filterResultForNotMatchedRows(
             { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments }
         );
     }
-    catch (const Exception &)
+    catch (...)
     {
         /// If we cannot evaluate the filter expression, return UNKNOWN
         return FilterResult::UNKNOWN;
@@ -131,5 +128,6 @@ FilterResult filterResultForNotMatchedRows(
 
     return getFilterResult(filter_output[0]);
 }
-}
+
+
 }

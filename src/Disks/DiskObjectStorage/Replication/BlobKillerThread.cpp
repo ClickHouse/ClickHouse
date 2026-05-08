@@ -40,13 +40,19 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INVALID_CONFIG_PARAMETER;
+}
+
 namespace
 {
 
 constexpr int64_t DEFAULT_RESCHEDULE_INTERVAL_SEC = 1;
 constexpr int64_t DEFAULT_METADATA_REQUEST_SIZE = 1000;
 constexpr int64_t DEFAULT_THREADS_COUNT = 16;
-constexpr int64_t MAX_BLOBS_IN_TASK = 1000;
+constexpr int64_t DEFAULT_MAX_BLOBS_IN_TASK = 100;
+constexpr int64_t BLOBS_IN_TASK_HARDWARE_LIMIT = 1000; /// S3 API prevents deletion if the value exceeds this limit
 
 IMetadataStorage::BlobsToRemove findBlobsToRemove(
     size_t request_batch,
@@ -69,7 +75,8 @@ IMetadataStorage::BlobsToRemove findBlobsToRemove(
 }
 
 std::vector<std::pair<Location, StoredObjects>> sliceIntoRemoveTasks(
-    const IMetadataStorage::BlobsToRemove & blobs_to_remove) noexcept
+    const IMetadataStorage::BlobsToRemove & blobs_to_remove,
+    size_t max_blobs_in_task) noexcept
 {
     std::vector<std::pair<Location, StoredObjects>> tasks;
 
@@ -81,7 +88,7 @@ std::vector<std::pair<Location, StoredObjects>> sliceIntoRemoveTasks(
             auto & incomplete_task_blobs = incomplete_tasks[location];
             incomplete_task_blobs.push_back(blob);
 
-            if (incomplete_task_blobs.size() >= MAX_BLOBS_IN_TASK)
+            if (incomplete_task_blobs.size() >= max_blobs_in_task)
                 tasks.emplace_back(location, std::exchange(incomplete_task_blobs, {}));
         }
     }
@@ -159,6 +166,7 @@ void recordBlobsRemoval(
 
 void removeBlobs(
     IMetadataStorage::BlobsToRemove blobs_to_remove,
+    size_t max_blobs_in_task,
     ThreadPoolCallbackRunnerLocal<bool> & remove_tasks_runner,
     const MetadataStoragePtr & metadata_storage,
     const ObjectStorageRouterPtr & object_storages,
@@ -167,7 +175,7 @@ void removeBlobs(
     if (blobs_to_remove.empty())
         return;
 
-    auto tasks = sliceIntoRemoveTasks(blobs_to_remove);
+    auto tasks = sliceIntoRemoveTasks(blobs_to_remove, max_blobs_in_task);
     ProfileEvents::increment(ProfileEvents::BlobKillerThreadRemoveTasks, tasks.size());
     LOG_TRACE(log, "Distributed removal of {} blobs into {} tasks", blobs_to_remove.size(), tasks.size());
 
@@ -194,6 +202,7 @@ void removeBlobs(
 
 void executeBlobsCleanup(
     size_t max_to_remove,
+    size_t max_blobs_in_task,
     ThreadPoolCallbackRunnerLocal<bool> & remove_tasks_runner,
     const ClusterConfigurationPtr & cluster,
     const MetadataStoragePtr & metadata,
@@ -202,20 +211,23 @@ void executeBlobsCleanup(
 {
     ProfileEvents::increment(ProfileEvents::BlobKillerThreadRuns);
     auto blobs_to_remove = findBlobsToRemove(max_to_remove, cluster, metadata, log);
-    removeBlobs(std::move(blobs_to_remove), remove_tasks_runner, metadata, object_storages, log);
+    removeBlobs(std::move(blobs_to_remove), max_blobs_in_task, remove_tasks_runner, metadata, object_storages, log);
 }
 
 }
 
 BlobKillerThread::BlobKillerThread(
-    std::string disk_name,
+    std::string disk_name_,
     ContextPtr context,
     ClusterConfigurationPtr cluster_,
     MetadataStoragePtr metadata_storage_,
-    ObjectStorageRouterPtr object_storages_)
-    : cluster(std::move(cluster_))
+    ObjectStorageRouterPtr object_storages_,
+    std::shared_ptr<BlobKillerThread> wrapped_blob_killer_)
+    : disk_name(std::move(disk_name_))
+    , cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))
+    , wrapped_blob_killer(std::move(wrapped_blob_killer_))
     , log(getLogger(fmt::format("{}::BlobKillerThread", disk_name)))
     , remove_tasks_pool(CurrentMetrics::BlobKillerThreads, CurrentMetrics::BlobKillerThreadsActive, CurrentMetrics::BlobKillerThreadsScheduled, 0, 0, 0)
     , remove_tasks_runner(remove_tasks_pool, ThreadName::BLOB_KILLER_TASK)
@@ -229,9 +241,12 @@ void BlobKillerThread::run()
     auto component_guard = Coordination::setCurrentComponent("BlobKillerThread::run");
     LOG_TEST(log, "Starting cleanup");
 
-    executeBlobsCleanup(metadata_request_batch.load(), remove_tasks_runner, cluster, metadata_storage, object_storages, log);
+    executeBlobsCleanup(metadata_request_batch.load(), max_blobs_in_task.load(), remove_tasks_runner, cluster, metadata_storage, object_storages, log);
+    finished_rounds.fetch_add(1);
+    finished_rounds.notify_all();
 
-    const int64_t schedule_after_ms = DelayWithJitter(reschedule_interval_sec.load() * 1000).getDelayWithJitter(-500, 500);
+    const int64_t interval = reschedule_interval_sec.load();
+    const int64_t schedule_after_ms = DelayWithJitter(interval * 1000).getDelayWithJitter(-500, 500);
     task->scheduleAfter(schedule_after_ms);
     LOG_TEST(log, "Scheduled after: {} ms", schedule_after_ms);
 }
@@ -255,7 +270,40 @@ void BlobKillerThread::shutdown()
     task->deactivate();
 
     /// We need to execute it here explicitly because some blobs may be in the metadata storage queue.
-    executeBlobsCleanup(/*max_to_remove=*/0, remove_tasks_runner, cluster, metadata_storage, object_storages, log);
+    executeBlobsCleanup(/*max_to_remove=*/0, max_blobs_in_task.load(), remove_tasks_runner, cluster, metadata_storage, object_storages, log);
+}
+
+int64_t BlobKillerThread::trigger()
+{
+    if (!started || !enabled)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Blobs cleanup was not enabled for disk {}", disk_name);
+
+    int64_t current_round = finished_rounds.load();
+    int64_t expected_round = current_round + 1;
+
+    task->schedule();
+
+    return expected_round;
+}
+
+void BlobKillerThread::waitRound(int64_t expected_round)
+{
+    int64_t current_round = finished_rounds.load();
+    while (current_round < expected_round)
+    {
+        finished_rounds.wait(current_round);
+        current_round = finished_rounds.load();
+    }
+}
+
+void BlobKillerThread::triggerAndWait()
+{
+    int64_t expected_round = trigger();
+
+    if (wrapped_blob_killer)
+        wrapped_blob_killer->triggerAndWait();
+
+    waitRound(expected_round);
 }
 
 void BlobKillerThread::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
@@ -263,6 +311,7 @@ void BlobKillerThread::applyNewSettings(const Poco::Util::AbstractConfiguration 
     enabled = config.getBool(config_prefix + ".enabled", true);
     reschedule_interval_sec = config.getUInt64(config_prefix + ".interval_sec", DEFAULT_RESCHEDULE_INTERVAL_SEC);
     metadata_request_batch = config.getUInt64(config_prefix + ".metadata_request_size", DEFAULT_METADATA_REQUEST_SIZE);
+    max_blobs_in_task = std::clamp<int64_t>(config.getUInt64(config_prefix + ".max_blobs_in_task", DEFAULT_MAX_BLOBS_IN_TASK), 1, BLOBS_IN_TASK_HARDWARE_LIMIT);
     remove_tasks_pool.setMaxThreads(config.getUInt64(config_prefix + ".threads_count", DEFAULT_THREADS_COUNT));
 
     LOG_INFO(log, "Applying new settings: Enabled: {}, Started: {}", enabled.load(), started.load());

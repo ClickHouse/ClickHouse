@@ -114,8 +114,7 @@ public:
         const std::string & path_prefix,
         std::shared_ptr<const S3::Client> client_,
         size_t max_list_size,
-        bool with_tags_,
-        const std::optional<std::string> & start_after_)
+        bool with_tags_)
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageS3Threads,
             CurrentMetrics::ObjectStorageS3ThreadsActive,
@@ -124,13 +123,10 @@ public:
         , client(client_)
         , request(std::make_unique<S3::ListObjectsV2Request>())
         , with_tags(with_tags_)
-        , start_after_set(start_after_.has_value() && !start_after_->empty())
     {
         request->SetBucket(bucket_);
         request->SetPrefix(path_prefix);
         request->SetMaxKeys(static_cast<int>(max_list_size));
-        if (start_after_set)
-            request->SetStartAfter(*start_after_);
     }
 
     ~S3IteratorAsync() override
@@ -152,28 +148,18 @@ private:
         /// Outcome failure will be handled on the caller side.
         if (outcome.IsSuccess())
         {
-            const auto next_continuation_token = outcome.GetResult().GetNextContinuationToken();
-            if (start_after_set)
-            {
-                /// StartAfter should only be sent on the first request. AWS SDK doesn't provide
-                /// a way to clear "has been set" flag, so we rebuild request for pagination.
-                auto paginated_request = std::make_unique<S3::ListObjectsV2Request>();
-                paginated_request->SetBucket(request->GetBucket());
-                paginated_request->SetPrefix(request->GetPrefix());
-                paginated_request->SetMaxKeys(request->GetMaxKeys());
-                paginated_request->SetContinuationToken(next_continuation_token);
-                request = std::move(paginated_request);
-                start_after_set = false;
-            }
-            else
-            {
-                request->SetContinuationToken(next_continuation_token);
-            }
+            request->SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
 
             auto objects = outcome.GetResult().GetContents();
             for (const auto & object : objects)
             {
-                ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), object.GetETag(), {}, {}};
+                ObjectMetadata metadata{
+                    .size_bytes = static_cast<uint64_t>(object.GetSize()),
+                    .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
+                    .etag = object.GetETag(),
+                    .tags = {},
+                    .attributes = {},
+                };
                 if (with_tags)
                     metadata.tags = S3::getObjectTags(*client, request->GetBucket(), object.GetKey());
                 batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
@@ -192,7 +178,6 @@ private:
     std::shared_ptr<const S3::Client> client;
     std::unique_ptr<S3::ListObjectsV2Request> request;
     const bool with_tags;
-    bool start_after_set;
 };
 
 }
@@ -284,16 +269,12 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
 }
 
 
-ObjectStorageIteratorPtr S3ObjectStorage::iterate(
-    const std::string & path_prefix,
-    size_t max_keys,
-    bool with_tags,
-    const std::optional<std::string> & start_after) const
+ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const
 {
     auto settings_ptr = s3_settings.get();
     if (!max_keys)
         max_keys = settings_ptr->request_settings[S3RequestSetting::list_object_keys_size];
-    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_tags, start_after);
+    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_tags);
 }
 
 void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -327,11 +308,12 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 object.GetKey(),
                 ObjectMetadata{
-                    static_cast<uint64_t>(object.GetSize()),
-                    Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    object.GetETag(),
-                    {},
-                    {}}));
+                    .size_bytes = static_cast<uint64_t>(object.GetSize()),
+                    .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
+                    .etag = object.GetETag(),
+                    .tags = {},
+                    .attributes = {},
+                }));
 
         if (max_keys)
         {
@@ -474,6 +456,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;
+    result.is_size_known = object_info.is_size_known;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
     result.tags = object_info.tags;
@@ -512,6 +495,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;
+    result.is_size_known = object_info.is_size_known;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
     result.tags = std::move(object_info.tags);

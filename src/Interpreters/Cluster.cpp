@@ -1,8 +1,6 @@
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Client/ConnectionPool.h>
-#include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Cluster.h>
 #include <base/range.h>
 #include <base/sort.h>
@@ -166,7 +164,7 @@ Cluster::Address::Address(
             parsed_host_port = parseAddress(info.hostname, 0);
             can_be_local = false;
         }
-        catch (const Exception &)
+        catch (...)
         {
             parsed_host_port = parseAddress(info.hostname, params.clickhouse_port);
         }

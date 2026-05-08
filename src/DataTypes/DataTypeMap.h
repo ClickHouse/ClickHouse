@@ -54,7 +54,7 @@ public:
     const DataTypePtr & getNestedType() const { return nested; }
     DataTypePtr getNestedTypeWithUnnamedTuple() const;
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+    SerializationPtr doGetDefaultSerialization() const override;
 
     static bool isValidKeyType(DataTypePtr key_type);
 

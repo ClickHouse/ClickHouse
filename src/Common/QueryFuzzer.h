@@ -228,7 +228,6 @@ private:
     ASTPtr addArrayJoinClause();
     ASTPtr generatePredicate();
     void addOrReplacePredicate(ASTSelectQuery * sel, ASTSelectQuery::Expression expr);
-    void fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);

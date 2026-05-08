@@ -256,28 +256,8 @@ function stop_server()
     fi
 }
 
-function wait_server_port_free()
-{
-    local port=$1
-    local timeout=${2:-120}
-    local elapsed=0
-    while ss -tlnp | grep -q ":${port}\b" && [ "$elapsed" -lt "$timeout" ]; do
-        sleep 1
-        elapsed=$((elapsed + 1))
-    done
-    if [ "$elapsed" -ge "$timeout" ]; then
-        echo "Warning: port $port is still in use after ${timeout}s"
-    fi
-}
-
 function start_server()
 {
-    # After safeExit (forceful shutdown), the kernel may still be cleaning up sockets,
-    # especially under sanitizer builds. Wait for the server ports to become available.
-    wait_server_port_free 9000
-    wait_server_port_free 9009
-    wait_server_port_free 9181
-
     counter=0
     max_attempt=${1:-6}
     until clickhouse-client --query "SELECT 1"

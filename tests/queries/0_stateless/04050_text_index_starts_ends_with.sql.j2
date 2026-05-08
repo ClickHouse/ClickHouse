@@ -1,0 +1,63 @@
+-- Tags: no-parallel-replicas
+
+{% for tokenizer in ['array', 'splitByString', 'ngrams(3)', 'splitByNonAlpha'] -%}
+
+SET enable_analyzer = 1;
+
+DROP TABLE IF EXISTS test_fts;
+
+SELECT 'tokenizer: {{ tokenizer }}';
+
+CREATE TABLE test_fts
+(
+    id UInt64,
+    name String,
+    INDEX idx_name_fts name TYPE text(tokenizer = {{ tokenizer }})
+)
+ENGINE = MergeTree
+ORDER BY id SETTINGS index_granularity = 1024;
+
+SYSTEM STOP MERGES test_fts;
+
+INSERT INTO test_fts VALUES
+    (1, 'ClickHouse is a fast analytical database');
+
+INSERT INTO test_fts VALUES
+    (2, 'Full-text search is now generally available');
+
+INSERT INTO test_fts VALUES
+    (3, 'The quick brown fox jumps over the lazy dog'),
+    (4, 'ClickHouse supports inverted text indexes');
+
+SET optimize_rewrite_like_perfect_affix = 1;
+
+EXPLAIN indexes = 1
+SELECT id, name
+FROM test_fts
+WHERE name LIKE 'Full%';
+
+SELECT id, name
+FROM test_fts
+WHERE name LIKE 'Full%';
+
+EXPLAIN indexes = 1
+SELECT id, name
+FROM test_fts
+WHERE startsWith(name, 'Full');
+
+SELECT id, name
+FROM test_fts
+WHERE startsWith(name, 'Full');
+
+EXPLAIN indexes = 1
+SELECT id, name
+FROM test_fts
+WHERE endsWith(name, 'analytical database');
+
+SELECT id, name
+FROM test_fts
+WHERE endsWith(name, 'analytical database');
+
+DROP TABLE test_fts;
+
+{% endfor -%}
