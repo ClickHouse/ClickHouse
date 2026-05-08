@@ -23,8 +23,6 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Common/typeid_cast.h>
 
-#include <boost/algorithm/string/predicate.hpp>
-
 namespace DB
 {
 namespace Setting
@@ -199,7 +197,7 @@ String evaluateSubqueryQueryText(const ASTPtr & query, ContextPtr context)
 
 void checkNoNestedEval(const ASTPtr & ast)
 {
-    if (const auto * function = ast->as<ASTFunction>(); function && boost::iequals(function->name, TableFunctionEval::name))
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == TableFunctionEval::name)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nested table function `eval` is not supported");
 
     for (const auto & child : ast->children)
