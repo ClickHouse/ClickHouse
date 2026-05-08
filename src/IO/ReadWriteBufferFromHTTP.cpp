@@ -325,6 +325,8 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
     {
         /// Check cancellation since the second attempt to let the original HTTP errors propagate correctly on the first attempt.
         if (attempt > 1 && check_cancelled && check_cancelled())
+            /// Don't throw exception, use break instead. Later in calling code (for example in StorageURLSource)
+            /// we make cancellation checks to know that doWithRetries was exited by break on cancellation.
             break;
 
         [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_max_tries;
