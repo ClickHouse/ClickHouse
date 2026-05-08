@@ -2,6 +2,8 @@
 #include <Common/logger_useful.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
@@ -38,6 +40,24 @@ FileDictionarySource::FileDictionarySource(
     , sample_block{sample_block_}
     , context(context_)
 {
+    /// `loadAll` reads the dictionary file via `ReadBufferFromFile`, which only
+    /// works on the local filesystem. With `user_files_policy` configured on a
+    /// non-local disk (for example `s3_plain`), the configured user-files roots
+    /// are not usable through local APIs. Reject up front instead of failing
+    /// later with an opaque local I/O error, mirroring the explicit guards added
+    /// in `InputFormatErrorsLogger` and `EmbeddedRocksDB`.
+    if (auto user_files_volume = context->getUserFilesVolume())
+    {
+        for (const auto & disk : user_files_volume->getDisks())
+        {
+            if (disk->isRemote())
+                throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                                "Dictionary source `file` is not supported "
+                                "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                                disk->getName());
+        }
+    }
+
     const auto user_files_paths = context->getUserFilesPaths();
     if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath, user_files_paths))
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", filepath);
