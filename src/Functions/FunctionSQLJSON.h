@@ -276,7 +276,7 @@ public:
 
         struct PlanNode
         {
-            NodeKind kind;
+            NodeKind kind = NodeKind::Leaf;
             IColumn * dest = nullptr;           /// destination column for this node
             size_t array_size = 0;              /// for Array nodes: constant number of elements
             IColumn::Offsets * array_offsets = nullptr; /// for Array nodes: offsets column
