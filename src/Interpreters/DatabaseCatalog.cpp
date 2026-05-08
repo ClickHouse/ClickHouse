@@ -87,12 +87,27 @@ namespace Setting
 {
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+    extern const SettingsBool show_external_databases_in_system_tables;
 }
 
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
+}
+
+namespace
+{
+    /// A database is considered "external" (and so hidden from system tables when
+    /// `show_external_databases_in_system_tables` is disabled) if it is a data lake catalog
+    /// or a MySQL/PostgreSQL database. Listing tables in these databases typically requires
+    /// network calls to a remote service.
+    bool databaseIsExternal(const IDatabase & database)
+    {
+        if (database.isDatalakeCatalog())
+            return true;
+        const auto & engine = database.getEngineName();
+        return engine == "MySQL" || engine == "PostgreSQL";
+    }
 }
 
 class DatabaseNameHints : public IHints<>
@@ -114,7 +129,7 @@ public:
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
         Names result;
-        auto databases_list = database_catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+        auto databases_list = database_catalog.getDatabases(GetDatabasesOptions{.with_external_databases = true});
         for (const auto & database_name : databases_list | boost::adaptors::map_keys)
         {
             if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
@@ -342,7 +357,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     }) == uuid_map.end());
 
     databases.clear();
-    databases_without_datalake_catalogs.clear();
+    databases_without_external.clear();
 
     referential_dependencies.clear();
     loading_dependencies.clear();
@@ -591,16 +606,16 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     }
 }
 
-bool DatabaseCatalog::hasDatalakeCatalogs() const
+bool DatabaseCatalog::hasExternalDatabases() const
 {
     std::lock_guard lock{databases_mutex};
-    return databases.size() != databases_without_datalake_catalogs.size();
+    return databases.size() != databases_without_external.size();
 }
 
-bool DatabaseCatalog::isDatalakeCatalog(const String & database_name) const
+bool DatabaseCatalog::isExternalDatabase(const String & database_name) const
 {
     std::lock_guard lock{databases_mutex};
-    return databases.contains(database_name) && !databases_without_datalake_catalogs.contains(database_name);
+    return databases.contains(database_name) && !databases_without_external.contains(database_name);
 }
 
 void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) const
@@ -621,8 +636,8 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
-    if (!database->isDatalakeCatalog())
-        databases_without_datalake_catalogs.emplace(database_name, database);
+    if (!databaseIsExternal(*database))
+        databases_without_external.emplace(database_name, database);
 
     NOEXCEPT_SCOPE({
         UUID db_uuid = database->getUUID();
@@ -650,8 +665,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
                 removeUUIDMapping(db_uuid);
             databases.erase(database_name);
         }
-        if (auto it = databases_without_datalake_catalogs.find(database_name); it != databases_without_datalake_catalogs.end())
-            databases_without_datalake_catalogs.erase(it);
+        if (auto it = databases_without_external.find(database_name); it != databases_without_external.end())
+            databases_without_external.erase(it);
     }
     if (!db)
     {
@@ -722,11 +737,11 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     databases.erase(it);
     databases.emplace(new_name, db);
 
-    auto no_catalogs_it = databases_without_datalake_catalogs.find(old_name);
-    if (no_catalogs_it != databases_without_datalake_catalogs.end())
+    auto local_it = databases_without_external.find(old_name);
+    if (local_it != databases_without_external.end())
     {
-        databases_without_datalake_catalogs.erase(no_catalogs_it);
-        databases_without_datalake_catalogs.emplace(new_name, db);
+        databases_without_external.erase(local_it);
+        databases_without_external.emplace(new_name, db);
     }
 
     for (const auto & table_name : tables_in_database)
@@ -850,10 +865,10 @@ bool DatabaseCatalog::isDatabaseExist(std::string_view database_name) const
 Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const
 {
     std::lock_guard lock{databases_mutex};
-    if (options.with_datalake_catalogs)
+    if (options.with_external_databases)
         return databases;
 
-    return databases_without_datalake_catalogs;
+    return databases_without_external;
 }
 
 bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr context_) const
@@ -1167,7 +1182,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     std::map<String, std::pair<StorageID, DiskPtr>> dropped_metadata;
     String path = fs::path("metadata_dropped") / "";
 
-    auto db_map = getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+    auto db_map = getDatabases(GetDatabasesOptions{.with_external_databases = true});
     std::set<DiskPtr> metadata_disk_list;
     for (const auto & [_, db] : db_map)
     {
@@ -2060,7 +2075,7 @@ void DatabaseCatalog::reloadDisksTask()
         disks.swap(disks_to_reload);
     }
 
-    for (auto & database : getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (auto & database : getDatabases(GetDatabasesOptions{.with_external_databases = false}))
     {
         // WARNING: In case of `async_load_databases = true` getTablesIterator() call wait for all table in the database to be loaded.
         // WARNING: It means that no database will be able to update configuration until all databases are fully loaded.
@@ -2227,7 +2242,7 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
     /// load all available databases from the DatabaseCatalog instance
     auto & database_catalog = DatabaseCatalog::instance();
     /// NOTE Skip datalake catalogs to avoid unnecessary access to remote catalogs (can be expensive)
-    auto all_databases = database_catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    auto all_databases = database_catalog.getDatabases(GetDatabasesOptions{.with_external_databases = false});
 
     for (const auto & [db_name, db] : all_databases)
     {
@@ -2250,8 +2265,9 @@ Names TableNameHints::getAllRegisteredNames() const
 {
     if (!database)
         return {};
-    /// DataLakeCatalog::getAllTableNames lists all tables from remote catalog - expensive. Skip when user opted out.
-    if (database->isDatalakeCatalog() && context && !context->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
+    /// External databases (data lake catalogs, MySQL, PostgreSQL) typically list tables via a remote
+    /// service, which is expensive. Skip when user opted out of seeing them in system tables.
+    if (databaseIsExternal(*database) && context && !context->getSettingsRef()[Setting::show_external_databases_in_system_tables])
         return {};
     return database->getAllTableNames(context);
 }
