@@ -48,6 +48,7 @@ int mainEntryExampleIntervalTree(int argc, char ** argv);
 int mainEntryExampleEncryptDecrypt(int argc, char ** argv);
 #endif
 int mainEntryExampleCheckPointerValid(int argc, char ** argv);
+int mainEntryExampleMemoryTrackerBenchmark(int argc, char ** argv);
 #if USE_ICU
 int mainEntryExampleUtf8UpperLower(int argc, char ** argv);
 #endif
@@ -155,6 +156,7 @@ std::pair<std::string_view, MainFunc> examples[] =
     {"encrypt_decrypt", mainEntryExampleEncryptDecrypt},
 #endif
     {"check_pointer_valid", mainEntryExampleCheckPointerValid},
+    {"memory_tracker_benchmark", mainEntryExampleMemoryTrackerBenchmark},
 #if USE_ICU
     {"utf8_upper_lower", mainEntryExampleUtf8UpperLower},
 #endif
