@@ -114,28 +114,50 @@ public:
                         Float64 xmax = col_xmax->getFloat64(i);
                         Float64 ymax = col_ymax->getFloat64(i);
 
-                        if (xmin > xmax || ymin > ymax)
+                        constexpr bool is_spherical = std::is_same_v<Point, SphericalPoint>;
+
+                        if (ymin > ymax)
                             throw Exception(
                                 ErrorCodes::BAD_ARGUMENTS,
-                                "Invalid bounding box in function {}: "
-                                "xmin ({}) must be <= xmax ({}) and ymin ({}) must be <= ymax ({})",
-                                getName(), xmin, xmax, ymin, ymax);
+                                "Invalid bounding box in function {}: ymin ({}) must be <= ymax ({})",
+                                getName(), ymin, ymax);
 
-                        /// Construct bounding box: min_corner(xmin, ymin), max_corner(xmax, ymax)
-                        Point min_corner;
-                        boost::geometry::set<0>(min_corner, xmin);
-                        boost::geometry::set<1>(min_corner, ymin);
-
-                        Point max_corner;
-                        boost::geometry::set<0>(max_corner, xmax);
-                        boost::geometry::set<1>(max_corner, ymax);
-
-                        Box box(min_corner, max_corner);
+                        if (!is_spherical && xmin > xmax)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid bounding box in function {}: xmin ({}) must be <= xmax ({})",
+                                getName(), xmin, xmax);
 
                         if constexpr (!is_point)
                             boost::geometry::correct(geometries[i]);
 
-                        res_data.emplace_back(boost::geometry::intersects(geometries[i], box));
+                        auto intersects_box = [&](Float64 box_xmin, Float64 box_xmax)
+                        {
+                            Point min_corner;
+                            boost::geometry::set<0>(min_corner, box_xmin);
+                            boost::geometry::set<1>(min_corner, ymin);
+
+                            Point max_corner;
+                            boost::geometry::set<0>(max_corner, box_xmax);
+                            boost::geometry::set<1>(max_corner, ymax);
+
+                            Box box(min_corner, max_corner);
+                            return boost::geometry::intersects(geometries[i], box);
+                        };
+
+                        /// For spherical coordinates, xmin > xmax means anti-meridian crossing:
+                        /// [xmin, 180] U [-180, xmax].
+                        if constexpr (is_spherical)
+                        {
+                            if (xmin <= xmax)
+                                res_data.emplace_back(intersects_box(xmin, xmax));
+                            else
+                                res_data.emplace_back(intersects_box(xmin, 180.0) || intersects_box(-180.0, xmax));
+                        }
+                        else
+                        {
+                            res_data.emplace_back(intersects_box(xmin, xmax));
+                        }
                     }
                 }
             });

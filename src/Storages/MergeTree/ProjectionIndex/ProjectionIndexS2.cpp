@@ -646,20 +646,44 @@ bool tryGetConstantFloat64(const ActionsDAG::Node * node, Float64 & result)
     }
 }
 
-/// Build a rectangular polygon from bounding box coordinates for S2 covering.
-std::optional<DecodedGeometry> buildBoxGeometry(Float64 xmin, Float64 ymin, Float64 xmax, Float64 ymax)
+/// Build geometry for ST_IntersectsBox from bounding box coordinates for S2 covering.
+std::optional<DecodedGeometry> buildBoxGeometry(Float64 xmin, Float64 ymin, Float64 xmax, Float64 ymax, bool is_spherical)
 {
-    SphericalPolygon polygon;
-    polygon.outer().emplace_back(xmin, ymin);
-    polygon.outer().emplace_back(xmax, ymin);
-    polygon.outer().emplace_back(xmax, ymax);
-    polygon.outer().emplace_back(xmin, ymax);
-    polygon.outer().emplace_back(xmin, ymin);
-    boost::geometry::correct(polygon);
+    if (ymin > ymax)
+        return std::nullopt;
+
+    if (!is_spherical && xmin > xmax)
+        return std::nullopt;
+
+    auto make_polygon = [](Float64 box_xmin, Float64 box_ymin, Float64 box_xmax, Float64 box_ymax)
+    {
+        SphericalPolygon polygon;
+        polygon.outer().emplace_back(box_xmin, box_ymin);
+        polygon.outer().emplace_back(box_xmax, box_ymin);
+        polygon.outer().emplace_back(box_xmax, box_ymax);
+        polygon.outer().emplace_back(box_xmin, box_ymax);
+        polygon.outer().emplace_back(box_xmin, box_ymin);
+        boost::geometry::correct(polygon);
+        return polygon;
+    };
 
     DecodedGeometry geometry;
+
+    /// For spherical coordinates, xmin > xmax means anti-meridian crossing:
+    /// [xmin, 180] U [-180, xmax].
+    if (is_spherical && xmin > xmax)
+    {
+        SphericalMultiPolygon multipolygon;
+        multipolygon.push_back(make_polygon(xmin, ymin, 180.0, ymax));
+        multipolygon.push_back(make_polygon(-180.0, ymin, xmax, ymax));
+
+        geometry.kind = DecodedGeometry::Kind::MultiPolygon;
+        geometry.value = std::move(multipolygon);
+        return geometry;
+    }
+
     geometry.kind = DecodedGeometry::Kind::Polygon;
-    geometry.value = std::move(polygon);
+    geometry.value = make_polygon(xmin, ymin, xmax, ymax);
     return geometry;
 }
 
@@ -869,27 +893,19 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
     if (!filter_node)
         return std::nullopt;
 
-    /// All spherical spatial predicates can be pruned with S2 covering:
+    /// Only spherical predicates can be safely pruned with S2 covering:
     /// if the predicate is true, the geometries must have spatial overlap,
     /// so S2 cell intersection is a necessary condition (no false negatives).
+    /// Cartesian predicates are intentionally excluded.
     static const std::unordered_set<std::string> supported_two_arg_functions = {
-        "polygonsIntersectCartesian",
         "polygonsIntersectSpherical",
-        "polygonsWithinCartesian",
         "polygonsWithinSpherical",
-        "geoContainsCartesian",
         "geoContainsSpherical",
-        "geoCoveredByCartesian",
         "geoCoveredBySpherical",
-        "geoCoversCartesian",
         "geoCoversSpherical",
-        "geoEqualsCartesian",
         "geoEqualsSpherical",
-        "geoIntersectsCartesian",
         "geoIntersectsSpherical",
-        "geoTouchesCartesian",
         "geoTouchesSpherical",
-        "geoWithinCartesian",
         "geoWithinSpherical",
     };
 
@@ -947,8 +963,8 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
 
             geometry = decodeGeometryFromField(geometry_field, geometry_type);
         }
-        /// Path 2: ST_IntersectsBox(source_column, xmin, ymin, xmax, ymax)
-        else if ((func_name == "geoIntersectsBoxCartesian" || func_name == "geoIntersectsBoxSpherical") && fn->children.size() == 5)
+        /// Path 2: spherical ST_IntersectsBox(source_column, xmin, ymin, xmax, ymax)
+        else if (func_name == "geoIntersectsBoxSpherical" && fn->children.size() == 5)
         {
             if (!isSourceColumnNode(fn->children[0], params.source_column))
                 continue;
@@ -963,7 +979,7 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
                 || !tryGetConstantFloat64(fn->children[4], ymax))
                 continue;
 
-            geometry = buildBoxGeometry(xmin, ymin, xmax, ymax);
+            geometry = buildBoxGeometry(xmin, ymin, xmax, ymax, /* is_spherical */ true);
         }
         /// Path 3: spherical ST_DWithin(source_column, const_geometry, distance_meters)
         ///          or spherical ST_DWithin(const_geometry, source_column, distance_meters)
