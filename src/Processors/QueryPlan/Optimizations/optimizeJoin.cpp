@@ -807,15 +807,27 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         else
         {
             auto sources = edge.getSourceRelations();
+            bool should_pin = false;
+
             for (auto rel_id : sources)
             {
                 auto it = query_graph.join_kinds.find(rel_id);
                 if (it != query_graph.join_kinds.end())
                 {
-                    query_graph.pinned[edge] = total_inputs - 1;
+                    should_pin = true;
                     break;
                 }
             }
+
+            /// If a condition references only the preserved side of an outer join,
+            /// it must not be placed in that outer join's ON clause, because
+            /// ON-clause conditions on the preserved side only affect matching,
+            /// not filtering — rows from the preserved side are kept regardless.
+            should_pin = should_pin || std::ranges::any_of(query_graph.join_kinds | std::views::values,
+                [&sources](const auto & partner_info) { return isSubsetOf(sources, partner_info.first); });
+
+            if (should_pin)
+                query_graph.pinned[edge] = total_inputs - 1;
         }
     }
 

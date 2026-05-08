@@ -858,7 +858,7 @@ private:
                       }
                       else
                       {
-                          next->set_value(getTableStructure(rg, b, true));
+                          next->set_value(getTableStructure(rg, b, false));
                       }
                       added_structure++;
                   }}});
