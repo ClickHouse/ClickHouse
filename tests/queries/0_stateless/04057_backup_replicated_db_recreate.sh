@@ -143,13 +143,30 @@ done
 #   * In release builds, the chassert is a no-op and the loop silently retries
 #     until `max_retries` is exhausted, then throws
 #     `Cannot get consistent metadata snapshot`.
-# The fix replaces both with a distinct `Log pointer moved backwards`
+# The fix replaces both with a distinct `Replicated database was dropped`
 # exception, so neither pre-fix symptom can appear.
 $CLICKHOUSE_CLIENT --query "
     SELECT count() FROM system.backups
     WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%'
       AND (error LIKE '%LOGICAL_ERROR%'
            OR error LIKE '%Cannot get consistent metadata snapshot%')
+"
+
+# Verify the fix actually engaged on the race condition. With the stress loop
+# above (six backup workers in tight submission loops + foreground recreates),
+# the recreate-during-backup window must have triggered the new guards at
+# least once: either the in-loop monotonicity check or the post-loop `czxid`
+# identity check in `getTablesForBackup`. Both throw `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT`
+# with a message starting `Replicated database was dropped`. This message
+# does not exist in unfixed code, so a non-zero count is a deterministic
+# signal that the fix is in place. Without this assertion, bugfix validation
+# (which runs the new test against the master HEAD release binary, where
+# the silent fast-path corruption produces no error) treats the test as
+# unable to reproduce the bug.
+$CLICKHOUSE_CLIENT --query "
+    SELECT count() > 0 FROM system.backups
+    WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%'
+      AND error LIKE '%Replicated database was dropped%'
 "
 
 # Clean up backup state. The stress loop submits thousands of backup IDs, and
