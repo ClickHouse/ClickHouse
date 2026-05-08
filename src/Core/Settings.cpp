@@ -1715,7 +1715,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_skip_indexes_for_top_k, false, R"(
+    DECLARE(Bool, use_skip_indexes_for_top_k, true, R"(
 Enable using data skipping indexes for TopK filtering.
 
 When enabled, if a minmax skip index exists on the column in `ORDER BY <column> LIMIT n` query, optimizer will attempt to use the minmax index to skip granules that are not relevant for the final result . This can reduce query latency.
@@ -1735,7 +1735,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_top_k_dynamic_filtering, false, R"(
+    DECLARE(Bool, use_top_k_dynamic_filtering, true, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 
 When enabled, the query executor will try to skip granules and rows that will not be part of the final `top N` rows in the resultset. This optimization is dynamic in nature and latency improvements depends on data distribution and presence of other predicates in the query.
