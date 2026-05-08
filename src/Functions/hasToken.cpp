@@ -30,7 +30,7 @@ Checks if the given token is present in the haystack.
 Uses [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitByNonAlpha) as tokenizer, i.e. a token is defined as the longest possible sub-sequence of consecutive characters `[0-9A-Za-z_]` (numbers, ASCII characters and underscore).
 
 :::note
-This function has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
+The function has certain pitfalls when used for lookups in text indexes with non-`splitByNonAlpha` tokenizers and/or preprocessor/postprocessor expressions.
 We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens) instead.
 :::
     )";
@@ -59,7 +59,7 @@ We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllT
 Like [`hasToken`](#hasToken) but returns null if token is ill-formed.
 
 :::note
-This function has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
+The function has certain pitfalls when used for lookups in text indexes with non-`splitByNonAlpha` tokenizers and/or preprocessor/postprocessor expressions.
 We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens) instead.
 :::
     )";
