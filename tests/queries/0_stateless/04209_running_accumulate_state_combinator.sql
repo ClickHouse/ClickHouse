@@ -20,16 +20,23 @@ FROM
 )
 FORMAT `Null`;
 
--- Same shape but with `sumStateOrDefaultStateDistinct` so the running cumulative
--- result is observable: without the fix the pointers would dangle, with it the states
--- are copied into the result column's arena and `finalizeAggregation` returns 0,1,3,6,10.
-SELECT finalizeAggregation(runningAccumulate(sum_k)) AS res
-FROM
+-- Same shape but read the finalized values out so the column is materialized.
+-- Without the fix, the result column held raw pointers to a stack-scoped buffer
+-- that was already destroyed; `finalizeAggregation` over the freed states would
+-- read garbage / crash. We only count the rows here because `runningAccumulate`
+-- resets the accumulator on each new block, and CI randomizes `max_block_size`
+-- and `max_threads` — the cumulative values themselves are not deterministic
+-- across runs, but the count is.
+SELECT count() FROM
 (
-    SELECT
-        number AS k,
-        sumStateOrDefaultStateDistinct(k) IGNORE NULLS AS sum_k
-    FROM numbers(5)
-    GROUP BY k
-    ORDER BY k ASC
+    SELECT finalizeAggregation(runningAccumulate(sum_k)) AS res
+    FROM
+    (
+        SELECT
+            number AS k,
+            sumStateOrDefaultStateDistinct(k) IGNORE NULLS AS sum_k
+        FROM numbers(5)
+        GROUP BY k
+        ORDER BY k ASC
+    )
 );
