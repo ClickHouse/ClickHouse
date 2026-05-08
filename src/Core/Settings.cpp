@@ -1715,7 +1715,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_skip_indexes_for_top_k, false, R"(
+    DECLARE(Bool, use_skip_indexes_for_top_k, true, R"(
 Enable using data skipping indexes for TopK filtering.
 
 When enabled, if a minmax skip index exists on the column in `ORDER BY <column> LIMIT n` query, optimizer will attempt to use the minmax index to skip granules that are not relevant for the final result . This can reduce query latency.
@@ -1735,7 +1735,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_top_k_dynamic_filtering, false, R"(
+    DECLARE(Bool, use_top_k_dynamic_filtering, true, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 
 When enabled, the query executor will try to skip granules and rows that will not be part of the final `top N` rows in the resultset. This optimization is dynamic in nature and latency improvements depends on data distribution and presence of other predicates in the query.
@@ -7700,14 +7700,14 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), automatic spilling is disabled. It prevents read in order through join optimization.
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
 )", 0) \
-    DECLARE(Double, max_bytes_ratio_before_external_join, 0., R"(
+    DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
 The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
 
 For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
 
-If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0` (default), only the absolute setting applies.
+If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
 
 Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto` and a temporary data path is configured.
 )", 0) \
@@ -7989,6 +7989,17 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
 )", EXPERIMENTAL, evaluation_time) \
     DECLARE(Bool, allow_experimental_alias_table_engine, false, R"(
 Allow to create table with the Alias engine.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
+Allow to create tables with Paimon* table engines.
+)", EXPERIMENTAL) \
+    DECLARE(Int64, paimon_target_snapshot_id, -1, R"(
+Query-level targeted snapshot read for Paimon incremental mode. When >0, the reader will only fetch the delta
+for the specified snapshot_id without advancing the committed watermark.
+Default: -1 (disabled)
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, max_consume_snapshots, 0, R"(
+Maximum number of Paimon snapshots to consume per incremental read. 0 means no limit.
 )", EXPERIMENTAL) \
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions
