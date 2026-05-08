@@ -178,13 +178,12 @@ namespace
         auto sample_timestamp = [] { return getTupleElement(make_intrusive<ASTIdentifier>("p"), 1); };
         auto sample_value = [] { return getTupleElement(make_intrusive<ASTIdentifier>("p"), 2); };
 
+        auto lower_bound = makeASTFunction("minus", toFloat64(grid_timestamp->clone()), toFloat64(window->clone()));
+        auto upper_bound = toFloat64(std::move(grid_timestamp));
         auto filter_condition = makeASTFunction(
             "and",
-            makeASTFunction(
-                "greater",
-                toFloat64(sample_timestamp()),
-                makeASTFunction("minus", toFloat64(grid_timestamp->clone()), toFloat64(window->clone()))),
-            makeASTFunction("lessOrEquals", toFloat64(sample_timestamp()), toFloat64(std::move(grid_timestamp))),
+            makeASTFunction("greater", toFloat64(sample_timestamp()), std::move(lower_bound)),
+            makeASTFunction("lessOrEquals", toFloat64(sample_timestamp()), std::move(upper_bound)),
             makeASTFunction("isNotNull", sample_value()));
 
         auto filtered_samples = makeASTFunction(
@@ -238,11 +237,13 @@ namespace
         auto grid_timestamp = make_intrusive<ASTIdentifier>("t");
         auto window_ast = timeSeriesDurationToAST(window, context.timestamp_data_type);
         auto samples = buildWindowSamples(grid_timestamp->clone(), timestamps->clone(), values->clone(), window_ast->clone());
+        auto has_no_samples = makeASTFunction("empty", samples->clone());
+        auto over_time_value = buildSimpleOverTimeValue(function, std::move(samples), context);
         auto value = makeASTFunction(
             "if",
-            makeASTFunction("empty", samples->clone()),
+            std::move(has_no_samples),
             make_intrusive<ASTLiteral>(Field{}),
-            buildSimpleOverTimeValue(function, std::move(samples), context));
+            std::move(over_time_value));
 
         return makeASTFunction(
             "arrayMap",

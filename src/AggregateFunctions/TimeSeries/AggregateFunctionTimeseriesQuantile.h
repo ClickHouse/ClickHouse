@@ -50,7 +50,7 @@ struct AggregateFunctionTimeseriesQuantileTraits
 
         void merge(const Bucket & other)
         {
-            samples.reserve(other.samples.size());
+            samples.reserve(samples.size() + other.samples.size());
 
             for (const auto & [timestamp, value] : other.samples)
                 add(timestamp, value);
