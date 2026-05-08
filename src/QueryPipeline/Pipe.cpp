@@ -684,7 +684,7 @@ void Pipe::addChains(std::vector<Chain> chains)
     max_parallel_streams = std::max(max_parallel_streams, max_parallel_streams_for_chains);
 }
 
-void Pipe::addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per_resize_after_split, bool strict)
+void Pipe::addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per_resize_after_split, const ResizeFactory & resize_factory)
 {
     OutputPortRawPtrs resize_output_ports(num_streams);
 
@@ -698,11 +698,7 @@ void Pipe::addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per
 
     for (size_t i = 0, next_input = 0, next_output = 0; i < groups; ++i)
     {
-        ProcessorPtr resize;
-        if (strict)
-            resize = std::make_shared<StrictResizeProcessor>(getSharedHeader(), instream_per_group, outstreams_per_group);
-        else
-            resize = std::make_shared<ResizeProcessor>(getSharedHeader(), instream_per_group, outstreams_per_group);
+        ProcessorPtr resize = resize_factory(instream_per_group, outstreams_per_group);
 
         for (auto it = resize->getInputs().begin(); it != resize->getInputs().end(); ++it)
         {
@@ -771,23 +767,24 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
     /// 1. Mitigates lock contention.
     /// 2. Maintains ResizeProcessor's benefit of balancing data flow among multiple streams.
     ///
+    SharedHeader header_for_factory = getSharedHeader();
+    auto factory = [strict, header_for_factory](size_t num_inputs, size_t num_outputs) -> ProcessorPtr
+    {
+        if (strict)
+            return std::make_shared<StrictResizeProcessor>(header_for_factory, num_inputs, num_outputs);
+        return std::make_shared<ResizeProcessor>(header_for_factory, num_inputs, num_outputs);
+    };
+
     /// Disable this optimization when min_outstreams_per_resize_after_split is 0
     if (output_ports.size() > 1 && min_outstreams_per_resize_after_split != 0 && num_streams / min_outstreams_per_resize_after_split > 1)
     {
-        addSplitResizeTransform(num_streams, min_outstreams_per_resize_after_split, strict);
+        addSplitResizeTransform(num_streams, min_outstreams_per_resize_after_split, factory);
         return;
     }
     if (strict && num_streams == numOutputPorts())
         return;
 
-    ProcessorPtr resize;
-
-    if (strict)
-        resize = std::make_shared<StrictResizeProcessor>(getSharedHeader(), numOutputPorts(), num_streams);
-    else
-        resize = std::make_shared<ResizeProcessor>(getSharedHeader(), numOutputPorts(), num_streams);
-
-    addTransform(std::move(resize));
+    addTransform(factory(numOutputPorts(), num_streams));
 }
 
 void Pipe::resizeGradual(size_t num_streams, size_t min_rows_per_output, size_t min_bytes_per_output, UInt64 min_outstreams_per_resize_after_split)
@@ -804,10 +801,24 @@ void Pipe::resizeGradual(size_t num_streams, size_t min_rows_per_output, size_t 
     if (numOutputPorts() == 1 && num_streams == 1)
         return;
 
-    auto processor = std::make_shared<GradualResizeProcessor>(
-        getSharedHeader(), numOutputPorts(), num_streams, min_rows_per_output, min_bytes_per_output);
+    SharedHeader header_for_factory = getSharedHeader();
+    auto factory = [min_rows_per_output, min_bytes_per_output, header_for_factory](size_t num_inputs, size_t num_outputs) -> ProcessorPtr
+    {
+        return std::make_shared<GradualResizeProcessor>(
+            header_for_factory, num_inputs, num_outputs, min_rows_per_output, min_bytes_per_output);
+    };
 
-    addTransform(std::move(processor));
+    /// Apply the same split-resize optimization as `resize` to mitigate `ExecutingGraph::Node::status_mutex`
+    /// contention at high parallelism. With G groups, the gradual ramp-up starts with G initial active outputs
+    /// instead of 1 — but G is bounded (e.g. 2 for `max_threads = 64` with the default
+    /// `min_outstreams_per_resize_after_split = 24`), so the merging-overhead reduction is mostly preserved.
+    if (output_ports.size() > 1 && min_outstreams_per_resize_after_split != 0 && num_streams / min_outstreams_per_resize_after_split > 1)
+    {
+        addSplitResizeTransform(num_streams, min_outstreams_per_resize_after_split, factory);
+        return;
+    }
+
+    addTransform(factory(numOutputPorts(), num_streams));
 }
 
 void Pipe::setSinks(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter)
