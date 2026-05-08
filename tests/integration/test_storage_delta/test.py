@@ -5171,6 +5171,28 @@ def test_schema_evolution_add_column_legacy(started_cluster):
     )
     expected = "1\tAlice\t\\N\n2\tBob\t\\N\n3\tCharlie\t30\n4\tDiana\t25\n"
     assert result == expected
+
+    # Step 3: Keep appending with the evolved schema until Delta Lake writes a checkpoint.
+    for i in range(5, 14):
+        checkpoint_data = [(i, f"User {i}", 20 + i)]
+        checkpoint_df = spark.createDataFrame(data=checkpoint_data, schema=evolved_schema)
+        checkpoint_df.write.option("mergeSchema", "true").mode("append").format("delta").save(path)
+    upload_directory(minio_client, bucket, path, "")
+
+    files = [
+        obj.object_name
+        for obj in minio_client.list_objects(bucket, table_name, recursive=True)
+    ]
+    assert any(file.endswith("_last_checkpoint") for file in files), f"Files: {files}"
+
+    assert int(node.query(f"SELECT count() FROM {delta_function}")) == 13
+    result = node.query(
+        f"SELECT id, age FROM {delta_function} WHERE id IN (1, 2, 3, 4, 13) ORDER BY id"
+    )
+    expected = "1\t\\N\n2\t\\N\n3\t30\n4\t25\n13\t33\n"
+    assert result == expected
+
+
 @pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
 def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allow_experimental_analyzer):
     node = started_cluster.instances["node1"]

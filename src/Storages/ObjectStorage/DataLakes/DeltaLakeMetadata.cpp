@@ -623,10 +623,12 @@ struct DeltaLakeMetadataImpl
         }
 
         /// If there are still deferred rows (no metaData row was ever seen),
-        /// this is an invalid checkpoint — but don't crash, just skip partition decoding.
+        /// this is an invalid checkpoint.
         if (!deferred_partition_rows.empty())
-            LOG_WARNING(log, "Checkpoint has {} add rows but no metaData row; "
-                "partition column decoding skipped for those files", deferred_partition_rows.size());
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Checkpoint has {} add rows but no metaData row; partition column decoding is impossible",
+                deferred_partition_rows.size());
 
         return version;
     }
