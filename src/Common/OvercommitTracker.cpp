@@ -1,5 +1,6 @@
 #include <Common/OvercommitTracker.h>
 
+#include <Common/Jemalloc.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/ProcessList.h>
@@ -102,11 +103,43 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     // As we don't need to free memory, we can continue execution of the selected query.
     if (required_memory == 0 && cancellation_state == QueryCancellationState::SELECTED)
         reset();
+    OvercommitResult result;
     if (timeout)
-        return OvercommitResult::TIMEOUTED;
-    if (still_need)
-        return OvercommitResult::NOT_ENOUGH_FREED;
-    return OvercommitResult::MEMORY_FREED;
+        result = OvercommitResult::TIMEOUTED;
+    else if (still_need)
+        result = OvercommitResult::NOT_ENOUGH_FREED;
+    else
+        result = OvercommitResult::MEMORY_FREED;
+
+    /// Release lk before the (potentially multi-second) purge so other
+    /// queries can enter OvercommitTracker while we're draining dirty pages.
+    lk.unlock();
+
+#if USE_JEMALLOC
+    /// The selected query has already freed its memory (logical decrement).
+    /// But the freed extents are still dirty in jemalloc and count toward
+    /// kernel RSS until decay_ms (5s) elapses or MemoryWorker triggers a purge.
+    /// Synchronously purge now so subsequent allocations from other queries
+    /// see actual RSS that matches MemoryTracker.amount.
+    ///
+    /// A single releaseThreads() call wakes up every queued waiter, and all
+    /// of them reach this code path with result==MEMORY_FREED — meaning a
+    /// single kill event triggers as many purges as there were waiters. This
+    /// looks alarming, but in practice deduplicating it (one purge per release
+    /// wave via an atomic flag) was measurably worse in throughput tests:
+    ///   - concurrent per-waiter purges parallelise the drain work, while
+    ///     a single serialised purge per wave is bigger and not pipelined;
+    ///   - more importantly, a waiter that skipped the dedup'd purge would
+    ///     return immediately and attempt its next allocation against a
+    ///     still-stale RSS view, which would then fail.
+    /// Per-waiter purging is wasted-work-bounded by the wave size, runs in
+    /// parallel, and guarantees every waiter sees a fresh RSS before its
+    /// next allocation.
+    if (result == OvercommitResult::MEMORY_FREED)
+        DB::Jemalloc::purgeArenas();
+#endif
+
+    return result;
 }
 
 void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
