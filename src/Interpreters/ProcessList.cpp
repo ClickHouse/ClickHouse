@@ -125,9 +125,15 @@ ProcessList::EntryPtr ProcessList::insert(
     bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal;
     std::shared_ptr<QueryStatus> query;
 
-    // Acquire a query slot from resource scheduler if necessary.
+    // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
     // NOTE: There is a separate independent limit for the whole server `max_concurrent_queries`.
     // NOTE: If that limit is exhausted, the query will be later blocked and wait while holding a query slot.
+    // NOTE: `MemoryReservation` admission may block here and evict other queries. The query may still be
+    // rejected below by reject-fast `ProcessList` checks (`max_concurrent_queries*`, duplicate query id,
+    // etc.), in which case the reservation was performed in vain. We accept this trade-off: the query slot
+    // is already acquired at this point, and the upcoming multi-resource scheduler will admit query slots
+    // and memory reservations together as a single allocation. Splitting their admission across the
+    // `ProcessList` mutex would prevent that unification and is a worse design overall.
     QuerySlotPtr query_slot;
     MemoryReservationPtr memory_reservation;
     if (!is_unlimited_query)
