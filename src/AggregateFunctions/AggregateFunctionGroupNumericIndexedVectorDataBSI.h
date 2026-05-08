@@ -1737,8 +1737,9 @@ public:
     }
 
     /// pointwise select helper: choose L or R per-key using (lhs < rhs) mask on `both`.
-    /// pick_lhs_when_lt = false  => max semantics (equal -> lhs).
-    /// pick_lhs_when_lt = true   => min semantics (equal -> lhs).
+    /// pick_lhs_when_lt = false  => max semantics (ties go to lhs).
+    /// pick_lhs_when_lt = true   => min semantics (ties go to rhs).
+    /// Tie-breaking is observationally irrelevant: when lhs == rhs the selected value is the same regardless of side.
     static void pointwiseSelectWithLTMask(
         const BSINumericIndexedVector & lhs,
         const BSINumericIndexedVector & rhs,
