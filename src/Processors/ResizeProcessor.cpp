@@ -629,8 +629,11 @@ IProcessor::Status GradualResizeProcessor::prepare(const UpdatedInputPorts & upd
 
         if (!all_outputs_active)
         {
-            total_rows_pushed += data.chunk.getNumRows();
-            total_bytes_pushed += data.chunk.bytes();
+            if (min_rows_per_output > 0)
+                total_rows_pushed += data.chunk.getNumRows();
+            /// `Chunk::bytes` iterates all columns, so skip it when the bytes threshold is disabled.
+            if (min_bytes_per_output > 0)
+                total_bytes_pushed += data.chunk.bytes();
         }
 
         waiting_output.port->pushData(std::move(data));
@@ -671,8 +674,10 @@ IProcessor::Status GradualResizeProcessor::prepare(const UpdatedInputPorts & upd
 
                 if (!all_outputs_active)
                 {
-                    total_rows_pushed += data.chunk.getNumRows();
-                    total_bytes_pushed += data.chunk.bytes();
+                    if (min_rows_per_output > 0)
+                        total_rows_pushed += data.chunk.getNumRows();
+                    if (min_bytes_per_output > 0)
+                        total_bytes_pushed += data.chunk.bytes();
                 }
 
                 waiting_output.port->pushData(std::move(data));
