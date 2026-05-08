@@ -26,10 +26,12 @@ namespace Setting
 
 ColumnsDescription StorageSystemIcebergFiles::getColumnsDescription()
 {
+    /// Values match `Iceberg::FileContentType` in `Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h`,
+    /// duplicated here because that header is only available when `USE_AVRO` is enabled.
     auto content_enum = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
-        {"DATA", static_cast<Int8>(Iceberg::FileContentType::DATA)},
-        {"POSITION_DELETE", static_cast<Int8>(Iceberg::FileContentType::POSITION_DELETE)},
-        {"EQUALITY_DELETE", static_cast<Int8>(Iceberg::FileContentType::EQUALITY_DELETE)},
+        {"DATA", 0},
+        {"POSITION_DELETE", 1},
+        {"EQUALITY_DELETE", 2},
     });
 
     return ColumnsDescription
@@ -53,7 +55,7 @@ ColumnsDescription StorageSystemIcebergFiles::getColumnsDescription()
     };
 }
 
-void StorageSystemIcebergFiles::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemIcebergFiles::fillData([[maybe_unused]] MutableColumns & res_columns, [[maybe_unused]] ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
 #if USE_AVRO
     ContextMutablePtr context_copy = Context::createCopy(context);
