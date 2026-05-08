@@ -516,7 +516,6 @@ IDE
 IDEs
 IDNA
 IMDS
-IMDSv
 INFILE
 INSERTed
 INSERTs
@@ -918,7 +917,6 @@ NonMonotonic
 NonZeroUInt
 Nonspacing
 NotPruned
-NullCount
 NuRaft
 Nukta
 NumHexagons
@@ -2442,8 +2440,8 @@ hasAll
 hasAllTokens
 hasAny
 hasAnyTokens
-hasColumnInTable
 hasPhrase
+hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF
