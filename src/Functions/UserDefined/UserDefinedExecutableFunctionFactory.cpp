@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int BAD_ARGUMENTS;
     extern const int UDF_EXECUTION_FAILED;
+    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 namespace Setting
@@ -281,6 +282,10 @@ UserDefinedExecutableFunctionFactory & UserDefinedExecutableFunctionFactory::ins
 
 FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const String & function_name, ContextPtr context, Array parameters)
 {
+    if (auto deny_list_ptr = context->getFunctionsDenyList())
+        if (deny_list_ptr->contains(function_name))
+            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function '{}' is disabled in config in functions_deny_list", function_name);
+
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(loader.load(function_name));
     auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
@@ -297,6 +302,10 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const Stri
 
 FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const String & function_name, ContextPtr context, Array parameters)
 {
+    if (auto deny_list_ptr = context->getFunctionsDenyList())
+        if (deny_list_ptr->contains(function_name))
+            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function '{}' is disabled in config in functions_deny_list", function_name);
+
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto load_result = loader.getLoadResult(function_name);
 

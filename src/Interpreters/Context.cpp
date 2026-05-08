@@ -492,6 +492,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
     ExternalLoaderXMLConfigRepository * user_defined_executable_functions_config_repository TSA_GUARDED_BY(external_user_defined_executable_functions_mutex) = nullptr;
     scope_guard user_defined_executable_functions_xmls TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
+    mutable std::shared_ptr<std::set<String>> functions_deny_list TSA_GUARDED_BY(mutex);
 
     mutable OnceFlag user_defined_sql_objects_storage_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
@@ -3595,6 +3596,33 @@ void Context::waitForDictionariesLoad() const
         LOG_INFO(shared->log, "All dictionaries have been loaded");
     else
         LOG_INFO(shared->log, "Some dictionaries were not loaded");
+}
+
+void Context::updateFunctionsDenyList(const Poco::Util::AbstractConfiguration & config)
+{
+    auto denied_functions = getMultipleValuesFromConfig(config, "functions_deny_list", "name");
+
+    std::lock_guard lock(shared->mutex);
+
+    if (denied_functions.empty())
+    {
+        if (shared->functions_deny_list)
+            shared->functions_deny_list.reset();
+        return;
+    }
+
+    if (!shared->functions_deny_list)
+        shared->functions_deny_list = std::make_shared<std::set<String>>();
+    else
+        shared->functions_deny_list->clear();
+
+    shared->functions_deny_list->insert(denied_functions.begin(), denied_functions.end());
+}
+
+std::shared_ptr<std::set<String>> Context::getFunctionsDenyList() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->functions_deny_list;
 }
 
 void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)

@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int CANNOT_DROP_FUNCTION;
     extern const int CANNOT_CREATE_RECURSIVE_FUNCTION;
     extern const int BAD_ARGUMENTS;
+    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 
@@ -220,6 +221,11 @@ ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
     if (ast && CurrentThread::isInitialized())
     {
         auto query_context = CurrentThread::get().getQueryContext();
+
+        if (auto deny_list_ptr = query_context->getFunctionsDenyList())
+            if (deny_list_ptr->contains(function_name))
+                throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function '{}' is disabled in config in functions_deny_list", function_name);
+
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
     }
@@ -234,6 +240,11 @@ ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) 
     if (ast && CurrentThread::isInitialized())
     {
         auto query_context = CurrentThread::get().getQueryContext();
+
+        if (auto deny_list_ptr = query_context->getFunctionsDenyList())
+            if (deny_list_ptr->contains(function_name))
+                throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function '{}' is disabled in config in functions_deny_list", function_name);
+
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
     }

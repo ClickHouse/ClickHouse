@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FUNCTION;
     extern const int LOGICAL_ERROR;
+    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 void TableFunctionFactory::registerFunction(
@@ -56,10 +57,14 @@ TableFunctionPtr TableFunctionFactory::get(
 
 TableFunctionPtr TableFunctionFactory::tryGet(
         const std::string & name_param,
-        ContextPtr) const
+        ContextPtr context) const
 {
     String name = getAliasToOrName(name_param);
     TableFunctionPtr res;
+
+    if (auto deny_list_ptr = context->getFunctionsDenyList())
+        if (deny_list_ptr->contains(name))
+            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function '{}' is disabled in config in functions_deny_list", name);
 
     auto it = table_functions.find(name);
     if (table_functions.end() != it)

@@ -1,0 +1,44 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <log>clickhouse-server.log</log>
+        <errorlog>clickhouse-server.err.log</errorlog>
+    </logger>
+
+    <listen_host>127.1</listen_host>
+    <http_port>3742</http_port>
+    <tcp_port>9742</tcp_port>
+
+    <shutdown_wait_unfinished>0</shutdown_wait_unfinished>
+    <path>.</path>
+    <mark_cache_size>0</mark_cache_size>
+
+    <access_control_path>access_03742</access_control_path>
+
+    <functions_deny_list>
+        <name>test_function_bash</name>
+        <name>test_sql_udf</name>
+        <name>remote</name>
+        <name>remoteSecure</name>
+    </functions_deny_list>
+
+    <user_defined_executable_functions_config>test_function_config.xml</user_defined_executable_functions_config>
+
+    <profiles>
+        <default/>
+    </profiles>
+
+    <users>
+        <default>
+            <password/>
+
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </default>
+    </users>
+
+    <quotas>
+        <default/>
+    </quotas>
+</clickhouse>

@@ -1121,6 +1121,8 @@ public:
     const IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage() const;
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void updateFunctionsDenyList(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<std::set<String>> getFunctionsDenyList() const;
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
 
