@@ -6,6 +6,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/HashTable/Hash.h>
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -34,6 +35,9 @@ struct UniqueKeyIndexCacheEntry
     /// Memory allocator passed at Insert time (must outlive the cache; RocksDB
     /// contract). Forwarded to helper->del_cb on eviction.
     void * allocator = nullptr;
+    /// Number of live HandlePins referring to this entry. Drives pinned-charge
+    /// accounting: 0→1 transition adds charge to pinned total; 1→0 removes it.
+    std::atomic<int32_t> pin_count{0};
 
     UniqueKeyIndexCacheEntry() = default;
     ~UniqueKeyIndexCacheEntry();
@@ -179,6 +183,7 @@ private:
     UniqueKeyIndexCacheBackingPtr backing;
     std::atomic<bool> strict_capacity_limit{false};
     std::atomic<uint64_t> next_id{1};
+    std::atomic<size_t> pinned_charge_total{0};
 };
 
 using UniqueKeyIndexCachePtr = std::shared_ptr<UniqueKeyIndexCache>;

@@ -202,6 +202,82 @@ TEST(UniqueKeyIndexCache, CreateStandaloneHonorsStrictCapacityLimit)
     cache.Release(h3, /*erase_if_last_ref=*/false);
 }
 
+TEST(UniqueKeyIndexCache, GetPinnedUsageTracksPinnedEntries)
+{
+    /// rocksdb::Cache::GetPinnedUsage counts each pinned *entry* once,
+    /// regardless of how many handles share it (LRUCacheShard returns
+    /// usage_ - lru_usage_; PinnedUsageTest only changes total on the
+    /// pinned/unpinned transition).
+    UniqueKeyIndexCache cache = makeCache(1 << 20);
+    EXPECT_EQ(cache.GetPinnedUsage(), 0u);
+
+    auto * obj = new FakeObject{nullptr, 1};
+    rocksdb::Cache::Handle * h = nullptr;
+    cache.Insert(rocksdb::Slice("k"), obj, &kTestHelper, /*charge=*/64, &h,
+                 rocksdb::Cache::Priority::LOW,
+                 rocksdb::Slice(), rocksdb::CompressionType::kNoCompression);
+    ASSERT_NE(h, nullptr);
+    EXPECT_EQ(cache.GetPinnedUsage(), 64u);
+
+    /// Second handle on the same entry: charge counted once.
+    auto * h2 = cache.Lookup(rocksdb::Slice("k"), nullptr, nullptr, rocksdb::Cache::Priority::LOW, nullptr);
+    ASSERT_NE(h2, nullptr);
+    EXPECT_EQ(cache.GetPinnedUsage(), 64u);
+
+    /// Eviction from the backing must not zero pinned charge while handles
+    /// are still live — the strict-cap-bypass the bot flagged.
+    cache.EraseUnRefEntries();
+    EXPECT_EQ(cache.GetUsage(), 0u);
+    EXPECT_EQ(cache.GetPinnedUsage(), 64u);
+
+    /// First release leaves one pin; entry still pinned, charge stays.
+    cache.Release(h2, false);
+    EXPECT_EQ(cache.GetPinnedUsage(), 64u);
+    /// Last pin released: 1→0 transition removes the charge.
+    cache.Release(h, false);
+    EXPECT_EQ(cache.GetPinnedUsage(), 0u);
+}
+
+TEST(UniqueKeyIndexCache, CreateStandaloneUnchargedHasZeroChargeAndUsage)
+{
+    /// Per rocksdb::Cache spec: when strict_capacity_limit + over-cap +
+    /// allow_uncharged=true, the handle is returned with GetCharge()==0.
+    /// pinned_usage must reflect that — counting the original charge would
+    /// expose a "charged" pin for an explicitly uncharged handle.
+    UniqueKeyIndexCache cache = makeCache(/*bytes=*/64);
+    cache.SetStrictCapacityLimit(true);
+
+    auto * obj = new FakeObject{nullptr, 1};
+    auto * h = cache.CreateStandalone(rocksdb::Slice("k"), obj, &kTestHelper,
+                                      /*charge=*/8192, /*allow_uncharged=*/true);
+    ASSERT_NE(h, nullptr);
+    EXPECT_EQ(cache.GetCharge(h), 0u);
+    EXPECT_EQ(cache.GetUsage(h), 0u);
+    EXPECT_EQ(cache.GetPinnedUsage(), 0u);
+    cache.Release(h, /*erase_if_last_ref=*/false);
+    EXPECT_EQ(cache.GetPinnedUsage(), 0u);
+}
+
+TEST(UniqueKeyIndexCache, GetPinnedUsageRefDoesNotDoubleCount)
+{
+    UniqueKeyIndexCache cache = makeCache(1 << 20);
+    auto * obj = new FakeObject{nullptr, 1};
+    rocksdb::Cache::Handle * h = nullptr;
+    cache.Insert(rocksdb::Slice("k"), obj, &kTestHelper, /*charge=*/32, &h,
+                 rocksdb::Cache::Priority::LOW,
+                 rocksdb::Slice(), rocksdb::CompressionType::kNoCompression);
+    ASSERT_NE(h, nullptr);
+    EXPECT_EQ(cache.GetPinnedUsage(), 32u);
+
+    /// Ref is per-handle; pin_count is per-entry — Ref must not change pinned total.
+    EXPECT_TRUE(cache.Ref(h));
+    EXPECT_EQ(cache.GetPinnedUsage(), 32u);
+    EXPECT_FALSE(cache.Release(h, /*erase_if_last_ref=*/false));
+    EXPECT_EQ(cache.GetPinnedUsage(), 32u);
+    cache.Release(h, /*erase_if_last_ref=*/false);
+    EXPECT_EQ(cache.GetPinnedUsage(), 0u);
+}
+
 TEST(UniqueKeyIndexCache, ThreadSafetySmoke)
 {
     UniqueKeyIndexCache cache = makeCache(128 * 1024);

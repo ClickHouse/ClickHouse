@@ -129,6 +129,8 @@ ROCKSDB_NAMESPACE::Status UniqueKeyIndexCache::Insert(
     if (handle)
     {
         auto * pin = new HandlePin{entry, keyOf(key), std::atomic<int32_t>{1}};
+        if (entry->pin_count.fetch_add(1, std::memory_order_relaxed) == 0)
+            pinned_charge_total.fetch_add(charge, std::memory_order_relaxed);
         *handle = fromPin(pin);
     }
 
@@ -143,28 +145,31 @@ UniqueKeyIndexCache::CreateStandalone(
     size_t charge,
     bool allow_uncharged)
 {
-    /// Standalone entries are detached from the shared table — only the
-    /// returned handle keeps them alive. `CacheBase` has no native
-    /// standalone-tracked path, so the entry itself is uncharged.
-    ///
-    /// Honor RocksDB's strict-capacity contract: when `strict_capacity_limit`
-    /// is set, refuse if the requested charge alone would exceed the cap and
-    /// the caller can't accept an uncharged handle. With `allow_uncharged=true`
-    /// (the typical RocksDB caller), the standalone handle is returned with no
-    /// capacity accounting — consistent with `rocksdb::Cache`'s spec.
-    if (strict_capacity_limit.load(std::memory_order_relaxed) && !allow_uncharged)
+    /// Per rocksdb::Cache::CreateStandalone contract: when strict cap can't
+    /// be satisfied and allow_uncharged=true, return a handle with
+    /// GetCharge()==0; otherwise refuse. Effective charge then drives both
+    /// GetCharge and pinned-usage accounting consistently.
+    size_t effective_charge = charge;
+    if (strict_capacity_limit.load(std::memory_order_relaxed))
     {
         const size_t max = backing->maxSizeInBytes();
         if (max != 0 && charge > max)
-            return nullptr;
+        {
+            if (!allow_uncharged)
+                return nullptr;
+            effective_charge = 0;
+        }
     }
 
     auto entry = std::make_shared<UniqueKeyIndexCacheEntry>();
     entry->obj = obj;
     entry->helper = helper;
-    entry->charge = charge;
+    entry->charge = effective_charge;
     /// Standalone has no shared-table key; an erase-on-release would be a no-op.
     auto * pin = new HandlePin{entry, UInt128{}, std::atomic<int32_t>{1}};
+    entry->pin_count.fetch_add(1, std::memory_order_relaxed);
+    if (effective_charge > 0)
+        pinned_charge_total.fetch_add(effective_charge, std::memory_order_relaxed);
     return fromPin(pin);
 }
 
@@ -191,6 +196,8 @@ UniqueKeyIndexCache::Lookup(
     }
     ProfileEvents::increment(ProfileEvents::UniqueKeyIndexCacheHits);
     auto * pin = new HandlePin{entry, keyOf(key), std::atomic<int32_t>{1}};
+    if (entry->pin_count.fetch_add(1, std::memory_order_relaxed) == 0)
+        pinned_charge_total.fetch_add(entry->charge, std::memory_order_relaxed);
     return fromPin(pin);
 }
 
@@ -212,6 +219,11 @@ bool UniqueKeyIndexCache::Release(Handle * handle, bool erase_if_last_ref)
     if (!last_ref)
         return false;
 
+    /// Per-entry pin counting: subtract from the pinned total only on the
+    /// 1→0 transition so multiple handles on one entry count its charge once.
+    if (pin->entry->pin_count.fetch_sub(1, std::memory_order_relaxed) == 1)
+        pinned_charge_total.fetch_sub(pin->entry->charge, std::memory_order_relaxed);
+
     /// Per RocksDB `Cache::Release` contract, the return value is true iff
     /// the cache entry was erased from the shared table. Standalone pins
     /// (`pin->key == 0`) and `erase_if_last_ref == false` always return
@@ -226,13 +238,18 @@ bool UniqueKeyIndexCache::Release(Handle * handle, bool erase_if_last_ref)
     if (erase_if_last_ref && pin->key != UInt128{})
     {
         const auto & pinned = pin->entry;
-        /// `CacheBase::remove(predicate)` runs the predicate under the cache
-        /// lock; capturing the match here avoids a racy second `count()` that
-        /// concurrent insert/erase on unrelated keys could perturb.
+        /// pin_count==0 inside the predicate narrows the Lookup-vs-erase
+        /// race: a concurrent Lookup whose pin_count.fetch_add completes
+        /// before this load sees 0 stays unerased. Fully closing it would
+        /// require getting + pin-count-bump under one lock (CacheBase API
+        /// gap); residual window is bounded — the orphaned handle keeps
+        /// the entry alive via shared_ptr and pinned_charge_total balances
+        /// at equilibrium.
         std::function<bool(const UInt128 &, const std::shared_ptr<UniqueKeyIndexCacheEntry> &)>
             pred = [&](const UInt128 & k, const std::shared_ptr<UniqueKeyIndexCacheEntry> & v)
             {
-                const bool matches = (k == pin->key && v == pinned);
+                const bool matches = (k == pin->key && v == pinned
+                                      && v->pin_count.load(std::memory_order_relaxed) == 0);
                 if (matches)
                     erased = true;
                 return matches;
@@ -283,14 +300,17 @@ size_t UniqueKeyIndexCache::GetUsage(Handle * handle) const
     if (!handle)
         return 0;
     const auto * pin = asPin(handle);
+    /// Uncharged standalone (key==0 && charge==0): return 0 to match
+    /// rocksdb::Cache semantics. OVERHEAD is internal backing weight; it
+    /// applies only to entries that occupy a backing slot.
+    if (pin->key == UInt128{} && pin->entry->charge == 0)
+        return 0;
     return pin->entry->charge + UniqueKeyIndexCacheEntryWeight::OVERHEAD;
 }
 
 size_t UniqueKeyIndexCache::GetPinnedUsage() const
 {
-    /// Approximate: we don't track this separately. Returning 0 is safe for the
-    /// BlockBasedTable path — it's an observability metric, not a correctness one.
-    return 0;
+    return pinned_charge_total.load(std::memory_order_relaxed);
 }
 
 size_t UniqueKeyIndexCache::GetCharge(Handle * handle) const
