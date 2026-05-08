@@ -17,25 +17,21 @@ namespace ErrorCodes
 }
 }
 
-namespace
-{
-
-MemoryTracker * getMemoryTracker()
-{
-    if (auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker())
-        return thread_memory_tracker;
-
-    /// total_memory_tracker can be used before MainThreadStatus is initialized,
-    /// but only after its own initialization and before teardown.
-    if (DB::MainThreadStatus::initialized() || isTotalMemoryTrackerInitialized())
-        return &total_memory_tracker;
-
-    return nullptr;
-}
-
-}
-
 using DB::current_thread;
+
+[[gnu::cold]] AllocationTrace CurrentMemoryTracker::allocWithoutCurrentThread(Int64 size, bool throw_if_memory_exceeded)
+{
+    if (DB::MainThreadStatus::initialized() || isTotalMemoryTrackerInitialized())
+        return total_memory_tracker.allocImpl(size, throw_if_memory_exceeded);
+    return AllocationTrace(0);
+}
+
+[[gnu::cold]] AllocationTrace CurrentMemoryTracker::freeWithoutCurrentThread(Int64 size)
+{
+    if (DB::MainThreadStatus::initialized() || isTotalMemoryTrackerInitialized())
+        return total_memory_tracker.free(size);
+    return AllocationTrace(0);
+}
 
 AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
 {
@@ -47,54 +43,54 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
     }
 #endif
 
-    if (auto * memory_tracker = getMemoryTracker())
+    /// Read `current_thread` (a TLS pointer) once so the hot path doesn't issue
+    /// duplicate TLS loads across `getMemoryTracker` plus a follow-up null check.
+    auto * const thread = current_thread;
+    if (thread == nullptr) [[unlikely]]
+        return allocWithoutCurrentThread(size, throw_if_memory_exceeded);
+
+    /// Make sure we do memory tracker calls with the correct level in MemoryTrackerBlockerInThread.
+    /// E.g. suppose allocImpl is called twice: first for 2 MB with blocker set to
+    /// VariableContext::User, then for 3 MB with no blocker. This should increase the
+    /// Global memory tracker by 5 MB and the User memory tracker by 3 MB. So we can't group
+    /// these two calls into one memory_tracker->allocImpl call.
+    ///
+    /// Only update `untracked_memory_blocker_level` when it actually changed: the unconditional
+    /// store costs a write per allocation on the hot path where it almost never differs.
+    VariableContext blocker_level = MemoryTrackerBlockerInThread::getLevel();
+    if (blocker_level != thread->untracked_memory_blocker_level) [[unlikely]]
     {
-        if (!current_thread)
-        {
-            /// total_memory_tracker only, ignore untracked_memory
-            return memory_tracker->allocImpl(size, throw_if_memory_exceeded);
-        }
-
-        /// Make sure we do memory tracker calls with the correct level in MemoryTrackerBlockerInThread.
-        /// E.g. suppose allocImpl is called twice: first for 2 MB with blocker set to
-        /// VariableContext::User, then for 3 MB with no blocker. This should increase the
-        /// Global memory tracker by 5 MB and the User memory tracker by 3 MB. So we can't group
-        /// these two calls into one memory_tracker->allocImpl call.
-        VariableContext blocker_level = MemoryTrackerBlockerInThread::getLevel();
-        if (blocker_level != current_thread->untracked_memory_blocker_level)
-        {
-            current_thread->flushUntrackedMemory();
-        }
-        current_thread->untracked_memory_blocker_level = blocker_level;
-
-        Int64 previous_untracked_memory = current_thread->untracked_memory;
-        current_thread->untracked_memory += size;
-        if (current_thread->untracked_memory > current_thread->untracked_memory_limit)
-        {
-            Int64 current_untracked_memory = current_thread->untracked_memory;
-            current_thread->untracked_memory = 0;
-
-            try
-            {
-                return memory_tracker->allocImpl(current_untracked_memory, throw_if_memory_exceeded);
-            }
-            catch (...)
-            {
-                current_thread->untracked_memory += previous_untracked_memory;
-                throw;
-            }
-        }
-
-        return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
+        thread->flushUntrackedMemory();
+        thread->untracked_memory_blocker_level = blocker_level;
     }
 
-    return AllocationTrace(0);
+    Int64 previous_untracked_memory = thread->untracked_memory;
+    thread->untracked_memory += size;
+    if (thread->untracked_memory > thread->untracked_memory_limit) [[unlikely]]
+    {
+        Int64 current_untracked_memory = thread->untracked_memory;
+        thread->untracked_memory = 0;
+
+        try
+        {
+            return thread->memory_tracker.allocImpl(current_untracked_memory, throw_if_memory_exceeded);
+        }
+        catch (...)
+        {
+            thread->untracked_memory += previous_untracked_memory;
+            throw;
+        }
+    }
+
+    return AllocationTrace(thread->getEffectiveSampleProbability(size));
 }
 
 void CurrentMemoryTracker::check()
 {
-    if (auto * memory_tracker = getMemoryTracker())
-        std::ignore = memory_tracker->allocImpl(0, true);
+    if (auto * thread = current_thread)
+        std::ignore = thread->memory_tracker.allocImpl(0, true);
+    else if (DB::MainThreadStatus::initialized() || isTotalMemoryTrackerInitialized())
+        std::ignore = total_memory_tracker.allocImpl(0, true);
 }
 
 AllocationTrace CurrentMemoryTracker::alloc(Int64 size)
@@ -109,36 +105,32 @@ AllocationTrace CurrentMemoryTracker::allocNoThrow(Int64 size)
 
 AllocationTrace CurrentMemoryTracker::free(Int64 size)
 {
-    if (auto * memory_tracker = getMemoryTracker())
+    auto * const thread = current_thread;
+    if (thread == nullptr) [[unlikely]]
+        return freeWithoutCurrentThread(size);
+
+    VariableContext blocker_level = MemoryTrackerBlockerInThread::getLevel();
+    if (blocker_level != thread->untracked_memory_blocker_level) [[unlikely]]
     {
-        if (!current_thread)
-        {
-            return memory_tracker->free(size);
-        }
-
-        VariableContext blocker_level = MemoryTrackerBlockerInThread::getLevel();
-        if (blocker_level != current_thread->untracked_memory_blocker_level)
-        {
-            current_thread->flushUntrackedMemory();
-        }
-        current_thread->untracked_memory_blocker_level = blocker_level;
-
-        current_thread->untracked_memory -= size;
-        if (current_thread->untracked_memory < -current_thread->untracked_memory_limit)
-        {
-            Int64 untracked_memory = current_thread->untracked_memory;
-            current_thread->untracked_memory = 0;
-            return memory_tracker->free(-untracked_memory);
-        }
-
-        return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
+        thread->flushUntrackedMemory();
+        thread->untracked_memory_blocker_level = blocker_level;
     }
 
-    return AllocationTrace(0);
+    thread->untracked_memory -= size;
+    if (thread->untracked_memory < -thread->untracked_memory_limit) [[unlikely]]
+    {
+        Int64 untracked_memory = thread->untracked_memory;
+        thread->untracked_memory = 0;
+        return thread->memory_tracker.free(-untracked_memory);
+    }
+
+    return AllocationTrace(thread->getEffectiveSampleProbability(size));
 }
 
 void CurrentMemoryTracker::injectFault()
 {
-    if (auto * memory_tracker = getMemoryTracker())
-        memory_tracker->injectFault();
+    if (auto * thread = current_thread)
+        thread->memory_tracker.injectFault();
+    else if (DB::MainThreadStatus::initialized() || isTotalMemoryTrackerInitialized())
+        total_memory_tracker.injectFault();
 }

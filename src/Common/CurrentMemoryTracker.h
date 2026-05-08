@@ -19,4 +19,10 @@ struct CurrentMemoryTracker
 
 private:
     [[nodiscard]] static AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded);
+
+    /// Cold-path slow helpers used when there is no `current_thread` (i.e. before the
+    /// `MainThreadStatus` is initialized or after teardown). Kept out-of-line so the
+    /// hot path stays compact.
+    [[nodiscard]] static AllocationTrace allocWithoutCurrentThread(Int64 size, bool throw_if_memory_exceeded);
+    [[nodiscard]] static AllocationTrace freeWithoutCurrentThread(Int64 size);
 };
