@@ -40,6 +40,7 @@ SETTINGS
     [kafka_sasl_mechanism = '',]
     [kafka_sasl_username = '',]
     [kafka_sasl_password = '',]
+    [kafka_autodetect_client_rack = '',]
     [kafka_schema = '',]
     [kafka_num_consumers = N,]
     [kafka_max_block_size = 0,]
@@ -86,6 +87,16 @@ Optional parameters:
 - `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`), dead_letter_queue (error related data will be saved in system.dead_letter_queue).
 - `kafka_commit_on_select` —  Commit messages when select query is made. Default: `false`.
 - `kafka_max_rows_per_message` — The maximum number of rows written in one kafka message for row-based formats. Default : `1`.
+- `kafka_autodetect_client_rack` — Automatically sets the `client.rack` parameter for `librdkafka` to prefer the nearest Kafka replicas.
+  Supported sources:
+  `AWS_ZONE_ID` for the AWS IMDSv2 availability zone ID, for example `euc1-az1`;
+  `AWS_ZONE_NAME` for the AWS IMDSv2 availability zone name, for example `eu-central-1a`;
+  `GCP_ZONE` for the GCP metadata service zone, for example `europe-central2-a`;
+  `CLICKHOUSE` to use ClickHouse internal detection, which may rely on cloud metadata or configuration;
+  `AWS_ZONE_NAME_THEN_GCP_ZONE` to try `AWS_ZONE_NAME` and then `GCP_ZONE`.
+  Default: empty string, disabled.
+  Tip: different environments use different availability zone formats. Amazon MSK typically uses zone IDs, so prefer `AWS_ZONE_ID`. Confluent Cloud typically uses zone names, so prefer `AWS_ZONE_NAME`. If unsure, use `AWS_ZONE_NAME_THEN_GCP_ZONE` or check the `broker.rack` value on your cluster.
+  Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.class=org.apache.kafka.common.replica.RackAwareReplicaSelector`.
 - `kafka_compression_codec` — Compression codec used for producing messages. Supported: empty string, `none`, `gzip`, `snappy`, `lz4`, `zstd`. In case of empty string the compression codec is not set by the table, thus values from the config files or default value from `librdkafka` will be used. Default: empty string.
 - `kafka_compression_level` — Compression level parameter for algorithm selected by kafka_compression_codec. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: `[0-9]` for `gzip`; `[0-12]` for `lz4`; only `0` for `snappy`; `[0-12]` for `zstd`; `-1` = codec-dependent default compression level. Default: `-1`.
 - `kafka_map_virtual_columns_on_write` — If enabled, columns with special names `_key`, `_timestamp`, `_headers.name` and `_headers.value` in the table schema are mapped to the corresponding Kafka message metadata on `INSERT` and are excluded from the message payload. See [Mapping columns to Kafka message metadata](#mapping-columns-to-kafka-message-metadata). Default: `false`.
