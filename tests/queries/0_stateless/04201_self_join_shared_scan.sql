@@ -84,6 +84,16 @@ FROM (
     SETTINGS query_plan_optimize_self_join_shared_scan = 0
 );
 
+-- Negative: non-shared snapshot must NOT trigger optimization (2 scans, no buffer).
+SELECT
+    countIf(explain LIKE '%ReadFromMergeTree%') AS rmt_count,
+    countIf(explain LIKE '%ReadFromCommonBuffer%') AS read_count
+FROM (
+    EXPLAIN actions = 0
+    SELECT a.x, b.y FROM t_sjss AS a INNER JOIN t_sjss AS b ON a.x = b.x
+    SETTINGS enable_shared_storage_snapshot_in_query = 0
+);
+
 DROP TABLE t_sjss;
 DROP TABLE t_sjss2;
 DROP TABLE t_sjss_rmt;
