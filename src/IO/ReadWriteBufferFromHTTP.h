@@ -115,8 +115,7 @@ private:
 
     void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
 
-    void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false,
-        CheckCancelled check_cancelled = nullptr) const;
+    void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false) const;
 
     CallResult  callImpl(
         Poco::Net::HTTPResponse & response,
@@ -161,6 +160,7 @@ private:
         size_t max_redirects_,
         bool enable_url_encoding_,
         OutStreamCallback out_stream_callback_,
+        CheckCancelled cancellation_check_,
         bool use_external_buffer_,
         bool http_skip_not_found_url_,
         HTTPHeaderEntries http_header_entries_,
@@ -190,9 +190,6 @@ public:
     /// passed through the buffer
     void setNextCallback(NextCallback next_callback_);
 
-    /// Set function to check for query cancellation during HTTP retries.
-    /// If set, it will be called between retry attempts to allow faster cancellation.
-    void setCancellationCheck(CheckCancelled check_cancelled_);
 
     const std::string & getCompressionMethod() const;
 
@@ -224,6 +221,7 @@ class BuilderRWBufferFromHTTP
     bool use_external_buffer = false;
     bool http_skip_not_found_url = false;
     HTTPHeaderEntries http_header_entries{};
+    ReadWriteBufferFromHTTP::CheckCancelled cancellation_check;
     bool delay_initialization = true;
 
 public:
@@ -250,6 +248,7 @@ public:
     setterMember(withEnableUrlEncoding, enable_url_encoding)
     setterMember(withOutCallback, out_stream_callback)
     setterMember(withHeaders, http_header_entries)
+    setterMember(withCancellationCheck, cancellation_check)
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)

@@ -604,10 +604,8 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                            .withSkipNotFound(skip_url_not_found_error)
                            .withHeaders(headers)
                            .withDelayInit(delay_initialization)
+                           .withCancellationCheck(check_cancelled)
                            .create(credentials);
-
-            if (check_cancelled)
-                res->setCancellationCheck(check_cancelled);
 
             if (context_->getSettingsRef()[Setting::engine_url_skip_empty_files] && res->eof() && option != std::prev(end))
             {

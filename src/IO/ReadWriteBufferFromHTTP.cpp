@@ -182,8 +182,7 @@ void ReadWriteBufferFromHTTP::getHeadResponse(Poco::Net::HTTPResponse & response
             callWithRedirects(response, Poco::Net::HTTPRequest::HTTP_HEAD, {});
         },
         /*on_retry=*/ nullptr,
-        /*mute_logging=*/ true,
-        cancellation_check);
+        /*mute_logging=*/ true);
 }
 
 ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
@@ -199,6 +198,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     size_t max_redirects_,
     bool enable_url_encoding_,
     OutStreamCallback out_stream_callback_,
+    CheckCancelled cancellation_check_,
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
     HTTPHeaderEntries http_header_entries_,
@@ -223,6 +223,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , http_header_entries {std::move(http_header_entries_)}
     , file_info(file_info_)
     , log(getLogger("ReadWriteBufferFromHTTP"))
+    , cancellation_check(std::move(cancellation_check_))
 {
     current_uri = initial_uri;
 
@@ -314,7 +315,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
 
 void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                                             std::function<void()> on_retry,
-                                            bool mute_logging, CheckCancelled check_cancelled) const
+                                            bool mute_logging) const
 {
     [[maybe_unused]] auto milliseconds_to_wait = read_settings.http_retry_initial_backoff_ms;
 
@@ -324,7 +325,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
     for (size_t attempt = 1; attempt <= read_settings.http_max_tries; ++attempt)
     {
         /// Check cancellation since the second attempt to let the original HTTP errors propagate correctly on the first attempt.
-        if (attempt > 1 && check_cancelled && check_cancelled())
+        if (attempt > 1 && cancellation_check && cancellation_check())
             /// Don't throw exception, use break instead. Later in calling code (for example in StorageURLSource)
             /// we make cancellation checks to know that doWithRetries was exited by break on cancellation.
             break;
@@ -527,8 +528,7 @@ bool ReadWriteBufferFromHTTP::nextImpl()
         {
             impl.reset();
         },
-        /*mute_logging=*/false,
-        cancellation_check);
+        /*mute_logging=*/false);
 
     return next_result;
 }
@@ -590,8 +590,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
             n -= bytes_copied;
             bytes_copied = 0;
         },
-        /*mute_logging=*/false,
-        cancellation_check);
+        /*mute_logging=*/false);
 
     chassert(total_bytes_copied == initial_n || is_canceled);
     return total_bytes_copied;
@@ -720,11 +719,6 @@ void ReadWriteBufferFromHTTP::setNextCallback(NextCallback next_callback_)
     next_callback(count());
 }
 
-void ReadWriteBufferFromHTTP::setCancellationCheck(CheckCancelled check_cancelled_)
-{
-    cancellation_check = std::move(check_cancelled_);
-}
-
 const std::string & ReadWriteBufferFromHTTP::getCompressionMethod() const
 {
     return content_encoding;
@@ -848,6 +842,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
         max_redirects,
         enable_url_encoding,
         out_stream_callback,
+        cancellation_check,
         use_external_buffer,
         http_skip_not_found_url,
         http_header_entries,
