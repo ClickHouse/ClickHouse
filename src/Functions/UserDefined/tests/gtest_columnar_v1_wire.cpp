@@ -535,8 +535,7 @@ TEST(ColumnarV1Wire, NullablePeriodicStringNotRepeatEncoded)
         str->insertData(i % 2 == 0 ? "foo" : "bar", 3);
 
     ColDescriptor desc{};
-    uint32_t cursor = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
-    cursor = buildColDescriptor(str.get(), /*is_const=*/false, /*is_nullable=*/true, 6, cursor, desc);
+    buildColDescriptor(str.get(), /*is_const=*/false, /*is_nullable=*/true, 6, COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES, desc);
 
     EXPECT_EQ(desc.type & COL_IS_REPEAT, 0u);   // repeat must be suppressed
     EXPECT_EQ(desc.type, COL_NULL_BYTES);
@@ -553,8 +552,7 @@ TEST(ColumnarV1Wire, NullablePeriodicFixed64NotRepeatEncoded)
             col->getData().push_back(v);
 
     ColDescriptor desc{};
-    uint32_t cursor = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
-    cursor = buildColDescriptor(col.get(), /*is_const=*/false, /*is_nullable=*/true, 9, cursor, desc);
+    buildColDescriptor(col.get(), /*is_const=*/false, /*is_nullable=*/true, 9, COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES, desc);
 
     EXPECT_EQ(desc.type & COL_IS_REPEAT, 0u);
     EXPECT_EQ(desc.type, COL_NULL_FIXED64);
@@ -746,4 +744,185 @@ TEST(ColumnarV1Wire, BoundsCheckComplexFixedDataOverflow)
     auto result_type = std::make_shared<DataTypeTuple>(fields);
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
                  DB::Exception);
+}
+
+// ── COL_COMPLEX bounds: array outer offset not monotonic ──────────────────────
+
+TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetNotMonotonic)
+{
+    const uint32_t num_rows = 2;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    // Array(UInt64) for 2 rows: outer_offsets = [0, 3, 1] (not monotonic: 1 < 3)
+    // total_elems = outer_offs[2] = 1
+    std::vector<uint8_t> buf(data_off + 3 * 4);
+    uint32_t one = 1;
+    std::memcpy(buf.data(), &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one, 4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_COMPLEX;
+    desc.data_offset = data_off;
+    desc.data_size   = 3 * 4;  // 3 uint32 offsets
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    // outer_offsets: [0, 3, 1] — non-monotonic
+    uint32_t * outer_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
+    outer_offs[0] = 0;
+    outer_offs[1] = 3;
+    outer_offs[2] = 1;
+
+    DataTypes nested = {std::make_shared<DataTypeUInt64>()};
+    auto arr_type = std::make_shared<DataTypeArray>(nested);
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
+}
+
+// ── COL_COMPLEX bounds: array offset exceeds total_elems ──────────────────────
+
+TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetExceedsTotal)
+{
+    const uint32_t num_rows = 2;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    // Array(UInt64) for 2 rows: outer_offsets = [0, 2, 5] (off[1]=2 > total=5? No, off[2]=5 > off[1]=2)
+    // Actually: off[2]=5 is total_elems, off[1]=2 should be <= 5 — that's fine.
+    // Let's make off[1]=10 > total=5.
+    std::vector<uint8_t> buf(data_off + 3 * 4);
+    uint32_t one = 1;
+    std::memcpy(buf.data(), &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one, 4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_COMPLEX;
+    desc.data_offset = data_off;
+    desc.data_size   = 3 * 4;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    uint32_t * outer_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
+    outer_offs[0] = 0;
+    outer_offs[1] = 10;  // exceeds total_elems = 5
+    outer_offs[2] = 5;
+
+    DataTypes nested = {std::make_shared<DataTypeUInt64>()};
+    auto arr_type = std::make_shared<DataTypeArray>(nested);
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
+}
+
+// ── COL_COMPLEX bounds: string offset not monotonic ──────────────────────────
+
+TEST(ColumnarV1Wire, BoundsCheckComplexStringOffsetNotMonotonic)
+{
+    const uint32_t num_rows = 1;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    // Array(String) for 1 row: wire_offsets = [0, 4, 2] (not monotonic: 2 < 4)
+    // total_chars = wire_offs[1] = 2
+    std::vector<uint8_t> buf(data_off + 3 * 4 + 4);  // offsets + 4 chars
+    uint32_t one = 1;
+    std::memcpy(buf.data(), &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one, 4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_COMPLEX;
+    desc.data_offset = data_off;
+    desc.data_size   = 3 * 4 + 4;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    uint32_t * wire_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
+    wire_offs[0] = 0;
+    wire_offs[1] = 4;
+    wire_offs[2] = 2;  // not monotonic
+
+    DataTypes nested = {std::make_shared<DataTypeString>()};
+    auto arr_type = std::make_shared<DataTypeArray>(nested);
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
+}
+
+// ── COL_COMPLEX bounds: string offset exceeds total_chars ────────────────────
+
+TEST(ColumnarV1Wire, BoundsCheckComplexStringOffsetExceedsTotal)
+{
+    const uint32_t num_rows = 1;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    // Array(String) for 1 row: wire_offsets = [0, 10, 2] (off[1]=10 > total=2)
+    std::vector<uint8_t> buf(data_off + 3 * 4 + 2);
+    uint32_t one = 1;
+    std::memcpy(buf.data(), &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one, 4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_COMPLEX;
+    desc.data_offset = data_off;
+    desc.data_size   = 3 * 4 + 2;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    uint32_t * wire_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
+    wire_offs[0] = 0;
+    wire_offs[1] = 10;  // exceeds total_chars = 2
+    wire_offs[2] = 2;
+
+    DataTypes nested = {std::make_shared<DataTypeString>()};
+    auto arr_type = std::make_shared<DataTypeArray>(nested);
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
+}
+
+// ── COL_COMPLEX bounds: total_elems exceeds available data ────────────────────
+
+TEST(ColumnarV1Wire, BoundsCheckComplexTotalElemsExceedsData)
+{
+    const uint32_t num_rows = 1;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    // Array(UInt64) for 1 row: outer_offsets = [0, 0, 0xFFFFFFFF]
+    // total_elems = 0xFFFFFFFF — huge, but only 0 bytes of actual data
+    std::vector<uint8_t> buf(data_off + 3 * 4);
+    uint32_t one = 1;
+    std::memcpy(buf.data(), &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one, 4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_COMPLEX;
+    desc.data_offset = data_off;
+    desc.data_size   = 3 * 4;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    uint32_t * outer_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
+    outer_offs[0] = 0;
+    outer_offs[1] = 0;
+    outer_offs[2] = 0xFFFFFFFF;
+
+    DataTypes nested = {std::make_shared<DataTypeUInt64>()};
+    auto arr_type = std::make_shared<DataTypeArray>(nested);
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
+}
+
+// ── COL_COMPLEX bounds: data_end constrained to data_size, not buf.size() ─────
+
+TEST(ColumnarV1Wire, BoundsCheckComplexDataEndTruncated)
+{
+    const uint32_t num_rows = 1;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    // Buffer has 100 bytes but data_size says only 4 bytes of complex data.
+    // The decoder must not read beyond data_size.
+    std::vector<uint8_t> buf(100, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(), &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one, 4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_COMPLEX;
+    desc.data_offset = data_off;
+    desc.data_size   = 4;  // only 4 bytes of complex data (1 uint32)
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    // Write a UInt64 at offset 4 — but data_size only allows up to 4+4=8,
+    // and we need 8 bytes for one UInt64. This should fail.
+    uint32_t val = 42;
+    std::memcpy(buf.data() + data_off + 4, &val, 4);
+
+    DataTypes nested = {std::make_shared<DataTypeUInt64>()};
+    auto arr_type = std::make_shared<DataTypeArray>(nested);
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
 }

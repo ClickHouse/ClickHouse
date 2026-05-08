@@ -662,7 +662,7 @@ inline MutableColumnPtr readColumnarOutput(
         checkRange(desc.data_offset, desc.data_size, "complex data");
 
         const uint8_t * data_ptr = buf.data() + desc.data_offset;
-        const uint8_t * data_end = buf.data() + buf.size();
+        const uint8_t * data_end = buf.data() + desc.data_offset + desc.data_size;
 
         std::function<MutableColumnPtr(const uint8_t *&, const DataTypePtr &, uint32_t)> decode;
         decode = [&](const uint8_t *& p, const DataTypePtr & type, uint32_t n) -> MutableColumnPtr
@@ -675,7 +675,26 @@ inline MutableColumnPtr readColumnarOutput(
                         "COLUMNAR_V1 COL_COMPLEX: array outer offsets overflow buffer");
                 const uint32_t * outer_offs = reinterpret_cast<const uint32_t *>(p);
                 p += offsets_bytes;
+
+                // Validate monotonicity and bounds of outer offsets before using total_elems.
                 uint32_t total_elems = outer_offs[n];
+                for (uint32_t i = 0; i < n; ++i)
+                {
+                    uint32_t off = outer_offs[i + 1u];
+                    if (off < outer_offs[i])
+                        throw Exception(ErrorCodes::WASM_ERROR,
+                            "COLUMNAR_V1 COL_COMPLEX: array offset not monotonic at index {}", i);
+                    if (off > total_elems)
+                        throw Exception(ErrorCodes::WASM_ERROR,
+                            "COLUMNAR_V1 COL_COMPLEX: array offset {} exceeds total {} at index {}",
+                            off, total_elems, i);
+                }
+
+                // Validate total_elems before allocating (prevent memory exhaustion).
+                if (static_cast<uint64_t>(data_end - p) < static_cast<uint64_t>(total_elems) * 4)
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "COLUMNAR_V1 COL_COMPLEX: array total_elems {} exceeds available data",
+                        total_elems);
 
                 auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
 
@@ -705,9 +724,26 @@ inline MutableColumnPtr readColumnarOutput(
                 const uint32_t * wire_offs = reinterpret_cast<const uint32_t *>(p);
                 p += offsets_bytes;
                 uint32_t total_chars = wire_offs[n];
+
+                // Validate total_chars before allocating (prevent memory exhaustion).
                 if (static_cast<uint64_t>(data_end - p) < total_chars)
                     throw Exception(ErrorCodes::WASM_ERROR,
-                        "COLUMNAR_V1 COL_COMPLEX: string chars overflow buffer");
+                        "COLUMNAR_V1 COL_COMPLEX: string total_chars {} exceeds available data",
+                        total_chars);
+
+                // Validate monotonicity and bounds of string offsets.
+                for (uint32_t i = 0; i < n; ++i)
+                {
+                    uint32_t off = wire_offs[i + 1u];
+                    if (off < wire_offs[i])
+                        throw Exception(ErrorCodes::WASM_ERROR,
+                            "COLUMNAR_V1 COL_COMPLEX: string offset not monotonic at index {}", i);
+                    if (off > total_chars)
+                        throw Exception(ErrorCodes::WASM_ERROR,
+                            "COLUMNAR_V1 COL_COMPLEX: string offset {} exceeds total {} at index {}",
+                            off, total_chars, i);
+                }
+
                 const uint8_t * chars_src = p;
                 p += total_chars;
 
@@ -733,13 +769,15 @@ inline MutableColumnPtr readColumnarOutput(
                 return col_str;
             }
 
-            auto col = type->createColumn();
-            col->insertManyDefaults(n);
+            // Validate allocation size before creating the column (prevent memory exhaustion).
             uint32_t elem_bytes = static_cast<uint32_t>(type->getSizeOfValueInMemory());
             uint64_t data_bytes = static_cast<uint64_t>(n) * elem_bytes;
             if (static_cast<uint64_t>(data_end - p) < data_bytes)
                 throw Exception(ErrorCodes::WASM_ERROR,
                     "COLUMNAR_V1 COL_COMPLEX: fixed data overflow buffer");
+
+            auto col = type->createColumn();
+            col->insertManyDefaults(n);
             std::memcpy(const_cast<char *>(col->getRawData().data()), p, data_bytes);
             p += data_bytes;
             return col;
