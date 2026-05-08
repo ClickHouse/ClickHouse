@@ -1715,7 +1715,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_skip_indexes_for_top_k, false, R"(
+    DECLARE(Bool, use_skip_indexes_for_top_k, true, R"(
 Enable using data skipping indexes for TopK filtering.
 
 When enabled, if a minmax skip index exists on the column in `ORDER BY <column> LIMIT n` query, optimizer will attempt to use the minmax index to skip granules that are not relevant for the final result . This can reduce query latency.
@@ -1735,7 +1735,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_top_k_dynamic_filtering, false, R"(
+    DECLARE(Bool, use_top_k_dynamic_filtering, true, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 
 When enabled, the query executor will try to skip granules and rows that will not be part of the final `top N` rows in the resultset. This optimization is dynamic in nature and latency improvements depends on data distribution and presence of other predicates in the query.
@@ -7986,6 +7986,17 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
 )", EXPERIMENTAL, evaluation_time) \
     DECLARE(Bool, allow_experimental_alias_table_engine, false, R"(
 Allow to create table with the Alias engine.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
+Allow to create tables with Paimon* table engines.
+)", EXPERIMENTAL) \
+    DECLARE(Int64, paimon_target_snapshot_id, -1, R"(
+Query-level targeted snapshot read for Paimon incremental mode. When >0, the reader will only fetch the delta
+for the specified snapshot_id without advancing the committed watermark.
+Default: -1 (disabled)
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, max_consume_snapshots, 0, R"(
+Maximum number of Paimon snapshots to consume per incremental read. 0 means no limit.
 )", EXPERIMENTAL) \
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions
