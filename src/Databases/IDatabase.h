@@ -189,6 +189,14 @@ public:
 
     virtual bool isDatalakeCatalog() const { return false; }
 
+    /// True for databases whose contents live on a remote service that we don't
+    /// want to enumerate implicitly (data lake catalogs, MySQL, PostgreSQL, ...).
+    /// Such databases are hidden from system.tables / system.columns / system.completions
+    /// unless `show_external_databases_in_system_tables` is enabled.
+    /// This is distinct from `isExternal()` (which classifies whether the engine supports
+    /// ClickHouse internal table types) and from `isDatalakeCatalog()` (which is narrower).
+    virtual bool isExternalDatabase() const { return false; }
+
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects( /// NOLINT

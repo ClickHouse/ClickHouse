@@ -95,21 +95,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
 }
 
-namespace
-{
-    /// A database is considered "external" (and so hidden from system tables when
-    /// `show_external_databases_in_system_tables` is disabled) if it is a data lake catalog
-    /// or a MySQL/PostgreSQL database. Listing tables in these databases typically requires
-    /// network calls to a remote service.
-    bool databaseIsExternal(const IDatabase & database)
-    {
-        if (database.isDatalakeCatalog())
-            return true;
-        const auto & engine = database.getEngineName();
-        return engine == "MySQL" || engine == "PostgreSQL";
-    }
-}
-
 class DatabaseNameHints : public IHints<>
 {
 public:
@@ -636,7 +621,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
-    if (!databaseIsExternal(*database))
+    if (!database->isExternalDatabase())
         databases_without_external.emplace(database_name, database);
 
     NOEXCEPT_SCOPE({
@@ -2267,7 +2252,7 @@ Names TableNameHints::getAllRegisteredNames() const
         return {};
     /// External databases (data lake catalogs, MySQL, PostgreSQL) typically list tables via a remote
     /// service, which is expensive. Skip when user opted out of seeing them in system tables.
-    if (databaseIsExternal(*database) && context && !context->getSettingsRef()[Setting::show_external_databases_in_system_tables])
+    if (database->isExternalDatabase() && context && !context->getSettingsRef()[Setting::show_external_databases_in_system_tables])
         return {};
     return database->getAllTableNames(context);
 }

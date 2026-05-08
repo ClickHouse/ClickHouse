@@ -29,6 +29,7 @@ public:
 
     bool shouldBeEmptyOnDetach() const override { return false; }
     bool isDatalakeCatalog() const override { return true; }
+    bool isExternalDatabase() const override { return true; }
 
     bool empty() const override;
 
