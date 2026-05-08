@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -29,9 +31,12 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_eval_table_function;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsSetOperationMode union_default_mode;
 }
 
 namespace ErrorCodes
@@ -216,6 +221,16 @@ ASTPtr parseGeneratedQuery(const String & query_text, ContextPtr context)
 
     if (!query->as<ASTSelectWithUnionQuery>())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function `eval` can only execute `SELECT` queries");
+
+    {
+        SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
+        SelectIntersectExceptQueryVisitor{data}.visit(query);
+    }
+
+    {
+        NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
+        NormalizeSelectWithUnionQueryVisitor{data}.visit(query);
+    }
 
     checkNoNestedEval(query);
     return query;
