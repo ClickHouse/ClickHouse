@@ -4041,6 +4041,17 @@ static BoolMask forAnyHyperrectangle(
     const Hyperrectangle * column_bounds,
     F && callback)
 {
+    /// Returns the column's "wide" range used when the hyperrectangle decomposition would otherwise
+    /// widen the column to (-inf, +inf). When column_bounds is provided, it carries a tighter
+    /// fallback (e.g. the part's partition minmax for that column).
+    auto wide_range = [&](size_t i) -> Range
+    {
+        if (column_bounds && i < column_bounds->size())
+            return (*column_bounds)[i];
+        if (isNullableOrLowCardinalityNullable(data_types[i]))
+            return Range::createWholeUniverse();
+        return Range::createWholeUniverseWithoutNull();
+    };
 
     /// Intersect a one-sided range with the column's fallback bound if any. If the result is
     /// empty (the granule's open side and the partition minmax do not overlap, which is
@@ -4107,12 +4118,7 @@ static BoolMask forAnyHyperrectangle(
             prefix_size);
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
-    {
-        if (isNullableOrLowCardinalityNullable(data_types[i]))
-            hyperrectangle[i] = Range::createWholeUniverse();
-        else
-            hyperrectangle[i] = Range::createWholeUniverseWithoutNull();
-    }
+        hyperrectangle[i] = wide_range(i);
 
     auto result = BoolMask::combine(initial_mask, callback(hyperrectangle));
 
