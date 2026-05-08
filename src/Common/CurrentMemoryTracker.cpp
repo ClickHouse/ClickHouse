@@ -38,21 +38,6 @@ MemoryTracker * getMemoryTracker()
 /// `ThreadStatus` later; kept locally for now.
 thread_local DB::PerCPUMemoryBudget::PerCPUMemoryBudgetState per_cpu_state;
 
-/// If we have migrated to a new CPU since the last op, rebind state.cpu and
-/// signal the caller to flush via the unified branch
-/// (`migrated || flush_per_cpu || over_limit`). State's nallocs/nfrees are
-/// deliberately *not* refreshed here — `chargeAlloc`/`chargeFree` overwrite
-/// them on every call, so the first post-migration op self-corrects the
-/// baseline. Any spurious crossing the stale baseline produces is harmless
-/// because we're flushing anyway.
-inline bool rebindPerCPUStateOnMigration(int cpu)
-{
-    if (per_cpu_state.cpu == cpu)
-        return false;
-    per_cpu_state.cpu = cpu;
-    return true;
-}
-
 }
 
 using DB::current_thread;
@@ -87,15 +72,14 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        int cpu = DB::PerCPUMemoryBudget::currentCPU();
-        bool migrated = (cpu >= 0) && rebindPerCPUStateOnMigration(cpu);
-
         Int64 previous_untracked_memory = current_thread->untracked_memory;
         current_thread->untracked_memory += size;
 
-        bool flush_per_cpu = (cpu >= 0) && DB::PerCPUMemoryBudget::chargeAlloc(size, per_cpu_state);
+        /// `chargeAlloc` returns true for either a SLICE crossing or a
+        /// CPU migration since the previous charge — both demand a flush.
+        bool flush_per_cpu = DB::PerCPUMemoryBudget::chargeAlloc(size, per_cpu_state);
 
-        if (current_thread->untracked_memory > current_thread->untracked_memory_limit || flush_per_cpu || migrated)
+        if (current_thread->untracked_memory > current_thread->untracked_memory_limit || flush_per_cpu)
         {
             Int64 current_untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
@@ -154,13 +138,12 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        int cpu = DB::PerCPUMemoryBudget::currentCPU();
-        bool migrated = (cpu >= 0) && rebindPerCPUStateOnMigration(cpu);
-
         current_thread->untracked_memory -= size;
-        bool flush_per_cpu = (cpu >= 0) && DB::PerCPUMemoryBudget::chargeFree(size, per_cpu_state);
+        /// See note in allocImpl: `chargeFree` returns true for crossing or
+        /// migration; both fold into the unified flush condition below.
+        bool flush_per_cpu = DB::PerCPUMemoryBudget::chargeFree(size, per_cpu_state);
 
-        if (current_thread->untracked_memory < -current_thread->untracked_memory_limit || flush_per_cpu || migrated)
+        if (current_thread->untracked_memory < -current_thread->untracked_memory_limit || flush_per_cpu)
         {
             Int64 untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;

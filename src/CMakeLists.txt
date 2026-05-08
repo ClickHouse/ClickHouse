@@ -865,6 +865,10 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::parquet)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
+
+    if (TARGET ch_contrib::librseq)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::librseq)
+    endif ()
 endif ()
 
 if (TARGET ch_contrib::jwt-cpp)

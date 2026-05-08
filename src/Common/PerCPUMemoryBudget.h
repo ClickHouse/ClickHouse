@@ -1,5 +1,24 @@
 #pragma once
 
+#include <Common/CacheLine.h>
+
+#include <memory>
+#if !defined(OS_LINUX)
+#include <thread>
+#endif
+
+#include "config.h"
+
+#if defined(OS_LINUX)
+#    include <sched.h>
+#    include <unistd.h>
+#endif
+
+#if USE_LIBRSEQ
+#    include <rseq/rseq.h>
+#endif
+
+#include <base/defines.h>
 #include <base/types.h>
 
 /// Per-CPU pacer for `ThreadStatus::untracked_memory` flushes.
@@ -8,15 +27,17 @@
 /// allocated and freed on that CPU. On every op a thread does an
 /// `__atomic_fetch_add` (or rseq equivalent) on the appropriate counter and
 /// compares the new value against the value it last saw on that CPU
-/// (`PerCPUMemoryBudgetState`). When the counter has crossed a SLICE
-/// boundary since the thread's last observation, the thread is told to flush
-/// its `untracked_memory` to the tracker chain.
+/// (`PerCPUMemoryBudgetState`). The caller is told to flush its
+/// `untracked_memory` whenever:
+///   * the SLICE bucket changed since this thread last looked, OR
+///   * the CPU itself changed since the previous charge (migration).
 ///
 /// Properties:
 ///   * counters never decrement -> no drift, no counter-charge to undo;
-///   * cross-CPU migration is handled at the caller (state.cpu mismatch ->
-///     flush + refresh state). After migration, `T_i` is tied to the new
-///     CPU's counter alone, so the bound below is per-CPU not per-thread;
+///   * migration detection is folded into `chargeAlloc`/`chargeFree`: there
+///     is exactly one CPU read per op (`rseq_cpu_start` or `sched_getcpu`),
+///     and the migration vs crossing signal is collapsed into the bool
+///     return — caller has a single flush condition;
 ///   * `Σ T_i ≤ ncpus * SLICE` in steady state: between two crossings on
 ///     CPU c, the counter advanced by exactly SLICE bytes; every thread on
 ///     c that contributed will see the bucket change on its next op and
@@ -35,21 +56,167 @@ static_assert(SLICE == (Int64{1} << SLICE_LOG2));
 /// `ThreadStatus`) and passes it to every charge call.
 struct PerCPUMemoryBudgetState
 {
-    int   cpu = -1;     /// CPU this thread last charged on; -1 = uninitialised
+    int   cpu = -1;     /// CPU we last successfully charged on; -1 = uninitialised
     Int64 nallocs = 0;  /// last-seen value of `nallocs[cpu]` for this thread
     Int64 nfrees  = 0;  /// last-seen value of `nfrees[cpu]`
 };
 
-bool isRSeqReady();
+struct alignas(CH_CACHE_LINE_SIZE) Slot
+{
+    Int64 nallocs;
+    Int64 nfrees;
+};
+
+/// Static-init pipeline: declared in source order, initialised in source
+/// order within this TU. Callers reach this code only after
+/// `total_memory_tracker` is constructed (the gate in `getMemoryTracker`),
+/// so by the time anyone touches `slots[]` it is fully populated.
+inline const int slot_count = []
+{
+#if defined(OS_LINUX)
+    Int64 n = ::sysconf(_SC_NPROCESSORS_CONF);
+    return n > 0 ? static_cast<int>(n) : 0;
+#else
+    return static_cast<int>(std::thread::hardware_concurrency());
+#endif
+}();
+
+const std::unique_ptr<Slot[]> slots = std::make_unique<Slot[]>(slot_count);
+
+#if USE_LIBRSEQ
+inline const bool rseq_ready = []
+{
+    return rseq_init() == RSEQ_INIT_OK && rseq_size > 0;
+}();
+#endif
+
+inline bool isRSeqReady()
+{
+#if USE_LIBRSEQ
+    return rseq_ready;
+#else
+    return false;
+#endif
+}
 
 /// Returns the current CPU, or a negative value when the per-CPU machinery
-/// is unavailable. Caller short-circuits the budget layer in that case.
-int currentCPU();
+/// is unavailable. Exposed mostly for tests/diagnostics; the hot path
+/// (`chargeAlloc`/`chargeFree`) reads the CPU itself.
+ALWAYS_INLINE inline int currentCPU()
+{
+#if USE_LIBRSEQ
+    if (likely(rseq_ready))
+    {
+        int cpu = static_cast<int>(rseq_cpu_start());
+        return static_cast<unsigned>(cpu) < static_cast<unsigned>(slot_count) ? cpu : -1;
+    }
+#endif
+#if defined(OS_LINUX)
+    int cpu = ::sched_getcpu();
+    return static_cast<unsigned>(cpu) < static_cast<unsigned>(slot_count) ? cpu : -1;
+#else
+    return -1;
+#endif
+}
+
+namespace detail
+{
+
+template <bool alloc>
+ALWAYS_INLINE Int64 * counterFor(int cpu)
+{
+    if constexpr (alloc) return &slots[cpu].nallocs;
+    else                 return &slots[cpu].nfrees;
+}
+
+/// Single hot-path helper, parameterised on whether we're charging the
+/// alloc-side or the free-side counter.
+///
+/// Important: the entire rseq vs. atomic dispatch is structured as a single
+/// outer branch on `rseq_ready` so that:
+///   * the compiler loads `rseq_ready` exactly once;
+///   * the rseq fast path keeps `rseq_offset` in a single register across
+///     the cpu read and the rseq op (the previous structure leaked to two
+///     loads of `rseq_offset` because the load was split across separate
+///     `if` regions).
+template <bool alloc>
+ALWAYS_INLINE bool charge(Int64 size, PerCPUMemoryBudgetState & state)
+{
+    int cpu;
+    Int64 next;
+
+#if USE_LIBRSEQ
+    if (likely(rseq_ready))
+    {
+        cpu = static_cast<int>(rseq_cpu_start());
+        if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(slot_count)))
+            return false;
+
+        Int64 * counter = counterFor<alloc>(cpu);
+        while (true)
+        {
+            Int64 current = __atomic_load_n(counter, __ATOMIC_RELAXED);
+            next = current + size;
+            int r = rseq_load_cbne_store__ptr(
+                RSEQ_MO_RELAXED,
+                RSEQ_PERCPU_CPU_ID,
+                reinterpret_cast<intptr_t *>(counter),
+                static_cast<intptr_t>(current),
+                static_cast<intptr_t>(next),
+                cpu);
+            if (likely(r == 0))
+                break;
+            /// rseq aborted (preemption / migration / signal). Re-read cpu and retry.
+            cpu = static_cast<int>(rseq_cpu_start());
+            if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(slot_count)))
+                return false;
+            counter = counterFor<alloc>(cpu);
+        }
+    }
+    else
+#endif
+    {
+#if defined(OS_LINUX)
+        cpu = ::sched_getcpu();
+#else
+        cpu = -1;
+#endif
+        if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(slot_count)))
+            return false;
+        next = __atomic_add_fetch(counterFor<alloc>(cpu), size, __ATOMIC_RELAXED);
+    }
+
+    /// Migration detection happens *after* a successful charge — `cpu` is the
+    /// CPU we actually ended up on, regardless of any rseq retries.
+    bool migrated = (state.cpu != cpu);
+    state.cpu = cpu;
+
+    if constexpr (alloc)
+    {
+        bool cross = (next >> SLICE_LOG2) > (state.nallocs >> SLICE_LOG2);
+        state.nallocs = next;
+        return migrated || cross;
+    }
+    else
+    {
+        bool cross = (next >> SLICE_LOG2) > (state.nfrees >> SLICE_LOG2);
+        state.nfrees = next;
+        return migrated || cross;
+    }
+}
+
+}
 
 /// Hot-path entry points. Atomically advance the per-CPU counter, update
-/// `state`'s last-seen value, and return true when the SLICE bucket changed
-/// since the caller last looked — the signal to flush `untracked_memory`.
-bool chargeAlloc(Int64 size, PerCPUMemoryBudgetState & state);
-bool chargeFree (Int64 size, PerCPUMemoryBudgetState & state);
+/// `state`, and return true when the caller should flush `untracked_memory`
+/// (either a SLICE crossing happened or this thread changed CPU).
+ALWAYS_INLINE inline bool chargeAlloc(Int64 size, PerCPUMemoryBudgetState & state)
+{
+    return detail::charge<true>(size, state);
+}
+ALWAYS_INLINE inline bool chargeFree(Int64 size, PerCPUMemoryBudgetState & state)
+{
+    return detail::charge<false>(size, state);
+}
 
 }
