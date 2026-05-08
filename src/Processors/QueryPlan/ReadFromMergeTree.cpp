@@ -750,12 +750,20 @@ Pipe ReadFromMergeTree::readInOrder(
     {
         const auto & part_with_ranges = parts_with_ranges[i];
 
-        /// For projection parts, the authoritative set is keyed by the parent part's info
-        /// (same convention used in the pool's announcement and getTask).
-        const auto & part_info_for_phantom_check = part_with_ranges.data_part->isProjectionPart()
+        /// For projection parts, the authoritative set is keyed by the parent part's info plus
+        /// the projection name (same convention used in the pool's announcement and getTask).
+        /// The projection name distinguishes mixed projection/base reads on the same parent part:
+        /// a stream may own only the projection variant, in which case the base consumer for the
+        /// same parent part must still be pruned.
+        const bool is_projection = part_with_ranges.data_part->isProjectionPart();
+        const auto & part_info_for_phantom_check = is_projection
             ? part_with_ranges.parent_part->info
             : part_with_ranges.data_part->info;
-        if (pr_in_order_pool && pr_in_order_pool->isPhantomPart(part_info_for_phantom_check))
+        const String & projection_name_for_phantom_check = is_projection
+            ? part_with_ranges.data_part->name
+            : "";
+        if (pr_in_order_pool
+            && pr_in_order_pool->isPhantomPart(part_info_for_phantom_check, projection_name_for_phantom_check))
             continue;
 
         UInt64 total_rows = part_with_ranges.getRowsCount();

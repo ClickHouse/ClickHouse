@@ -87,17 +87,17 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     {
         authoritative_parts_received = true;
         for (const auto & part : response.parts)
-            authoritative_parts.insert(part.info);
+            authoritative_parts.emplace(part.info, part.projection_name);
     }
 
     per_part_marks_in_range.resize(per_part_infos.size(), 1);
 }
 
-bool MergeTreeReadPoolParallelReplicasInOrder::isPhantomPart(const MergeTreePartInfo & part_info) const
+bool MergeTreeReadPoolParallelReplicasInOrder::isPhantomPart(const MergeTreePartInfo & info, const String & projection_name) const
 {
     if (!authoritative_parts_received)
         return false;
-    return !authoritative_parts.contains(part_info);
+    return !authoritative_parts.contains({info, projection_name});
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
@@ -114,12 +114,13 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part->info;
     const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part->name : "";
 
-    /// Phantom consumers: this consumer's part isn't in the coordinator's stream — finish it
-    /// immediately rather than spinning on getTask. We only filter when the coordinator actually
-    /// reported its authoritative set; if it didn't (older initiator), fall back to the pre-existing
-    /// behavior (no pruning). An empty authoritative set with the flag set means the stream doesn't
-    /// exist on the coordinator (over-announced split) — every consumer of this pool should finish.
-    if (authoritative_parts_received && !authoritative_parts.contains(part_info))
+    /// Phantom consumers: this consumer's (part, projection_name) isn't in the coordinator's stream
+    /// — finish it immediately rather than spinning on getTask. We only filter when the coordinator
+    /// actually reported its authoritative set; if it didn't (older initiator), fall back to the
+    /// pre-existing behavior (no pruning). An empty authoritative set with the flag set means the
+    /// stream doesn't exist on the coordinator (over-announced split) — every consumer of this
+    /// pool should finish.
+    if (authoritative_parts_received && !authoritative_parts.contains({part_info, projection_name}))
         return nullptr;
 
     auto & marks_in_range = per_part_marks_in_range[task_idx];

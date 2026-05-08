@@ -35,12 +35,14 @@ public:
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
     MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
 
-    /// Returns true if this part is not in the coordinator's authoritative set for this stream.
-    /// Used to skip constructing source processors for phantom parts at pipeline-build time
-    /// (instead of running them and having `getTask` short-circuit on every call).
-    /// Returns false if the coordinator didn't send an authoritative set (older protocol):
-    /// fall back to the pre-existing behavior, which constructs all sources.
-    bool isPhantomPart(const MergeTreePartInfo & part_info) const;
+    /// Returns true if this (part, projection_name) is not in the coordinator's authoritative set
+    /// for this stream. Used to skip constructing source processors for phantom parts at
+    /// pipeline-build time (instead of running them and having `getTask` short-circuit on every
+    /// call). The `info` argument is the parent part's info for projection parts, matching the
+    /// convention used elsewhere in this pool. Returns false if the coordinator didn't send an
+    /// authoritative set (older protocol): fall back to the pre-existing behavior, which
+    /// constructs all sources.
+    bool isPhantomPart(const MergeTreePartInfo & info, const String & projection_name) const;
 
 private:
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicasInOrder");
@@ -64,7 +66,10 @@ private:
     /// Only consulted if `authoritative_parts_received` is true; otherwise the initiator is on
     /// an older protocol and didn't send a response — fall back to the pre-existing behavior.
     bool authoritative_parts_received{false};
-    std::set<MergeTreePartInfo> authoritative_parts;
+    /// Keyed by (info, projection_name). Mixed projection/base reads can produce streams whose
+    /// authoritative set contains only projection entries for a given parent part — base
+    /// consumers for the same parent part must still be pruned, so we can't key by `info` alone.
+    std::set<std::pair<MergeTreePartInfo, String>> authoritative_parts;
 
     mutable std::mutex mutex;
     std::vector<size_t> per_part_marks_in_range;

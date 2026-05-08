@@ -1181,7 +1181,12 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
     /// only that replica can create a new stream coordinator. Announcements from
     /// non-snapshot replicas for streams that don't exist yet are dropped (we return
     /// an empty parts list so the announcing replica's pool can finish immediately).
-    /// If the snapshot replica wasn't pinned, fall back to the first announcement.
+    /// If the snapshot replica wasn't pinned, any replica can be the first announcer for
+    /// a stream — the per-stream coordinator is created on first arrival. We must not
+    /// auto-pin the global snapshot here: with multiple streams (e.g. UNION of MergeTree
+    /// tables) different replicas may announce first for different streams, and pinning
+    /// to whichever announces first globally would silently drop subsequent first-time
+    /// announcements for other streams from other replicas, hanging their read requests.
     if (snapshot_replica_num)
     {
         const bool stream_exists = stream_to_coordinator.contains(announcement.stream_id);
@@ -1194,10 +1199,6 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
                 announcement.stream_id);
             return response;
         }
-    }
-    else
-    {
-        snapshot_replica_num = announcement.replica_num;
     }
 
     /// On the very first (snapshot replica's) announcement for a stream, capture its parts
