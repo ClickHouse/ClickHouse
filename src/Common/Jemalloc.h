@@ -55,9 +55,16 @@ void setValue(const char * name, T value)
 }
 
 template <typename T>
+bool tryGetValue(const char * name, T & out)
+{
+    size_t value_size = sizeof(out);
+    return je_mallctl(name, &out, &value_size, nullptr, 0) == 0;
+}
+
+template <typename T>
 T getValue(const char * name)
 {
-    T value;
+    T value{};
     size_t value_size = sizeof(T);
     je_mallctl(name, &value, &value_size, nullptr, 0);
     return value;

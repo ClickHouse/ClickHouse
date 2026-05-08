@@ -226,9 +226,16 @@ void verifySetup(
 
     if (getThreadProfileInitMib().getValue() != enable_global_profiler)
         log_warning(config_enable_global_profiler);
-    if (getValue<bool>("background_thread") != enable_background_threads)
+    /// `background_thread` and `max_background_threads` mallctls only exist when jemalloc was built
+    /// with `JEMALLOC_BACKGROUND_THREAD` (e.g. not on macOS). When unavailable, `je_mallctl` returns
+    /// `ENOENT` and any `setBackgroundThreads`/`setMaxBackgroundThreads` calls in `setup` were no-ops,
+    /// so we have nothing to verify and must not compare against an uninitialized read.
+    if (bool current_background_thread = false; tryGetValue("background_thread", current_background_thread)
+        && current_background_thread != enable_background_threads)
         log_warning(config_enable_background_threads);
-    if (max_background_threads_num && getValue<size_t>("max_background_threads") != max_background_threads_num)
+    if (size_t current_max_background_threads = 0; max_background_threads_num
+        && tryGetValue("max_background_threads", current_max_background_threads)
+        && current_max_background_threads != max_background_threads_num)
         log_warning(config_max_background_threads_num);
     if (profiler_sampling_rate != default_profiler_sampling_rate && getValue<size_t>("prof.lg_sample") != profiler_sampling_rate)
         log_warning(config_profiler_sampling_rate);
