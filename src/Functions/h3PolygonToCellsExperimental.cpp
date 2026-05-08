@@ -157,9 +157,9 @@ public:
 
             // polygonToCellsExperimental does not work for points and lines
             if constexpr (std::is_same_v<ColumnToPointsConverter<SphericalPoint>, Converter>)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument of function {} must not be Point", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must not be Point", getName());
             if constexpr (std::is_same_v<ColumnToLineStringsConverter<SphericalPoint>, Converter>)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument of function {} must not be LineString", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must not be LineString", getName());
 
             auto get_multi_polygon = [&]<typename T>(T && geometry) -> SphericalMultiPolygon
             {
@@ -259,9 +259,9 @@ public:
                             dst_data.insert(hindex);
                         }
                     }
-
-                    dst_offsets[row] = current_offset;
                 }
+
+                dst_offsets[row] = current_offset;
             }
         });
 

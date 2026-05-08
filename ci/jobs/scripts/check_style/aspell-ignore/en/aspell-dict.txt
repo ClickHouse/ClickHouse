@@ -907,6 +907,7 @@ PointDistKm
 PointDistM
 PointDistRads
 PolygonToCells
+PolygonToCellsExperimental
 PostHistory
 PostLink
 PostLinks
