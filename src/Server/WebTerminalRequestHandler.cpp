@@ -11,9 +11,8 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <Formats/FormatSettings.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/SHA1Engine.h>
 
@@ -241,95 +240,86 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket, UInt64 deadl
     return frame;
 }
 
-/// Extract a JSON string value for a given key from a simple flat JSON object.
-/// Uses ReadHelpers for correct JSON string unescaping.
-/// Returns empty string if not found.
-String extractJSONStringValue(const String & json, const char * key)
+/// Parse the JSON document and return its root object. Returns nullptr if the
+/// input is malformed or the root is not an object. We must parse the full
+/// structure (rather than searching for keys by substring) because top-level
+/// fields like `type`/`user`/`password` could otherwise be matched inside
+/// nested objects in attacker-controlled input.
+Poco::JSON::Object::Ptr parseRootObject(const String & json)
 {
-    auto pos = json.find(key);
-    if (pos == String::npos)
-        return {};
-    pos += strlen(key);
-    pos = json.find(':', pos);
-    if (pos == String::npos)
-        return {};
-    ++pos;
-    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t'))
-        ++pos;
-    if (pos >= json.size() || json[pos] != '"')
-        return {};
-
-    /// Use ReadHelpers to properly parse the JSON string value
-    ReadBufferFromString buf(std::string_view(json).substr(pos));
-    String result;
-    FormatSettings::JSON json_settings;
     try
     {
-        readJSONString(result, buf, json_settings);
+        Poco::JSON::Parser parser;
+        return parser.parse(json).extract<Poco::JSON::Object::Ptr>();
     }
-    catch (...) // Ok: malformed JSON string, return empty
+    catch (...) // Ok: malformed JSON or non-object root
+    {
+        return nullptr;
+    }
+}
+
+/// Read a top-level string field. Returns empty string if missing or not a string.
+String getStringField(const Poco::JSON::Object::Ptr & object, const char * key)
+{
+    if (!object->has(key))
+        return {};
+    try
+    {
+        return object->getValue<String>(key);
+    }
+    catch (...) // Ok: type mismatch
     {
         return {};
     }
-    return result;
 }
 
-/// Extract a JSON integer value for a given key, clamped to [0, max_value].
-/// Returns -1 if not found.
-int extractJSONIntValue(const String & json, const char * key, int max_value)
+/// Read a top-level integer field, clamped to [0, max_value]. Returns -1 if
+/// missing or not an integer.
+int getIntField(const Poco::JSON::Object::Ptr & object, const char * key, int max_value)
 {
-    auto pos = json.find(key);
-    if (pos == String::npos)
+    if (!object->has(key))
         return -1;
-    pos += strlen(key);
-    pos = json.find(':', pos);
-    if (pos == String::npos)
-        return -1;
-    ++pos;
-    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t'))
-        ++pos;
-    /// Accumulate into UInt64 with an explicit overflow guard so that arbitrarily long
-    /// digit sequences in untrusted input cannot cause signed integer overflow (UB).
-    UInt64 value = 0;
-    UInt64 max_unsigned = static_cast<UInt64>(max_value);
-    while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9')
+    try
     {
-        if (value > max_unsigned)
+        Int64 value = object->getValue<Int64>(key);
+        if (value < 0)
+            return -1;
+        if (value > max_value)
             return max_value;
-        value = value * 10 + static_cast<UInt64>(json[pos] - '0');
-        ++pos;
+        return static_cast<int>(value);
     }
-    if (value > max_unsigned)
-        return max_value;
-    return static_cast<int>(value);
+    catch (...) // Ok: type mismatch or non-integer numeric value
+    {
+        return -1;
+    }
 }
 
-/// Parse a simple JSON message like {"type":"resize","cols":80,"rows":24}
-/// This is a minimal parser sufficient for our control messages.
+/// Parse a control message like {"type":"resize","cols":80,"rows":24}.
 bool parseResizeMessage(const String & json, int & cols, int & rows)
 {
-    /// Validate that the "type" field is exactly "resize"
-    String type = extractJSONStringValue(json, "\"type\"");
-    if (type != "resize")
+    auto object = parseRootObject(json);
+    if (!object)
+        return false;
+    if (getStringField(object, "type") != "resize")
         return false;
 
     static constexpr int MAX_TERMINAL_DIMENSION = 500;
-
-    cols = extractJSONIntValue(json, "\"cols\"", MAX_TERMINAL_DIMENSION);
-    rows = extractJSONIntValue(json, "\"rows\"", MAX_TERMINAL_DIMENSION);
+    cols = getIntField(object, "cols", MAX_TERMINAL_DIMENSION);
+    rows = getIntField(object, "rows", MAX_TERMINAL_DIMENSION);
     return cols > 0 && rows > 0;
 }
 
-/// Parse an auth message like {"type":"auth","user":"default","password":"..."}
+/// Parse an auth message like {"type":"auth","user":"default","password":"..."}.
 bool parseAuthMessage(const String & json, String & user, String & password)
 {
-    /// Validate that the "type" field is exactly "auth"
-    String type = extractJSONStringValue(json, "\"type\"");
-    if (type != "auth")
+    auto object = parseRootObject(json);
+    if (!object)
+        return false;
+    if (getStringField(object, "type") != "auth")
         return false;
 
-    user = extractJSONStringValue(json, "\"user\"");
-    password = extractJSONStringValue(json, "\"password\"");
+    user = getStringField(object, "user");
+    password = getStringField(object, "password");
     /// User is required, password can be empty
     return !user.empty();
 }
