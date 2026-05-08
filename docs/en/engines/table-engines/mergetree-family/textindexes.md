@@ -316,17 +316,27 @@ When the column is of type `Array(String)`, the postprocessor still operates on 
 
 Usage of non-deterministic functions is disallowed.
 
-Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens), [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), and [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) apply the postprocessor to search tokens before looking them up in the index.
+**Function compatibility with preprocessor / tokenizer / postprocessor**.
+For predicates that consult the text index, the preprocessor and postprocessor are applied to the search value before the granule-level check so that the index lookup uses the same tokens that were stored at index build.
+Row-level evaluation of the predicate (after the granule passes) is unchanged — it operates on the original column data with the original needle.
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
-Functions [equals](/sql-reference/functions/comparison-functions.md/#equals) (`=`), [IN](/sql-reference/operators/in.md), [mapContainsKey](/sql-reference/functions/tuple-map-functions#mapContainsKey), [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike), [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue), and [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike) also apply the postprocessor to the needle for the granule lookup.
-Row-level evaluation of these predicates remains literal — the index simply prunes granules whose stored (postprocessed) tokens cannot match a postprocessed needle.
+| Function | Preprocessor | Compatible tokenizers | Postprocessor |
+|---|---|---|---|
+| `=`, `IN` | yes | any | yes |
+| [`hasToken`](/sql-reference/functions/string-search-functions.md/#hasToken), `hasTokenOrNull`, `hasTokenCaseInsensitive`, `hasTokenCaseInsensitiveOrNull` | yes | any (designed for `splitByNonAlpha`) | yes |
+| [`hasAnyTokens(col, str)`](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), [`hasAllTokens(col, str)`](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | yes | any | yes (skipped for `array`) |
+| `hasAnyTokens(col, arr)`, `hasAllTokens(col, arr)` | no (array elements are tokens as-is) | any | yes (skipped for `array`) |
+| [`hasPhrase`](/sql-reference/functions/string-search-functions.md/#hasPhrase) | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
+| [`startsWith`](/sql-reference/functions/string-functions.md/#startsWith), [`endsWith`](/sql-reference/functions/string-functions.md/#endsWith) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| `LIKE`, `ILIKE`, `match` | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| [`mapContainsKey`](/sql-reference/functions/tuple-map-functions#mapContainsKey), [`mapContainsValue`](/sql-reference/functions/tuple-map-functions#mapContainsValue) | yes | any | yes (skipped for `array`) |
+| [`mapContainsKeyLike`](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike), [`mapContainsValueLike`](/sql-reference/functions/tuple-map-functions#mapContainsValueLike) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes (skipped for `array`) |
+| [`has`](/sql-reference/functions/array-functions.md/#has), [`hasAny`](/sql-reference/functions/array-functions.md/#hasAny), [`hasAll`](/sql-reference/functions/array-functions.md/#hasAll) | no | `array` | no |
 
-Functions [has](/sql-reference/functions/array-functions.md/#has), [hasAll](/sql-reference/functions/array-functions.md/#hasAll), and [hasAny](/sql-reference/functions/array-functions.md/#hasAny) do **not** apply the postprocessor.
-`has`, `hasAll`, and `hasAny` operate directly on array elements, bypassing the entire tokenization pipeline (tokenizer, preprocessor, and postprocessor).
-Functions [startsWith](/sql-reference/functions/string-functions.md/#startsWith) and [endsWith](/sql-reference/functions/string-functions.md/#endsWith) can still use the text index in Hint mode with a postprocessor when the extracted hint tokens remain non-empty after normalization. If normalization drops all hint tokens, the text index is not used for that predicate.
+¹ `LIKE` and `ILIKE` have a *direct-read mode* (enabled via setting `use_text_index_like_evaluation_by_dictionary_scan`) which requires neither a preprocessor nor a postprocessor and supports only the `splitByNonAlpha` and `array` tokenizers. Outside direct-read mode, `LIKE`, `ILIKE`, and `match` use the index in Hint mode with the values shown in the table.
 
-When the index is built with `tokenizer = 'array'`, the index stores raw array elements unchanged — the postprocessor is **bypassed at index build** so that `has`, `hasAll`, and `hasAny` can do their literal element comparison. To stay consistent, `mapContainsKey`, `mapContainsKeyLike`, `mapContainsValue`, and `mapContainsValueLike` also bypass the postprocessor on the lookup side when the tokenizer is `array`. As a result, combining `tokenizer = 'array'` with a postprocessor is effectively a no-op for query semantics — every search compares against raw array elements.
+When the index is built with `tokenizer = 'array'`, the index stores raw array elements unchanged and the postprocessor is bypassed at index build. To stay consistent, all lookups that would otherwise apply the postprocessor also skip it for `array` (rows marked "skipped for `array`" above). As a result, combining `tokenizer = 'array'` with a postprocessor is effectively a no-op for query semantics — every search compares against raw array elements.
 
 Example for stop word filtering:
 
