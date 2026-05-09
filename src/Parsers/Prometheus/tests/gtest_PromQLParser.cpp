@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Common/Exception.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 using namespace DB;
@@ -172,15 +173,9 @@ PrometheusQueryTree(INSTANT_VECTOR):
         instance NE 'demo.promlabs.com:10000'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_THROW(parse(R"(
         {__name__=~".*"}
-        )"), R"(
-{__name__=~".*"}
-
-PrometheusQueryTree(INSTANT_VECTOR):
-    InstantSelector:
-        __name__ RE '.*'
-)");
+        )"), DB::Exception);
 
     /// Aggregation operators.
     EXPECT_EQ(parse("sum(demo_memory_usage_bytes)"), R"(
