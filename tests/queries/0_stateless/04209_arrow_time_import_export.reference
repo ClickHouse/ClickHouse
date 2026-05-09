@@ -4,3 +4,6 @@
 01:02:03	01:02:03.400	01:02:03.450	01:02:03.456	01:02:03.456700	01:02:03.456780	01:02:03.456789	01:02:03.456789000	01:02:03.456789010	01:02:03.456789012
 === Export Time type to Arrow ===
 12:34:56
+=== Export Time64 to Arrow – Overflow ===
+Code: 407. DB::Exception: Code: 407. DB::Exception: Code: 407. DB::Exception: Decimal math overflow. (DECIMAL_OVERFLOW)
+Code: 407. DB::Exception: Code: 407. DB::Exception: Code: 407. DB::Exception: Decimal math overflow. (DECIMAL_OVERFLOW)

@@ -5,7 +5,7 @@
 # timezone independence during import, and proper export roundtrip.
 #
 # https://github.com/ClickHouse/ClickHouse/issues/104038
-# 
+#
 #   - Import: Arrow time32/time64 → Time64 (timezone must NOT affect values)
 #   - Export: ClickHouse Time/Time64 → Arrow (exact type & value verified by Python)
 #
@@ -81,7 +81,7 @@ $CLICKHOUSE_LOCAL -q "
         toTime64('01:02:03.45678901', 8)      AS t8,
         toTime64('01:02:03.456789012', 9)     AS t9
     FORMAT Arrow
-" > "$DATA_FILE"
+" >"$DATA_FILE"
 
 python3 -c "
 import pyarrow as pa
@@ -108,7 +108,7 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA_FILE', 'Arrow')"
 
 # Do the same for the `Time` type (seconds precision only).
 echo "=== Export Time type to Arrow ==="
-$CLICKHOUSE_LOCAL -q "SELECT '12:34:56'::Time AS t_s FORMAT Arrow" > "$DATA_FILE"
+$CLICKHOUSE_LOCAL -q "SELECT '12:34:56'::Time AS t_s FORMAT Arrow" >"$DATA_FILE"
 
 python3 -c "
 import pyarrow as pa
@@ -120,6 +120,14 @@ assert schema.field('t_s').type == pa.time32('s'), f't_s: expected time32[s], go
 "
 
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA_FILE', 'Arrow')"
+
+# ---------------------------------------------------------------
+# 3. Overflow
+# ---------------------------------------------------------------
+echo "=== Export Time64 to Arrow – Overflow ==="
+
+$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) + INTERVAL 1000 YEAR FORMAT Arrow" >"$DATA_FILE"
+$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) - INTERVAL 1000 YEAR FORMAT Arrow" >"$DATA_FILE"
 
 # Cleanup
 rm -f "$DATA_FILE"

@@ -47,6 +47,8 @@
 #include <boost/iterator/zip_iterator.hpp>
 #include <boost/tuple/tuple.hpp>
 
+#include <limits>
+
 #define FOR_INTERNAL_NUMERIC_TYPES(M) \
         M(Int8, arrow::Int8Builder) \
         M(UInt16, arrow::UInt16Builder) \
@@ -356,13 +358,17 @@ namespace DB
                 }
                 else
                 {
-                    auto value = static_cast<Int32>(column[value_i].safeGet<DecimalField<Time64>>().getValue());
+                    auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<Time64>>().getValue());
                     if (need_rescale)
                     {
                         if (common::mulOverflow(value, rescale_multiplier, value))
                             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
                     }
-                    status = builder.Append(value);
+                    if (value > std::numeric_limits<Int32>::max() || value < std::numeric_limits<Int32>::min())
+                    {
+                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                    }
+                    status = builder.Append(static_cast<Int32>(value));
                 }
                 checkStatus(status, write_column->getName(), format_name);
             }
