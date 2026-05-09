@@ -60,9 +60,15 @@ def test_string_aggregation_compatibility(started_cluster):
 
     assert run_query(node1) == 10000
     assert run_query(node256) == 10000
+    # With `serialize_string_in_memory_with_zero_byte=0` the new server uses the legacy
+    # serialization format. Previously this used to surface a cross-version aggregation
+    # bug (returning 20000 instead of 10000) when two-level aggregation was active.
+    # Starting from revision 54484, two-level aggregation is disabled when communicating
+    # with older servers (see DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD),
+    # which prevents the bug from being triggered in this scenario.
     assert (
         run_query(node1, extra_settings={"serialize_string_in_memory_with_zero_byte": 0})
-        == 20000
+        == 10000
     )
 
 def test_string_aggregation_compatibility_setting(started_cluster):
