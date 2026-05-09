@@ -196,6 +196,14 @@ public:
     /// This method may be called from separate thread.
     void cancel();
 
+    /// Signal a concurrent `finish` drain loop to abort early. Used by
+    /// `RemoteSource::cancel` to upgrade a soft `PartialResult` cancellation to
+    /// a hard cancellation: we cannot acquire `was_cancelled_mutex` to call
+    /// `cancel` without first letting the drain loop in `finish` exit, because
+    /// `finish` holds the mutex across the entire blocking receive loop.
+    /// This method is lock-free and safe to call from any thread.
+    void abortDrain() noexcept;
+
     /// Get totals and extremes if any.
     Block getTotals() { return std::move(totals); }
     Block getExtremes() { return std::move(extremes); }
@@ -300,6 +308,14 @@ private:
       */
     bool was_cancelled = false;
     std::mutex was_cancelled_mutex;
+
+    /** Set by `abortDrain` to make `finish`'s drain loop exit early when a
+      * concurrent hard cancellation arrives. The drain loop checks this atomic
+      * after each packet so the hard cancel does not have to wait for the full
+      * drain to complete (which could be long if the remote is slow to respond
+      * to the `Cancel` packet).
+      */
+    std::atomic<bool> drain_should_stop{false};
 
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution

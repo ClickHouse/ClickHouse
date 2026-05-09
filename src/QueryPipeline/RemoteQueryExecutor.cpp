@@ -859,6 +859,13 @@ void RemoteQueryExecutor::finish()
     /// flips `finished` when `!hasActiveConnections`.
     while (connections->hasActiveConnections())
     {
+        /// Allow a concurrent hard cancel (via `abortDrain`) to interrupt the drain loop.
+        /// Without this, a long drain (e.g. slow remote) would block user/timeout cancellation
+        /// until all replicas finish, since `cancel` cannot acquire `was_cancelled_mutex`
+        /// while we are holding it here.
+        if (drain_should_stop.load(std::memory_order_acquire))
+            break;
+
         Packet packet = connections->receivePacket();
 
         switch (packet.type)
@@ -907,6 +914,11 @@ void RemoteQueryExecutor::cancel()
 {
     LockAndBlocker guard(was_cancelled_mutex);
     cancelUnlocked();
+}
+
+void RemoteQueryExecutor::abortDrain() noexcept
+{
+    drain_should_stop.store(true, std::memory_order_release);
 }
 
 void RemoteQueryExecutor::cancelUnlocked()

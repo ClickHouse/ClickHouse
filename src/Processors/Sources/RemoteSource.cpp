@@ -254,9 +254,7 @@ void RemoteSource::cancel(CancelReason reason) noexcept
     /// preserved (see `onCancel`). If a hard cancellation (`CancelledByUser`,
     /// `CancelledByTimeout`, etc.) arrives afterwards, it must take precedence so the user
     /// is not made to wait for the drain to complete. Upgrade the reason and force a hard
-    /// `query_executor->cancel`. If the drain is already in progress under the executor's
-    /// lock, the hard cancel will short-circuit once the lock is released; if the drain has
-    /// not yet started, this prevents it from running.
+    /// `query_executor->cancel`.
     if (reason == CancelReason::PartialResult)
         return;
 
@@ -269,6 +267,12 @@ void RemoteSource::cancel(CancelReason reason) noexcept
 
     try
     {
+        /// First, signal the drain loop in `finish` to abort early. `cancel` would
+        /// otherwise block on `was_cancelled_mutex` until the drain naturally completes,
+        /// since `finish` holds the mutex across the entire blocking receive loop.
+        /// `abortDrain` is lock-free, so the drain can observe the abort signal and
+        /// release the mutex; only then does our subsequent `cancel` make progress.
+        query_executor->abortDrain();
         query_executor->cancel();
     }
     catch (...)
