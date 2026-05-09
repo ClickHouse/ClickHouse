@@ -9,6 +9,7 @@
 #include <Common/noexcept_scope.h>
 
 #include <type_traits>
+#include <vector>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -291,8 +292,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     ScopedDecrement available_threads_decrement(available_threads);
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
-    ThreadFromThreadPool * thread_to_wake = nullptr;
-
     // Load the current capacity
     int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
     int64_t currently_available_threads = available_threads.load(std::memory_order_relaxed);
@@ -433,21 +432,13 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// avoids a thundering herd where every idle thread wakes, contends for the
         /// mutex, and goes back to sleep on every job schedule.
         ///
-        /// If the stack is empty, no notify is needed: either a new thread was just
-        /// added to `threads` and will see the queued job in its first worker-loop
-        /// iteration, or all threads are busy and will pick up the queued job when
-        /// they finish their current jobs and re-enter the loop.
-        if (!idle_thread_stack.empty())
-        {
-            thread_to_wake = idle_thread_stack.back();
-            idle_thread_stack.pop_back();
-            thread_to_wake->idle_wakeup_flag = true;
-            thread_to_wake->idle_stack_index = -1;
-        }
+        /// Notify while still holding `mutex`: once `idle_wakeup_flag` is set, a
+        /// spurious wakeup is enough for the worker to run and remove itself from
+        /// the pool, so the raw `ThreadFromThreadPool` pointer must not be used
+        /// after the lock is released.
+        if (ThreadFromThreadPool * thread_to_wake = popNewestIdleThreadNoLock())
+            wakeIdleThreadNoLock(thread_to_wake);
     }
-
-    if (thread_to_wake)
-        thread_to_wake->cv.notify_one();
 
     ProfileEvents::increment(std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
@@ -615,15 +606,79 @@ void ThreadPoolImpl<Thread>::onDestroy()
 }
 
 template <typename Thread>
+void ThreadPoolImpl<Thread>::pushIdleThreadNoLock(ThreadFromThreadPool * thread)
+{
+    chassert(!thread->in_idle_stack);
+    chassert(!thread->idle_prev);
+    chassert(!thread->idle_next);
+
+    thread->idle_prev = idle_thread_tail;
+    thread->idle_next = nullptr;
+    thread->in_idle_stack = true;
+
+    if (idle_thread_tail)
+        idle_thread_tail->idle_next = thread;
+    else
+        idle_thread_head = thread;
+
+    idle_thread_tail = thread;
+    ++idle_thread_count;
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::removeIdleThreadNoLock(ThreadFromThreadPool * thread)
+{
+    if (!thread->in_idle_stack)
+        return;
+
+    if (thread->idle_prev)
+        thread->idle_prev->idle_next = thread->idle_next;
+    else
+        idle_thread_head = thread->idle_next;
+
+    if (thread->idle_next)
+        thread->idle_next->idle_prev = thread->idle_prev;
+    else
+        idle_thread_tail = thread->idle_prev;
+
+    thread->idle_prev = nullptr;
+    thread->idle_next = nullptr;
+    thread->in_idle_stack = false;
+
+    chassert(idle_thread_count > 0);
+    --idle_thread_count;
+}
+
+template <typename Thread>
+typename ThreadPoolImpl<Thread>::ThreadFromThreadPool * ThreadPoolImpl<Thread>::popNewestIdleThreadNoLock()
+{
+    ThreadFromThreadPool * thread = idle_thread_tail;
+    if (thread)
+        removeIdleThreadNoLock(thread);
+    return thread;
+}
+
+template <typename Thread>
+typename ThreadPoolImpl<Thread>::ThreadFromThreadPool * ThreadPoolImpl<Thread>::popOldestIdleThreadNoLock()
+{
+    ThreadFromThreadPool * thread = idle_thread_head;
+    if (thread)
+        removeIdleThreadNoLock(thread);
+    return thread;
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::wakeIdleThreadNoLock(ThreadFromThreadPool * thread)
+{
+    thread->idle_wakeup_flag = true;
+    thread->cv.notify_one();
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::wakeUpAllIdleThreadsNoLock()
 {
-    for (auto * thread : idle_thread_stack)
-    {
-        thread->idle_wakeup_flag = true;
-        thread->idle_stack_index = -1;
-        thread->cv.notify_one();
-    }
-    idle_thread_stack.clear();
+    while (ThreadFromThreadPool * thread = popOldestIdleThreadNoLock())
+        wakeIdleThreadNoLock(thread);
 }
 
 template <typename Thread>
@@ -633,19 +688,17 @@ void ThreadPoolImpl<Thread>::wakeUpExcessIdleThreadsNoLock()
     if (threads.size() <= target)
         return;
     const size_t excess = threads.size() - target;
-    const size_t to_wake = std::min(excess, idle_thread_stack.size());
+    const size_t to_wake = std::min(excess, idle_thread_count);
 
     /// Wake the oldest-idle threads first (front of the stack), keeping the
     /// recently-idle threads (back of the stack) intact for LIFO scheduling
     /// of the next incoming jobs.
     for (size_t i = 0; i < to_wake; ++i)
     {
-        ThreadFromThreadPool * thread = idle_thread_stack[i];
-        thread->idle_wakeup_flag = true;
-        thread->idle_stack_index = -1;
-        thread->cv.notify_one();
+        ThreadFromThreadPool * thread = popOldestIdleThreadNoLock();
+        chassert(thread);
+        wakeIdleThreadNoLock(thread);
     }
-    idle_thread_stack.erase(idle_thread_stack.begin(), idle_thread_stack.begin() + to_wake);
 }
 
 template <typename Thread>
@@ -795,28 +848,32 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     parent_pool.wakeUpAllIdleThreadsNoLock(); /// `shutdown` was set, wake up other threads so they can finish themselves.
             }
 
-            /// LIFO idle thread scheduling: push this thread onto the idle stack
-            /// and wait on its own per-thread CV until selected. The scheduler pops
-            /// the most recently idle thread from the stack, sets its
-            /// `idle_wakeup_flag`, and notifies only that thread's CV. This
-            /// concentrates work on fewer OS threads (improving cache locality and
-            /// letting jemalloc release per-thread caches of unused threads).
+            /// LIFO idle thread scheduling: link this thread into the intrusive
+            /// idle stack and wait on its own per-thread CV until selected. The
+            /// scheduler pops the most recently idle thread from the stack, sets
+            /// its `idle_wakeup_flag`, and notifies only that thread's CV.
             ///
-            /// `wakeUpAllIdleThreadsNoLock` is used for shutdown and limit changes;
-            /// it sets the flag and notifies every idle thread's CV, then clears
-            /// the stack. The wait predicate checks only `idle_wakeup_flag`, so
-            /// spurious wakeups put the thread right back to sleep without
-            /// disrupting LIFO discipline.
+            /// The predicate also checks the real pool state. This is required for
+            /// safety: if the idle bookkeeping ever misses a wake-up, a notified or
+            /// spuriously-woken worker must still notice queued jobs, shutdown, or
+            /// a reduced thread limit instead of sleeping forever.
             while (parent_pool.jobs.empty()
                 && !parent_pool.shutdown
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
-                {
-                    ALLOW_ALLOCATIONS_IN_SCOPE;
-                    parent_pool.idle_thread_stack.push_back(this);
-                }
                 idle_wakeup_flag = false;
-                cv.wait(lock, [this] { return idle_wakeup_flag; });
+                parent_pool.pushIdleThreadNoLock(this);
+                cv.wait(lock, [this]
+                {
+                    return idle_wakeup_flag
+                        || !parent_pool.jobs.empty()
+                        || parent_pool.shutdown
+                        || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
+                });
+
+                /// If this worker woke through the fallback predicate rather than
+                /// being LIFO-selected, it is still linked in the idle stack.
+                parent_pool.removeIdleThreadNoLock(this);
             }
 
             if (parent_pool.jobs.empty() || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))

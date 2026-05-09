@@ -7,7 +7,6 @@
 #include <functional>
 #include <queue>
 #include <list>
-#include <vector>
 #include <optional>
 #include <atomic>
 #include <stack>
@@ -94,12 +93,15 @@ public:
         /// LIFO idle thread scheduling flag.
         /// When a new job is scheduled, the most recently idle thread is popped
         /// from the LIFO stack, this flag is set to true, and only that thread's
-        /// CV is notified. The flag distinguishes a real wake-up from a spurious one.
+        /// CV is notified. The worker wait predicate also checks pool state, so
+        /// this flag only marks direct LIFO or administrative wake-ups.
         bool idle_wakeup_flag = false;
 
-        /// Index of this thread in the idle_thread_stack, or -1 if not in the stack.
-        /// Used for O(1) swap-and-pop removal from the idle stack.
-        ssize_t idle_stack_index = -1;
+        /// Intrusive links in the parent pool idle stack. They avoid allocations
+        /// in the worker idle path, which runs under `DENY_ALLOCATIONS_IN_SCOPE`.
+        ThreadFromThreadPool * idle_prev = nullptr;
+        ThreadFromThreadPool * idle_next = nullptr;
+        bool in_idle_stack = false;
 
         // Remove itself from the parent pool
         void removeSelfFromPoolNoPoolLock();
@@ -219,18 +221,27 @@ private:
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
-    /// LIFO stack of idle threads for wake-up scheduling.
+    /// Intrusive LIFO stack of idle threads for wake-up scheduling.
     /// When a new job is scheduled, the most recently idle thread is woken first.
     /// This concentrates work on fewer OS threads, improving CPU cache locality
     /// and reducing memory fragmentation from allocator per-thread caches (e.g. jemalloc tcache).
     /// See https://github.com/ClickHouse/ClickHouse/issues/10818
-    std::vector<ThreadFromThreadPool *> idle_thread_stack;
+    ThreadFromThreadPool * idle_thread_head = nullptr; /// Oldest idle thread.
+    ThreadFromThreadPool * idle_thread_tail = nullptr; /// Most recently idle thread.
+    size_t idle_thread_count = 0;
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
+
+    /// Idle stack operations. Must be called with mutex held.
+    void pushIdleThreadNoLock(ThreadFromThreadPool * thread);
+    void removeIdleThreadNoLock(ThreadFromThreadPool * thread);
+    ThreadFromThreadPool * popNewestIdleThreadNoLock();
+    ThreadFromThreadPool * popOldestIdleThreadNoLock();
+    void wakeIdleThreadNoLock(ThreadFromThreadPool * thread);
 
     /// Wake all threads in the idle stack and set their wakeup flags (for shutdown).
     /// Must be called with mutex held.
