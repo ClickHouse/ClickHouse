@@ -152,7 +152,15 @@ started	1
 1
 1
 0
-26. Negative tests.
+26. hasTokenOrNull: stop-word postprocessor is honored consistently across index and row-scan paths.
+0
+1
+1
+0
+4
+4
+0
+27. Negative tests.
 - The postprocessor expression must reference the index column
 - The postprocessor expression must be a function, not an identifier
 - The postprocessor expression must return String

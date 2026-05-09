@@ -221,6 +221,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
 TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const String & function_name) const
 {
     if (function_name == "hasToken"
+        || function_name == "hasTokenOrNull"
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens")
         return TextIndexDirectReadMode::Exact;

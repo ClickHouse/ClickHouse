@@ -372,14 +372,16 @@ private:
     /// has/hasAll/hasAny bypass both transforms.
     static bool needApplyPreprocessor(const String & function_name)
     {
-        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        return function_name == "hasToken" || function_name == "hasTokenOrNull"
+            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
     }
 
     /// Returns true for functions that require applying the postprocessor to the needle.
     /// hasPhrase keeps its needle as an unsplit phrase string so per-token postprocessing does not apply.
     static bool needApplyPostprocessor(const String & function_name)
     {
-        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
+        return function_name == "hasToken" || function_name == "hasTokenOrNull"
+            || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
     }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
