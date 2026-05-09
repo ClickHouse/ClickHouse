@@ -16,6 +16,7 @@
 #include <Columns/ColumnVariant.h>
 
 #include <IO/ReadBuffer.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -1061,21 +1062,13 @@ std::vector<size_t> SerializationVariant::getVariantsDeserializeTextOrder(const 
 }
 
 
-bool SerializationVariant::tryDeserializeImpl(
+bool SerializationVariant::tryDeserializeVariantFromField(
     IColumn & column,
     const String & field,
-    std::function<bool(ReadBuffer &)> check_for_null,
     std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
     const FormatSettings & settings) const
 {
     auto & column_variant = assert_cast<ColumnVariant &>(column);
-    ReadBufferFromString null_buf(field);
-    if (check_for_null(null_buf) && null_buf.eof())
-    {
-        column_variant.insertDefault();
-        return true;
-    }
-
     FormatSettings modified_settings = settings;
     modified_settings.allow_special_bool_values = settings.allow_special_bool_values_inside_variant;
     for (size_t global_discr : deserialize_text_order)
@@ -1098,6 +1091,24 @@ bool SerializationVariant::tryDeserializeImpl(
     return false;
 }
 
+bool SerializationVariant::tryDeserializeImpl(
+    IColumn & column,
+    const String & field,
+    std::function<bool(ReadBuffer &)> check_for_null,
+    std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
+    const FormatSettings & settings) const
+{
+    auto & column_variant = assert_cast<ColumnVariant &>(column);
+    ReadBufferFromString null_buf(field);
+    if (check_for_null(null_buf) && null_buf.eof())
+    {
+        column_variant.insertDefault();
+        return true;
+    }
+
+    return tryDeserializeVariantFromField(column, field, try_deserialize_nested, settings);
+}
+
 void SerializationVariant::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
@@ -1108,33 +1119,105 @@ void SerializationVariant::serializeTextEscaped(const IColumn & column, size_t r
         variant_serializations[global_discr]->serializeTextEscaped(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings);
 }
 
+template <typename ReadField, typename TryDeserializeVariant>
+bool SerializationVariant::tryDeserializeTextEscapedOrRawImpl(
+    IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+    ReadField && read_field, TryDeserializeVariant && try_deserialize_variant) const
+{
+    const String & null_representation = settings.tsv.null_representation;
+
+    auto read_field_and_try_deserialize = [&](ReadBuffer & buf)
+    {
+        String field;
+        read_field(field, buf);
+        return tryDeserializeVariantFromField(column, field, try_deserialize_variant, settings);
+    };
+
+    /// Some data types can deserialize absence of data (e.g. empty string), so eof is ok.
+    if (istr.eof() || (!null_representation.empty() && *istr.position() != null_representation[0]))
+        return read_field_and_try_deserialize(istr);
+
+    /// Check if we have enough data in buffer to check if it's a null.
+    if (istr.available() > null_representation.size())
+    {
+        auto * pos = istr.position();
+        if (checkString(null_representation, istr)
+            && (istr.eof() || *istr.position() == '\t' || *istr.position() == '\n'
+                || (settings.tsv.crlf_end_of_line_input && *istr.position() == '\r')))
+        {
+            assert_cast<ColumnVariant &>(column).insertDefault();
+            return true;
+        }
+        istr.position() = pos;
+        return read_field_and_try_deserialize(istr);
+    }
+
+    /// We don't have enough data in buffer to check if it's a null.
+    /// Use PeekableReadBuffer to make a checkpoint before checking null
+    /// representation and rollback if check was failed.
+    PeekableReadBuffer peekable_buf(istr, true);
+    peekable_buf.setCheckpoint();
+    if (checkString(null_representation, peekable_buf)
+        && (peekable_buf.eof() || *peekable_buf.position() == '\t' || *peekable_buf.position() == '\n'
+            || (settings.tsv.crlf_end_of_line_input && *peekable_buf.position() == '\r')))
+    {
+        peekable_buf.dropCheckpoint();
+        assert_cast<ColumnVariant &>(column).insertDefault();
+        return true;
+    }
+
+    /// Not null. Rollback and continue reading from peekable_buf,
+    /// because istr position is already advanced by the failed null check.
+    peekable_buf.rollbackToCheckpoint();
+    peekable_buf.dropCheckpoint();
+    bool result = read_field_and_try_deserialize(peekable_buf);
+
+    /// Check that we don't have any unread data in PeekableReadBuffer own memory.
+    /// It can happen only if there is a string instead of a number
+    /// or if someone uses tab or LF in TSV null_representation.
+    /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
+    if (likely(!peekable_buf.hasUnreadData()))
+        return result;
+
+    /// We have some unread data in PeekableReadBuffer own memory.
+    /// We should delete incorrectly deserialized value from the column.
+    if (result)
+        column.popBack(1);
+    return false;
+}
+
 bool SerializationVariant::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    String field;
-    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field, istr) : readEscapedString(field, istr);
-    return tryDeserializeTextEscapedImpl(column, field, settings);
-}
-
-void SerializationVariant::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    String field;
-    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field, istr) : readEscapedString(field, istr);
-    if (!tryDeserializeTextEscapedImpl(column, field, settings))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse escaped value of type {} here: {}", variant_name, field);
-}
-
-bool SerializationVariant::tryDeserializeTextEscapedImpl(DB::IColumn & column, const String & field, const DB::FormatSettings & settings) const
-{
-    auto check_for_null = [&](ReadBuffer & buf)
+    auto read_field = [&](String & field, ReadBuffer & buf)
     {
-        return SerializationNullable::tryDeserializeNullEscaped(buf, settings);
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field, buf) : readEscapedString(field, buf);
     };
+
     auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
         return variant_serialization->tryDeserializeTextEscaped(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
+    return tryDeserializeTextEscapedOrRawImpl(column, istr, settings, read_field, try_deserialize_variant);
+}
+
+void SerializationVariant::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String field;
+    auto read_field = [&](String & f, ReadBuffer & buf)
+    {
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(f, buf) : readEscapedString(f, buf);
+        /// Save field for better exception message in case of error during parsing.
+        field = f;
+    };
+
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
+    {
+        return variant_serialization->tryDeserializeTextEscaped(variant_column, buf, settings_);
+    };
+
+    if (!tryDeserializeTextEscapedOrRawImpl(column, istr, settings, read_field, try_deserialize_variant))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse escaped value of type {} here: {}", variant_name, field);
 }
 
 void SerializationVariant::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1149,31 +1232,36 @@ void SerializationVariant::serializeTextRaw(const IColumn & column, size_t row_n
 
 bool SerializationVariant::tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    String field;
-    readString(field, istr);
-    return tryDeserializeTextRawImpl(column, field, settings);
-}
-
-void SerializationVariant::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    String field;
-    readString(field, istr);
-    if (!tryDeserializeTextRawImpl(column, field, settings))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse raw value of type {} here: {}", variant_name, field);
-}
-
-bool SerializationVariant::tryDeserializeTextRawImpl(DB::IColumn & column, const String & field, const DB::FormatSettings & settings) const
-{
-    auto check_for_null = [&](ReadBuffer & buf)
+    auto read_field = [](String & field, ReadBuffer & buf)
     {
-        return SerializationNullable::tryDeserializeNullRaw(buf, settings);
+        readString(field, buf);
     };
+
     auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
         return variant_serialization->tryDeserializeTextRaw(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
+    return tryDeserializeTextEscapedOrRawImpl(column, istr, settings, read_field, try_deserialize_variant);
+}
+
+void SerializationVariant::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String field;
+    auto read_field = [&](String & f, ReadBuffer & buf)
+    {
+        readString(f, buf);
+        /// Save field for better exception message in case of error during parsing.
+        field = f;
+    };
+
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
+    {
+        return variant_serialization->tryDeserializeTextRaw(variant_column, buf, settings_);
+    };
+
+    if (!tryDeserializeTextEscapedOrRawImpl(column, istr, settings, read_field, try_deserialize_variant))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse raw value of type {} here: {}", variant_name, field);
 }
 
 void SerializationVariant::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

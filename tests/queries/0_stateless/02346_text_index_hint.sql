@@ -4,6 +4,7 @@ SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_text_index_add_hint = 1;
 SET use_statistics = 0;
+SET use_text_index_like_evaluation_by_dictionary_scan = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 
