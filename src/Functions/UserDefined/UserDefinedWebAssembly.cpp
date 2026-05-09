@@ -422,6 +422,9 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
+        if (input_rows_count >= std::numeric_limits<uint32_t>::max())
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large number of rows: {}", input_rows_count);
+
         // ── Build the columnar input buffer ──────────────────────────────────
         const uint32_t num_cols = static_cast<uint32_t>(cols.size());
         uint32_t cursor = COLUMNAR_HEADER_BYTES + num_cols * COLUMNAR_DESC_BYTES;
