@@ -135,8 +135,12 @@ if (ENABLE_COLORED_BUILD AND CMAKE_GENERATOR STREQUAL "Ninja")
     # --> available since CMake 3.24: https://stackoverflow.com/a/73349744
 endif ()
 
-include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
+
+# Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
+# toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
+# version-dependent behaviour must be gated on CMAKE_CXX_COMPILER_VERSION explicitly.
+include (cmake/block_build_time_checks.cmake)
 
 option(ENABLE_TESTS "Provide unit_tests_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)

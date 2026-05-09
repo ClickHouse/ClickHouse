@@ -150,13 +150,18 @@ common_integration_test_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
             "./ci/jobs/scripts/integration_tests_configs.py",
+            "./ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
+            "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
             "./tests/integration/",
             "./ci/docker/integration",
             "./ci/jobs/scripts/docker_in_docker.sh",
         ],
     ),
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
-    post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
+    post_hooks=[
+        "python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py",
+        "python3 ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
+    ],
 )
 
 
@@ -190,7 +195,7 @@ class JobConfigs:
     ci_tests = Job.Config(
         name=JobNames.CI_TESTS,
         runs_on=RunnerLabels.ARM_LARGE,
-        command="python3 ./ci/jobs/ci_tests_job.py --skip test_cleanup_kills_orphaned_test_process",
+        command="python3 ./ci/jobs/ci_tests_job.py",
         timeout=1200,
         run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
         digest_config=Job.CacheDigestConfig(include_paths=["./ci"]),

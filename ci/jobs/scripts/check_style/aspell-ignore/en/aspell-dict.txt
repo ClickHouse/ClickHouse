@@ -516,6 +516,7 @@ IDE
 IDEs
 IDNA
 IMDS
+IMDSv
 INFILE
 INSERTed
 INSERTs
@@ -2443,8 +2444,8 @@ hasAll
 hasAllTokens
 hasAny
 hasAnyTokens
-hasPhrase
 hasColumnInTable
+hasPhrase
 hasSubsequence
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF
