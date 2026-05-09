@@ -17,8 +17,6 @@
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/ProcessList.h>
 
 
 namespace fs = std::filesystem;
@@ -801,12 +799,6 @@ void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)
             if (!detached_tables.contains(uuid))
                 return;
         }
-
-        if (CurrentThread::isInitialized())
-            if (auto query_context = CurrentThread::get().tryGetQueryContext())
-                if (auto process_list_element = query_context->getProcessListElementSafe())
-                    process_list_element->throwIfKilled();
-
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }

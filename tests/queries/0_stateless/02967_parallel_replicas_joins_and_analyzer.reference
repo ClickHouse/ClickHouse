@@ -407,6 +407,10 @@ Expression
                               Expression
                                 Expression
                                   ReadFromMergeTree
+                              CreatingSet
+                                Expression
+                                  Filter
+                                    ReadFromSystemNumbers
                         Expression
                           Expression
                             ReadFromMemoryStorage
@@ -462,6 +466,10 @@ Expression
                         Expression
                           Expression
                             ReadFromMergeTree
+                        CreatingSet
+                          Expression
+                            Filter
+                              ReadFromSystemNumbers
                   Expression
                     Union
                       Expression
@@ -886,6 +894,10 @@ Expression
                               Expression
                                 Expression
                                   ReadFromMergeTree
+                              CreatingSet
+                                Expression
+                                  Filter
+                                    ReadFromSystemNumbers
                         Expression
                           Expression
                             Expression
@@ -943,6 +955,10 @@ Expression
                         Expression
                           Expression
                             ReadFromMergeTree
+                        CreatingSet
+                          Expression
+                            Filter
+                              ReadFromSystemNumbers
                   Expression
                     Union
                       Expression
