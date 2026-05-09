@@ -25,6 +25,7 @@ constexpr auto config_profiler_sampling_rate = "jemalloc_profiler_sampling_rate"
 #if USE_JEMALLOC
 
 #include <string_view>
+#include <base/defines.h>
 #include <Common/logger_useful.h>
 #include <jemalloc/jemalloc.h>
 
@@ -65,8 +66,8 @@ template <typename T>
 T getValue(const char * name)
 {
     T value{};
-    size_t value_size = sizeof(T);
-    je_mallctl(name, &value, &value_size, nullptr, 0);
+    [[maybe_unused]] const bool ok = tryGetValue(name, value);
+    chassert(ok);
     return value;
 }
 

@@ -26,15 +26,6 @@ TEST(Jemalloc, TryGetValueReportsFailureForUnknownMallctl)
     EXPECT_TRUE(out);
 }
 
-/// `getValue` must return a defined value when the mallctl is missing; the
-/// fix replaces `T value;` with `T value{}`, so callers no longer observe
-/// uninitialized memory.
-TEST(Jemalloc, GetValueReturnsZeroOnUnknownMallctl)
-{
-    EXPECT_EQ(Jemalloc::getValue<size_t>("this.mallctl.does.not.exist"), 0u);
-    EXPECT_FALSE(Jemalloc::getValue<bool>("this.mallctl.does.not.exist"));
-}
-
 /// `verifySetup` must not abort or warn when the only potential mismatch
 /// comes from optional `background_thread` / `max_background_threads`
 /// mallctls that are not compiled into the running jemalloc -- the macOS
