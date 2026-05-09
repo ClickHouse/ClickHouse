@@ -356,43 +356,46 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
     }
 
     /// Spatial bbox pruning via covering.bbox column bounds.
-    /// For each registered spatial pruner, derive the file's global bbox from the four
-    /// bbox scalar columns' min/max bounds, then prune if the query bbox is disjoint.
-    for (const auto & sp : spatial_bbox_pruners)
+    /// Conservatively: only apply pruning when there is exactly one spatial predicate.
+    /// With multiple predicates the boolean structure (AND vs OR) is lost in extraction,
+    /// and pruning semantics differ: AND requires ALL disjoint, OR requires ANY disjoint.
+    if (spatial_bbox_pruners.size() == 1)
     {
+        const auto & sp = spatial_bbox_pruners[0];
+
         auto xmin_it = entry_hyperrectangles.find(sp.xmin_col_id);
         auto ymin_it = entry_hyperrectangles.find(sp.ymin_col_id);
         auto xmax_it = entry_hyperrectangles.find(sp.xmax_col_id);
         auto ymax_it = entry_hyperrectangles.find(sp.ymax_col_id);
-        if (xmin_it == entry_hyperrectangles.end() || ymin_it == entry_hyperrectangles.end()
-            || xmax_it == entry_hyperrectangles.end() || ymax_it == entry_hyperrectangles.end())
-            continue;
+        if (xmin_it != entry_hyperrectangles.end() && ymin_it != entry_hyperrectangles.end()
+            && xmax_it != entry_hyperrectangles.end() && ymax_it != entry_hyperrectangles.end())
+        {
+            /// Global file bbox:
+            ///   file_xmin = min(xmin_col) = xmin_range.left
+            ///   file_xmax = max(xmax_col) = xmax_range.right
+            ///   file_ymin = min(ymin_col) = ymin_range.left
+            ///   file_ymax = max(ymax_col) = ymax_range.right
+            const auto & xmin_range = xmin_it->second;
+            const auto & xmax_range = xmax_it->second;
+            const auto & ymin_range = ymin_it->second;
+            const auto & ymax_range = ymax_it->second;
 
-        /// Global file bbox:
-        ///   file_xmin = min(xmin_col) = xmin_range.left
-        ///   file_xmax = max(xmax_col) = xmax_range.right
-        ///   file_ymin = min(ymin_col) = ymin_range.left
-        ///   file_ymax = max(ymax_col) = ymax_range.right
-        const auto & xmin_range = xmin_it->second;
-        const auto & xmax_range = xmax_it->second;
-        const auto & ymin_range = ymin_it->second;
-        const auto & ymax_range = ymax_it->second;
+            if (xmin_range.left.getType() == Field::Types::Float64
+                && xmax_range.right.getType() == Field::Types::Float64
+                && ymin_range.left.getType() == Field::Types::Float64
+                && ymax_range.right.getType() == Field::Types::Float64)
+            {
+                double file_xmin = xmin_range.left.safeGet<double>();
+                double file_xmax = xmax_range.right.safeGet<double>();
+                double file_ymin = ymin_range.left.safeGet<double>();
+                double file_ymax = ymax_range.right.safeGet<double>();
 
-        if (xmin_range.left.getType() != Field::Types::Float64
-            || xmax_range.right.getType() != Field::Types::Float64
-            || ymin_range.left.getType() != Field::Types::Float64
-            || ymax_range.right.getType() != Field::Types::Float64)
-            continue;
-
-        double file_xmin = xmin_range.left.safeGet<double>();
-        double file_xmax = xmax_range.right.safeGet<double>();
-        double file_ymin = ymin_range.left.safeGet<double>();
-        double file_ymax = ymax_range.right.safeGet<double>();
-
-        bool disjoint = sp.query_xmax < file_xmin || sp.query_xmin > file_xmax
-            || sp.query_ymax < file_ymin || sp.query_ymin > file_ymax;
-        if (disjoint)
-            return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
+                bool disjoint = sp.query_xmax < file_xmin || sp.query_xmin > file_xmax
+                    || sp.query_ymax < file_ymin || sp.query_ymin > file_ymax;
+                if (disjoint)
+                    return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
+            }
+        }
     }
 
     return PruningReturnStatus::NOT_PRUNED;

@@ -493,7 +493,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
            {
                return !sc->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
            };
-           if (std::any_of(spatial_key_conditions.begin(), spatial_key_conditions.end(), spatial_predicate))
+           if (std::all_of(spatial_key_conditions.begin(), spatial_key_conditions.end(), spatial_predicate))
                 continue;
         }
 

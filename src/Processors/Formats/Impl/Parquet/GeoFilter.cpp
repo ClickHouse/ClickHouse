@@ -195,6 +195,10 @@ bool rowGroupFailsSpatialFilters(
     const std::vector<Reader::PrimitiveColumnInfo> & primitive_columns,
     const std::vector<SpatialFilter> & filters)
 {
+    /// Conservatively: only prune if ALL filters are disjoint.
+    /// With multiple predicates the boolean structure (AND vs OR) is lost in extraction.
+    /// Pruning when ALL are disjoint is always safe regardless of boolean structure.
+    std::vector<SpatialFilter> valid_filters;
     for (const auto & filter : filters)
     {
         /// Find the geometry primitive column by name.
@@ -223,9 +227,14 @@ bool rowGroupFailsSpatialFilters(
                      || bbox.xmin > filter.query_xmax
                      || bbox.ymax < filter.query_ymin
                      || bbox.ymin > filter.query_ymax;
-        if (disjoint)
-            return true;
+        if (!disjoint)
+            return false;
+        valid_filters.push_back(filter);
     }
+
+    /// All filters checked are disjoint (or no filters had bbox stats).
+    /// Prune only if we had at least one filter with bbox stats.
+    return !valid_filters.empty();
 
     return false;
 }
