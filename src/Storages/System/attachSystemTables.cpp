@@ -214,7 +214,9 @@ void attachUserQueryLog(ContextPtr context, IDatabase & system_database)
         table_id,
         ast_create,
         QueryLogElement::getColumnsDescription(),
-        "A view over `system.query_log` that shows queries submitted by the current user.");
+        "A view over `system.query_log` that shows queries submitted by the current user.",
+        /* is_parameterized_view_ */ false,
+        /* security_barrier_ */ true);
     system_database.attachTable(context, USER_QUERY_LOG_TABLE_NAME, view, path);
 }
 

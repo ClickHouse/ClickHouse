@@ -5008,7 +5008,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
 
     const auto & storage = table_node->getStorage();
     const auto * view = typeid_cast<const StorageView *>(storage.get());
-    if (!view || view->isParameterizedView())
+    if (!view || view->isParameterizedView() || !view->allowsViewInlining())
         return;
 
     /// Do not inline views with FINAL/SAMPLE modifiers for now.

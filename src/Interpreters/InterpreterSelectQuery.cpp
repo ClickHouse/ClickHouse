@@ -736,6 +736,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     StorageView * view = nullptr;
     if (storage)
         view = dynamic_cast<StorageView *>(storage.get());
+    if (view && !view->allowsViewInlining())
+        view = nullptr;
 
     if (!settings[Setting::additional_table_filters].value.empty() && storage && !joined_tables.tablesWithColumns().empty())
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(

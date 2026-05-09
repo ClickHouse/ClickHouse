@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 The `system.user_query_log` table is a view over `system.query_log` that returns only rows where the `user` column is equal to `currentUser`.
 
-The view is created with `SQL SECURITY DEFINER` and the `default` user as the definer, so a user can read their own query log rows through `system.user_query_log` without being granted direct access to `system.query_log`.
+The view is created with `SQL SECURITY DEFINER` and the `default` user as the definer, so a user can read their own query log rows through `system.user_query_log` without being granted direct access to `system.query_log`. Users do not need an explicit `SELECT` grant on `system.user_query_log`.
 
 The filter is placed in `PREWHERE` in the view definition.
 
@@ -21,13 +21,11 @@ You can disable the view with the `query_log.enable_user_query_log` server confi
 
 ## Columns {#columns}
 
-The columns are the same as in [`system.query_log`](query_log.md).
+The columns match [`system.query_log`](query_log.md), except `LowCardinality` wrappers are removed from exposed column types.
 
 ## Example {#example}
 
 ```sql
-GRANT SELECT ON system.user_query_log TO alice;
-
 SELECT
     query_start_time,
     query_duration_ms,

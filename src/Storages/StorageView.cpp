@@ -118,6 +118,17 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
     return false;
 }
 
+ColumnsDescription getSecurityBarrierColumnsDescription(ColumnsDescription columns)
+{
+    ColumnsDescription result;
+    for (auto column : columns)
+    {
+        column.type = recursiveRemoveLowCardinality(column.type);
+        result.add(std::move(column));
+    }
+    return result;
+}
+
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
   *
@@ -159,18 +170,21 @@ StorageView::StorageView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     const String & comment,
-    bool is_parameterized_view_)
+    bool is_parameterized_view_,
+    bool security_barrier_)
     : StorageWithCommonVirtualColumns(table_id_)
+    , security_barrier(security_barrier_)
 {
     StorageInMemoryMetadata storage_metadata;
+    const auto columns = security_barrier ? getSecurityBarrierColumnsDescription(columns_) : columns_;
     if (!is_parameterized_view_)
     {
         /// If CREATE query is to create parameterized view, then we dont want to set columns
         if (!query.isParameterizedView())
-            storage_metadata.setColumns(columns_);
+            storage_metadata.setColumns(columns);
     }
     else
-        storage_metadata.setColumns(columns_);
+        storage_metadata.setColumns(columns);
 
     storage_metadata.setComment(comment);
     if (query.sql_security)
@@ -340,7 +354,11 @@ void StorageView::readImpl(
     {
         auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectQueryAnalyzer interpreter(
-            current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
+            current_inner_query,
+            view_context,
+            options,
+            column_names,
+            security_barrier ? nullptr : query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }

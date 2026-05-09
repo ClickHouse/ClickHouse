@@ -20,7 +20,6 @@ ${CLICKHOUSE_CLIENT} --query "SELECT engine FROM system.tables WHERE database = 
 
 ${CLICKHOUSE_CLIENT} --query "SELECT 1 FORMAT Null" --query_id "${other_query_id}"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH no_password"
-${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON system.user_query_log TO ${user}"
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT 4212 FORMAT Null" --query_id "${query_id}"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
