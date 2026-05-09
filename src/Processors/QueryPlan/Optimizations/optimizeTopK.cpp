@@ -242,7 +242,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         hash.update(info.direction);
         info.condition_hash = hash.get64();
 
-        read_from_mergetree_step->setTopKColumn(std::move(info));
+        read_from_mergetree_step->setTopKColumn(info);
     }
 
     return added_step ? 1 : 0;
