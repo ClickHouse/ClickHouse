@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
 #include <unordered_set>
+#include <boost/functional/hash.hpp>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -1289,6 +1290,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     LoggerPtr log)
@@ -1313,6 +1315,13 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     auto drop_mark_ranges = [&](const ActionsDAG::Node * dag)
     {
         UInt64 condition_hash = dag->getHash();
+
+        /// Mirror the salting done by `updateQueryConditionCache` on the write path: when the read
+        /// goes through a TopK filter, the cached granule decisions are valid only for the same
+        /// TopK plan, so the cache key must be partitioned by the TopK parameters.
+        if (top_k_filter_info)
+            boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
+
         Stats stats;
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {
