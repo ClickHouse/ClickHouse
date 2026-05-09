@@ -1,9 +1,12 @@
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <fmt/core.h>
@@ -24,7 +27,7 @@ UInt64 getJeMallocValue(const char * name)
 {
     UInt64 value{};
     size_t size = sizeof(value);
-    mallctl(name, &value, &size, nullptr, 0);
+    je_mallctl(name, &value, &size, nullptr, 0);
     /// mallctl() fills the value with 32 bit integer for some queries("arenas.nbins" for example).
     /// In this case variable 'size' will be changed from 8 to 4 and the 64 bit variable 'value' will hold the 32 bit actual value times 2^32 on big-endian machines.
     /// We should right shift the value by 32 on big-endian machines(which is unnecessary on little-endian machines).
@@ -47,12 +50,20 @@ void fillJemallocBins(MutableColumns & res_columns)
         auto ndalloc = getJeMallocValue(fmt::format("stats.arenas.{}.bins.{}.ndalloc", MALLCTL_ARENAS_ALL, bin).c_str());
         auto nmalloc = getJeMallocValue(fmt::format("stats.arenas.{}.bins.{}.nmalloc", MALLCTL_ARENAS_ALL, bin).c_str());
 
+        auto nregs = getJeMallocValue(fmt::format("arenas.bin.{}.nregs", bin).c_str());
+        auto curslabs = getJeMallocValue(fmt::format("stats.arenas.{}.bins.{}.curslabs", MALLCTL_ARENAS_ALL, bin).c_str());
+        auto curregs = getJeMallocValue(fmt::format("stats.arenas.{}.bins.{}.curregs", MALLCTL_ARENAS_ALL, bin).c_str());
+
         size_t col_num = 0;
         res_columns.at(col_num++)->insert(bin_index);
         res_columns.at(col_num++)->insert(0);
         res_columns.at(col_num++)->insert(size);
         res_columns.at(col_num++)->insert(nmalloc);
         res_columns.at(col_num++)->insert(ndalloc);
+
+        res_columns.at(col_num++)->insert(nregs);
+        res_columns.at(col_num++)->insert(curslabs);
+        res_columns.at(col_num++)->insert(curregs);
     }
 
     /// Bins for large allocations
@@ -69,6 +80,10 @@ void fillJemallocBins(MutableColumns & res_columns)
         res_columns.at(col_num++)->insert(size);
         res_columns.at(col_num++)->insert(nmalloc);
         res_columns.at(col_num++)->insert(ndalloc);
+
+        res_columns.at(col_num++)->insertDefault();
+        res_columns.at(col_num++)->insertDefault();
+        res_columns.at(col_num++)->insertDefault();
     }
 }
 
@@ -83,24 +98,43 @@ void fillJemallocBins(MutableColumns &)
 
 
 StorageSystemJemallocBins::StorageSystemJemallocBins(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     ColumnsDescription desc;
     storage_metadata.setColumns(getColumnsDescription());
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSystemJemallocBins::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 ColumnsDescription StorageSystemJemallocBins::getColumnsDescription()
 {
-    return ColumnsDescription
+    auto description = ColumnsDescription
     {
         { "index",          std::make_shared<DataTypeUInt16>(), "Index of the bin ordered by size."},
         { "large",          std::make_shared<DataTypeUInt8>(), "True for large allocations and False for small."},
         { "size",           std::make_shared<DataTypeUInt64>(), "Size of allocations in this bin."},
         { "allocations",    std::make_shared<DataTypeInt64>(), "Number of allocations."},
         { "deallocations",  std::make_shared<DataTypeInt64>(), "Number of deallocations."},
+        { "nregs",          std::make_shared<DataTypeInt64>(), "Number of regions per slab."},
+        { "curslabs",       std::make_shared<DataTypeInt64>(), "Current number of slabs."},
+        { "curregs",        std::make_shared<DataTypeInt64>(), "Current number of regions for this size class."},
     };
+
+    description.setAliases({
+        {"availregs", std::make_shared<DataTypeUInt64>(), "nregs * curslabs"},
+        {"util", std::make_shared<DataTypeFloat64>(), "curregs / availregs"},
+    });
+
+    return description;
 }
 
 Pipe StorageSystemJemallocBins::read(
@@ -114,7 +148,7 @@ Pipe StorageSystemJemallocBins::read(
 {
     storage_snapshot->check(column_names);
 
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     MutableColumns res_columns = header.cloneEmptyColumns();
 
     fillJemallocBins(res_columns);

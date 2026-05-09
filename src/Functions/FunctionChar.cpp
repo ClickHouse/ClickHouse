@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -29,7 +28,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 

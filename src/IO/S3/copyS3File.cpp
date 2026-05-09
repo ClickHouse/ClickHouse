@@ -273,6 +273,7 @@ namespace
 
             try
             {
+                multipart_tags.resize(num_parts);
                 for (size_t part_number = 1; position < end_position; ++part_number)
                 {
                     if (has_failed)
@@ -285,13 +286,12 @@ namespace
 
                     assert(part_size);
 
-                    multipart_tags.push_back({});
-                    chassert(part_number == multipart_tags.size());
+                    auto & part_tag = multipart_tags[part_number - 1];
 
-                    task_tracker.add([this, part_number, position, part_size]()
+                    task_tracker.add([this, part_number, position, part_size, &part_tag]()
                     {
                         UploadPartTask task = {part_number, position, part_size};
-                        this->processUploadTask(task);
+                        this->processUploadTask(task, part_tag);
                     });
 
                     position = next_position;
@@ -373,7 +373,7 @@ namespace
             normal_part_size = part_size;
         }
 
-        void processUploadTask(UploadPartTask & task)
+        void processUploadTask(UploadPartTask & task, String & part_tag)
         {
             if (has_failed)
                 return;
@@ -389,7 +389,7 @@ namespace
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, task.part_size);
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
-                multipart_tags[task.part_number - 1] = tag;
+                part_tag = tag;
                 auto finished_count = ++num_finished_parts;
 
                 LOG_TRACE(log, "Finished writing part #{}. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Finished parts: {} of {}",

@@ -1,5 +1,6 @@
 #include <Processors/Port.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -9,15 +10,6 @@ IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Ope
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
 {
-    const Names & columns = header_->getNames();
-    size_t num_columns = columns.empty() ? header_->columns() : columns.size();
-
-    key_columns_pos.reserve(columns.size());
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        auto pos = columns.empty() ? i : header_->getPositionByName(columns[i]);
-        key_columns_pos.emplace_back(pos);
-    }
 }
 
 
@@ -91,6 +83,15 @@ void IntersectOrExceptTransform::work()
 }
 
 
+UInt128 IntersectOrExceptTransform::hashRow(const ColumnRawPtrs & columns, size_t row)
+{
+    SipHash hash;
+    for (const auto * column : columns)
+        column->updateHashWithValue(row, hash);
+    return hash.get128();
+}
+
+
 template <typename Method>
 void IntersectOrExceptTransform::addToSet(Method & method, const ColumnRawPtrs & columns, size_t rows, SetVariants & variants) const
 {
@@ -130,13 +131,24 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
     auto columns = chunk.detachColumns();
 
     ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(key_columns_pos.size());
+    column_ptrs.reserve(columns.size());
 
-    for (auto pos : key_columns_pos)
+    for (auto & column : columns)
     {
-        /// Hash methods expect non-const column
-        columns[pos] = columns[pos]->convertToFullColumnIfConst();
-        column_ptrs.emplace_back(columns[pos].get());
+        /// Hash methods expect non-const columns.
+        column = column->convertToFullColumnIfConst();
+        column_ptrs.emplace_back(column.get());
+    }
+
+    if (isAllOperator())
+    {
+        /// For ALL variants, track occurrence counts using a HashMap.
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            auto key = hashRow(column_ptrs, i);
+            ++counts[key];
+        }
+        return;
     }
 
     if (!data)
@@ -168,42 +180,68 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(key_columns_pos.size());
+    column_ptrs.reserve(columns.size());
 
-    for (auto pos : key_columns_pos)
+    for (auto & column : columns)
     {
-        /// Hash methods expect non-const column
-        columns[pos] = columns[pos]->convertToFullColumnIfConst();
-        column_ptrs.emplace_back(columns[pos].get());
+        /// Hash methods expect non-const columns.
+        column = column->convertToFullColumnIfConst();
+        column_ptrs.emplace_back(column.get());
     }
-    if (!data)
-        data.emplace();
-
-    if (data->empty())
-        data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
     size_t new_rows_num = 0;
+    IColumn::Filter row_filter(num_rows);
 
-    IColumn::Filter filter(num_rows);
-    auto & data_set = *data;
-
-    switch (data->type)
+    if (isAllOperator())
     {
-        case SetVariants::Type::EMPTY:
-            break;
+        /// For ALL variants, decrement counts to respect row multiplicities.
+        bool is_except = (current_operator == Operator::EXCEPT_ALL);
+
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            auto key = hashRow(column_ptrs, i);
+            auto * it = counts.find(key);
+
+            /// Check if this row has remaining occurrences in the right side.
+            bool matched = (it != nullptr && it->getMapped() > 0);
+            if (matched)
+                --it->getMapped();
+
+            /// EXCEPT ALL keeps unmatched rows; INTERSECT ALL keeps matched rows.
+            row_filter[i] = matched != is_except;
+
+            if (row_filter[i])
+                ++new_rows_num;
+        }
+    }
+    else
+    {
+        if (!data)
+            data.emplace();
+
+        if (data->empty())
+            data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
+
+        auto & data_set = *data;
+
+        switch (data->type)
+        {
+            case SetVariants::Type::EMPTY:
+                break;
 #define M(NAME) \
     case SetVariants::Type::NAME: \
-        new_rows_num = buildFilter(*data_set.NAME, column_ptrs, filter, num_rows, data_set); \
+        new_rows_num = buildFilter(*data_set.NAME, column_ptrs, row_filter, num_rows, data_set); \
         break;
-            APPLY_FOR_SET_VARIANTS(M)
+                APPLY_FOR_SET_VARIANTS(M)
 #undef M
+        }
     }
 
     if (!new_rows_num)
         return;
 
     for (auto & column : columns)
-        column = column->filter(filter, -1);
+        column = column->filter(row_filter, -1);
 
     chunk.setColumns(std::move(columns), new_rows_num);
 }

@@ -183,7 +183,7 @@ void HandshakeResponse::writePayloadImpl(WriteBuffer & buffer) const
     }
     else if (capability_flags & CLIENT_SECURE_CONNECTION)
     {
-        writeChar(auth_response.size(), buffer);
+        writeChar(static_cast<UInt8>(auth_response.size()), buffer);
         writeString(auth_response, buffer);
     }
     else

@@ -21,16 +21,16 @@ extern const int BAD_ARGUMENTS;
 
 namespace Paimon
 {
-    DB::ASTPtr createPartitionKeyAST(const DB::PaimonTableSchema & table_schema)
+    boost::intrusive_ptr<DB::IAST> createPartitionKeyAST(const DB::PaimonTableSchema & table_schema)
     {
-        std::shared_ptr<DB::ASTFunction> partition_key_ast = std::make_shared<DB::ASTFunction>();
+        auto partition_key_ast = DB::make_intrusive<DB::ASTFunction>();
         partition_key_ast->name = "tuple";
-        partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
+        partition_key_ast->arguments = DB::make_intrusive<DB::ASTExpressionList>();
         partition_key_ast->children.push_back(partition_key_ast->arguments);
 
         for (const auto & column_name : table_schema.partition_keys)
         {
-            auto partition_ast = std::make_shared<DB::ASTIdentifier>(column_name);
+            auto partition_ast = DB::make_intrusive<DB::ASTIdentifier>(column_name);
             partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
         }
         return partition_key_ast;
@@ -65,6 +65,7 @@ namespace Paimon
             partition_key = DB::KeyDescription::getKeyFromAST(
                 partition_key_ast,
                 partition_columns_description,
+                {},
                 context_);
 
             DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag_.getOutputs().front(), context_);
@@ -73,7 +74,7 @@ namespace Paimon
         }
     }
 
-    bool PartitionPruner::canBePruned(const DB::PaimonManifestEntry & manifest_entry)
+    bool PartitionPruner::canBePruned(const DB::PaimonManifestEntry & manifest_entry) const
     {
         if (!key_condition.has_value())
             return false;

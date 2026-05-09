@@ -144,11 +144,11 @@ SELECT timeSeriesGroupArray(timestamps, values);
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("timeSeriesGroupArray", {createAggregateFunctionTimeseriesGroupArray, {}, documentation});
+    factory.registerFunction("timeSeriesGroupArray", {createAggregateFunctionTimeseriesGroupArray, documentation});
 }
 
 }

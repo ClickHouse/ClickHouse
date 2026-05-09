@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
+#include <Common/ErrnoException.h>
 
 #    include <base/MemorySanitizer.h>
 #    include <Dictionaries/DictionaryHelpers.h>
@@ -875,7 +876,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request, default_mask);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for complex key storage");
     }
 
     void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) override
@@ -891,7 +892,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeys is not supported for complex key storage");
     }
 
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
@@ -928,7 +929,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeys is not supported for simple key storage");
     }
 
     PaddedPODArray<std::string_view> getCachedComplexKeys() const override
@@ -956,7 +957,7 @@ public:
 
         size_t max_blocks_size = (configuration.file_blocks_size + configuration.write_buffer_blocks_size) * configuration.max_partitions_count;
 
-        double load_factor = static_cast<double>(blocks_in_memory + blocks_on_disk) / max_blocks_size;
+        double load_factor = static_cast<double>(blocks_in_memory + blocks_on_disk) / static_cast<double>(max_blocks_size);
         return load_factor;
     }
 
@@ -1412,7 +1413,7 @@ private:
 
     SSDCacheFileBuffer<SSDCacheKeyType> file_buffer;
 
-    std::vector<SSDCacheMemoryBuffer<SSDCacheKeyType>> memory_buffer_partitions;
+    VectorWithMemoryTracking<SSDCacheMemoryBuffer<SSDCacheKeyType>> memory_buffer_partitions;
 
     pcg64 rnd_engine;
 

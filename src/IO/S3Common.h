@@ -4,6 +4,8 @@
 #include <IO/S3/Client.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Core/Field.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include "config.h"
 
@@ -46,6 +48,7 @@ public:
     }
 
     bool isRetryableError() const;
+    bool isAccessTokenExpiredError() const;
 
     S3Exception * clone() const override { return new S3Exception(*this); }
     void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
@@ -64,6 +67,12 @@ namespace Poco::Util
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 struct ProxyConfigurationResolver;
 
 namespace S3
@@ -71,6 +80,34 @@ namespace S3
 
 HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config, std::string header_key = "header");
 ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+
+template <typename SettingFieldRef>
+bool setValueFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & path,
+    SettingFieldRef & field)
+{
+    if (!config.has(path))
+        return false;
+
+    auto which = field.getValue().getType();
+    if (which == Field::Types::String)
+        field.setValue(config.getString(path));
+    else if (which == Field::Types::Bool)
+        field.setValue(config.getBool(path));
+    else if (isInt64OrUInt64FieldType(which))
+    {
+        const auto type_name = field.getTypeName();
+        if (type_name == "UInt64" || type_name == "Int64")
+            field.setValue(config.getUInt64(path));
+        else
+            field.setValue(Field(config.getString(path)));
+    }
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+
+    return true;
+}
 
 }
 }

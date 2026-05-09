@@ -788,7 +788,12 @@ static void getFileReader(
         return;
 
     orc::ReaderOptions options;
-    options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = min_bytes_for_seek, .rangeSizeLimit = 10 * 1024 * 1024UL});
+    /// ORC library requires rangeSizeLimit > holeSizeLimit.
+    static constexpr uint64_t default_range_size_limit = 10 * 1024 * 1024UL;
+    /// Clamp to avoid overflow when computing holeSizeLimit + 1.
+    uint64_t hole_size_limit = std::min<uint64_t>(min_bytes_for_seek, std::numeric_limits<uint64_t>::max() - 1);
+    uint64_t range_size_limit = std::max(default_range_size_limit, hole_size_limit + 1);
+    options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = hole_size_limit, .rangeSizeLimit = range_size_limit});
 
     auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
     file_reader = orc::createReader(std::move(input_stream), options);
@@ -952,7 +957,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
         return;
 
     if (format_filter_info)
-        format_filter_info->initOnce([&] { format_filter_info->initKeyCondition(getPort().getHeader()); });
+        format_filter_info->initKeyConditionOnce(getPort().getHeader());
 
     std::unique_ptr<orc::StripeInformation> stripe_info;
     if (file_reader->getNumberOfStripes())
@@ -1222,7 +1227,7 @@ void ORCColumnToCHColumn::orcTableToCHChunk(
 static ColumnPtr readByteMapFromORCColumn(const orc::ColumnVectorBatch * orc_column)
 {
     if (!orc_column->hasNulls)
-        return ColumnUInt8::create(orc_column->numElements, 0);
+        return ColumnUInt8::create(orc_column->numElements, static_cast<UInt8>(0));
 
     auto nullmap_column = ColumnUInt8::create();
     PaddedPODArray<UInt8> & bytemap_data = assert_cast<ColumnVector<UInt8> &>(*nullmap_column).getData();
@@ -1266,7 +1271,7 @@ readColumnWithBooleanData(const orc::ColumnVectorBatch * orc_column, const Strin
         if (!orc_bool_column->hasNulls || orc_bool_column->notNull[i])
             column_data.push_back(static_cast<UInt8>(orc_bool_column->data[i]));
         else
-            column_data.push_back(0);
+            column_data.push_back(static_cast<UInt8>(0));
     }
 
     return {std::move(internal_column), internal_type, column_name};
@@ -1710,8 +1715,8 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
 {
     bool skipped = false;
 
-    if (!inside_nullable && (orc_column->hasNulls || (type_hint && type_hint->isNullable())) && !orc_column->isEncoded
-        && (orc_type->getKind() != orc::LIST && orc_type->getKind() != orc::MAP && orc_type->getKind() != orc::STRUCT))
+    if (!inside_nullable && (orc_column->hasNulls || (type_hint && isNullableOrLowCardinalityNullable(type_hint))) && !orc_column->isEncoded
+        && (orc_type->getKind() != orc::LIST && orc_type->getKind() != orc::MAP))
     {
         DataTypePtr nested_type_hint;
         if (type_hint)
@@ -1883,19 +1888,27 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             auto nested_column = readColumnFromORCColumn(orc_nested_column, orc_nested_type, column_name, false, nested_type_hint);
 
             auto offsets_column = readOffsetsFromORCListColumn(orc_list_column);
-            auto array_column = ColumnArray::create(nested_column.column, offsets_column);
             DataTypePtr array_type;
-            /// If type hint is Nested, we should return Nested type,
-            /// because we differentiate Nested and simple Array(Tuple)
-            if (type_hint && isNested(type_hint))
+            ColumnPtr array_data_column = nested_column.column;
+            /// If type hint is Nested and the element is a named Tuple, return the Nested type
+            /// so that `Nested::flatten` can decompose it into separate arrays.
+            /// When the element is Nullable(Tuple(...)), unwrap it and propagate the struct null
+            /// map to each element via `unwrapNullableTuple`.
+            const auto * tuple_type = type_hint && isNested(type_hint)
+                ? typeid_cast<const DataTypeTuple *>(removeNullable(nested_column.type).get())
+                : nullptr;
+            if (tuple_type)
             {
-                const auto & tuple_type = assert_cast<const DataTypeTuple &>(*nested_column.type);
-                array_type = createNested(tuple_type.getElements(), tuple_type.getElementNames());
+                auto unwrapped = Nested::unwrapNullableTuple({array_data_column, nested_column.type, column_name});
+                array_data_column = unwrapped.column;
+                const auto & result_tuple = assert_cast<const DataTypeTuple &>(*unwrapped.type);
+                array_type = createNested(result_tuple.getElements(), result_tuple.getElementNames());
             }
             else
             {
                 array_type = std::make_shared<DataTypeArray>(nested_column.type);
             }
+            auto array_column = ColumnArray::create(array_data_column, offsets_column);
             return {array_column, array_type, column_name};
         }
         case orc::STRUCT:

@@ -53,7 +53,7 @@ SELECT * FROM test_table;
 
 ## Globs in URL {#globs-in-url}
 
-Patterns in curly brackets `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.
+Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](../../operations/settings/settings.md#glob_expansion_max_elements) setting.
 
 ## Virtual Columns {#virtual-columns}
@@ -66,20 +66,42 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 
 ## use_hive_partitioning setting {#hive-style-partitioning}
 
-When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path.
 
 **Example**
 
 Use virtual column, created with Hive-style partitioning
 
 ```sql
-SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE _date > '2020-01-01' AND _country = 'Netherlands' AND _code = 42;
+SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+## Resolving relative URLs {#resolving-relative-urls}
+
+The [url_base](/operations/settings/settings.md#url_base) setting allows passing a relative URL to the `url` function. When `url_base` is set and the function argument is a relative reference, it is resolved against the base URL per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+
+The resolution rules are:
+
+- **Path-relative** (e.g. `data.csv`): merged with the base URL path — everything after the last `/` of the base path is replaced. The trailing slash matters: `https://example.com/dir/` + `data.csv` gives `https://example.com/dir/data.csv`, but `https://example.com/dir` + `data.csv` gives `https://example.com/data.csv`. Dot segments (`./` and `../`) are normalized.
+- **Host-relative** (e.g. `/test/data.csv`): resolved using the scheme and host of the base URL.
+- **Scheme-relative** (e.g. `//other.com/test/data.csv`): resolved using the scheme of the base URL.
+- **Query-only** (e.g. `?x=1`): appended to the full base path, replacing any existing query or fragment.
+- **Fragment-only** (e.g. `#frag`): appended to the base URL, preserving the query, replacing any existing fragment.
+- **Empty**: returns the base URL without fragment.
+- **Absolute URL**: passed through unchanged; `url_base` is ignored.
+
+**Example**
+
+```sql
+SET url_base = 'https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/';
+SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 ```
 
 ## Storage Settings {#storage-settings}
 
 - [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 - [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
+- [url_base](/operations/settings/settings.md#url_base) - base URL for resolving relative URLs passed to the `url` function.
 
 ## Permissions {#permissions}
 

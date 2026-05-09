@@ -16,7 +16,7 @@
   * clickhouse-client --query="SELECT 100 + round(10 * rand() / 0xFFFFFFFF) FROM system.numbers LIMIT 105" | tr "\n" ' ' | ./merge_selector
   */
 
-int main(int, char **)
+int mainEntryExampleMergeSelector(int, char **)
 {
     using namespace DB;
 
@@ -131,7 +131,7 @@ int main(int, char **)
 
     std::cout << "\n";
     std::cout << std::fixed << std::setprecision(2)
-        << "Write amplification: " << static_cast<double>(sum_size_written) / sum_parts_size << "\n"
+        << "Write amplification: " << static_cast<double>(sum_size_written) / static_cast<double>(sum_parts_size) << "\n"
         << "Num merges: " << num_merges << "\n";
 
     for (const auto & part : parts)

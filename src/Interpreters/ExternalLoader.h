@@ -105,6 +105,8 @@ public:
     /// Sets settings for periodic updates.
     void enablePeriodicUpdates(bool enable);
 
+    void joinLoadingThreads();
+
     /// Returns the status of the object.
     /// If the object has not been loaded yet then the function returns Status::NOT_LOADED.
     /// If the specified name isn't found in the configuration then the function returns Status::NOT_EXIST.
@@ -224,11 +226,11 @@ protected:
     virtual void updateObjectFromConfigWithoutReloading(
         IExternalLoadable & /* object */, const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const {}
 
+    Strings getAllTriedToLoadNames() const;
+
 private:
     void checkLoaded(const LoadResult & result, bool check_no_errors) const;
     void checkLoaded(const LoadResults & results, bool check_no_errors) const;
-
-    Strings getAllTriedToLoadNames() const;
 
     LoadableMutablePtr createOrCloneObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const;
 

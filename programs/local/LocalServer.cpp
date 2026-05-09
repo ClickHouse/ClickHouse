@@ -22,11 +22,15 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/SystemLog.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Access/AccessControl.h>
+#include <Access/DiskAccessStorage.h>
+#include <Access/MemoryAccessStorage.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
+#include <base/errnoToString.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadStatus.h>
@@ -36,7 +40,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
@@ -87,6 +91,11 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
+    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
+    extern const ServerSettingsBool jemalloc_enable_background_threads;
+    extern const ServerSettingsBool jemalloc_enable_global_profiler;
+    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
+    extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
@@ -101,10 +110,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
     extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
-    extern const ServerSettingsString text_index_dictionary_block_cache_policy;
-    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_size;
-    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_max_entries;
-    extern const ServerSettingsDouble text_index_dictionary_block_cache_size_ratio;
+    extern const ServerSettingsString text_index_tokens_cache_policy;
+    extern const ServerSettingsUInt64 text_index_tokens_cache_size;
+    extern const ServerSettingsUInt64 text_index_tokens_cache_max_entries;
+    extern const ServerSettingsDouble text_index_tokens_cache_size_ratio;
     extern const ServerSettingsString text_index_header_cache_policy;
     extern const ServerSettingsUInt64 text_index_header_cache_size;
     extern const ServerSettingsUInt64 text_index_header_cache_max_entries;
@@ -121,6 +130,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
+    extern const ServerSettingsString parquet_metadata_cache_policy;
+    extern const ServerSettingsUInt64 parquet_metadata_cache_size;
+    extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
+    extern const ServerSettingsDouble parquet_metadata_cache_size_ratio;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
@@ -146,11 +159,20 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
+    extern const ServerSettingsUInt64 page_cache_history_window_ms;
+    extern const ServerSettingsString page_cache_policy;
+    extern const ServerSettingsDouble page_cache_size_ratio;
+    extern const ServerSettingsUInt64 page_cache_min_size;
+    extern const ServerSettingsUInt64 page_cache_max_size;
+    extern const ServerSettingsDouble page_cache_free_memory_ratio;
+    extern const ServerSettingsUInt64 page_cache_shards;
+    extern const ServerSettingsUInt64 memory_worker_period_ms;
+    extern const ServerSettingsDouble memory_worker_purge_dirty_pages_threshold_ratio;
+    extern const ServerSettingsDouble memory_worker_purge_total_memory_threshold_ratio;
+    extern const ServerSettingsBool memory_worker_correct_memory_tracker;
+    extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
+    extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsString allowed_disks_for_table_engines;
-    extern const ServerSettingsBool jemalloc_enable_global_profiler;
-    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
-    extern const ServerSettingsBool jemalloc_enable_background_threads;
-    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
 }
 
 namespace ErrorCodes
@@ -158,6 +180,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_LOAD_CONFIG;
     extern const int FILE_ALREADY_EXISTS;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 void applySettingsOverridesForLocal(ContextMutablePtr context)
@@ -238,7 +261,8 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],
         server_settings[ServerSetting::jemalloc_max_background_threads_num],
-        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log],
+        server_settings[ServerSetting::jemalloc_profiler_sampling_rate]);
 #endif
 
     GlobalThreadPool::initialize(
@@ -381,7 +405,7 @@ void LocalServer::tryInitPath()
             LOG_DEBUG(log, "Can not get temporary folder: {}", e.what());
             parent_folder = std::filesystem::current_path();
 
-            std::filesystem::is_directory(parent_folder); // that will throw an exception if it's not a directory
+            (void)std::filesystem::is_directory(parent_folder); // checks the path is accessible (may throw on I/O error)
             LOG_DEBUG(log, "Will create working directory inside current directory: {}", parent_folder.string());
         }
 
@@ -406,7 +430,7 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(fs::path(path) / "");
 
-    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 0);
+    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 1_GiB);
     global_context->setFlagsPath(fs::path(path) / "flags" / "");
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
@@ -431,6 +455,9 @@ void LocalServer::cleanup()
     try
     {
         connection.reset();
+
+        /// Stop the memory worker before shutting down context, as it references the page cache.
+        memory_worker.reset();
 
         /// Suggestions are loaded async in a separate thread and it can use global context.
         /// We should reset it before resetting global_context.
@@ -539,6 +566,7 @@ void LocalServer::setupUsers()
         "            </networks>"
         "            <profile>default</profile>"
         "            <quota>default</quota>"
+        "            <access_management>1</access_management>"
         "            <named_collection_control>1</named_collection_control>"
         "        </default>"
         "    </users>"
@@ -551,6 +579,19 @@ void LocalServer::setupUsers()
     auto & access_control = global_context->getAccessControl();
     access_control.setNoPasswordAllowed(getClientConfiguration().getBool("allow_no_password", true));
     access_control.setPlaintextPasswordAllowed(getClientConfiguration().getBool("allow_plaintext_password", true));
+
+    /// Enable all access control improvements by default; can be overridden via config.
+    auto & config = getClientConfiguration();
+    access_control.setEnabledUsersWithoutRowPoliciesCanReadRows(config.getBool("access_control_improvements.users_without_row_policies_can_read_rows", true));
+    access_control.setOnClusterQueriesRequireClusterGrant(config.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", true));
+    access_control.setSelectFromSystemDatabaseRequiresGrant(config.getBool("access_control_improvements.select_from_system_db_requires_grant", true));
+    access_control.setSelectFromInformationSchemaRequiresGrant(config.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
+    access_control.setSettingsConstraintsReplacePrevious(config.getBool("access_control_improvements.settings_constraints_replace_previous", true));
+    access_control.setTableEnginesRequireGrant(config.getBool("access_control_improvements.table_engines_require_grant", true));
+    access_control.setEnableReadWriteGrants(config.getBool("access_control_improvements.enable_read_write_grants", true));
+    access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
+    access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
+
     if (getClientConfiguration().has("config-file") || fs::exists("config.xml"))
     {
         String config_path = getClientConfiguration().getString("config-file", "");
@@ -580,6 +621,20 @@ void LocalServer::setupUsers()
         global_context->setUsersConfig(users_config);
     else
         throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
+
+    /// Add a writeable storage for SQL-based access management.
+    /// This allows creating users, roles, row policies, etc. via SQL queries.
+    if (getClientConfiguration().has("path"))
+    {
+        /// Use disk storage for persistence when --path is specified.
+        String access_path = fs::path(global_context->getPath()) / "access" / "";
+        access_control.addDiskStorage(DiskAccessStorage::STORAGE_TYPE, access_path, /* readonly= */ false, /* allow_backup= */ false);
+    }
+    else
+    {
+        /// Use in-memory storage for temporary/ephemeral mode.
+        access_control.addMemoryStorage(MemoryAccessStorage::STORAGE_TYPE, /* allow_backup= */ false);
+    }
 }
 
 void LocalServer::connect()
@@ -810,7 +865,7 @@ void LocalServer::processConfig()
     size_t max_server_memory_usage = server_settings[ServerSetting::max_server_memory_usage];
     const double max_server_memory_usage_to_ram_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
     const size_t physical_server_memory = getMemoryAmount();
-    const size_t default_max_server_memory_usage = static_cast<size_t>(physical_server_memory * max_server_memory_usage_to_ram_ratio);
+    const size_t default_max_server_memory_usage = static_cast<size_t>(static_cast<double>(physical_server_memory) * max_server_memory_usage_to_ram_ratio);
 
     if (max_server_memory_usage == 0)
     {
@@ -836,8 +891,49 @@ void LocalServer::processConfig()
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+    size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
+    size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
+    if (page_cache_max_size != 0 && (page_cache_min_size > page_cache_max_size))
+    {
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Invalid page cache configuration: page_cache_min_size ({}) is greater than page_cache_max_size ({}).",
+            page_cache_min_size,
+            page_cache_max_size);
+    }
+
+    if (page_cache_max_size != 0)
+    {
+        global_context->setPageCache(
+            std::chrono::milliseconds(Int64(server_settings[ServerSetting::page_cache_history_window_ms])),
+            server_settings[ServerSetting::page_cache_policy],
+            server_settings[ServerSetting::page_cache_size_ratio],
+            server_settings[ServerSetting::page_cache_min_size],
+            server_settings[ServerSetting::page_cache_max_size],
+            server_settings[ServerSetting::page_cache_free_memory_ratio],
+            server_settings[ServerSetting::page_cache_shards]);
+        total_memory_tracker.setPageCache(global_context->getPageCache().get());
+    }
+
+    /// MemoryWorker periodically updates RSS in the memory tracker, resizes the userspace page
+    /// cache based on available memory, and purges jemalloc dirty pages under memory pressure.
+    /// It is required for the page cache to function correctly: without it the cache stays stuck
+    /// at `page_cache_min_size` and never grows, causing severe thrashing.
+    {
+        MemoryWorkerConfig memory_worker_config{
+            .rss_update_period_ms = server_settings[ServerSetting::memory_worker_period_ms],
+            .purge_dirty_pages_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_dirty_pages_threshold_ratio],
+            .purge_total_memory_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_total_memory_threshold_ratio],
+            .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
+            .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
+            .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+        };
+        memory_worker.emplace(memory_worker_config, global_context->getPageCache());
+        memory_worker->start();
+    }
+
     const double cache_size_to_ram_max_ratio = server_settings[ServerSetting::cache_size_to_ram_max_ratio];
-    const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
+    const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * cache_size_to_ram_max_ratio);
 
     String uncompressed_cache_policy = server_settings[ServerSetting::uncompressed_cache_policy];
     size_t uncompressed_cache_size = server_settings[ServerSetting::uncompressed_cache_size];
@@ -902,16 +998,16 @@ void LocalServer::processConfig()
     }
     global_context->setVectorSimilarityIndexCache(vector_similarity_index_cache_policy, vector_similarity_index_cache_size, vector_similarity_index_cache_max_count, vector_similarity_index_cache_size_ratio);
 
-    String text_index_dictionary_block_cache_policy = server_settings[ServerSetting::text_index_dictionary_block_cache_policy];
-    size_t text_index_dictionary_block_cache_size = server_settings[ServerSetting::text_index_dictionary_block_cache_size];
-    size_t text_index_dictionary_block_cache_max_count = server_settings[ServerSetting::text_index_dictionary_block_cache_max_entries];
-    double text_index_dictionary_block_cache_size_ratio = server_settings[ServerSetting::text_index_dictionary_block_cache_size_ratio];
-    if (text_index_dictionary_block_cache_size > max_cache_size)
+    String text_index_tokens_cache_policy = server_settings[ServerSetting::text_index_tokens_cache_policy];
+    size_t text_index_tokens_cache_size = server_settings[ServerSetting::text_index_tokens_cache_size];
+    size_t text_index_tokens_cache_max_count = server_settings[ServerSetting::text_index_tokens_cache_max_entries];
+    double text_index_tokens_cache_size_ratio = server_settings[ServerSetting::text_index_tokens_cache_size_ratio];
+    if (text_index_tokens_cache_size > max_cache_size)
     {
-        text_index_dictionary_block_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index dictionary block cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_dictionary_block_cache_size));
+        text_index_tokens_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered text index tokens cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_tokens_cache_size));
     }
-    global_context->setTextIndexDictionaryBlockCache(text_index_dictionary_block_cache_policy, text_index_dictionary_block_cache_size, text_index_dictionary_block_cache_max_count, text_index_dictionary_block_cache_size_ratio);
+    global_context->setTextIndexTokensCache(text_index_tokens_cache_policy, text_index_tokens_cache_size, text_index_tokens_cache_max_count, text_index_tokens_cache_size_ratio);
 
     String text_index_header_cache_policy = server_settings[ServerSetting::text_index_header_cache_policy];
     size_t text_index_header_cache_size = server_settings[ServerSetting::text_index_header_cache_size];
@@ -954,6 +1050,18 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
+#endif
+#if USE_PARQUET
+    String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
+    size_t parquet_metadata_cache_size = server_settings[ServerSetting::parquet_metadata_cache_size];
+    size_t parquet_metadata_cache_max_entries = server_settings[ServerSetting::parquet_metadata_cache_max_entries];
+    double parquet_metadata_cache_size_ratio = server_settings[ServerSetting::parquet_metadata_cache_size_ratio];
+    if (parquet_metadata_cache_size > max_cache_size)
+    {
+        parquet_metadata_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(parquet_metadata_cache_size));
+    }
+    global_context->setParquetMetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
 #endif
 
     Names allowed_disks_table_engines;
@@ -1068,6 +1176,18 @@ void LocalServer::processConfig()
         DatabaseCatalog::instance().startupBackgroundTasks();
     }
 
+    /// Initialize system logs only when explicitly configured (e.g. `query_log`, `processors_profile_log`).
+    /// Default `clickhouse-local` invocations have no system log sections in the config, and skipping
+    /// initialization avoids a TSan-visible race between background pool task logging and `Context`
+    /// teardown that would otherwise be triggered for short-lived processes.
+    /// Also skip in `--only-system-tables` mode, which is intended for reading existing persisted
+    /// system tables; spinning up the loggers there is unnecessary and can race with shutdown.
+    /// This must happen after the system database is attached.
+    if (!getClientConfiguration().has("no-system-tables")
+        && !getClientConfiguration().has("only-system-tables")
+        && hasAnySystemLogConfigured(config()))
+        global_context->initializeSystemLogs();
+
     std::string default_database = getClientConfiguration().getString("database", server_default_database);
     if (default_database.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
@@ -1083,30 +1203,32 @@ void LocalServer::processConfig()
 }
 
 
-[[ maybe_unused ]] static std::string getHelpHeader()
+String LocalServer::getHelpHeader() const
 {
-    return
-        "usage: clickhouse-local [initial table definition] [--query <query>]\n"
-
-        "clickhouse-local allows to execute SQL queries on your data files via single command line call."
-        " To do so, initially you need to define your data source and its format."
-        " After you can execute your SQL queries in usual manner.\n"
-
-        "There are two ways to define initial table keeping your data."
-        " Either just in first query like this:\n"
+    return fmt::format(
+        "Usage: {0} [initial table definition] [--query <query>]\n\n"
+        "{0} allows to execute SQL queries on your data files\n"
+        "via single command line call.\n"
+        "To do so, initially you need to define your data source and its format.\n"
+        "After that, you can execute your SQL queries as usual.\n\n"
+        "There are two ways to define initial table keeping your data.\n"
+        "Either just in the first query like this:\n"
         "    CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);\n"
-        "Either through corresponding command line parameters --table --structure --input-format and --file.";
+        "Either through corresponding command line parameters\n"
+        "--table --structure --input-format and --file.",
+        app_name);
 }
 
 
-[[ maybe_unused ]] static std::string getHelpFooter()
+String LocalServer::getHelpFooter() const
 {
-    return
+    return fmt::format(
         "Example printing memory used by each Unix user:\n"
-        "ps aux | tail -n +2 | awk '{ printf(\"%s\\t%s\\n\", $1, $4) }' | "
-        "clickhouse-local -S \"user String, mem Float64\" -q"
-            " \"SELECT user, round(sum(mem), 2) as mem_total FROM table GROUP BY user ORDER"
-            " BY mem_total DESC FORMAT PrettyCompact\"";
+        "    ps aux | tail -n +2 | awk '{{ printf(\"%s\\t%s\\n\", $1, $4) }}' | \\\n"
+        "        {} -S \"user String, mem Float64\" -q \\\n"
+        "        \"SELECT user, round(sum(mem), 2) as mem_total FROM table \\\n"
+        "         GROUP BY user ORDER BY mem_total DESC FORMAT PrettyCompact\"",
+        app_name);
 }
 
 
@@ -1125,22 +1247,22 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
 void LocalServer::addExtraOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
-        ("table,N", po::value<std::string>(), "name of the initial table")
-        ("copy", "shortcut for format conversion, equivalent to: --query 'SELECT * FROM table'")
+        ("table,N", po::value<std::string>(), "Name of the initial table")
+        ("copy", "Shortcut for format conversion, equivalent to: --query 'SELECT * FROM table'")
 
         /// If structure argument is omitted then initial query is not generated
-        ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
-        ("file,F", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
+        ("structure,S", po::value<std::string>(), "Structure of the initial table (list of column and type names)")
+        ("file,F", po::value<std::string>(), "Path to file with data of the initial table (stdin if not specified)")
 
-        ("input-format", po::value<std::string>(), "input format of the initial table data")
+        ("input-format", po::value<std::string>(), "Default input format. Takes precedence over --format.")
 
         ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
 
-        ("no-system-tables", "do not attach system tables (better startup time)")
+        ("no-system-tables", "Do not attach system tables (better startup time)")
         ("path", po::value<std::string>(), "Storage path. If it was not specified, we will use a temporary directory, that is cleaned up on exit.")
-        ("only-system-tables", "attach only system tables from specified path")
+        ("only-system-tables", "Attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
 }

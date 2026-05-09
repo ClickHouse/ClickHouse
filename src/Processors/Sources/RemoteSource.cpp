@@ -249,6 +249,8 @@ void RemoteSource::onCancel() noexcept
 
 void RemoteSource::onUpdatePorts()
 {
+    if (isCancelled())
+        return;
     if (getPort().isFinished())
         query_executor->finish();
 }

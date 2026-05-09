@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -42,12 +43,10 @@ static ITransformingStep::Traits getTraits()
 CreatingSetStep::CreatingSetStep(
     const SharedHeader & input_header_,
     SetAndKeyPtr set_and_key_,
-    StoragePtr external_table_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(Block{}), getTraits())
     , set_and_key(std::move(set_and_key_))
-    , external_table(std::move(external_table_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
 {
@@ -58,7 +57,6 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     pipeline.addCreatingSetsTransform(
         getOutputHeader(),
         std::move(set_and_key),
-        std::move(external_table),
         network_transfer_limits,
         std::move(prepared_sets_cache));
 }
@@ -70,13 +68,14 @@ void CreatingSetStep::updateOutputHeader()
 
 void CreatingSetStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    if (!set_and_key->set)
+        return ;
+
+    const String & prefix = settings.detail_prefix;
 
     settings.out << prefix;
-    if (set_and_key->set)
-        settings.out << "Set: ";
-
-    settings.out << set_and_key->key << '\n';
+    settings.out << "Set: ";
+    settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(set_and_key->key, settings.pretty_names) : set_and_key->key) << '\n';
 }
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const

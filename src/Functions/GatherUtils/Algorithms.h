@@ -1,6 +1,6 @@
 #pragma once
 
-#include <type_traits>
+#include <base/arithmeticOverflow.h>
 #include <base/types.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -15,6 +15,7 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace DB::GatherUtils
@@ -71,21 +72,15 @@ inline ALWAYS_INLINE void writeSlice(const StringSource::Slice & slice, FixedStr
 }
 
 /// Assuming same types of underlying columns for slice and sink if (ArraySlice, ArraySink) is (GenericArraySlice, GenericArraySink).
-/// Remember to use checkAreLowCardinalityInsertable outside the loop before calling this function to ensure copy compatibility.
 inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArraySink & sink)
 {
-    /// We are checking this condition with checkAreLowCardinalityInsertable outside this function as recommended in
-    /// https://github.com/ClickHouse/ClickHouse/pull/80376 due to performance concerns.
-    /// However, I prefer to keep the assertion here for correctness and future debugging; because this function could be called from
-    /// different places and direct use may be hidden due to templates.
-    chassert(
-        // Check same type
-        slice.elements->structureEquals(sink.elements)
-        // insertRangeFrom casts numeric types if they are different, so it can insert them.
-        || (sink.elements.lowCardinality() && slice.elements->lowCardinality() && sink.elements.isNumeric() && slice.elements->isNumeric()));
-
-    sink.elements.insertRangeFrom(*slice.elements, slice.begin, slice.size);
-    sink.current_offset += slice.size;
+    if (slice.elements->structureEquals(sink.elements))
+    {
+        sink.elements.insertRangeFrom(*slice.elements, slice.begin, slice.size);
+        sink.current_offset += slice.size;
+    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function writeSlice expects same column types for GenericArraySlice and GenericArraySink.");
 }
 
 template <typename T>
@@ -388,7 +383,28 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
         Int64 size = has_length ? length_nested_column->getInt(row_num) : static_cast<Int64>(src.getElementSize());
 
         if (size < 0)
-            size += offset > 0 ? static_cast<Int64>(src.getElementSize()) - (offset - 1) : -UInt64(offset);
+        {
+            Int64 abs_size;
+            if (common::subOverflow(Int64(0), size, abs_size))
+                throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "Overflow in length argument of substring-like function: {}", size);
+            Int64 adjustment;
+            if (offset > 0)
+            {
+                adjustment = static_cast<Int64>(src.getElementSize()) - (offset - 1);
+            }
+            else
+            {
+                if (common::subOverflow(Int64(0), offset, adjustment))
+                    throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "Overflow in offset argument of substring-like function: {}", offset);
+            }
+            Int64 new_size;
+            if (common::addOverflow(size, adjustment, new_size))
+                throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "Overflow when computing slice size in substring-like function: size={}, adjustment={}", size, adjustment);
+            size = new_size;
+        }
 
         if (offset != 0 && size > 0)
         {
@@ -678,40 +694,12 @@ void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, UInt8 *
     }
 }
 
-template <typename Source, typename Sink>
-inline void checkAreLowCardinalityInsertable(const Source &, const Sink &)
-{
-}
-
-template <typename Source>
-requires std::same_as<typename Source::Slice, GenericArraySlice>
-inline void checkAreLowCardinalityInsertable(const Source & source, const GenericArraySink & sink)
-{
-    const IColumn & source_elements = source.elements;
-
-    const bool can_insert =
-        // Check same type
-        source_elements.structureEquals(sink.elements)
-        // insertRangeFrom casts numeric types if they are different, so it can insert them.
-        || (source_elements.lowCardinality() &&
-            sink.elements.lowCardinality() &&
-            (source_elements.getDataType() == sink.elements.getDataType()));
-
-    if (!can_insert)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Function resizeDynamicSize expects same column types or numeric lowCardinality for GenericArraySlice and GenericArraySink.");
-}
-
-
 template <typename ArraySource, typename ValueSource, typename Sink>
 void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const IColumn & size_column)
 {
     const auto * size_nullable = typeid_cast<const ColumnNullable *>(&size_column);
     const NullMap * size_null_map = size_nullable ? &size_nullable->getNullMapData() : nullptr;
     const IColumn * size_nested_column = size_nullable ? &size_nullable->getNestedColumn() : &size_column;
-
-    checkAreLowCardinalityInsertable(array_source, sink);
-    checkAreLowCardinalityInsertable(value_source, sink);
 
     while (!sink.isEnd())
     {
@@ -768,10 +756,6 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
 template <typename ArraySource, typename ValueSource, typename Sink>
 void resizeConstantSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const ssize_t size)
 {
-
-    checkAreLowCardinalityInsertable(array_source, sink);
-    checkAreLowCardinalityInsertable(value_source, sink);
-
     while (!sink.isEnd())
     {
         auto array_size = array_source.getElementSize();

@@ -7,12 +7,10 @@ title: 'Manipulating Column Statistics'
 doc_type: 'reference'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Manipulating Column Statistics
 
-<ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
 The following operations are available:
@@ -37,6 +35,12 @@ Adding two statistics types to two columns:
 
 ```sql
 ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+```
+
+Adding NullCount statistics to a Nullable column:
+
+```sql
+ALTER TABLE t1 ADD STATISTICS nullable_col TYPE NullCount;
 ```
 
 :::note
