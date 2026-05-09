@@ -52,8 +52,15 @@ def _write_iceberg_metadata(instance, table_name, meta, prev_path):
     new_version = int(version_match.group(1)) + 1
     new_path = f"{metadata_dir}/v{new_version}.metadata.json"
     new_content = json.dumps(meta, indent=4)
+    # Write to a temporary file and rename atomically. Concurrent readers (in
+    # `test_format_version_upgrade_concurrent_reads`) must never observe a
+    # partially-written metadata file.
     instance.exec_in_container(
-        ["bash", "-c", f"cat > {new_path} << 'JSONEOF'\n{new_content}\nJSONEOF"]
+        [
+            "bash",
+            "-c",
+            f"cat > {new_path}.tmp << 'JSONEOF'\n{new_content}\nJSONEOF\nmv {new_path}.tmp {new_path}",
+        ]
     )
 
 
