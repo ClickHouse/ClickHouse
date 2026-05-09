@@ -65,6 +65,7 @@ def clone_submodules():
         "contrib/StringZilla",
         "contrib/rust_vendor",
         "contrib/clickstack",
+        "contrib/wasmtime",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
