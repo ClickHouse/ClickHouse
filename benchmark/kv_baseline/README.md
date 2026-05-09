@@ -70,7 +70,41 @@ python3 benchmark/kv_baseline/bench_clickhouse_http.py \
   --output benchmark/kv_baseline/results/baseline.csv
 ```
 
-Run Redis benchmark. This script also requires `redis-py`:
+Run ClickHouse Redis-compatible endpoint benchmark. This script uses raw sockets and the Python standard library only:
+
+```bash
+python3 benchmark/kv_baseline/bench_clickhouse_redis.py \
+  --host 127.0.0.1 \
+  --port 9006 \
+  --db 0 \
+  --keys-file benchmark/kv_baseline/keys_100k.txt \
+  --duration 30 \
+  --concurrency 8 \
+  --batch-size 10 \
+  --dataset-size 100000 \
+  --value-size 64 \
+  --output benchmark/kv_baseline/results/baseline.csv
+```
+
+Each worker opens one TCP connection, sends `SELECT 0` once, then keeps using the same connection for `GET` or `MGET` commands.
+
+Run Redis raw-socket benchmark. This script uses the same raw-socket RESP style as `bench_clickhouse_redis.py` and is preferred for the final apples-to-apples comparison:
+
+```bash
+python3 benchmark/kv_baseline/bench_redis_raw.py \
+  --host 127.0.0.1 \
+  --port 6379 \
+  --db 0 \
+  --keys-file benchmark/kv_baseline/keys_100k.txt \
+  --duration 30 \
+  --concurrency 8 \
+  --batch-size 10 \
+  --dataset-size 100000 \
+  --value-size 64 \
+  --output benchmark/kv_baseline/results/baseline.csv
+```
+
+Run Redis `redis-py` benchmark. This can remain as an additional reference row, but it should not be the main final comparison against the raw-socket ClickHouse Redis-compatible endpoint benchmark:
 
 ```bash
 python3 benchmark/kv_baseline/bench_redis.py \
