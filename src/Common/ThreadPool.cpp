@@ -206,8 +206,11 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
     }
     else if (need_finish_free_threads)
     {
-        /// Wake idle threads so excess ones can observe the new limit and exit.
-        wakeUpAllIdleThreadsNoLock();
+        /// Wake exactly the excess idle threads so they can observe the new limit
+        /// and exit. We do not call `wakeUpAllIdleThreadsNoLock` here because that
+        /// would wipe the LIFO stack on every limit adjustment, defeating the
+        /// purpose of LIFO scheduling.
+        wakeUpExcessIdleThreadsNoLock();
     }
 }
 
@@ -243,8 +246,11 @@ void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
 
     if (need_finish_free_threads)
     {
-        /// Wake idle threads so excess ones can observe the new limit and exit.
-        wakeUpAllIdleThreadsNoLock();
+        /// Wake exactly the excess idle threads so they can observe the new limit
+        /// and exit. We do not call `wakeUpAllIdleThreadsNoLock` here because that
+        /// would wipe the LIFO stack on every limit adjustment, defeating the
+        /// purpose of LIFO scheduling.
+        wakeUpExcessIdleThreadsNoLock();
     }
 }
 
@@ -618,6 +624,28 @@ void ThreadPoolImpl<Thread>::wakeUpAllIdleThreadsNoLock()
         thread->cv.notify_one();
     }
     idle_thread_stack.clear();
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::wakeUpExcessIdleThreadsNoLock()
+{
+    const size_t target = std::min(max_threads, scheduled_jobs + max_free_threads);
+    if (threads.size() <= target)
+        return;
+    const size_t excess = threads.size() - target;
+    const size_t to_wake = std::min(excess, idle_thread_stack.size());
+
+    /// Wake the oldest-idle threads first (front of the stack), keeping the
+    /// recently-idle threads (back of the stack) intact for LIFO scheduling
+    /// of the next incoming jobs.
+    for (size_t i = 0; i < to_wake; ++i)
+    {
+        ThreadFromThreadPool * thread = idle_thread_stack[i];
+        thread->idle_wakeup_flag = true;
+        thread->idle_stack_index = -1;
+        thread->cv.notify_one();
+    }
+    idle_thread_stack.erase(idle_thread_stack.begin(), idle_thread_stack.begin() + to_wake);
 }
 
 template <typename Thread>

@@ -236,6 +236,13 @@ private:
     /// Must be called with mutex held.
     void wakeUpAllIdleThreadsNoLock();
 
+    /// Wake just enough idle threads to bring `threads.size()` down to the current
+    /// limit. Preserves LIFO order for the rest of the stack. Must be called with
+    /// mutex held. Used when `max_threads`/`max_free_threads` shrink: we wake the
+    /// excess threads from the bottom of the stack (oldest-idle first) so the
+    /// recently-active workers stay in the LIFO position they earned.
+    void wakeUpExcessIdleThreadsNoLock();
+
     void finalize();
     void onDestroy();
 };
