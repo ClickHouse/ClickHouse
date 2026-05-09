@@ -115,6 +115,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_rank_dense_rank_arguments", true, false, "New setting. Before 26.5, the `RANK` and `DENSE_RANK` window functions silently ignored any provided arguments (equivalent to `allow_rank_dense_rank_arguments = 1`). From 26.5, they reject arguments by default with `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` because per SQL standard these functions take zero arguments. Set this to `1` to restore the legacy behavior."},
             {"is_aggregate", false, false, "New setting to register a WebAssembly UDF as an aggregate function."},
             {"is_spatial_predicate", false, false, "New setting to mark a WebAssembly UDF as a spatial predicate for pruning."},
+            {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
