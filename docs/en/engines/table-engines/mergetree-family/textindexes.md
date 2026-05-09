@@ -292,21 +292,21 @@ This is the natural place for transformations that are inherently token-level.
 Typical use cases for the postprocessor argument include:
 1. **Filtering stop words (extremely frequent tokens)**. Very common tokens such as "the", "a", and "is" carry little search relevancy and inflate the index.
    You can use the postprocessor to discard them by converting them to empty tokens — empty tokens are ignored, i.e., not added to the index.
-   Example: `if(col IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', col)`
+   Example: `if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)`
 2. **Timestamp removal**. Log lines often begin with or contain a structured timestamp such as `2024-01-15T10:23:45`.
    Indexing timestamp tokens bloats the index with strings that carry no search relevance.
    There are two complementary approaches to ignore timestamps:
    - **Postprocessor approach**: use the `splitByString` tokenizer (whitespace split) so that the entire timestamp becomes a single token, then use `parseDateTimeOrNull` to detect and drop it.
-     Example: `if(isNull(parseDateTimeOrNull(col, '%Y-%m-%dT%H:%i:%S')), col, '')`
-     For timestamps with timezone offsets or fractional seconds, use `parseDateTimeBestEffortOrNull(col)` without an explicit format string.
+     Example: `if(isNull(parseDateTimeOrNull(str, '%Y-%m-%dT%H:%i:%S')), str, '')`
+     For timestamps with timezone offsets or fractional seconds, use `parseDateTimeBestEffortOrNull(str)` without an explicit format string.
    - **Preprocessor approach**: strip the timestamp from the full log line *before* tokenization with a regular expression.
-     Example: `replaceRegexpAll(col, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
+     Example: `replaceRegexpAll(str, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
      This works with any tokenizer and is more efficient as timestamp characters are never tokenized.
    Both approaches can be combined: the preprocessor strips the timestamp while the postprocessor normalizes or filters the remaining tokens (e.g., lowercase + drop severity words like `ERROR` or `INFO`).
-3. **Stemming or lemmatization**. Mapping each token to its stem improves search recall by matching morphological variants of the token with the same meaning.
-   For example, a query for "running" would also match "run", searching for "better" finds "good", etc.
+3. **Stemming**. Mapping each token to its stem improves search recall by matching morphological variants that share the same root.
+   For example, with English stemming "running", "runs", and "run" all stem to "run", so a query for any of these variants matches all of them.
    ClickHouse provides a built-in [stem](/sql-reference/functions/string-functions.md/#stem) function for several languages.
-   Example: `stem(col,'en')`
+   Example: `stem(str, 'en')`
 4. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8).
    We generally recommend using a corresponding preprocessor for lower- and upper-casing.
 
@@ -599,14 +599,16 @@ Similarly, `endsWith` should be used with a leading space:
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 ```
 
-#### `hasToken`, `hasTokenOrNull`, `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` {#functions-example-hastoken-hastokenornull}
+#### `hasToken` and `hasTokenOrNull` {#functions-example-hastoken-hastokenornull}
 
 :::note
-Functions `hasToken`, `hasTokenOrNull`, `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` look straightforward to use but they have certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
+Functions `hasToken` and `hasTokenOrNull` look straightforward to use but they have certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
 We recommend using functions `hasAnyTokens` and `hasAllTokens` instead.
+
+The case-insensitive variants `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` are not text-index-aware — they always run as a full row scan even on text-indexed columns. For case-insensitive matching, use a `lower(...)` preprocessor or postprocessor and combine it with `hasToken` / `hasAllTokens` / `hasAnyTokens`.
 :::
 
-Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull), [hasTokenCaseInsensitive](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitive) and [hasTokenCaseInsensitiveOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull) match against a single given token.
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken) and [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull) match against a single given token.
 
 Unlike the previously mentioned functions, they do not tokenize the search term (they assume the input is a single token).
 

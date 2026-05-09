@@ -439,7 +439,7 @@ private:
         auto function_name = function_node.function_base->getName();
         bool need_transform_function = needApplyTokenizer(function_name) || needApplyPreprocessor(function_name);
 
-        /// Early exit if there is nothig to process.
+        /// Early exit if there is nothing to process.
         if (!need_transform_function && !direct_read_from_text_index)
             return replacement;
 
