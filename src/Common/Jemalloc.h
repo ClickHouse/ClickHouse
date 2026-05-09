@@ -66,8 +66,7 @@ template <typename T>
 T getValue(const char * name)
 {
     T value{};
-    [[maybe_unused]] const bool ok = tryGetValue(name, value);
-    chassert(ok);
+    tryGetValue(name, value);
     return value;
 }
 
@@ -106,7 +105,7 @@ struct MibCache
 
     T getValue() const
     {
-        T value;
+        T value{};
         size_t value_size = sizeof(T);
         je_mallctlbymib(mib, mib_length, &value, &value_size, nullptr, 0);
         return value;
