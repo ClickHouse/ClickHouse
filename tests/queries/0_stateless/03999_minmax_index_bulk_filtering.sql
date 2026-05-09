@@ -1,5 +1,6 @@
 -- Tags: no-parallel-replicas
--- no-parallel-replicas: reads `system.query_log`.
+-- no-parallel-replicas: per-query SETTINGS toggling skip-index evaluation paths
+-- must take effect on the executing replica.
 
 -- The test runner randomizes `secondary_indices_enable_bulk_filtering` and
 -- `use_skip_indexes_on_data_read`. Both structurally affect where and whether bulk
