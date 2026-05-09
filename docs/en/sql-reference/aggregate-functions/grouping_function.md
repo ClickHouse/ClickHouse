@@ -2,6 +2,7 @@
 description: 'Documentation for the GROUPING aggregate function.'
 slug: /sql-reference/aggregate-functions/grouping_function
 title: 'GROUPING'
+doc_type: 'reference'
 ---
 
 # GROUPING

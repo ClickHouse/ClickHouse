@@ -14,6 +14,7 @@
 
 #include <cstdlib>
 #include <Common/assert_cast.h>
+#include <Core/Defines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -131,13 +132,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
     {
         case TypeIndex::UInt8:
         {
-            assert_cast<ColumnUInt8 &>(column).insertValue(value);
+            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
             break;
         }
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
-            assert_cast<ColumnUInt16 &>(column).insertValue(value);
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
             break;
         }
         case TypeIndex::DateTime: [[fallthrough]];
@@ -154,13 +155,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
-            assert_cast<ColumnInt8 &>(column).insertValue(value);
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
             break;
         }
         case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
-            assert_cast<ColumnInt16 &>(column).insertValue(value);
+            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
             break;
         }
         case TypeIndex::Date32: [[fallthrough]];
@@ -398,17 +399,34 @@ bool MsgPackVisitor::start_array(size_t size) // NOLINT
         if (size > 0)
             info_stack.push(Info{nested_column, nested_type, false, size, nullptr});
     }
-    else if (isTuple(info_stack.top().type))
+    else if (isTuple(removeNullable(info_stack.top().type)))
     {
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*info_stack.top().type);
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(info_stack.top().type));
         const auto & nested_types = tuple_type.getElements();
         if (size != nested_types.size())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack array with size {} into Tuple column with {} elements", size, nested_types.size());
 
-        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(info_stack.top().column);
+        /// If the type is Nullable, reaching start_array means the value
+        /// is non-null (for nulls, the parser calls visit_nil instead).
+        /// So we can safely unwrap the Nullable to work with the inner
+        /// ColumnTuple directly.
+        IColumn * column_ptr = &info_stack.top().column;
+        if (info_stack.top().type->isNullable())
+        {
+            auto & nullable_column = assert_cast<ColumnNullable &>(*column_ptr);
+            nullable_column.getNullMapColumn().insertValue(0);
+            column_ptr = &nullable_column.getNestedColumn();
+        }
+
+        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(*column_ptr);
         /// Push nested columns into stack in reverse order.
-        for (ssize_t i = nested_types.size() - 1; i >= 0; --i)
+        for (ssize_t i = static_cast<ssize_t>(nested_types.size()) - 1; i >= 0; --i)
             info_stack.push(Info{column_tuple.getColumn(i), nested_types[i], true, std::nullopt, nullptr});
+
+        /// There are no nested columns to grow, so we must explicitly increment the column size.
+        /// Otherwise, `column.size()` will return 0 for empty tuples columns.
+        if (nested_types.empty())
+            column_tuple.addSize(1);
     }
     else
     {
@@ -562,6 +580,15 @@ MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "You must specify setting input_format_msgpack_number_of_columns "
                         "to extract table schema from MsgPack data");
+
+    /// Guard against absurdly large values that would cause std::length_error
+    /// or trigger sanitizer OOM aborts in vector::reserve() below.
+    /// Uses the same limit as Native format readers (see Core/Defines.h).
+    if (number_of_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "input_format_msgpack_number_of_columns = {} is too large "
+                        "(maximum: {})",
+                        number_of_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
 }
 
 

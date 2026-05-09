@@ -3,7 +3,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -31,13 +30,16 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
  *  Otherwise any condition with minimal summary column size can be transferred to PREWHERE.
  *  If column sizes are unknown (in compact parts), the number of columns, participating in condition is used instead.
  */
+
+class ConditionSelectivityEstimator;
+using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
     MergeTreeWhereOptimizer(
         std::unordered_map<std::string, UInt64> column_sizes_,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ConditionSelectivityEstimator & estimator_,
+        const StorageSnapshotPtr & storage_snapshot,
+        ConditionSelectivityEstimatorPtr estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
         LoggerPtr log_);
@@ -162,13 +164,14 @@ private:
 
     static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
 
-    const ConditionSelectivityEstimator estimator;
+    ConditionSelectivityEstimatorPtr estimator;
 
     const NameSet table_columns;
     const Names queried_columns;
     const std::optional<NameSet> supported_columns;
     const NameSet sorting_key_names;
     const NameToIndexMap primary_key_names_positions;
+    StorageMetadataPtr storage_metadata;
     LoggerPtr log;
     std::unordered_map<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;

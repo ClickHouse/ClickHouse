@@ -1,4 +1,5 @@
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -22,16 +23,12 @@ namespace
 
 /** Get scalar value of sub queries from query context via IASTHash.
   */
-class FunctionGetScalar : public IFunction, WithContext
+class FunctionGetScalar : public IFunction
 {
 public:
     static constexpr auto name = "__getScalar";
-    static FunctionPtr create(ContextPtr context_)
-    {
-        return std::make_shared<FunctionGetScalar>(context_);
-    }
 
-    explicit FunctionGetScalar(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionGetScalar(ColumnWithTypeAndName scalar_) : scalar(std::move(scalar_)) {}
 
     String getName() const override
     {
@@ -52,13 +49,8 @@ public:
 
     bool isServerConstant() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
-        if (arguments.size() != 1 || !isString(arguments[0].type) || !arguments[0].column || !isColumnConst(*arguments[0].column))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} accepts one const string argument", getName());
-        auto scalar_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
-        ContextPtr query_context = getContext()->hasQueryContext() ? getContext()->getQueryContext() : getContext();
-        scalar = query_context->getScalar(scalar_name).getByPosition(0);
         return scalar.type;
     }
 
@@ -68,42 +60,86 @@ public:
     }
 
 private:
-    mutable ColumnWithTypeAndName scalar;
+    ColumnWithTypeAndName scalar;
+};
+
+
+class FunctionGetScalarOverloadResolver : public IFunctionOverloadResolver, private WithContext
+{
+public:
+    static constexpr auto name = "__getScalar";
+
+    static FunctionOverloadResolverPtr create(ContextPtr context_)
+    {
+        return std::make_unique<FunctionGetScalarOverloadResolver>(context_);
+    }
+
+    explicit FunctionGetScalarOverloadResolver(ContextPtr context_) : WithContext(context_) {}
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool isServerConstant() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 1 || !isString(arguments[0].type) || !arguments[0].column || !isColumnConst(*arguments[0].column))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} accepts one const string argument", getName());
+        auto scalar_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
+        ContextPtr query_context = getContext()->hasQueryContext() ? getContext()->getQueryContext() : getContext();
+        return query_context->getScalar(scalar_name).getByPosition(0).type;
+    }
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    {
+        /// buildImpl receives original arguments which may still have Nullable types/columns.
+        auto args = createBlockWithNestedColumns(arguments);
+        if (args.size() != 1 || !isString(args[0].type) || !args[0].column || !isColumnConst(*args[0].column))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} accepts one const string argument", getName());
+        auto scalar_name = assert_cast<const ColumnConst &>(*args[0].column).getValue<String>();
+        ContextPtr query_context = getContext()->hasQueryContext() ? getContext()->getQueryContext() : getContext();
+        auto scalar = query_context->getScalar(scalar_name).getByPosition(0);
+
+        auto function = std::make_shared<FunctionGetScalar>(std::move(scalar));
+
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+
+        return std::make_unique<FunctionToFunctionBaseAdaptor>(function, data_types, return_type);
+    }
 };
 
 
 /** Get special scalar values
   */
-template <typename Scalar>
 class FunctionGetSpecialScalar : public IFunction
 {
 public:
-    static constexpr auto name = Scalar::name;
-    static FunctionPtr create(ContextPtr context_)
+    static FunctionPtr create(ContextPtr context_, const char * function_name_, const char * scalar_name_)
     {
-        return std::make_shared<FunctionGetSpecialScalar<Scalar>>(context_);
+        return std::make_shared<FunctionGetSpecialScalar>(context_, function_name_, scalar_name_);
     }
 
-    static ColumnWithTypeAndName createScalar(ContextPtr context_)
+    static ColumnWithTypeAndName createScalar(ContextPtr context_, const char * scalar_name_)
     {
-        if (auto block = context_->tryGetSpecialScalar(Scalar::scalar_name))
+        if (auto block = context_->tryGetSpecialScalar(scalar_name_))
             return block->getByPosition(0);
         if (context_->hasQueryContext())
         {
-            if (context_->getQueryContext()->hasScalar(Scalar::scalar_name))
-                return context_->getQueryContext()->getScalar(Scalar::scalar_name).getByPosition(0);
+            if (context_->getQueryContext()->hasScalar(scalar_name_))
+                return context_->getQueryContext()->getScalar(scalar_name_).getByPosition(0);
         }
-        return {DataTypeUInt32().createColumnConst(1, 0), std::make_shared<DataTypeUInt32>(), Scalar::scalar_name};
+        return {DataTypeUInt32().createColumnConst(1, 0), std::make_shared<DataTypeUInt32>(), scalar_name_};
     }
 
-    explicit FunctionGetSpecialScalar(ContextPtr context_)
-        : scalar(createScalar(context_)), is_distributed(context_->isDistributed())
+    FunctionGetSpecialScalar(ContextPtr context_, const char * function_name_, const char * scalar_name_)
+        : scalar(createScalar(context_, scalar_name_)), is_distributed(context_->isDistributed()), function_name(function_name_)
     {
     }
 
     String getName() const override
     {
-        return name;
+        return function_name;
     }
 
     bool isDeterministic() const override { return false; }
@@ -137,25 +173,14 @@ public:
 private:
     ColumnWithTypeAndName scalar;
     bool is_distributed;
-};
-
-struct GetShardNum
-{
-    static constexpr auto name = "shardNum";
-    static constexpr auto scalar_name = "_shard_num";
-};
-
-struct GetShardCount
-{
-    static constexpr auto name = "shardCount";
-    static constexpr auto scalar_name = "_shard_count";
+    const char * function_name;
 };
 
 }
 
 REGISTER_FUNCTION(GetScalar)
 {
-    factory.registerFunction<FunctionGetScalar>();
+    factory.registerFunction<FunctionGetScalarOverloadResolver>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 
     FunctionDocumentation::Description description_shardNum = R"(
 Returns the index of a shard which processes a part of data in a distributed query.
@@ -183,9 +208,9 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
     };
     FunctionDocumentation::IntroducedIn introduced_in_shardNum = {21, 9};
     FunctionDocumentation::Category category_shardNum = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_shardNum = {description_shardNum, syntax_shardNum, arguments_shardNum, returned_value_shardNum, examples_shardNum, introduced_in_shardNum, category_shardNum};
+    FunctionDocumentation documentation_shardNum = {description_shardNum, syntax_shardNum, arguments_shardNum, {}, returned_value_shardNum, examples_shardNum, introduced_in_shardNum, category_shardNum};
 
-    factory.registerFunction<FunctionGetSpecialScalar<GetShardNum>>(documentation_shardNum);
+    factory.registerFunction("shardNum", [](ContextPtr context){ return FunctionGetSpecialScalar::create(context, "shardNum", "_shard_num"); }, documentation_shardNum);
 
     FunctionDocumentation::Description description_shardCount = R"(
 Returns the total number of shards for a distributed query.
@@ -213,9 +238,9 @@ SELECT shardCount() FROM shard_count_example;
     };
     FunctionDocumentation::IntroducedIn introduced_in_shardCount = {21, 9};
     FunctionDocumentation::Category category_shardCount = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_shardCount = {description_shardCount, syntax_shardCount, arguments_shardCount, returned_value_shardCount, examples_shardCount, introduced_in_shardCount, category_shardCount};
+    FunctionDocumentation documentation_shardCount = {description_shardCount, syntax_shardCount, arguments_shardCount, {}, returned_value_shardCount, examples_shardCount, introduced_in_shardCount, category_shardCount};
 
-    factory.registerFunction<FunctionGetSpecialScalar<GetShardCount>>(documentation_shardCount);
+    factory.registerFunction("shardCount", [](ContextPtr context){ return FunctionGetSpecialScalar::create(context, "shardCount", "_shard_count"); }, documentation_shardCount);
 }
 
 }

@@ -3,14 +3,15 @@ description: 'Table engine that allows importing data from a YTsaurus cluster.'
 sidebar_label: 'YTsaurus'
 sidebar_position: 185
 slug: /engines/table-engines/integrations/ytsaurus
-title: 'YTsaurus'
+title: 'YTsaurus table engine'
 keywords: ['YTsaurus', 'table engine']
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
-# YTsaurus
+# YTsaurus table engine
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>

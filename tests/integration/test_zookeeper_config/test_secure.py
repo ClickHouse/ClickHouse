@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 from tempfile import NamedTemporaryFile
 
 import pytest
@@ -55,26 +56,35 @@ def test_secure_connection(started_cluster):
     node2.query("SELECT count() FROM system.zookeeper WHERE path = '/'")
 
     threads_number = 16
-    iterations = 100
-    threads = []
+    mandatory_iterations = 3
+    max_iterations = 100
+    timeout_seconds = 100
+
+    stop_event = threading.Event()
 
     # just checking for race conditions
-    for _ in range(threads_number):
-        threads.append(
-            threading.Thread(
-                target=(
-                    lambda: [
-                        node1.query(
-                            "SELECT count() FROM system.zookeeper WHERE path = '/'"
-                        )
-                        for _ in range(iterations)
-                    ]
-                )
+    def worker():
+        for i in range(max_iterations):
+            if i >= mandatory_iterations and stop_event.is_set():
+                break
+            node1.query(
+                "SELECT count() FROM system.zookeeper WHERE path = '/'"
             )
-        )
+
+    threads = []
+    for _ in range(threads_number):
+        threads.append(threading.Thread(target=worker))
 
     for thread in threads:
         thread.start()
+
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if all(not t.is_alive() for t in threads):
+            break
+        time.sleep(1)
+
+    stop_event.set()
 
     for thread in threads:
         thread.join()

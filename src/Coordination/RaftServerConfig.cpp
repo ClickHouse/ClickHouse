@@ -38,7 +38,7 @@ std::optional<RaftServerConfig> RaftServerConfig::parse(std::string_view server)
     Int32 id;
     if (!tryParse(id, id_str))
         return std::nullopt;
-    if (id <= 0)
+    if (id < 0)
         return std::nullopt;
 
     const std::string_view endpoint = parts[1];

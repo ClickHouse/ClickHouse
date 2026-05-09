@@ -4,6 +4,7 @@ sidebar_label: 'Encryption'
 slug: /sql-reference/functions/encryption-functions
 title: 'Encryption functions'
 keywords: ['encryption', 'regular functions', 'encrypt', 'decrypt']
+doc_type: 'reference'
 ---
 
 # Encryption functions

@@ -45,16 +45,11 @@ using GlobalThresholdColumnsPtr = std::shared_ptr<GlobalThresholdColumns>;
 
 struct PrewhereInfo
 {
-    /// Actions for row level security filter. Applied separately before prewhere_actions.
-    /// This actions are separate because prewhere condition should not be executed over filtered rows.
-    std::optional<ActionsDAG> row_level_filter;
     /// Actions which are executed on block in order to get filter column for prewhere step.
     ActionsDAG prewhere_actions;
-    String row_level_column_name;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
-    bool generated_by_optimizer = false;
 
     /// Push down the TopN threshold into MergeTreeSource. The threshold
     /// represents the value of the (N-1)th element in the current TopN state.
@@ -70,10 +65,10 @@ struct PrewhereInfo
 
     std::string dump() const;
 
-    PrewhereInfoPtr clone() const;
+    PrewhereInfo clone() const;
 
     void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static PrewhereInfoPtr deserialize(IQueryPlanStep::Deserialization & ctx);
+    static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
 };
 
 /// Same as FilterInfo, but with ActionsDAG.
@@ -84,6 +79,9 @@ struct FilterDAGInfo
     bool do_remove_column = false;
 
     std::string dump() const;
+
+    void serialize(IQueryPlanStep::Serialization & ctx) const;
+    static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
 };
 
 struct InputOrderInfo
@@ -193,7 +191,7 @@ struct SelectQueryInfo
     InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
-    /// New analyzer stores prepared sets in planner_context and hashes computed of QueryTree instead of AST.
+    /// The analyzer stores prepared sets in planner_context and hashes computed of QueryTree instead of AST.
     /// Example: x IN (1, 2, 3)
     PreparedSetsPtr prepared_sets;
 
@@ -201,6 +199,10 @@ struct SelectQueryInfo
     bool has_window = false;
     bool has_order_by = false;
     bool need_aggregate = false;
+
+    /// Actions for row level security filter. Applied separately before prewhere.
+    /// This actions are separate because prewhere condition should not be executed over filtered rows.
+    FilterDAGInfoPtr row_level_filter;
     PrewhereInfoPtr prewhere_info;
 
     /// If query has aggregate functions

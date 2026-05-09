@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
 
@@ -83,7 +82,7 @@ String calculateActionNodeNameInStorage(const QueryTreeNodePtr & node, const Pla
 /// Calculate action node name for constant
 String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type);
 
-String calculateConstantActionNodeName(const ConstantNode & constant_node);
+String calculateConstantActionNodeName(const ConstantNode & constant_node, Int64 optimize_const_name_size);
 
 /// Calculate action node name for constant, data type will be derived from constant literal value
 String calculateConstantActionNodeName(const Field & constant_literal);

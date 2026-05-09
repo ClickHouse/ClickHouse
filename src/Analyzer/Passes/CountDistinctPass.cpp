@@ -40,7 +40,7 @@ public:
 
         /// Check that query has only SELECT clause
         if (!query_node || (query_node->hasWith() || query_node->hasPrewhere() || query_node->hasWhere() || query_node->hasGroupBy() ||
-            query_node->hasHaving() || query_node->hasWindow() || query_node->hasOrderBy() || query_node->hasLimitByLimit() || query_node->hasLimitByOffset() ||
+            query_node->hasHaving() || query_node->hasWindow() || query_node->hasQualify() || query_node->hasOrderBy() || query_node->hasLimitByLimit() || query_node->hasLimitByOffset() ||
             query_node->hasLimitBy() || query_node->hasLimit() || query_node->hasOffset()))
             return;
 
@@ -64,7 +64,7 @@ public:
         /// Check that query single projection node is `countDistinct` function
         auto & projection_node = projection_nodes[0];
         auto * function_node = projection_node->as<FunctionNode>();
-        if (!function_node)
+        if (!function_node || function_node->hasWindow())
             return;
 
         auto lower_function_name = Poco::toLower(function_node->getFunctionName());

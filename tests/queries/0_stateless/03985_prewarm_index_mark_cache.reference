@@ -1,0 +1,16 @@
+10000
+10000
+20000
+20000
+20000
+20000
+20000
+20000
+prewarm on insert	0
+prewarm on fetch	0
+after prewarm on merge	0
+after prewarm on merge	0
+after prewarm on restart	0
+after prewarm on restart	0
+after drop mark cache	1
+after prewarm with system query	0

@@ -1,54 +1,44 @@
 #pragma once
 
+#include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
 
-/// SubstreamsCacheStringElement is used in ClickHouse to cache intermediate states for string serialization, especially
-/// when dealing with .size substreams together with string data stream.
-///
-/// Purpose:
-/// - Provides temporary storage of string data and size information between different serialization passes.
-/// - Avoids re-parsing and allows consistent handling of partially read substreams.
-///
-/// Typical usage by different serializers:
-/// - `SerializationString` uses {data, partial_data} and updates `data`
-/// - `SerializationStringWithSizeStream` uses {data, size, skipped_bytes} and updates {data, partial_size}
-/// - `SerializationStringSize` uses {data, size, partial_size} and updates `size` (and may update `skipped_bytes`)
-/// - `SerializationStringInlineSize` uses {data, size} and updates `size` (and may update `partial_data`)
-struct SubstreamsCacheStringElement : public ISerialization::ISubstreamsCacheElement
+struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization::DeserializeBinaryBulkState
 {
-    explicit SubstreamsCacheStringElement(
-        ColumnPtr data_,
-        ColumnPtr size_ = nullptr,
-        ColumnPtr partial_data_ = nullptr,
-        ColumnPtr partial_size_ = nullptr,
-        size_t skipped_bytes_ = 0)
-        : data(std::move(data_))
-        , size(std::move(size_))
-        , partial_data(std::move(partial_data_))
-        , partial_size(std::move(partial_size_))
-        , skipped_bytes(skipped_bytes_)
-    {
-    }
+    /// Holds full string values when `need_string_data` is true
+    ColumnPtr column;
 
-    ColumnPtr data; /// The full string column
-    ColumnPtr size; /// The column storing string sizes
-    ColumnPtr partial_data; /// Temporary storage of string data starting from current offset
-    ColumnPtr partial_size; /// Temporary storage for the size substream starting from current offset
-    size_t skipped_bytes = 0; /// Tracks how many bytes were skipped, used for partial consumption and alignment logic
+    /// Whether full string data is required during deserialization
+    bool need_string_data = false;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override;
 };
 
 class SerializationString final : public ISerialization
 {
+private:
+    explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
+
 public:
+    static UInt128 getHash(MergeTreeStringSerializationVersion version_);
+    static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
+
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const override;
+
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
@@ -57,6 +47,8 @@ public:
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
+
+    void deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const override;
 
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const override;
@@ -84,6 +76,43 @@ public:
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+
+private:
+    MergeTreeStringSerializationVersion version;
+
+    /// dispatch helpers for enumerateStreams
+    void enumerateStreamsWithSize(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const;
+    void enumerateStreamsWithoutSize(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const;
+
+    /// dispatch helpers for serializeBinaryBulkWithMultipleStreams
+    void serializeBinaryBulkWithSizeStream(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
+    void serializeBinaryBulkWithoutSizeStream(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
+
+    /// dispatch helpers for deserializeBinaryBulkWithMultipleStreams
+    void deserializeBinaryBulkWithSizeStream(
+        ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
+    void deserializeBinaryBulkWithoutSizeStream(
+        ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
 };
 
 }

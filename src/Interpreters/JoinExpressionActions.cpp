@@ -13,7 +13,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/FunctionsComparison.h>
+#include <Functions/ComparisonNames.h>
 #include <Common/logger_useful.h>
 #include <fmt/ranges.h>
 
@@ -25,7 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_IDENTIFIER;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 std::string_view toString(JoinConditionOperator op)
@@ -200,6 +200,11 @@ std::shared_ptr<ActionsDAG> JoinExpressionActions::getActionsDAG() const
     return std::shared_ptr<ActionsDAG>(data, &data->actions_dag);
 }
 
+void JoinExpressionActions::resetNodeSources(NodeToSourceMapping expression_sources)
+{
+    data->expression_sources = std::move(expression_sources);
+}
+
 void JoinExpressionActions::setNodeSources(const NodeToSourceMapping & expression_sources)
 {
     data->expression_sources.insert(expression_sources.begin(), expression_sources.end());
@@ -283,7 +288,7 @@ JoinActionRef JoinExpressionActions::findNode(const String & column_name, bool i
         if (node->result_name == column_name)
             return JoinActionRef(node, data);
     if (throw_if_not_found)
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Cannot find column {} in actions DAG {}:\n{}",
+        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Cannot find column {} in actions DAG {}:\n{}",
             column_name, is_input ? "input" : "output", data->actions_dag.dumpDAG());
     return JoinActionRef(nullptr);
 }
@@ -396,6 +401,13 @@ bool JoinActionRef::fromNone() const
     return getSourceRelations().none();
 }
 
+bool JoinActionRef::isFromSameActions(const JoinActionRef & other) const
+{
+    auto data_ptr = getData();
+    auto other_data_ptr = other.getData();
+    return data_ptr.get() == other_data_ptr.get();
+}
+
 std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> JoinActionRef::asBinaryPredicate() const
 {
     auto data_ptr = getData();
@@ -422,6 +434,14 @@ std::vector<JoinActionRef> JoinActionRef::getArguments(bool recursive) const
     for (const auto & child : node->children)
         arguments.emplace_back(child, data_ptr);
     return arguments;
+}
+
+JoinActionRef JoinActionRef::resolveAliases() const
+{
+    const auto * node = getNode();
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+    return JoinActionRef(node, getData());
 }
 
 std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData() const
@@ -459,8 +479,6 @@ static FunctionOverloadResolverPtr operatorToFunction(JoinConditionOperator op)
             return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
         case JoinConditionOperator::Or:
             return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
-        case JoinConditionOperator::NullSafeEquals:
-            return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>());
         default:
             auto function_name = operatorToFunctionName(op);
             return FunctionFactory::instance().get(function_name, nullptr);

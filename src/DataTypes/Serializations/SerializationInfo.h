@@ -1,8 +1,11 @@
 #pragma once
 
+#include <Core/MergeTreeSerializationEnums.h>
 #include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
+
+#include <map>
 
 namespace Poco::JSON
 {
@@ -17,11 +20,6 @@ class ReadBuffer;
 class WriteBuffer;
 class NamesAndTypesList;
 class Block;
-
-static constexpr auto DEFAULT_SERIALIZATION_INFO_VERSION = 0;
-static constexpr auto SERIALIZATION_STRING_WITH_SIZE_STREAM = 1;
-
-static constexpr auto MAX_SERIALIZATION_INFO_VERSION = 1;
 
 /** Contains information about kind of serialization of column and its subcolumns.
  *  Also contains information about content of columns,
@@ -48,12 +46,12 @@ public:
         void addDefaults(size_t length);
     };
 
-    SerializationInfo(ISerialization::Kind kind_, const SerializationInfoSettings & settings_);
-    SerializationInfo(ISerialization::Kind kind_, const SerializationInfoSettings & settings_, const Data & data_);
+    SerializationInfo(ISerialization::KindStack kind_stack_, const SerializationInfoSettings & settings_);
+    SerializationInfo(ISerialization::KindStack kind_stack_, const SerializationInfoSettings & settings_, const Data & data_);
 
     virtual ~SerializationInfo() = default;
 
-    virtual bool hasCustomSerialization() const { return kind != ISerialization::Kind::DEFAULT; }
+    virtual bool hasCustomSerialization() const { return kind_stack.size() > 1; }
     virtual bool structureEquals(const SerializationInfo & rhs) const { return typeid(*this) == typeid(rhs); }
 
     virtual void add(const IColumn & column);
@@ -69,23 +67,24 @@ public:
         const IDataType & new_type,
         const SerializationInfoSettings & new_settings) const;
 
-    virtual void serialializeKindBinary(WriteBuffer & out) const;
+    virtual void serialializeKindStackBinary(WriteBuffer & out) const;
     virtual void deserializeFromKindsBinary(ReadBuffer & in);
 
     virtual void toJSON(Poco::JSON::Object & object) const;
     virtual void fromJSON(const Poco::JSON::Object & object);
 
-    void setKind(ISerialization::Kind kind_) { kind = kind_; }
+    void setKindStack(ISerialization::KindStack kind_stack_) { kind_stack = kind_stack_; }
+    void appendToKindStack(ISerialization::Kind kind) { kind_stack.push_back(kind); }
     const SerializationInfoSettings & getSettings() const { return settings; }
     const Data & getData() const { return data; }
-    ISerialization::Kind getKind() const { return kind; }
+    ISerialization::KindStack getKindStack() const { return kind_stack; }
 
-    static ISerialization::Kind chooseKind(const Data & data, const SerializationInfoSettings & settings);
+    static ISerialization::KindStack chooseKindStack(const Data & data, const SerializationInfoSettings & settings);
 
 protected:
     const SerializationInfoSettings settings;
 
-    ISerialization::Kind kind;
+    ISerialization::KindStack kind_stack;
     Data data;
 };
 
@@ -113,7 +112,7 @@ public:
 
     SerializationInfoPtr tryGet(const String & name) const;
     MutableSerializationInfoPtr tryGet(const String & name);
-    ISerialization::Kind getKind(const String & column_name) const;
+    ISerialization::KindStack getKindStack(const String & column_name) const;
 
     /// Takes data from @other, but keeps current serialization kinds.
     /// If column exists in @other infos, but not in current infos,
@@ -126,23 +125,19 @@ public:
 
     const Settings & getSettings() const { return settings; }
 
-    size_t getVersion() const;
+    MergeTreeSerializationInfoVersion getVersion() const;
 
-    void fallbackSettingsToVersion(size_t version);
+    bool needsPersistence() const;
 
-    static SerializationInfoByName readJSON(
-        const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in);
+    static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
 
-    static SerializationInfoByName readJSONFromString(
-        const NamesAndTypesList & columns, const Settings & settings, const std::string & str);
+    static SerializationInfoByName readJSONFromString(const NamesAndTypesList & columns, const std::string & str);
 
 private:
     /// This field stores all configuration options that are not tied to a
     /// specific column entry in `SerializationInfoByName`. For example:
-    /// - Whether String columns should be serialized using a separate
-    ///   "size stream".
-    /// - Other defaults that affect how `SerializationInfo` instances
-    ///   are constructed when no explicit entry exists.
+    /// - Per-type serialization versions (`types_serialization_versions`), e.g.,
+    ///   specifying different versions for `String` or other types.
     ///
     /// Design notes:
     /// - We intentionally keep such options out of `SerializationInfo::Data`,

@@ -7,6 +7,7 @@ import bson
 import pymongo
 import pytest
 
+from helpers.database_disk import replace_text_in_metadata
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mongo_pass
@@ -83,9 +84,15 @@ def test_simple_select(started_cluster):
     node.restart_clickhouse()
 
     assert node.query(system_warnings_query) == "0\n"
+
+    metadata_path = node.query(
+        f"SELECT metadata_path FROM system.tables WHERE database='default' AND table='simple_mongo_table'"
+    ).strip()
     node.stop_clickhouse()
-    replace_definition_cmd = f"sed --follow-symlinks -i 's|mongo1|mongo1/ignored/path|' /var/lib/clickhouse/metadata/default/simple_mongo_table.sql"
-    node.exec_in_container(["bash", "-c", replace_definition_cmd])
+    replace_text_in_metadata(
+        node, metadata_path, "mongo1", "mongo1/ignored/path"
+    )
+
     node.start_clickhouse()
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
     assert node.query(system_warnings_query) == "1\n"
@@ -873,8 +880,7 @@ def test_where(started_cluster):
     assert node.query("SELECT id FROM where_table WHERE id NOT IN ('11') AND id IN ('12')") == "12\n"
     assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11'] AND id IN ('12')") == "12\n"
 
-    with pytest.raises(QueryRuntimeException):
-        assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11', 100] ORDER BY keyFloat") == "12\n21\n22\n"
+    assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11', 100] ORDER BY keyFloat") == "12\n21\n22\n"
 
     assert node.query("SELECT id FROM where_table WHERE keyDateTime > now()") == ""
     assert (
@@ -1471,3 +1477,23 @@ def test_numbers_parsing(started_cluster):
 
     node.query("DROP TABLE numbers_parsing_table")
     numbers_parsing_table.drop()
+
+
+def test_url_validation(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root@aa.com", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "url_validation_table")
+    url_validation_table = db["url_validation_table"]
+    data = []
+    for i in range(0, 100):
+        data.append({"key": i, "data": hex(i * i)})
+    url_validation_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    node.query(
+        f"CREATE OR REPLACE TABLE url_validation_table(key UInt64, data String) ENGINE = MongoDB('mongo1', 'test', 'url_validation_table', 'root@aa.com', '{mongo_pass}')"
+    )
+
+    assert node.query("SELECT COUNT() FROM url_validation_table") == "100\n"

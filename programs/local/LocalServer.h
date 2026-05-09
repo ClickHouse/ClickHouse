@@ -6,6 +6,7 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Loggers/Loggers.h>
+#include <Common/MemoryWorker.h>
 #include <Common/StatusFile.h>
 
 #include <filesystem>
@@ -27,6 +28,7 @@ public:
     void initialize(Poco::Util::Application & self) override;
 
     int main(const std::vector<String> & /*args*/) override;
+    bool supportsLocalMetaCommands() const override { return true; }
 
 protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
@@ -50,6 +52,8 @@ protected:
     void updateLoggerLevel(const String & logs_level) override;
 
 private:
+    String getHelpHeader() const;
+    String getHelpFooter() const;
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
       * This query will be executed first, before queries passed through --query argument
       * Returns a pair of the table name and the corresponding create table statement.
@@ -72,6 +76,10 @@ private:
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 
     std::unique_ptr<ReadBufferFromFile> input;
+
+    /// MemoryWorker periodically updates RSS and resizes the userspace page cache.
+    /// Without it the page cache stays stuck at `page_cache_min_size`.
+    std::optional<MemoryWorker> memory_worker;
 };
 
 }

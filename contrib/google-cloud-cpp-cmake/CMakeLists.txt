@@ -43,8 +43,14 @@ set(GOOGLE_CLOUD_CPP_ENABLE_GRPC ON)
 set(PROJECT_VERSION "1")
 set(PROJECT_VERSION_MAJOR "1")
 set(PROTO_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src")
-set(Protobuf_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
-set(GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
+    set(Protobuf_PROTOC_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
+    set(GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_cpp_plugin")
+else ()
+    set(Protobuf_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
+    set(GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+endif()
 
 include(GoogleApis)
 
@@ -106,15 +112,10 @@ list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS_EXTRA
 if(ENABLE_GOOGLE_CLOUD_CPP_KMS)
     list(APPEND GOOGLE_CLOUD_CPP_SOURCES ${GOOGLE_CLOUD_CPP_KMS_SRC})
     add_library(_google_cloud_cpp_kms ${GOOGLE_CLOUD_CPP_SOURCES})
-    add_dependencies(_google_cloud_cpp_kms google_cloud_cpp_kms_protos)
+    set(GOOGLE_CLOUD_CPP_KMS_DEPS google_cloud_cpp_grpc_utils google_cloud_cpp_kms_protos google_cloud_cpp_iam_v1_iam_policy_protos google_cloud_cpp_cloud_location_locations_protos)
 
-    list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
-        google_cloud_cpp_grpc_utils
-        _google_cloud_cpp_kms
-        google_cloud_cpp_kms_protos
-        google_cloud_cpp_cloud_location_locations_protos
-        google_cloud_cpp_iam_v1_iam_policy_protos
-    )
+    add_dependencies(_google_cloud_cpp_kms ${GOOGLE_CLOUD_CPP_KMS_DEPS})
+    list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS _google_cloud_cpp_kms ${GOOGLE_CLOUD_CPP_KMS_DEPS})
 
     target_include_directories(_google_cloud_cpp_kms SYSTEM PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_INCLUDES})
     target_include_directories(_google_cloud_cpp_kms SYSTEM PUBLIC ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})
@@ -128,7 +129,7 @@ target_link_libraries(_gcloud INTERFACE ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS} ${GOOGL
 # The library is large - avoid bloat.
 if(OMIT_HEAVY_DEBUG_SYMBOLS)
     foreach(lib ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS})
-        target_compile_options(${lib} PRIVATE -g0)
+        target_compile_options(${lib} PRIVATE -g1)
     endforeach()
 endif()
 

@@ -4,6 +4,7 @@ sidebar_label: 'SAMPLE BY'
 sidebar_position: 41
 slug: /sql-reference/statements/alter/sample-by
 title: 'Manipulating Sampling-Key Expressions'
+doc_type: 'reference'
 ---
 
 # Manipulating SAMPLE BY expression

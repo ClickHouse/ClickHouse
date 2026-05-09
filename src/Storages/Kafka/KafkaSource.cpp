@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DeadLetterQueue.h>
@@ -54,7 +55,7 @@ KafkaSource::KafkaSource(
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
-    , virtual_header(storage.getVirtualsHeader())
+    , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
 {
 }
@@ -234,18 +235,19 @@ Chunk KafkaSource::generateImpl()
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
+                virtual_columns[8]->insert(storage.getStorageID().getTableName());
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
                         const auto & payload = consumer->currentPayload();
-                        virtual_columns[8]->insertData(reinterpret_cast<const char *>(payload.get_data()), payload.get_size());
-                        virtual_columns[9]->insertData(exception_message->data(), exception_message->size());
+                        virtual_columns[9]->insertData(reinterpret_cast<const char *>(payload.get_data()), payload.get_size());
+                        virtual_columns[10]->insertData(exception_message->data(), exception_message->size());
                     }
                     else
                     {
-                        virtual_columns[8]->insertDefault();
                         virtual_columns[9]->insertDefault();
+                        virtual_columns[10]->insertDefault();
                     }
                 }
             }
@@ -256,19 +258,22 @@ Chunk KafkaSource::generateImpl()
                 auto storage_id = storage.getStorageID();
 
                 auto dead_letter_queue = context->getDeadLetterQueue();
-                dead_letter_queue->add(DeadLetterQueueElement{
-                        .table_engine = DeadLetterQueueElement::StreamType::Kafka,
-                        .event_time = timeInSeconds(time_now),
-                        .event_time_microseconds = timeInMicroseconds(time_now),
-                        .database = storage_id.database_name,
-                        .table = storage_id.table_name,
-                        .raw_message = consumer->currentPayload(),
-                        .error = exception_message.value(),
-                        .details = DeadLetterQueueElement::KafkaDetails{
-                            .topic_name = consumer->currentTopic(),
-                            .partition = consumer->currentPartition(),
-                            .offset = consumer->currentPartition(),
-                            .key = consumer->currentKey()}});
+                if (!dead_letter_queue)
+                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
+                else
+                    dead_letter_queue->add(DeadLetterQueueElement{
+                            .table_engine = DeadLetterQueueElement::StreamType::Kafka,
+                            .event_time = timeInSeconds(time_now),
+                            .event_time_microseconds = timeInMicroseconds(time_now),
+                            .database = storage_id.database_name,
+                            .table = storage_id.table_name,
+                            .raw_message = consumer->currentPayload(),
+                            .error = exception_message.value(),
+                            .details = DeadLetterQueueElement::KafkaDetails{
+                                .topic_name = consumer->currentTopic(),
+                                .partition = consumer->currentPartition(),
+                                .offset = consumer->currentPartition(),
+                                .key = consumer->currentKey()}});
             }
 
             total_rows = total_rows + new_rows;
@@ -332,7 +337,8 @@ Chunk KafkaSource::generateImpl()
     auto converting_dag = ActionsDAG::makeConvertingActions(
         result_block.cloneEmpty().getColumnsWithTypeAndName(),
         getPort().getHeader().getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        context);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     converting_actions->execute(result_block);

@@ -11,10 +11,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/NaNUtils.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 
 #include <cmath>
@@ -51,6 +49,7 @@ using CartesianPolygon = Polygon<CartesianPoint>;
 using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
 
 using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
+using SphericalPointInRadians = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::radian>>;
 using SphericalLineString = LineString<SphericalPoint>;
 using SphericalMultiLineString = MultiLineString<SphericalPoint>;
 using SphericalRing = Ring<SphericalPoint>;

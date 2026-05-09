@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
@@ -8,6 +10,7 @@
 #include <Formats/NativeReader.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
+#include <Common/CurrentThread.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
@@ -17,6 +20,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <filesystem>
+#include <optional>
 
 namespace fs = std::filesystem;
 
@@ -58,8 +62,8 @@ private:
     String backup_tmp_path;
     String backup_file_name;
     std::unique_ptr<WriteBufferFromFileBase> backup_buf;
-    CompressedWriteBuffer compressed_backup_buf;
-    NativeWriter backup_stream;
+    std::optional<CompressedWriteBuffer> compressed_backup_buf;
+    std::optional<NativeWriter> backup_stream;
     bool persistent;
 };
 
@@ -79,9 +83,6 @@ SetOrJoinSink::SetOrJoinSink(
     , backup_path(backup_path_)
     , backup_tmp_path(backup_tmp_path_)
     , backup_file_name(backup_file_name_)
-    , backup_buf(table_.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name))
-    , compressed_backup_buf(*backup_buf)
-    , backup_stream(compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()))
     , persistent(persistent_)
 {
 }
@@ -94,7 +95,8 @@ SetOrJoinSink::~SetOrJoinSink()
 
 void SetOrJoinSink::cancelBuffers() noexcept
 {
-    compressed_backup_buf.cancel();
+    if (compressed_backup_buf)
+        compressed_backup_buf->cancel();
     if (backup_buf)
         backup_buf->cancel();
 }
@@ -106,23 +108,27 @@ void SetOrJoinSink::consume(Chunk & chunk)
 
     table.insertBlock(block, getContext());
     if (persistent)
-        backup_stream.write(block);
+    {
+        if (!backup_buf)
+        {
+            backup_buf = table.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name);
+            compressed_backup_buf.emplace(*backup_buf);
+            backup_stream.emplace(*compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
+        }
+        backup_stream->write(block);
+    }
 }
 
 void SetOrJoinSink::onFinish()
 {
     table.finishInsert();
-    if (persistent)
+    if (backup_buf)
     {
-        backup_stream.flush();
-        compressed_backup_buf.finalize();
+        backup_stream->flush();
+        compressed_backup_buf->finalize();
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
-    }
-    else
-    {
-        cancelBuffers();
     }
 }
 
@@ -143,18 +149,27 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const ConstraintsDescription & constraints_,
     const String & comment,
     bool persistent_)
-    : IStorage(table_id_), disk(disk_), persistent(persistent_)
+    : StorageWithCommonVirtualColumns(table_id_), disk(disk_), persistent(persistent_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
 
     path = relative_path_;
+}
+
+VirtualColumnsDescription StorageSetOrJoinBase::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 
@@ -169,7 +184,7 @@ StorageSet::StorageSet(
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
     , set(std::make_shared<Set>(SizeLimits(), 0, true))
 {
-    Block header = getInMemoryMetadataPtr()->getSampleBlock();
+    Block header = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getSampleBlock();
     set->setHeader(header.getColumnsWithTypeAndName());
 
     restore();

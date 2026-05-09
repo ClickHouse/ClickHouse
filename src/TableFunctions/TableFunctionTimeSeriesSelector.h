@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Interpreters/StorageID.h>
-#include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Storages/StorageTimeSeriesSelector.h>
 #include <TableFunctions/ITableFunction.h>
 
 
@@ -31,12 +30,13 @@ private:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return "TimeSeriesSelector"; }
+    const char * getStorageEngineName() const override
+    {
+        /// Technically it's TimeSeriesSelector but it doesn't register itself
+        return "";
+    }
 
-    StorageID time_series_storage_id = StorageID::createEmpty();
-    PrometheusQueryTree instant_selector;
-    Field min_time;
-    Field max_time;
+    StorageTimeSeriesSelector::Configuration config;
 };
 
 }

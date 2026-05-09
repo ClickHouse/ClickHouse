@@ -62,7 +62,6 @@ public:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Confidence level parameter must be between 0 and 1 in aggregate function {}.", Data::name);
             }
-
         }
     }
 
@@ -115,7 +114,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         Float64 value = columns[0]->getFloat64(row_num);
-        UInt8 is_second = columns[1]->getUInt(row_num);
+        bool is_second = columns[1]->getUInt(row_num);
 
         if (is_second)
             this->data(place).addY(value);

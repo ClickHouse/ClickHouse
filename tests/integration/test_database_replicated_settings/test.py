@@ -1,11 +1,6 @@
-import logging
-import os
 import random
-import re
-import shutil
 import string
-import threading
-import time
+import uuid
 from typing import Any, Dict
 
 import pytest
@@ -34,6 +29,14 @@ node2 = cluster.add_instance(
     user_configs=["configs/users.xml"],
     keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": "shard1", "replica": "2"},
+    with_zookeeper=True,
+)
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=["configs/config.xml"],
+    user_configs=["configs/users.xml"],
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    macros={"shard": "shard2", "replica": "1"},
     with_zookeeper=True,
 )
 
@@ -186,3 +189,37 @@ def test_database_replicated_settings_zero_logs_to_keep(started_cluster):
         + r"'{shard}', '{replica}') "
         + "SETTINGS logs_to_keep=0"
     )
+
+def test_create_database_replicated_with_default_args(started_cluster):
+    db_name = "test_" + get_random_string()
+    db_uuid = uuid.uuid4()
+    assert "within an ON CLUSTER query" in node1.query_and_get_error(f"CREATE DATABASE {db_name} Engine=Replicated")
+
+    node1.query(f"CREATE DATABASE {db_name}_1 ON CLUSTER default Engine=Replicated")
+    node2.query(f"CREATE DATABASE {db_name}_2 ON CLUSTER default Engine=Replicated")
+
+    node1.query(f"CREATE DATABASE {db_name}_explicit UUID '{db_uuid}' Engine=Replicated")
+    node2.query(f"CREATE DATABASE {db_name}_explicit UUID '{db_uuid}' Engine=Replicated")
+
+    for db in [f"{db_name}_1", f"{db_name}_2", f"{db_name}_explicit"]:
+        resp1 = node1.query(f"SELECT database, zookeeper_path FROM system.database_replicas WHERE database='{db}' ORDER BY ALL")
+        resp2 = node2.query(f"SELECT database, zookeeper_path FROM system.database_replicas WHERE database='{db}' ORDER BY ALL")
+        assert resp1 == resp2
+
+@pytest.mark.parametrize("async_insert", [0, 1])
+@pytest.mark.parametrize("prefer_localhost_replica", [0, 1])
+def test_database_replicated_with_internal_replication(started_cluster, async_insert, prefer_localhost_replica):
+    db_name = "test_internal_replication_" + get_random_string()
+    node1.query(f"CREATE DATABASE {db_name} ON CLUSTER default Engine=Replicated SETTINGS internal_replication=true")
+    node1.query(f"CREATE TABLE {db_name}.data_table (a Int) Engine=ReplicatedMergeTree ORDER BY a")
+    node1.query(f"CREATE TABLE {db_name}.distributed (a Int) Engine=Distributed({db_name}, {db_name}, data_table, a)")
+
+    node1.query(f"INSERT INTO TABLE {db_name}.distributed VALUES (1), (2)", settings={
+        "wait_for_async_insert": 1,
+        "async_insert": async_insert,
+        "prefer_localhost_replica": prefer_localhost_replica,
+    })
+    node1.query(f"SYSTEM SYNC REPLICA ON CLUSTER default {db_name}.data_table")
+
+    response = node1.query(f"SELECT a FROM {db_name}.distributed ORDER BY a")
+    assert response == '1\n2\n'

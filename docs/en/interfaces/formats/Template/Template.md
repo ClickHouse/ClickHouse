@@ -6,6 +6,7 @@ keywords: ['Template']
 output_format: true
 slug: /interfaces/formats/Template
 title: 'Template'
+doc_type: 'guide'
 ---
 
 | Input | Output | Alias |

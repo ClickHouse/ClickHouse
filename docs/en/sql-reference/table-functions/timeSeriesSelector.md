@@ -4,6 +4,7 @@ sidebar_label: 'timeSeriesSelector'
 sidebar_position: 145
 slug: /sql-reference/table-functions/timeSeriesSelector
 title: 'timeSeriesSelector'
+doc_type: 'reference'
 ---
 
 # timeSeriesSelector Table Function

@@ -2,6 +2,7 @@
 #include <Core/SortDescription.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Common/PODArray.h>
 
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>
@@ -72,7 +73,8 @@ public:
     PartialSortingTransform(
         SharedHeader header_,
         const SortDescription & description_,
-        UInt64 limit_ = 0);
+        UInt64 limit_ = 0,
+        TopKThresholdTrackerPtr threshold_tracker_ = nullptr);
 
     String getName() const override { return "PartialSortingTransform"; }
 
@@ -108,6 +110,8 @@ private:
     PaddedPODArray<UInt64> rows_to_compare;
     PaddedPODArray<Int8> compare_results;
     IColumn::Filter filter;
+
+    TopKThresholdTrackerPtr threshold_tracker;
 
     /// If limit < min_limit_for_partial_sort_optimization, skip optimization with threshold_block.
     /// Because for small LIMIT partial sorting may be very faster then additional work

@@ -1,8 +1,9 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Common/CurrentThread.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Interpreters/FileCache/FileCache.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
@@ -158,7 +159,7 @@ void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
             /// new read until position is before the current position in the working buffer
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Attempt to set read until position before already read data ({} > {})",
+                "Attempt to set read until position before already read data ({} < {})",
                 position,
                 getPosition());
         }

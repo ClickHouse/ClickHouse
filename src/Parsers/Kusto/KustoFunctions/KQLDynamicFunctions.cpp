@@ -2,12 +2,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
-#include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDateTimeFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLDynamicFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
 
 #include <fmt/format.h>
 
@@ -69,7 +64,7 @@ bool ArrayReverse::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto array = getArgument(function_name, pos);
-    out = fmt::format("if(throwIf(not startsWith(toTypeName({0}), 'Array'), 'Only arrays are supported'), [], reverse({0}))", array);
+    out = fmt::format("reverse({0})", array);
 
     return true;
 }

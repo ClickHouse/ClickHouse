@@ -45,7 +45,8 @@ struct PositionCaseSensitiveASCII
 
     static const char * advancePos(const char * pos, const char * end, size_t n)
     {
-        return std::min(pos + n, end);
+        /// Clamp `n` to the available range to avoid pointer-arithmetic overflow when `n` is huge.
+        return pos + std::min(n, static_cast<size_t>(end - pos));
     }
 
     /// Number of code points between 'begin' and 'end' (this has different behaviour for ASCII and UTF-8).
@@ -66,7 +67,7 @@ struct PositionCaseInsensitiveASCII
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t /*haystack_size_hint*/)
     {
-        return SearcherInBigHaystack(needle_data, needle_size);
+        return SearcherInBigHaystack(reinterpret_cast<const UInt8 *>(needle_data), needle_size);
     }
 
     static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
@@ -81,7 +82,8 @@ struct PositionCaseInsensitiveASCII
 
     static const char * advancePos(const char * pos, const char * end, size_t n)
     {
-        return std::min(pos + n, end);
+        /// Clamp `n` to the available range to avoid pointer-arithmetic overflow when `n` is huge.
+        return pos + std::min(n, static_cast<size_t>(end - pos));
     }
 
     static size_t countChars(const char * begin, const char * end) { return end - begin; }
@@ -151,7 +153,7 @@ struct PositionCaseInsensitiveUTF8
 
     static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
     {
-        return SearcherInSmallHaystack(needle_data, needle_size);
+        return SearcherInSmallHaystack(reinterpret_cast<const UInt8 *>(needle_data), needle_size);
     }
 
     static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)

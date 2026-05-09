@@ -129,7 +129,7 @@ public:
         Block scalar{{std::move(column), type, "_constant"}};
         if (worthConvertingScalarToLiteral(scalar, data.max_literal_size))
         {
-            auto literal = std::make_unique<ASTLiteral>(std::move(field));
+            auto literal = make_intrusive<ASTLiteral>(std::move(field));
             ast = addTypeConversionToAST(std::move(literal), type->getName());
         }
     }

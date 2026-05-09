@@ -84,7 +84,36 @@ using FunctionExtractURLParameter = FunctionsStringSearchToString<ExtractURLPara
 
 REGISTER_FUNCTION(ExtractURLParameter)
 {
-    factory.registerFunction<FunctionExtractURLParameter>();
+    /// extractURLParameter documentation
+    FunctionDocumentation::Description description_extractURLParameter = R"(
+Returns the value of the `name` parameter in the URL, if present, otherwise an empty string is returned.
+If there are multiple parameters with this name, the first occurrence is returned.
+The function assumes that the parameter in the `url` parameter is encoded in the same way as in the `name` argument.
+    )";
+    FunctionDocumentation::Syntax syntax_extractURLParameter = "extractURLParameter(url, name)";
+    FunctionDocumentation::Arguments arguments_extractURLParameter = {
+        {"url", "URL.", {"String"}},
+        {"name", "Parameter name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_extractURLParameter = {"Returns the value of the URL parameter with the specified name.", {"String"}};
+    FunctionDocumentation::Examples examples_extractURLParameter = {
+    {
+        "Usage example",
+        R"(
+SELECT extractURLParameter('http://example.com/?param1=value1&param2=value2', 'param1');
+        )",
+        R"(
+┌─extractURLPa⋯, 'param1')─┐
+│ value1                   │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_extractURLParameter = {1, 1};
+    FunctionDocumentation::Category category_extractURLParameter = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_extractURLParameter = {description_extractURLParameter, syntax_extractURLParameter, arguments_extractURLParameter, {}, returned_value_extractURLParameter, examples_extractURLParameter, introduced_in_extractURLParameter, category_extractURLParameter};
+
+    factory.registerFunction<FunctionExtractURLParameter>(documentation_extractURLParameter);
 }
 
 }
