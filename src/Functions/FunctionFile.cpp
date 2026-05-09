@@ -160,12 +160,26 @@ public:
             /// being used as `link/passwd` to escape the disk root. Object-storage
             /// disks have no symlink concept in the user-visible namespace, so the
             /// check trivially passes for them.
-            auto path_is_inside_disk_root = [&disk_path_with_slash](const DiskPtr & d, const String & rel) -> bool
+            ///
+            /// `fs::weakly_canonical` resolves symlinks for the longest existing
+            /// prefix of the path and lexically appends the rest. We invoke it
+            /// explicitly so the symlink-resolution step is visible at the call site -
+            /// the security property of this check should not depend on subtle library
+            /// behavior of `fs::relative` (which `pathStartsWith` would otherwise call
+            /// internally).
+            auto path_is_inside_disk_root = [](const DiskPtr & d, const String & rel) -> bool
             {
                 if (d->getDataSourceDescription().type != DataSourceType::Local)
                     return true;
-                const String disk_root = disk_path_with_slash(d);
-                return pathStartsWith(disk_root + rel, disk_root);
+                std::error_code ec;
+                const fs::path disk_path(d->getPath());
+                const fs::path resolved_root = fs::weakly_canonical(disk_path, ec);
+                if (ec)
+                    return false;
+                const fs::path resolved = fs::weakly_canonical(disk_path / rel, ec);
+                if (ec)
+                    return false;
+                return pathStartsWith(resolved, resolved_root);
             };
 
             for (size_t row = 0; row < input_rows_count; ++row)
