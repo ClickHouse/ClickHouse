@@ -1,29 +1,16 @@
 import csv
 import logging
 import os
-import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple
 
+from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
-
-
-class SensitiveFormatter(logging.Formatter):
-    @staticmethod
-    def _filter(s):
-        return re.sub(
-            r"(.*)(AZURE_CONNECTION_STRING.*\')(.*)", r"\1AZURE_CONNECTION_STRING\3", s
-        )
-
-    def format(self, record):
-        original = logging.Formatter.format(self, record)
-        return self._filter(original)
 
 
 def read_test_results(results_path: Path, with_raw_logs: bool = True):
@@ -62,13 +49,6 @@ def get_additional_envs(info, check_name: str) -> List[str]:
     from ci.jobs.ci_utils import is_extended_run
 
     result = []
-    if not info.is_local_run:
-        azure_connection_string = Shell.get_output(
-            f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
-            verbose=True,
-            strict=True,
-        )
-        result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled
     # so we need this ENV to be able to disable the randomization
     # of feature flags
@@ -94,6 +74,7 @@ def get_run_command(
     result_path: Path,
     repo_tests_path: Path,
     server_log_path: Path,
+    cores_path: Path,
     additional_envs: List[str],
     image: DockerImage,
     upgrade_check: bool,
@@ -110,13 +91,17 @@ def get_run_command(
         "docker run --cap-add=SYS_PTRACE "
         # For dmesg and sysctl
         "--privileged "
+        # azurite-rs (in-process Azure Blob Storage emulator) needs many fds under parallel load
+        "--ulimit nofile=1048576:1048576 "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         "--tmpfs /tmp/clickhouse:mode=1777 "
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}/..:/repo "
-        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} {run_script}"
+        f"--volume={server_log_path}:/var/log/clickhouse-server "
+        f"--volume={cores_path}:/cores "
+        f"{env_str} {image} {run_script}"
     )
 
     return cmd
@@ -159,9 +144,6 @@ def process_results(
 def run_stress_test(upgrade_check: bool = False) -> None:
     info = Info()
     logging.basicConfig(level=logging.INFO)
-    for handler in logging.root.handlers:
-        # pylint: disable=protected-access
-        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Utils.Stopwatch()
     temp_path = Path(Utils.cwd()) / "ci/tmp"
@@ -182,6 +164,9 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
 
+    cores_path = temp_path / "cores"
+    cores_path.mkdir(parents=True, exist_ok=True)
+
     additional_envs = get_additional_envs(info, check_name)
 
     run_command = get_run_command(
@@ -189,6 +174,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         result_path,
         repo_tests_path,
         server_log_path,
+        cores_path,
         additional_envs,
         docker_image,
         upgrade_check,
@@ -197,7 +183,9 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     exit_code = Shell.run(run_command)
 
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    Utils.fix_ownership_after_docker(temp_path, docker_image)
+
+    core_files = ClickHouseService.collect_cores(cores_path)
 
     is_oom = False
 
@@ -347,7 +335,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             f"Unknown error: Test script failed with exit code {exit_code}"
         )
 
-    r.set_files(additional_logs).complete_job()
+    r.set_files(additional_logs).set_files(core_files).complete_job()
 
 
 if __name__ == "__main__":
