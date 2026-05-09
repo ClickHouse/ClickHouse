@@ -1,12 +1,13 @@
 #include <jieba_dict.h>
 
-#include <incbin.h>
-
+constexpr unsigned char resource_jieba_dict[] =
+{
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-INCBIN(resource_jieba_dict, "dict_be.dat");
+#embed "dict_be.dat"
 #else
-INCBIN(resource_jieba_dict, "dict_le.dat");
+#embed "dict_le.dat"
 #endif
+};
 
 namespace Jieba
 {
@@ -51,7 +52,7 @@ DAG DartsDict::buildDAG(std::span<const Rune> runes) const
 
 DartsDict::DartsDict()
 {
-    const char * jieba_dict = reinterpret_cast<const char *>(gresource_jieba_dictData);
+    const char * jieba_dict = reinterpret_cast<const char *>(resource_jieba_dict);
     const DartsHeader * header = reinterpret_cast<const DartsHeader *>(jieba_dict);
     min_weight = header->min_weight;
     num_elems = header->num_elems;
