@@ -2225,6 +2225,13 @@ def test_comparison_operators():
     )
 
     # Compare two instant vectors.
+    do_query_test_expect_error(
+        '({__name__=~"foo|bar"} == {__name__=~"foo|bar"})[50:10]',
+        150,
+        "found duplicate series for the match group",
+        "Multiple series have the same tags {'shape': 'circle', 'size': 'l'}",
+    )
+
     do_query_test(
         "(foo == bar)[50:10]",
         150,

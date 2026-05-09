@@ -45,8 +45,12 @@ namespace
         const PQT::BinaryOperator * operator_node,
         const SQLQueryPiece & left_argument,
         const SQLQueryPiece & right_argument,
-        const ConverterContext & context)
+        const ConverterContext & context,
+        bool drop_metric_name)
     {
+        if (!drop_metric_name)
+            return false;
+
         if (operator_node->on || operator_node->ignoring || operator_node->group_left || operator_node->group_right || !operator_node->extra_labels.empty())
             return false;
 
@@ -130,7 +134,7 @@ namespace
             return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
         }
 
-        if (canUseIdenticalVectorFastPath(operator_node, left_argument, right_argument, context))
+        if (canUseIdenticalVectorFastPath(operator_node, left_argument, right_argument, context, drop_metric_name))
         {
             return applyOperatorToIdenticalVectors(
                 operator_node,
