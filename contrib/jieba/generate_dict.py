@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 This script downloads the Jieba dictionary from GitHub, processes it, and serializes it into
-binary files suitable for use with a Double-Array Trie (darts-clone).
+a binary file suitable for use with a Double-Array Trie (darts-clone), then zstd-compresses it.
 
 Processing steps:
 1. Read the dictionary lines from the online source.
@@ -13,12 +13,10 @@ Processing steps:
 6. Sort the words lexicographically.
 7. Build the Double-Array Trie using the UTF-16 encoded words, their lengths in bytes, and
    integer values (0..n-1).
-8. Convert the weights and the trie array to both little-endian and big-endian formats.
-9. Write two binary files:
-    - dict.bin       : little-endian format
-    - dict_be.bin    : big-endian format
+8. Write a single little-endian binary file and zstd-compress it. ClickHouse only targets
+   little-endian platforms, so a separate big-endian dictionary is not produced.
 
-Binary file layout:
+Binary file layout (uncompressed `dict_le.dat`):
 
 +--------+----------------+-------------------------------------------+
 | Offset | Size (bytes)   | Description                               |
@@ -32,8 +30,9 @@ Binary file layout:
 
 Notes:
 - Null bytes in UTF-16 words are replaced to avoid trie conflicts.
-- Both big-endian and little-endian files are generated for portability.
 - Values array corresponds to 0..n-1 indices of words.
+- The runtime side must apply the same 0x00 -> 0xF0 byte replacement when
+  encoding lookup keys; see `decodeUTF8Rune` in `jieba_common.h`.
 """
 
 import urllib.request
@@ -41,6 +40,7 @@ import numpy as np
 import struct
 import math
 import sys
+import zstandard
 from dartsclone import DoubleArray
 
 url = "https://raw.githubusercontent.com/yanyiwu/cppjieba/refs/heads/master/dict/jieba.dict.utf8"
@@ -74,7 +74,6 @@ sorted_indices = sorted(range(len(keys_bytes)), key=lambda i: keys_bytes[i])
 keys_bytes = [keys_bytes[i] for i in sorted_indices]
 lengths = [lengths[i] for i in sorted_indices]
 weights = np.array([weights[i] for i in sorted_indices], dtype=np.float64)
-weights_be = weights.byteswap().view(weights.dtype.newbyteorder(">"))
 values = list(range(len(weights)))  # 0..n-1
 
 for i, kb in enumerate(keys_bytes[:5]):
@@ -85,26 +84,20 @@ for i, kb in enumerate(keys_bytes[:5]):
 da = DoubleArray()
 da.build(keys_bytes, lengths=lengths, values=values)
 arr = np.frombuffer(da.array(), dtype=np.uint32)
-arr_be = arr.byteswap().view(arr.dtype.newbyteorder(">"))
 
-with open("dict_be.dat", "wb") as f:
-    header = struct.pack(
-        ">dQQ",
-        np.min(weights),
-        len(weights),
-        da.size(),
-    )
-    f.write(header)
-    f.write(weights_be.tobytes())
-    f.write(arr_be.tobytes())
+header = struct.pack(
+    "<dQQ",
+    np.min(weights),
+    len(weights),
+    da.size(),
+)
+payload = header + weights.tobytes() + arr.tobytes()
 
 with open("dict_le.dat", "wb") as f:
-    header = struct.pack(
-        "<dQQ",
-        np.min(weights),
-        len(weights),
-        da.size(),
-    )
-    f.write(header)
-    f.write(weights.tobytes())
-    f.write(arr.tobytes())
+    f.write(payload)
+
+# Use the highest zstd level so the compressed dict (~3.5 MiB) stays under the 5 MiB
+# in-tree size limit enforced by `ci/jobs/scripts/check_style/various_checks.sh`.
+compressor = zstandard.ZstdCompressor(level=22)
+with open("dict_le.dat.zst", "wb") as f:
+    f.write(compressor.compress(payload))
