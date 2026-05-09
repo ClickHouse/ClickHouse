@@ -26,8 +26,8 @@ namespace DB
         /// Description of columns for format_header. Used for inserting defaults.
         ColumnsDescription columns_description;
         /// Columns to request from IInputFormat.
-        /// Includes columns to read from file and maybe prewhere result column (if
-        /// !remove_prewhere_column). The prewhere result column is not necessarily at the end.
+        /// Includes columns to read from file and columns outputted by the prewhere expression
+        /// (the prewhere columns are not necessarily at the end of the list).
         /// Doesn't include columns that are only used as prewhere input; IInputFormat should deduce
         /// them from prewhere expression.
         NamesAndTypesList requested_columns;

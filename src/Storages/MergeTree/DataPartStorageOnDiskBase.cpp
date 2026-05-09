@@ -1,21 +1,22 @@
 #include <string_view>
-#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Disks/IDiskTransaction.h>
-#include <Disks/TemporaryFileOnDisk.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <Common/logger_useful.h>
-#include <Common/formatReadable.h>
-#include <Interpreters/Context.h>
-#include <Storages/MergeTree/Backup.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/BackupSettings.h>
+#include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Disks/TemporaryFileOnDisk.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
+#include <Storages/MergeTree/Backup.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
 #include <fmt/ranges.h>
 
@@ -502,14 +503,14 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     if (params.external_transaction)
     {
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
     else
     {
         disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
+        disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
@@ -558,14 +559,14 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     if (params.external_transaction)
     {
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
     else
     {
         dst_disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
+        dst_disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
@@ -727,6 +728,15 @@ void DataPartStorageOnDiskBase::remove(
                 disk->removeSharedRecursive(
                     fs::path(to) / "", !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove);
             }
+            catch (const fs::filesystem_error & e)
+            {
+                if (e.code() == std::errc::no_such_file_or_directory)
+                {
+                    /// If the directory was already removed (e.g. by clearOldTemporaryDirectories), nothing to do.
+                }
+                else
+                    throw;
+            }
             catch (...)
             {
                 LOG_ERROR(
@@ -737,26 +747,30 @@ void DataPartStorageOnDiskBase::remove(
 
         if (!disk->existsDirectory(from))
         {
-            LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+            LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
             /// We will never touch this part again, so unlocking it from zero-copy
             if (!can_remove_description)
                 can_remove_description.emplace(can_remove_callback());
             return;
         }
 
+        /// Evaluate can_remove_callback before moving the directory so zero-copy reference checks
+        /// use the current (existing) path. We intentionally don't update part_dir to avoid races.
+        if (!can_remove_description)
+            can_remove_description.emplace(can_remove_callback());
+
         try
         {
             disk->moveDirectory(from, to);
-            part_dir = part_dir_without_slash;
+            /// NOTE: we intentionally don't update part_dir here because it would cause a data race
+            /// with concurrent readers (e.g. system.parts table queries calling getFullPath()).
+            /// The part is being removed anyway, so the path doesn't need to be updated.
         }
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
             {
-                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
-                /// We will never touch this part again, so unlocking it from zero-copy
-                if (!can_remove_description)
-                    can_remove_description.emplace(can_remove_callback());
+                LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
                 return;
             }
             throw;
@@ -765,12 +779,8 @@ void DataPartStorageOnDiskBase::remove(
         {
             if (e.code() == std::errc::no_such_file_or_directory)
             {
-                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
+                LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
                           "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
-                /// We will never touch this part again, so unlocking it from zero-copy
-                if (!can_remove_description)
-                    can_remove_description.emplace(can_remove_callback());
-
                 return;
             }
             throw;
@@ -858,7 +868,19 @@ void DataPartStorageOnDiskBase::clearDirectory(
     if (checksums.empty() || incomplete_temporary_part)
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        try
+        {
+            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                /// If the directory was already removed (e.g. by clearOldTemporaryDirectories), nothing to do.
+            }
+            else
+                throw;
+        }
         return;
     }
 
@@ -877,7 +899,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
             request.emplace_back(fs::path(dir) / file);
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
-        request.emplace_back(fs::path(dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME, true);
+        request.emplace_back(fs::path(dir) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
 
@@ -889,7 +911,19 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Recursive directory removal does many excessive "stat" syscalls under the hood.
 
         LOG_ERROR(log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, dir), getCurrentExceptionMessage(false));
-        disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        try
+        {
+            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                /// If the directory was already removed (e.g. by clearOldTemporaryDirectories), nothing to do.
+            }
+            else
+                throw;
+        }
     }
 }
 
@@ -924,9 +958,9 @@ SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const
     return volume->getDisk()->getDirectorySyncGuard(fs::path(root_path) / part_dir);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransactionFile(WriteMode mode) const
+std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransactionFile(const String & txn_file_name, WriteMode mode) const
 {
-    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME, 256, mode);
+    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / txn_file_name, 256, mode);
 }
 
 void DataPartStorageOnDiskBase::removeRecursive()
@@ -947,6 +981,11 @@ void DataPartStorageOnDiskBase::createDirectories()
 bool DataPartStorageOnDiskBase::hasActiveTransaction() const
 {
     return transaction != nullptr;
+}
+
+bool DataPartStorageOnDiskBase::isCaseInsensitive() const
+{
+    return getDisk()->isCaseInsensitive();
 }
 
 }

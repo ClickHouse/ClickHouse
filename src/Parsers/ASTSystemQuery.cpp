@@ -1,6 +1,5 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
-#include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Poco/String.h>
 #include <Common/quoteString.h>
@@ -63,32 +62,16 @@ String ASTSystemQuery::getTable() const
 
 void ASTSystemQuery::setDatabase(const String & name)
 {
-    if (database)
-    {
-        std::erase(children, database);
-        database.reset();
-    }
-
+    reset(database);
     if (!name.empty())
-    {
-        database = std::make_shared<ASTIdentifier>(name);
-        children.push_back(database);
-    }
+        set(database, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTSystemQuery::setTable(const String & name)
 {
-    if (table)
-    {
-        std::erase(children, table);
-        table.reset();
-    }
-
+    reset(table);
     if (!name.empty())
-    {
-        table = std::make_shared<ASTIdentifier>(name);
-        children.push_back(table);
-    }
+        set(table, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -144,9 +127,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_keyword(" FROM TABLE ");
             print_database_table();
         }
-        else if (!replica_zk_path.empty())
+        else if (!full_replica_zk_path.empty())
         {
-            print_keyword(" FROM ZKPATH ") << quoteString(replica_zk_path);
+            print_keyword(" FROM ZKPATH ") << quoteString(full_replica_zk_path);
         }
         else if (database)
         {
@@ -166,8 +149,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     print_keyword(typeToString(type));
 
     std::unordered_set<Type> queries_with_on_cluster_at_end = {
-        Type::DROP_FILESYSTEM_CACHE,
+        Type::CLEAR_FILESYSTEM_CACHE,
         Type::SYNC_FILESYSTEM_CACHE,
+        Type::CLEAR_QUERY_CACHE,
     };
 
     if (!queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
@@ -209,6 +193,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 print_on_volume();
             }
+            break;
+        }
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        {
+            ostr << ' ';
+            print_database_table();
+            ostr << " PATH " << quoteString(queue_path);
             break;
         }
         case Type::RESTART_REPLICA:
@@ -260,7 +251,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
         case Type::RESTART_DISK:
-        case Type::DROP_DISK_METADATA_CACHE:
+        case Type::WAIT_BLOBS_CLEANUP:
+        case Type::CLEAR_DISK_METADATA_CACHE:
         {
             if (table)
             {
@@ -317,7 +309,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_keyword(" SECOND");
             break;
         }
-        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
         {
             if (!schema_cache_format.empty())
             {
@@ -326,7 +318,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-        case Type::DROP_FILESYSTEM_CACHE:
+        case Type::CLEAR_FILESYSTEM_CACHE:
         {
             if (!filesystem_cache_name.empty())
             {
@@ -344,7 +336,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-        case Type::DROP_SCHEMA_CACHE:
+        case Type::CLEAR_SCHEMA_CACHE:
         {
             if (!schema_cache_storage.empty())
             {
@@ -353,12 +345,21 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-        case Type::DROP_DISTRIBUTED_CACHE:
+        case Type::CLEAR_DISTRIBUTED_CACHE:
         {
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
             else if (!distributed_cache_server_id.empty())
                 ostr << " " << distributed_cache_server_id;
+            break;
+        }
+        case Type::CLEAR_QUERY_CACHE:
+        {
+            if (query_result_cache_tag.has_value())
+            {
+                print_keyword(" TAG ");
+                ostr << quoteString(*query_result_cache_tag);
+            }
             break;
         }
         case Type::UNFREEZE:
@@ -369,7 +370,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::UNLOCK_SNAPSHOT:
         {
-            ostr << quoteString(backup_name);
+            ostr << " " << quoteString(backup_name);
             if (backup_source)
             {
                 print_keyword(" FROM ");
@@ -423,12 +424,34 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::SET_COVERAGE_TEST:
+        {
+            ostr << ' ';
+            ostr << quoteString(coverage_test_name);
+            break;
+        }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
+        {
+            ostr << ' ';
+            print_identifier(fail_point_name);
+            break;
+        }
         case Type::WAIT_FAILPOINT:
         {
             ostr << ' ';
             print_identifier(fail_point_name);
+            if (fail_point_action == FailPointAction::PAUSE)
+            {
+                ostr << ' ';
+                print_keyword("PAUSE");
+            }
+            else if (fail_point_action == FailPointAction::RESUME)
+            {
+                ostr << ' ';
+                print_keyword("RESUME");
+            }
             break;
         }
         case Type::REFRESH_VIEW:
@@ -436,6 +459,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
         case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
         case Type::CANCEL_VIEW:
         case Type::WAIT_VIEW:
         {
@@ -461,6 +485,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            ostr << ' ';
+            print_identifier(delta_kernel_tracing_level);
+            break;
+        }
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::FLUSH_LOGS:
         {
@@ -480,14 +510,17 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             break;
         }
 
+        case Type::ALLOCATE_MEMORY:
+        {
+            ostr << ' ' << untracked_memory_size;
+            break;
+        }
+
 #if USE_XRAY
         case Type::INSTRUMENT_ADD:
         {
             if (!instrumentation_function_name.empty())
-            {
-                ostr << ' ';
-                print_identifier(instrumentation_function_name);
-            }
+                ostr << ' ' << quoteString(instrumentation_function_name);
 
             if (!instrumentation_handler_name.empty())
             {
@@ -527,12 +560,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (!instrumentation_subquery.empty())
                 ostr << " (" << instrumentation_subquery << ')';
-            else if (instrumentation_point_id)
+            else if (instrumentation_point)
             {
-                if (std::holds_alternative<bool>(instrumentation_point_id.value()))
+                if (std::holds_alternative<Instrumentation::All>(instrumentation_point.value()))
                     ostr << " ALL";
+                else if (std::holds_alternative<String>(instrumentation_point.value()))
+                    ostr << ' ' << quoteString(std::get<String>(instrumentation_point.value()));
                 else
-                    ostr << ' ' << std::get<UInt64>(instrumentation_point_id.value());
+                    ostr << ' ' << std::get<UInt64>(instrumentation_point.value());
             }
             break;
         }
@@ -543,24 +578,24 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         case Type::KILL:
         case Type::SHUTDOWN:
-        case Type::DROP_DNS_CACHE:
-        case Type::DROP_CONNECTIONS_CACHE:
-        case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_CONDITION_CACHE:
-        case Type::DROP_QUERY_CACHE:
-        case Type::DROP_MARK_CACHE:
-        case Type::DROP_PRIMARY_INDEX_CACHE:
-        case Type::DROP_INDEX_MARK_CACHE:
-        case Type::DROP_UNCOMPRESSED_CACHE:
-        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
-        case Type::DROP_TEXT_INDEX_HEADER_CACHE:
-        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
-        case Type::DROP_TEXT_INDEX_CACHES:
-        case Type::DROP_COMPILED_EXPRESSION_CACHE:
-        case Type::DROP_S3_CLIENT_CACHE:
-        case Type::DROP_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_DNS_CACHE:
+        case Type::CLEAR_CONNECTIONS_CACHE:
+        case Type::CLEAR_MMAP_CACHE:
+        case Type::CLEAR_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_MARK_CACHE:
+        case Type::CLEAR_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_INDEX_MARK_CACHE:
+        case Type::CLEAR_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
+        case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_CACHES:
+        case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
+        case Type::CLEAR_S3_CLIENT_CACHE:
+        case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:
@@ -583,10 +618,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::STOP_THREAD_FUZZER:
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
-        case Type::DROP_PAGE_CACHE:
+        case Type::PAUSE_VIEWS:
+        case Type::CLEAR_PAGE_CACHE:
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:
         case Type::RECONNECT_ZOOKEEPER:
+        case Type::FREE_MEMORY:
+        case Type::RESET_DDL_WORKER:
             break;
         case Type::UNKNOWN:
         case Type::END:

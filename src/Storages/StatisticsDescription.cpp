@@ -45,6 +45,8 @@ SingleStatisticsDescription & SingleStatisticsDescription::operator=(SingleStati
 
 StatisticsType stringToStatisticsType(String type)
 {
+    type = Poco::toLower(type);
+
     if (type == "tdigest")
         return StatisticsType::TDigest;
     if (type == "uniq")
@@ -53,11 +55,13 @@ StatisticsType stringToStatisticsType(String type)
         return StatisticsType::CountMinSketch;
     if (type == "minmax")
         return StatisticsType::MinMax;
+    if (type == "nullcount")
+        return StatisticsType::NullCount;
 
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'.", type);
 }
 
-String SingleStatisticsDescription::getTypeName() const
+String statisticsTypeToString(StatisticsType type)
 {
     switch (type)
     {
@@ -69,9 +73,16 @@ String SingleStatisticsDescription::getTypeName() const
             return "countmin";
         case StatisticsType::MinMax:
             return "minmax";
+        case StatisticsType::NullCount:
+            return "nullcount";
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'.", type);
     }
+}
+
+String SingleStatisticsDescription::getTypeName() const
+{
+    return statisticsTypeToString(type);
 }
 
 SingleStatisticsDescription::SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_)
@@ -85,7 +96,9 @@ bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription &
 
 bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription & other) const
 {
-    return types_to_desc == other.types_to_desc;
+    if (!data_type || !other.data_type)
+        return data_type == other.data_type;
+    return types_to_desc == other.types_to_desc && data_type->equals(*other.data_type);
 }
 
 bool ColumnStatisticsDescription::empty() const
@@ -195,10 +208,10 @@ ColumnStatisticsDescription ColumnStatisticsDescription::fromStatisticsDescripti
 
 ASTPtr ColumnStatisticsDescription::getAST() const
 {
-    auto function_node = std::make_shared<ASTFunction>();
+    auto function_node = make_intrusive<ASTFunction>();
     function_node->name = "STATISTICS";
-    function_node->kind = ASTFunction::Kind::STATISTICS;
-    function_node->arguments = std::make_shared<ASTExpressionList>();
+    function_node->setKind(ASTFunction::Kind::STATISTICS);
+    function_node->arguments = make_intrusive<ASTExpressionList>();
 
     for (const auto & [type, desc] : types_to_desc)
     {
@@ -215,17 +228,16 @@ ASTPtr ColumnStatisticsDescription::getAST() const
 
 String ColumnStatisticsDescription::getNameForLogs() const
 {
-    String ret;
+    String result;
     for (const auto & [tp, desc] : types_to_desc)
     {
-        ret += desc.getTypeName();
+        if (!result.empty())
+            result += ',';
+        result += desc.getTypeName();
         if (desc.is_implicit)
-            ret += "(auto)";
-        ret += ",";
+            result += "(auto)";
     }
-    if (!ret.empty())
-        ret.pop_back();
-    return ret;
+    return result;
 }
 
 

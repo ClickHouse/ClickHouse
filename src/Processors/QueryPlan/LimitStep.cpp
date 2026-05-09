@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -54,7 +55,7 @@ void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQu
 
 void LimitStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix << "Limit " << limit << '\n';
     settings.out << prefix << "Offset " << offset << '\n';
 
@@ -102,7 +103,7 @@ void LimitStep::serialize(Serialization & ctx) const
         serializeSortDescription(description, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> LimitStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags;
     readIntBinary(flags, ctx.in);

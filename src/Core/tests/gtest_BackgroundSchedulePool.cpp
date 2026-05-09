@@ -54,8 +54,10 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
     });
     ASSERT_EQ(task->activateAndSchedule(), true);
 
-    std::unique_lock lock(mutex);
-    condvar.wait(lock, [&] { return counter == ITERATIONS; });
+    {
+        std::unique_lock lock(mutex);
+        condvar.wait(lock, [&] { return counter == ITERATIONS; });
+    }
 
     ASSERT_EQ(counter, ITERATIONS);
 

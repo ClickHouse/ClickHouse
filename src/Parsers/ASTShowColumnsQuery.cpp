@@ -10,7 +10,7 @@ namespace DB
 
 ASTPtr ASTShowColumnsQuery::clone() const
 {
-    auto res = std::make_shared<ASTShowColumnsQuery>(*this);
+    auto res = make_intrusive<ASTShowColumnsQuery>(*this);
     res->children.clear();
     cloneOutputOptions(*res);
     return res;

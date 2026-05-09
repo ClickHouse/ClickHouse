@@ -5,7 +5,7 @@
 #include <Common/logger_useful.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3/getObjectInfo.h>
 

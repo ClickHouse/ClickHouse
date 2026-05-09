@@ -1,7 +1,9 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
@@ -22,6 +24,21 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+}
+
+
+UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & function_, const String & type_name_, size_t version_)
+{
+    SipHash hash;
+    hash.update("AggregateFunction");
+    auto state_type_name = function_->getStateType()->getName();
+    hash.update(state_type_name.size());
+    hash.update(state_type_name);
+    hash.update(type_name_.size());
+    hash.update(type_name_);
+    hash.update(version_);
+    hash.update(static_cast<UInt8>(function_->getStateVariant()));
+    return hash.get128();
 }
 
 void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
@@ -122,6 +139,16 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
     {
         ReadBufferFromString istr(s);
         function->deserialize(place, istr, version, &arena);
+
+        const size_t trailing_bytes = istr.available();
+        if (trailing_bytes != 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "AggregateFunction state for `{}` has {} trailing byte(s) after deserialization",
+                function->getName(),
+                trailing_bytes);
+        }
     }
     catch (...)
     {
@@ -233,6 +260,11 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
     column_concrete.getData().push_back(place);
 }
 
+SerializationPtr SerializationAggregateFunction::create(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
+{
+    return ISerialization::pooled(getHash(function_, type_name_, version_), [&] { return new SerializationAggregateFunction(function_, std::move(type_name_), version_); });
+}
+
 void SerializationAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(serializeToString(function, column, row_num, version), ostr);
@@ -332,6 +364,11 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
     String s;
     readCSV(s, istr, settings.csv);
     deserializeBasedOnInput(column, settings, s);
+}
+
+size_t SerializationAggregateFunction::allocatedBytes() const
+{
+    return sizeof(*this) + type_name.capacity();
 }
 
 }

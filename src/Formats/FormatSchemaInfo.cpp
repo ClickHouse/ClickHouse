@@ -204,7 +204,7 @@ void FormatSchemaInfo::handleSchemaSourceQuery(
 
 String FormatSchemaInfo::querySchema(const String & query)
 {
-    auto current_query_context = CurrentThread::get().getQueryContext();
+    auto current_query_context = CurrentThread::get().tryGetQueryContext();
     if (!current_query_context)
         current_query_context = Context::getGlobalContextInstance();
 
@@ -227,6 +227,12 @@ String FormatSchemaInfo::querySchema(const String & query)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected the schema query result to have one column");
 
         auto & column = block.getByPosition(0).column;
+        if (column->size() != 1)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Expected the schema query result to have one row, got {}",
+                column->size());
+
         if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
         {
             result = col_str->getDataAt(0);

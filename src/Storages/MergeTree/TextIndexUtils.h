@@ -5,27 +5,12 @@
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
+#include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
 #include <Processors/ISimpleTransform.h>
 
 namespace DB
 {
-
-/// A segment of the text index.
-/// Created during materialization of text index.
-struct TextIndexSegment
-{
-    TextIndexSegment(DataPartStoragePtr part_storage_, String index_file_name_, size_t part_index_)
-        : part_storage(std::move(part_storage_))
-        , index_file_name(std::move(index_file_name_))
-        , part_index(part_index_)
-    {
-    }
-
-    DataPartStoragePtr part_storage;
-    String index_file_name;
-    size_t part_index;
-};
 
 /// Transform that builds text indexes and periodically flushes their segments
 /// into temporary storage, when amount of accumulated data reaches some threshold.
@@ -51,8 +36,9 @@ public:
     void finalize();
 
     /// Returns all segments created by this transform for the given index and part.
-    std::vector<TextIndexSegment> getSegments(size_t index_idx, size_t part_idx) const;
+    std::vector<TextIndexSegment> getSegments(const String & index_name, size_t part_idx) const;
     const std::vector<MergeTreeIndexPtr> & getIndexes() const { return indexes; }
+    bool hasIndex(const String & index_name) const { return index_position_by_name.contains(index_name); }
 
 private:
     /// Resets current index granule and flush a segment
@@ -61,6 +47,7 @@ private:
 
     String index_file_prefix;
     std::vector<MergeTreeIndexPtr> indexes;
+    std::unordered_map<String, size_t> index_position_by_name;
     MergeTreeIndexAggregators aggregators;
     MutableDataPartStoragePtr temporary_storage;
     MergeTreeWriterSettings writer_settings;
@@ -96,6 +83,8 @@ public:
 
     bool executeStep() override;
     void cancel() noexcept override;
+
+    MutableDataPartsVector extractTemporaryParts() override { return {}; }
     void addToChecksums(MergeTreeDataPartChecksums & checksums) override;
 
 private:
@@ -146,18 +135,14 @@ private:
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
 
+    PostingsSerialization postings_serialization;
+
     bool is_initialized = false;
 };
 
 using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
 MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path);
-
-std::vector<MergeTreeIndexPtr> getTextIndexesToBuildMerge(
-    const IndicesDescription & indices_description,
-    const NameSet & read_column_names,
-    const IMergeTreeDataPart & data_part,
-    bool merge_may_reduce_rows);
 
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,

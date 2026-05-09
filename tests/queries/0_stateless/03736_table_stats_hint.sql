@@ -1,6 +1,13 @@
-SET allow_experimental_statistics=1;
+SET allow_statistics=1;
 SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
+SET enable_join_runtime_filters=0;
+SET materialize_statistics_on_insert = 1;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_join_swap_table = 'auto';
+SET query_plan_optimize_join_order_algorithm = 'greedy';
+SET query_plan_optimize_join_order_limit = 10; -- needed for statistics-based row count estimates in EXPLAIN output
 
 CREATE TABLE part
 (
@@ -26,7 +33,7 @@ INSERT INTO partsupp SELECT number/2, number%17, number FROM numbers(200);
 SET query_plan_join_swap_table = 0;
 
 SELECT '========== with statistics ===========';
-SET allow_statistics_optimize=1;
+SET use_statistics=1;
 
 SELECT explain FROM
 (
@@ -37,7 +44,8 @@ WHERE explain LIKE '% Join: %' OR explain LIKE '% ResultRows: %' OR explain LIKE
 
 
 SELECT '========== with 10x hint =============';
-SET allow_statistics_optimize=0;
+SET use_statistics=0;
+SET query_plan_optimize_join_order_algorithm='greedy';
 -- Statistics hint with all values multiplied by 10 compared to real
 SET param__internal_join_table_stat_hints = '
 {

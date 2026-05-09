@@ -25,8 +25,5 @@ Expression ((Project names + Projection))
   CreatingSets (Create sets before main query execution)
     Expression (((WHERE + Join output actions) + (( + Calculate join left keys) + (Join filter + Change column names to column identifiers))))
       ReadFromMergeTree (system.query_log)
-    CreatingSet (Create set for subquery)
-      Expression ((JOIN keys + (Calculate join right keys + Change column names to column identifiers)))
-        ReadFromSystemOneBlock
 0
 1	1

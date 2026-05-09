@@ -103,27 +103,6 @@ REQUEST_SETTINGS_LIST(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 namespace S3
 {
 
-namespace
-{
-bool setValueFromConfig(
-    const Poco::Util::AbstractConfiguration & config, const std::string & path, typename S3RequestSettingsImpl::SettingFieldRef & field)
-{
-    if (!config.has(path))
-        return false;
-
-    auto which = field.getValue().getType();
-    if (isInt64OrUInt64FieldType(which))
-        field.setValue(config.getUInt64(path));
-    else if (which == Field::Types::String)
-        field.setValue(config.getString(path));
-    else if (which == Field::Types::Bool)
-        field.setValue(config.getBool(path));
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
-
-    return true;
-}
-}
 
 S3RequestSettings::S3RequestSettings() : impl(std::make_unique<S3RequestSettingsImpl>())
 {
@@ -155,7 +134,7 @@ S3RequestSettings::S3RequestSettings(
     {
         auto path = fmt::format("{}.{}{}", config_prefix, setting_name_prefix, field.getName());
 
-        bool updated = setValueFromConfig(config, path, field);
+        bool updated = S3::setValueFromConfig(config, path, field);
         if (!updated)
         {
             auto setting_name = "s3_" + field.getName();
@@ -240,13 +219,13 @@ void S3RequestSettings::validateUploadSettings()
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting min_upload_part_size ({}) cannot be zero",
-                ReadableSize(impl->min_upload_part_size));
+                ReadableSize(impl->min_upload_part_size.value));
 
         if (impl->max_upload_part_size < impl->min_upload_part_size)
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size ({})",
-                ReadableSize(impl->max_upload_part_size), ReadableSize(impl->min_upload_part_size));
+                ReadableSize(impl->max_upload_part_size.value), ReadableSize(impl->min_upload_part_size.value));
 
         if (!impl->upload_part_size_multiply_factor)
             throw Exception(
@@ -264,7 +243,7 @@ void S3RequestSettings::validateUploadSettings()
                             ErrorCodes::INVALID_SETTING_VALUE,
                             "Setting upload_part_size_multiply_factor is too big ({}). "
                             "Multiplication to max_upload_part_size ({}) will cause integer overflow",
-                            impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size));
+                            impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size.value));
     }
 
     std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};

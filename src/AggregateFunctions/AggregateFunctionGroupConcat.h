@@ -9,9 +9,7 @@
 #include <Core/ServerSettings.h>
 #include <Common/ArenaAllocator.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -58,9 +56,9 @@ public:
 
     String getName() const override;
 
-    static const std::vector<std::string>& getNameAndAliases()
+    static const VectorWithMemoryTracking<std::string> & getNameAndAliases()
     {
-        static const std::vector<std::string> aliases = {"groupConcat", "group_concat"};
+        static const VectorWithMemoryTracking<std::string> aliases = {"groupConcat", "group_concat"};
         return aliases;
     }
 

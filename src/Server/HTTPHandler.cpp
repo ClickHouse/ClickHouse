@@ -19,9 +19,11 @@
 #include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
+#include <Processors/Port.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
+#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
@@ -31,7 +33,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -45,6 +46,7 @@
 #include <Poco/Net/HTTPMessage.h>
 
 #include <algorithm>
+#include <boost/algorithm/string/trim.hpp>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -183,7 +185,7 @@ void HTTPHandler::processQuery(
     HTMLForm & params,
     HTTPServerResponse & response,
     Output & used_output,
-    std::optional<CurrentThread::QueryScope> & query_scope,
+    QueryScope & query_scope,
     const ProfileEvents::Event & write_event)
 {
     using namespace Poco::Net;
@@ -249,7 +251,13 @@ void HTTPHandler::processQuery(
     setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+    String query_id = params.get("query_id", request.get("X-ClickHouse-Query-Id", ""));
+
+    /// Sanitize query_id: remove ASCII control characters to prevent CRLF injection
+    /// into HTTP response headers (the query_id is reflected in X-ClickHouse-Query-Id).
+    std::erase_if(query_id, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
+
+    context->setCurrentQueryId(query_id);
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
@@ -302,7 +310,7 @@ void HTTPHandler::processQuery(
 
     /// Initialize query scope, once query_id is initialized.
     /// (To track as much allocations as possible)
-    query_scope.emplace(context);
+    query_scope = QueryScope::create(context);
 
     const auto & settings = context->getSettingsRef();
 
@@ -683,7 +691,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
-    std::optional<CurrentThread::QueryScope> query_scope;
+    QueryScope query_scope;
 
     Output used_output;
 
@@ -963,8 +971,12 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
-    if (http_response_headers_override.has_value())
+    if (!common_headers.empty())
+    {
+        if (!http_response_headers_override.has_value())
+            http_response_headers_override.emplace();
         http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
+    }
 
     auto creator = [&server, query_param_name, http_response_headers_override, connection_config]() -> std::unique_ptr<DynamicQueryHandler>
     { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override); };
@@ -1004,6 +1016,9 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}.handler.query' in configuration file.", config_prefix);
 
     std::string predefined_query = config.getString(config_prefix + ".handler.query");
+    /// Remove leading and trailing whitespace that may come from XML formatting in the config file.
+    /// This prevents whitespace from being interpreted as data for binary formats like MsgPack.
+    boost::algorithm::trim(predefined_query);
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
     std::unordered_map<String, CompiledRegexPtr> headers_name_with_regex;
@@ -1026,8 +1041,12 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     }
 
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
-    if (http_response_headers_override.has_value())
+    if (!common_headers.empty())
+    {
+        if (!http_response_headers_override.has_value())
+            http_response_headers_override.emplace();
         http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
+    }
 
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 

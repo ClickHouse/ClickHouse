@@ -1,9 +1,9 @@
 #pragma once
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsComparison.h>
-#include <Columns/ColumnNullable.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
@@ -106,17 +106,18 @@ public:
 
     ColumnPtr ALWAYS_INLINE executeForVariantOrDynamicAndNull(const ColumnWithTypeAndName & variant_or_dynamic_col) const
     {
+        ColumnPtr col = variant_or_dynamic_col.column->convertToFullColumnIfConst();
         const auto & column_variant_or_dynamic =
             isVariant(variant_or_dynamic_col.type) ?
-                checkAndGetColumn<ColumnVariant>(*variant_or_dynamic_col.column) :
-                checkAndGetColumn<ColumnDynamic>(*variant_or_dynamic_col.column).getVariantColumn();
+                checkAndGetColumn<ColumnVariant>(*col) :
+                checkAndGetColumn<ColumnDynamic>(*col).getVariantColumn();
         auto res = DataTypeUInt8().createColumn();
         auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
         data.resize(column_variant_or_dynamic.size());
         for (size_t i = 0; i < column_variant_or_dynamic.size(); ++i)
         {
-            bool ele_is_null = column_variant_or_dynamic.isNullAt(i);
-            data[i] = is_equal_mode ? ele_is_null && true : ele_is_null && false;
+            bool is_null = column_variant_or_dynamic.isNullAt(i);
+            data[i] = is_equal_mode ? is_null : !is_null;
         }
         return res;
     }
@@ -135,16 +136,6 @@ public:
                             backQuote(name),
                             left_col ? "NOT NULL" : "NULL",
                             right_col ? "NOT NULL" : "NULL");
-        }
-
-        // for self null-safe cmp
-        if (type_and_name_left_col.name == type_and_name_right_col.name
-            && type_and_name_left_col.type->equals(*type_and_name_right_col.type)
-            && !isTuple(type_and_name_left_col.type)
-            && left_col.get() == right_col.get())
-        {
-            return is_equal_mode ? result_type->createColumnConst(input_rows_count, UInt8(1)) :
-                                    result_type->createColumnConst(input_rows_count, UInt8(0));
         }
 
         // To address:

@@ -293,7 +293,13 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
     }
 
-    return ColumnsDescription::fromNamesAndTypes(names_and_types);
+    auto result = ColumnsDescription::fromNamesAndTypes(names_and_types);
+
+    result.modify("code_point", [](ColumnDescription & col) { col.comment = "The Unicode code point represented as U+XXXX."; });
+    result.modify("code_point_value", [](ColumnDescription & col) { col.comment = "The integer value of the Unicode code point."; });
+    result.modify("notation", [](ColumnDescription & col) { col.comment = "The character notation (visual representation of the code point)."; });
+
+    return result;
 }
 
 Block StorageSystemUnicode::getFilterSampleBlock() const
@@ -388,7 +394,7 @@ void StorageSystemUnicode::fillData(
                 ++offset;
                 col_notation_chars[offset] = '+';
                 ++offset;
-                writeHexByteUppercase(code >> 8, &col_notation_chars[offset]);
+                writeHexByteUppercase(static_cast<UInt8>(code >> 8), &col_notation_chars[offset]);
                 offset += 2;
                 writeHexByteUppercase(code & 0xFF, &col_notation_chars[offset]);
                 offset += 2;
@@ -403,7 +409,7 @@ void StorageSystemUnicode::fillData(
                 ++offset;
                 col_notation_chars[offset] = '+';
                 ++offset;
-                col_notation_chars[offset] = hexDigitUppercase(code >> 16);
+                col_notation_chars[offset] = hexDigitUppercase(static_cast<unsigned char>(code >> 16));
                 ++offset;
                 writeHexByteUppercase((code >> 8) & 0xFF, &col_notation_chars[offset]);
                 offset += 2;
@@ -420,7 +426,7 @@ void StorageSystemUnicode::fillData(
                 ++offset;
                 col_notation_chars[offset] = '+';
                 ++offset;
-                writeHexByteUppercase(code >> 16, &col_notation_chars[offset]);
+                writeHexByteUppercase(static_cast<UInt8>(code >> 16), &col_notation_chars[offset]);
                 offset += 2;
                 writeHexByteUppercase((code >> 8) & 0xFF, &col_notation_chars[offset]);
                 offset += 2;
