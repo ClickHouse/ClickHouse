@@ -2004,10 +2004,13 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// Some config sections have user-defined names (e.g., graphite rollup rules, HTTP handlers).
     /// We recognize them by known prefixes: exact match or prefix followed by '_' separator.
     /// This prevents typos like "graphite_rollupTypo" from silently passing.
+    /// Do NOT add a blanket `users` prefix here: every legitimate top-level `users_*` key
+    /// (`users`, `users_config`, `users_to_ignore_early_memory_limit_check`, ...) is already
+    /// covered by `known_keys` (from `ServerSettings`) or by `known_complex_sections`,
+    /// and a prefix would silently accept typos like `<users_cnfig>` (typo of `users_config`).
     static const std::vector<String> known_prefixes = {
         "graphite_rollup",
         "http_handlers",
-        "users",
     };
 
     /// Collect top-level config sections that are referenced from elsewhere in the config.

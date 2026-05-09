@@ -11,6 +11,15 @@ node_bad = cluster_bad.add_instance(
 )
 caught_exception = ""
 
+# Negative case: a typo of a real `users_*` key (e.g. `<users_cnfig>` instead of
+# `<users_config>`) must NOT pass through a blanket `users_*` prefix allowlist.
+cluster_users_typo = ClickHouseCluster(__file__, name="users_typo")
+node_users_typo = cluster_users_typo.add_instance(
+    "node_users_typo",
+    main_configs=["configs/config.d/users_typo.xml"],
+)
+caught_users_typo_exception = ""
+
 # Positive case: a custom top-level key referenced via config:// from an
 # HTTP handler must be accepted without setting skip_check_for_incorrect_settings.
 cluster_ok = ClickHouseCluster(__file__, name="ok")
@@ -58,6 +67,21 @@ def start_bad_cluster():
 
 
 @pytest.fixture(scope="module")
+def start_users_typo_cluster():
+    global caught_users_typo_exception
+    try:
+        cluster_users_typo.start()
+    except Exception as e:
+        caught_users_typo_exception = str(e)
+        err_log = os.path.join(node_users_typo.logs_dir, "clickhouse-server.err.log")
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_users_typo_exception += "\n" + f.read()
+    yield
+    cluster_users_typo.shutdown()
+
+
+@pytest.fixture(scope="module")
 def start_ok_cluster():
     cluster_ok.start()
     yield
@@ -81,6 +105,13 @@ def start_reload_cluster():
 def test_unknown_config_option_rejected(start_bad_cluster):
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_exception
     assert "some_completely_unknown_option" in caught_exception
+
+
+def test_users_prefix_typo_rejected(start_users_typo_cluster):
+    # A typo of `users_config` (e.g. `users_cnfig`) must be rejected: the
+    # validator must not blanket-accept any `users_*` top-level key.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_users_typo_exception
+    assert "users_cnfig" in caught_users_typo_exception
 
 
 def test_config_ref_in_http_handler_accepted(start_ok_cluster):
