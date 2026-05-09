@@ -554,8 +554,6 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
 
 void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     if (database && !table)
     {
         ostr

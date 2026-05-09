@@ -73,8 +73,6 @@ void ASTDictionaryAttributeDeclaration::readJSON(const Poco::JSON::Object & json
 
 void ASTDictionaryAttributeDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
 
     if (type)
