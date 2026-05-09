@@ -242,11 +242,39 @@ void RemoteSource::cancel(CancelReason reason) noexcept
     /// Mirrors `ISource::cancel`, but records `reason` between the gate and `onCancel`,
     /// guaranteeing that the value `onCancel` reads was written by the winning thread.
     bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
-    if (already_cancelled)
+    if (!already_cancelled)
+    {
+        cancel_reason.store(reason, std::memory_order_release);
+        onCancel();
+        return;
+    }
+
+    /// A `PartialResult` cancellation is a soft signal that asks `RemoteSource` to drain
+    /// remaining packets via `query_executor->finish`, so trailing `Progress` packets are
+    /// preserved (see `onCancel`). If a hard cancellation (`CancelledByUser`,
+    /// `CancelledByTimeout`, etc.) arrives afterwards, it must take precedence so the user
+    /// is not made to wait for the drain to complete. Upgrade the reason and force a hard
+    /// `query_executor->cancel`. If the drain is already in progress under the executor's
+    /// lock, the hard cancel will short-circuit once the lock is released; if the drain has
+    /// not yet started, this prevents it from running.
+    if (reason == CancelReason::PartialResult)
         return;
 
-    cancel_reason.store(reason, std::memory_order_release);
-    onCancel();
+    auto prev = cancel_reason.load(std::memory_order_acquire);
+    if (prev != CancelReason::PartialResult)
+        return;
+
+    if (!cancel_reason.compare_exchange_strong(prev, reason, std::memory_order_acq_rel))
+        return;
+
+    try
+    {
+        query_executor->cancel();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("RemoteSource"), "Error occurs on cancellation upgrade.");
+    }
 }
 
 void RemoteSource::onCancel() noexcept
