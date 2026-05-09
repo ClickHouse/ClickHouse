@@ -47,21 +47,33 @@ def started_cluster():
 
 
 def get_cgroup_info(instance):
-    """Read the cgroup path from /proc/self/cgroup inside the container."""
-    try:
-        result = instance.exec_in_container(["cat", "/proc/self/cgroup"])
-        return result.strip()
-    except Exception as e:
-        return f"Error reading cgroup: {e}"
+    """Read the cgroup path from /proc/self/cgroup inside the container.
+
+    Raises on infrastructure failures (container errors, permission issues).
+    """
+    # Let exceptions propagate - infrastructure failures should fail the test
+    result = instance.exec_in_container(["cat", "/proc/self/cgroup"])
+    return result.strip()
 
 
 def is_cgroupv2_enabled(instance):
-    """Check if cgroup v2 is enabled by looking for cgroup.controllers file."""
+    """Check if cgroup v2 is enabled by looking for cgroup.controllers file.
+
+    Returns False if the file doesn't exist (expected for cgroup v1).
+    Raises on infrastructure failures (container errors, permission issues).
+    """
     try:
         instance.exec_in_container(["test", "-f", "/sys/fs/cgroup/cgroup.controllers"])
         return True
-    except Exception:
-        return False
+    except Exception as e:
+        # "test -f" exits non-zero if file doesn't exist - this is expected for cgroup v1
+        # But distinguish from real infrastructure errors by checking the error message
+        error_str = str(e).lower()
+        if "non-zero exit" in error_str or "exit code" in error_str or "returned 1" in error_str:
+            # Command executed but file doesn't exist - cgroup v1 environment
+            return False
+        # Real infrastructure error (Docker failure, permission denied, etc.)
+        raise
 
 
 def get_cgroup_path(instance):
