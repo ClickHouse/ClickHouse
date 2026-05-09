@@ -11,9 +11,12 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Common/typeid_cast.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
@@ -524,6 +527,14 @@ void BackupEntriesCollector::gatherTablesMetadata()
     checkIsQueryCancelled();
 
     table_infos.clear();
+
+    /// Collect target tables of refreshable materialized views that use the REPLACE
+    /// refresh strategy (APPEND is excluded) among the tables being backed up.
+    /// We build this snapshot from the storages we've already found, so the decision
+    /// in `shouldBackupTableData` doesn't need to query `DatabaseCatalog` again and
+    /// is scoped to the tables within the backup.
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> rmv_replace_target_ids;
+
     for (const auto & [database_name, database_info] : database_infos)
     {
         std::vector<std::pair<ASTPtr, StoragePtr>> db_tables = findTablesInDatabase(database_name);
@@ -551,7 +562,6 @@ void BackupEntriesCollector::gatherTablesMetadata()
                     / escapeForFileName(table_name_in_backup.table);
             }
 
-            /// Add information to `table_infos`.
             const auto qualified_name = QualifiedTableName{database_name, table_name};
             auto & res_table_info = table_infos[qualified_name];
             res_table_info.database = database_info.database;
@@ -559,26 +569,40 @@ void BackupEntriesCollector::gatherTablesMetadata()
             res_table_info.create_table_query = create_table_query;
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
-            res_table_info.should_backup_data = shouldBackupTableData(qualified_name, storage);
 
-            if (res_table_info.should_backup_data)
+            if (const auto * mv = typeid_cast<const StorageMaterializedView *>(storage.get()))
             {
-                auto it = database_info.tables.find(table_name);
-                if (it != database_info.tables.end())
-                {
-                    const auto & partitions = it->second.partitions;
-                    if (partitions && storage && !storage->supportsBackupPartition())
-                    {
-                        throw Exception(
-                            ErrorCodes::CANNOT_BACKUP_TABLE,
-                            "Table engine {} doesn't support partitions, cannot backup {}",
-                            storage->getName(),
-                            tableNameWithTypeToString(database_name, table_name, false));
-                    }
-                    res_table_info.partitions = partitions;
-                }
+                if (mv->isRefreshable() && !mv->isAppendRefreshStrategy())
+                    rmv_replace_target_ids.insert(mv->getTargetTableId());
             }
         }
+    }
+
+    /// Second pass: now that we have the full snapshot of tables and RMV targets,
+    /// decide whether the data of each table should be backed up and validate
+    /// partition-related constraints.
+    for (auto & [qualified_name, res_table_info] : table_infos)
+    {
+        res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, rmv_replace_target_ids);
+
+        if (!res_table_info.should_backup_data)
+            continue;
+
+        const auto & database_info = database_infos.at(qualified_name.database);
+        auto it = database_info.tables.find(qualified_name.table);
+        if (it == database_info.tables.end())
+            continue;
+
+        const auto & partitions = it->second.partitions;
+        if (partitions && res_table_info.storage && !res_table_info.storage->supportsBackupPartition())
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Table engine {} doesn't support partitions, cannot backup {}",
+                res_table_info.storage->getName(),
+                tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
+        }
+        res_table_info.partitions = partitions;
     }
 }
 
@@ -857,7 +881,10 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
     }
 }
 
-bool BackupEntriesCollector::shouldBackupTableData(const QualifiedTableName & table_name, const StoragePtr & storage) const
+bool BackupEntriesCollector::shouldBackupTableData(
+    const QualifiedTableName & table_name,
+    const StoragePtr & storage,
+    const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const
 {
     if (backup_settings.structure_only)
         return false;
@@ -866,7 +893,7 @@ bool BackupEntriesCollector::shouldBackupTableData(const QualifiedTableName & ta
         return true;
 
     if (!backup_settings.backup_data_from_refreshable_materialized_view_targets
-        && BackupUtils::isTargetForReplaceRefreshableMaterializedView(storage->getStorageID(), context))
+        && rmv_replace_target_ids.contains(storage->getStorageID()))
     {
         LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", table_name.getFullName());
         return false;

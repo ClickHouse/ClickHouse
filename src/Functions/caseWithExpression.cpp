@@ -173,14 +173,33 @@ public:
                 }
             }
 
+            /// Include the ELSE branch in the THEN-side supertype. The dst array we hand to
+            /// `transform` must have an element type wide enough that
+            /// `getLeastSupertype(dst_supertype, default_type)` (which `transform` uses for
+            /// its own return type) equals our `result_type`. Otherwise `transform` and
+            /// `caseWithExpression` disagree on the result column type and `executeNumToNum`
+            /// will hit a `Bad cast` `LOGICAL_ERROR`. Concrete failure: THEN values
+            /// `(UInt16, Int8)` give a THEN-only supertype of `Int32`. With an ELSE branch of
+            /// `Decimal(9, 2)`, `getLeastSupertype(Int32, Decimal(9, 2))` is `Decimal(12, 2)`
+            /// (`Decimal64`), but `getLeastSupertype(UInt16, Int8, Decimal(9, 2))` is
+            /// `Decimal(9, 2)` (`Decimal32`).
+            dst_array_types.push_back(args.back().type);
+
             /// Check whether `transform` can handle these types.
             /// `transform` casts WHEN values to the expression type; if WHEN values are Nullable
             /// but the expression is non-Nullable, the cast will fail on NULLs.
             auto src_supertype = tryGetLeastSupertype(src_array_types);
             auto dst_supertype = tryGetLeastSupertype(dst_array_types);
 
+            /// The `transform` function cannot handle Dynamic/Variant types because its
+            /// hash-based lookup includes the type discriminator, so values with the same
+            /// logical content but different stored subtypes (e.g. Dynamic(UInt8(1)) vs
+            /// Dynamic(Int64(1))) produce different hashes and never match.
+            auto expr_type = removeNullable(args.front().type);
             bool can_use_transform = src_supertype && dst_supertype
-                && !(src_supertype->isNullable() && !args.front().type->isNullable());
+                && !(src_supertype->isNullable() && !args.front().type->isNullable())
+                && !isDynamic(expr_type)
+                && !isVariant(expr_type);
 
             if (can_use_transform)
             {

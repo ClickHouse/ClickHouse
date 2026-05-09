@@ -169,7 +169,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         for (const auto & type : flattened_column.types)
         {
             if (settings.native_format && settings.format_settings && settings.format_settings->native.encode_types_in_binary_format)
-                encodeDataType(type);
+                encodeDataType(type, *stream);
             else
                 writeStringBinary(type->getName(), *stream);
         }
