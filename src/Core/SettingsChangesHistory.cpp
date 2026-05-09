@@ -1184,13 +1184,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
-
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "26.4",
-        {
             {"merge_selector_small_parts_threshold", 0, 10 * 1024 * 1024, "Size threshold for the small-parts batching heuristic in merge selector"},
             {"merge_selector_small_parts_min_count", 0, 0, "Minimum part count to allow merging small fresh parts (0 = disabled)"},
             {"merge_selector_small_parts_max_age", 0, 600, "Age limit for the small-parts merge restriction"},
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "26.4",
+        {
             {"share_nested_offsets", true, true, "When set to false, Array columns with dotted names that share a common prefix are treated as independent columns instead of sharing offset files as part of legacy Nested semantics"},
             {"shared_merge_tree_merge_coordinator_merges_prepare_count", 100, "auto", "Make setting auto: max merge tasks per replica * number of active replicas"},
             {"allow_commit_order_projection", false, false, "New setting"},
