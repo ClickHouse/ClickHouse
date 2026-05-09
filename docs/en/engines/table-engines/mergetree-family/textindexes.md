@@ -85,6 +85,7 @@ CREATE TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | chinese[(granularity)]
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 -- Optional advanced parameters:
@@ -118,6 +119,7 @@ ALTER TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | chinese[(granularity)]
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 -- Optional advanced parameters:
@@ -158,6 +160,9 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/sql-reference/functions/array-functions.md/#array)).
+- `chinese[(granularity)]` segments Chinese text using the embedded `cppjieba` dictionary.
+  The optional `granularity` argument is one of `'coarse_grained'` (default) or `'fine_grained'`;
+  `fine_grained` enumerates overlapping word candidates and is therefore better suited for recall.
 
 All available tokenizers are listed in [system.tokenizers](../../../operations/system-tables/tokenizers.md).
 
