@@ -396,6 +396,8 @@ String normalizeDiskRelativePath(const String & input)
     return result;
 }
 
+}
+
 /// After lexical normalization, returns whether a disk-relative path stays
 /// inside the disk root once symlinks are resolved. This is the symlink-aware
 /// counterpart to `normalizeDiskRelativePath`: the lexical pass blocks `..`
@@ -426,6 +428,9 @@ bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_
     /// containment check on the canonical paths is sufficient and unambiguous.
     return pathStartsWith(resolved, resolved_root);
 }
+
+namespace
+{
 
 /// Same containment check but throws when the path would escape. Use when the
 /// disk is already known to be the one that should serve the request.

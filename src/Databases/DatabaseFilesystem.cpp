@@ -113,9 +113,24 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     /// If run in Local mode, no need for path checking.
     bool check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
     const auto user_files_paths = context_->getUserFilesPaths();
+    auto user_files_volume = check_path ? context_->getUserFilesVolume() : VolumePtr{};
 
-    /// Check access for file before checking its existence.
-    if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_paths))
+    /// When `user_files_policy` is configured with a non-local disk (e.g. `s3_plain`),
+    /// `fs::exists` only checks the local filesystem and would reject valid paths
+    /// that exist on the configured `IDisk`. Resolve the disk + relative path once
+    /// and route existence checks through `IDisk` when a volume is configured.
+    DiskPtr disk;
+    String disk_relative_path;
+    if (user_files_volume)
+    {
+        std::tie(disk, disk_relative_path) = splitUserFilesAbsolutePath(table_path, user_files_volume->getDisks());
+        if (!disk || !isDiskRelativePathInsideRoot(disk, disk_relative_path))
+        {
+            /// Access denied is thrown regardless of 'throw_on_error'
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside user files path");
+        }
+    }
+    else if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_paths))
     {
         /// Access denied is thrown regardless of 'throw_on_error'
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside user files path");
@@ -123,15 +138,16 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
 
     if (!containsGlobs(table_path))
     {
-        /// Check if the corresponding file exists.
-        if (!fs::exists(table_path))
+        const bool exists = disk ? disk->existsFileOrDirectory(disk_relative_path) : fs::exists(table_path);
+        if (!exists)
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
             return false;
         }
 
-        if (!fs::is_regular_file(table_path))
+        const bool is_regular_file = disk ? disk->existsFile(disk_relative_path) : fs::is_regular_file(table_path);
+        if (!is_regular_file)
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", table_path);
@@ -152,12 +168,22 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
             table = it->second;
     }
 
-    /// Invalidate cache if file no longer exists.
-    if (table && !fs::exists(getTablePath(name)))
+    /// Invalidate cache if file no longer exists. Route through `IDisk` when
+    /// `user_files_policy` is configured so the existence probe matches the
+    /// disk that backs the storage.
+    if (table)
     {
-        std::lock_guard lock(mutex);
-        loaded_tables.erase(name);
-        return nullptr;
+        const auto table_path = getTablePath(name);
+        const auto user_files_volume = getContext()->getUserFilesVolume();
+        const bool exists = user_files_volume
+            ? userFilesPathExists(table_path, user_files_volume->getDisks())
+            : fs::exists(table_path);
+        if (!exists)
+        {
+            std::lock_guard lock(mutex);
+            loaded_tables.erase(name);
+            return nullptr;
+        }
     }
 
     return table;

@@ -38,6 +38,12 @@ std::pair<DiskPtr, String> splitUserFilesAbsolutePath(const String & absolute_pa
 /// or directory on one of the disks of the user-files volume.
 bool userFilesPathExists(const String & absolute_path, const Disks & disks);
 
+/// Returns whether the disk-relative path stays inside the disk root after symlink
+/// resolution. For object-storage disks (no user-visible symlinks) this trivially
+/// returns true. Use as a symlink-aware access boundary check before reading or
+/// writing through `IDisk` when the absolute path was supplied by the user.
+bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_path);
+
 class StorageFile final : public IStorage
 {
 public:
