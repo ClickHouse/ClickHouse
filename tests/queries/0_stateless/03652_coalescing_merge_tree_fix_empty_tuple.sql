@@ -14,6 +14,21 @@ SELECT c0 FROM t0 FINAL;
 
 DROP TABLE IF EXISTS t0;
 
+-- With allow_tuple_element_aggregation = true: Tuple is flattened, Nullable sub-column is coalesced.
+CREATE TABLE t0 (c0 Tuple(a Int32, b Nullable(Int32)), c1 Int32) ENGINE = SummingMergeTree() ORDER BY c1 SETTINGS allow_tuple_element_aggregation = true;
+INSERT INTO t0 VALUES ((1,2), 0);
+INSERT INTO t0 VALUES ((3,4), 0);
+SELECT c0 FROM t0 FINAL;
+
+DROP TABLE IF EXISTS t0;
+
+CREATE TABLE t0 (c0 Tuple(a Int32, b Nullable(Int32)), c1 Int32) ENGINE = CoalescingMergeTree() ORDER BY c1 SETTINGS allow_tuple_element_aggregation = true;
+INSERT INTO t0 VALUES ((1,2), 0);
+INSERT INTO t0 VALUES ((3,4), 0);
+SELECT c0 FROM t0 FINAL;
+
+DROP TABLE IF EXISTS t0;
+
 CREATE TABLE t0 (c0 Array(Nullable(Int32)), c1 Int32) ENGINE = SummingMergeTree() ORDER BY c1;
 INSERT INTO t0 VALUES ([1,2], 0);
 INSERT INTO t0 VALUES ([3,4], 0);

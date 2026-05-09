@@ -8,8 +8,7 @@ CREATE TABLE test_table
     C Tuple(Nullable(String))
 )
 ENGINE = CoalescingMergeTree()
-ORDER BY key
-SETTINGS allow_tuple_element_aggregation = false;
+ORDER BY key;
 
 SET optimize_on_insert = 0;
 

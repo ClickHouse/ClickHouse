@@ -6,7 +6,7 @@ CREATE TABLE tab
     c0 Tuple(c1 String, c2 String),
     INDEX i0 c0.c1 TYPE text(tokenizer = splitByString)
 )
-ENGINE = SummingMergeTree() ORDER BY (id) SETTINGS allow_tuple_element_aggregation = false;
+ENGINE = SummingMergeTree() ORDER BY (id);
 
 INSERT INTO TABLE tab (id, c0) VALUES (1, ('a aa aaa', 'b bb bbb'));
 INSERT INTO TABLE tab (id, c0) VALUES (1, ('c cc ccc', 'd dd ddd'));
