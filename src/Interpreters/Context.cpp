@@ -326,6 +326,7 @@ namespace Setting
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsUInt64 page_cache_block_size;
     extern const SettingsUInt64 page_cache_lookahead_blocks;
+    extern const SettingsUInt64 page_cache_max_coalesced_bytes;
     extern const SettingsInt64 read_priority;
     extern const SettingsString remote_filesystem_read_method;
     extern const SettingsBool remote_filesystem_read_prefetch;
@@ -1253,6 +1254,8 @@ ContextData::ContextData(const ContextData &o) :
     buffer_context(o.buffer_context),
     is_internal_query(o.is_internal_query),
     is_background_operation(o.is_background_operation),
+    is_view_inner_query(o.is_view_inner_query),
+    positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
@@ -7639,6 +7642,7 @@ ReadSettings Context::getReadSettings() const
     res.page_cache_inject_eviction = settings_ref[Setting::page_cache_inject_eviction];
     res.page_cache_block_size = settings_ref[Setting::page_cache_block_size];
     res.page_cache_lookahead_blocks = settings_ref[Setting::page_cache_lookahead_blocks];
+    res.page_cache_max_coalesced_bytes = settings_ref[Setting::page_cache_max_coalesced_bytes];
 
     res.remote_read_min_bytes_for_seek = getSettingsRef()[Setting::remote_read_min_bytes_for_seek];
 
