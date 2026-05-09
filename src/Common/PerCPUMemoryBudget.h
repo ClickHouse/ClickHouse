@@ -48,23 +48,28 @@
 namespace DB::PerCPUMemoryBudget
 {
 
-constexpr Int64 SLICE = 4 * 1024 * 1024;
-constexpr int   SLICE_LOG2 = 22;
-static_assert(SLICE == (Int64{1} << SLICE_LOG2));
+constexpr UInt64 SLICE = 4 * 1024 * 1024;
+constexpr int    SLICE_LOG2 = 22;
+static_assert(SLICE == (UInt64{1} << SLICE_LOG2));
 
 /// Per-thread state. Caller stores this in TLS (or, eventually, in
 /// `ThreadStatus`) and passes it to every charge call.
+///
+/// Counters are unsigned: signed overflow would be UB and we don't want the
+/// optimiser to assume away the wrap. Unsigned wraps cleanly, and the
+/// crossing check below uses `!=` on the SLICE-shifted bucket so it stays
+/// correct across the (~29-year-at-10GB/s/CPU) wrap point.
 struct PerCPUMemoryBudgetState
 {
-    int   cpu = -1;     /// CPU we last successfully charged on; -1 = uninitialised
-    Int64 nallocs = 0;  /// last-seen value of `nallocs[cpu]` for this thread
-    Int64 nfrees  = 0;  /// last-seen value of `nfrees[cpu]`
+    int    cpu = -1;     /// CPU we last successfully charged on; -1 = uninitialised
+    UInt64 nallocs = 0;  /// last-seen value of `nallocs[cpu]` for this thread
+    UInt64 nfrees  = 0;  /// last-seen value of `nfrees[cpu]`
 };
 
 struct alignas(CH_CACHE_LINE_SIZE) Slot
 {
-    Int64 nallocs;
-    Int64 nfrees;
+    UInt64 nallocs;
+    UInt64 nfrees;
 };
 
 /// Static-init pipeline: declared in source order, initialised in source
@@ -123,7 +128,7 @@ namespace detail
 {
 
 template <bool alloc>
-ALWAYS_INLINE Int64 * counterFor(int cpu)
+ALWAYS_INLINE UInt64 * counterFor(int cpu)
 {
     if constexpr (alloc) return &slots[cpu].nallocs;
     else                 return &slots[cpu].nfrees;
@@ -143,7 +148,7 @@ template <bool alloc>
 ALWAYS_INLINE bool charge(Int64 size, PerCPUMemoryBudgetState & state)
 {
     int cpu;
-    Int64 next;
+    UInt64 next;
 
 #if USE_LIBRSEQ
     if (likely(rseq_ready))
@@ -152,11 +157,11 @@ ALWAYS_INLINE bool charge(Int64 size, PerCPUMemoryBudgetState & state)
         if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(slot_count)))
             return false;
 
-        Int64 * counter = counterFor<alloc>(cpu);
+        UInt64 * counter = counterFor<alloc>(cpu);
         while (true)
         {
-            Int64 current = __atomic_load_n(counter, __ATOMIC_RELAXED);
-            next = current + size;
+            UInt64 current = __atomic_load_n(counter, __ATOMIC_RELAXED);
+            next = current + static_cast<UInt64>(size);
             int r = rseq_load_cbne_store__ptr(
                 RSEQ_MO_RELAXED,
                 RSEQ_PERCPU_CPU_ID,
@@ -183,7 +188,7 @@ ALWAYS_INLINE bool charge(Int64 size, PerCPUMemoryBudgetState & state)
 #endif
         if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(slot_count)))
             return false;
-        next = __atomic_add_fetch(counterFor<alloc>(cpu), size, __ATOMIC_RELAXED);
+        next = __atomic_add_fetch(counterFor<alloc>(cpu), static_cast<UInt64>(size), __ATOMIC_RELAXED);
     }
 
     /// Migration detection happens *after* a successful charge — `cpu` is the
@@ -191,15 +196,18 @@ ALWAYS_INLINE bool charge(Int64 size, PerCPUMemoryBudgetState & state)
     bool migrated = (state.cpu != cpu);
     state.cpu = cpu;
 
+    /// `!=` (not `>`) on the SLICE-shifted bucket: monotone counters only
+    /// ever advance or wrap, so any change of bucket is a crossing — and
+    /// using `!=` makes the check correct across the unsigned wrap point.
     if constexpr (alloc)
     {
-        bool cross = (next >> SLICE_LOG2) > (state.nallocs >> SLICE_LOG2);
+        bool cross = (next >> SLICE_LOG2) != (state.nallocs >> SLICE_LOG2);
         state.nallocs = next;
         return migrated || cross;
     }
     else
     {
-        bool cross = (next >> SLICE_LOG2) > (state.nfrees >> SLICE_LOG2);
+        bool cross = (next >> SLICE_LOG2) != (state.nfrees >> SLICE_LOG2);
         state.nfrees = next;
         return migrated || cross;
     }

@@ -61,8 +61,8 @@ TEST(PerCPUMemoryBudget, AllocCrossingDetection)
     /// meaningful baseline for the boundary-distance arithmetic below.
     std::ignore = PerCPUMemoryBudget::chargeAlloc(0, state);
 
-    constexpr Int64 SLICE = PerCPUMemoryBudget::SLICE;
-    Int64 to_boundary = SLICE - (state.nallocs & (SLICE - 1));
+    constexpr UInt64 SLICE = PerCPUMemoryBudget::SLICE;
+    Int64 to_boundary = static_cast<Int64>(SLICE - (state.nallocs & (SLICE - 1)));
 
     EXPECT_FALSE(PerCPUMemoryBudget::chargeAlloc(to_boundary - 1, state));
     EXPECT_TRUE (PerCPUMemoryBudget::chargeAlloc(2, state));
@@ -82,8 +82,8 @@ TEST(PerCPUMemoryBudget, FreeCrossingDetection)
 
     std::ignore = PerCPUMemoryBudget::chargeFree(0, state);
 
-    constexpr Int64 SLICE = PerCPUMemoryBudget::SLICE;
-    Int64 to_boundary = SLICE - (state.nfrees & (SLICE - 1));
+    constexpr UInt64 SLICE = PerCPUMemoryBudget::SLICE;
+    Int64 to_boundary = static_cast<Int64>(SLICE - (state.nfrees & (SLICE - 1)));
 
     EXPECT_FALSE(PerCPUMemoryBudget::chargeFree(to_boundary - 1, state));
     EXPECT_TRUE (PerCPUMemoryBudget::chargeFree(2, state));
@@ -202,7 +202,7 @@ TEST(PerCPUMemoryBudget, ConcurrentAllocFreeAcrossThreadsDoesNotDrift)
     for (auto & t : threads)
         t.join();
 
-    constexpr Int64 slack = static_cast<Int64>(num_threads) * 4 * PerCPUMemoryBudget::SLICE;
+    constexpr Int64 slack = static_cast<Int64>(num_threads * 4 * PerCPUMemoryBudget::SLICE);
     const Int64 drift = total_memory_tracker.get() - before;
     EXPECT_GE(drift, -slack);
     EXPECT_LE(drift, slack);
