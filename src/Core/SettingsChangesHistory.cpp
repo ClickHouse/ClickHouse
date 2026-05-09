@@ -117,7 +117,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"is_spatial_predicate", false, false, "New setting to mark a WebAssembly UDF as a spatial predicate for pruning."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
         });
-        addSettingsChanges(settings_changes_history, "26.4",
+        addSettingsChanges(settings_changes_history, "26.5",
         {
             {"max_bytes_before_external_join", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."},
             {"allow_iceberg_remove_orphan_files", false, false, "New setting to gate Iceberg orphan file removal"},
@@ -1238,7 +1238,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
             {"concurrent_part_removal_threshold_for_remote_disk", 100, 16, "New setting. Lower threshold to enter the concurrent part removal path when any part being removed is on a remote disk, where each removal is typically one network round-trip. The old value (100) matches the legacy `concurrent_part_removal_threshold` default, so older `compatibility` modes preserve the previous behavior."},
         });
-        addSettingsChanges(merge_tree_settings_changes_history, "26.4",
+        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
             {"share_nested_offsets", true, true, "When set to false, Array columns with dotted names that share a common prefix are treated as independent columns instead of sharing offset files as part of legacy Nested semantics"},
             {"shared_merge_tree_merge_coordinator_merges_prepare_count", 100, "auto", "Make setting auto: max merge tasks per replica * number of active replicas"},
