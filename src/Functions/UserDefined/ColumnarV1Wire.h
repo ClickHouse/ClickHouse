@@ -607,6 +607,10 @@ inline MutableColumnPtr readColumnarOutput(
         const DataTypePtr & base_type = (raw_type == COL_NULL_FIXED8)
             ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
             : result_type;
+        if (base_type->getSizeOfValueInMemory() != 1)
+            throw Exception(ErrorCodes::WASM_ERROR,
+                "COLUMNAR_V1: COL_FIXED8 wire type requires 1-byte nested type, got {}",
+                base_type->getName());
         auto col8 = base_type->createColumn();
         col8->insertManyDefaults(num_rows);
         std::memcpy(const_cast<char *>(col8->getRawData().data()),
@@ -630,6 +634,10 @@ inline MutableColumnPtr readColumnarOutput(
         const DataTypePtr & base_type = (raw_type == COL_NULL_FIXED32)
             ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
             : result_type;
+        if (base_type->getSizeOfValueInMemory() != 4)
+            throw Exception(ErrorCodes::WASM_ERROR,
+                "COLUMNAR_V1: COL_FIXED32 wire type requires 4-byte nested type, got {}",
+                base_type->getName());
         auto col32 = base_type->createColumn();
         col32->insertManyDefaults(num_rows);
         std::memcpy(const_cast<char *>(col32->getRawData().data()),
@@ -652,6 +660,10 @@ inline MutableColumnPtr readColumnarOutput(
         const DataTypePtr & base_type = (raw_type == COL_NULL_FIXED64)
             ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
             : result_type;
+        if (base_type->getSizeOfValueInMemory() != 8)
+            throw Exception(ErrorCodes::WASM_ERROR,
+                "COLUMNAR_V1: COL_FIXED64 wire type requires 8-byte nested type, got {}",
+                base_type->getName());
         auto col64 = base_type->createColumn();
         col64->insertManyDefaults(num_rows);
         std::memcpy(const_cast<char *>(col64->getRawData().data()),
