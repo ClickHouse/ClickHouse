@@ -118,7 +118,8 @@ bool FunctionFactory::has(const std::string & name) const
 
 FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
-    ContextPtr context) const
+    ContextPtr context,
+    bool track_in_query_log) const
 {
     String name = getAliasToOrName(name_param);
     FunctionOverloadResolverPtr res;
@@ -140,7 +141,7 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     if (CurrentThread::isInitialized())
     {
         auto query_context = CurrentThread::get().tryGetQueryContext();
-        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+        if (track_in_query_log && query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
 
         /// There is a legacy toTime function that has the same name as toTime function for Time data type, so we need to
@@ -158,9 +159,10 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 
 FunctionOverloadResolverPtr FunctionFactory::tryGet(
     const std::string & name,
-    ContextPtr context) const
+    ContextPtr context,
+    bool track_in_query_log) const
 {
-    auto impl = tryGetImpl(name, context);
+    auto impl = tryGetImpl(name, context, track_in_query_log);
     return impl ? std::move(impl) : nullptr;
 }
 

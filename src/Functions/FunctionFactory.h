@@ -45,11 +45,15 @@ public:
     FunctionOverloadResolverPtr get(const std::string & name, ContextPtr context) const;
 
     /// Returns nullptr if not found.
-    FunctionOverloadResolverPtr tryGet(const std::string & name, ContextPtr context) const;
+    /// `track_in_query_log` controls whether the resolved function is added to
+    /// query_log.used_functions for the current query. Set it to false on
+    /// introspection paths (e.g. reading system.functions) that should not
+    /// pollute query factory accounting.
+    FunctionOverloadResolverPtr tryGet(const std::string & name, ContextPtr context, bool track_in_query_log = true) const;
 
     /// The same methods to get developer interface implementation.
     FunctionOverloadResolverPtr getImpl(const std::string & name, ContextPtr context) const;
-    FunctionOverloadResolverPtr tryGetImpl(const std::string & name, ContextPtr context) const;
+    FunctionOverloadResolverPtr tryGetImpl(const std::string & name, ContextPtr context, bool track_in_query_log = true) const;
 
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.

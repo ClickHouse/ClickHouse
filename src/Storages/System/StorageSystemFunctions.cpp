@@ -142,7 +142,9 @@ namespace
         ExtraInfo info;
         try
         {
-            auto resolver = factory.tryGet(name, context);
+            /// Pass track_in_query_log=false: introspection of system.functions must not
+            /// pollute query_log.used_functions for the current query.
+            auto resolver = factory.tryGet(name, context, /* track_in_query_log */ false);
             if (!resolver)
                 return info;
 
