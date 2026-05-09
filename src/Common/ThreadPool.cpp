@@ -531,10 +531,12 @@ void ThreadPoolImpl<Thread>::wait()
     ProfileEvents::increment(
         std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
         watch.elapsedMicroseconds());
-    /// Defensive wake-up: if some queued job somehow has no notified thread,
-    /// rouse all idle workers so they re-check the queue. With LIFO scheduling
-    /// done correctly, this is redundant, but cheap insurance against deadlock.
-    wakeUpAllIdleThreadsNoLock();
+    /// Do NOT wake idle threads here. The LIFO scheduling guarantees that every
+    /// queued job has an associated wake-up (either a notified thread popped from
+    /// the idle stack, or a newly-created thread that will see the job in its
+    /// first worker-loop iteration, or a busy thread that will see the queued
+    /// job when it finishes its current one). Waking all idle threads would
+    /// destroy LIFO ordering — the whole point of this pool design.
     job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
 
     if (first_exception)
@@ -766,57 +768,27 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             }
 
             /// LIFO idle thread scheduling: push this thread onto the idle stack
-            /// and wait on its own per-thread CV. The scheduler pops the most
-            /// recently idle thread, sets its `idle_wakeup_flag`, and notifies
-            /// only that thread's CV. This concentrates work on fewer OS threads
-            /// (improving cache locality and letting jemalloc release per-thread
-            /// caches of unused threads) without the thundering-herd cost of a
-            /// shared CV with `notify_all`.
+            /// and wait on its own per-thread CV until selected. The scheduler pops
+            /// the most recently idle thread from the stack, sets its
+            /// `idle_wakeup_flag`, and notifies only that thread's CV. This
+            /// concentrates work on fewer OS threads (improving cache locality and
+            /// letting jemalloc release per-thread caches of unused threads).
             ///
-            /// `wakeUpAllIdleThreadsNoLock` is used for shutdown, limit changes,
-            /// and `wait()` — it sets the flag and notifies every idle thread's CV.
-            /// `!jobs.empty()` is kept in the predicate as a safety net for the
-            /// rare case of a queued job with no associated wake-up (which should
-            /// not occur with the LIFO logic above, but a queued-job-and-no-wake
-            /// state would deadlock without it — see
-            /// `SchedulerWorkloadResourceManager.DropNotEmptyQueueLong`).
+            /// `wakeUpAllIdleThreadsNoLock` is used for shutdown and limit changes;
+            /// it sets the flag and notifies every idle thread's CV, then clears
+            /// the stack. The wait predicate checks only `idle_wakeup_flag`, so
+            /// spurious wakeups put the thread right back to sleep without
+            /// disrupting LIFO discipline.
             while (parent_pool.jobs.empty()
                 && !parent_pool.shutdown
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
                 {
                     ALLOW_ALLOCATIONS_IN_SCOPE;
-                    idle_stack_index = static_cast<ssize_t>(parent_pool.idle_thread_stack.size());
                     parent_pool.idle_thread_stack.push_back(this);
                 }
                 idle_wakeup_flag = false;
-
-                cv.wait(lock, [this]
-                {
-                    return idle_wakeup_flag
-                        || !parent_pool.jobs.empty()
-                        || parent_pool.shutdown
-                        || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
-                });
-
-                /// If we were not the LIFO-selected thread, remove ourselves from the idle stack.
-                /// Use O(1) swap-and-pop removal via the tracked index.
-                if (!idle_wakeup_flag && idle_stack_index >= 0)
-                {
-                    auto & stack = parent_pool.idle_thread_stack;
-                    size_t idx = static_cast<size_t>(idle_stack_index);
-                    if (idx < stack.size())
-                    {
-                        if (idx != stack.size() - 1)
-                        {
-                            stack[idx] = stack.back();
-                            stack[idx]->idle_stack_index = static_cast<ssize_t>(idx);
-                        }
-                        stack.pop_back();
-                    }
-                    idle_stack_index = -1;
-                }
-                idle_wakeup_flag = false;
+                cv.wait(lock, [this] { return idle_wakeup_flag; });
             }
 
             if (parent_pool.jobs.empty() || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
