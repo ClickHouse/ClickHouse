@@ -114,7 +114,7 @@ bool tryExtractConstBbox(
     /// WKB-encoded String (e.g., constant from st_geomfromgeojson / st_geomfromtext).
     if (const auto * str_col = typeid_cast<const DB::ColumnString *>(raw))
     {
-        if (str_col->size() == 0) return false;
+        if (str_col->empty()) return false;
         return tryExtractWkbBbox(str_col->getDataAt(0), xmin, ymin, xmax, ymax);
     }
 
@@ -235,8 +235,6 @@ bool rowGroupFailsSpatialFilters(
     /// All filters checked are disjoint (or no filters had bbox stats).
     /// Prune only if we had at least one filter with bbox stats.
     return !valid_filters.empty();
-
-    return false;
 }
 
 std::shared_ptr<DB::KeyCondition> buildBboxKeyCondition(
