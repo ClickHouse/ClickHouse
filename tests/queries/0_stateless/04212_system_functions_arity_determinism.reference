@@ -1,0 +1,27 @@
+-- columns exist with the expected types
+accepts_lambda	Nullable(UInt8)
+is_deterministic	Nullable(UInt8)
+max_arguments	Nullable(UInt64)
+min_arguments	Nullable(UInt64)
+-- non-variadic deterministic function: arity is fixed and equal min == max
+plus	2	2	1	0
+-- non-variadic non-deterministic function with zero arguments
+today	0	0	0	0
+-- variadic deterministic function: min/max are NULL, is_deterministic is 1
+concat	\N	\N	1	0
+-- variadic non-deterministic function: all metadata still reported
+rand	\N	\N	0	0
+-- higher-order array functions are flagged
+arrayFilter	1
+arrayFold	1
+arrayMap	1
+mapApply	1
+mapFilter	1
+-- non-higher-order functions are not flagged
+concat	0
+length	0
+plus	0
+-- aggregate functions: arity and determinism are NULL by design
+0
+-- SQL UDFs: arity is countable from the lambda parameter list
+test_udf_04212	2	2	\N	\N

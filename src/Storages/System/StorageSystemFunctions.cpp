@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -8,6 +9,8 @@
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -31,6 +34,16 @@ enum class FunctionOrigin : int8_t
 
 namespace
 {
+    /// Per-function metadata that cannot be obtained without resolving / parsing the function.
+    /// `nullopt` means "unknown" and is reported as NULL in the result column.
+    struct ExtraInfo
+    {
+        std::optional<UInt64> min_arguments;
+        std::optional<UInt64> max_arguments;
+        std::optional<UInt8> is_deterministic;
+        std::optional<UInt8> accepts_lambda;
+    };
+
     template <typename Factory>
     void fillRow(
         MutableColumns & res_columns,
@@ -38,7 +51,8 @@ namespace
         UInt64 is_aggregate,
         const String & create_query,
         FunctionOrigin function_origin,
-        const Factory & factory)
+        const Factory & factory,
+        const ExtraInfo & extra)
     {
         res_columns[0]->insert(name);
         res_columns[1]->insert(is_aggregate);
@@ -97,6 +111,93 @@ namespace
             res_columns[12]->insertDefault();
             res_columns[13]->insertDefault();
         }
+
+        if (extra.min_arguments)
+            res_columns[14]->insert(*extra.min_arguments);
+        else
+            res_columns[14]->insertDefault();
+
+        if (extra.max_arguments)
+            res_columns[15]->insert(*extra.max_arguments);
+        else
+            res_columns[15]->insertDefault();
+
+        if (extra.is_deterministic)
+            res_columns[16]->insert(*extra.is_deterministic);
+        else
+            res_columns[16]->insertDefault();
+
+        if (extra.accepts_lambda)
+            res_columns[17]->insert(*extra.accepts_lambda);
+        else
+            res_columns[17]->insertDefault();
+    }
+
+    /// Resolve an ordinary function and read static metadata from its overload resolver.
+    /// Anything that throws or returns no resolver is reported as NULL — the function is
+    /// genuinely unavailable to introspection without a richer query context.
+    ExtraInfo getOrdinaryFunctionExtraInfo(const FunctionFactory & factory, const String & name, ContextPtr context)
+    {
+        ExtraInfo info;
+        try
+        {
+            auto resolver = factory.tryGet(name, context);
+            if (!resolver)
+                return info;
+
+            info.is_deterministic = resolver->isDeterministic() ? UInt8{1} : UInt8{0};
+            info.accepts_lambda = resolver->isHigherOrder() ? UInt8{1} : UInt8{0};
+
+            if (!resolver->isVariadic())
+            {
+                const auto n = static_cast<UInt64>(resolver->getNumberOfArguments());
+                info.min_arguments = n;
+                info.max_arguments = n;
+            }
+            /// Variadic functions: the resolver does not expose a static [min, max] range,
+            /// so leave both as NULL rather than guessing.
+        }
+        catch (...)
+        {
+            /// Some functions need a fully-formed query context to construct (e.g. those that
+            /// inspect settings at build time). Reporting NULL is the honest answer here.
+        }
+        return info;
+    }
+
+    /// SQL UDFs: arity is the size of the lambda's parameter list. Determinism cannot be
+    /// inferred from the body in general, so leave it NULL.
+    ///
+    /// AST shape (mirrors UserDefinedSQLFunctionVisitor): function_core is the lambda
+    /// ASTFunction; its first child is an ASTExpressionList with two entries — a `tuple`
+    /// ASTFunction holding the parameter identifiers, and the body. The parameter count
+    /// lives one more level down inside the tuple's arguments.
+    ExtraInfo getSQLUserDefinedFunctionExtraInfo(const ASTPtr & ast)
+    {
+        ExtraInfo info;
+        if (!ast)
+            return info;
+
+        const auto * create = ast->as<ASTCreateSQLFunctionQuery>();
+        if (!create || !create->function_core || create->function_core->children.empty())
+            return info;
+
+        const auto & lambda_args = create->function_core->children.at(0);
+        if (!lambda_args || lambda_args->children.empty())
+            return info;
+
+        const auto & param_tuple = lambda_args->children.at(0);
+        if (!param_tuple || param_tuple->children.empty())
+            return info;
+
+        const auto * params = param_tuple->children.at(0)->as<ASTExpressionList>();
+        if (!params)
+            return info;
+
+        const auto n = static_cast<UInt64>(params->children.size());
+        info.min_arguments = n;
+        info.max_arguments = n;
+        return info;
     }
 }
 
@@ -127,7 +228,15 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"returned_value", std::make_shared<DataTypeString>(), "What does the function return."},
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
         {"introduced_in", std::make_shared<DataTypeString>(), "ClickHouse version in which the function was first introduced."},
-        {"categories", std::make_shared<DataTypeString>(), "The category of the function."}
+        {"categories", std::make_shared<DataTypeString>(), "The category of the function."},
+        {"min_arguments", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "The minimum number of arguments the function accepts. NULL when unknown (e.g. variadic functions, aggregate functions, executable user-defined functions)."},
+        {"max_arguments", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "The maximum number of arguments the function accepts. NULL when unbounded (variadic) or unknown."},
+        {"is_deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+            "Whether the function returns the same result for the same arguments. NULL when unknown (e.g. aggregate or user-defined functions)."},
+        {"accepts_lambda", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+            "Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown."}
     };
 }
 
@@ -137,14 +246,17 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & function_name : function_names)
     {
-        fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory);
+        const ExtraInfo extra = getOrdinaryFunctionExtraInfo(functions_factory, function_name, context);
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory, extra);
     }
 
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : aggregate_function_names)
     {
-        fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory);
+        /// Aggregate functions need argument types and parameters to instantiate, so static
+        /// arity / determinism are not available. Report NULL rather than guess.
+        fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory, ExtraInfo{});
     }
 
     const auto & user_defined_sql_functions_factory = UserDefinedSQLFunctionFactory::instance();
@@ -166,14 +278,15 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         String create_query;
         if (ast)
             create_query = format({context, *ast});
-        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
+        const ExtraInfo extra = getSQLUserDefinedFunctionExtraInfo(ast);
+        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory, extra);
     }
 
     const auto & user_defined_executable_functions_factory = UserDefinedExecutableFunctionFactory::instance();
     const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context); /// NOLINT(readability-static-accessed-through-instance)
     for (const auto & function_name : user_defined_executable_functions_names)
     {
-        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory, ExtraInfo{});
     }
 }
 
