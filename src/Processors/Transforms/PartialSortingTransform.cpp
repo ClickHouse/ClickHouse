@@ -23,47 +23,6 @@ ColumnRawPtrs extractRawColumns(const Block & block, const SortDescriptionWithPo
     return result;
 }
 
-size_t getFilterMask(const ColumnRawPtrs & raw_block_columns, const Columns & threshold_columns,
-                     const SortDescription & description, size_t num_rows, IColumn::Filter & filter,
-                     PaddedPODArray<UInt64> & rows_to_compare, PaddedPODArray<Int8> & compare_results)
-{
-    filter.resize(num_rows);
-    compare_results.resize(num_rows);
-
-    if (description.size() == 1)
-    {
-        /// Fast path for single column
-        raw_block_columns[0]->compareColumn(*threshold_columns[0], 0, nullptr, compare_results,
-                              description[0].direction, description[0].nulls_direction);
-    }
-    else
-    {
-        rows_to_compare.resize(num_rows);
-        iota(rows_to_compare.data(), num_rows, UInt64(0));
-
-        size_t size = description.size();
-        for (size_t i = 0; i < size; ++i)
-        {
-            raw_block_columns[i]->compareColumn(*threshold_columns[i], 0, &rows_to_compare, compare_results,
-                                  description[i].direction, description[i].nulls_direction);
-
-            if (rows_to_compare.empty())
-                break;
-        }
-    }
-
-    size_t result_size_hint = 0;
-
-    for (size_t i = 0; i < num_rows; ++i)
-    {
-        /// Leave only rows that are less then row from rhs.
-        filter[i] = compare_results[i] < 0;
-        result_size_hint += filter[i];
-    }
-
-    return result_size_hint;
-}
-
 bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_block_index, const Columns & threshold_columns, const SortDescription & sort_description)
 {
     assert(raw_block_columns.size() == threshold_columns.size());
