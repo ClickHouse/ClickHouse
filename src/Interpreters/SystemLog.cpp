@@ -103,6 +103,20 @@ namespace ActionLocks
 namespace
 {
 
+/// Flush buffered text-log entries from the application's async logger, if any.
+///
+/// `BaseDaemon::flushTextLogs` is what `clickhouse-server` uses to drain its async log
+/// channels into `system.text_log`. `clickhouse-local`/`clickhouse-client` derive from
+/// `ClientApplicationBase` rather than `BaseDaemon`, so `BaseDaemon::instance()` would
+/// throw `std::bad_cast`; that exception used to escape `SystemLogs::flushAndShutdown`,
+/// leaving the saving threads alive while `~SystemLogQueue` ran `pthread_cond_destroy`,
+/// which hangs while there are waiters.
+void flushAsyncTextLogsIfPossible()
+{
+    if (auto base_daemon = BaseDaemon::tryGetInstance())
+        base_daemon->get().flushTextLogs();
+}
+
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
@@ -445,7 +459,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
     if (names.empty())
     {
         if (text_log)
-            BaseDaemon::instance().flushTextLogs();
+            flushAsyncTextLogsIfPossible();
 
         for (auto * log : getAllLogs())
         {
@@ -491,7 +505,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
             auto * log = it->second;
 
             if (log == text_log.get())
-                BaseDaemon::instance().flushTextLogs();
+                flushAsyncTextLogsIfPossible();
 
             log->flushBufferToLog(std::chrono::system_clock::now());
 
@@ -588,6 +602,12 @@ SystemLog<LogElement>::SystemLog(
 {
     create_query = getCreateTableQuery()->formatWithSecretsOneLine();
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
+}
+
+template <typename LogElement>
+SystemLog<LogElement>::~SystemLog()
+{
+    Base::stopFlushThread();
 }
 
 template <typename LogElement>
@@ -890,6 +910,22 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
+
+    /// The default engine string wraps `PARTITION BY` / `ORDER BY` / `PRIMARY KEY` /
+    /// `SAMPLE BY` arguments in artificial parentheses so the parser accepts both
+    /// single-expression and tuple forms. Clear the `parenthesized` flag so the formatter
+    /// does not emit those artificial wrapping parens in `system.tables.engine_full`.
+    if (auto * storage = storage_with_comment.storage->as<ASTStorage>())
+    {
+        if (storage->partition_by)
+            storage->partition_by->setParenthesized(false);
+        if (storage->order_by)
+            storage->order_by->setParenthesized(false);
+        if (storage->primary_key)
+            storage->primary_key->setParenthesized(false);
+        if (storage->sample_by)
+            storage->sample_by->setParenthesized(false);
+    }
 
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);
