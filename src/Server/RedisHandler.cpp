@@ -1,12 +1,14 @@
 #include <Server/RedisHandler.h>
 
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBuffer.h>
@@ -34,6 +36,67 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+}
+
+namespace
+{
+
+bool parseRedisUInt64Key(const String & key, UInt64 & value)
+{
+    if (key.empty() || key.front() < '0' || key.front() > '9')
+        return false;
+
+    const char * begin = key.data();
+    const char * end = key.data() + key.size();
+    auto result = std::from_chars(begin, end, value);
+    return result.ec == std::errc{} && result.ptr == end;
+}
+
+bool buildKeyColumns(
+    TypeIndex key_type,
+    const String & primary_key_name,
+    const std::vector<String> & keys_to_get,
+    ColumnsWithTypeAndName & keys,
+    String & error)
+{
+    if (key_type == TypeIndex::String)
+    {
+        auto key_column = ColumnString::create();
+        for (const auto & key : keys_to_get)
+            key_column->insertData(key.data(), key.size());
+
+        keys.push_back({
+            std::move(key_column),
+            std::make_shared<DataTypeString>(),
+            primary_key_name});
+        return true;
+    }
+
+    if (key_type == TypeIndex::UInt64)
+    {
+        auto key_column = ColumnUInt64::create();
+        for (const auto & key : keys_to_get)
+        {
+            UInt64 parsed_key = 0;
+            if (!parseRedisUInt64Key(key, parsed_key))
+            {
+                error = "ERR invalid UInt64 key";
+                return false;
+            }
+            key_column->insertValue(parsed_key);
+        }
+
+        keys.push_back({
+            std::move(key_column),
+            std::make_shared<DataTypeUInt64>(),
+            primary_key_name});
+        return true;
+    }
+
+    error = "ERR only String or UInt64 key column is supported";
+    return false;
+}
+
 }
 
 RedisHandler::RedisHandler(
@@ -111,12 +174,7 @@ void RedisHandler::getKey(WriteBuffer & out, const String & key)
         Block sample_block = key_value->getSampleBlock(required_columns);
         size_t key_pos = sample_block.getPositionByName(primary_keys.front());
         size_t value_pos = sample_block.getPositionByName(selected_target.default_column);
-
-        if (sample_block.getByPosition(key_pos).type->getTypeId() != TypeIndex::String)
-        {
-            RedisProtocol::writeError(out, "ERR only String key column is supported");
-            return;
-        }
+        const auto key_type = sample_block.getByPosition(key_pos).type->getTypeId();
 
         if (sample_block.getByPosition(value_pos).type->getTypeId() != TypeIndex::String)
         {
@@ -124,11 +182,13 @@ void RedisHandler::getKey(WriteBuffer & out, const String & key)
             return;
         }
 
-        auto key_column = ColumnString::create();
-        key_column->insertData(key.data(), key.size());
-
         ColumnsWithTypeAndName keys;
-        keys.push_back({std::move(key_column), std::make_shared<DataTypeString>(), primary_keys.front()});
+        String key_error;
+        if (!buildKeyColumns(key_type, primary_keys.front(), {key}, keys, key_error))
+        {
+            RedisProtocol::writeError(out, key_error);
+            return;
+        }
 
         PaddedPODArray<UInt8> found_map;
         IColumn::Offsets offsets;
@@ -208,12 +268,7 @@ void RedisHandler::getKeys(WriteBuffer & out, const std::vector<String> & keys_t
         Block sample_block = key_value->getSampleBlock(required_columns);
         size_t key_pos = sample_block.getPositionByName(primary_keys.front());
         size_t value_pos = sample_block.getPositionByName(selected_target.default_column);
-
-        if (sample_block.getByPosition(key_pos).type->getTypeId() != TypeIndex::String)
-        {
-            RedisProtocol::writeError(out, "ERR only String key column is supported");
-            return;
-        }
+        const auto key_type = sample_block.getByPosition(key_pos).type->getTypeId();
 
         if (sample_block.getByPosition(value_pos).type->getTypeId() != TypeIndex::String)
         {
@@ -221,12 +276,13 @@ void RedisHandler::getKeys(WriteBuffer & out, const std::vector<String> & keys_t
             return;
         }
 
-        auto key_column = ColumnString::create();
-        for (const auto & key : keys_to_get)
-            key_column->insertData(key.data(), key.size());
-
         ColumnsWithTypeAndName keys;
-        keys.push_back({std::move(key_column), std::make_shared<DataTypeString>(), primary_keys.front()});
+        String key_error;
+        if (!buildKeyColumns(key_type, primary_keys.front(), keys_to_get, keys, key_error))
+        {
+            RedisProtocol::writeError(out, key_error);
+            return;
+        }
 
         PaddedPODArray<UInt8> found_map;
         IColumn::Offsets offsets;
