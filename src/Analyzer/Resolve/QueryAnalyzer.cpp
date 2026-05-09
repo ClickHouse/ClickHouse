@@ -122,6 +122,63 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
+namespace
+{
+
+/// Verify that a subsequent reference to a MATERIALIZED CTE produced the same projection
+/// types as the storage that was created from the first reference.
+///
+/// Each reference to a MATERIALIZED CTE clones the body subquery and re-resolves it in the
+/// scope of that reference. Normally all clones must produce identical projection types
+/// (otherwise the single shared storage cannot satisfy all readers). Type drift across
+/// clones is possible when the body resolves identifiers from outer scope that take
+/// different values per call site (for example, aliases from the calling subquery's
+/// projection are inlined as different constants).
+///
+/// Without this check the planner would create the storage with one set of column types
+/// but feed it data with another set, leading to a `Bad cast` `LOGICAL_ERROR` at read time
+/// inside `MemorySource::fillPhysicalColumns`. Detecting the mismatch here turns the
+/// silent corruption into a clear analysis-time error.
+void verifyMaterializedCTESubqueryMatchesStorage(
+    const QueryTreeNodePtr & subquery,
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const std::string & cte_name,
+    const QueryTreeNodePtr & scope_node)
+{
+    const NamesAndTypes & projection_columns = subquery->as<QueryNode>()
+        ? subquery->as<QueryNode>()->getProjectionColumns()
+        : subquery->as<UnionNode>()->computeProjectionColumns();
+
+    auto storage_metadata = storage->getInMemoryMetadataPtr(context, /*throw_on_invalid=*/false);
+    const NamesAndTypesList storage_columns = storage_metadata->getColumns().getOrdinary();
+
+    if (projection_columns.size() != storage_columns.size())
+        throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Materialized CTE '{}' has inconsistent projection across references: storage has {} columns, "
+            "but this reference resolved to {}. In scope {}",
+            cte_name, storage_columns.size(), projection_columns.size(),
+            scope_node->formatASTForErrorMessage());
+
+    auto storage_it = storage_columns.begin();
+    for (size_t i = 0; i < projection_columns.size(); ++i, ++storage_it)
+    {
+        if (!projection_columns[i].type->equals(*storage_it->type))
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Materialized CTE '{}' has inconsistent column types across references: column '{}' has type {} in storage "
+                "but this reference resolved to type {}. This usually means the CTE body references identifiers "
+                "from outer scope (e.g. aliases from the calling subquery) that take different values per call site. "
+                "Materialized CTEs cannot have such dependencies. In scope {}",
+                cte_name,
+                storage_it->name,
+                storage_it->type->getName(),
+                projection_columns[i].type->getName(),
+                scope_node->formatASTForErrorMessage());
+    }
+}
+
+}
+
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
@@ -594,8 +651,22 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
 void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
 {
     const auto & settings = scope.context->getSettingsRef();
-    if (!settings[Setting::enable_positional_arguments] || scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+    if (!settings[Setting::enable_positional_arguments])
         return;
+    const bool is_view_inner = scope.context->isViewInnerQuery();
+    if (!is_view_inner)
+    {
+        /// Skip resolution on distributed/parallel-replicas local plan nodes: the initiator
+        /// already resolved positional arguments in the outer query. View-inner contexts are
+        /// exempt because views are expanded on the local node and were never resolved by the
+        /// initiator.
+        if (scope.context->isPositionalArgumentsAlreadyResolved())
+            return;
+        /// Skip on remote shard execution (SECONDARY_QUERY): same reasoning as above for
+        /// paths not covered by setPositionalArgumentsAlreadyResolved.
+        if (scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+            return;
+    }
 
     auto & node_list_typed = node_list->as<ListNode &>();
 
@@ -2953,6 +3024,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         else
                         {
                             mat_table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
+                            verifyMaterializedCTESubqueryMatchesStorage(
+                                mat_subquery,
+                                materialized_cte_ptr->storage,
+                                scope.context,
+                                materialized_cte_ptr->cte_name,
+                                scope.scope_node);
                         }
                     }
                 }
@@ -5205,6 +5282,12 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
 
                     table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
+                    verifyMaterializedCTESubqueryMatchesStorage(
+                        subquery,
+                        materialized_cte_ptr->storage,
+                        scope.context,
+                        materialized_cte_ptr->cte_name,
+                        scope.scope_node);
                 }
             }
 
