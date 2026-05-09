@@ -903,7 +903,7 @@ void SchemaConverter::processPrimitiveColumn(
 
     if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
     {
-        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
+        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed, std::nullopt};
         out_inferred_type = getGeoDataType(GeoType::Mixed);
         out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo);
         return;

@@ -1224,7 +1224,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             }
             if (type_hint && type_hint->getName() == "Geometry" && settings.allow_geoparquet_parser)
             {
-                return readColumnWithGeoData(arrow_column, column_name, GeoColumnMetadata{GeoEncoding::WKB, GeoType::Mixed});
+                return readColumnWithGeoData(arrow_column, column_name, GeoColumnMetadata{GeoEncoding::WKB, GeoType::Mixed, std::nullopt});
             }
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
         }

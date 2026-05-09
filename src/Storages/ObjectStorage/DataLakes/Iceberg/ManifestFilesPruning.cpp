@@ -55,7 +55,7 @@ bool tryExtractWkbBboxForIceberg(
     // Case 1: WKB-encoded String (used by st_intersects / WKB-based spatial functions)
     if (const auto * str_col = typeid_cast<const DB::ColumnString *>(raw))
     {
-        if (str_col->size() == 0)
+        if (str_col->empty())
             return false;
         auto sv = str_col->getDataAt(0);
         DB::ReadBufferFromMemory buf(sv.data(), sv.size());
