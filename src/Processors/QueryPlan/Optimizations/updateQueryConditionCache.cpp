@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 
+#include <boost/functional/hash.hpp>
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -32,10 +34,6 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (!read_from_merge_tree)
         return;
 
-    /// ORDER BY ... LIMIT N can drop granules, don't update qcc for the WHERE filter
-    if (read_from_merge_tree->isSelectedForTopKFilterOptimization())
-        return;
-
     const auto & query_info = read_from_merge_tree->getQueryInfo();
     const auto & filter_actions_dag = query_info.filter_actions_dag;
     if (!filter_actions_dag || query_info.isFinal())
@@ -60,6 +58,16 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
             UInt64 condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
+
+            /// `ORDER BY ... LIMIT N` may drop granules during reading, so the result of the WHERE
+            /// filter is no longer "applies to every granule of every part" — it applies only to
+            /// the granules that the TopK filter decided to keep. To keep the QCC entry sound, we
+            /// fold the deterministic part of the TopK plan into the cache key. Same query + same
+            /// part set + same TopK params → cache hit; different LIMIT or sort column → fresh
+            /// entry, never reusing a row-set computed under different TopK conditions.
+            if (const auto & top_k_filter_info = read_from_merge_tree->getTopKFilterInfo())
+                boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
+
             String condition = filter_actions_dag->getNames()[0];
             filter_step->setConditionForQueryConditionCache(condition_hash, condition);
             return;
