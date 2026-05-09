@@ -125,7 +125,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
         size_t result_size_hint = getFilterMask(
                 block_columns, sort_description_threshold_columns,
-                description, rows_num, filter, rows_to_compare, compare_results);
+                rows_num, filter, &rows_to_compare, compare_results, /*include_equal_row=*/false);
 
         /// Everything was filtered. Skip whole chunk.
         if (result_size_hint == 0)
