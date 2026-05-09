@@ -127,8 +127,6 @@ public:
         STOP_VIEW,
         STOP_VIEWS,
         STOP_REPLICATED_VIEW,
-        PAUSE_VIEW,
-        PAUSE_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,

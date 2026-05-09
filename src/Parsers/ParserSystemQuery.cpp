@@ -586,7 +586,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
         case Type::STOP_REPLICATED_VIEW:
-        case Type::PAUSE_VIEW:
         case Type::CANCEL_VIEW:
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
@@ -594,7 +593,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
-        case Type::PAUSE_VIEWS:
         case Type::FREE_MEMORY:
             break;
 
@@ -901,7 +899,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                         res->instrumentation_point = field.safeGet<UInt64>();
                         break;
                     default:
-                        expected.add(pos, "String or UInt64 literal for instrumentation point");
                         return false;
                 }
             }
@@ -911,15 +908,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 if (Poco::toLower(identifier) == "all")
                     res->instrumentation_point = Instrumentation::All{};
                 else
-                {
-                    expected.add(pos, "ALL");
                     return false;
-                }
-            }
-            else
-            {
-                expected.add(pos, "instrumentation point: subquery, literal, or ALL");
-                return false;
             }
 
             break;
@@ -930,18 +919,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (ParserLiteral{}.parse(pos, temporary_identifier, expected))
                 res->instrumentation_function_name = temporary_identifier->as<ASTLiteral &>().value.safeGet<String>();
             else
-            {
-                expected.add(pos, "function name (string literal)");
                 return false;
-            }
 
             if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
                 res->instrumentation_handler_name = temporary_identifier->as<ASTIdentifier &>().name();
             else
-            {
-                expected.add(pos, "handler name (LOG or PROFILE)");
                 return false;
-            }
 
             if (Poco::toLower(res->instrumentation_handler_name) == "profile")
             {
@@ -957,17 +940,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 else if (Poco::toLower(entry_type) == "exit")
                     res->instrumentation_entry_type = Instrumentation::EntryType::EXIT;
                 else
-                {
-                    expected.add(pos, "entry type (ENTRY or EXIT)");
                     return false;
-                }
             }
             else
-            {
-                expected.add(pos, "entry type (ENTRY or EXIT)");
                 return false;
-            }
-
 
             ASTPtr params_ast;
             while (ParserLiteral{}.parse(pos, params_ast, expected))
@@ -984,10 +960,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
 
             if (res->instrumentation_parameters.empty())
-            {
-                expected.add(pos, "at least one parameter (string literal)");
                 return false;
-            }
 
             break;
         }
