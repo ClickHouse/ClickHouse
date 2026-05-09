@@ -538,7 +538,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     def.columns_need_exact_copy.resize(num_columns, false);
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & col = header.safeGetByPosition(i);
+        const auto & col = header_flatten.safeGetByPosition(i);
         if (!col.type)
             continue;
 

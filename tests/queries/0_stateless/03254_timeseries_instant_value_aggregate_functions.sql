@@ -11,8 +11,7 @@ CREATE TABLE t_resampled_timeseries
     samples Tuple(Array(DateTime('UTC')), Array(Float64)) -- Timeseries data resampled to the grid
 )
 ENGINE = AggregatingMergeTree()
-ORDER BY (step, metric_id, grid_timestamp)
-SETTINGS allow_tuple_element_aggregation = false;
+ORDER BY (step, metric_id, grid_timestamp);
 
 INSERT INTO t_resampled_timeseries(step, metric_id, grid_timestamp, samples) VALUES
 (10, 42, '2024-12-12 12:00:10', (['2024-12-12 12:00:09', '2024-12-12 12:00:07'], [100, 90])),
@@ -53,8 +52,7 @@ CREATE TABLE t_resampled_timeseries_64
     samples Tuple(Array(DateTime64(3, 'UTC')), Array(Float64)) -- Timeseries data resampled to the grid
 )
 ENGINE = AggregatingMergeTree()
-ORDER BY (step, metric_id, grid_timestamp)
-SETTINGS allow_tuple_element_aggregation = false;
+ORDER BY (step, metric_id, grid_timestamp);
 
 INSERT INTO t_resampled_timeseries_64(step, metric_id, grid_timestamp, samples) VALUES
 (10, 142, '2024-12-12 12:00:10', (['2024-12-12 12:00:09.100', '2024-12-12 12:00:08.600'], [100, 90])),

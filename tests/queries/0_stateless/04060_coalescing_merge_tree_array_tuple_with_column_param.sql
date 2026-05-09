@@ -10,8 +10,7 @@ CREATE TABLE 04060_test
     update_column  Nullable(String)
 )
 ENGINE = CoalescingMergeTree(update_column)
-ORDER BY key
-SETTINGS allow_tuple_element_aggregation = false;
+ORDER BY key;
 
 INSERT INTO 04060_test (key, str_col, arr_col, tuple_col, map_col)
 VALUES ('k', 'first', ['a', 'b'], ('hello', 42), {'x': 1, 'y': 2});
