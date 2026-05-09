@@ -6,6 +6,7 @@
 #include <Common/IThrottler.h>
 #include <Common/Logger_fwd.h>
 #include <Common/MemoryTracker.h>
+#include <Common/PerCPUMemoryBudgetState.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
@@ -221,6 +222,11 @@ public:
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
+    /// Per-thread last-seen view of the per-CPU `nallocs` / `nfrees` counters.
+    /// Lives here (rather than as a separate `thread_local`) so the hot path
+    /// in `CurrentMemoryTracker` reaches it as an offset off `current_thread`,
+    /// without an extra TLS resolution.
+    PerCPUMemoryBudget::PerCPUMemoryBudgetState per_cpu_memory_budget;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CacheLine.h>
+#include <Common/PerCPUMemoryBudgetState.h>
 
 #include <memory>
 #if !defined(OS_LINUX)
@@ -51,20 +52,6 @@ namespace DB::PerCPUMemoryBudget
 constexpr UInt64 SLICE = 4 * 1024 * 1024;
 constexpr int    SLICE_LOG2 = 22;
 static_assert(SLICE == (UInt64{1} << SLICE_LOG2));
-
-/// Per-thread state. Caller stores this in TLS (or, eventually, in
-/// `ThreadStatus`) and passes it to every charge call.
-///
-/// Counters are unsigned: signed overflow would be UB and we don't want the
-/// optimiser to assume away the wrap. Unsigned wraps cleanly, and the
-/// crossing check below uses `!=` on the SLICE-shifted bucket so it stays
-/// correct across the (~29-year-at-10GB/s/CPU) wrap point.
-struct PerCPUMemoryBudgetState
-{
-    int    cpu = -1;     /// CPU we last successfully charged on; -1 = uninitialised
-    UInt64 nallocs = 0;  /// last-seen value of `nallocs[cpu]` for this thread
-    UInt64 nfrees  = 0;  /// last-seen value of `nfrees[cpu]`
-};
 
 struct alignas(CH_CACHE_LINE_SIZE) Slot
 {

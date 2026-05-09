@@ -34,10 +34,6 @@ MemoryTracker * getMemoryTracker()
     return nullptr;
 }
 
-/// Per-thread last-seen view of the per-CPU counters. To be moved into
-/// `ThreadStatus` later; kept locally for now.
-thread_local DB::PerCPUMemoryBudget::PerCPUMemoryBudgetState per_cpu_state;
-
 }
 
 using DB::current_thread;
@@ -77,7 +73,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
 
         /// `chargeAlloc` returns true for either a SLICE crossing or a
         /// CPU migration since the previous charge — both demand a flush.
-        bool flush_per_cpu = DB::PerCPUMemoryBudget::chargeAlloc(size, per_cpu_state);
+        bool flush_per_cpu = DB::PerCPUMemoryBudget::chargeAlloc(size, current_thread->per_cpu_memory_budget);
 
         if (current_thread->untracked_memory > current_thread->untracked_memory_limit || flush_per_cpu)
         {
@@ -93,7 +89,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             }
             catch (...)
             {
-                /// nallocs / per_cpu_state.nallocs already advanced; leave them.
+                /// nallocs / per_cpu_memory_budget.nallocs already advanced; leave them.
                 /// The next op may flush slightly sooner, no correctness loss.
                 current_thread->untracked_memory = previous_untracked_memory;
                 throw;
@@ -141,7 +137,7 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         current_thread->untracked_memory -= size;
         /// See note in allocImpl: `chargeFree` returns true for crossing or
         /// migration; both fold into the unified flush condition below.
-        bool flush_per_cpu = DB::PerCPUMemoryBudget::chargeFree(size, per_cpu_state);
+        bool flush_per_cpu = DB::PerCPUMemoryBudget::chargeFree(size, current_thread->per_cpu_memory_budget);
 
         if (current_thread->untracked_memory < -current_thread->untracked_memory_limit || flush_per_cpu)
         {
