@@ -23,7 +23,7 @@ ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT 4212 FORMAT Null" --query_id "${query_id}"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
-if ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT count() FROM system.query_log" >/dev/null 2>&1
+if ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT count() FROM system.query_log WHERE current_database = currentDatabase()" >/dev/null 2>&1
 then
     echo "UNEXPECTED"
 else
@@ -33,10 +33,14 @@ fi
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "
     SELECT count() >= 1, countIf(user != currentUser())
     FROM system.user_query_log
-    WHERE event_date >= yesterday() AND query_id = '${query_id}'"
+    WHERE event_date >= yesterday()
+      AND current_database = currentDatabase()
+      AND query_id = '${query_id}'"
 
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "
     SELECT 'safe'
     FROM system.user_query_log
-    WHERE event_date >= yesterday() AND throwIf(user != currentUser()) = 0
+    WHERE event_date >= yesterday()
+      AND current_database = currentDatabase()
+      AND throwIf(user != currentUser()) = 0
     LIMIT 1"
