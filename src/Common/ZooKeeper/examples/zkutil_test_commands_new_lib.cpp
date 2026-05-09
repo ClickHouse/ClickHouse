@@ -13,7 +13,7 @@
 using namespace Coordination;
 
 
-int main(int argc, char ** argv)
+int mainEntryExampleZkutilTestCommandsNewLib(int argc, char ** argv)
 try
 {
     if (argc < 2)

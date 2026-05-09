@@ -292,11 +292,28 @@ if __name__ == "__main__":
             print(msg)
             print_res = Result.create_from(
                 name="Print Uncovered Code",
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 info=msg,
             )
             print_res.set_comment(msg)
-        print_res.files.append(_print_log)
+        # Append high-precision hit/total counts to the log so they are visible
+        # in the artifact without cluttering the GitHub comment.
+        if _diff_ran:
+            with open(_print_log, "a") as _f:
+                _f.write(
+                    f"\n--- Coverage counts ---\n"
+                    f"Lines     : baseline {b_line_hit:,}/{b_line_total:,}"
+                    f"  ->  current {c_line_hit:,}/{c_line_total:,}"
+                    f"  (delta {c_line_hit - b_line_hit:+,} / {c_line_total - b_line_total:+,})\n"
+                    f"Functions : baseline {b_func_hit:,}/{b_func_total:,}"
+                    f"  ->  current {c_func_hit:,}/{c_func_total:,}"
+                    f"  (delta {c_func_hit - b_func_hit:+,} / {c_func_total - b_func_total:+,})\n"
+                    f"Branches  : baseline {b_branch_hit:,}/{b_branch_total:,}"
+                    f"  ->  current {c_branch_hit:,}/{c_branch_total:,}"
+                    f"  (delta {c_branch_hit - b_branch_hit:+,} / {c_branch_total - b_branch_total:+,})\n"
+                )
+        if _diff_inputs_exist:
+            print_res.files.append(_print_log)
         results.append(print_res)
 
         if not is_local_run:

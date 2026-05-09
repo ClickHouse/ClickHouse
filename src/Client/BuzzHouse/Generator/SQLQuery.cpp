@@ -1003,7 +1003,9 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
             const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4)), UINT32_C(1));
             const uint32_t nrows = rg.randomInt<uint32_t>(1, 3);
-            ValuesStatement * vs = tof->mutable_tfunc()->mutable_values();
+            /// Half the time use SQL standard syntax: (VALUES (rows...)) AS alias(cols...)
+            /// The other half use the existing values() table function form
+            ValuesStatement * vs = rg.nextBool() ? tof->mutable_values_standard() : tof->mutable_tfunc()->mutable_values();
 
             for (const auto & [key, val] : this->levels)
             {
