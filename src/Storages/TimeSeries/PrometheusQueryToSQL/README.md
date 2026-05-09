@@ -17,24 +17,6 @@ Main concepts in this lowering path:
 
 Correct PromQL semantics are the first constraint. A physical optimization is only safe when it preserves staleness/lookback behavior, label-set identity, metric-name dropping rules, duplicate-labelset errors, scalar/vector cardinality behavior, NaN handling, and subquery alignment.
 
-## How to use downstream prototype evidence
-
-Some ideas in this file are motivated by downstream experiments in `promshim`, a Prometheus-compatible service that uses ClickHouse SQL as one execution backend. Those results are useful for finding promising query families, but they are not ClickHouse performance claims by themselves.
-
-When a follow-up PR uses downstream evidence, include the specific artifact or benchmark condition and then reproduce the relevant signal in ClickHouse. Good ClickHouse evidence includes:
-
-- focused integration tests under `tests/integration/test_prometheus_protocols`;
-- generated SQL/AST or explain output showing the physical-shape change;
-- `system.query_log` counters such as `SelectedRows`, `SelectedBytes`, `ReadCompressedBytes`, `FunctionExecute`, `UserTimeMicroseconds`, and memory usage;
-- `EXPLAIN SYNTAX`, `EXPLAIN PLAN indexes=1, actions=1`, or `EXPLAIN PIPELINE` when the claim is about pruning, expression work, or pipeline shape;
-- benchmark artifacts for larger range/subquery cases when latency or memory is the claim.
-
-Downstream benchmark examples that motivate, but do not prove, ClickHouse work:
-
-- On a 50k-active-series downstream profile, native ClickHouse SQL paths were usually faster than Prometheus for completed 7-day and 30-day sweeps; the summary reported median shim/Prometheus p50 ratios around `0.36x` for 7-day native-lowering rows and `0.33x` for 30-day native-lowering rows.
-- The same downstream sweeps showed long-range range/subquery resource pressure as the clearer issue: observed ClickHouse memory p95 included about `35.5 GiB` for a `subquery_rate_over_aggregate_1h_range_30d` shape and about `20.7 GiB` for a `rate_1h_range_30d` shape.
-- A downstream chunking experiment reduced peak memory for selected 7-day range rows, for example about `18.98 GiB` to `2.86 GiB` for one `sum(rate(...[1h]))` range shape. That does not mean ClickHouse should implement request-level chunking here; it identifies range/subquery materialization as a high-value area to measure with native ClickHouse evidence.
-
 ## Optimization principles for this converter
 
 - Prefer deterministic, query-family-specific physical shapes over a broad PromQL cost-based optimizer.
@@ -56,13 +38,6 @@ Downstream benchmark examples that motivate, but do not prove, ClickHouse work:
 | Limit and top-k aggregations | Special-case empty-output parameters such as `k = 0`; prefer partial top-N shapes where exact instead of full sorts. | Preserve NaN ordering, tie behavior, grouping labels, and output order expectations where the API requires them. | Edge tests for `k`, NaN, and grouping; `EXPLAIN`/ProfileEvents showing less sort or array work. |
 | Classic histogram quantile | Aggregate bucket rows early, avoid repeated `le` parsing/group reconstruction, and keep monotonicity correction in one helper path. | Preserve Prometheus bucket ordering, missing/invalid `le`, duplicate bucket, zero-count, and monotonicity edge behavior. | Histogram integration/compliance tests plus reduced grouping/parsing work in SQL or ProfileEvents. |
 | Explainability | Where practical, expose the selected PromQL lowering shape and important rejection reasons through existing explain paths. | Explain output must not change normal query results or hide unsupported semantic cases. | Explain-output tests or examples tied to a query family. |
-
-## Non-goals for this code path
-
-- Do not add a separate PromQL runtime or fallback executor inside ClickHouse.
-- Do not import downstream request routing, shadow execution, or broad cost-based routing machinery.
-- Do not make performance claims from downstream promshim numbers alone.
-- Do not add manual `PREWHERE`, settings changes, thread caps, or cache assumptions without ClickHouse evidence that the executor-visible work changes for the target query family.
 
 ## Validation checklist for optimization PRs
 
