@@ -18,6 +18,11 @@ allowed-tools: Task, Bash, Read, Glob, Grep, WebFetch, AskUserQuestion
 - Fetch PR metadata (title, description, base/head refs, changed files).
 - Fetch the full PR diff.
 - Note the PR title, description, and linked issues
+- **Detect revert PRs** before validating template metadata. A PR is a revert when the title starts with `Revert "..."` (the GitHub default), or the body matches `Reverts ClickHouse/ClickHouse#<N>` / `This reverts commit <sha>`. Revert PRs are **exempt** from PR template validation: skip all `Changelog category`, `Changelog entry`, and documentation checkbox checks for them, and do not flag missing template fields. Only verify that the body identifies the reverted PR or commit.
+- For non-revert PRs, validate PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`:
+  - `Changelog category` is present, valid, and semantically correct for the actual code change.
+  - `Changelog entry` is present and user-readable when required by the selected category.
+  - `Changelog entry` quality follows ClickHouse expectations: specific user-facing impact, no vague wording, and migration guidance for backward-incompatible changes.
 
 **If a branch name is given:**
 - Get the diff against `master`.
@@ -45,7 +50,7 @@ SCOPE & LANGUAGE
 
 INPUTS YOU WILL RECEIVE
 - PR title, description, motivation
-- PR template fields (`Changelog category`, `Changelog entry`)
+- PR template changelog metadata (`Changelog category`, `Changelog entry`, requirement/sufficiency, and user-facing quality)
 - Diff (file paths, added/removed lines)
 - Linked issues / discussions
 - CI status and logs (if available)
@@ -93,7 +98,16 @@ WHAT TO REVIEW VS WHAT TO IGNORE
 - Scan all changed lines for typos in comments, variable names, string literals, log messages, error messages, and documentation.
 - Report all typos found with suggested corrections.
 - Check that error messages are clear, informative, and help the user understand what went wrong and how to fix it.
-- Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present and user-readable.
+- Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present, specific, and user-readable. **Skip this entirely for revert PRs** (see "Obtaining the Diff" for detection).
+- Read the changelog-entry standards from `clickhouse-pr-description` and apply them: avoid vague text (e.g. "fix bug"), describe the exact affected feature/behavior, and for backward-incompatible changes explain old behavior, new behavior, and how to preserve old behavior when possible.
+
+**Documentation is auto-generated from source for structured parts of the system — do NOT request separate `docs/` files for these:**
+- ClickHouse auto-generates user-facing documentation for the structured surface of the system directly from the source code. This includes (non-exhaustive): SQL functions and aggregate functions (via `FunctionDocumentation` registered at function factory time), settings (via the doc-string argument of the `DECLARE(...)` macro in `src/Core/Settings.cpp`, `MergeTreeSettings.cpp`, format settings, server settings, etc.), table functions, table engines, formats, system tables, and similar registered components.
+- When a PR adds or changes a function, setting, table function, table engine, format, or system table, the correct place for documentation is **the source code registration** (e.g. `FunctionDocumentation` fields like `description`, `syntax`, `arguments`, `returned_value`, `examples`, `introduced_in`, `category`; or the doc-string in `DECLARE(...)` for settings). A separate hand-written page under `docs/` is **not required** and asking for one is a false positive.
+- Only flag missing documentation when:
+  - The structured doc fields are themselves missing, empty, or clearly inadequate (e.g. no `description`, no `examples`, no `syntax` for a new function; empty doc-string in `DECLARE` for a new setting).
+  - The change is to a **non-structured** area that has no auto-generation (e.g. high-level guides, tutorials, architecture docs, operational/admin docs, integration guides) — those do live under `docs/` and may legitimately need updates.
+- Do **not** ask the contributor to add `docs/` files for new functions, settings, dialects, or other registered components when the source-level documentation is present. If the source-level docs are weak, comment on the source-level fields directly instead.
 
 **Explicitly ignore (do not comment on these unless they indicate a bug):**
 - Commented debugging code (completely ignore for draft PR, no more than one message in total)
@@ -167,10 +181,43 @@ When reading diffs, scan for these classes of bugs:
 - Watch for file paths that surface contents in error messages on parse failure — even a "read then validate" pattern can leak file contents through exceptions.
 - This applies to all code paths that use `ReadBufferFromFile`, `WriteBufferToFile`, `std::ifstream`, or similar with user-controlled paths.
 
-**9) Semantic correctness & fix completeness**
+**9) Repository bloat — large & binary files**
+- ClickHouse is a huge monorepo; every byte committed to git is cloned by every contributor forever and can never be fully removed without history rewriting.
+- **Binary blobs** (JARs, compiled executables, archives, images, dataset files, model weights) must **never** be committed directly. Flag any new binary file larger than ~100 KB as a blocker. Check `file` type and size for any non-text addition.
+- **Chunked / split binaries** are a red flag — they indicate someone tried to work around size limits while still committing the same blob.
+- **Fat dependency bundles** (uber-JARs, vendored node_modules, bundled `.so`/.`dylib` files) are never acceptable in-tree.
+- **Acceptable alternatives:** download at test time from CI artifact storage / S3 / Maven Central; build from source inside the test container; use a Docker image that already contains the dependency; use git-lfs if the project supports it (ClickHouse does not).
+- **Test data** (Parquet files, Avro files, small JSON fixtures) under ~1 MB total is usually fine, but anything larger should be generated at test time or downloaded.
+- When a PR adds new files under `tests/integration/`, `tests/queries/`, or any other directory, always scan for unexpectedly large or binary additions — contributors sometimes commit build artifacts or data files without realizing the permanent cost.
+
+**10) Semantic correctness & fix completeness**
 - **Partial / asymmetric fixes:** when a behavior is changed in one code path, check whether symmetric paths need the same change. Examples: fixing `SYSTEM STOP MERGES` for merge selection but not mutation selection; fixing `ReplicatedMergeTree` but not `SharedMergeTree`. Use `grep` to find all related call sites.
 - **Multi-instance resource selection:** when a PR adds support for multiple instances of a resource (e.g. auxiliary ZooKeeper clusters, secondary storage backends), grep for every place that accesses the resource and verify the correct instance is selected — not just in the newly added code paths.
 
+**11) Trust boundary expansion — looking beyond the diff**
+
+Trigger: a PR wraps existing internal code for a wider audience (library function → SQL function, CLI tool → server endpoint, internal reader → table function, background-only path → user-reachable query). The wrapper diff may look fine, but the callee was written with assumptions about its original callers that no longer hold.
+
+**The single most important rule: when you find something suspicious in callee code, you MUST pick a concrete minimal input and trace execution step by step, writing out every variable value at every iteration. Never dismiss a finding by reasoning about it abstractly — the whole point is that abstract reasoning ("this is technically safe because...") is how real bugs get missed. A 5-line trace with concrete values catches what paragraphs of analysis miss.**
+
+Workflow:
+
+1. **Read the core callee(s)** — full implementation, not just signatures.
+
+2. **Compare existing callers vs. the PR.** Grep for ALL call sites. For each parameter, compare what existing callers pass against what the PR passes. Flag any parameter where the PR passes a weaker, degenerate, or no-op value (callback, validator, filter, flag). These are "degraded integration" bugs.
+
+3. **Grep the callee for dangerous patterns.** Run actual Grep commands — do not scan visually. Look for: relative indexing (accessing neighbors of current position), assertions used as guards (`assert`/`chassert` compile out in release), pointer arithmetic without size checks, end-relative access on possibly-empty ranges, and unbounded allocation proportional to input.
+
+4. **For every match: trace with a concrete boundary input.** This step is mandatory and non-negotiable. Pick the shortest input that reaches the dangerous code. Write out the trace: for each iteration, state the line, the expression, the concrete value, and whether it is safe or not. Track every pointer/index/flag — a condition that *looks* protective may execute *after* the dangerous access within the same iteration. Choose inputs at extremes: empty, length 1, length 2, first element of each type the code branches on.
+
+   **Anti-pattern to avoid:** finding a suspicious access, writing "this is technically safe because [memory layout / padding / practical likelihood]", and moving on. If you cannot prove safety via a concrete trace, report it. Pre-existing bugs that were harmless in the old calling context become exploitable under user-controlled input — that is the whole point of this checklist.
+
+5. **Verify test coverage.** The PR's tests must include adversarial edge cases that the original caller would never produce: empty inputs, minimal-length inputs, malformed inputs, NULLs, maximum-length inputs.
+
+**12) Shell-command safety in Python / shell scripts**
+- Destructive or privileged commands (`rm -rf`, `mv`, `cp -r`, `find … -delete`, `chmod`, `chown`, `dd`, `kill`, `sudo …`) with substituted arguments passed to `shell=True` (`subprocess.run`/`Popen`, `os.system`) or to in-tree wrappers that use `shell=True` under the hood (ClickHouse's `Shell.check` / `Shell.run` / `Shell.get_output`).
+- Unquoted variables in destructive commands inside `.sh` scripts.
+- Prefer `shutil.rmtree` or argv-list `subprocess.run`; if a shell wrapper is unavoidable, use `shlex.quote` and `--`.
 
 CLICKHOUSE RULES (MANDATORY)
 - **Deletion logging**
@@ -183,7 +230,7 @@ CLICKHOUSE RULES (MANDATORY)
   Do **not** delete or relax existing tests. New behavior requires **new tests**.
   Tests replace random database names with `default` in output normalization. Do **not** flag hardcoded `default.` or `default_` prefixes in expected test output as incorrect or suggest using `${CLICKHOUSE_DATABASE}` – this is by design.
 - **Experimental gate**
-  New features/behaviors must be gated behind an **experimental** setting (e.g. `allow_experimental_simd_acceleration`) until proven safe. The gate can later be made ineffective at GA.
+  Features that introduce genuinely new or risky behavior — new engines, new query execution strategies, new replication mechanisms, new on-disk formats, or features whose incorrect implementation could cause data loss or corruption — must be gated behind an **experimental** setting (e.g. `allow_experimental_simd_acceleration`) until proven safe. The gate can later be made ineffective at GA. Thin wrappers that expose already-stable internal code as SQL functions, simple utility functions, or low-risk additive features do **not** need a gate.
 - **No magic constants**
   Avoid magic constants; represent important thresholds or alternative behaviors as settings with sensible defaults.
 - **Backward compatibility**
@@ -192,6 +239,10 @@ CLICKHOUSE RULES (MANDATORY)
   Ensure incremental rollout is feasible in both OSS and Cloud (feature flags, safe defaults, non-disruptive changes).
 - **Compilation time**
   Follow checklist **7) Compilation time & build impact**. Treat violations there as ClickHouse-rule issues.
+- **No large / binary files in git**
+  Binary blobs (JARs, archives, compiled artifacts, datasets >1 MB, fat dependency bundles) must never be committed. They permanently bloat the repository for every clone and cannot be removed without history rewriting. Test dependencies should be downloaded at test time, built from source inside the test container, or pulled from Docker images. Follow checklist **9) Repository bloat**. Any violation is a blocker.
+- **PR metadata quality**
+  For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes). **Revert PRs are exempt** from this rule — mark the row as ➖ and do not produce findings about missing template fields.
 
 SEVERITY MODEL – WHAT DESERVES A COMMENT
 
@@ -201,10 +252,12 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 - New races, deadlocks, or serious concurrency issues.
 - Breaking compatibility (serialization formats, protocols, behavior, settings) without a versioned migration path or a setting to restore previous behavior.
 - Deletion events not logged.
-- New feature without an experimental gate.
+- Risky new feature (new engine, execution strategy, replication mechanism, on-disk format) without an experimental gate.
 - Significant performance regression in a hot path.
 - Security or privilege issues, or license incompatibility.
 - Server-side file access with user-controlled paths that bypass `user_files_path` or equivalent restrictions.
+- Large binary files (JARs, archives, datasets, compiled artifacts) committed to git — permanent, irreversible repo bloat.
+- Destructive shell commands (`rm -rf`, `mv`, `chmod`, `dd`, `sudo`, …) with unquoted substitution under `shell=True` or in shell scripts.
 
 **Majors** – serious but not catastrophic
 - Under-tested important edge cases or error paths.
@@ -221,10 +274,16 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 REQUESTED OUTPUT FORMAT
 Respond with the following sections. Be terse but specific. Include code suggestions as minimal diffs/patches where helpful.
 Focus on problems — do not describe what was checked and found to be fine. Use emojis (❌ ⚠️ ✅ 💡) to make findings scannable.
-**Omit any section entirely if there is nothing notable to report in it** — do not include a section just to say "looks good" or "no concerns". The only mandatory sections are Summary, ClickHouse Compliance, and Final Verdict.
+**Omit any section entirely if there is nothing notable to report in it** — do not include a section just to say "looks good" or "no concerns". The only mandatory sections are Summary, ClickHouse Rules, and Final Verdict.
 
 **Summary**
 - One paragraph explaining what the PR does and your high-level verdict.
+
+**PR Metadata** (omit if no issues found; **always omit for revert PRs**)
+- State whether `Changelog category` is correct for the actual change.
+- State whether `Changelog entry` is required by the chosen category, and whether the provided entry satisfies that requirement.
+- Evaluate `Changelog entry` quality using `clickhouse-pr-description` criteria (specific change, user impact, and migration guidance for backward-incompatible changes).
+- If any item is incorrect, provide the exact replacement text.
 
 **Missing context** (omit if none)
 - Bullet list of critical info you lacked. Prefix each item with ⚠️ (e.g., ⚠️ No CI logs available, ⚠️ No benchmarks provided).
@@ -237,11 +296,10 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 - **⚠️ Majors**
   - `[File:Line(s)]` Issue + rationale.
   - Suggested fix.
-- **💡 Nits** (only if they reduce bug risk or user confusion)
+- **💡 Nits**
   - `[File:Line(s)]` Issue + quick fix.
-  - Use this section for changelog-template quality issues (`Changelog category` mismatch, missing/unclear required `Changelog entry`).
+  - Use this section for changelog-template quality issues (`Changelog category` mismatch, missing/unclear required `Changelog entry`, or low-quality user-facing `Changelog entry` that is too vague).
 
-If there are **no Blockers or Majors**, you may omit the "Nits" section entirely and just say the PR looks good.
 
 **Tests** (omit if adequate)
 - Only include this section if tests are **missing or insufficient**. Prefix each missing test with ⚠️. Specify which additional tests to add and why.
@@ -261,8 +319,10 @@ Example:
 | No magic constants | ✅ | |
 | Backward compatibility | ⚠️ | Default changed without `SettingsChangesHistory.cpp` update |
 | `SettingsChangesHistory.cpp` | ❌ | Not updated |
+| PR metadata quality | ⚠️ | `Changelog category` does not match change type; `Changelog entry` is too vague for users |
 | Safe rollout | ➖ | |
 | Compilation time | ✅ | |
+| No large/binary files | ✅ | |
 
 **Performance & Safety** (omit if no concerns)
 - Only include this section if there are actual concerns about hot-path regressions, memory, concurrency, or failure modes.

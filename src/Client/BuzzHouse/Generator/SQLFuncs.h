@@ -411,6 +411,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCtoMonth, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoMonthNumSinceEpoch, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoDayOfYear, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtoDaysInMonth, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoDayOfMonth, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoDayOfWeek, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoHour, 0, 0, 1, 1),
@@ -935,6 +936,10 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCendsWithCaseInsensitiveUTF8, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCstartsWithCaseInsensitive, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCstartsWithCaseInsensitiveUTF8, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCnaturalSortKey, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCcaseFoldUTF8, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCremoveDiacriticsUTF8, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCnormalizeUTF8NFKCCasefold, 0, 0, 1, 1),
     /// Time window
     CHFunction(SQLFunc::FUNCtumble, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCtumbleStart, 0, 0, 2, 3),

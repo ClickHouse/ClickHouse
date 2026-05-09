@@ -59,7 +59,6 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
 void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
-    frame.need_parens = false;
     frame.expression_list_prepend_whitespace = true;
 
     std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
@@ -77,13 +76,35 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         ostr << s.nl_or_ws;
     }
 
-    ostr << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
+    /// When the table has a SAMPLE clause and the query has a standalone OFFSET
+    /// (without LIMIT), use FROM-first syntax so that SELECT separates SAMPLE
+    /// from OFFSET.  Otherwise, the formatted "... SAMPLE r OFFSET n ..." is
+    /// ambiguous: the parser would consume OFFSET as the SAMPLE offset instead
+    /// of a query-level OFFSET.
+    /// Note: FROM-first syntax is disabled for SELECTs inside INSERT to avoid
+    /// parsing ambiguity with INSERT ... FROM INFILE syntax.
+    bool format_from_first = sampleSize() && limitOffset() && !limitLength() && !frame.disable_from_first_syntax;
+
+    /// Reset the flag so that nested subqueries in the FROM clause can make their own decision
+    /// about FROM-first formatting (they might need it for SAMPLE + standalone OFFSET).
+    frame.disable_from_first_syntax = false;
+
+    if (format_from_first && tables())
+    {
+        ostr << indent_str << "FROM";
+        tables()->format(ostr, s, state, frame);
+        ostr << s.nl_or_ws << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
+    }
+    else
+    {
+        ostr << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
+    }
 
     s.one_line
         ? select()->format(ostr, s, state, frame)
         : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
 
-    if (tables())
+    if (!format_from_first && tables())
     {
         ostr << s.nl_or_ws << indent_str << "FROM";
         tables()->format(ostr, s, state, frame);
@@ -450,7 +471,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
     }
 
     String table_alias = getTableExpressionAlias(table_expression);
-    table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>(table_id);
+    table_expression->setOrReplace(table_expression->database_and_table_name, make_intrusive<ASTTableIdentifier>(table_id));
 
     if (!table_alias.empty())
         table_expression->database_and_table_name->setAlias(table_alias);
@@ -474,8 +495,8 @@ void ASTSelectQuery::addTableFunction(const ASTPtr & table_function_ptr)
 
     String table_alias = getTableExpressionAlias(table_expression);
     /// Maybe need to modify the alias, so we should clone new table_function node
-    table_expression->table_function = table_function_ptr->clone();
-    table_expression->database_and_table_name = nullptr;
+    table_expression->setOrReplace(table_expression->table_function, table_function_ptr->clone());
+    table_expression->reset(table_expression->database_and_table_name);
 
     if (table_alias.empty())
         table_expression->table_function->setAlias(table_alias);

@@ -23,6 +23,7 @@
 
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
+#include <Interpreters/castColumn.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
 
@@ -146,6 +147,18 @@ static std::optional<WasmValKind> wasmKindForDataType(const IDataType * type)
         return false;
     });
     return kind;
+}
+
+/// Returns true when `from` can be implicitly coerced to `to`.
+/// Allowed: same kind; i32→i64; any int→any float; f32→f64.
+static bool canCoerce(WasmValKind from, WasmValKind to)
+{
+    if (from == to) return true;
+    if (from == WasmValKind::I32 && to == WasmValKind::I64) return true;
+    if (from == WasmValKind::F32 && to == WasmValKind::F64) return true;
+    const bool from_int = from == WasmValKind::I32 || from == WasmValKind::I64;
+    if (from_int && (to == WasmValKind::F32 || to == WasmValKind::F64)) return true;
+    return false;
 }
 
 
@@ -541,12 +554,10 @@ public:
             if (arguments[i]->equals(*expected_arguments[i]))
                 continue;
 
-            /// Allow implicit coercion between types that map to the same WASM kind
-            /// (e.g. Int8/UInt8/Int16/UInt16/Int32 all map to i32, so they are interchangeable).
-            /// Pairs with different WASM kinds (e.g. Float64 vs Int32) are rejected.
+            /// Allow implicit coercions: same kind, i32→i64, any int→any float, f32→f64.
             auto actual_kind = wasmKindForDataType(arguments[i].get());
             auto expected_kind = wasmKindForDataType(expected_arguments[i].get());
-            if (actual_kind && expected_kind && *actual_kind == *expected_kind)
+            if (actual_kind && expected_kind && canCoerce(*actual_kind, *expected_kind))
                 continue;
 
             auto get_type_names = std::views::transform([](const auto & arg) { return arg->getName(); });
@@ -616,12 +627,19 @@ private:
 
     Block getArgumentsBlock(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t length) const
     {
+        const auto & declared_arguments = user_defined_function->getArguments();
         Block arguments_block;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             ColumnPtr column = arguments[i].column->convertToFullColumnIfConst()->cut(start_idx, length);
             String column_name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
-            arguments_block.insert(ColumnWithTypeAndName(column, arguments[i].type, column_name));
+            /// Cast to the declared type so serialization uses the correct width.
+            /// Without this, e.g. Int8 passed to an Int32 parameter would be serialized
+            /// as 1 byte by RowBinary instead of 4, causing the WASM module to read garbage.
+            const DataTypePtr & declared_type = declared_arguments[i];
+            if (!arguments[i].type->equals(*declared_type))
+                column = castColumn(ColumnWithTypeAndName(column, arguments[i].type, column_name), declared_type);
+            arguments_block.insert(ColumnWithTypeAndName(column, declared_type, column_name));
         }
         return arguments_block;
     }

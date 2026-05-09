@@ -17,7 +17,7 @@ SET enable_analyzer = 1;
 SET query_plan_read_in_order = 1, optimize_read_in_order = 1;
 SET query_plan_read_in_order_through_join = 1;
 SET optimize_aggregation_in_order = 1;
-
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable spilling as it doesn't support read-in-order optimization
 SET enable_parallel_replicas = 0;
 
 -- Without parallel replicas: read_in_order_through_join should apply (InOrder for events table)
@@ -32,6 +32,7 @@ SELECT groupArray(trim(explain)) FROM (
 
 -- With parallel replicas: read_in_order_through_join must NOT apply (Default for events table)
 -- to avoid coordination mode mismatch between initiator and remote replicas.
+SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_local_plan = 1;
 
