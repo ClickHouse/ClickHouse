@@ -244,6 +244,71 @@ def send_test_data():
         ]
     )
 
+    send_data(
+        [
+            (
+                {"__name__": "request_duration_seconds_bucket", "instance": "a", "job": "api", "le": "1"},
+                {100: 10, 160: 20},
+            ),
+            (
+                {"__name__": "request_duration_seconds_bucket", "instance": "a", "job": "api", "le": "2"},
+                {100: 20, 160: 40},
+            ),
+            (
+                {"__name__": "request_duration_seconds_bucket", "instance": "a", "job": "api", "le": "+Inf"},
+                {100: 20, 160: 40},
+            ),
+            (
+                {"__name__": "request_duration_seconds_bucket", "instance": "b", "job": "api", "le": "1"},
+                {100: 5, 160: 15},
+            ),
+            (
+                {"__name__": "request_duration_seconds_bucket", "instance": "b", "job": "api", "le": "2"},
+                {100: 10, 160: 30},
+            ),
+            (
+                {"__name__": "request_duration_seconds_bucket", "instance": "b", "job": "api", "le": "+Inf"},
+                {100: 10, 160: 30},
+            ),
+            (
+                {"__name__": "request_duration_no_inf_bucket", "job": "api", "le": "1"},
+                {160: 1},
+            ),
+            (
+                {"__name__": "request_duration_no_inf_bucket", "job": "api", "le": "2"},
+                {160: 2},
+            ),
+            (
+                {"__name__": "request_duration_mixed_bucket", "job": "api", "le": "1"},
+                {160: 1},
+            ),
+            (
+                {"__name__": "request_duration_mixed_bucket", "job": "api", "le": "NaN"},
+                {160: 100},
+            ),
+            (
+                {"__name__": "request_duration_mixed_bucket", "job": "api", "le": "bad"},
+                {160: 100},
+            ),
+            (
+                {"__name__": "request_duration_mixed_bucket", "job": "api", "le": "+Inf"},
+                {160: 2},
+            ),
+            (
+                {"__name__": "request_duration_duplicate_bound_bucket", "job": "api", "le": "1"},
+                {160: 10},
+            ),
+            (
+                {"__name__": "request_duration_duplicate_bound_bucket", "job": "api", "le": "1.0"},
+                {160: 20},
+            ),
+            (
+                {"__name__": "request_duration_duplicate_bound_bucket", "job": "api", "le": "+Inf"},
+                {160: 40},
+            ),
+        ]
+    )
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -581,6 +646,107 @@ def test_function_over_time():
                 "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',2),('1970-01-01 00:02:30.000',1),('1970-01-01 00:03:30.000',3)]",
             ]
         ],
+    )
+
+
+def test_function_histogram_quantile():
+    do_unordered_query_test(
+        "histogram_quantile(0.9, request_duration_seconds_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"instance": "a", "job": "api"}, "value": [160, "1.8"]}, {"metric": {"instance": "b", "job": "api"}, "value": [160, "1.8"]}]}',
+        [
+            ["[('instance','a'),('job','api')]", "1970-01-01 00:02:40.000", 1.8],
+            ["[('instance','b'),('job','api')]", "1970-01-01 00:02:40.000", 1.8],
+        ],
+    )
+
+    do_query_test(
+        "histogram_quantile(0.9, sum by (job, le) (rate(request_duration_seconds_bucket[2m])))",
+        170,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [170, "1.8"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:50.000", 1.8]],
+        eps=1e-9,
+    )
+
+    do_query_test(
+        "histogram_quantile(0.9, test)",
+        160,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    do_query_test(
+        "histogram_quantile(0.5, request_duration_no_inf_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "NaN"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:40.000", "nan"]],
+    )
+
+    do_query_test(
+        "histogram_quantile(-0.5, request_duration_no_inf_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "-Inf"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:40.000", "-inf"]],
+    )
+
+    do_query_test(
+        "histogram_quantile(1.5, request_duration_no_inf_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "+Inf"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:40.000", "inf"]],
+    )
+
+    do_query_test(
+        "histogram_quantile(0.5, request_duration_mixed_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "NaN"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:40.000", "nan"]],
+    )
+
+    do_query_test(
+        "histogram_quantile(0.5, request_duration_duplicate_bound_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "0.6666666666666666"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:40.000", 0.6666666666666666]],
+    )
+
+    assert http_api_response_close_to(
+        execute_range_query_in_prometheus(
+            "histogram_quantile(0.9, sum by (job, le) (rate(request_duration_seconds_bucket[2m])))",
+            160,
+            170,
+            10,
+        ),
+        '{"resultType": "matrix", "result": [{"metric": {"job": "api"}, "values": [[160, "1.8"], [170, "1.8"]]}]}',
+        eps=1e-9,
+    )
+
+    actual_chresult = execute_range_query_in_clickhouse_sql(
+        "histogram_quantile(0.9, sum by (job, le) (rate(request_duration_seconds_bucket[2m])))",
+        160,
+        170,
+        10,
+    )
+    assert tsv_close_to(
+        actual_chresult,
+        [
+            [
+                "[('job','api')]",
+                "[('1970-01-01 00:02:40.000',1.8),('1970-01-01 00:02:50.000',1.8)]",
+            ]
+        ],
+        eps=1e-9,
+    ), f"actual result: {actual_chresult}"
+
+    assert http_api_response_close_to(
+        execute_range_query_in_clickhouse_http_api(
+            "histogram_quantile(0.9, sum by (job, le) (rate(request_duration_seconds_bucket[2m])))",
+            160,
+            170,
+            10,
+        ),
+        '{"resultType": "matrix", "result": [{"metric": {"job": "api"}, "values": [[160, "1.8"], [170, "1.8"]]}]}',
+        eps=1e-9,
     )
 
 
