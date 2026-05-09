@@ -163,7 +163,7 @@ namespace
             /// Some functions need a fully-formed query context to construct (e.g. those that
             /// inspect settings at build time). Reporting NULL is the honest answer; log the
             /// exception message at debug level so the failure is visible to anyone
-            /// investigating empty cells. Ok.
+            /// investigating empty cells.
             LOG_DEBUG(
                 getLogger("system.functions"),
                 "Cannot resolve function {} for introspection: {}",
