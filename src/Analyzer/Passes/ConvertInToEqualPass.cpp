@@ -99,15 +99,15 @@ public:
 
         /// When the LHS and RHS have the same type, we can convert directly.
         /// When they differ, we convert the constant to the LHS type using
-        /// convertFieldToTypeStrict — the same function that IN uses in
-        /// SetUtils.cpp to build its Set. This rejects lossy conversions
-        /// (e.g. Decimal(9,2) → Decimal(9,1) losing precision, or
+        /// `convertFieldToType` with `strict = true` — the same path that IN
+        /// uses in `SetUtils.cpp` to build its Set. This rejects lossy
+        /// conversions (e.g. Decimal(9,2) → Decimal(9,1) losing precision, or
         /// Float64 1.5551 → Decimal(9,3) truncating to 1.555).
         ///
         /// This also handles cases like String IN (1): the integer 1 is
-        /// converted to the string '1', producing equals(x, '1') which
-        /// FunctionComparison can execute. Without this, equals(String, UInt8)
-        /// would throw NO_COMMON_TYPE at execution time.
+        /// converted to the string '1', producing `equals(x, '1')` which
+        /// `FunctionComparison` can execute. Without this, `equals(String, UInt8)`
+        /// would throw `NO_COMMON_TYPE` at execution time.
         ///
         /// If the conversion fails or is lossy, IN would never match either,
         /// but we conservatively skip the optimization to avoid changing behavior.
@@ -115,10 +115,10 @@ public:
         DataTypePtr result_rhs_type = rhs_type;
         if (!lhs_type->equals(*rhs_type))
         {
-            auto converted = convertFieldToTypeStrict(value, *rhs_type, *lhs_type);
-            if (!converted.has_value())
+            Field converted = convertFieldToType(value, *lhs_type, rhs_type.get(), {}, /*strict*/ true);
+            if (converted.isNull() && !value.isNull())
                 return;
-            converted_value = std::move(converted.value());
+            converted_value = std::move(converted);
             result_rhs_type = lhs_type;
         }
 
