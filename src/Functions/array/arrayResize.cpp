@@ -107,7 +107,11 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
             appended_column = castColumn(arguments[2], return_nested_type);
     }
     else
-        appended_column = ColumnConst::create(result_array.getData().cloneResized(1), size);
+    {
+        auto default_column = result_array.getData().cloneEmpty();
+        default_column->insertDefault();
+        appended_column = ColumnConst::create(std::move(default_column), size);
+    }
 
     bool is_appended_const = false;
     if (const auto * const_appended_column = typeid_cast<const ColumnConst *>(appended_column.get()))
