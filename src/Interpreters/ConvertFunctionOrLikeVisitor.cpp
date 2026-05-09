@@ -123,8 +123,9 @@ struct PatternInfo
 
     /// Returns true if all per-pattern lengths and the total length fit within the hyperscan
     /// regexp size limits. A limit value of 0 means "unlimited".
-    /// Used by `multiMatchAny` when ClickHouse is built with Vectorscan.
-    [[maybe_unused]] bool fitsHyperscanLimits(size_t max_length, size_t max_total_length) const
+    /// Used both as a pre-check for `multiMatchAny` and as a guard against building an unbounded
+    /// combined `match` regexp in the fallback path.
+    bool fitsHyperscanLimits(size_t max_length, size_t max_total_length) const
     {
         if (max_length == 0 && max_total_length == 0)
             return true;
@@ -165,113 +166,149 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
     {
         if (auto * expr_list_fn = child->as<ASTExpressionList>())
         {
-            ASTs unique_elems;
-            std::unordered_map<String, PatternInfo> identifier_to_patterns;
-            std::vector<String> pattern_keys;  /// To preserve order
-            std::vector<size_t> match_function_positions;  /// Positions in unique_elems
-            std::unordered_map<String, ASTPtr> identifier_to_ast;  /// Map key to AST node
+            /// Each "slot" in the OR's argument list. A slot is either a single non-LIKE branch we
+            /// kept as-is, or a placeholder for a group of LIKE/ILIKE/match patterns sharing the
+            /// same LHS expression. We resolve each placeholder to either a single optimized match
+            /// function or (when the rewrite is unsafe) the original branches kept verbatim, then
+            /// flatten back into the OR's argument list.
+            std::vector<ASTs> slots;
+
+            struct PerKeyData
+            {
+                ASTPtr identifier;
+                PatternInfo info;
+                ASTs originals;
+                size_t slot_index = 0;
+            };
+            std::vector<PerKeyData> per_key_data;
+            std::unordered_map<String, size_t> key_to_index;
 
             for (const auto & child_expr_fn : expr_list_fn->children)
             {
-                unique_elems.push_back(child_expr_fn);
-                if (const auto * child_fn = child_expr_fn->as<ASTFunction>())
+                const auto * child_fn = child_expr_fn->as<ASTFunction>();
+                if (!child_fn)
                 {
-                    const bool is_like = child_fn->name == "like";
-                    const bool is_ilike = child_fn->name == "ilike";
-                    const bool is_match = child_fn->name == "match";
-
-                    /// Not {i}like or match -> bail out.
-                    if (!is_like && !is_ilike && !is_match)
-                        continue;
-
-                    const auto & arguments = child_fn->arguments->children;
-
-                    /// They should have 2 arguments.
-                    if (arguments.size() != 2)
-                        continue;
-
-                    /// Second one is string literal.
-                    auto identifier = arguments[0];
-                    auto * literal = arguments[1]->as<ASTLiteral>();
-                    if (!identifier || !literal || literal->value.getType() != Field::Types::String)
-                        continue;
-
-                    /// Don't merge `f(x) LIKE 'a%' OR f(x) LIKE 'b%'` when `f` is non-deterministic
-                    /// (e.g. `rand`). Both branches would render to the same `getAliasOrColumnName`
-                    /// key, but at runtime they evaluate independently — collapsing them into one
-                    /// `multiSearchAny`/`multiMatchAny` call would change query results.
-                    if (isExpressionNonDeterministic(identifier, context))
-                        continue;
-
-                    const String & pattern_str = literal->value.safeGet<String>();
-
-                    PatternData data;
-                    data.is_case_insensitive = is_ilike;
-                    data.is_substring = false;
-
-                    if (is_match)
-                    {
-                        /// match() already has a regexp pattern - use as is.
-                        /// A regexp can never be a pure substring, so it always falls through to the
-                        /// combined `match` path; case-insensitivity flags inside the pattern (e.g.
-                        /// `(?i)`, `(?mi:...)`) are preserved verbatim in the combined alternation.
-                        data.regexp = pattern_str;
-                        data.is_substring = false;
-                    }
-                    else
-                    {
-                        /// Check if LIKE pattern is a simple substring search
-                        data.is_substring = likePatternIsSubstring(pattern_str, data.substring);
-
-                        /// Always compute regexp for fallback
-                        data.regexp = likePatternToRegexp(pattern_str);
-                        if (is_ilike)
-                            data.regexp = "(?i)" + data.regexp;
-                    }
-
-                    unique_elems.pop_back();
-                    String key = identifier->getAliasOrColumnName();
-                    auto it = identifier_to_patterns.find(key);
-
-                    if (it == identifier_to_patterns.end())
-                    {
-                        it = identifier_to_patterns.insert({key, PatternInfo{}}).first;
-                        identifier_to_ast[key] = identifier;
-                        pattern_keys.push_back(key);
-                        match_function_positions.push_back(unique_elems.size());
-                        unique_elems.push_back(nullptr);  /// Placeholder
-                    }
-
-                    it->second.patterns.push_back(std::move(data));
+                    slots.push_back({child_expr_fn});
+                    continue;
                 }
+
+                const bool is_like = child_fn->name == "like";
+                const bool is_ilike = child_fn->name == "ilike";
+                const bool is_match = child_fn->name == "match";
+
+                /// Not {i}like or match -> keep as-is.
+                if (!is_like && !is_ilike && !is_match)
+                {
+                    slots.push_back({child_expr_fn});
+                    continue;
+                }
+
+                const auto & arguments = child_fn->arguments->children;
+                if (arguments.size() != 2)
+                {
+                    slots.push_back({child_expr_fn});
+                    continue;
+                }
+
+                auto identifier = arguments[0];
+                auto * literal = arguments[1]->as<ASTLiteral>();
+                if (!identifier || !literal || literal->value.getType() != Field::Types::String)
+                {
+                    slots.push_back({child_expr_fn});
+                    continue;
+                }
+
+                /// Don't merge `f(x) LIKE 'a%' OR f(x) LIKE 'b%'` when `f` is non-deterministic
+                /// (e.g. `rand`). Both branches would render to the same `getAliasOrColumnName`
+                /// key, but at runtime they evaluate independently — collapsing them into one
+                /// `multiSearchAny`/`multiMatchAny` call would change query results.
+                if (isExpressionNonDeterministic(identifier, context))
+                {
+                    slots.push_back({child_expr_fn});
+                    continue;
+                }
+
+                const String & pattern_str = literal->value.safeGet<String>();
+
+                PatternData data;
+                data.is_case_insensitive = is_ilike;
+                data.is_substring = false;
+
+                if (is_match)
+                {
+                    /// match() already has a regexp pattern - use as is.
+                    /// A regexp can never be a pure substring, so it always falls through to the
+                    /// combined `match` path; case-insensitivity flags inside the pattern (e.g.
+                    /// `(?i)`, `(?mi:...)`) are preserved verbatim in the combined alternation.
+                    data.regexp = pattern_str;
+                    data.is_substring = false;
+                }
+                else
+                {
+                    /// Check if LIKE pattern is a simple substring search
+                    data.is_substring = likePatternIsSubstring(pattern_str, data.substring);
+
+                    /// Always compute regexp for fallback
+                    data.regexp = likePatternToRegexp(pattern_str);
+                    if (is_ilike)
+                        data.regexp = "(?i)" + data.regexp;
+                }
+
+                String key = identifier->getAliasOrColumnName();
+                auto it = key_to_index.find(key);
+                size_t idx;
+                if (it == key_to_index.end())
+                {
+                    idx = per_key_data.size();
+                    key_to_index.emplace(key, idx);
+                    per_key_data.emplace_back();
+                    per_key_data.back().identifier = identifier;
+                    per_key_data.back().slot_index = slots.size();
+                    slots.emplace_back();  /// reserved placeholder slot
+                }
+                else
+                {
+                    idx = it->second;
+                }
+
+                per_key_data[idx].originals.push_back(child_expr_fn);
+                per_key_data[idx].info.patterns.push_back(std::move(data));
             }
 
-            /// If no patterns were optimized, nothing to do
-            if (identifier_to_patterns.empty())
+            /// If no patterns were collected, nothing to do
+            if (per_key_data.empty())
                 continue;
 
-            /// Create appropriate function nodes and fill in placeholders
-            for (size_t i = 0; i < pattern_keys.size(); ++i)
+            bool any_rewrite = false;
+
+            /// Decide per-key whether to rewrite. When the patterns exceed the configured hyperscan
+            /// size limits, keep the original LIKE/ILIKE/match branches: emitting `multiMatchAny`
+            /// would throw at runtime and emitting one combined `match` regexp could blow up RE2
+            /// compile limits.
+            for (auto & key_data : per_key_data)
             {
-                const String & key = pattern_keys[i];
-                auto & info = identifier_to_patterns.at(key);
-                size_t pos = match_function_positions[i];
-                const ASTPtr & identifier_ast = identifier_to_ast.at(key);
+                auto & info = key_data.info;
+                ASTs & slot = slots[key_data.slot_index];
 
                 ASTPtr match_fn;
+
                 if (info.canUseMultiSearchAny())
                 {
                     /// Use `multiSearchAny` or `multiSearchAnyCaseInsensitiveUTF8` for pure substring patterns.
+                    /// `multiSearchAny*` operates on raw substrings, not regexps, so the hyperscan
+                    /// regexp size limits are not applicable here.
                     String func_name = info.needsCaseInsensitive() ? "multiSearchAnyCaseInsensitiveUTF8" : "multiSearchAny";
-                    match_fn = makeASTFunction(func_name, identifier_ast, make_intrusive<ASTLiteral>(Field{info.getSubstrings()}));
+                    match_fn = makeASTFunction(func_name, key_data.identifier, make_intrusive<ASTLiteral>(Field{info.getSubstrings()}));
                 }
                 else
                 {
 #if USE_VECTORSCAN
+                    const bool fits_limits = info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
                     const bool can_use_multi_match = allow_hyperscan
-                        && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length)
+                        && fits_limits
                         && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp());
 #else
+                    const bool fits_limits = info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
                     constexpr bool can_use_multi_match = false;
 #endif
                     if (can_use_multi_match)
@@ -282,25 +319,45 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                         /// `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`,
                         /// so a query that previously worked as `OR LIKE` cannot be turned into a
                         /// `BAD_ARGUMENTS` / `HYPERSCAN_CANNOT_SCAN_TEXT` failure by this rewrite.
-                        match_fn = makeASTFunction("multiMatchAny", identifier_ast, make_intrusive<ASTLiteral>(Field{info.getRegexps()}));
+                        match_fn = makeASTFunction("multiMatchAny", key_data.identifier, make_intrusive<ASTLiteral>(Field{info.getRegexps()}));
+                    }
+                    else if (fits_limits)
+                    {
+                        /// Fall back to `match` with combined alternation when Vectorscan is not
+                        /// compiled in, `allow_hyperscan` is off, or the patterns would be rejected
+                        /// as expensive. The combined regexp size is bounded by
+                        /// `max_hyperscan_regexp_total_length` (verified above), so we cannot blow
+                        /// up RE2 compile limits here.
+                        match_fn = makeASTFunction("match", key_data.identifier, make_intrusive<ASTLiteral>(Field{info.getCombinedRegexp()}));
                     }
                     else
                     {
-                        /// Fall back to `match` with combined alternation when Vectorscan is not
-                        /// compiled in, `allow_hyperscan` is off, or the hyperscan size limits
-                        /// would be exceeded.
-                        match_fn = makeASTFunction("match", identifier_ast, make_intrusive<ASTLiteral>(Field{info.getCombinedRegexp()}));
+                        /// Patterns exceed the configured hyperscan size limits. Skip the rewrite
+                        /// for this key — keep the original `OR LIKE` branches so the query remains
+                        /// executable and so we don't build an unbounded combined regexp.
+                        slot = std::move(key_data.originals);
+                        continue;
                     }
                 }
 
-                unique_elems[pos] = std::move(match_fn);
+                slot.push_back(std::move(match_fn));
+                any_rewrite = true;
             }
 
-            /// OR must have at least two arguments.
-            if (unique_elems.size() == 1)
-                unique_elems.push_back(make_intrusive<ASTLiteral>(Field(false)));
+            if (!any_rewrite)
+                continue;
 
-            expr_list_fn->children = std::move(unique_elems);
+            /// Flatten the slot list back into the OR's argument list.
+            ASTs flattened;
+            for (auto & slot : slots)
+                for (auto & elem : slot)
+                    flattened.push_back(std::move(elem));
+
+            /// OR must have at least two arguments.
+            if (flattened.size() == 1)
+                flattened.push_back(make_intrusive<ASTLiteral>(Field(false)));
+
+            expr_list_fn->children = std::move(flattened);
 
             /// Note: indexHint wrapping is only supported in the new analyzer.
             /// The old analyzer doesn't support it due to visitor pattern limitations.

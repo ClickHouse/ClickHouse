@@ -215,45 +215,66 @@ public:
             return;
         processed_nodes.insert(function_node);
 
-        QueryTreeNodes unique_elems;
-        /// Store clones of original LIKE/ILIKE/match expressions for indexHint
-        QueryTreeNodes original_like_exprs;
+        /// Each "slot" in the OR's argument list. A slot is either a single non-LIKE branch we kept
+        /// as-is, or a placeholder for a group of LIKE/ILIKE/match patterns sharing the same LHS
+        /// expression. We resolve the placeholder to either a single optimized match function or
+        /// (when the rewrite is unsafe) the original branches kept verbatim, then flatten back into
+        /// the OR's argument list.
+        std::vector<QueryTreeNodes> slots;
 
-        QueryTreeNodePtrWithHashMap<PatternInfo> node_to_patterns;
-        std::vector<QueryTreeNodePtr> pattern_keys;  /// To preserve order of first occurrence
-        /// Track positions in unique_elems where we'll insert the match functions
-        std::vector<size_t> match_function_positions;
+        struct PerKeyData
+        {
+            QueryTreeNodePtr key;
+            PatternInfo info;
+            QueryTreeNodes originals;  /// Original LIKE/ILIKE/match argument nodes for this key
+            size_t slot_index = 0;     /// Index into `slots` reserved for this key
+        };
+        std::vector<PerKeyData> per_key_data;
+        QueryTreeNodePtrWithHashMap<size_t> key_to_index;
 
         for (auto & argument : function_node->getArguments())
         {
-            unique_elems.push_back(argument);
-
             auto * argument_function = argument->as<FunctionNode>();
             if (!argument_function)
+            {
+                slots.push_back({argument});
                 continue;
+            }
 
             const bool is_like  = argument_function->getFunctionName() == "like";
             const bool is_ilike = argument_function->getFunctionName() == "ilike";
             const bool is_match = argument_function->getFunctionName() == "match";
 
-            /// Not {i}like or match -> bail out.
+            /// Not {i}like or match -> keep as-is.
             if (!is_like && !is_ilike && !is_match)
+            {
+                slots.push_back({argument});
                 continue;
+            }
 
             const auto & like_arguments = argument_function->getArguments().getNodes();
             if (like_arguments.size() != 2)
+            {
+                slots.push_back({argument});
                 continue;
+            }
 
             const auto & like_first_argument = like_arguments[0];
             const auto * pattern = like_arguments[1]->as<ConstantNode>();
             if (!pattern || !isString(pattern->getResultType()))
+            {
+                slots.push_back({argument});
                 continue;
+            }
 
             /// Don't merge `f(x) LIKE 'a%' OR f(x) LIKE 'b%'` when `f` is non-deterministic
             /// (e.g. `rand`). The structural hash treats both branches as equal, but at runtime
             /// they evaluate independently — collapsing would change query results.
             if (isExpressionNonDeterministic(like_first_argument))
+            {
+                slots.push_back({argument});
                 continue;
+            }
 
             const String & pattern_str = pattern->getValue().safeGet<String>();
 
@@ -281,27 +302,28 @@ public:
                     data.regexp = "(?i)" + data.regexp;
             }
 
-            /// Clone the original expression for indexHint before removing it
-            original_like_exprs.push_back(argument->clone());
-
-            unique_elems.pop_back();
-
-            auto it = node_to_patterns.find(like_first_argument);
-            if (it == node_to_patterns.end())
+            auto it = key_to_index.find(like_first_argument);
+            size_t idx;
+            if (it == key_to_index.end())
             {
-                it = node_to_patterns.insert({like_first_argument, PatternInfo{}}).first;
-                pattern_keys.push_back(like_first_argument);
-                /// Remember the position where we'll insert the function later
-                match_function_positions.push_back(unique_elems.size());
-                /// Add placeholder that will be replaced
-                unique_elems.push_back(nullptr);
+                idx = per_key_data.size();
+                key_to_index.emplace(like_first_argument, idx);
+                per_key_data.emplace_back();
+                per_key_data.back().key = like_first_argument;
+                per_key_data.back().slot_index = slots.size();
+                slots.emplace_back();  /// reserved placeholder slot
+            }
+            else
+            {
+                idx = it->second;
             }
 
-            it->second.patterns.push_back(std::move(data));
+            per_key_data[idx].originals.push_back(argument);
+            per_key_data[idx].info.patterns.push_back(std::move(data));
         }
 
-        /// If no patterns were optimized, nothing to do
-        if (original_like_exprs.empty())
+        /// If no LIKE/ILIKE/match patterns were collected, nothing to do
+        if (per_key_data.empty())
             return;
 
         /// Cache context for later use
@@ -318,27 +340,105 @@ public:
         const size_t max_hyperscan_regexp_total_length = context->getSettingsRef()[Setting::max_hyperscan_regexp_total_length];
         const bool reject_expensive_hyperscan_regexps = context->getSettingsRef()[Setting::reject_expensive_hyperscan_regexps];
 
+        /// Decide per-key whether to rewrite, and collect originals of all keys we keep rewriting
+        /// (those originals form the indexHint payload).
+        bool any_rewrite = false;
+        QueryTreeNodes index_hint_originals;
+
+        for (auto & key_data : per_key_data)
+        {
+            auto & info = key_data.info;
+            QueryTreeNodes & slot = slots[key_data.slot_index];
+
+            std::shared_ptr<FunctionNode> match_function;
+
+            if (info.canUseMultiSearchAny())
+            {
+                /// Use `multiSearchAny` or `multiSearchAnyCaseInsensitiveUTF8` for pure substring patterns.
+                /// `multiSearchAny*` operates on raw substrings, not regexps, so the hyperscan
+                /// regexp size limits are not applicable here.
+                String func_name = info.needsCaseInsensitive() ? "multiSearchAnyCaseInsensitiveUTF8" : "multiSearchAny";
+                match_function = std::make_shared<FunctionNode>(func_name);
+                match_function->getArguments().getNodes().push_back(key_data.key);
+                match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getSubstrings()}));
+                auto resolver = FunctionFactory::instance().get(func_name, context);
+                match_function->resolveAsFunction(resolver);
+            }
+            else if (info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
+            {
+                if (allow_hyperscan && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp()))
+                {
+                    /// Use `multiMatchAny` for non-substring patterns. It is significantly faster than
+                    /// `match` with alternation because it can leverage Vectorscan/Hyperscan when available
+                    /// and falls back to RE2 alternation otherwise.
+                    /// `multiMatchAny` enforces `max_hyperscan_regexp_length`,
+                    /// `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`
+                    /// at execution time, so we pre-check those guards; that way the rewrite cannot
+                    /// turn a previously-working query into a `BAD_ARGUMENTS` /
+                    /// `HYPERSCAN_CANNOT_SCAN_TEXT` failure.
+                    match_function = std::make_shared<FunctionNode>("multiMatchAny");
+                    match_function->getArguments().getNodes().push_back(key_data.key);
+                    match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getRegexps()}));
+                    auto resolver = FunctionFactory::instance().get("multiMatchAny", context);
+                    match_function->resolveAsFunction(resolver);
+                }
+                else
+                {
+                    /// Fall back to `match` with combined alternation when Hyperscan is disabled or the
+                    /// patterns would be rejected as expensive. The combined regexp size is bounded
+                    /// by `max_hyperscan_regexp_total_length` (verified above), so we cannot blow up
+                    /// RE2 compile limits here.
+                    match_function = std::make_shared<FunctionNode>("match");
+                    match_function->getArguments().getNodes().push_back(key_data.key);
+                    match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getCombinedRegexp()}));
+                    auto resolver = FunctionFactory::instance().get("match", context);
+                    match_function->resolveAsFunction(resolver);
+                }
+            }
+            else
+            {
+                /// Patterns exceed the configured hyperscan size limits. We cannot emit
+                /// `multiMatchAny` (would throw at runtime), and emitting a single combined `match`
+                /// would build an unbounded regexp that can blow up RE2 compile limits. Keep the
+                /// original `OR LIKE` branches so the query remains executable.
+                slot = std::move(key_data.originals);
+                continue;
+            }
+
+            slot.push_back(std::move(match_function));
+            any_rewrite = true;
+
+            for (auto & original : key_data.originals)
+                index_hint_originals.push_back(original->clone());
+        }
+
+        if (!any_rewrite)
+            return;
+
         /// `indexHint(A) AND expr` restricts index analysis to ranges satisfying `A`, so wrapping the
         /// optimized chain in `indexHint(<LIKE subset>)` is only safe when every OR branch was a
         /// LIKE/ILIKE/match: for mixed chains (e.g. `URL LIKE 'a%' OR UserID = 1`), the hint would
         /// prune ranges where only the non-LIKE branch matches, producing false negatives.
-        const bool is_pure_like_chain = original_like_exprs.size() == function_node->getArguments().getNodes().size();
+        size_t total_like_branches = 0;
+        for (const auto & key_data : per_key_data)
+            total_like_branches += key_data.originals.size();
+        const bool is_pure_like_chain = total_like_branches == function_node->getArguments().getNodes().size();
 
         QueryTreeNodePtr index_hint_node;
-        if (is_pure_like_chain)
+        if (is_pure_like_chain && !index_hint_originals.empty())
         {
-            /// Create indexHint with the original LIKE/ILIKE/match expressions for index analysis FIRST
-            /// (before modifying the original node)
             QueryTreeNodePtr index_hint_arg;
-            if (original_like_exprs.size() == 1)
+            if (index_hint_originals.size() == 1)
             {
-                index_hint_arg = std::move(original_like_exprs[0]);
+                index_hint_arg = std::move(index_hint_originals[0]);
             }
             else
             {
-                /// Create OR of all original expressions
+                /// Create OR of all original expressions for the rewritten keys. Originals of keys
+                /// that were not rewritten still appear in the outer OR, so the index can use them
+                /// directly without indexHint.
                 auto original_or = std::make_shared<FunctionNode>("or");
-                original_or->getArguments().getNodes() = std::move(original_like_exprs);
+                original_or->getArguments().getNodes() = std::move(index_hint_originals);
                 original_or->resolveAsFunction(or_function_resolver);
                 index_hint_arg = std::move(original_or);
             }
@@ -350,63 +450,17 @@ public:
             index_hint_node = std::move(index_hint_fn);
         }
 
-        /// Now create the appropriate function nodes and fill in the placeholders
-        for (size_t i = 0; i < pattern_keys.size(); ++i)
-        {
-            const auto & key = pattern_keys[i];
-            auto & info = node_to_patterns.at(key);
-            size_t pos = match_function_positions[i];
-
-            std::shared_ptr<FunctionNode> match_function;
-
-            if (info.canUseMultiSearchAny())
-            {
-                /// Use `multiSearchAny` or `multiSearchAnyCaseInsensitiveUTF8` for pure substring patterns
-                String func_name = info.needsCaseInsensitive() ? "multiSearchAnyCaseInsensitiveUTF8" : "multiSearchAny";
-                match_function = std::make_shared<FunctionNode>(func_name);
-                match_function->getArguments().getNodes().push_back(key);
-                match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getSubstrings()}));
-                auto resolver = FunctionFactory::instance().get(func_name, context);
-                match_function->resolveAsFunction(resolver);
-            }
-            else if (allow_hyperscan
-                && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length)
-                && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp()))
-            {
-                /// Use `multiMatchAny` for non-substring patterns. It is significantly faster than
-                /// `match` with alternation because it can leverage Vectorscan/Hyperscan when available
-                /// and falls back to RE2 alternation otherwise.
-                /// `multiMatchAny` enforces `max_hyperscan_regexp_length`,
-                /// `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`
-                /// at execution time, so we pre-check those guards and fall back to plain `match`
-                /// when they would be triggered; that way the rewrite cannot turn a
-                /// previously-working query into a `BAD_ARGUMENTS` / `HYPERSCAN_CANNOT_SCAN_TEXT`
-                /// failure.
-                match_function = std::make_shared<FunctionNode>("multiMatchAny");
-                match_function->getArguments().getNodes().push_back(key);
-                match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getRegexps()}));
-                auto resolver = FunctionFactory::instance().get("multiMatchAny", context);
-                match_function->resolveAsFunction(resolver);
-            }
-            else
-            {
-                /// Fall back to `match` with combined alternation when Hyperscan is disabled or the
-                /// hyperscan size limits would be exceeded.
-                match_function = std::make_shared<FunctionNode>("match");
-                match_function->getArguments().getNodes().push_back(key);
-                match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getCombinedRegexp()}));
-                auto resolver = FunctionFactory::instance().get("match", context);
-                match_function->resolveAsFunction(resolver);
-            }
-
-            unique_elems[pos] = std::move(match_function);
-        }
+        /// Flatten the slot list back into the OR's argument list.
+        QueryTreeNodes flattened;
+        for (auto & slot : slots)
+            for (auto & elem : slot)
+                flattened.push_back(std::move(elem));
 
         /// OR must have at least two arguments.
-        if (unique_elems.size() == 1)
-            unique_elems.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(0)));
+        if (flattened.size() == 1)
+            flattened.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(0)));
 
-        function_node->getArguments().getNodes() = std::move(unique_elems);
+        function_node->getArguments().getNodes() = std::move(flattened);
         function_node->resolveAsFunction(or_function_resolver);
 
         if (!index_hint_node)
