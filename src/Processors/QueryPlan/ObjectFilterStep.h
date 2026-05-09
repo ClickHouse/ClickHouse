@@ -22,6 +22,8 @@ public:
     String getName() const override { return "ObjectFilter"; }
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
+    bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
+
     const ActionsDAG & getExpression() const { return actions_dag; }
     ActionsDAG & getExpression() { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }

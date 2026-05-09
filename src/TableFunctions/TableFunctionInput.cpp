@@ -97,7 +97,10 @@ StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionInput(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionInput>({});
+    /// `input` only reads the data stream that the client is sending alongside the INSERT query;
+    /// it does not access arbitrary hosts or storages, so it does not need the `CREATE TEMPORARY TABLE` grant
+    /// and is allowed in readonly mode.
+    factory.registerFunction<TableFunctionInput>({}, {.allow_readonly = true});
 }
 
 }

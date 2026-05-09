@@ -105,7 +105,6 @@ PartitionIdToMaxBlockPtr getMaxAddedBlocks(ReadFromMergeTree * reading)
 void QueryDAG::appendExpression(const ActionsDAG & expression)
 {
     auto cloned = expression.clone();
-    cloned.removeTrivialWrappers();
 
     if (dag)
         dag->mergeInplace(std::move(cloned));
@@ -249,6 +248,9 @@ bool QueryDAG::build(QueryPlan::Node & node)
         auto & outputs = dag->getOutputs();
         outputs.insert(outputs.begin(), filter_node);
     }
+
+    if (dag)
+        dag->removeTrivialWrappers();
 
     return true;
 }

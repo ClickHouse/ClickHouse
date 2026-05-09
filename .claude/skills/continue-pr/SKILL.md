@@ -113,6 +113,8 @@ For each CI failure:
 
 4. **Repeat** until all failures are addressed or confirmed as known issues with links to open issues/PRs.
 
+If the only failure is "CH Inc Sync", fix it using the /fix-sync skill.
+
 ### 5. Address reviewer feedback
 
 Fetch review comments:
