@@ -274,8 +274,18 @@ void listFilesWithRegexpMatchingOnDisk(
         String full_path = dir_path + for_match;
         if (disk->existsFile(full_path))
         {
-            total_bytes_to_read += disk->getFileSize(full_path);
-            result.push_back(full_path);
+            try
+            {
+                total_bytes_to_read += disk->getFileSize(full_path);
+                result.push_back(full_path);
+            }
+            catch (const Exception & e)
+            {
+                /// File can disappear between `existsFile` and `getFileSize` under
+                /// concurrent rotation/deletion. Skip vanished entries; rethrow other errors.
+                if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                    throw;
+            }
         }
         return;
     }
@@ -323,8 +333,19 @@ void listFilesWithRegexpMatchingOnDisk(
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
-                total_bytes_to_read += disk->getFileSize(full_entry_path);
-                result.push_back(full_entry_path);
+                try
+                {
+                    total_bytes_to_read += disk->getFileSize(full_entry_path);
+                    result.push_back(full_entry_path);
+                }
+                catch (const Exception & e)
+                {
+                    /// Concurrent deletion/rotation can race with the directory iterator:
+                    /// the entry was reported by `iterateDirectory` but disappeared before
+                    /// `getFileSize`. Skip vanished entries; rethrow other errors.
+                    if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                        throw;
+                }
             }
         }
         else if (is_dir)
@@ -388,8 +409,22 @@ bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_
     if (disk->getDataSourceDescription().type != DataSourceType::Local)
         return true;
 
-    const String disk_root = getDiskPathWithSlash(disk);
-    return pathStartsWith(disk_root + relative_path, disk_root);
+    /// `fs::weakly_canonical` resolves symlinks for the longest existing prefix of the
+    /// path and lexically appends the rest. We invoke it explicitly here (rather than
+    /// relying on `pathStartsWith` calling `fs::relative` internally) so the
+    /// symlink-resolution step is visible at the call site - the security property
+    /// of this check should not depend on subtle library behavior of `fs::relative`.
+    std::error_code ec;
+    const fs::path disk_path(disk->getPath());
+    const fs::path resolved_root = fs::weakly_canonical(disk_path, ec);
+    if (ec)
+        return false;
+    const fs::path resolved = fs::weakly_canonical(disk_path / relative_path, ec);
+    if (ec)
+        return false;
+    /// Both paths are now in canonical form (symlinks resolved); a string-prefix
+    /// containment check on the canonical paths is sufficient and unambiguous.
+    return pathStartsWith(resolved, resolved_root);
 }
 
 /// Same containment check but throws when the path would escape. Use when the
