@@ -41,6 +41,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.5",
         {
+            {"query_plan_rewrite_order_by_limit", true, true, "New setting that enables `RewriteOrderByLimitPass`."},
+            {"query_plan_max_limit_for_rewrite_order_by_limit", 1000000, 1000000, "New setting that gates `RewriteOrderByLimitPass` by the value of `LIMIT n`."},
+            {"query_plan_min_columns_to_use_rewrite_order_by_limit", 50, 50, "New setting that gates `RewriteOrderByLimitPass` by the number of columns in the table."},
             {"paimon_target_snapshot_id", -1, -1, "New setting."},
             {"max_consume_snapshots", 0, 0, "New setting."},
             {"allow_experimental_paimon_storage_engine", false, false, "New setting."},

@@ -51,6 +51,7 @@
 #include <Analyzer/Passes/RegexpFunctionRewritePass.h>
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
+#include <Analyzer/Passes/RewriteOrderByLimitPass.h>
 #include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
@@ -283,6 +284,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<UniqToCountPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
+    manager.addPass(std::make_unique<RewriteOrderByLimitPass>());
 
     manager.addPass(std::make_unique<DistanceTransposedPartialReadsPass>());
 

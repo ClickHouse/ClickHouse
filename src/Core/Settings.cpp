@@ -6088,6 +6088,13 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
+    DECLARE(Bool, query_plan_rewrite_order_by_limit, true, R"(
+Enables `RewriteOrderByLimitPass`. For wide tables, `SELECT * FROM t ORDER BY narrow_key LIMIT n` is rewritten so wide columns are read only for the surviving N rows: scan `_part_starting_offset`/`_part_offset` along with the sort key first, then re-read the rest by row position.
+)", 0) \
+    DECLARE(UInt64, query_plan_max_limit_for_rewrite_order_by_limit, 1000000, R"(Maximum value of `LIMIT n` for which `RewriteOrderByLimitPass` may fire. If zero, there is no upper bound.
+)", 0) \
+    DECLARE(UInt64, query_plan_min_columns_to_use_rewrite_order_by_limit, 50, R"(Minimum number of columns in the table for which `RewriteOrderByLimitPass` may fire. The rewrite saves I/O only when the table is wide enough that re-reading by row position is cheaper than the initial sort scan.
+)", 0) \
     DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
 Optimize reading with FINAL from ReplacingMergeTree by building a set of primary keys and using it for index analysis.
 )", 0) \
