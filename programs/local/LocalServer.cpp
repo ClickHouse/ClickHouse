@@ -1,6 +1,3 @@
-/// musl defines `stderr` as `(stderr)` which triggers `-Wdisabled-macro-expansion`.
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-
 #include <LocalServer.h>
 
 #include <sys/resource.h>
@@ -224,8 +221,12 @@ void LocalServer::processError(std::string_view) const
             message = client_exception->message();
         }
 
+        /// musl defines `stderr` as `(stderr)` which triggers `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         fmt::print(stderr, "Received exception:\n{}\n", message);
         fmt::print(stderr, "\n");
+#pragma clang diagnostic pop
     }
     else
     {

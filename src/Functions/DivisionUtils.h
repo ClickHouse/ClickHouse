@@ -6,6 +6,10 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
+/// Mixed Float32 / Float64 expressions appear throughout the templated
+/// `apply` methods (Float32 operands compared against Float64
+/// `numeric_limits<...>::max/lowest`, Float32 trunc/quotient mixed with
+/// double-precision constants), so we keep the suppression at file scope.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdouble-promotion"
 

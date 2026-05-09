@@ -36,6 +36,10 @@
 
 #include <vector>
 
+/// ICU wraps every entry point in a `U_ICU_ENTRY_POINT_RENAME(name)` macro that
+/// re-uses the original name during expansion (`#define u_charType
+/// U_ICU_ENTRY_POINT_RENAME(u_charType)`), so every ICU call below triggers
+/// `-Wdisabled-macro-expansion`. Keep the suppression at file scope.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 

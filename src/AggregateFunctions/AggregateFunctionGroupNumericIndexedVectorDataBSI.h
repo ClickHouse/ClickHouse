@@ -14,9 +14,6 @@
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <roaring/containers/containers.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 
@@ -1987,5 +1984,3 @@ public:
 };
 
 }
-
-#pragma clang diagnostic pop
