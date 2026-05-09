@@ -1916,7 +1916,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "mqs",
         "kafka_consumer_hang",
 
-        /// Sections used in private builds (shared catalog, distributed cache, stateless workers)
+        /// Sections used in private builds (shared catalog, distributed cache, stateless workers, cloud readiness)
         "shared_database_catalog",
         "shared_merge_tree",
         "distributed_cache_client",
@@ -1925,6 +1925,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "stateless_worker_client",
         "stateless_worker_server",
         "_functional_tests_helper_shared_catalog",
+        "server_uuid_from_replica_name",
+        "cloud",
 
         /// Miscellaneous
         "core_dump",
