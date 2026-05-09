@@ -306,7 +306,7 @@ Typical use cases for the postprocessor argument include:
 3. **Stemming or lemmatization**. Mapping each token to its stem improves search recall by matching morphological variants of the token with the same meaning.
    For example, a query for "running" would also match "run", searching for "better" finds "good", etc.
    ClickHouse provides a built-in [stem](/sql-reference/functions/string-functions.md/#stem) function for several languages.
-   Example: `stem('en', col)`
+   Example: `stem(col,'en')`
 4. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8).
    We generally recommend using a corresponding preprocessor for lower- and upper-casing.
 
@@ -324,7 +324,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | Function | Preprocessor | Compatible tokenizers | Postprocessor |
 |---|---|---|---|
 | `=`, `IN` | yes | any | yes |
-| [`hasToken`](/sql-reference/functions/string-search-functions.md/#hasToken) | yes | any (designed for `splitByNonAlpha`) | yes |
+| [`hasToken`](/sql-reference/functions/string-search-functions.md/#hasToken), [`hasTokenOrNull`](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull) | yes | any (designed for `splitByNonAlpha`) | yes |
 | [`hasAnyTokens(col, str)`](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), [`hasAllTokens(col, str)`](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | yes | any | yes (skipped for `array`) |
 | [`hasAnyTokens(col, arr)`](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), [`hasAllTokens(col, arr)`](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | no (array elements are tokens as-is) | any | yes (skipped for `array`) |
 | [`hasPhrase`](/sql-reference/functions/string-search-functions.md/#hasPhrase) | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
