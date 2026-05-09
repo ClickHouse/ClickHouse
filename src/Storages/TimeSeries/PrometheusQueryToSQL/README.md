@@ -59,8 +59,8 @@ GROUP BY series_id
 
 Measured result from the external transpiler:
 
-- `rate_5m_range_1d`: p50 improved by `47.9%` and `50.2%` in two measured runs.
-- `sum_rate_by_job_range_7d`: p50 improved by `56.5%` and `58.2%`.
+- For `query_range` over one day with 5-minute steps, `rate(http_requests_total[5m])` p50 improved by `47.9%` and `50.2%` in two measured runs.
+- For `query_range` over seven days with 1-hour steps, `sum by (job) (rate(http_requests_total[1h]))` p50 improved by `56.5%` and `58.2%`.
 
 In-tree ClickHouse validation: range-function tests for lookback boundaries, staleness, counter resets, offsets, and subquery alignment; `EXPLAIN` or `system.query_log` evidence showing less expression work, memory, or pipeline work for the generated SQL.
 
@@ -100,8 +100,8 @@ This target is safe only when the duplicated expression has the same label-set a
 
 Measured result from the external transpiler:
 
-- Repeated-expression cancellation reduced `FunctionExecute/query` by about `26%` to `40%` on targeted rows.
-- The same rows had p50 improvements of about `55%` to `89%`.
+- Repeated-expression cancellation reduced `FunctionExecute/query` by about `26%` to `40%` for exact-average expressions like the examples above.
+- The same expressions had p50 improvements of about `55%` to `89%`.
 - Some repeated-expression variants also reduced `SelectedRows` or `ReadCompressedBytes` by about `33%` to `37.5%` after the duplicated scan work disappeared.
 
 In-tree ClickHouse validation: tests for `on`/`ignoring`, bool comparisons, duplicate-labelset errors, metric-name dropping, and set-operator presence semantics; `system.query_log` evidence such as lower `FunctionExecute`, `SelectedRows`, or `ReadCompressedBytes` when the duplicate work is removed.
@@ -142,7 +142,7 @@ GROUP BY labels, eval_ts
 
 Measured result from the external transpiler:
 
-- Direct selector-window aggregate shapes reduced `FunctionExecute/query` by about `13%` to `21%` on targeted rate rows.
+- Direct selector-window aggregate shapes reduced `FunctionExecute/query` by about `13%` to `21%` for `rate(...)` expressions like the examples above.
 - p50 improved by about `80%`.
 - `SelectedRows` and `SelectedBytes` moved by about `11%` in the measured accepted shape.
 
@@ -179,9 +179,9 @@ The measured-better target uses a direct aggregate kernel for long-window `rate`
 
 Measured result from the external transpiler:
 
-- A guarded direct-rate aggregate improved `rate_1h_instant` p50 by about `14%`.
-- Histogram-quantile inputs using long-window bucket rates improved p50 by `12.3%` and `11.7%` on two targeted rows.
-- `FunctionExecute/query` moved only `0.5%` to `1.5%` on those histogram rows, so this was mainly a latency improvement in the external measurements.
+- A guarded direct-rate aggregate improved instant `rate(http_requests_total[1h])` p50 by about `14%`.
+- Histogram-quantile inputs such as `histogram_quantile(0.9, sum by (le) (rate(http_request_duration_seconds_bucket[1h])))` improved p50 by `12.3%` and `11.7%` in two measured cases.
+- `FunctionExecute/query` moved only `0.5%` to `1.5%` on those histogram expressions, so this was mainly a latency improvement in the external measurements.
 
 In-tree ClickHouse validation: tests for counter resets, one-sample windows, sparse windows, stale markers, and especially short windows. The external attempt had to disable the direct shortcut for `rate(...[15s])` before re-enabling it behind a long-window guard.
 
@@ -279,7 +279,7 @@ The measured-better target parses and groups bucket bounds once per output label
 
 Measured result from the external transpiler:
 
-- Direct histogram coalescing improved p50 by about `14.6%` to `19.7%` on targeted histogram rows.
+- Direct histogram coalescing improved p50 by about `14.6%` to `19.7%` on histogram-quantile expressions like the example above.
 - `FunctionExecute/query` moved by about `0.4%` to `1.9%` in those runs, so the observed win was mostly latency/shape rather than a large total function-count reduction.
 
 In-tree ClickHouse validation: tests for missing or invalid `le`, duplicate bucket bounds, `+Inf`, zero-count buckets, monotonicity correction, grouping labels, and metric-name dropping; generated SQL and query-log counters for bucket parsing, grouping, or function work.
@@ -325,9 +325,9 @@ Measured result from the external transpiler:
 
 In-tree ClickHouse validation: range-function correctness tests for duplicate timestamps, sparse windows, and counter resets; `system.query_log` counters showing lower function work or sort/array work for the generated SQL.
 
-## Explored patterns with weak or mixed external-transpiler signal
+## Explored patterns with weak or mixed external-transpiler measurements
 
-These patterns did not clear the external transpiler's acceptance bar, but they may still be useful inside ClickHouse if the in-tree converter can express them with less overhead or at a lower level than generated SQL can.
+These patterns did not show a clear positive result in generated SQL, but they may still be useful inside ClickHouse if the in-tree converter can express them with less overhead or at a lower level than generated SQL can.
 
 ### Reuse one range source instead of scanning the same selector twice
 
@@ -358,10 +358,10 @@ SELECT combine(
     evaluateRate(range_source))
 ```
 
-External-transpiler signal:
+External measurement result:
 
-- Early normalized range self-reuse attempts reduced `SelectedRows` and `SelectedBytes` by about `5%` to `7%`, but did not clear the function-work gate.
-- A later one-source self-join form improved p50 by about `51%`, but `FunctionExecute/query` regressed and an unrelated `rate_5m_range_1d` guardrail regressed by about `12%`.
+- Early normalized range self-reuse attempts reduced `SelectedRows` and `SelectedBytes` by about `5%` to `7%`, but `FunctionExecute/query` did not improve enough to accept the generated-SQL change.
+- A later one-source self-join form improved p50 by about `51%`, but `FunctionExecute/query` regressed and a separate `query_range` expression for `rate(http_requests_total[5m])` regressed by about `12%`.
 
 In-tree ClickHouse validation: duplicate-labelset and vector-matching tests, plus query-log counters proving the reuse does not add more join or function work than it removes.
 
@@ -393,9 +393,9 @@ FROM bounded_selector_samples
 GROUP BY grouping_labels, eval_ts
 ```
 
-External-transpiler signal:
+External measurement result:
 
-- A direct rows-based grouped range selector attempt improved p50 by `6.0%` and `7.6%` in two measured runs.
+- A direct raw-sample grouped range selector attempt improved p50 by `6.0%` and `7.6%` in two measured runs.
 - `FunctionExecute/query` slightly regressed by `0.61%` and `0.48%`, and `ReadCompressedBytes` did not move clearly.
 
 In-tree ClickHouse validation: grouping-label, metric-name dropping, stale-marker, and window-boundary tests; query-log evidence showing whether the in-tree shape reduces scan, memory, or expression work.
@@ -433,7 +433,7 @@ WHERE lookback <= step
 GROUP BY series_id, eval_ts
 ```
 
-External-transpiler signal:
+External measurement result:
 
 - Guarded non-overlap bucketization reduced `FunctionExecute/query` by about `2.0%` to `3.6%`.
 - p50 moved only within about `1.2%`, which was treated as noise in the external transpiler.
