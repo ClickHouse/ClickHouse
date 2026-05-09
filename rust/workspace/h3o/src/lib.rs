@@ -1068,14 +1068,18 @@ pub unsafe extern "C" fn polygonToCells(
             .disable_radians_conversion()
             .build();
         tiler.add(geo_poly).ok()?;
-        // Defensive upper bound on writes — the caller has allocated at least
-        // this many slots via `maxPolygonToCellsSize`.
+        // The caller allocates exactly `coverage_size_hint` slots via
+        // `maxPolygonToCellsSize`, so producing more cells here means the two
+        // backend calls disagree. Surface that as an error rather than
+        // silently truncating the result set.
         let max_size = tiler.coverage_size_hint();
-        for (i, cell) in tiler.into_coverage().enumerate() {
-            if i >= max_size {
-                break;
+        let mut count = 0usize;
+        for cell in tiler.into_coverage() {
+            if count >= max_size {
+                return None;
             }
-            *out.add(i) = u64::from(cell);
+            *out.add(count) = u64::from(cell);
+            count += 1;
         }
         Some(())
     }));
