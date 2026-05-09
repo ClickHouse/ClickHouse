@@ -128,7 +128,7 @@ public:
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
-        if (!replace && fs::exists(file_name))
+        if (!replace && fs::exists(getPath(file_name)))
         {
             throw Exception(
                 ErrorCodes::REWRITE_RULE_ALREADY_EXISTS,
