@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 
+set -euo pipefail
+
 # Test the experimental gate `allow_experimental_json_ast_dialect` and the
 # `dialect = 'clickhouse_json'` value, which lets queries be submitted as JSON
 # ASTs (the output of `parseQueryToJSON`) instead of SQL text.
+#
+# Pipelines below that submit a query expected to fail (gate-off, malformed
+# JSON, etc.) are marked with `|| true` so `set -e` does not exit on the
+# expected non-zero status of `clickhouse-client` / `clickhouse-curl`. With
+# `pipefail`, an empty `grep` match still propagates as a non-zero pipeline
+# status, which in turn produces empty output and a `.reference` mismatch
+# - so the assertion is still enforced deterministically.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,14 +31,14 @@ $CLICKHOUSE_CLIENT --query "SELECT name, value, default FROM system.settings WHE
 # dialect itself succeeds without the gate; the failure happens when the
 # next query is parsed.
 echo "=== Without gate, client-side TCP query fails with SUPPORT_IS_DISABLED ==="
-$CLICKHOUSE_CLIENT --dialect=clickhouse_json --query="SELECT 1" 2>&1 | grep -oE "Code: [0-9]+|SUPPORT_IS_DISABLED" | head -2
+{ $CLICKHOUSE_CLIENT --dialect=clickhouse_json --query="SELECT 1" 2>&1 || true; } | grep -oE "Code: [0-9]+|SUPPORT_IS_DISABLED" | head -2
 
 echo "=== Without gate, server-side HTTP query fails with SUPPORT_IS_DISABLED ==="
-${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&dialect=clickhouse_json" --data-binary 'SELECT 1' 2>&1 | grep -oE "Code: [0-9]+|SUPPORT_IS_DISABLED" | head -2
+{ ${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&dialect=clickhouse_json" --data-binary 'SELECT 1' 2>&1 || true; } | grep -oE "Code: [0-9]+|SUPPORT_IS_DISABLED" | head -2
 
 # Error message mentions the setting to enable
 echo "=== Error message mentions the setting to enable ==="
-$CLICKHOUSE_CLIENT --dialect=clickhouse_json --query="SELECT 1" 2>&1 | grep -oE "allow_experimental_json_ast_dialect" | head -1
+{ $CLICKHOUSE_CLIENT --dialect=clickhouse_json --query="SELECT 1" 2>&1 || true; } | grep -oE "allow_experimental_json_ast_dialect" | head -1
 
 # ============================================================================
 # Basic JSON-AST execution
@@ -71,10 +80,10 @@ echo "OK"
 # Errors
 # ============================================================================
 echo "=== With gate, malformed JSON yields BAD_ARGUMENTS ==="
-$CLICKHOUSE_CLIENT --allow_experimental_json_ast_dialect=1 --dialect=clickhouse_json --query="not json" 2>&1 | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
+{ $CLICKHOUSE_CLIENT --allow_experimental_json_ast_dialect=1 --dialect=clickhouse_json --query="not json" 2>&1 || true; } | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
 
 echo "=== With gate, empty JSON object yields BAD_ARGUMENTS ==="
-$CLICKHOUSE_CLIENT --allow_experimental_json_ast_dialect=1 --dialect=clickhouse_json --query="{}" 2>&1 | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
+{ $CLICKHOUSE_CLIENT --allow_experimental_json_ast_dialect=1 --dialect=clickhouse_json --query="{}" 2>&1 || true; } | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
 
 echo "=== With gate, unknown AST type yields BAD_ARGUMENTS ==="
-$CLICKHOUSE_CLIENT --allow_experimental_json_ast_dialect=1 --dialect=clickhouse_json --query='{"type":"NoSuchASTNode"}' 2>&1 | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
+{ $CLICKHOUSE_CLIENT --allow_experimental_json_ast_dialect=1 --dialect=clickhouse_json --query='{"type":"NoSuchASTNode"}' 2>&1 || true; } | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
