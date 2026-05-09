@@ -9,6 +9,7 @@
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
+#include <Databases/DatabaseFactory.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
@@ -281,6 +282,28 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             auto source_name = AccessTypeObjects::toStringSource(*creator.features.source_access_type);
             if (res.isGranted(AccessType::READ | AccessType::WRITE, source_name))
                 res.grant(AccessType::TABLE_ENGINE, engine_name);
+        }
+    }
+
+    /// Database engines are registered in DatabaseFactory, not StorageFactory, but
+    /// CREATE DATABASE checks TABLE_ENGINE in InterpreterCreateQuery. Apply the same
+    /// source_access_type logic as the StorageFactory loop above.
+    ///
+    /// Engines that share names with StorageFactory (PostgreSQL, MySQL, SQLite, S3, etc.)
+    /// are processed by both loops with the same source_access_type — grant() is idempotent,
+    /// so duplicates are harmless.
+    for (const auto & [name, creator] : DatabaseFactory::instance().getDatabaseEngines())
+    {
+        if (!creator.features.source_access_type)
+        {
+            if (!access_control.doesTableEnginesRequireGrant())
+                res.grant(AccessType::TABLE_ENGINE, name);
+        }
+        else
+        {
+            auto source_name = AccessTypeObjects::toStringSource(*creator.features.source_access_type);
+            if (res.isGranted(AccessType::READ | AccessType::WRITE, source_name))
+                res.grant(AccessType::TABLE_ENGINE, name);
         }
     }
 

@@ -2,7 +2,7 @@
 
 #if USE_NLP
 
-/// Embedded SQL definitions
+/// Embedded NLP data
 constexpr unsigned char resource_charset_zst[] =
 {
 #embed "../../contrib/nlp-data/charset.zst"

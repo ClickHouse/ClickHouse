@@ -33,7 +33,7 @@
 	url = https://github.com/ClickHouse/mariadb-connector-c
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
-	url = https://github.com/jemalloc/jemalloc
+	url = https://github.com/ClickHouse/jemalloc
 [submodule "contrib/google-protobuf"]
 	path = contrib/google-protobuf
 	url = https://github.com/ClickHouse/google-protobuf.git
@@ -124,7 +124,7 @@
 	url = https://github.com/ClickHouse/libuv
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
-	url = https://github.com/fmtlib/fmt
+	url = https://github.com/ClickHouse/fmt
 [submodule "contrib/krb5"]
 	path = contrib/krb5
 	url = https://github.com/ClickHouse/krb5
@@ -139,16 +139,13 @@
 	url = https://github.com/danlark1/miniselect
 [submodule "contrib/rocksdb"]
 	path = contrib/rocksdb
-	url = https://github.com/ClickHouse/rocksdb
+	url = https://github.com/facebook/rocksdb
 [submodule "contrib/xz"]
 	path = contrib/xz
-	url = https://github.com/xz-mirror/xz
+	url = https://github.com/tukaani-project/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
 	url = https://github.com/ClickHouse/abseil-cpp.git
-[submodule "contrib/dragonbox"]
-	path = contrib/dragonbox
-	url = https://github.com/ClickHouse/dragonbox
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
@@ -390,3 +387,6 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/zmij"]
+	path = contrib/zmij
+	url = https://github.com/vitaut/zmij.git
