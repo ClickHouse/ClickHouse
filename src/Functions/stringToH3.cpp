@@ -22,9 +22,15 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-/// `stringToH3` is documented to return 0 for invalid input.
-/// Swallow any parse error from the underlying H3 library to preserve that contract
-/// (the v4 H3 C API reports errors through a return code; v3 returned 0 silently).
+/// `stringToH3` accepts the same inputs as the original C H3 library, which used
+/// `sscanf("%" PRIx64, ...)` to parse the index. That means parsing is permissive:
+/// the longest valid hex prefix is consumed (after optional whitespace, sign, and
+/// "0x"/"0X" prefix), and trailing garbage is ignored, so non-H3 strings like
+/// `"foo"` parse to a valid value (e.g. `0xf`) rather than failing. Only inputs
+/// without any hex digit return 0 (the parse error from the underlying library is
+/// swallowed; the v4 H3 C API reports errors through a return code, v3 returned 0
+/// silently). The returned `H3Index` is not validated to be a real H3 cell — use
+/// `h3IsValid` for that.
 
 namespace
 {
@@ -109,13 +115,15 @@ REGISTER_FUNCTION(StringToH3)
 {
     FunctionDocumentation::Description description = R"(
 Converts the string representation of an H3 index to the `H3Index` ([UInt64](/sql-reference/data-types/int-uint)) representation.
+
+Parsing follows `sscanf("%" PRIx64, ...)` semantics: the longest valid hex prefix is consumed (after optional whitespace, sign, and `0x`/`0X` prefix) and trailing garbage is ignored, so inputs that contain at least one hex digit succeed. The returned value is not validated to be a real H3 cell — use `h3IsValid` to check that.
     )";
     FunctionDocumentation::Syntax syntax = "stringToH3(index_str)";
     FunctionDocumentation::Arguments arguments = {
         {"index_str", "String representation of the H3 index.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the H3 index number, or `0` if the input is not a valid H3 index.",
+        "Returns the parsed `H3Index`. Returns `0` only when the input contains no hex digit at all; otherwise the longest valid hex prefix is parsed (e.g. `'foo'` parses to `0xf`). The result is not validated as a real H3 cell.",
         {"UInt64"}
     };
     FunctionDocumentation::Examples examples = {
