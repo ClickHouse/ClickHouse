@@ -10,11 +10,13 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
+#include <cmath>
 
 
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -50,6 +52,7 @@ namespace
     {
         None,
         Increase,
+        Deriv,
     };
 
     struct ImplInfo
@@ -62,6 +65,64 @@ namespace
     ASTPtr toFloat64(ASTPtr && x)
     {
         return makeASTFunction("toFloat64", std::move(x));
+    }
+
+    void checkPredictLinearArgumentTypes(const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    {
+        std::string_view function_name = "predict_linear";
+        if (arguments.size() != 2)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects 2 arguments, but was called with {} arguments",
+                            function_name, arguments.size());
+        }
+
+        const auto & range_arg = arguments[0];
+        if (range_arg.type != ResultType::RANGE_VECTOR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects first argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::RANGE_VECTOR,
+                            getPromQLText(range_arg, context), range_arg.type);
+        }
+
+        const auto & scalar_arg = arguments[1];
+        if (scalar_arg.type != ResultType::SCALAR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects second argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::SCALAR,
+                            getPromQLText(scalar_arg, context), scalar_arg.type);
+        }
+    }
+
+    ASTPtr getScalarParameter(SQLQueryPiece && scalar_arg, std::string_view function_name, ConverterContext & context)
+    {
+        switch (scalar_arg.store_method)
+        {
+            case StoreMethod::CONST_SCALAR:
+            {
+                return timeSeriesScalarToAST(scalar_arg.scalar_value, context.scalar_data_type);
+            }
+            case StoreMethod::SINGLE_SCALAR:
+            {
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(scalar_arg.select_query), SQLSubqueryType::SCALAR});
+                auto subquery_id = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+                /// Wrap with `assumeNotNull` because scalar subqueries make their result nullable,
+                /// but StoreMethod::SINGLE_SCALAR always means one row.
+                return makeASTFunction("assumeNotNull", std::move(subquery_id));
+            }
+            case StoreMethod::SCALAR_GRID:
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "Function '{}' with a non-constant scalar parameter is not supported",
+                                function_name);
+            }
+            default:
+            {
+                throwUnexpectedStoreMethod(scalar_arg, context);
+            }
+        }
     }
 
     /// Returns information about how the specified prometheus function is implemented.
@@ -100,6 +161,13 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"deriv",
+             {
+                 "timeSeriesDerivToGrid",
+                 /* drop_metric_name = */ true,
+                 PostProcessFunction::Deriv,
+             }},
+
             {"last_over_time",
              {
                  "timeSeriesLastToGrid",
@@ -108,8 +176,6 @@ namespace
 
             /// TODO:
             /// resets
-            /// predict_linear
-            /// deriv
             /// avg_over_time
             /// min_over_time
             /// max_over_time
@@ -139,7 +205,7 @@ namespace
 
 bool isFunctionOverRange(std::string_view function_name)
 {
-    return getImplInfo(function_name) != nullptr;
+    return (function_name == "predict_linear") || (getImplInfo(function_name) != nullptr);
 }
 
 
@@ -157,20 +223,44 @@ SQLQueryPiece applyFunctionOverRange(
     ConverterContext & context)
 {
     const auto * impl_info = getImplInfo(function_name);
-    chassert(impl_info);
+    const bool is_predict_linear = function_name == "predict_linear";
+    chassert(impl_info || is_predict_linear);
 
-    checkArgumentTypes(function_name, arguments, context);
+    std::string_view ch_function_name;
+    bool drop_metric_name = true;
+    size_t range_argument_index = 0;
+    ASTPtr extra_parameter;
+
+    if (is_predict_linear)
+    {
+        checkPredictLinearArgumentTypes(arguments, context);
+        ch_function_name = "timeSeriesPredictLinearToGrid";
+    }
+    else
+    {
+        checkArgumentTypes(function_name, arguments, context);
+        ch_function_name = impl_info->ch_function_name;
+        drop_metric_name = impl_info->drop_metric_name;
+    }
 
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
         return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+
+    if (is_predict_linear)
+    {
+        if (arguments[0].store_method == StoreMethod::EMPTY || arguments[1].store_method == StoreMethod::EMPTY)
+            return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+
+        extra_parameter = getScalarParameter(std::move(arguments[1]), function_name, context);
+    }
 
     auto start_time = node_range.start_time;
     auto end_time = node_range.end_time;
     auto step = node_range.step;
     auto window = node_range.window;
 
-    auto argument = std::move(arguments[0]);
+    auto argument = std::move(arguments[range_argument_index]);
 
     SQLQueryPiece res = argument;
     res.node = node;
@@ -285,17 +375,43 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    ASTPtr result_values = addParametersToAggregateFunction(
-        makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
-        timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type));
-
-    if (impl_info->post_process_function == PostProcessFunction::Increase)
+    auto aggregate_function = makeASTFunction(ch_function_name, std::move(timestamps), std::move(values));
+    ASTPtr result_values;
+    if (extra_parameter)
     {
-        /// timeSeriesRateToGrid already implements Prometheus counter extrapolation;
-        /// increase() is that per-second rate scaled back to the requested range length.
+        result_values = addParametersToAggregateFunction(
+            std::move(aggregate_function),
+            timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(step, context.timestamp_data_type),
+            timeSeriesDurationToAST(window, context.timestamp_data_type),
+            std::move(extra_parameter));
+    }
+    else
+    {
+        result_values = addParametersToAggregateFunction(
+            std::move(aggregate_function),
+            timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(step, context.timestamp_data_type),
+            timeSeriesDurationToAST(window, context.timestamp_data_type));
+    }
+
+    if (impl_info && impl_info->post_process_function != PostProcessFunction::None)
+    {
+        ASTPtr factor;
+        if (impl_info->post_process_function == PostProcessFunction::Increase)
+        {
+            /// timeSeriesRateToGrid already implements Prometheus counter extrapolation;
+            /// increase() is that per-second rate scaled back to the requested range length.
+            factor = toFloat64(timeSeriesDurationToAST(window, context.timestamp_data_type));
+        }
+        else
+        {
+            /// timeSeriesDerivToGrid returns a slope per timestamp unit; PromQL deriv reports per-second slope.
+            factor = make_intrusive<ASTLiteral>(std::pow(10.0, context.timestamp_scale));
+        }
+
         result_values = makeASTFunction(
             "arrayMap",
             makeASTLambda(
@@ -307,7 +423,7 @@ SQLQueryPiece applyFunctionOverRange(
                     makeASTFunction(
                         "multiply",
                         make_intrusive<ASTIdentifier>("x"),
-                        toFloat64(timeSeriesDurationToAST(window, context.timestamp_data_type))))),
+                        std::move(factor)))),
             std::move(result_values));
     }
 
@@ -329,7 +445,7 @@ SQLQueryPiece applyFunctionOverRange(
     res.end_time = end_time;
     res.step = step;
 
-    if (has_group && impl_info->drop_metric_name)
+    if (has_group && drop_metric_name)
         res = dropMetricName(std::move(res), context);
 
     return res;
