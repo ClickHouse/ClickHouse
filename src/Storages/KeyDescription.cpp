@@ -247,6 +247,13 @@ KeyDescription KeyDescription::parse(
     ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
+    /// The artificial "(" + str + ")" wrapping above causes the parser to mark
+    /// the resulting expression as parenthesized when there is exactly one element.
+    /// Strip that flag so the formatter does not produce spurious parentheses
+    /// (e.g. `x` round-tripping as `(x)` in metadata comparisons).
+    if (ast)
+        ast->setParenthesized(false);
+
     return getKeyFromAST(ast, columns, virtuals, context);
 }
 
