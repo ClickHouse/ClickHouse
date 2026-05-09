@@ -324,6 +324,9 @@ inline uint32_t buildColDescriptor(
     }
 
     uint32_t elem_size = static_cast<uint32_t>(col->sizeOfValueIfFixed());
+    if (elem_size > 8)
+        throw Exception(ErrorCodes::WASM_ERROR,
+            "COLUMNAR_V1: fixed-width type with size {} bytes is not supported", elem_size);
     // 2-byte types (UInt16/Int16) are promoted to FIXED32 (4 bytes, zero-padded)
     // so WASM reads a clean 4-byte value without touching adjacent memory.
     uint32_t wire_elem_size = (elem_size == 2) ? 4u : elem_size;
