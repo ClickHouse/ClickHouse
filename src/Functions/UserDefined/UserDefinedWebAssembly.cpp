@@ -912,7 +912,7 @@ bool UserDefinedWebAssemblyFunctionFactory::isAggregate(const String & function_
     return it != registry.end() && it->second.is_aggregate;
 }
 
-AggregateFunctionPtr UserDefinedWebAssemblyFunctionFactory::getAggregate(
+std::shared_ptr<IAggregateFunction> UserDefinedWebAssemblyFunctionFactory::getAggregate(
     const String & function_name, const DataTypes & /*arg_types*/, ContextPtr context) const
 {
     std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_func;

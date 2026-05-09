@@ -22,7 +22,6 @@ namespace DB
 
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
-using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
 enum class WasmAbiVersion : uint8_t
 {
