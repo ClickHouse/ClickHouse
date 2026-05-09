@@ -472,11 +472,9 @@ struct ChineseTokenizer final : public ITokenizerHelper<ChineseTokenizer>
 
 private:
     ChineseTokenizationGranularity granularity;
-    /// State for the streaming nextInString iterator
+    /// State for the streaming nextInString iterator (rebuilt when callers restart with pos == 0)
     mutable std::vector<std::string_view> tokens_cache;
     mutable size_t tokens_cache_index = 0;
-    mutable const char * tokens_cache_data = nullptr;
-    mutable size_t tokens_cache_length = 0;
 };
 #endif
 

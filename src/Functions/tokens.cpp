@@ -70,7 +70,7 @@ std::unique_ptr<ITokenizer> createTokenizer(const ColumnsWithTypeAndName & argum
         }
         else if (which_type.isString())
         {
-            params.push_back(col->getDataAt(0).toString());
+            params.push_back(String{col->getDataAt(0)});
         }
         else
         {
