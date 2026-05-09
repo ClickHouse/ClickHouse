@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringSimilarity.h>
+#include <Common/BitHelpers.h>
 #include <Common/PODArray.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/iota.h>
@@ -15,6 +16,9 @@
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
+#endif
+#ifdef __AVX2__
+#    include <immintrin.h>
 #endif
 
 namespace DB
@@ -758,6 +762,185 @@ struct ByteJaroSimilarityImpl
 {
     using ResultType = Float64;
 
+#ifdef __AVX2__
+    /// AVX2-accelerated greedy Jaro matcher. For each i in s1 (ascending), we
+    /// find the smallest unmatched j in [i-d, i+d] with s2[j] == s1[i]. Two
+    /// kernels split by needle length:
+    ///   * `|needle| <= 64`: hoist all of `needle` into one or two `__m256i`
+    ///     registers. Per s1 char: broadcast/cmpeq/movemask -> 64-bit eq
+    ///     mask; AND with window AND ~matched_s2; ctzll picks the smallest j.
+    ///   * `|needle|  > 64`: slide a 4×AVX2 (= 128 byte) window over needle
+    ///     with a single branch per 128 bytes. The 128-bit eq mask is AND-ed
+    ///     with ~matched_s2 loaded at the current bit offset.
+    /// `matched_s1` is recorded in encounter order; `matched_s2` is a bitmap
+    /// walked via ctzll/blsr in the transposition pass. Result is byte-
+    /// identical to the scalar reference.
+
+    /// Mask covering bit positions [lo, hi). Caller guarantees 0 <= lo <= hi <= 64.
+    static UInt64 windowMask(int lo, int hi)
+    {
+        const UInt64 hi_mask = (hi == 64) ? ~UInt64{0} : ((UInt64{1} << hi) - 1);
+        const UInt64 lo_mask = (UInt64{1} << lo) - 1;
+        return hi_mask & ~lo_mask;
+    }
+
+    static double finishScore(int matches, int trans2, int s1_len, int s2_len)
+    {
+        if (matches == 0)
+            return 0.0;
+        const double m = static_cast<double>(matches);
+        const double t = static_cast<double>(trans2) * 0.5;
+        return (1.0 / 3.0) * (m / s1_len + m / s2_len + (m - t) / m);
+    }
+
+    static double jaroSmall(const unsigned char * s1, int s1_len,
+                            const unsigned char * s2, int s2_len,
+                            int max_range)
+    {
+        alignas(32) unsigned char buf[64] = {};
+        memcpy(buf, s2, s2_len);
+        const __m256i s2v0 = _mm256_load_si256(reinterpret_cast<const __m256i *>(buf));
+        const __m256i s2v1 = _mm256_load_si256(reinterpret_cast<const __m256i *>(buf + 32));
+        const UInt64 valid = (s2_len == 64) ? ~UInt64{0} : ((UInt64{1} << s2_len) - 1);
+
+        /// matches <= s2_len <= 64, so the encounter list fits on the stack.
+        int idx_buf[64];
+        int matches = 0;
+        UInt64 matched_s2 = 0;
+
+        for (int i = 0; i < s1_len; ++i)
+        {
+            const int lo = std::max(0, i - max_range);
+            const int hi = std::min(s2_len, i + max_range + 1);
+            if (lo >= hi)
+                continue;
+            const __m256i target = _mm256_set1_epi8(static_cast<char>(s1[i]));
+            const UInt32 e0 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(target, s2v0)));
+            const UInt32 e1 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(target, s2v1)));
+            const UInt64 eq = UInt64(e0) | (UInt64(e1) << 32);
+            const UInt64 cand = eq & windowMask(lo, hi) & valid & ~matched_s2;
+            if (cand)
+            {
+                const int j = static_cast<int>(getTrailingZeroBitsUnsafe(cand));
+                matched_s2 |= UInt64{1} << j;
+                idx_buf[matches++] = i;
+            }
+        }
+
+        int trans2 = 0;
+        UInt64 b = matched_s2;
+        for (int k = 0; k < matches; ++k)
+        {
+            const int j = static_cast<int>(getTrailingZeroBitsUnsafe(b));
+            b &= b - 1;
+            trans2 += (s1[idx_buf[k]] != s2[j]);
+        }
+        return finishScore(matches, trans2, s1_len, s2_len);
+    }
+
+    /// Read 64 bits from a packed bitmap starting at an arbitrary bit offset.
+    /// Caller must provide a sentinel word past the last live position so this
+    /// can blindly load `bits[word + 1]`.
+    static UInt64 bits64At(const UInt64 * bits, int bit_off)
+    {
+        const int word = bit_off >> 6;
+        const int sh   = bit_off & 63;
+        const UInt64 lo = bits[word] >> sh;
+        const UInt64 hi = (sh == 0) ? 0 : (bits[word + 1] << (64 - sh));
+        return lo | hi;
+    }
+
+    static double jaroScan(const unsigned char * s1, int s1_len,
+                           const unsigned char * s2, int s2_len,
+                           int max_range)
+    {
+        const int s2_words = (s2_len + 63) / 64;
+        /// One sentinel word past the end so bits64At can load [word + 1].
+        PaddedPODArray<UInt64> matched_s2_bits(s2_words + 1, 0);
+        PaddedPODArray<int> idx_buf(s1_len);
+        int matches = 0;
+
+        /// Returns the smallest unmatched j in [lo, hi) with s2[j] == c, or -1.
+        auto findMatch = [&](unsigned char c, int lo, int hi) -> int
+        {
+            const __m256i target = _mm256_set1_epi8(static_cast<char>(c));
+            int j = lo;
+
+            /// 128-byte unroll: one branch per 128 bytes keeps mispredict cost
+            /// bounded even for randomized inputs.
+            while (j + 128 <= hi)
+            {
+                const __m256i c0 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s2 + j));
+                const __m256i c1 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s2 + j + 32));
+                const __m256i c2 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s2 + j + 64));
+                const __m256i c3 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s2 + j + 96));
+                const UInt32 e0 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(c0, target)));
+                const UInt32 e1 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(c1, target)));
+                const UInt32 e2 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(c2, target)));
+                const UInt32 e3 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(c3, target)));
+                const UInt64 eq_lo = UInt64(e0) | (UInt64(e1) << 32);
+                const UInt64 eq_hi = UInt64(e2) | (UInt64(e3) << 32);
+                const UInt64 cand_lo = eq_lo & ~bits64At(matched_s2_bits.data(), j);
+                const UInt64 cand_hi = eq_hi & ~bits64At(matched_s2_bits.data(), j + 64);
+                if (cand_lo | cand_hi)
+                    return cand_lo
+                        ? j      + static_cast<int>(getTrailingZeroBitsUnsafe(cand_lo))
+                        : j + 64 + static_cast<int>(getTrailingZeroBitsUnsafe(cand_hi));
+                j += 128;
+            }
+            while (j + 32 <= hi)
+            {
+                const __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s2 + j));
+                UInt32 eq_mask = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(chunk, target)));
+                eq_mask &= ~static_cast<UInt32>(bits64At(matched_s2_bits.data(), j) & 0xFFFFFFFFu);
+                if (eq_mask)
+                    return j + static_cast<int>(getTrailingZeroBitsUnsafe(eq_mask));
+                j += 32;
+            }
+            for (; j < hi; ++j)
+            {
+                const UInt64 bit = UInt64{1} << (j & 63);
+                if (s2[j] == c && !(matched_s2_bits[j >> 6] & bit))
+                    return j;
+            }
+            return -1;
+        };
+
+        for (int i = 0; i < s1_len; ++i)
+        {
+            const int lo = std::max(0, i - max_range);
+            const int hi = std::min(s2_len, i + max_range + 1);
+            if (lo >= hi)
+                continue;
+
+            const int jj = findMatch(s1[i], lo, hi);
+            if (jj >= 0)
+            {
+                matched_s2_bits[jj >> 6] |= UInt64{1} << (jj & 63);
+                idx_buf[matches++] = i;
+            }
+        }
+
+        int trans2 = 0;
+        int wb = 0;
+        UInt64 b = matched_s2_bits[0];
+        for (int k = 0; k < matches; ++k)
+        {
+            while (!b)
+            {
+                ++wb;
+                if (wb >= s2_words)
+                    return finishScore(matches, trans2, s1_len, s2_len);
+                b = matched_s2_bits[wb];
+            }
+            const int j = (wb << 6) + static_cast<int>(getTrailingZeroBitsUnsafe(b));
+            b &= b - 1;
+            trans2 += (s1[idx_buf[k]] != s2[j]);
+        }
+        return finishScore(matches, trans2, s1_len, s2_len);
+    }
+#endif
+
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
@@ -783,6 +966,14 @@ struct ByteJaroSimilarityImpl
 
         /// Window size to search for matches in the other string
         const int max_range = std::max(0, std::max(s1len, s2len) / 2 - 1);
+
+#ifdef __AVX2__
+        const auto * s1 = reinterpret_cast<const unsigned char *>(haystack);
+        const auto * s2 = reinterpret_cast<const unsigned char *>(needle);
+        return (s2len <= 64)
+            ? jaroSmall(s1, s1len, s2, s2len, max_range)
+            : jaroScan (s1, s1len, s2, s2len, max_range);
+#else
         std::vector<int> s1_matching(s1len, -1);
         std::vector<int> s2_matching(s2len, -1);
 
@@ -827,6 +1018,7 @@ struct ByteJaroSimilarityImpl
                                             + m / static_cast<double>(s2len)
                                             + (m - transpositions) / m);
         return jaro_similarity;
+#endif
     }
 };
 
