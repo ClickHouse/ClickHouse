@@ -272,10 +272,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
 
     const size_t rows = ScatteredBlock::Selector::size(selector);
 
-    /// Software prefetch during the build phase, mirroring the probe-side logic in `joinRightColumns`.
-    /// `emplaceKey` chases a hash bucket on every row and incurs random-memory cache misses just like
-    /// `findKey`, so the same look-ahead trick (issue prefetch for row `i + lookahead` while we work
-    /// on row `i`) hides DRAM latency once the table grows past `getMinBytesForPrefetchInJoin()`.
+    /// Software prefetch during the build phase.
     constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, HashMap>;
 
     bool use_prefetch = false;
