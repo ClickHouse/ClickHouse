@@ -6,6 +6,15 @@
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachSystemTablesImpl.h>
 
+#include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryLogElement.h>
+#include <Interpreters/StorageID.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/StorageView.h>
+
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <Storages/System/StorageSystemAsyncLoader.h>
@@ -144,9 +153,78 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+constexpr auto USER_QUERY_LOG_TABLE_NAME = "user_query_log";
+
+void attachUserQueryLog(ContextPtr context, IDatabase & system_database)
+{
+    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+
+    if (!context->getConfigRef().getBool("query_log.enable_user_query_log", true))
+        return;
+
+    auto query_log = context->getQueryLog();
+    if (!query_log)
+        return;
+
+    const auto & query_log_table_id = query_log->getTableID();
+    if (query_log_table_id.table_name == USER_QUERY_LOG_TABLE_NAME)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The `query_log.table` configuration parameter cannot be set to `{}` when `query_log.enable_user_query_log` is enabled",
+            USER_QUERY_LOG_TABLE_NAME);
+
+    query_log->prepareTable();
+
+    if (system_database.isTableExist(USER_QUERY_LOG_TABLE_NAME, context))
+        return;
+
+    auto create_query = "CREATE VIEW system." + backQuoteIfNeed(USER_QUERY_LOG_TABLE_NAME)
+        + " DEFINER = default SQL SECURITY DEFINER AS SELECT * FROM system." + backQuoteIfNeed(query_log_table_id.table_name)
+        + " PREWHERE user = currentUser()";
+
+    ParserCreateQuery parser;
+    ASTPtr ast = parseQuery(
+        parser,
+        create_query.data(),
+        create_query.data() + create_query.size(),
+        "user query log view definition",
+        0,
+        DBMS_DEFAULT_MAX_PARSER_DEPTH,
+        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    const auto & ast_create = ast->as<ASTCreateQuery &>();
+
+    StorageID table_id(DatabaseCatalog::SYSTEM_DATABASE, USER_QUERY_LOG_TABLE_NAME);
+    String path;
+    if (system_database.getUUID() != UUIDHelpers::Nil)
+    {
+        table_id.uuid = UUIDHelpers::generateV4();
+        DatabaseCatalog::instance().addUUIDMapping(table_id.uuid);
+        path = DatabaseCatalog::getStoreDirPath(table_id.uuid);
+    }
+
+    auto view = std::make_shared<StorageView>(
+        table_id,
+        ast_create,
+        QueryLogElement::getColumnsDescription(),
+        "A view over `system.query_log` that shows queries submitted by the current user.");
+    system_database.attachTable(context, USER_QUERY_LOG_TABLE_NAME, view, path);
+}
+
+}
+
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
 {
     auto component_guard = Coordination::setCurrentComponent("attachSystemTablesServer");
+    attachUserQueryLog(context, system_database);
+
     attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false, "number");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", true, "number");
