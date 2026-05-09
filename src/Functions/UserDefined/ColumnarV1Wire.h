@@ -289,7 +289,7 @@ inline uint32_t buildColDescriptor(
                 if (unique_data < REPEAT_DATA_LIMIT)
                 {
                     desc.type           = base_type | COL_IS_REPEAT;
-                    desc.null_offset    = 0;  // nullable repeat not yet supported
+                    desc.null_offset    = 0;
                     desc.offsets_offset = r;  // period, NOT a byte offset
                     write_cursor        = (write_cursor + 3u) & ~3u;
                     desc.data_offset    = write_cursor;
@@ -697,12 +697,6 @@ inline MutableColumnPtr readColumnarOutput(
                             "COLUMNAR_V1 COL_COMPLEX: array offset {} exceeds total {} at index {}",
                             off, total_elems, i);
                 }
-
-                // Validate total_elems before allocating (prevent memory exhaustion).
-                if (static_cast<uint64_t>(data_end - p) < static_cast<uint64_t>(total_elems) * 4)
-                    throw Exception(ErrorCodes::WASM_ERROR,
-                        "COLUMNAR_V1 COL_COMPLEX: array total_elems {} exceeds available data",
-                        total_elems);
 
                 auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
 
