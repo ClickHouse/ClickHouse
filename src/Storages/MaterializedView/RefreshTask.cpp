@@ -795,11 +795,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
         }
 
         AllDependenciesInfo dependencies;
-        if (!collectDependencyStates(dependencies, lock))
-        {
-            setState(RefreshState::MissingDependencies, lock);
-            return;
-        }
+        bool dependencies_ok = collectDependencyStates(dependencies, lock);
         chassert(lock.owns_lock());
 
         auto start_time = currentTime();
@@ -815,7 +811,10 @@ void RefreshTask::doScheduling(bool is_shutdown)
         {
             if (when == std::chrono::system_clock::time_point::max())
             {
-                setState(RefreshState::WaitingForDependencies, lock);
+                if (dependencies_ok)
+                    setState(RefreshState::WaitingForDependencies, lock);
+                else
+                    setState(RefreshState::MissingDependencies, lock);
             }
             else
             {
@@ -1126,22 +1125,26 @@ bool RefreshTask::collectDependencyStates(AllDependenciesInfo & out, std::unique
     lock.unlock();
 
     const RefreshSet & set = view->getContext()->getRefreshSet();
+    bool all_found = true;
     for (const StorageID & id : deps)
     {
+        DependencyRefreshInfo info;
         auto tasks = set.findTasks(id);
         if (tasks.empty())
         {
-            lock.lock();
-            return false;
+            all_found = false;
         }
-        DependencyRefreshInfo info = (*tasks.begin())->getInfoForDependentViews();
+        else
+        {
+            info = (*tasks.begin())->getInfoForDependentViews();
+        }
         info.database_and_table = id.getFullTableName();
         out.tables.push_back(std::move(info));
     }
 
     lock.lock();
 
-    return true;
+    return all_found;
 }
 
 void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps, const ContextPtr & context)

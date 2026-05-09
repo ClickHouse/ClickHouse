@@ -233,7 +233,21 @@ The coordination is done through Keeper. The znode path is determined by [defaul
 
 ### Refresh Dependencies {#refresh-dependencies}
 
-`DEPENDS ON` synchronizes refreshes of different tables. Dependent view's refresh will start only after all dependency views' refreshes complete.
+`DEPENDS ON` synchronizes refreshes of different tables:
+```sql
+CREATE MATERIALIZED VIEW dependent REFRESH EVERY 1 HOUR DEPENDS ON dependency [...]
+```
+Dependent view's refresh will start only after all dependency views' refreshes complete.
+
+To refresh immediately after another view's refresh:
+```sql
+CREATE MATERIALIZED VIEW dependent REFRESH AFTER 0 SECOND DEPENDS ON dependency [...]
+```
+Or equivalently:
+```sql
+CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
+```
+
 :::note
 `DEPENDS ON` only works between refreshable materialized views. In particular, if the dependency view uses `TO <table>`, make sure to use the name of the view rather than the table. If the `DEPENDS ON` list contains a regular table or non-refreshable view or has a typo, the view will never refresh and will show state `MissingDependencies` in `system.view_refreshes`. Dependencies can be changed or removed using `ALTER`, see [Changing Refresh Parameters](#changing-refresh-parameters).
 :::

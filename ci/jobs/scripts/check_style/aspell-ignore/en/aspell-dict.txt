@@ -3561,6 +3561,8 @@ timeSeriesSelector
 timeSeriesTags
 timeSlot
 timeSlots
+timeslot
+timeslots
 timeZone
 timeZoneOf
 timeZoneOffset
