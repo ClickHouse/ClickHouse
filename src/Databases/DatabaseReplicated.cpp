@@ -1880,6 +1880,17 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
 {
     std::map<String, String> table_name_to_metadata;
 
+    /// Capture the `czxid` of `/max_log_ptr` at the start of the snapshot operation. `czxid` is
+    /// set when the node is created and is stable across `Set`s, so any change implies the entire
+    /// database subtree was dropped by `DROP DATABASE` and a new `Replicated` database was
+    /// created at the same Keeper path during the snapshot. This identity check is strictly
+    /// stronger than the `max_log_ptr` rollback guards below: it catches recreates regardless of
+    /// whether the new database's pointer ended up below or above the original, and it applies
+    /// to every caller of this function (`getTablesForBackup`, `recoverLostReplica`,
+    /// `tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly`).
+    Coordination::Stat initial_max_log_ptr_stat;
+    zookeeper->get(zookeeper_path + "/max_log_ptr", &initial_max_log_ptr_stat);
+
     if (zookeeper->isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST) &&
         zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) &&
         zookeeper->isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA) &&
@@ -1914,6 +1925,23 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
                 max_log_ptr, new_max_log_ptr);
         }
         max_log_ptr = new_max_log_ptr;
+
+        /// Revalidate identity after the snapshot: catches the case where the recreated database
+        /// advanced past the original `max_log_ptr` before this read and would otherwise pass
+        /// the monotonicity guard above silently. Also catches the in-between case where the
+        /// node has been removed by `DROP DATABASE` but not yet recreated (`tryGet` returns
+        /// `false` for a missing node, which we treat as identity changed).
+        Coordination::Stat final_max_log_ptr_stat;
+        String unused_value;
+        bool final_exists = zookeeper->tryGet(zookeeper_path + "/max_log_ptr", unused_value, &final_max_log_ptr_stat);
+        if (!final_exists || final_max_log_ptr_stat.czxid != initial_max_log_ptr_stat.czxid)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(Keeper path identity changed)");
+        }
+
         LOG_DEBUG(log, "Got consistent metadata snapshot for log pointer {}", max_log_ptr);
         return table_name_to_metadata;
     }
@@ -2011,6 +2039,22 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
 
     if (max_retries < iteration)
         throw Exception(ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT, "Cannot get consistent metadata snapshot");
+
+    /// Revalidate identity at the end of the retry loop too: see the matching check at the top
+    /// of the fast path. The retry loop already rejects rollback (`max_log_ptr > new_max_log_ptr`)
+    /// and uses a `czxid` check on `/metadata` for retry, but neither catches the case where the
+    /// recreated database advanced its pointer past the original before the loop saw a stable
+    /// state.
+    Coordination::Stat final_max_log_ptr_stat;
+    String unused_value;
+    bool final_exists = zookeeper->tryGet(zookeeper_path + "/max_log_ptr", unused_value, &final_max_log_ptr_stat);
+    if (!final_exists || final_max_log_ptr_stat.czxid != initial_max_log_ptr_stat.czxid)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+            "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+            "(Keeper path identity changed)");
+    }
 
     LOG_DEBUG(log, "Got consistent metadata snapshot for log pointer {}", max_log_ptr);
 
@@ -2479,27 +2523,8 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
     /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
     auto zookeeper = getZooKeeper();
-    Coordination::Stat initial_stat;
-    UInt32 snapshot_version = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr", &initial_stat));
+    UInt32 snapshot_version = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
     auto snapshot = getConsistentMetadataSnapshotImpl(zookeeper, filter, /* max_retries= */ 20, snapshot_version);
-
-    /// Identity check that survives full database recreation regardless of whether the new
-    /// `/max_log_ptr` value ended up below or above the snapshot version we observed initially.
-    /// `czxid` of `/max_log_ptr` is set when the node is created and is stable across `Set`s, so
-    /// any change here implies the entire database subtree was dropped and a new database was
-    /// created at the same Keeper path during the snapshot. The in-loop rollback guard inside
-    /// `getConsistentMetadataSnapshotImpl` only catches the case where the new pointer is below
-    /// the old one; this re-read also catches the case where the recreated database advanced past
-    /// the old pointer before the snapshot iteration read it.
-    Coordination::Stat final_stat;
-    zookeeper->get(zookeeper_path + "/max_log_ptr", &final_stat);
-    if (final_stat.czxid != initial_stat.czxid)
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
-            "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
-            "(Keeper path identity changed)");
-    }
 
     std::vector<std::pair<ASTPtr, StoragePtr>> res;
     for (const auto & [table_name, metadata] : snapshot)
