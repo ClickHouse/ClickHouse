@@ -14,6 +14,7 @@
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -160,7 +161,14 @@ namespace
         catch (...)
         {
             /// Some functions need a fully-formed query context to construct (e.g. those that
-            /// inspect settings at build time). Reporting NULL is the honest answer here.
+            /// inspect settings at build time). Reporting NULL is the honest answer; log the
+            /// exception message at debug level so the failure is visible to anyone
+            /// investigating empty cells. Ok.
+            LOG_DEBUG(
+                getLogger("system.functions"),
+                "Cannot resolve function {} for introspection: {}",
+                name,
+                getCurrentExceptionMessage(/* with_stacktrace */ false));
         }
         return info;
     }
