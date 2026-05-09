@@ -44,6 +44,64 @@ bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_bl
 
 }
 
+size_t PartialSortingTransform::getFilterMask(
+    const ColumnRawPtrs & raw_block_columns,
+    const Columns & threshold_columns,
+    size_t num_rows,
+    IColumn::Filter & filter_,
+    PaddedPODArray<UInt64> * rows_to_compare_,
+    PaddedPODArray<Int8> & compare_results_,
+    bool include_equal_row) const
+{
+    filter_.resize(num_rows);
+    compare_results_.resize(num_rows);
+
+    if (description.size() == 1 || rows_to_compare_ == nullptr)
+    {
+        /// Fast path for single column
+        raw_block_columns[0]->compareColumn(
+            *threshold_columns[0], 0, nullptr, compare_results_, description[0].direction, description[0].nulls_direction);
+    }
+    else
+    {
+        rows_to_compare_->resize(num_rows);
+        iota(rows_to_compare_->data(), num_rows, UInt64(0));
+
+        size_t size = raw_block_columns.size();
+        for (size_t i = 0; i < size; ++i)
+        {
+            raw_block_columns[i]->compareColumn(
+                *threshold_columns[i], 0, rows_to_compare_, compare_results_, description[i].direction, description[i].nulls_direction);
+
+            if (rows_to_compare_->empty())
+                break;
+        }
+    }
+
+    size_t result_size_hint = 0;
+
+    if (include_equal_row)
+    {
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            /// Leave only rows that are less or equal to row from rhs.
+            filter_[i] = compare_results_[i] <= 0;
+            result_size_hint += filter_[i];
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            /// Leave only rows that are less than row from rhs.
+            filter_[i] = compare_results_[i] < 0;
+            result_size_hint += filter_[i];
+        }
+    }
+
+    return result_size_hint;
+}
+
 PartialSortingTransform::PartialSortingTransform(
     SharedHeader header_, const SortDescription & description_, UInt64 limit_,
     TopKThresholdTrackerPtr threshold_tracker_)

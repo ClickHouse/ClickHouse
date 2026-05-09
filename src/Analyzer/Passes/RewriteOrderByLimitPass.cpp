@@ -12,6 +12,7 @@
 #include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 
@@ -176,15 +177,16 @@ bool rewriteOrderByLimit(QueryTreeNodePtr & original_query, const StoragePtr & t
     auto & subquery_projection = new_order_by_limit_subquery_node->getProjection().getChildren();
     if (subquery_projection.empty())
         return false;
-    auto get_column_name_and_type = [&table_storage](const String & column_name) -> std::optional<NameAndTypePair>
+    auto get_column_name_and_type = [&table_storage, &context](const String & column_name) -> std::optional<NameAndTypePair>
     {
-        if (auto column = table_storage->getVirtualsList().tryGetByName(column_name))
+        auto metadata = table_storage->getInMemoryMetadataPtr(context, false);
+        if (auto column = metadata->virtuals.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All))
             return column;
 
-        if (!table_storage->getInMemoryMetadataPtr()->getColumns().has(column_name))
+        if (!metadata->getColumns().has(column_name))
             return {};
 
-        const auto & column = table_storage->getInMemoryMetadataPtr()->getColumns().get(column_name);
+        const auto & column = metadata->getColumns().get(column_name);
         return NameAndTypePair{column.name, column.type};
     };
     /// The _part_starting_offset/_part_offset column must exist in the table information
