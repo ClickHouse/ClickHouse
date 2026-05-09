@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<clickhouse>
+    <redis_port>9006</redis_port>
+    <redis>
+        <db>
+            <_0>
+                <database>default</database>
+                <table>kv_baseline</table>
+                <default_column>value</default_column>
+            </_0>
+        </db>
+    </redis>
+</clickhouse>
