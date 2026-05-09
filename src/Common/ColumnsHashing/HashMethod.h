@@ -283,7 +283,7 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
             if (str.empty())
                 data[i] = 0;
             else if (str.size() <= std::numeric_limits<UInt32>::max())
-                data[i] = StringViewHash()(str);
+                data[i] = static_cast<UInt32>(StringViewHash()(str));
             else
                 data[i] = static_cast<UInt32>(str.size());
         }
