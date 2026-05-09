@@ -30,9 +30,9 @@ public:
     void unlock() TSA_RELEASE();
 
     // Shared ownership
-    void lock_shared() TSA_ACQUIRE_SHARED();
-    bool try_lock_shared() TSA_TRY_ACQUIRE_SHARED(true);
-    void unlock_shared() TSA_RELEASE_SHARED();
+    void lock_shared() const TSA_ACQUIRE_SHARED();
+    bool try_lock_shared() const TSA_TRY_ACQUIRE_SHARED(true);
+    void unlock_shared() const TSA_RELEASE_SHARED();
 
 private:
     static constexpr UInt64 readers = (1ull << 32ull) - 1ull; // Lower 32 bits of state
@@ -69,11 +69,11 @@ public:
     void unlock() TSA_RELEASE() { absl::Mutex::unlock(); }
 
     // Shared ownership
-    void lock_shared() TSA_ACQUIRE_SHARED() { absl::Mutex::lock_shared(); }
+    void lock_shared() const TSA_ACQUIRE_SHARED() { absl::Mutex::lock_shared(); }
 
-    bool try_lock_shared() TSA_TRY_ACQUIRE_SHARED(true) { return absl::Mutex::try_lock_shared(); }
+    bool try_lock_shared() const TSA_TRY_ACQUIRE_SHARED(true) { return absl::Mutex::try_lock_shared(); }
 
-    void unlock_shared() TSA_RELEASE_SHARED() { absl::Mutex::unlock_shared(); }
+    void unlock_shared() const TSA_RELEASE_SHARED() { absl::Mutex::unlock_shared(); }
 };
 }
 
