@@ -61,6 +61,9 @@ Float64 bucketQuantile(Float64 q, std::vector<Bucket> buckets)
     if (buckets.empty())
         return std::numeric_limits<Float64>::quiet_NaN();
 
+    if (std::any_of(buckets.begin(), buckets.end(), [](const Bucket & bucket) { return std::isnan(bucket.upper_bound); }))
+        return std::numeric_limits<Float64>::quiet_NaN();
+
     std::sort(
         buckets.begin(), buckets.end(), [](const Bucket & left, const Bucket & right) { return left.upper_bound < right.upper_bound; });
     if (!std::isinf(buckets.back().upper_bound) || buckets.back().upper_bound < 0)

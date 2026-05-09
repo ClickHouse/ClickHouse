@@ -1,7 +1,9 @@
+import json
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import tsv_close_to
+from helpers.test_tools import TSV, tsv_close_to
 from .prometheus_test_utils import *
 
 
@@ -342,6 +344,36 @@ def do_query_test(
         http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
         == clickhouse_http_api_result_is_same_as_prometheus
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+
+
+def _sort_http_api_response_series(response):
+    data = json.loads(response)
+    if isinstance(data.get("result"), list):
+        data["result"] = sorted(
+            data["result"], key=lambda series: json.dumps(series.get("metric", {}), sort_keys=True)
+        )
+    return json.dumps(data, sort_keys=True)
+
+
+def do_unordered_query_test(query, timestamp, result, chresult, eps=0):
+    actual_prometheus_result = _sort_http_api_response_series(
+        execute_query_in_prometheus(query, timestamp)
+    )
+    expected_result = _sort_http_api_response_series(result)
+    assert http_api_response_close_to(actual_prometheus_result, expected_result, eps=eps)
+
+    actual_chresult = sorted(TSV.toMat(execute_query_in_clickhouse_sql(query, timestamp)))
+    expected_chresult = sorted(chresult, key=lambda row: str(row))
+    assert tsv_close_to(
+        actual_chresult, expected_chresult, eps=eps
+    ), f"actual result: {actual_chresult}, expected: {expected_chresult}"
+
+    actual_result_from_http_api = _sort_http_api_response_series(
+        execute_query_in_clickhouse_http_api(query, timestamp)
+    )
+    assert http_api_response_close_to(
+        actual_result_from_http_api, expected_result, eps=eps
+    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {expected_result}"
 
 
 def do_query_test_expect_error(
