@@ -92,7 +92,14 @@ void ISource::progress(size_t read_rows, size_t read_bytes)
 std::optional<ISource::ReadProgress> ISource::getReadProgress()
 {
     std::lock_guard lock(read_progress_mutex);
-    if (finished && read_progress.read_bytes == 0 && read_progress.total_rows_approx == 0)
+    /// If the source has finished and there is genuinely nothing to report, skip the
+    /// downstream `onProgress` call. Check every counter to avoid dropping accumulated
+    /// `read_rows` in cases where a `Progress` packet reports rows without bytes.
+    if (finished
+        && read_progress.read_rows == 0
+        && read_progress.read_bytes == 0
+        && read_progress.total_rows_approx == 0
+        && read_progress.total_bytes == 0)
         return {};
 
     ReadProgressCounters res_progress;
