@@ -1186,7 +1186,10 @@ void LocalServer::processConfig()
     if (!getClientConfiguration().has("no-system-tables")
         && !getClientConfiguration().has("only-system-tables")
         && hasAnySystemLogConfigured(config()))
+    {
         global_context->initializeSystemLogs();
+        attachSystemUserQueryLog(global_context, *DatabaseCatalog::instance().getSystemDatabase());
+    }
 
     std::string default_database = getClientConfiguration().getString("database", server_default_database);
     if (default_database.empty())

@@ -19,6 +19,8 @@ The filter is placed in `PREWHERE` in the view definition.
 
 You can disable the view with the `query_log.enable_user_query_log` server configuration parameter.
 
+In `clickhouse-local`, `system.user_query_log` is available only when `query_log` is explicitly configured, because `clickhouse-local` does not initialize system logs by default.
+
 ## Columns {#columns}
 
 The columns match [`system.query_log`](query_log.md), except `LowCardinality` wrappers are removed from exposed column types.

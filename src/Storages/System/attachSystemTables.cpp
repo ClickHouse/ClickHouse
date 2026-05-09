@@ -209,7 +209,9 @@ void attachSystemView(
     system_database.attachTable(context, view_name, view, path);
 }
 
-void attachUserQueryLog(ContextPtr context, IDatabase & system_database)
+}
+
+void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
 {
     assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
 
@@ -239,12 +241,10 @@ void attachUserQueryLog(ContextPtr context, IDatabase & system_database)
         /* security_barrier */ true);
 }
 
-}
-
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
 {
     auto component_guard = Coordination::setCurrentComponent("attachSystemTablesServer");
-    attachUserQueryLog(context, system_database);
+    attachSystemUserQueryLog(context, system_database);
 
     attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false, "number");
