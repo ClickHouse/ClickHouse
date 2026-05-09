@@ -1217,6 +1217,27 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         bool is_equality = (name == NameEquals::name || name == NameNotEquals::name);
+
+        if (is_equality)
+        {
+            if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality",
+                    backQuote(arguments[0]->getName()),
+                    backQuote(arguments[1]->getName()),
+                    backQuote(getName()));
+        }
+        else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable",
+                backQuote(arguments[0]->getName()),
+                backQuote(arguments[1]->getName()),
+                backQuote(getName()));
+        }
+
         bool types_compatible = is_equality
             ? areTypesComparableForEquality(arguments[0], arguments[1])
             : areTypesComparableForOrdering(arguments[0], arguments[1]);
