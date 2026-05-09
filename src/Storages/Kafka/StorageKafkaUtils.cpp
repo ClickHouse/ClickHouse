@@ -547,23 +547,72 @@ VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_m
 {
     VirtualColumnsDescription desc;
 
-    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "");
-    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "");
-    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "");
-        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "");
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
     }
 
     return desc;
+}
+
+PayloadSplit splitPayloadColumns(const Block & header, bool map_virtual_columns_on_write)
+{
+    PayloadSplit split;
+    split.format_column_indices.reserve(header.columns());
+
+    auto is_string_array = [](const DataTypePtr & type)
+    {
+        const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+        return array_type && isString(array_type->getNestedType());
+    };
+
+    /// Headers are mapped only when both `_headers.name` and `_headers.value` are present
+    /// with `Array(String)` type — see `KafkaProducer::KafkaProducer`. Excluding them
+    /// independently would silently drop one-sided header columns from the payload.
+    bool map_headers = false;
+    if (map_virtual_columns_on_write
+        && header.has("_headers.name") && header.has("_headers.value"))
+    {
+        map_headers = is_string_array(header.getByName("_headers.name").type)
+            && is_string_array(header.getByName("_headers.value").type);
+    }
+
+    auto is_mapped_to_metadata = [&](const ColumnWithTypeAndName & column)
+    {
+        /// Keep type checks in sync with `KafkaProducer::KafkaProducer`. Columns whose type
+        /// does not match are left in the payload rather than being silently dropped.
+        if (column.name == "_key")
+            return isString(column.type);
+        if (column.name == "_timestamp")
+            return isDateTime(column.type);
+        if (column.name == "_headers.name" || column.name == "_headers.value")
+            return map_headers;
+        return false;
+    };
+
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        const auto & column = header.getByPosition(i);
+
+        if (map_virtual_columns_on_write && is_mapped_to_metadata(column))
+            continue;
+
+        split.format_header.insert(column);
+        split.format_column_indices.push_back(i);
+    }
+
+    return split;
 }
 }
 }

@@ -366,13 +366,13 @@ void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_
 /// Returns non virtual column names, and virtual columns names and types.
 static std::pair<Names, NamesAndTypesList> splitVirtualColumns(
     const Names & columns,
-    VirtualsDescriptionPtr virtual_columns_description)
+    const VirtualColumnsDescription & virtual_columns_description)
 {
     Names non_virtual_columns;
     NamesAndTypesList virtual_columns;
     for (const auto & column_name : columns)
     {
-        if (auto virtual_column = virtual_columns_description->tryGet(column_name))
+        if (auto virtual_column = virtual_columns_description.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
             virtual_columns.emplace_back(std::move(*virtual_column));
         else
             non_virtual_columns.push_back(column_name);
@@ -525,7 +525,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
     Names columns_to_read;
     std::tie(columns_to_read, info.requested_virtual_columns) =
-        splitVirtualColumns(requested_columns, storage_snapshot->virtual_columns);
+        splitVirtualColumns(requested_columns, storage_snapshot->metadata->virtuals);
 
     /// Create header for Source with non virtual columns
     /// and add virtual columns at the end of the header.
