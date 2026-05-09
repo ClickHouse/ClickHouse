@@ -210,7 +210,7 @@ const ActionsDAG::Node & addConstUInt8(ActionsDAG & dag, UInt8 value, const Stri
 {
     auto type = std::make_shared<DataTypeUInt8>();
     auto column = type->createColumnConst(1, Field(value));
-    ColumnWithTypeAndName c{std::move(column), std::move(type), name_hint.empty() ? (value ? String("const_1") : String("const_0")) : name_hint};
+    ColumnWithTypeAndName c{column, type, name_hint.empty() ? (value ? String("const_1") : String("const_0")) : name_hint};
     return dag.addColumn(std::move(c));
 }
 
@@ -218,7 +218,7 @@ const ActionsDAG::Node & addConstUInt8(ActionsDAG & dag, UInt8 value, const Stri
 const ActionsDAG::Node & addLiteral(ActionsDAG & dag, const DataTypePtr & type, const Field & value, const String & name_hint)
 {
     auto column = type->createColumnConst(1, value);
-    ColumnWithTypeAndName c{std::move(column), type, name_hint};
+    ColumnWithTypeAndName c{column, type, name_hint};
     return dag.addColumn(std::move(c));
 }
 
@@ -752,7 +752,7 @@ MergeTreeIndexBulkGranulesMinMaxFast::FastKind classifyFastKind(const IDataType 
     if (type.isNullable())
         return FastKind::None;
     WhichDataType which(type);
-    if (which.isUInt8() || which.isEnum8())
+    if (which.isUInt8())
         return FastKind::U8;
     if (which.isUInt16() || which.isDate())
         return FastKind::U16;
@@ -760,7 +760,9 @@ MergeTreeIndexBulkGranulesMinMaxFast::FastKind classifyFastKind(const IDataType 
         return FastKind::U32;
     if (which.isUInt64())
         return FastKind::U64;
-    if (which.isInt8())
+    /// Enum8 stores values in `ColumnVector<Int8>`, so it must use the I8 fast path.
+    /// Routing it under U8 caused `assert_cast<ColumnVector<UInt8>>` to throw at runtime.
+    if (which.isInt8() || which.isEnum8())
         return FastKind::I8;
     if (which.isInt16() || which.isEnum16())
         return FastKind::I16;
