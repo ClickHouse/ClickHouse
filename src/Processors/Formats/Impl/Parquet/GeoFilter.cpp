@@ -128,7 +128,7 @@ bool tryExtractConstBbox(
 }
 
 
-} // namespace
+}
 
 std::vector<SpatialFilter> extractSpatialFilters(
     const DB::ActionsDAG & filter_dag,
@@ -282,4 +282,4 @@ std::shared_ptr<DB::KeyCondition> buildBboxKeyCondition(
             DB::ActionsDAG(extended_sample_block.getColumnsWithTypeAndName())));
 }
 
-} // namespace DB::Parquet
+}

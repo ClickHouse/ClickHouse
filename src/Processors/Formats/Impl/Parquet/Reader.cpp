@@ -44,7 +44,6 @@ namespace ProfileEvents
 {
     extern const Event ParquetRowsFilterExpression;
     extern const Event ParquetColumnsFilterExpression;
-    extern const Event ParquetPrunedPages;
 }
 
 namespace DB::Parquet
@@ -490,10 +489,11 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         /// Check spatial KeyConditions (covering.bbox column stats via hyperrectangle).
         if (!spatial_key_conditions.empty())
         {
-            if (std::any_of(spatial_key_conditions.begin(), spatial_key_conditions.end(),
-                [&](const auto & sc) {
-                    return !sc->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
-                }))
+            auto spatial_predicate = [&](const auto & sc)
+           {
+               return !sc->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
+           };
+           if (std::any_of(spatial_key_conditions.begin(), spatial_key_conditions.end(), spatial_predicate))
                 continue;
         }
 
