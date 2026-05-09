@@ -1067,21 +1067,20 @@ Chunk ObjectStorageQueueSource::generateImpl()
             }
 
             auto started_file = processed_files.back().metadata;
-            if (table_is_being_dropped)
-            {
-                /// Something must have been already read.
-                chassert(started_file->getFileStatus()->processed_rows > 0);
-                /// Mark file as Cancelled, such files will not be set as Failed.
-                processed_files.back().state = FileState::Cancelled;
-                /// Throw exception to avoid inserting half processed file to destination table.
-                throw Exception(
-                    ErrorCodes::QUERY_WAS_CANCELLED,
-                    "Table is being dropped (having unfinished file: {})", started_file->getPath());
-            }
-
-            LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
-                     "Will process the file fully and then shutdown",
-                     started_file->getPath(), started_file->getFileStatus()->processed_rows.load());
+            /// Something must have been already read.
+            chassert(started_file->getFileStatus()->processed_rows > 0);
+            /// Mark file as Cancelled, such files will not be set as Failed.
+            processed_files.back().state = FileState::Cancelled;
+            /// Throw to abort reading more rows from this file rather than blocking shutdown
+            /// for the rest of the file. Rows already returned by previous generateImpl() calls
+            /// may have been inserted into the destination table; the file is marked Cancelled
+            /// (not Processed) and will be retried on next start, which can produce duplicates
+            /// for those rows.
+            throw Exception(
+                ErrorCodes::QUERY_WAS_CANCELLED,
+                "{} (having unfinished file: {})",
+                table_is_being_dropped ? "Table is being dropped" : "Shutdown was called",
+                started_file->getPath());
         }
 
         FileMetadataPtr file_metadata;
