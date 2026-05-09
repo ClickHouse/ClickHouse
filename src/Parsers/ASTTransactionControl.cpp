@@ -70,7 +70,11 @@ void ASTTransactionControl::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown TransactionControl action: {}", action_value);
     action = *action_opt;
     if (action == SET_SNAPSHOT)
+    {
+        if (!r.has("snapshot"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'snapshot' field for SET_SNAPSHOT action");
         snapshot = r.getUInt("snapshot");
+    }
 }
 
 }
