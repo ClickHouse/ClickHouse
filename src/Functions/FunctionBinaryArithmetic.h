@@ -2864,15 +2864,24 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
         /// Process special case when operation is divide, intDiv or modulo and denominator
         /// is Nullable(Something) to prevent division by zero error.
-        if (division_by_nullable && !right_nullmap)
+        ///
+        /// `division_by_nullable` is captured at build time from the original arguments. When the
+        /// function is invoked recursively with already-stripped element types (e.g. from
+        /// `executeArrayWithNumericImpl` for `intDiv(Array, Nullable(N))`, where the framework
+        /// wraps a non-Nullable `Array` result), `right_argument.type` is no longer Nullable.
+        /// The Nullable special-case has already been handled by the outer call, so skip it here.
+        if (division_by_nullable && !right_nullmap && right_argument.type->isNullable())
         {
-            assert(right_argument.type->isNullable());
             bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
 
             const auto & null_bytemap = nullable_column->getNullMapData();
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
+            /// When the framework declared a non-Nullable result type (e.g. `Array` via `makeNullableSafe`),
+            /// `wrapInNullable` would produce a `ColumnNullable` that disagrees with `result_type`.
+            if (!result_type->isNullable())
+                return res;
             return wrapInNullable(res, arguments, result_type, input_rows_count);
         }
 

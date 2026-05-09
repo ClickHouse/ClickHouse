@@ -1718,7 +1718,10 @@ public:
     }
     static UInt32 execute(Int32 d, const DateLUTImpl &)
     {
-        return DAYS_BETWEEN_YEARS_0_AND_1970 + d;
+        /// Cast to `UInt32` so the addition is performed in unsigned arithmetic
+        /// and out-of-range `d` (e.g. fuzzer-supplied values near `INT32_MAX`)
+        /// does not trigger a signed integer overflow.
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(d);
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl &)
     {

@@ -348,9 +348,9 @@
     \
     M(ExecuteShellCommand, "Number of shell command executions.", ValueType::Number) \
     \
-    M(ExternalProcessingCompressedBytesTotal, "Number of compressed bytes written by external processing (sorting/aggragating/joining)", ValueType::Bytes) \
-    M(ExternalProcessingUncompressedBytesTotal, "Amount of data (uncompressed, before compression) written by external processing (sorting/aggragating/joining)", ValueType::Bytes) \
-    M(ExternalProcessingFilesTotal, "Number of files used by external processing (sorting/aggragating/joining)", ValueType::Number) \
+    M(ExternalProcessingCompressedBytesTotal, "Number of compressed bytes written by external processing (sorting/aggregating/joining)", ValueType::Bytes) \
+    M(ExternalProcessingUncompressedBytesTotal, "Amount of data (uncompressed, before compression) written by external processing (sorting/aggregating/joining)", ValueType::Bytes) \
+    M(ExternalProcessingFilesTotal, "Number of files used by external processing (sorting/aggregating/joining)", ValueType::Number) \
     M(ExternalSortWritePart, "Number of times a temporary file was written to disk for sorting in external memory.", ValueType::Number) \
     M(ExternalSortMerge, "Number of times temporary files were merged for sorting in external memory.", ValueType::Number) \
     M(ExternalSortCompressedBytes, "Number of compressed bytes written for sorting in external memory.", ValueType::Bytes) \
@@ -1203,14 +1203,14 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeMergeMutationAssignmentFailedWithNothingToDo, "How many times we tried to assign merge or mutation and failed because nothing to merge", ValueType::Number) \
     M(SharedMergeTreeMergeMutationAssignmentFailedWithConflict, "How many times we tried to assign merge or mutation and failed because of conflict in Keeper", ValueType::Number) \
     M(SharedMergeTreeMergeMutationAssignmentSuccessful, "How many times we tried to assign merge or mutation", ValueType::Number) \
-    M(SharedMergeTreeMergePartsMovedToOudated, "How many parts moved to oudated directory", ValueType::Number) \
+    M(SharedMergeTreeMergePartsMovedToOudated, "How many parts moved to outdated directory", ValueType::Number) \
     M(SharedMergeTreeMergePartsMovedToCondemned, "How many parts moved to condemned directory", ValueType::Number) \
     M(SharedMergeTreeOutdatedPartsConfirmationRequest, "How many ZooKeeper requests were used to config outdated parts", ValueType::Number) \
     M(SharedMergeTreeOutdatedPartsConfirmationInvocations, "How many invocations were made to confirm outdated parts", ValueType::Number) \
     M(SharedMergeTreeOutdatedPartsHTTPRequest, "How many HTTP requests were send to confirm outdated parts", ValueType::Number) \
     M(SharedMergeTreeOutdatedPartsHTTPResponse, "How many HTTP responses were send to confirm outdated parts", ValueType::Number) \
     M(SharedMergeTreeCondemnedPartsKillRequest, "How many ZooKeeper requests were used to remove condemned parts", ValueType::Number) \
-    M(SharedMergeTreeCondemnedPartsLockConflict, "How many times we failed to acquite lock because of conflict", ValueType::Number) \
+    M(SharedMergeTreeCondemnedPartsLockConflict, "How many times we failed to acquire lock because of conflict", ValueType::Number) \
     M(SharedMergeTreeCondemnedPartsRemoved, "How many condemned parts were removed", ValueType::Number) \
     M(SharedMergeTreePartsKillerRuns, "How many times parts killer has been running", ValueType::Number) \
     M(SharedMergeTreePartsKillerMicroseconds, "How much time does parts killer main thread takes", ValueType::Microseconds) \

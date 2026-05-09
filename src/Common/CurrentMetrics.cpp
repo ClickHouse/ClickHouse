@@ -206,7 +206,7 @@
     M(BuildVectorSimilarityIndexThreadsScheduled, "Number of queued or active jobs in the build vector similarity index thread pool.") \
     M(DistributedIndexAnalysisThreads, "Number of threads in the thread pool for distributed index analysis.") \
     M(DistributedIndexAnalysisThreadsActive, "Number of threads in the thread pool for distributed index analysis running a task.") \
-    M(DistributedIndexAnalysisThreadsScheduled, "Number of queued or active jobs in the distributed idnex analysis thread pool.") \
+    M(DistributedIndexAnalysisThreadsScheduled, "Number of queued or active jobs in the distributed index analysis thread pool.") \
     M(ObjectStorageQueueRegisteredServers, "Number of registered servers in StorageS3(Azure)Queue")\
     M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
     M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \

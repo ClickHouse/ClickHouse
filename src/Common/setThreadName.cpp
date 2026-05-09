@@ -94,7 +94,10 @@ void setThreadName(ThreadName name)
 #elif defined(OS_DARWIN)
     if (0 != pthread_setname_np(thread_name_str.data()))
 #elif defined(OS_SUNOS)
-    if (0 != pthread_setname_np(pthread_self(), thread_name_str.data()))
+    // On illumos, pthread_setname_np is prohibitively expensive due to contention in procfs.
+    // To avoid the performance penalty, skip os-level thread renaming, and fall back to the
+    // cached thread-local name. Note: revert if illumos learns a fast path for thread renaming.
+    if ((false))
 #else
     if (0 != prctl(PR_SET_NAME, thread_name_str.data(), 0, 0, 0))
 #endif
@@ -115,9 +118,11 @@ ThreadName getThreadName()
 
     char tmp_thread_name[THREAD_NAME_SIZE] = {};
 
-#if defined(OS_DARWIN) || defined(OS_SUNOS)
+#if defined(OS_DARWIN)
     if (pthread_getname_np(pthread_self(), tmp_thread_name, THREAD_NAME_SIZE))
         throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with pthread_getname_np()");
+#elif defined(OS_SUNOS)
+    // Skip os-level thread name lookup on illumos, since we skip thread renames in setThreadName.
 #elif defined(OS_FREEBSD)
 // TODO: make test. freebsd will have this function soon https://freshbsd.org/commit/freebsd/r337983
 //    if (pthread_get_name_np(pthread_self(), thread_name, THREAD_NAME_SIZE))

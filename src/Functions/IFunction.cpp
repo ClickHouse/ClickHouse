@@ -210,6 +210,63 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     if (null_presence.has_nullable)
     {
+        const bool result_is_nullable = result_type->isNullable();
+
+        if (!result_is_nullable)
+        {
+            /// The result type cannot be Nullable (e.g. `Array`, `Tuple`, `Map`).
+            /// The framework convention here is `f(default(input))` for null rows: the function
+            /// runs over inputs where null rows have been normalized to the default value of
+            /// the (nested) input type. This is necessary because `createBlockWithNestedColumns`
+            /// alone does not overwrite null rows -- e.g. `nullIf(materialize('x'), materialize('x'))`
+            /// produces a Nullable column whose nested data still contains `'x'`, so running the
+            /// function on it would return `f('x')` instead of the desired `f('')`.
+            ColumnsWithTypeAndName patched_columns = createBlockWithNestedColumns(args);
+            auto temporary_result_type = removeNullable(result_type);
+
+            for (size_t i = 0; i < args.size(); ++i)
+            {
+                if (!args[i].type->isNullable())
+                    continue;
+                const auto & nested_type = patched_columns[i].type;
+
+                if (isColumnConst(*args[i].column))
+                {
+                    if (args[i].column->onlyNull())
+                        patched_columns[i].column = nested_type->createColumnConstWithDefaultValue(input_rows_count);
+                    continue;
+                }
+
+                const auto & nullable = assert_cast<const ColumnNullable &>(*args[i].column);
+                const auto & null_map = nullable.getNullMapData();
+
+                bool has_any_null = false;
+                for (size_t r = 0; r < input_rows_count; ++r)
+                {
+                    if (null_map[r])
+                    {
+                        has_any_null = true;
+                        break;
+                    }
+                }
+                if (!has_any_null)
+                    continue;
+
+                auto patched = nested_type->createColumn();
+                patched->reserve(input_rows_count);
+                for (size_t r = 0; r < input_rows_count; ++r)
+                {
+                    if (null_map[r])
+                        patched->insertDefault();
+                    else
+                        patched->insertFrom(*patched_columns[i].column, r);
+                }
+                patched_columns[i].column = std::move(patched);
+            }
+
+            return executeWithoutLowCardinalityColumns(patched_columns, temporary_result_type, input_rows_count, dry_run);
+        }
+
         bool all_columns_constant = true;
         bool all_numeric_types = true;
         for (const auto & arg: args)
@@ -748,7 +805,11 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
         {
             Block nested_columns = createBlockWithNestedColumns(arguments);
             auto return_type = getReturnTypeImpl(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
-            return makeNullable(return_type);
+            /// If the return type cannot be Nullable (e.g. Array, Tuple, Map),
+            /// return it as-is. For null input rows, the function will be evaluated
+            /// over the default values of the nested column and produce the corresponding default result
+            /// (e.g. an empty array), instead of failing the type check.
+            return makeNullableSafe(return_type);
         }
     }
 

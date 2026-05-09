@@ -2910,6 +2910,23 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 {
     query_info.prewhere_info = prewhere_info_value;
 
+    /// Build sets for the new PREWHERE synchronously. PREWHERE is evaluated at the
+    /// storage level during data reading, before the pipeline-level CreatingSetsStep
+    /// has a chance to execute. If a condition with IN (subquery) was moved to PREWHERE
+    /// by optimizePrewhere after applyFilters already ran, the set would remain unbuilt
+    /// and cause a "Not-ready Set" error.
+    /// We must skip sets used in GLOBAL IN functions because ReadFromRemote needs to
+    /// attach external tables to those sets before they are built. Building them here
+    /// would cause "Trying to attach external table to a ready set" errors.
+    /// Only build sets when applyFilters has already been called for this step (indicated by
+    /// `indexes` being populated). The plan built by `considerEnablingParallelReplicas` for
+    /// statistics collection runs `optimizePrewhere` without `optimizePrimaryKeyConditionAndLimit`,
+    /// so `applyFilters` is skipped there and sets must not be built — the original plan's
+    /// `CreatingSetsStep` (added later via `addStepsToBuildSets`) handles them. Building here
+    /// would re-execute the IN-subquery and double-count its rows against `max_rows_to_read`.
+    if (query_info.prewhere_info && indexes.has_value())
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
+
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
         query_info.row_level_filter,

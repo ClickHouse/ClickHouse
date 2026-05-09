@@ -2396,6 +2396,13 @@ def test_aggregation_operators():
         [["[]", "[('1970-01-01 00:01:50.000',30),('1970-01-01 00:02:00.000',56),('1970-01-01 00:02:10.000',140),('1970-01-01 00:02:20.000',700),('1970-01-01 00:02:30.000',1030)]"]],
     )
 
+    do_query_test(
+        "sum(nonexistent_metric_name)[50:10]",
+        150,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
     # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
     # do_query_test(
     #     "sum(bar) without (shape)",
@@ -2428,6 +2435,13 @@ def test_aggregation_operators():
             ["[('size','s')]", "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:20.000',1)]"],
             ["[('size','xl')]", "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]"],
         ],
+    )
+
+    do_query_test(
+        "count(nonexistent_metric_name)[50:10]",
+        150,
+        '{"resultType": "matrix", "result": []}',
+        [],
     )
 
     do_query_test(
@@ -2501,6 +2515,13 @@ def test_aggregation_operators():
         150,
         '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "8.5"], [120, "28"], [130, "70"], [140, "700"], [150, "515"]]}]}',
         [["[]", "[('1970-01-01 00:01:50.000',8.5),('1970-01-01 00:02:00.000',28),('1970-01-01 00:02:10.000',70),('1970-01-01 00:02:20.000',700),('1970-01-01 00:02:30.000',515)]"]],
+    )
+
+    do_query_test(
+        "quantile(0.5, nonexistent_metric_name)[50:10]",
+        150,
+        '{"resultType": "matrix", "result": []}',
+        [],
     )
 
     # FIXME: quantile with phi depending on timestamp is not implemented yet.
