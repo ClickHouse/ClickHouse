@@ -7,14 +7,22 @@
 #include <vector>
 
 
-namespace DB::QueryPlanOptimizations
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace QueryPlanOptimizations
 {
 
 namespace
 {
 
 /// Represents a list of conjunctive or disjunctive conditions
-/// Some sub-conditions are references to the existing nodes in the DAG, others are conjctions or disjunctions
+/// Some sub-conditions are references to the existing nodes in the DAG, others are conjunctions or disjunctions
 /// that are not present in the original DAG
 /// Example: when we have a filter on 2 tables n1 and n2:
 ///     (n1.n_name = 'FRANCE' AND n2.n_name = 'GERMANY') OR
@@ -25,7 +33,7 @@ namespace
 /// for n2:
 ///     n2.n_name = 'GERMANY' OR n2.n_name = 'FRANCE'
 ///
-/// The idea is to traverse the all conjunctions and disjunctions in the original condition and
+/// The idea is to traverse all the conjunctions and disjunctions in the original condition and
 ///  1. replace elements of conjunctions that depend on other columns with 'True'
 ///  2. replace the whole disjunctions with 'True' if any element depends on other columns
 struct ConditionList
@@ -48,12 +56,19 @@ struct ConditionList
     }
 };
 
-/// Check if the whole subgraph that calculates the node only uses columns from the list
+/// Check if the whole subgraph that calculates the node only uses columns from the list.
+/// Also rejects subgraphs containing ARRAY_JOIN, because pushing such predicates below
+/// a JOIN would cause the array expansion to execute twice (once in the pushed-down filter
+/// and once in the original filter above the JOIN), producing duplicate rows.
 bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet & available_columns)
 {
     if (node.type == ActionsDAG::ActionType::INPUT)
     {
         return available_columns.contains(node.result_name);
+    }
+    else if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+    {
+        return false;
     }
     else
     {
@@ -179,6 +194,15 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
     full_dag.addOrReplaceInOutputs(*predicate_node);
     full_dag.removeUnusedActions();
 
+    /// removeUnusedActions unconditionally keeps ARRAY_JOIN nodes because they change
+    /// the number of rows. This can bring back INPUT nodes from the other side of the
+    /// JOIN that are not available in the target stream. Since extractPartialPredicate
+    /// already correctly rejects predicates depending on ARRAY_JOIN (via
+    /// onlyDependsOnAvailableColumns), any ARRAY_JOIN surviving here is an artifact
+    /// and pushing it below a JOIN would cause duplicate rows.
+    if (full_dag.hasArrayJoin())
+        return {};
+
     return full_dag;
 }
 
@@ -188,17 +212,35 @@ void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::No
     new_filter_node.children = {join_node.children[child_idx]};
     join_node.children[child_idx] = &new_filter_node;
 
+    if (filter_dag.getOutputs().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter DAG is expected to have only just the filter column in its output");
+
     auto filter_column_name = filter_dag.getOutputs().front()->result_name;
+    // Let's keep the order inputs for the join
+    std::multimap<std::string, const ActionsDAG::Node *> filter_inputs;
     for (const auto * input : filter_dag.getInputs())
-        filter_dag.addOrReplaceInOutputs(*input);
+        filter_inputs.insert({input->result_name, input});
 
-    const auto input_header = new_filter_node.children.at(0)->step->getOutputHeader();
+    for (const auto & input_column : join_node.step->getInputHeaders()[child_idx]->getColumnsWithTypeAndName())
+    {
+        auto it = filter_inputs.find(input_column.name);
+        if (it == filter_inputs.end())
+        {
+            const auto & new_input = filter_dag.addInput(input_column.name, input_column.type);
+            filter_dag.getOutputs().push_back(&new_input);
+        }
+        else
+        {
+            filter_dag.getOutputs().push_back(it->second);
+            filter_inputs.erase(it);
+        }
+    }
 
-    new_filter_node.step = std::make_unique<FilterStep>(
-        input_header,
-        std::move(filter_dag),
-        filter_column_name,
-        true);
+    const auto filter_input_header = new_filter_node.children.at(0)->step->getOutputHeader();
+
+    new_filter_node.step = std::make_unique<FilterStep>(filter_input_header, std::move(filter_dag), filter_column_name, true);
+}
+
 }
 
 }

@@ -41,6 +41,13 @@ def cluster():
             ],
         )
         cluster.add_instance(
+            "cache_dynamic_resize_slru",
+            main_configs=[
+                "config.d/cache_dynamic_resize_slru.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
             "node_force_read_through_cache_on_merge",
             main_configs=[
                 "config.d/storage_conf.xml",
@@ -134,8 +141,8 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
 
     node.query(
         """
-        SYSTEM DROP FILESYSTEM CACHE;
-        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+        SYSTEM CLEAR FILESYSTEM CACHE;
+        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
         SELECT * FROM test FORMAT Null;
         """
     )
@@ -167,7 +174,7 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
         f"SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE key in ({keys_set}) ORDER BY key, file_segment_range_begin, size"
     )
 
-    assert node.contains_in_log("Loading filesystem cache with 30 threads")
+    assert node.contains_in_log("15 listing thread(s) and 15 loading thread(s)")
     assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
     assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
     assert (
@@ -187,7 +194,7 @@ def test_caches_with_the_same_configuration(cluster, node_name):
     node = cluster.instances[node_name]
     cache_path = "cache1"
 
-    node.query("SYSTEM DROP FILESYSTEM CACHE;")
+    node.query("SYSTEM CLEAR FILESYSTEM CACHE;")
     for table in ["test", "test2"]:
         node.query(
             f"""
@@ -258,7 +265,7 @@ def test_caches_with_the_same_configuration(cluster, node_name):
 def test_caches_with_the_same_configuration_2(cluster, node_name):
     node = cluster.instances[node_name]
 
-    node.query("SYSTEM DROP FILESYSTEM CACHE;")
+    node.query("SYSTEM CLEAR FILESYSTEM CACHE;")
     for table in ["cache1", "cache2"]:
         node.query(
             f"""
@@ -460,9 +467,8 @@ def test_force_filesystem_cache_on_merges(cluster):
 
         node.query(
             """
-            SYSTEM DROP FILESYSTEM CACHE;
-            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
-            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+            SYSTEM CLEAR FILESYSTEM CACHE;
+            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
             """
         )
         assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
@@ -486,7 +492,7 @@ def test_force_filesystem_cache_on_merges(cluster):
             "select current_size from system.filesystem_cache_settings where cache_name = 'force_cache_on_merges'"
         ) == node.query("select sum(downloaded_size) from system.filesystem_cache")
 
-        node.query("SYSTEM DROP FILESYSTEM CACHE")
+        node.query("SYSTEM CLEAR FILESYSTEM CACHE")
         node.query("OPTIMIZE TABLE test FINAL")
 
         r_cache_count_3 = to_int(
@@ -511,7 +517,7 @@ def test_system_sync_filesystem_cache(cluster):
     node.query(
         f"""
 DROP TABLE IF EXISTS test;
-SYSTEM DROP FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE;
 
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
@@ -697,7 +703,7 @@ def test_dynamic_resize(cluster):
     node.query(
         f"""
 DROP TABLE IF EXISTS test;
-SYSTEM DROP FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE;
 CREATE TABLE test (a String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = '{cache_name}', min_bytes_for_wide_part = 10485760;
@@ -832,7 +838,7 @@ SETTINGS disk = disk(type = cache,
     )
 
     wait_for_cache_initialized(node, "test_filesystem_cache_log")
-    
+
 
     node.query(
         """
@@ -874,7 +880,7 @@ def test_dynamic_resize_disabled(cluster):
     node.query(
         f"""
 DROP TABLE IF EXISTS test;
-SYSTEM DROP FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE;
 CREATE TABLE test (a String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = '{cache_name}', min_bytes_for_wide_part = 10485760;
@@ -968,3 +974,396 @@ def test_finished_download_time(cluster):
     assert len(elapsed_time) > 0
     assert int(elapsed_time) > 1
     assert int(elapsed_time) < 5
+
+
+@pytest.mark.parametrize("cache_policy", ["lru", "slru"])
+def test_concurrent_eviction(cluster, cache_policy):
+    """Stress-test concurrent eviction in filesystem cache with multiple readers."""
+    import threading
+
+    node = cluster.instances["node"]
+    cache_name = f"bench_small_{cache_policy}_{uuid.uuid4().hex[:8]}"
+    table_name = f"bench_eviction_{uuid.uuid4().hex[:8]}"
+    try:
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS {table_name} SYNC;
+            CREATE TABLE {table_name} (key UInt32, value String)
+            ENGINE = MergeTree() ORDER BY key
+            SETTINGS disk = disk(
+                type = cache,
+                name = '{cache_name}',
+                path = '{cache_name}/',
+                max_size = '1Mi',
+                max_file_segment_size = 32768,
+                boundary_alignment = 32768,
+                cache_policy = '{cache_policy}',
+                disk = 'hdd_blob'
+            );
+            INSERT INTO {table_name} SELECT number, randomString(100) FROM numbers(100000);
+            """
+        )
+
+        test_start = node.query("SELECT now()").strip()
+
+        stop_event = threading.Event()
+
+        def drop_cache_loop():
+            while not stop_event.is_set():
+                node.query(f"SYSTEM CLEAR FILESYSTEM CACHE '{cache_name}'")
+
+        drop_thread = threading.Thread(target=drop_cache_loop, daemon=True)
+        drop_thread.start()
+
+        try:
+            node.exec_in_container(
+                [
+                    "/usr/bin/clickhouse",
+                    "benchmark",
+                    "--iterations",
+                    "200",
+                    "--concurrency",
+                    "100",
+                    "--query",
+                    f"SELECT count() FROM {table_name} WHERE key < (randConstant() % 100000) OR key > (randConstant() % 100000) FORMAT Null",
+                ]
+            )
+        finally:
+            stop_event.set()
+            drop_thread.join()
+
+        errors = int(
+            node.query(
+                f"SELECT count() FROM system.errors WHERE name = 'LOGICAL_ERROR' AND last_error_time >= '{test_start}'"
+            ).strip()
+        )
+        assert errors == 0, f"LOGICAL_ERROR occurred on {node.name}"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
+cache_dynamic_resize_slru_config = """
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdd_blob>
+                <type>local_blob_storage</type>
+                <path>/</path>
+            </hdd_blob>
+            <cache_dynamic_resize_slru>
+                <type>cache</type>
+                <disk>hdd_blob</disk>
+                <max_size>{max_size}</max_size>
+                <max_elements>{max_elements}</max_elements>
+                <max_file_segment_size>10</max_file_segment_size>
+                <boundary_alignment>10</boundary_alignment>
+                <cache_policy>SLRU</cache_policy>
+                <allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>
+                <path>./cache_dynamic_resize_slru/</path>
+            </cache_dynamic_resize_slru>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+"""
+
+
+def slru_config(max_size=100, max_elements=10):
+    return cache_dynamic_resize_slru_config.format(
+        max_size=max_size, max_elements=max_elements
+    )
+
+
+def test_dynamic_resize_slru(cluster):
+    """Test that SLRU filesystem cache properly evicts from both protected and
+    probationary queues when max_size and max_elements are shrunk via config reload,
+    and that growing limits back works correctly."""
+    node = cluster.instances["cache_dynamic_resize_slru"]
+    cache_name = "cache_dynamic_resize_slru"
+
+    node.query(
+        f"""
+DROP TABLE IF EXISTS test_slru1 SYNC;
+DROP TABLE IF EXISTS test_slru2 SYNC;
+SYSTEM CLEAR FILESYSTEM CACHE;
+CREATE TABLE test_slru1 (a String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = '{cache_name}', min_bytes_for_wide_part = 10485760,
+         serialization_info_version = 'basic';
+INSERT INTO test_slru1 SELECT randomString(20);
+CREATE TABLE test_slru2 (a String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = '{cache_name}', min_bytes_for_wide_part = 10485760,
+         serialization_info_version = 'basic';
+INSERT INTO test_slru2 SELECT randomString(20);
+SYSTEM CLEAR FILESYSTEM CACHE;
+    """
+    )
+
+    def get_cache_settings():
+        row = node.query(
+            f"SELECT max_size, max_elements FROM system.filesystem_cache_settings "
+            f"WHERE cache_name = '{cache_name}'"
+        ).strip()
+        parts = row.split("\t")
+        return int(parts[0]), int(parts[1])
+
+    def get_downloaded_count():
+        return int(
+            node.query(
+                f"SELECT count() FROM system.filesystem_cache "
+                f"WHERE state = 'DOWNLOADED' AND cache_name = '{cache_name}'"
+            )
+        )
+
+    def get_downloaded_size():
+        return int(
+            node.query(
+                f"SELECT sum(downloaded_size) FROM system.filesystem_cache "
+                f"WHERE state = 'DOWNLOADED' AND cache_name = '{cache_name}'"
+            )
+        )
+
+    try:
+        # Verify initial settings
+        max_size, max_elements = get_cache_settings()
+        assert max_size == 100
+        assert max_elements == 10
+
+        assert get_downloaded_count() == 0
+
+        test_start = node.query("SELECT now()").strip()
+
+        # Read table 1 twice to promote its segments into the protected queue
+        node.query("SELECT * FROM test_slru1 FORMAT Null")
+        node.query("SELECT * FROM test_slru1 FORMAT Null")
+
+        # Read table 2 once -- its segments stay in the probationary queue
+        node.query("SELECT * FROM test_slru2 FORMAT Null")
+
+        assert get_downloaded_count() > 0
+        assert get_downloaded_size() > 0
+
+        # --- Shrink max_size from 100 to 10 ---
+        node.replace_config(
+            "/etc/clickhouse-server/config.d/cache_dynamic_resize_slru.xml",
+            slru_config(max_size=10, max_elements=10),
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+        s, e = get_cache_settings()
+        assert s == 10
+        assert e == 10
+        # Total cached bytes must not exceed the new limit
+        assert get_downloaded_size() <= 10
+
+        # --- Grow max_size back to 100 ---
+        node.replace_config(
+            "/etc/clickhouse-server/config.d/cache_dynamic_resize_slru.xml",
+            slru_config(max_size=100, max_elements=10),
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+        s, e = get_cache_settings()
+        assert s == 100
+        assert e == 10
+
+        # Re-read to populate the cache again
+        node.query("SELECT * FROM test_slru1 FORMAT Null")
+        node.query("SELECT * FROM test_slru2 FORMAT Null")
+        assert get_downloaded_count() > 0
+        assert get_downloaded_size() > 0
+
+        # --- Shrink max_elements from 10 to 2 ---
+        node.replace_config(
+            "/etc/clickhouse-server/config.d/cache_dynamic_resize_slru.xml",
+            slru_config(max_size=100, max_elements=2),
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+        s, e = get_cache_settings()
+        assert s == 100
+        assert e == 2
+        assert get_downloaded_count() <= 2
+
+        # --- Grow max_elements back to 10 ---
+        node.replace_config(
+            "/etc/clickhouse-server/config.d/cache_dynamic_resize_slru.xml",
+            slru_config(max_size=100, max_elements=10),
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+        s, e = get_cache_settings()
+        assert s == 100
+        assert e == 10
+
+        # Verify the cache still works after all the resizing
+        node.query("SELECT * FROM test_slru1 FORMAT Null")
+        assert get_downloaded_count() > 0
+
+        # No LOGICAL_ERROR should have occurred during resize operations
+        errors = int(
+            node.query(
+                f"SELECT count() FROM system.errors "
+                f"WHERE name = 'LOGICAL_ERROR' AND last_error_time >= '{test_start}'"
+            ).strip()
+        )
+        assert errors == 0, f"LOGICAL_ERROR occurred during SLRU resize test"
+
+    finally:
+        node.replace_config(
+            "/etc/clickhouse-server/config.d/cache_dynamic_resize_slru.xml",
+            slru_config(max_size=100, max_elements=10),
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+        node.query("DROP TABLE IF EXISTS test_slru1 SYNC")
+        node.query("DROP TABLE IF EXISTS test_slru2 SYNC")
+
+
+def test_dynamic_resize_slru_failpoint_eviction(cluster):
+    """Test that SLRU filesystem cache resize gracefully handles eviction failures
+    via the file_cache_dynamic_resize_fail_to_evict failpoint. When eviction fails,
+    entries should be restored to their original queues and the cache should remain
+    in a consistent state."""
+    node = cluster.instances["cache_dynamic_resize_slru"]
+    cache_name = "cache_dynamic_resize_slru"
+
+    # Restore to known-good initial state
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/cache_dynamic_resize_slru.xml",
+        slru_config(max_size=100, max_elements=10),
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    node.query(
+        f"""
+DROP TABLE IF EXISTS test_slru_fp SYNC;
+SYSTEM CLEAR FILESYSTEM CACHE;
+CREATE TABLE test_slru_fp (a String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = '{cache_name}', min_bytes_for_wide_part = 10485760,
+         serialization_info_version = 'basic';
+INSERT INTO test_slru_fp SELECT randomString(20);
+SYSTEM CLEAR FILESYSTEM CACHE;
+    """
+    )
+
+    get_downloaded_count = lambda: int(
+        node.query(
+            f"SELECT count() FROM system.filesystem_cache "
+            f"WHERE state = 'DOWNLOADED' AND cache_name = '{cache_name}'"
+        )
+    )
+
+    get_downloaded_size = lambda: int(
+        node.query(
+            f"SELECT sum(downloaded_size) FROM system.filesystem_cache "
+            f"WHERE state = 'DOWNLOADED' AND cache_name = '{cache_name}'"
+        )
+    )
+
+    get_max_size = lambda: int(
+        node.query(
+            f"SELECT max_size FROM system.filesystem_cache_settings "
+            f"WHERE cache_name = '{cache_name}'"
+        ).strip()
+    )
+
+    try:
+        test_start = node.query("SELECT now()").strip()
+
+        # Read twice to promote segments into the protected queue
+        node.query("SELECT * FROM test_slru_fp FORMAT Null")
+        node.query("SELECT * FROM test_slru_fp FORMAT Null")
+
+        initial_count = get_downloaded_count()
+        initial_size = get_downloaded_size()
+        assert initial_count > 0
+        assert initial_size > 0
+
+        # Enable failpoint so eviction will fail
+        node.query(
+            "SYSTEM ENABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict"
+        )
+
+        # Anchor log position so we only check lines written from now on
+        log_anchor = node.count_log_lines()
+
+        # Attempt to shrink -- eviction will fail, so limits should stay
+        # at old values (or somewhere between old and desired)
+        node.replace_config(
+            "/etc/clickhouse-server/config.d/cache_dynamic_resize_slru.xml",
+            slru_config(max_size=10, max_elements=10),
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+        # Wait for the background resize thread to attempt (and fail) the resize.
+        # Confirm the failure path actually ran by checking for the log message
+        # emitted when eviction candidates fail.
+        node.wait_for_log_line(
+            "Having .* failed candidates",
+            timeout=60,
+            look_behind_lines=f"+{log_anchor}",
+        )
+
+        # Disable failpoint before checking state
+        node.query(
+            "SYSTEM DISABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict"
+        )
+
+        # After failed resize, limits should have reverted to prev_limits (100)
+        assert get_max_size() == 100, (
+            f"max_size should have reverted to 100 after failed resize, got {get_max_size()}"
+        )
+
+        # Entries should have been restored -- count and size should be
+        # the same as before the failed resize attempt
+        assert get_downloaded_count() == initial_count, (
+            f"Entry count changed after failed resize: {initial_count} -> {get_downloaded_count()}"
+        )
+        assert get_downloaded_size() == initial_size, (
+            f"Total size changed after failed resize: {initial_size} -> {get_downloaded_size()}"
+        )
+
+        # Cache should still be usable -- reads should work
+        node.query("SELECT * FROM test_slru_fp FORMAT Null")
+
+        # Now do a real resize (without failpoint) to verify cache is not corrupted
+        node.replace_config(
+            "/etc/clickhouse-server/config.d/cache_dynamic_resize_slru.xml",
+            slru_config(max_size=10, max_elements=10),
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+        # Poll for the real resize to complete
+        for _ in range(30):
+            if get_max_size() == 10:
+                break
+            time.sleep(1)
+
+        assert get_max_size() == 10, (
+            f"Dynamic resize to 10 did not complete, max_size is {get_max_size()}"
+        )
+
+        assert get_downloaded_size() <= 10, (
+            f"Cache size {get_downloaded_size()} exceeds new limit 10 after real resize"
+        )
+
+        # No LOGICAL_ERROR should have occurred
+        errors = int(
+            node.query(
+                f"SELECT count() FROM system.errors "
+                f"WHERE name = 'LOGICAL_ERROR' AND last_error_time >= '{test_start}'"
+            ).strip()
+        )
+        assert errors == 0, f"LOGICAL_ERROR occurred during SLRU failpoint resize test"
+
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict"
+        )
+        node.replace_config(
+            "/etc/clickhouse-server/config.d/cache_dynamic_resize_slru.xml",
+            slru_config(max_size=100, max_elements=10),
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+        node.query("DROP TABLE IF EXISTS test_slru_fp SYNC")

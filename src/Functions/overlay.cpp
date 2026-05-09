@@ -1,6 +1,5 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -18,14 +17,13 @@ namespace
 /// Syntax:
 /// - overlay(s, replace, offset[, length])
 /// - overlayUTF8(s, replace, offset[, length]) - measure offset and length in code points instead of bytes
-template <bool is_utf8>
 class FunctionOverlay : public IFunction
 {
 public:
-    static constexpr auto name = is_utf8 ? "overlayUTF8" : "overlay";
+    FunctionOverlay(const char * name_, bool is_utf8_) : function_name(name_), is_utf8(is_utf8_) {}
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionOverlay>(); }
-    String getName() const override { return name; }
+    static FunctionPtr create(const char * name, bool is_utf8) { return std::make_shared<FunctionOverlay>(name, is_utf8); }
+    String getName() const override { return function_name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -97,17 +95,17 @@ public:
         res_offsets.resize_exact(input_rows_count);
         if (col_input_const)
         {
-            StringRef input = col_input_const->getDataAt(0);
-            res_data.reserve(input.size * input_rows_count);
+            std::string_view input = col_input_const->getDataAt(0);
+            res_data.reserve(input.size() * input_rows_count);
         }
         else
         {
             res_data.reserve(col_input_string->getChars().size());
         }
 
-#define OVERLAY_EXECUTE_CASE(HAS_FOUR_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST) \
+#define OVERLAY_EXECUTE_CASE(IS_UTF8, HAS_FOUR_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST) \
     if (input_is_const && replace_is_const) \
-        constantConstant<HAS_FOUR_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
+        constantConstant<IS_UTF8, HAS_FOUR_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
             input_rows_count, \
             col_input_const->getDataAt(0), \
             col_replace_const->getDataAt(0), \
@@ -118,7 +116,7 @@ public:
             res_data, \
             res_offsets); \
     else if (input_is_const && !replace_is_const) \
-        constantVector<HAS_FOUR_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
+        constantVector<IS_UTF8, HAS_FOUR_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
             input_rows_count, \
             col_input_const->getDataAt(0), \
             col_replace_string->getChars(), \
@@ -130,7 +128,7 @@ public:
             res_data, \
             res_offsets); \
     else if (!input_is_const && replace_is_const) \
-        vectorConstant<HAS_FOUR_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
+        vectorConstant<IS_UTF8, HAS_FOUR_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
             input_rows_count, \
             col_input_string->getChars(), \
             col_input_string->getOffsets(), \
@@ -142,7 +140,7 @@ public:
             res_data, \
             res_offsets); \
     else \
-        vectorVector<HAS_FOUR_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
+        vectorVector<IS_UTF8, HAS_FOUR_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
             input_rows_count, \
             col_input_string->getChars(), \
             col_input_string->getOffsets(), \
@@ -155,36 +153,48 @@ public:
             res_data, \
             res_offsets);
 
-        if (!has_four_args)
+/// Dispatch is_utf8 to compile-time, then dispatch the other parameters
+#define OVERLAY_DISPATCH_ARGS(IS_UTF8) \
+        if (!has_four_args) \
+        { \
+            if (offset_is_const) \
+            { \
+                OVERLAY_EXECUTE_CASE(IS_UTF8, false, true, false) \
+            } \
+            else \
+            { \
+                OVERLAY_EXECUTE_CASE(IS_UTF8, false, false, false) \
+            } \
+        } \
+        else \
+        { \
+            if (offset_is_const && length_is_const) \
+            { \
+                OVERLAY_EXECUTE_CASE(IS_UTF8, true, true, true) \
+            } \
+            else if (offset_is_const && !length_is_const) \
+            { \
+                OVERLAY_EXECUTE_CASE(IS_UTF8, true, true, false) \
+            } \
+            else if (!offset_is_const && length_is_const) \
+            { \
+                OVERLAY_EXECUTE_CASE(IS_UTF8, true, false, true) \
+            } \
+            else \
+            { \
+                OVERLAY_EXECUTE_CASE(IS_UTF8, true, false, false) \
+            } \
+        }
+
+        if (is_utf8)
         {
-            if (offset_is_const)
-            {
-                OVERLAY_EXECUTE_CASE(false, true, false)
-            }
-            else
-            {
-                OVERLAY_EXECUTE_CASE(false, false, false)
-            }
+            OVERLAY_DISPATCH_ARGS(true)
         }
         else
         {
-            if (offset_is_const && length_is_const)
-            {
-                OVERLAY_EXECUTE_CASE(true, true, true)
-            }
-            else if (offset_is_const && !length_is_const)
-            {
-                OVERLAY_EXECUTE_CASE(true, true, false)
-            }
-            else if (!offset_is_const && length_is_const)
-            {
-                OVERLAY_EXECUTE_CASE(true, false, true)
-            }
-            else
-            {
-                OVERLAY_EXECUTE_CASE(true, false, false)
-            }
+            OVERLAY_DISPATCH_ARGS(false)
         }
+#undef OVERLAY_DISPATCH_ARGS
 #undef OVERLAY_EXECUTE_CASE
 
         return res_col;
@@ -208,19 +218,20 @@ private:
     }
 
     /// get character count of a slice [data, data+bytes)
+    template <bool is_utf8_>
     static size_t getSliceSize(const UInt8 * data, size_t bytes)
     {
-        if constexpr (is_utf8)
+        if constexpr (is_utf8_)
             return UTF8::countCodePoints(data, bytes);
         else
             return bytes;
     }
 
-    template <bool has_four_args, bool offset_is_const, bool length_is_const>
+    template <bool is_utf8_, bool has_four_args, bool offset_is_const, bool length_is_const>
     void constantConstant(
         size_t rows,
-        const StringRef & input,
-        const StringRef & replace,
+        const std::string_view & input,
+        const std::string_view & replace,
         const ColumnPtr & column_offset,
         const ColumnPtr & column_length,
         Int64 const_offset,
@@ -231,17 +242,17 @@ private:
         /// Free us from handling negative length in the code below
         if (has_four_args && length_is_const && const_length < 0)
         {
-            constantConstant<true, offset_is_const, false>(
+            constantConstant<is_utf8_, true, offset_is_const, false>(
                 rows, input, replace, column_offset, column_length, const_offset, -1, res_data, res_offsets);
             return;
         }
 
-        size_t input_size = getSliceSize(reinterpret_cast<const UInt8 *>(input.data), input.size);
+        size_t input_size = getSliceSize<is_utf8_>(reinterpret_cast<const UInt8 *>(input.data()), input.size());
         size_t valid_offset = 0; // start from 0, not negative
         if constexpr (offset_is_const)
             valid_offset = getValidOffset(const_offset, input_size);
 
-        size_t replace_size = getSliceSize(reinterpret_cast<const UInt8 *>(replace.data), replace.size);
+        size_t replace_size = getSliceSize<is_utf8_>(reinterpret_cast<const UInt8 *>(replace.data()), replace.size());
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
@@ -255,8 +266,8 @@ private:
 
         Int64 offset = 0; // start from 1, maybe negative
         Int64 length = 0; // maybe negative
-        const UInt8 * input_begin = reinterpret_cast<const UInt8 *>(input.data);
-        const UInt8 * input_end = reinterpret_cast<const UInt8 *>(input.data + input.size);
+        const UInt8 * input_begin = reinterpret_cast<const UInt8 *>(input.data());
+        const UInt8 * input_end = reinterpret_cast<const UInt8 *>(input.data() + input.size());
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
@@ -275,35 +286,35 @@ private:
             size_t prefix_size = valid_offset;
             size_t suffix_size = (prefix_size + valid_length > input_size) ? 0 : (input_size - prefix_size - valid_length);
 
-            if constexpr (!is_utf8)
+            if constexpr (!is_utf8_)
             {
                 size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data, prefix_size);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data(), prefix_size);
                 res_offset += prefix_size;
 
                 /// copy replace
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data, replace_size);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data(), replace_size);
                 res_offset += replace_size;
 
                 /// copy suffix after replaced region. It is not necessary to copy if suffix_size is zero.
                 if (suffix_size)
                 {
-                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data + prefix_size + valid_length, suffix_size);
+                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + prefix_size + valid_length, suffix_size);
                     res_offset += suffix_size;
                 }
             }
             else
             {
                 const auto * prefix_end = GatherUtils::UTF8StringSource::skipCodePointsForward(input_begin, prefix_size, input_end);
-                size_t prefix_bytes = prefix_end > input_end ? input.size : prefix_end - input_begin;
+                size_t prefix_bytes = prefix_end > input_end ? input.size() : prefix_end - input_begin;
 
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
 
-                size_t new_res_size = res_data.size() + prefix_bytes + replace.size + suffix_bytes;
+                size_t new_res_size = res_data.size() + prefix_bytes + replace.size() + suffix_bytes;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -311,8 +322,8 @@ private:
                 res_offset += prefix_bytes;
 
                 /// copy replace
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data, replace.size);
-                res_offset += replace.size;
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data(), replace.size());
+                res_offset += replace.size();
 
                 /// copy suffix after replaced region. It is not necessary to copy if suffix_bytes is zero.
                 if (suffix_bytes)
@@ -326,12 +337,12 @@ private:
         }
     }
 
-    template <bool has_four_args, bool offset_is_const, bool length_is_const>
+    template <bool is_utf8_, bool has_four_args, bool offset_is_const, bool length_is_const>
     void vectorConstant(
         size_t rows,
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
-        const StringRef & replace,
+        const std::string_view & replace,
         const ColumnPtr & column_offset,
         const ColumnPtr & column_length,
         Int64 const_offset,
@@ -342,12 +353,12 @@ private:
         /// Free us from handling negative length in the code below
         if (has_four_args && length_is_const && const_length < 0)
         {
-            vectorConstant<true, offset_is_const, false>(
+            vectorConstant<is_utf8_, true, offset_is_const, false>(
                 rows, input_data, input_offsets, replace, column_offset, column_length, const_offset, -1, res_data, res_offsets);
             return;
         }
 
-        size_t replace_size = getSliceSize(reinterpret_cast<const UInt8 *>(replace.data), replace.size);
+        size_t replace_size = getSliceSize<is_utf8_>(reinterpret_cast<const UInt8 *>(replace.data()), replace.size());
         Int64 length = 0; // maybe negative
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
@@ -367,7 +378,7 @@ private:
         {
             size_t input_offset = input_offsets[i - 1];
             size_t input_bytes = input_offsets[i] - input_offsets[i - 1];
-            size_t input_size = getSliceSize(&input_data[input_offset], input_bytes);
+            size_t input_size = getSliceSize<is_utf8_>(&input_data[input_offset], input_bytes);
 
             if constexpr (offset_is_const)
             {
@@ -388,7 +399,7 @@ private:
             size_t prefix_size = valid_offset;
             size_t suffix_size = (prefix_size + valid_length > input_size) ? 0 : (input_size - prefix_size - valid_length);
 
-            if constexpr (!is_utf8)
+            if constexpr (!is_utf8_)
             {
                 size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
                 res_data.resize(new_res_size);
@@ -398,7 +409,7 @@ private:
                 res_offset += prefix_size;
 
                 /// copy replace
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data, replace_size);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data(), replace_size);
                 res_offset += replace_size;
 
                 /// copy suffix after replaced region. It is not necessary to copy if suffix_size is zero.
@@ -418,7 +429,7 @@ private:
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
 
-                size_t new_res_size = res_data.size() + prefix_bytes + replace.size + suffix_bytes;
+                size_t new_res_size = res_data.size() + prefix_bytes + replace.size() + suffix_bytes;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -426,8 +437,8 @@ private:
                 res_offset += prefix_bytes;
 
                 /// copy replace
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data, replace.size);
-                res_offset += replace.size;
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data(), replace.size());
+                res_offset += replace.size();
 
                 /// copy suffix after replaced region. It is not necessary to copy if suffix_bytes is zero.
                 if (suffix_bytes)
@@ -441,10 +452,10 @@ private:
         }
     }
 
-    template <bool has_four_args, bool offset_is_const, bool length_is_const>
+    template <bool is_utf8_, bool has_four_args, bool offset_is_const, bool length_is_const>
     void constantVector(
         size_t rows,
-        const StringRef & input,
+        const std::string_view & input,
         const ColumnString::Chars & replace_data,
         const ColumnString::Offsets & replace_offsets,
         const ColumnPtr & column_offset,
@@ -457,12 +468,12 @@ private:
         /// Free us from handling negative length in the code below
         if (has_four_args && length_is_const && const_length < 0)
         {
-            constantVector<true, offset_is_const, false>(
+            constantVector<is_utf8_, true, offset_is_const, false>(
                 rows, input, replace_data, replace_offsets, column_offset, column_length, const_offset, -1, res_data, res_offsets);
             return;
         }
 
-        size_t input_size = getSliceSize(reinterpret_cast<const UInt8 *>(input.data), input.size);
+        size_t input_size = getSliceSize<is_utf8_>(reinterpret_cast<const UInt8 *>(input.data()), input.size());
         size_t valid_offset = 0; // start from 0, not negative
         if constexpr (offset_is_const)
             valid_offset = getValidOffset(const_offset, input_size);
@@ -475,15 +486,15 @@ private:
             valid_length = const_length;
         }
 
-        const auto * input_begin = reinterpret_cast<const UInt8 *>(input.data);
-        const auto * input_end = reinterpret_cast<const UInt8 *>(input.data + input.size);
+        const auto * input_begin = reinterpret_cast<const UInt8 *>(input.data());
+        const auto * input_end = reinterpret_cast<const UInt8 *>(input.data() + input.size());
         Int64 offset = 0; // start from 1, maybe negative
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
             size_t replace_offset = replace_offsets[i - 1];
             size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1];
-            size_t replace_size = getSliceSize(&replace_data[replace_offset], replace_bytes);
+            size_t replace_size = getSliceSize<is_utf8_>(&replace_data[replace_offset], replace_bytes);
 
             if constexpr (!offset_is_const)
             {
@@ -504,13 +515,13 @@ private:
             size_t prefix_size = valid_offset;
             size_t suffix_size = (prefix_size + valid_length > input_size) ? 0 : (input_size - prefix_size - valid_length);
 
-            if constexpr (!is_utf8)
+            if constexpr (!is_utf8_)
             {
                 size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data, prefix_size);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data(), prefix_size);
                 res_offset += prefix_size;
 
                 /// copy replace
@@ -520,14 +531,14 @@ private:
                 /// copy suffix after replaced region. It is not necessary to copy if suffix_size is zero.
                 if (suffix_size)
                 {
-                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data + prefix_size + valid_length, suffix_size);
+                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + prefix_size + valid_length, suffix_size);
                     res_offset += suffix_size;
                 }
             }
             else
             {
                 const auto * prefix_end = GatherUtils::UTF8StringSource::skipCodePointsForward(input_begin, prefix_size, input_end);
-                size_t prefix_bytes = prefix_end > input_end ? input.size : prefix_end - input_begin;
+                size_t prefix_bytes = prefix_end > input_end ? input.size() : prefix_end - input_begin;
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
                 size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes;
@@ -553,7 +564,7 @@ private:
         }
     }
 
-    template <bool has_four_args, bool offset_is_const, bool length_is_const>
+    template <bool is_utf8_, bool has_four_args, bool offset_is_const, bool length_is_const>
     void vectorVector(
         size_t rows,
         const ColumnString::Chars & input_data,
@@ -570,7 +581,7 @@ private:
         /// Free us from handling negative length in the code below
         if (has_four_args && length_is_const && const_length < 0)
         {
-            vectorVector<true, offset_is_const, false>(
+            vectorVector<is_utf8_, true, offset_is_const, false>(
                 rows,
                 input_data,
                 input_offsets,
@@ -600,11 +611,11 @@ private:
         {
             size_t input_offset = input_offsets[i - 1];
             size_t input_bytes = input_offsets[i] - input_offsets[i - 1];
-            size_t input_size = getSliceSize(&input_data[input_offset], input_bytes);
+            size_t input_size = getSliceSize<is_utf8_>(&input_data[input_offset], input_bytes);
 
             size_t replace_offset = replace_offsets[i - 1];
             size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1];
-            size_t replace_size = getSliceSize(&replace_data[replace_offset], replace_bytes);
+            size_t replace_size = getSliceSize<is_utf8_>(&replace_data[replace_offset], replace_bytes);
 
             if constexpr (offset_is_const)
             {
@@ -629,7 +640,7 @@ private:
             size_t prefix_size = valid_offset;
             size_t suffix_size = (prefix_size + valid_length > input_size) ? 0 : (input_size - prefix_size - valid_length);
 
-            if constexpr (!is_utf8)
+            if constexpr (!is_utf8_)
             {
                 size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
                 res_data.resize(new_res_size);
@@ -680,6 +691,9 @@ private:
             res_offsets[i] = res_offset;
         }
     }
+
+    const char * const function_name;
+    const bool is_utf8;
 };
 
 }
@@ -719,9 +733,11 @@ Replaces part of the string `input` with another string `replace`, starting at t
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
-    FunctionDocumentation overlay_documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation overlay_documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionOverlay<false>>(overlay_documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("overlay",
+        [](ContextPtr){ return FunctionOverlay::create("overlay", false); },
+        overlay_documentation, FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description utf8_description = R"(
 Replace part of the string `s` with another string `replace`, starting at the 1-based index `offset`.
@@ -747,8 +763,10 @@ If this assumption is violated, no exception is thrown and the result is undefin
         )"
     }
     };
-    FunctionDocumentation overlayutf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, utf8_returned_value, utf8_examples, introduced_in, category};
+    FunctionDocumentation overlayutf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, {}, utf8_returned_value, utf8_examples, introduced_in, category};
 
-    factory.registerFunction<FunctionOverlay<true>>(overlayutf8_documentation, FunctionFactory::Case::Sensitive);
+    factory.registerFunction("overlayUTF8",
+        [](ContextPtr){ return FunctionOverlay::create("overlayUTF8", true); },
+        overlayutf8_documentation, FunctionFactory::Case::Sensitive);
 }
 }

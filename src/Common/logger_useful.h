@@ -9,8 +9,9 @@
 #include <Common/AtomicLogger.h>
 #include <Common/CurrentThreadHelpers.h>
 #include <Common/Logger.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/LoggingFormatStringHelpers.h>
+#include <Common/LoggingHelpers.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 

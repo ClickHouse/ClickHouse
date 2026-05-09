@@ -1,9 +1,10 @@
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Block.h>
+#include <DataTypes/TimezoneMixin.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
-#include <Core/Block.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB
@@ -68,6 +69,11 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     columns_definition = defineColumns(*header_, params);
 }
 
+GraphiteRollupSortedAlgorithm::~GraphiteRollupSortedAlgorithm()
+{
+    merged_data.reset();
+}
+
 UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
 {
     static_assert(is_signed_v<time_t>, "time_t must be signed type");
@@ -129,7 +135,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
-        std::string_view next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow()).toView();
+        std::string_view next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow());
         bool new_path = is_first || next_path != current_group_path;
 
         is_first = false;

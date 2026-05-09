@@ -7,7 +7,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <Common/typeid_cast.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -84,8 +83,9 @@ public:
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                     toString(resolution), getName(), MAX_H3_RES);
-            Int64 res = getNumCells(resolution);
-            dst_data[row] = res;
+            int64_t num_cells = 0;
+            getNumCells(resolution, &num_cells);
+            dst_data[row] = num_cells;
         }
 
         return dst;
@@ -120,7 +120,7 @@ Returns the number of unique [H3](#h3-index) indices at the given resolution.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3NumHexagons>(documentation);
 }
 

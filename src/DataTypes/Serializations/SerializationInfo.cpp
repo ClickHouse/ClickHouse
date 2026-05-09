@@ -34,6 +34,9 @@ constexpr auto KEY_NAME = "name";
 
 constexpr auto KEY_TYPES_SERIALIZATION_VERSIONS = "types_serialization_versions";
 constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
+constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
+constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
+constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
 
 }
 
@@ -43,7 +46,7 @@ void SerializationInfo::Data::add(const IColumn & column)
     double ratio = column.getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
 
     num_rows += rows;
-    num_defaults += static_cast<size_t>(ratio * rows);
+    num_defaults += static_cast<size_t>(ratio * static_cast<double>(rows));
 }
 
 void SerializationInfo::Data::add(const Data & other)
@@ -143,7 +146,8 @@ std::shared_ptr<SerializationInfo> SerializationInfo::createWithType(
     ISerialization::KindStack new_kind_stack;
     for (auto kind : kind_stack)
     {
-        if (kind == ISerialization::Kind::SPARSE && (!new_type.supportsSparseSerialization() || !preserveDefaultsAfterConversion(old_type, new_type)))
+        if (kind == ISerialization::Kind::SPARSE
+            && (!new_settings.canUseSparseSerialization(new_type) || !preserveDefaultsAfterConversion(old_type, new_type)))
             continue;
         new_kind_stack.push_back(kind);
     }
@@ -267,7 +271,7 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, const Settings & settings)
 {
     ISerialization::KindStack kind_stack = {ISerialization::Kind::DEFAULT};
-    double ratio = data.num_rows ? std::min(static_cast<double>(data.num_defaults) / data.num_rows, 1.0) : 0.0;
+    double ratio = data.num_rows ? std::min(static_cast<double>(data.num_defaults) / static_cast<double>(data.num_rows), 1.0) : 0.0;
     if (ratio > settings.ratio_of_defaults_for_sparse)
         kind_stack.push_back(ISerialization::Kind::SPARSE);
     return kind_stack;
@@ -276,18 +280,9 @@ ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, 
 SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settings & settings_)
     : settings(settings_)
 {
-    /// Downgrade to BASIC version if `string_serialization_version` is SINGLE_STREAM.
-    ///
-    /// Rationale:
-    /// - `BASIC` means old serialization format (no per-type specialization).
-    /// - `WITH_TYPES` means new format that supports per-type serialization versions,
-    ///   where `string_serialization_version` is currently the only one specialization.
-    ///
-    /// If `string_serialization_version` is SINGLE_STREAM, there is no effective type specialization
-    /// in use, so writing `WITH_TYPES` would add no benefit but reduce compatibility.
-    /// Falling back to `BASIC` keeps the output fully compatible with older servers.
-    if (settings.string_serialization_version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
-        settings.version = MergeTreeSerializationInfoVersion::BASIC;
+    /// If all type-specific versions remain at their defaults, downgrade to BASIC to avoid emitting a WITH_TYPES format
+    /// unnecessarily. This prevents an avoidable version bump and preserves maximum compatibility with older servers.
+    settings.tryDowngradeToBasic();
 }
 
 SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings_)
@@ -298,7 +293,7 @@ SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & colum
 
     for (const auto & column : columns)
     {
-        if (column.type->supportsSparseSerialization())
+        if (settings.canUseSparseSerialization(*column.type))
             emplace(column.name, column.type->createSerializationInfo(settings));
     }
 }
@@ -401,7 +396,16 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     {
         Poco::JSON::Object type_versions_obj;
         type_versions_obj.set(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(settings.string_serialization_version));
+        if (settings.nullable_serialization_version != MergeTreeNullableSerializationVersion::BASIC)
+            type_versions_obj.set(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(settings.nullable_serialization_version));
+        if (settings.map_serialization_version != MergeTreeMapSerializationVersion::BASIC)
+            type_versions_obj.set(KEY_MAP_SERIALIZATION_VERSION, static_cast<size_t>(settings.map_serialization_version));
         object.set(KEY_TYPES_SERIALIZATION_VERSIONS, type_versions_obj);
+
+        /// Write flag propagate_types_serialization_versions_to_nested_types only if it's set,
+        /// so old versions can read this info if the flag is disabled.
+        if (settings.propagate_types_serialization_versions_to_nested_types)
+            object.set(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types);
     }
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -429,7 +433,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::BASIC;
     {
-        size_t version_value = object->getValue<size_t>(KEY_VERSION);
+        auto version_value = static_cast<std::underlying_type_t<MergeTreeSerializationInfoVersion>>(object->getValue<size_t>(KEY_VERSION));
         auto maybe_enum = magic_enum::enum_cast<MergeTreeSerializationInfoVersion>(version_value);
         if (!maybe_enum)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown version of serialization infos ({})", version_value);
@@ -438,6 +442,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     Poco::JSON::Array::Ptr columns_array;
     Poco::JSON::Object::Ptr type_versions_obj;
+    bool propagate_types_serialization_versions_to_nested_types = false;
     for (const auto & [key, value] : *object)
     {
         if (key == KEY_VERSION)
@@ -452,6 +457,10 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         {
             type_versions_obj = value.extract<Poco::JSON::Object::Ptr>();
         }
+        else if (key == KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES)
+        {
+            propagate_types_serialization_versions_to_nested_types = value.extract<bool>();
+        }
         else
         {
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected field '{}' in MergeTreeSerializationInfo JSON", key);
@@ -459,6 +468,8 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     }
 
     MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
+    MergeTreeNullableSerializationVersion nullable_serialization_version = MergeTreeNullableSerializationVersion::BASIC;
+    MergeTreeMapSerializationVersion map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
         /// types_serialization_versions is mandatory in WITH_TYPES mode
@@ -471,13 +482,27 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
         for (const auto & [type_name, value] : *type_versions_obj)
         {
-            size_t version_value = value.convert<size_t>();
+            auto version_value = static_cast<std::underlying_type_t<MergeTreeStringSerializationVersion>>(value.convert<size_t>());
             if (type_name == KEY_STRING_SERIALIZATION_VERSION)
             {
                 auto maybe_enum = magic_enum::enum_cast<MergeTreeStringSerializationVersion>(version_value);
                 if (!maybe_enum.has_value())
                     throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
                 string_serialization_version = *maybe_enum;
+            }
+            else if (type_name == KEY_NULLABLE_SERIALIZATION_VERSION)
+            {
+                auto maybe_enum = magic_enum::enum_cast<MergeTreeNullableSerializationVersion>(version_value);
+                if (!maybe_enum.has_value())
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
+                nullable_serialization_version = *maybe_enum;
+            }
+            else if (type_name == KEY_MAP_SERIALIZATION_VERSION)
+            {
+                auto maybe_enum = magic_enum::enum_cast<MergeTreeMapSerializationVersion>(version_value);
+                if (!maybe_enum.has_value())
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
+                map_serialization_version = *maybe_enum;
             }
             else
             {
@@ -490,7 +515,10 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         1.0 /* Doesn't matter when constructing from JSON */,
         false /* Cannot choose kind when constructing from JSON */,
         version,
-        string_serialization_version);
+        string_serialization_version,
+        nullable_serialization_version,
+        map_serialization_version,
+        propagate_types_serialization_versions_to_nested_types);
 
     SerializationInfoByName infos(settings);
     if (columns_array)

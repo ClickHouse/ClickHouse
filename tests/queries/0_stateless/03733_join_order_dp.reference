@@ -1,0 +1,51 @@
+=========================================
+Plan with greedy algorithm
+Expression ((Project names + (Projection + )))
+  Expression (Post Join Actions)
+    Join (JOIN FillRightFirst)
+      Expression (Left Pre Join Actions)
+        Expression (Post Join Actions)
+          Join (JOIN FillRightFirst)
+            Expression (Left Pre Join Actions)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.R3)
+            Expression (Right Pre Join Actions)
+              Expression ((WHERE + Change column names to column identifiers))
+                ReadFromMergeTree (default.R4)
+      Expression (Right Pre Join Actions)
+        Expression (Post Join Actions)
+          Join (JOIN FillRightFirst)
+            Expression (Left Pre Join Actions)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.R2)
+            Expression (Right Pre Join Actions)
+              Expression ((WHERE + Change column names to column identifiers))
+                ReadFromMergeTree (default.R1)
+5684007341784604324
+=========================================
+Plan with DPsize algorithm
+Expression ((Project names + (Projection + )))
+  Expression (Post Join Actions)
+    Join (JOIN FillRightFirst)
+      Expression (Left Pre Join Actions)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.R2)
+      Expression (Right Pre Join Actions)
+        Expression (Post Join Actions)
+          Join (JOIN FillRightFirst)
+            Expression (Left Pre Join Actions)
+              Expression (Post Join Actions)
+                Join (JOIN FillRightFirst)
+                  Expression (Left Pre Join Actions)
+                    Expression (Change column names to column identifiers)
+                      ReadFromMergeTree (default.R3)
+                  Expression (Right Pre Join Actions)
+                    Expression ((WHERE + Change column names to column identifiers))
+                      ReadFromMergeTree (default.R1)
+            Expression (Right Pre Join Actions)
+              Expression ((WHERE + Change column names to column identifiers))
+                ReadFromMergeTree (default.R4)
+5684007341784604324
+===========================================
+Fallback to greedy
+1

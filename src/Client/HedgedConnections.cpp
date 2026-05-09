@@ -2,6 +2,7 @@
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnections.h>
+#include <Client/scaleInteractiveDelayByFanout.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
@@ -24,6 +25,7 @@ namespace Setting
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 parallel_replica_offset;
@@ -215,6 +217,10 @@ void HedgedConnections::sendQuery(
         /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
         modified_settings[Setting::dialect] = Dialect::clickhouse;
         modified_settings[Setting::dialect].changed = false;
+
+        modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
+            modified_settings[Setting::interactive_delay],
+            distributed_fanout * offset_states.size());
 
         if (disable_two_level_aggregation)
         {

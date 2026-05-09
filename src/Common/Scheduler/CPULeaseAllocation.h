@@ -20,6 +20,8 @@
 namespace DB
 {
 
+class ThreadGroup;
+
 struct CPULeaseSettings
 {
     static constexpr ResourceCost default_quantum_ns = 10'000'000;
@@ -181,7 +183,9 @@ private:
     size_t upscale();
 
     /// Unregisters specified thread from leased set
-    void downscale(size_t thread_num);
+    /// If shutdown is true, ConcurrencyControlDownscales profile event is not incremented
+    /// (shutdown-induced termination is normal, not resource contention)
+    void downscale(size_t thread_num, bool shutdown = false);
 
     /// Preempted thread set management
     void setPreempted(size_t thread_num);
@@ -314,6 +318,13 @@ private:
     /// Introspection
     CurrentMetrics::Increment acquired_increment;
     CurrentMetrics::Increment scheduled_increment;
+    /// Stable counters for wait_timer. We cannot use CurrentThread::getProfileEvents() in
+    /// schedule() because it returns the calling thread's counters, which may be destroyed
+    /// before the timer is flushed — storing a Timer with a dangling Counters& causes UAF.
+    /// The ThreadGroupPtr keeps the ThreadGroup (and its performance_counters) alive.
+    /// Declared before wait_timer so the owner outlives the timer during member destruction.
+    std::shared_ptr<ThreadGroup> wait_thread_group;
+    ProfileEvents::Counters * wait_counters = &ProfileEvents::global_counters;
     std::optional<ProfileEvents::Timer> wait_timer;
     const size_t lease_id; /// Unique identifier for this lease allocation, used for tracing
     static std::atomic<size_t> lease_counter;

@@ -3,7 +3,7 @@ description: 'Documentation for JOIN Clause'
 sidebar_label: 'JOIN'
 slug: /sql-reference/statements/select/join
 title: 'JOIN Clause'
-keywords: ['INNER JOIN', 'LEFT JOIN', 'LEFT OUTER JOIN', 'RIGHT JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'LEFT SEMI JOIN', 'RIGHT SEMI JOIN', 'LEFT ANTI JOIN', 'RIGHT ANTI JOIN', 'LEFT ANY JOIN', 'RIGHT ANY JOIN', 'INNER ANY JOIN', 'ASOF JOIN', 'LEFT ASOF JOIN', 'PASTE JOIN']
+keywords: ['INNER JOIN', 'LEFT JOIN', 'LEFT OUTER JOIN', 'RIGHT JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'LEFT SEMI JOIN', 'RIGHT SEMI JOIN', 'LEFT ANTI JOIN', 'RIGHT ANTI JOIN', 'LEFT ANY JOIN', 'RIGHT ANY JOIN', 'INNER ANY JOIN', 'ASOF JOIN', 'LEFT ASOF JOIN', 'PASTE JOIN', 'NATURAL JOIN']
 doc_type: 'reference'
 ---
 
@@ -33,10 +33,12 @@ All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supp
 | `RIGHT OUTER JOIN`| non-matching rows from right table are returned in addition to matching rows. |
 | `FULL OUTER JOIN` | non-matching rows from both tables are returned in addition to matching rows. |
 | `CROSS JOIN`      | produces cartesian product of whole tables, "join keys" are **not** specified.|
+| `NATURAL JOIN`    | automatically joins on all columns with the same name in both tables; each common column appears once in the result. Supports `INNER` (default), `LEFT`, `RIGHT`, and `FULL` variants. Equivalent to `JOIN ... USING (col1, col2, ...)` where the column list is derived automatically. |
 
 - `JOIN` without a type specified implies `INNER`.
 - The keyword `OUTER` can be safely omitted.
 - An alternative syntax for `CROSS JOIN` is specifying multiple tables in the [`FROM` clause](../../../sql-reference/statements/select/from.md) separated by commas.
+- If there are no matching columns for a `NATURAL JOIN`, it functions like a `CROSS JOIN`.
 
 Additional join types available in ClickHouse are:
 
@@ -398,7 +400,7 @@ SETTINGS max_block_size = 2;
 There are two ways to execute a JOIN involving distributed tables:
 
 - When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
-- When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
+- When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate one side of the join and collects the result into a temporary table. This temporary table is then passed to each remote server, and queries are run on them using the temporary data that was transmitted. For `LEFT` and `INNER` joins, the right table is calculated as the subquery. For `RIGHT` joins, the left table is calculated instead, since the right table is the one being preserved and should be read from shards.
 
 Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](/sql-reference/operators/in#distributed-subqueries) section.
 
@@ -472,7 +474,7 @@ Each time a query is run with the same `JOIN`, the subquery is run again because
 
 In some cases, it is more efficient to use [IN](../../../sql-reference/operators/in.md) instead of `JOIN`.
 
-If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is a "dictionaries" feature that you should use instead of `JOIN`. For more information, see the [Dictionaries](../../../sql-reference/dictionaries/index.md) section.
+If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is a "dictionaries" feature that you should use instead of `JOIN`. For more information, see the [Dictionaries](/sql-reference/statements/create/dictionary/overview.md) section.
 
 ### Memory limitations {#memory-limitations}
 
@@ -483,7 +485,7 @@ If you need to restrict `JOIN` operation memory consumption use the following se
 - [max_rows_in_join](/operations/settings/settings#max_rows_in_join) — Limits number of rows in the hash table.
 - [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join) — Limits size of the hash table.
 
-When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) 
+When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/operations/settings/settings#join_overflow_mode)
 setting instructs.
 
 ## Examples {#examples}

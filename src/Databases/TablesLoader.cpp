@@ -118,7 +118,7 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
     {
         auto storage_id_vector = mv_to_dependencies.getDependencies(table_id);
         for (const auto & storage_id : storage_id_vector)
-            all_startup_dependencies.addDependency(storage_id, table_id);
+            all_startup_dependencies.addDependency(table_id, storage_id);
     }
     for (const auto & table_id : mv_from_dependencies.getTables())
     {
@@ -169,7 +169,7 @@ void TablesLoader::buildDependencyGraph()
 {
     for (const auto & [table_name, table_metadata] : metadata.parsed_tables)
     {
-        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase());
+        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
         auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
 
         if (!new_ref_dependencies.dependencies.empty())

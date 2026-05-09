@@ -3,9 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/StringHelpers.h>
-#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Common/TLDListsHolder.h>
 
 namespace DB
@@ -25,7 +23,7 @@ struct FirstSignificantSubdomainCustomLookup
     {
     }
 
-    TLDType operator()(StringRef host) const
+    TLDType operator()(std::string_view host) const
     {
         return tld_list.lookup(host);
     }

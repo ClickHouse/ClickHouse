@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -11,10 +11,6 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
-
-#include <constants.h>
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -32,7 +28,11 @@ namespace
     public:
         static constexpr auto name = "h3ToCenterChild";
 
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToCenterChild>(); }
+        H3Validator validator;
+
+        explicit FunctionH3ToCenterChild(const ContextPtr & context) : validator(context) {}
+
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToCenterChild>(context); }
 
         std::string getName() const override { return name; }
 
@@ -104,7 +104,13 @@ namespace
                     getName(),
                     toString(MAX_H3_RES));
 
-            UInt64 res = cellToCenterChild(data_hindex[row], data_resolution[row]);
+            UInt64 res = 0;
+            if (validator.validateCell(data_hindex[row]))
+            {
+                H3Index child = 0;
+                if (!cellToCenterChild(data_hindex[row], data_resolution[row], &child))
+                    res = child;
+            }
 
             dst_data[row] = res;
         }
@@ -143,7 +149,7 @@ This function finds the center child of an H3 index at a specified finer resolut
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToCenterChild>(documentation);
 }
 

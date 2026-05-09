@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -12,6 +13,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <base/StringViewHash.h>
 
 #include <filesystem>
 
@@ -140,6 +142,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        auto component_guard = Coordination::setCurrentComponent("FunctionSerial::executeImpl");
         auto col_res = ColumnUInt64::create();
         typename ColumnUInt64::Container & vec_to = col_res->getData();
         vec_to.resize(input_rows_count);
@@ -182,7 +185,7 @@ public:
                 UInt64 num_rows = 0;
                 UInt64 old_value = 0;
             };
-            std::unordered_map<StringRef, Series, StringRefHash> series;
+            std::unordered_map<std::string_view, Series, StringViewHash> series;
 
             /// Count the number of rows for each name:
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -190,7 +193,7 @@ public:
 
             /// Update counters in Keeper:
             for (auto & [series_name, values] : series)
-                values.old_value = update(series_name.toString(), start_value, current_series, values.num_rows, keeper);
+                values.old_value = update(std::string{series_name}, start_value, current_series, values.num_rows, keeper);
 
             /// Populate the result:
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -281,7 +284,7 @@ SELECT generateSerialID('id2', 100)
 };
 FunctionDocumentation::IntroducedIn introduced_in = {25, 1};
 FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
 factory.registerFunction<FunctionSerial>(documentation);
 }

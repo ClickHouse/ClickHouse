@@ -5,8 +5,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
 
-#include <memory>
-
 
 namespace DB
 {
@@ -35,10 +33,11 @@ namespace
             const auto * it = standard.find(el.getKey());
             if (it != standard.end())
             {
-                res += el.getMapped() * log(it->getMapped());
-            } else
+                res += static_cast<Float64>(el.getMapped()) * log(it->getMapped());
+            }
+            else
             {
-                res += el.getMapped() * log(zero_frequency);
+                res += static_cast<Float64>(el.getMapped()) * log(zero_frequency);
             }
             /// If at some step the result has become less than the current maximum, then it makes no sense to count it fully.
             if (res < max_result)
@@ -149,6 +148,11 @@ REGISTER_FUNCTION(DetectCharset)
 {
     FunctionDocumentation::Description description_charset = R"(
 Detects the character set of a non-UTF8-encoded input string.
+
+:::warning
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
+:::
 )";
     FunctionDocumentation::Syntax syntax_charset = "detectCharset(s)";
     FunctionDocumentation::Arguments arguments_charset = {
@@ -160,13 +164,18 @@ Detects the character set of a non-UTF8-encoded input string.
     };
     FunctionDocumentation::IntroducedIn introduced_in_charset = {22, 2};
     FunctionDocumentation::Category category_charset = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation_charset = {description_charset, syntax_charset, arguments_charset, returned_value_charset, examples_charset, introduced_in_charset, category_charset};
+    FunctionDocumentation documentation_charset = {description_charset, syntax_charset, arguments_charset, {}, returned_value_charset, examples_charset, introduced_in_charset, category_charset};
 
     factory.registerFunction<FunctionDetectCharset>(documentation_charset);
 
     FunctionDocumentation::Description description_unknown = R"(
 Similar to the [`detectLanguage`](#detectLanguage) function, except the detectLanguageUnknown function works with non-UTF8-encoded strings.
 Prefer this version when your character set is UTF-16 or UTF-32.
+
+:::warning
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
+:::
 )";
     FunctionDocumentation::Syntax syntax_unknown = "detectLanguageUnknown('s')";
     FunctionDocumentation::Arguments arguments_unknown = {
@@ -178,7 +187,7 @@ Prefer this version when your character set is UTF-16 or UTF-32.
     };
     FunctionDocumentation::IntroducedIn introduced_in_unknown = {22, 2};
     FunctionDocumentation::Category category_unknown = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation_unknown = {description_unknown, syntax_unknown, arguments_unknown, returned_value_unknown, examples_unknown, introduced_in_unknown, category_unknown};
+    FunctionDocumentation documentation_unknown = {description_unknown, syntax_unknown, arguments_unknown, {}, returned_value_unknown, examples_unknown, introduced_in_unknown, category_unknown};
 
     factory.registerFunction<FunctionDetectLanguageUnknown>(documentation_unknown);
 }

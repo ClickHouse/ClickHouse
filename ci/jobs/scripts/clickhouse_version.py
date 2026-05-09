@@ -53,11 +53,12 @@ SET(VERSION_STRING {string})
         try:
             tweak = int(
                 Shell.get_output(
-                    f"git rev-list --count {version['githash']}..HEAD", verbose=True
+                    f"git rev-list --count --first-parent {version['githash']}..HEAD",
+                    verbose=True,
                 )
             )
-        except ValueError:
-            # Shallow checkout
+        except (ValueError, Exception):
+            # Shallow checkout or other error
             tweak = 1
         version_type = "testing"
         if info.pr_number == 0 and bool(
@@ -93,7 +94,11 @@ SET(VERSION_STRING {string})
         return cls.get_release_version_as_dict()["githash"]
 
     @classmethod
-    def store_version_data_in_ci_pipeline(cls):
-        version = cls.get_current_version_as_dict()
+    def store_version_data_in_ci_pipeline(cls, version):
         print(f"Store version in pipeline kv data: [version={version}]")
-        Info().store_kv_data("version", cls.get_current_version_as_dict())
+        Info().store_kv_data("version", version)
+
+
+if __name__ == "__main__":
+    # test;
+    print(CHVersion.get_current_version_as_dict())

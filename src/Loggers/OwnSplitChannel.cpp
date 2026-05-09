@@ -7,12 +7,15 @@
 #include <Common/DNSResolver.h>
 #include <Common/IO.h>
 #include <Common/LockMemoryExceptionInThread.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/setThreadName.h>
 
 #include <Poco/Message.h>
+
+#if defined(MEMORY_SANITIZER)
+#include <sanitizer/msan_interface.h>
+#endif
 
 
 namespace ProfileEvents
@@ -47,6 +50,14 @@ void OwnSplitChannel::log(const Poco::Message & msg)
 
 void OwnSplitChannel::log(Poco::Message && msg)
 {
+#if defined(MEMORY_SANITIZER)
+    {
+        auto fmt = msg.getFormatString();
+        __msan_check_mem_is_initialized(&fmt, sizeof(fmt));
+        if (fmt.data())
+            __msan_check_mem_is_initialized(fmt.data(), fmt.size());
+    }
+#endif
     if (stop_logging)
         return;
 
@@ -94,7 +105,7 @@ void pushExtendedMessageToInternalTCPTextLogQueue(
 void logToSystemTextLogQueue(
     const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked,
     const ExtendedLogMessage & msg_ext,
-    const std::string & msg_thread_name)
+    ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
     TextLogElement elem;
@@ -137,7 +148,7 @@ void logToSystemTextLogQueue(
 }
 
 void OwnSplitChannel::logSplit(
-    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name)
+    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
 
@@ -304,7 +315,7 @@ public:
 
     Message msg; /// Need to keep a copy until we finish logging
     ExtendedLogMessage msg_ext;
-    std::string msg_thread_name;
+    ThreadName msg_thread_name;
 };
 
 
@@ -336,7 +347,7 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
 
     if (unlikely(dropped_messages))
     {
-        String log = "We've dropped " + toString(dropped_messages) + " log messages in this channel due to queue overflow";
+        String log = fmt::format("We've dropped {} log messages in this channel due to queue overflow", dropped_messages);
         auto async_message = std::make_shared<AsyncLogMessage>(Poco::Message("AsyncLogMessageQueue", log, Poco::Message::PRIO_WARNING));
         async_message->msg_ext.query_id.clear();
         message_queue.push_back(async_message);
@@ -398,6 +409,16 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
 {
     try
     {
+#if defined(MEMORY_SANITIZER)
+        /// Catch which LOG call produces a message with uninitialized format string bytes.
+        /// STID 1478-2063: arm_msan stress test reports use-of-uninitialized-value in TextLog
+        {
+            auto fmt = msg.getFormatString();
+            __msan_check_mem_is_initialized(&fmt, sizeof(fmt));
+            if (fmt.data())
+                __msan_check_mem_is_initialized(fmt.data(), fmt.size());
+        }
+#endif
         /// Based on logger_useful.h this won't be called if the message is not needed
         /// so we can create the AsyncLogMessage as it won't penalize performance by being unused
         auto msg_priority = msg.getPriority();
@@ -476,7 +497,7 @@ AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
 
 void OwnAsyncSplitChannel::runChannel(size_t i)
 {
-    setThreadName("AsyncLog");
+    DB::setThreadName(ThreadName::ASYNC_LOGGER);
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     auto notification = queues[i]->waitDequeueMessage();
     const auto & extended_channel = channels[i];
@@ -540,7 +561,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
 void OwnAsyncSplitChannel::runTextLog()
 {
-    setThreadName("AsyncTextLog", true);
+    DB::setThreadName(ThreadName::ASYNC_TEXT_LOG);
 
     auto log_notification = [](auto & message, const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {

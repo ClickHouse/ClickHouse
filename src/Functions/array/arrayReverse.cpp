@@ -30,6 +30,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -262,7 +263,7 @@ in addition to Arrays.
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayReverse([1, 2, 3])", "[3,2,1]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayReverse>(documentation);
 }

@@ -1,4 +1,5 @@
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -7,6 +8,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeObject.h>
 
 #include <Storages/IStorage.h>
 
@@ -21,15 +23,19 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <IO/WriteHelpers.h>
 
 #include <stack>
+
+
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
@@ -47,7 +53,49 @@ struct ColumnContext
     ContextPtr context;
 };
 
+struct IdentifiersToOptimize
+{
+    /// Identifiers where ALL uses are optimizable (count matches).
+    /// Rewritten unconditionally in every clause.
+    std::unordered_set<Identifier> everywhere;
+
+    /// Identifiers that also have plain column references, but have at least one
+    /// transformable use in WHERE/PREWHERE. Rewritten ONLY inside WHERE/PREWHERE.
+    std::unordered_set<Identifier> filter_only;
+
+    bool empty() const { return everywhere.empty() && filter_only.empty(); }
+};
+
 using NodeToSubcolumnTransformer = std::function<void(QueryTreeNodePtr &, FunctionNode &, ColumnContext &)>;
+
+/// Before columns to substream optimization, we need to make sure, that column with such name as substream does not exists, otherwise the optimize will use it instead of substream.
+bool sourceHasColumn(QueryTreeNodePtr column_source, const String & column_name)
+{
+    auto * table_node = column_source->as<TableNode>();
+    if (!table_node)
+        return {};
+
+    const auto & storage_snapshot = table_node->getStorageSnapshot();
+    return storage_snapshot->tryGetColumn(GetColumnsOptions::All, column_name).has_value();
+}
+
+/// Sometimes we cannot optimize function to subcolumn because there is no such subcolumn in the table.
+/// For example, for column "a Array(Tuple(b UInt32))" function length(a.b) cannot be replaced to
+/// a.b.size0, because there is no such subcolumn, even though a.b has type Array(UInt32)
+bool canOptimizeToSubcolumn(QueryTreeNodePtr column_source, const String & subcolumn_name, bool is_regular_subcolumn = true)
+{
+    auto * table_node = column_source->as<TableNode>();
+    if (!table_node)
+        return {};
+
+    const auto & storage_snapshot = table_node->getStorageSnapshot();
+    auto get_options = GetColumnsOptions(GetColumnsOptions::All);
+    if (is_regular_subcolumn)
+        get_options = get_options.withRegularSubcolumns();
+    else
+        get_options = get_options.withSubcolumns();
+    return storage_snapshot->tryGetColumn(get_options, subcolumn_name).has_value();
+}
 
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
@@ -55,6 +103,8 @@ void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, Colum
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
+    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+        return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
@@ -66,6 +116,8 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
+    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+        return;
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
     function_arguments_nodes.clear();
@@ -82,6 +134,9 @@ void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnConte
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
+    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+        return;
+
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
@@ -93,6 +148,20 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
+    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+        return;
+
+    /// If the .size0 subcolumn is actually Nullable (e.g. when the column type is Nullable(Array(...))),
+    /// skip the optimization. The hardcoded UInt64 type would mismatch the actual Nullable(UInt64),
+    /// causing a type mismatch exception at runtime in ExpressionActions::execute.
+    if (auto * table_node = ctx.column_source->as<TableNode>())
+    {
+        auto actual = table_node->getStorageSnapshot()->tryGetColumn(
+            GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
+        if (actual && actual->type->isNullable())
+            return;
+    }
+
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
     function_arguments_nodes.clear();
@@ -102,6 +171,42 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     const auto * function_name = positive ? "equals" : "notEquals";
     function_node.markAsOperator();
     resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
+}
+
+void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    /// Replace `m['key']` (which is internally `arrayElement(m, 'key')`) with the subcolumn `m.key_<serialized_key>`.
+
+    auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    if (function_arguments_nodes.size() != 2)
+        return;
+
+    /// The key must be a compile-time constant — dynamic key lookups cannot be rewritten to a fixed subcolumn.
+    const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
+    if (!second_argument_constant_node)
+        return;
+
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+    const auto & key_type = data_type_map.getKeyType();
+    auto tmp_key_column = key_type->createColumn();
+    /// Verify that the constant value is compatible with the map's key type.
+    if (!tmp_key_column->tryInsert(second_argument_constant_node->getValue()))
+        return;
+
+    /// Serialize the key to its text representation to construct the subcolumn name,
+    /// e.g. the string key "foo" becomes the subcolumn suffix "key_foo".
+    WriteBufferFromOwnString buf;
+    key_type->getDefaultSerialization()->serializeText(*tmp_key_column, 0, buf, FormatSettings());
+    String subcolumn_name = String(DataTypeMap::KEY_SUBCOLUMN_PREFIX) + buf.str();
+
+    /// The resulting subcolumn has the map's value type, e.g. `m.key_foo : V` for `Map(K, V)`.
+    NameAndTypePair column{ctx.column.name + "." + subcolumn_name, data_type_map.getValueType()};
+    /// Use is_regular_subcolumn=false because key subcolumns are not declared as regular subcolumns
+    /// of the table schema — they are dynamic subcolumns.
+    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name, false))
+        return;
+
+    node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
 std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeTuple & data_type_tuple)
@@ -128,6 +233,21 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
             return {};
 
         return NameAndTypePair{names[index - 1], types[index - 1]};
+    }
+
+    /// Maybe negative index
+    if (value.getType() == Field::Types::Int64)
+    {
+        ssize_t index = value.safeGet<Int64>();
+        ssize_t size = types.size();
+
+        if (index == 0 || std::abs(index) > size)
+            return {};
+
+        if (index > 0)
+            return NameAndTypePair{names[index - 1], types[index - 1]};
+        else
+            return NameAndTypePair{names[size + index], types[size + index]};
     }
 
     return {};
@@ -183,7 +303,30 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
         return;
 
     NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
+    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+        return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
+}
+
+void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
+{
+    /// Replace distinctJSONPaths(json) to arraySort(groupArrayDistinct(arrayJoin(json.__special_subcolumn_name_for_distinct_paths_calculation)))
+    NameAndTypePair column{ctx.column.name + "." + DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())};
+
+    auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
+    auto function_array_join_node = std::make_shared<FunctionNode>("arrayJoin");
+    function_array_join_node->getArguments().getNodes().push_back(std::move(new_column_node));
+    resolveOrdinaryFunctionNodeByName(*function_array_join_node, "arrayJoin", ctx.context);
+
+    auto function_group_array_distinct_node = std::make_shared<FunctionNode>("groupArrayDistinct");
+    function_group_array_distinct_node->getArguments().getNodes().push_back(std::move(function_array_join_node));
+    resolveAggregateFunctionNodeByName(*function_group_array_distinct_node, "groupArrayDistinct");
+
+    auto function_array_sort_node = std::make_shared<FunctionNode>("arraySort");
+    function_array_sort_node->getArguments().getNodes().push_back(std::move(function_group_array_distinct_node));
+    resolveOrdinaryFunctionNodeByName(*function_array_sort_node, "arraySort", ctx.context);
+
+    node = std::move(function_array_sort_node);
 }
 
 std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
@@ -224,6 +367,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             auto key_type = std::make_shared<DataTypeArray>(data_type_map.getKeyType());
 
             NameAndTypePair column{ctx.column.name + ".keys", key_type};
+            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
@@ -236,6 +381,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             auto value_type = std::make_shared<DataTypeArray>(data_type_map.getValueType());
 
             NameAndTypePair column{ctx.column.name + ".values", value_type};
+            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
@@ -247,6 +394,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
             NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
+            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
             auto has_function_argument = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -261,6 +410,21 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `count(nullable_argument)` with `sum(not(nullable_argument.null))`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
+            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
+
+            /// When the column is inside a Nullable(Tuple(...)), the .null subcolumn/nullmap
+            /// in storage is Nullable(UInt8), not UInt8, because the type system wraps all
+            /// subcolumns of a Nullable(Tuple(...)) with the outer nullability. Using it with
+            /// a hardcoded UInt8 type causes a type mismatch at runtime. Skip the optimization.
+            if (auto * table_node = ctx.column_source->as<TableNode>())
+            {
+                auto actual = table_node->getStorageSnapshot()->tryGetColumn(
+                    GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
+                if (actual && actual->type->isNullable())
+                    return;
+            }
+
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
             auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -280,6 +444,20 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
+            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
+
+            /// For nested Nullable types (e.g. Nullable(Tuple(... Nullable(T) ...))),
+            /// the .null subcolumn in storage is Nullable(UInt8), not UInt8.
+            /// Using it with a hardcoded UInt8 type causes a type mismatch at runtime.
+            if (auto * table_node = ctx.column_source->as<TableNode>())
+            {
+                auto actual = table_node->getStorageSnapshot()->tryGetColumn(
+                    GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
+                if (actual && actual->type->isNullable())
+                    return;
+            }
+
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
@@ -289,6 +467,18 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNotNull(nullable_argument)` with `not(nullable_argument.null)`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
+            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
+
+            /// Same guard as isNull above: nested Nullable .null subcolumn may itself be Nullable.
+            if (auto * table_node = ctx.column_source->as<TableNode>())
+            {
+                auto actual = table_node->getStorageSnapshot()->tryGetColumn(
+                    GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
+                if (actual && actual->type->isNullable())
+                    return;
+            }
+
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
             function_arguments_nodes = {std::make_shared<ColumnNode>(column, ctx.column_source)};
@@ -304,7 +494,43 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     {
         {TypeIndex::QBit, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
     },
+    {
+        {TypeIndex::Object, "distinctJSONPaths"}, optimizeDistinctJSONPaths,
+    },
+    {
+        {TypeIndex::Map, "arrayElement"}, optimizeFunctionArrayElementForMap,
+    },
 };
+
+/// Transformers that can be safely applied even when the column is used in
+/// primary key, partition key, or secondary index expressions. The rewritten
+/// subcolumn form will be handled by index analysis (or the index simply
+/// won't be used, which is safe — just potentially slower).
+std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
+{
+    {TypeIndex::Map, "arrayElement"},
+};
+
+/// Transformers that should be applied even when the full column is also read
+/// elsewhere in the query (e.g., in SELECT alongside WHERE m['key'] = val).
+/// Normally the optimizer skips a column if it's used both in a transformable
+/// function and as a plain column reference, because introducing a new
+/// subcolumn identifier complicates analysis. But for Map key lookups the
+/// transformation is beneficial when the occurrence is in WHERE/PREWHERE: only
+/// the relevant bucket is read for the filter, while the full map is still read
+/// for matching rows in SELECT. The reads are independent and semantically correct.
+/// Note: this exception does NOT apply to HAVING or other clauses where the
+/// subcolumn would need to appear in GROUP BY.
+std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
+{
+    {TypeIndex::Map, "arrayElement"},
+};
+
+bool canOptimizeWithWherePrewhereOrGroupBy(const String & function_name)
+{
+    /// Optimization for distinctJSONPaths works correctly only if we request distinct JSON paths across whole table.
+    return function_name != "distinctJSONPaths";
+}
 
 std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
@@ -317,7 +543,7 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
         return {};
 
     auto * first_argument_column_node = function_arguments_nodes.front()->as<ColumnNode>();
-    if (!first_argument_column_node || first_argument_column_node->getColumnName() == "__grouping_set")
+    if (!first_argument_column_node || first_argument_column_node->getColumnName() == "__grouping_set" || first_argument_column_node->hasExpression())
         return {};
 
     auto column_source = first_argument_column_node->getColumnSource();
@@ -335,10 +561,10 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storage->supportsOptimizationToSubcolumns() || storage->isVirtualColumn(column.name, storage_snapshot->metadata))
+    if (!storage->supportsOptimizationToSubcolumns() || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
-    auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions::All, column.name);
+    auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
     if (!column_in_table || !column_in_table->type->equals(*column.type))
         return {};
 
@@ -392,11 +618,38 @@ public:
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
                 can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
+            has_where_prewhere_or_group_by = query_node->hasWhere() || query_node->hasPrewhere() || query_node->hasGroupBy();
+            /// Push a placeholder for this query level; needChildVisit will update it
+            /// to true when we descend into WHERE or PREWHERE.
+            in_where_prewhere_stack.push_back(false);
             return;
         }
     }
 
-    std::unordered_set<Identifier> getIdentifiersToOptimize() const
+    void leaveImpl(const QueryTreeNodePtr & node)
+    {
+        if (!getSettings()[Setting::optimize_functions_to_subcolumns])
+            return;
+
+        if (node->as<QueryNode>())
+            in_where_prewhere_stack.pop_back();
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
+    {
+        if (const auto * query_node = parent->as<QueryNode>())
+        {
+            if (!in_where_prewhere_stack.empty())
+            {
+                bool is_where = query_node->hasWhere() && child.get() == query_node->getWhere().get();
+                bool is_prewhere = query_node->hasPrewhere() && child.get() == query_node->getPrewhere().get();
+                in_where_prewhere_stack.back() = is_where || is_prewhere;
+            }
+        }
+        return true;
+    }
+
+    IdentifiersToOptimize getIdentifiersToOptimize() const
     {
         if (can_wrap_result_columns_with_nullable)
         {
@@ -407,7 +660,6 @@ public:
             return {};
         }
 
-        /// TODO(ab): need to optimize for prewhere anyway
         /// Do not optimize if full column is requested in other context.
         /// It doesn't make sense because it doesn't reduce amount of read data
         /// and optimized functions are not computation heavy. But introducing
@@ -419,31 +671,63 @@ public:
         ///     SELECT n FROM table GROUP BY n HAVING not(n.null)
         /// Will produce: `n.null` is not under aggregate function and not in GROUP BY keys)
         ///
+        /// When all uses of an identifier are optimizable (count matches), the
+        /// identifier goes into `everywhere` — it is rewritten in every clause.
+        ///
+        /// When there are also plain column references but a transformable use
+        /// exists in WHERE/PREWHERE (recorded in `identifiers_with_filter_optimization`),
+        /// the identifier goes into `filter_only` — it is rewritten only inside
+        /// WHERE/PREWHERE by the second pass. This is beneficial for Map key
+        /// lookups: only the relevant bucket is read for the filter while the
+        /// full Map is still read for matching rows in SELECT.
+        ///
         /// Do not optimize index columns (primary, min-max, secondary),
         /// because otherwise analysis of indexes may be broken.
-        /// TODO: handle subcolumns in index analysis.
+        /// Exception: transformers listed in `transformers_safe_with_indexes` are allowed
+        /// even for indexed columns, provided ALL optimizable uses of the column are safe.
+        /// TODO: handle all subcolumns in index analysis.
 
-        std::unordered_set<Identifier> identifiers_to_optimize;
+        IdentifiersToOptimize result;
         for (const auto & [identifier, count] : optimized_identifiers_count)
         {
             if (all_key_columns.contains(identifier))
-                continue;
+            {
+                auto safe_it = optimized_identifiers_index_safe_count.find(identifier);
+                if (safe_it == optimized_identifiers_index_safe_count.end() || safe_it->second != count)
+                    continue;
+            }
 
             auto it = identifiers_count.find(identifier);
-            if (it != identifiers_count.end() && it->second == count)
-                identifiers_to_optimize.insert(identifier);
+            if (it == identifiers_count.end())
+                continue;
+
+            if (it->second == count)
+                result.everywhere.insert(identifier);
+            else if (identifiers_with_filter_optimization.contains(identifier))
+                result.filter_only.insert(identifier);
         }
 
-        return identifiers_to_optimize;
+        return result;
     }
 
 private:
     std::unordered_set<Identifier> all_key_columns;
     std::unordered_map<Identifier, UInt64> identifiers_count;
     std::unordered_map<Identifier, UInt64> optimized_identifiers_count;
+    /// Counts only uses of transformers from `transformers_safe_with_indexes`.
+    std::unordered_map<Identifier, UInt64> optimized_identifiers_index_safe_count;
+    /// Identifiers that have at least one use of a transformer from
+    /// `transformers_optimize_in_filter_with_full_column` inside WHERE or PREWHERE.
+    /// These are optimized even when the column is also read as a full column elsewhere.
+    std::unordered_set<Identifier> identifiers_with_filter_optimization;
+
+    /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
+    /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
+    std::vector<bool> in_where_prewhere_stack;
 
     NameSet processed_tables;
     bool can_wrap_result_columns_with_nullable = false;
+    bool has_where_prewhere_or_group_by = false;
 
     void enterImpl(const TableNode & table_node)
     {
@@ -504,24 +788,42 @@ private:
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
         Identifier qualified_name({table_name, column.name});
 
-        if (node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
+        if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
+            return;
+
+        auto transformer_key = std::make_pair(column.type->getTypeId(), function_node.getFunctionName());
+        if (node_transformers.contains(transformer_key))
+        {
             ++optimized_identifiers_count[qualified_name];
+            if (transformers_safe_with_indexes.contains(transformer_key))
+                ++optimized_identifiers_index_safe_count[qualified_name];
+            if (transformers_optimize_in_filter_with_full_column.contains(transformer_key)
+                && !in_where_prewhere_stack.empty() && in_where_prewhere_stack.back())
+                identifiers_with_filter_optimization.insert(qualified_name);
+        }
     }
 };
 
 /// Second pass optimizes functions to subcolumns for allowed identifiers.
+/// For identifiers in `filter_only`, the rewrite is restricted to WHERE/PREWHERE
+/// clauses only, because in post-aggregation clauses (HAVING, ORDER BY, etc.)
+/// the subcolumn would not be present in the block after GROUP BY.
 class FunctionToSubcolumnsVisitorSecondPass : public InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>
 {
 private:
-    std::unordered_set<Identifier> identifiers_to_optimize;
+    IdentifiersToOptimize identifiers_to_optimize;
     std::unordered_set<const TableNode *> outer_joined_tables;
+
+    /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
+    /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
+    std::vector<bool> in_where_prewhere_stack;
 
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
     using Base::Base;
 
     FunctionToSubcolumnsVisitorSecondPass(ContextPtr context_,
-        std::unordered_set<Identifier> identifiers_to_optimize_,
+        IdentifiersToOptimize identifiers_to_optimize_,
         std::unordered_set<const TableNode *> outer_joined_tables_)
         : Base(std::move(context_))
         , identifiers_to_optimize(std::move(identifiers_to_optimize_))
@@ -529,10 +831,30 @@ public:
     {
     }
 
-    void enterImpl(QueryTreeNodePtr & node) const
+    bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
+    {
+        if (const auto * query_node = parent->as<QueryNode>())
+        {
+            if (!in_where_prewhere_stack.empty())
+            {
+                bool is_where = query_node->hasWhere() && child.get() == query_node->getWhere().get();
+                bool is_prewhere = query_node->hasPrewhere() && child.get() == query_node->getPrewhere().get();
+                in_where_prewhere_stack.back() = is_where || is_prewhere;
+            }
+        }
+        return true;
+    }
+
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
+
+        if (node->as<QueryNode>())
+        {
+            in_where_prewhere_stack.push_back(false);
+            return;
+        }
 
         auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node, getContext());
         if (!function_node || !first_argument_column_node || !table_node)
@@ -542,7 +864,16 @@ public:
         auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
 
         Identifier qualified_name({table_name, column.name});
-        if (!identifiers_to_optimize.contains(qualified_name))
+
+        /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
+        bool should_optimize = identifiers_to_optimize.everywhere.contains(qualified_name);
+        if (!should_optimize
+            && identifiers_to_optimize.filter_only.contains(qualified_name)
+            && !in_where_prewhere_stack.empty()
+            && in_where_prewhere_stack.back())
+            should_optimize = true;
+
+        if (!should_optimize)
             return;
 
         auto result_type = function_node->getResultType();
@@ -556,6 +887,15 @@ public:
             if (!result_type->equals(*node->getResultType()))
                 node = buildCastFunction(node, result_type, getContext());
         }
+    }
+
+    void leaveImpl(const QueryTreeNodePtr & node)
+    {
+        if (!getSettings()[Setting::optimize_functions_to_subcolumns])
+            return;
+
+        if (node->as<QueryNode>())
+            in_where_prewhere_stack.pop_back();
     }
 };
 

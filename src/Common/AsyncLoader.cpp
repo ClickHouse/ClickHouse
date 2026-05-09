@@ -44,7 +44,7 @@ void logAboutProgress(LoggerPtr log, size_t processed, size_t total, AtomicStopw
 {
     if (total && (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS)))
     {
-        LOG_INFO(log, "Processed: {:.1f}%", static_cast<double>(processed) * 100.0 / total);
+        LOG_INFO(log, "Processed: {:.1f}%", static_cast<double>(processed) * 100.0 / static_cast<double>(total));
         watch.restart();
     }
 }
@@ -924,7 +924,7 @@ void AsyncLoader::worker(Pool & pool)
     while (true)
     {
         // This is inside the loop to also reset previous thread names set inside the jobs
-        setThreadName(pool.name.c_str());
+        DB::setThreadName(ThreadName::ASYNC_TABLE_LOADER);
 
         {
             std::unique_lock lock{mutex};

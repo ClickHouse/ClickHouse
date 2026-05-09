@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -42,12 +43,10 @@ static ITransformingStep::Traits getTraits()
 CreatingSetStep::CreatingSetStep(
     const SharedHeader & input_header_,
     SetAndKeyPtr set_and_key_,
-    StoragePtr external_table_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(Block{}), getTraits())
     , set_and_key(std::move(set_and_key_))
-    , external_table(std::move(external_table_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
 {
@@ -58,7 +57,6 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     pipeline.addCreatingSetsTransform(
         getOutputHeader(),
         std::move(set_and_key),
-        std::move(external_table),
         network_transfer_limits,
         std::move(prepared_sets_cache));
 }
@@ -70,13 +68,14 @@ void CreatingSetStep::updateOutputHeader()
 
 void CreatingSetStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    if (!set_and_key->set)
+        return ;
+
+    const String & prefix = settings.detail_prefix;
 
     settings.out << prefix;
-    if (set_and_key->set)
-        settings.out << "Set: ";
-
-    settings.out << set_and_key->key << '\n';
+    settings.out << "Set: ";
+    settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(set_and_key->key, settings.pretty_names) : set_and_key->key) << '\n';
 }
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -218,14 +217,13 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
             continue;
 
         plan->optimize(optimization_settings);
-
         plans.emplace_back(std::move(plan));
     }
 
     return plans;
 }
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
+void addDelayedCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
 {
     if (!prepared_sets)
         return;
@@ -234,7 +232,17 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, 
     if (subqueries.empty())
         return;
 
-    addCreatingSetsStep(query_plan, std::move(subqueries), context);
+    const auto & settings = context->getSettingsRef();
+    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+    auto prepared_sets_cache = context->getPreparedSetsCache();
+
+    auto step = std::make_unique<DelayedCreatingSetsStep>(
+            query_plan.getCurrentHeader(),
+            std::move(subqueries),
+            network_transfer_limits,
+            prepared_sets_cache);
+
+    query_plan.addStep(std::move(step));
 }
 
 DelayedCreatingSetsStep::DelayedCreatingSetsStep(

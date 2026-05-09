@@ -6,6 +6,7 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
@@ -28,7 +29,15 @@ struct StorageInMemoryMetadata
     /// Columns of table with their names, types,
     /// defaults, comments, etc. All table engines have columns.
     ColumnsDescription columns;
+    /// Virtual columns description (e.g. _part, _table, _row_exists).
+    /// Not serialized to disk — recomputed by each storage engine.
+    VirtualColumnsDescription virtuals;
     /// Table indices. Currently supported for MergeTree only.
+    bool add_minmax_index_for_numeric_columns = false;
+    bool add_minmax_index_for_string_columns = false;
+    bool add_minmax_index_for_temporal_columns = false;
+    /// Needed for compatibility
+    bool escape_index_filenames = true;
     IndicesDescription secondary_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
@@ -88,8 +97,11 @@ struct StorageInMemoryMetadata
     /// Sets a user-defined comment for a table
     void setComment(const String & comment_);
 
-    /// Sets only real columns, possibly overwrites virtual ones.
+    /// Sets only real columns.
     void setColumns(ColumnsDescription columns_);
+
+    /// Sets virtual columns
+    void setVirtuals(VirtualColumnsDescription virtuals_);
 
     /// Sets secondary indices
     void setSecondaryIndices(IndicesDescription secondary_indices_);
@@ -120,6 +132,8 @@ struct StorageInMemoryMetadata
     void setMetadataVersion(int32_t metadata_version_);
     /// Get copy of current metadata with metadata_version_
     StorageInMemoryMetadata withMetadataVersion(int32_t metadata_version_) const;
+    /// Get copy of current metadata with virtual columns
+    StorageInMemoryMetadata withVirtuals(VirtualColumnsDescription virtual_columns_) const;
 
     /// Sets SQL security for the storage.
     void setSQLSecurity(const ASTSQLSecurity & sql_security);
@@ -204,10 +218,11 @@ struct StorageInMemoryMetadata
     /// Block with ordinary columns.
     Block getSampleBlockNonMaterialized() const;
 
-    /// Block with ordinary + materialized + virtuals. Virtuals have to be
-    /// explicitly specified, because they are part of Storage type, not
-    /// Storage metadata.
-    Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
+    /// Block with ordinary + materialized + virtuals.
+    Block getSampleBlockWithVirtuals(VirtualsKind kind, VirtualsMaterializationPlace place) const;
+
+    /// Returns whether the column is virtual and not shadowed by a real column.
+    bool isVirtualColumn(const String & column_name) const;
 
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
@@ -275,6 +290,9 @@ struct StorageInMemoryMetadata
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
 
+    /// If any of the columns has statistics.
+    bool hasStatistics() const;
+
     /// Get version of metadata
     int32_t getMetadataVersion() const { return metadata_version; }
 
@@ -297,6 +315,9 @@ struct StorageInMemoryMetadata
 
     /// Elements of `columns` that have `default_desc.expression == nullptr`.
     NameSet getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const;
+
+    void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
+    void dropImplicitIndicesForColumn(const String & column_name);
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

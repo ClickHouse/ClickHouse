@@ -13,7 +13,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/FunctionsComparison.h>
+#include <Functions/ComparisonNames.h>
 #include <Common/logger_useful.h>
 #include <fmt/ranges.h>
 
@@ -198,6 +198,11 @@ BitSet getExpressionSourcesImpl(std::unordered_map<NodeRawPtr, BitSet> & express
 std::shared_ptr<ActionsDAG> JoinExpressionActions::getActionsDAG() const
 {
     return std::shared_ptr<ActionsDAG>(data, &data->actions_dag);
+}
+
+void JoinExpressionActions::resetNodeSources(NodeToSourceMapping expression_sources)
+{
+    data->expression_sources = std::move(expression_sources);
 }
 
 void JoinExpressionActions::setNodeSources(const NodeToSourceMapping & expression_sources)
@@ -396,6 +401,13 @@ bool JoinActionRef::fromNone() const
     return getSourceRelations().none();
 }
 
+bool JoinActionRef::isFromSameActions(const JoinActionRef & other) const
+{
+    auto data_ptr = getData();
+    auto other_data_ptr = other.getData();
+    return data_ptr.get() == other_data_ptr.get();
+}
+
 std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> JoinActionRef::asBinaryPredicate() const
 {
     auto data_ptr = getData();
@@ -422,6 +434,14 @@ std::vector<JoinActionRef> JoinActionRef::getArguments(bool recursive) const
     for (const auto & child : node->children)
         arguments.emplace_back(child, data_ptr);
     return arguments;
+}
+
+JoinActionRef JoinActionRef::resolveAliases() const
+{
+    const auto * node = getNode();
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+    return JoinActionRef(node, getData());
 }
 
 std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData() const

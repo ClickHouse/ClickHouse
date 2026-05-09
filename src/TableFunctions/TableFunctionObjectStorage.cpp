@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
-#include <Access/Common/AccessFlags.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/Context.h>
@@ -56,7 +55,7 @@ template <typename Definition, typename Configuration, bool is_data_lake>
 ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
     if (!object_storage)
-        object_storage = configuration->createObjectStorage(context, create_readonly);
+        object_storage = configuration->createObjectStorage(context, create_readonly, std::nullopt);
     return object_storage;
 }
 
@@ -178,7 +177,7 @@ void TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::parseA
     /// e.g. `s3(endpoint, ..., SETTINGS setting=value, ..., setting=value)`
     /// We do similarly for some other table functions
     /// whose storage implementation supports storage settings (for example, MySQL).
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)
@@ -197,14 +196,8 @@ ColumnsDescription TableFunctionObjectStorage<
 {
     if (configuration->structure == "auto")
     {
-        if (const auto access_object = getSourceAccessObject())
-            context->checkAccess(AccessType::READ, toStringSource(*access_object));
-
         auto storage = getObjectStorage(context, !is_insert_query);
-        configuration->update(
-            object_storage,
-            context,
-            /* if_not_updated_before */ true);
+        configuration->lazyInitializeIfNeeded(object_storage, context);
 
         std::string sample_path;
         ColumnsDescription columns;
@@ -270,7 +263,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             columns,
             ConstraintsDescription{},
             partition_by,
-            context);
+            context,
+            /* is_table_function */true);
 
         storage->startup();
         return storage;
@@ -309,6 +303,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* is_datalake_query*/ false,
         /* distributed_processing */ can_use_distributed_iterator,
         /* partition_by */ partition_by,
+        /* order_by */ nullptr,
         /* is_table_function */true);
 
     storage->startup();
@@ -320,54 +315,44 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
     UNUSED(factory);
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionObjectStorage<S3Definition, StorageS3Configuration>>(
-    {
-        .documentation =
         {
             .description=R"(The table function can be used to read the data stored on AWS S3.)",
             .examples{{S3Definition::name, "SELECT * FROM s3(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    });
+        {.allow_readonly = false}
+    );
 
     factory.registerFunction<TableFunctionObjectStorage<GCSDefinition, StorageS3Configuration>>(
-    {
-        .documentation =
         {
             .description=R"(The table function can be used to read the data stored on GCS.)",
             .examples{{GCSDefinition::name, "SELECT * FROM gcs(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    });
+        {.allow_readonly = false}
+    );
 
     factory.registerFunction<TableFunctionObjectStorage<COSNDefinition, StorageS3Configuration>>(
-    {
-        .documentation =
         {
             .description=R"(The table function can be used to read the data stored on COSN.)",
             .examples{{COSNDefinition::name, "SELECT * FROM cosn(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    });
+        {.allow_readonly = false}
+    );
 
     factory.registerFunction<TableFunctionObjectStorage<OSSDefinition, StorageS3Configuration>>(
-    {
-        .documentation =
         {
             .description=R"(The table function can be used to read the data stored on OSS.)",
             .examples{{OSSDefinition::name, "SELECT * FROM oss(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    });
+        {.allow_readonly = false}
+    );
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration>>(
-    {
-        .documentation =
         {
             .description=R"(The table function can be used to read the data stored on Azure Blob Storage.)",
             .examples{
@@ -378,13 +363,11 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
             }},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    });
+        {.allow_readonly = false}
+    );
 #endif
 #if USE_HDFS
     factory.registerFunction<TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>>(
-    {
-        .documentation =
         {
             .description=R"(The table function can be used to read the data stored on HDFS virtual filesystem.)",
             .examples{
@@ -394,8 +377,8 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
             }},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    });
+        {.allow_readonly = false}
+    );
 #endif
 }
 
@@ -415,6 +398,10 @@ template class TableFunctionObjectStorage<OSSDefinition, StorageS3Configuration>
 #if USE_HDFS
 template class TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
 template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConfiguration>;
+#endif
+
+#if USE_AVRO
+template class TableFunctionObjectStorage<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AWS_S3
@@ -448,7 +435,7 @@ template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3D
 template class TableFunctionObjectStorage<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
 #endif
 
-#if USE_PARQUET && USE_AZURE_BLOB_STORAGE
+#if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
 template class TableFunctionObjectStorage<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
 #endif
 
@@ -461,41 +448,36 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 {
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionIceberg>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store. Alias to icebergS3)",
+         {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store. Alias to icebergS3)",
             .examples{{IcebergDefinition::name, "SELECT * FROM iceberg(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+        {.allow_readonly = false});
     factory.registerFunction<TableFunctionIcebergS3>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store.)",
+         {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store.)",
             .examples{{IcebergS3Definition::name, "SELECT * FROM icebergS3(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+        {.allow_readonly = false});
 
 #endif
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionIcebergAzure>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Iceberg table stored on Azure object store.)",
+         {.description = R"(The table function can be used to read the Iceberg table stored on Azure object store.)",
             .examples{{IcebergAzureDefinition::name, "SELECT * FROM icebergAzure(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
 #endif
 #if USE_HDFS
     factory.registerFunction<TableFunctionIcebergHDFS>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem.)",
+         {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem.)",
             .examples{{IcebergHDFSDefinition::name, "SELECT * FROM icebergHDFS(url)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionIcebergLocal>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Iceberg table stored locally.)",
+         {.description = R"(The table function can be used to read the Iceberg table stored locally.)",
             .examples{{IcebergLocalDefinition::name, "SELECT * FROM icebergLocal(filename)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
 }
 #endif
 
@@ -505,41 +487,36 @@ void registerTableFunctionPaimon(TableFunctionFactory & factory)
 {
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionPaimon>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Paimon table stored on S3 object store. Alias to paimonS3)",
+         {.description = R"(The table function can be used to read the Paimon table stored on S3 object store. Alias to paimonS3)",
             .examples{{"paimon", "SELECT * FROM paimon(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
     factory.registerFunction<TableFunctionPaimonS3>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Paimon table stored on S3 object store.)",
+         {.description = R"(The table function can be used to read the Paimon table stored on S3 object store.)",
             .examples{{"paimonS3", "SELECT * FROM paimonS3(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
 
 #endif
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionPaimonAzure>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Paimon table stored on Azure object store.)",
+         {.description = R"(The table function can be used to read the Paimon table stored on Azure object store.)",
             .examples{{"paimonAzure", "SELECT * FROM paimonAzure(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
 #endif
 #if USE_HDFS
     factory.registerFunction<TableFunctionPaimonHDFS>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Paimon table stored on HDFS virtual filesystem.)",
+         {.description = R"(The table function can be used to read the Paimon table stored on HDFS virtual filesystem.)",
             .examples{{"paimonHDFS", "SELECT * FROM paimonHDFS(url)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionPaimonLocal>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Paimon table stored locally.)",
+         {.description = R"(The table function can be used to read the Paimon table stored locally.)",
             .examples{{"paimonLocal", "SELECT * FROM paimonLocal(filename)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
 }
 #endif
 
@@ -548,36 +525,32 @@ void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionDeltaLake>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the DeltaLake table stored on S3, alias of deltaLakeS3.)",
+         {.description = R"(The table function can be used to read the DeltaLake table stored on S3, alias of deltaLakeS3.)",
             .examples{{DeltaLakeDefinition::name, "SELECT * FROM deltaLake(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
 
     factory.registerFunction<TableFunctionDeltaLakeS3>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the DeltaLake table stored on S3.)",
+         {.description = R"(The table function can be used to read the DeltaLake table stored on S3.)",
             .examples{{DeltaLakeS3Definition::name, "SELECT * FROM deltaLakeS3(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionDeltaLakeAzure>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store.)",
+         {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store.)",
             .examples{{DeltaLakeAzureDefinition::name, "SELECT * FROM deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, \"\n"
  "                \"[account_name, account_key, format, compression, structure])", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
 #endif
     // Register the new local Delta Lake table function
     factory.registerFunction<TableFunctionDeltaLakeLocal>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the DeltaLake table stored locally.)",
+         {.description = R"(The table function can be used to read the DeltaLake table stored locally.)",
             .examples{{DeltaLakeLocalDefinition::name, "SELECT * FROM deltaLakeLocal(path)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
 }
 #endif
 
@@ -585,11 +558,10 @@ void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 void registerTableFunctionHudi(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionHudi>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Hudi table stored on object store.)",
+         {.description = R"(The table function can be used to read the Hudi table stored on object store.)",
             .examples{{HudiDefinition::name, "SELECT * FROM hudi(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
+         {.allow_readonly = false});
 }
 #endif
 

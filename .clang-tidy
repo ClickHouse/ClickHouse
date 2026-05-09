@@ -33,8 +33,10 @@ Checks: [
   '-bugprone-not-null-terminated-result',
   '-bugprone-forward-declaration-namespace',
   '-bugprone-nondeterministic-pointer-iteration-order',
+  '-bugprone-sizeof-expression', # too aggressive
 
   '-cert-dcl16-c',
+  '-cert-arr39-c', # alias of bugprone-sizeof-expression
   '-cert-err58-cpp',
 
   '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong

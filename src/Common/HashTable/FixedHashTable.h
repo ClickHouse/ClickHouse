@@ -107,13 +107,13 @@ struct FixedHashTableCalculatedSize
   *
   * TODO: Deprecate the cell API so that end users don't rely on the structure
   *  of cell. Instead iterator should be used for operations such as cell
-  *  transfer, key updates (f.g. StringRef) and serde. This will allow
+  *  transfer, key updates (f.g. std::string_view) and serde. This will allow
   *  TwoLevelHashSet(Map) to contain different type of sets(maps).
   */
-template <typename Key, typename Cell, typename Size, typename Allocator>
+template <typename Key, typename Cell, typename Size, typename Allocator, size_t size_bits = sizeof(Key) * 8>
 class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State, protected Size
 {
-    static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
+    static constexpr size_t NUM_CELLS = 1ULL << size_bits;
 
     /// We maintain min and max values inserted into the hash table to then limit the amount of cells to traverse to the [min; max] range.
     /// Both values could be efficiently calculated only within `emplace` calls (and not when we populate the hash table in `read` method for example), so we update them only within `emplace` and track if any other method was called.
@@ -170,7 +170,7 @@ protected:
         iterator_base() {} /// NOLINT
         iterator_base(Container * container_, cell_type * ptr_) : container(container_), ptr(ptr_)
         {
-            cell.update(ptr - container->buf, ptr);
+            cell.update(static_cast<Key>(ptr - container->buf), ptr);
         }
 
         bool operator==(const iterator_base & rhs) const { return ptr == rhs.ptr; }
@@ -192,14 +192,14 @@ protected:
 
         auto & operator*()
         {
-            if (cell.key != ptr - container->buf)
-                cell.update(ptr - container->buf, ptr);
+            if (cell.key != static_cast<Key>(ptr - container->buf))
+                cell.update(static_cast<Key>(ptr - container->buf), ptr);
             return cell;
         }
         auto * operator-> ()
         {
-            if (cell.key != ptr - container->buf)
-                cell.update(ptr - container->buf, ptr);
+            if (cell.key != static_cast<Key>(ptr - container->buf))
+                cell.update(static_cast<Key>(ptr - container->buf), ptr);
             return &cell;
         }
 

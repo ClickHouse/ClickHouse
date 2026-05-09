@@ -678,6 +678,32 @@ def test_headers_in_response():
         assert response_predefined.headers["X-My-Common-Header"] == "Common header present"
 
 
+def test_common_headers_without_per_handler():
+    """Test that common_http_response_headers are present in responses from
+    dynamic_query_handler and predefined_query_handler even when those handlers
+    have no per-handler http_response_headers configured."""
+    with contextlib.closing(
+            SimpleCluster(
+                ClickHouseCluster(__file__), "common_headers_no_per_handler",
+                "test_common_headers_without_per_handler"
+            )
+    ) as cluster:
+        # dynamic_query_handler without per-handler headers
+        response = cluster.instance.http_request("?query=SELECT%201", method="GET")
+        assert response.status_code == 200
+        assert "X-My-Common-Header" in response.headers, \
+            "common_http_response_headers missing from dynamic_query_handler without per-handler headers"
+        assert response.headers["X-My-Common-Header"] == "Common header present"
+
+        # predefined_query_handler without per-handler headers
+        response_predefined = cluster.instance.http_request(
+            "query_param_with_url", method="GET", headers={"PARAMS_XXX": "test_param"})
+        assert response_predefined.status_code == 200
+        assert "X-My-Common-Header" in response_predefined.headers, \
+            "common_http_response_headers missing from predefined_query_handler without per-handler headers"
+        assert response_predefined.headers["X-My-Common-Header"] == "Common header present"
+
+
 def test_redirect_handler():
     with contextlib.closing(
         SimpleCluster(
@@ -709,3 +735,44 @@ def test_redirect_handler():
         # Query string is not empty - no redirect, and we do not add defaults so, it will be 404
         req = get("/dashboard?foo=bar")
         assert req.status_code == 404
+
+
+def test_predefined_handler_whitespace():
+    """Test that predefined query handlers correctly trim whitespace from queries.
+
+    This is a regression test for a bug where whitespace from XML indentation
+    in the config file would be interpreted as binary data, causing parsing errors.
+    """
+    import struct
+
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__),
+            "predefined_handler_whitespace",
+            "test_predefined_handler_whitespace",
+        )
+    ) as cluster:
+        # Create test table
+        cluster.instance.query(
+            "CREATE TABLE test_table (id UInt64, value String) ENGINE = Memory"
+        )
+
+        # Prepare RowBinary data: a row with id=1 and value='test'
+        # RowBinary format: UInt64 (8 bytes little-endian) + String (varint length + bytes)
+        row_data = struct.pack("<Q", 1) + b"\x04test"  # 1 as UInt64 + "test" with length prefix
+
+        # POST RowBinary data to the predefined handler
+        # The handler has a query with leading/trailing whitespace in the config XML.
+        # Without the fix, this whitespace would be interpreted as binary data.
+        res = cluster.instance.http_request(
+            "insert_rowbinary",
+            method="POST",
+            data=row_data,
+        )
+        assert res.status_code == 200, f"Insert failed: {res.content}"
+
+        # Verify the data was inserted correctly
+        result = cluster.instance.query("SELECT * FROM test_table")
+        assert result.strip() == "1\ttest"
+
+        cluster.instance.query("DROP TABLE test_table")

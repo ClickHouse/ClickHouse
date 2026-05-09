@@ -35,7 +35,6 @@ public:
         bool sync) override;
 
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
-    ASTPtr getCreateDatabaseQuery() const override;
 
     /// DatabaseMemory allows to create tables, which store data on disk.
     /// It's needed to create such tables in default database of clickhouse-local.
@@ -52,7 +51,8 @@ public:
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
 
-    void alterDatabaseComment(const AlterCommand & command, ContextPtr query_context) override;
+protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
 
 private:
     void removeDataPath(ContextPtr local_context);

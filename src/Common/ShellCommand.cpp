@@ -3,9 +3,12 @@
 #include <dlfcn.h>
 #include <unistd.h>
 
+#include <csignal>
+
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ShellCommand.h>
 #include <Common/PipeFDs.h>
 #include <IO/WriteHelpers.h>
@@ -95,7 +98,7 @@ ShellCommand::~ShellCommand()
 
 bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
 {
-    LOG_TRACE(getLogger(), "Try wait for shell command pid {} with timeout {}", pid, timeout_in_seconds);
+    LOG_TRACE(getLogger(), "Try wait for shell command pid {} with timeout {} (seconds)", pid, timeout_in_seconds);
 
     wait_called = true;
 
