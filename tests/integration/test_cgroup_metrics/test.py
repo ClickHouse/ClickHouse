@@ -125,6 +125,14 @@ def test_cgroup_cpu_metrics_exist(started_cluster):
     is_nested = cgroup_path and cgroup_path != "/"
     print(f"Nested cgroup: {is_nested}")
 
+    # Skip if not in a nested cgroup - the path concatenation bug only manifests
+    # when the cgroup path is not "/" (e.g., "/docker/abc123...")
+    if not is_nested:
+        pytest.skip(
+            f"Test requires nested cgroup to exercise path concatenation bug. "
+            f"Current cgroup path: '{cgroup_path}'"
+        )
+
     # Wait for metrics to be collected using retry/poll loop
     user_time = wait_for_metric(node, "CGroupUserTime")
     system_time = wait_for_metric(node, "CGroupSystemTime")
@@ -163,6 +171,14 @@ def test_cgroup_metrics_update_after_cpu_work(started_cluster):
     cgroupv2_enabled = is_cgroupv2_enabled(node)
     if not cgroupv2_enabled:
         pytest.skip("Cgroup v2 is not enabled in this environment")
+
+    # Require nested cgroup to exercise path concatenation bug
+    cgroup_path = get_cgroup_path(node)
+    if not cgroup_path or cgroup_path == "/":
+        pytest.skip(
+            f"Test requires nested cgroup to exercise path concatenation bug. "
+            f"Current cgroup path: '{cgroup_path}'"
+        )
 
     # Get initial values using retry loop
     initial_user = wait_for_metric(node, "CGroupUserTime")
