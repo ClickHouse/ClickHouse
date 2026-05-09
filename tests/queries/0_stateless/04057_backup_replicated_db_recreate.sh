@@ -155,14 +155,16 @@ $CLICKHOUSE_CLIENT --query "
 # Verify the fix actually engaged on the race condition. With the stress loop
 # above (six backup workers in tight submission loops + foreground recreates),
 # the recreate-during-backup window must have triggered the new guards at
-# least once: either the in-loop monotonicity check or the post-loop `czxid`
-# identity check in `getTablesForBackup`. Both throw `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT`
-# with a message starting `Replicated database was dropped`. This message
-# does not exist in unfixed code, so a non-zero count is a deterministic
-# signal that the fix is in place. Without this assertion, bugfix validation
-# (which runs the new test against the master HEAD release binary, where
-# the silent fast-path corruption produces no error) treats the test as
-# unable to reproduce the bug.
+# least once: the entry-time `tryGet` on `/max_log_ptr`, the in-loop
+# monotonicity check, the post-loop `czxid` identity check, or the entry-time
+# `tryGet` on `/metadata` in the slow path. All four throw
+# `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` with a message starting
+# `Replicated database was dropped`. This message does not exist in unfixed
+# code, so a non-zero count is a deterministic signal that the fix is in
+# place. Without this assertion, bugfix validation (which runs the new test
+# against the master HEAD release binary, where the silent fast-path
+# corruption produces no error) treats the test as unable to reproduce the
+# bug.
 $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0 FROM system.backups
     WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%'

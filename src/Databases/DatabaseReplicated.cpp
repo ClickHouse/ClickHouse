@@ -1888,8 +1888,20 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
     /// whether the new database's pointer ended up below or above the original, and it applies
     /// to every caller of this function (`getTablesForBackup`, `recoverLostReplica`,
     /// `tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly`).
+    ///
+    /// Use `tryGet` instead of `get`: if the node is already gone at function entry the database
+    /// has been dropped concurrently (the in-memory `DatabaseReplicated` object is stale), and we
+    /// surface the same `Replicated database was dropped` error as the post-snapshot identity
+    /// check below, instead of leaking a generic `KEEPER_EXCEPTION` to the caller.
     Coordination::Stat initial_max_log_ptr_stat;
-    zookeeper->get(zookeeper_path + "/max_log_ptr", &initial_max_log_ptr_stat);
+    String unused_initial_value;
+    if (!zookeeper->tryGet(zookeeper_path + "/max_log_ptr", unused_initial_value, &initial_max_log_ptr_stat))
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+            "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+            "(max_log_ptr node missing at snapshot start)");
+    }
 
     if (zookeeper->isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST) &&
         zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) &&
@@ -1952,8 +1964,19 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
     {
         table_name_to_metadata.clear();
 
+        /// Symmetric to the fast-path `tryGet` at the top of the function: if the metadata node
+        /// is gone, the database was dropped concurrently. Surface the same
+        /// `Replicated database was dropped` error instead of a generic `KEEPER_EXCEPTION`.
         Coordination::Stat prev_metadata_path_stat;
-        zookeeper->get(metadata_path, &prev_metadata_path_stat);
+        String unused_metadata_value;
+        if (!zookeeper->tryGet(metadata_path, unused_metadata_value, &prev_metadata_path_stat))
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(metadata node missing at retry iteration {})",
+                iteration);
+        }
 
         LOG_DEBUG(log, "Trying to get consistent metadata snapshot for log pointer {}", max_log_ptr);
 
