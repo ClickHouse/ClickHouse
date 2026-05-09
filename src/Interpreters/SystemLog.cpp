@@ -911,6 +911,22 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
 
+    /// The default engine string wraps `PARTITION BY` / `ORDER BY` / `PRIMARY KEY` /
+    /// `SAMPLE BY` arguments in artificial parentheses so the parser accepts both
+    /// single-expression and tuple forms. Clear the `parenthesized` flag so the formatter
+    /// does not emit those artificial wrapping parens in `system.tables.engine_full`.
+    if (auto * storage = storage_with_comment.storage->as<ASTStorage>())
+    {
+        if (storage->partition_by)
+            storage->partition_by->setParenthesized(false);
+        if (storage->order_by)
+            storage->order_by->setParenthesized(false);
+        if (storage->primary_key)
+            storage->primary_key->setParenthesized(false);
+        if (storage->sample_by)
+            storage->sample_by->setParenthesized(false);
+    }
+
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);
 

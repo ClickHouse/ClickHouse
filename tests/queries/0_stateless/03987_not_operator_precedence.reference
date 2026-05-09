@@ -11,6 +11,6 @@
 0
 1
 0
-SELECT NOT (x IS NULL)
-SELECT NOT ((x >= 1) AND (x <= 5))
-SELECT NOT (x LIKE y)
+SELECT NOT ((x) IS NULL)
+SELECT NOT (((x) >= 1) AND ((x) <= 5))
+SELECT NOT ((x) LIKE y)

@@ -580,7 +580,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE (__table1.A AND __table1.B) OR ((__table1.C AND __table1.D) OR (__table1.E AND __table1.F))
+WHERE ((__table1.A AND __table1.B) OR ((__table1.C AND __table1.D) OR (__table1.E AND __table1.F)))
 -9220160771238933596	1	0	0	0	1	1
 -9217261049539683905	0	1	1	0	1	1
 -9154303869107404275	1	0	1	1	1	1
@@ -634,7 +634,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE (__table1.A AND __table1.B) OR ((__table1.B AND __table1.D) OR (__table1.E AND __table1.F))
+WHERE ((__table1.A AND __table1.B) OR ((__table1.B AND __table1.D) OR (__table1.E AND __table1.F)))
 -9137658153367139416	1	1	1	0	0	0
 -9137309194079040284	1	1	1	0	0	0
 -9121738304623869295	1	1	0	0	1	0

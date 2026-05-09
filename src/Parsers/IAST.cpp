@@ -3,6 +3,9 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/String.h>
@@ -92,6 +95,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_AST;
     extern const int UNKNOWN_ELEMENT_IN_AST;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 IAST::IAST(const IAST & other)
@@ -358,6 +362,108 @@ std::string IAST::dumpTree(size_t indent) const
     WriteBufferFromOwnString wb;
     dumpTree(wb, indent);
     return wb.str();
+}
+
+/// Decide how to emit `parenthesized` parens. When the node has an alias and we are not in an
+/// operator-chain context (`frame.need_parens == false`), defer to `ASTWithAlias::formatImpl` so
+/// it can emit `(expr) AS alias` instead of `(expr AS alias)` — only the former re-formats to
+/// itself and keeps the format-parse-format round-trip stable.
+///
+/// In operator-chain context (`frame.need_parens == true`) we keep the parens here so the output
+/// is `(expr AS alias)`, because the parser would not accept `(expr) AS alias OP rhs` at the top
+/// level of a SELECT element / WHERE clause (the alias terminates the SELECT element parser).
+static bool decideParensEmission(const IAST & node, IAST::FormatStateStacked & frame)
+{
+    const bool parens = node.isParenthesized() && !frame.wrapped_in_parens;
+    frame.wrapped_in_parens = false;
+    if (!parens)
+        return false;
+
+    if (!frame.need_parens)
+    {
+        if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(&node);
+            with_alias && !with_alias->alias.empty() && !dynamic_cast<const ASTSubquery *>(&node))
+        {
+            /// Skip the deferral for `ASTSubquery`: its `formatImplWithoutAlias` already emits
+            /// `(SELECT ...)` itself, so deferring would produce `((SELECT ...)) AS alias`,
+            /// and the parser collapses `((SELECT ...))` to a non-parenthesized subquery,
+            /// breaking the round-trip. The default `(formatImpl-output)` wrapping in
+            /// `IAST::format` produces `((SELECT ...) AS alias)` which round-trips cleanly.
+            frame.parenthesize_alias_inner_only = true;
+            frame.current_function = nullptr;
+            frame.list_element_index = 0;
+            return false;
+        }
+    }
+
+    /// A multi-element tuple literal naturally formats as `(elem, elem, ...)` — the
+    /// parens are part of the value's representation, not grouping parens. Emitting the
+    /// `parenthesized` flag's parens on top of that would produce `((1, 2))` for inputs
+    /// like `(((1), (2)))` or `NOT ((1, 1, 1))`, where the canonical form is a single
+    /// pair. Suppress them here. The aliased-tuple case (`((1, 2)) AS a`) is already
+    /// handled by the alias-deferral branch above and remains unaffected.
+    if (const auto * literal = dynamic_cast<const ASTLiteral *>(&node);
+        literal && literal->value.getType() == Field::Types::Tuple
+            && literal->value.safeGet<Tuple>().size() > 1)
+    {
+        return false;
+    }
+
+    /// `ASTSubquery` without an alias always emits its own enclosing `(SELECT ...)` parens.
+    /// Adding the `parenthesized` flag's parens on top would produce `((SELECT ...))`,
+    /// which the parser collapses back to a non-parenthesized subquery, breaking the
+    /// format-parse-format round-trip. The aliased case is different: there `((SELECT ...) AS alias)`
+    /// is the canonical form (the alias-deferral branch above explicitly skips `ASTSubquery` so
+    /// the outer parens are emitted here instead), so we only suppress when the alias is empty.
+    if (const auto * subquery = dynamic_cast<const ASTSubquery *>(&node); subquery && subquery->alias.empty())
+        return false;
+
+    frame.need_parens = false;
+    frame.current_function = nullptr;
+    frame.list_element_index = 0;
+    return true;
+}
+
+void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    FormatState state;
+    FormatStateStacked frame;
+    const bool parens = decideParensEmission(*this, frame);
+    if (parens)
+        ostr.write('(');
+    formatImpl(ostr, settings, state, std::move(frame));
+    if (parens)
+        ostr.write(')');
+}
+
+void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    const bool parens = decideParensEmission(*this, frame);
+    if (parens)
+        ostr.write('(');
+    formatImpl(ostr, settings, state, std::move(frame));
+    if (parens)
+        ostr.write(')');
+}
+
+void IAST::format(FormattingBuffer out) const
+{
+    const bool parens = decideParensEmission(*this, out.frame);
+    if (parens)
+        out.ostr.write('(');
+    formatImpl(out.ostr, out.settings, out.state, out.frame);
+    if (parens)
+        out.ostr.write(')');
+}
+
+void IAST::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
+}
+
+void IAST::formatImpl(FormattingBuffer /*out*/) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
 }
 
 }
