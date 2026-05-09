@@ -1,4 +1,5 @@
 #include <Common/RewriteRules/RewriteRules.h>
+#include <algorithm>
 #include <Core/Settings.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -68,7 +69,7 @@ RewriteRuleObjectPtr RewriteRules::tryGet(const std::string & rule_name) const
     return tryGet(rule_name, lock);
 }
 
-RewriteRuleObjectsMap RewriteRules::getAll() const
+RewriteRuleObjectsList RewriteRules::getAll() const
 {
     std::lock_guard lock(mutex);
     loadIfNot(lock);
@@ -77,15 +78,19 @@ RewriteRuleObjectsMap RewriteRules::getAll() const
 
 bool RewriteRules::exists(const std::string & rule_name, std::lock_guard<std::mutex> &) const
 {
-    return loaded_rewrite_rules.contains(rule_name);
+    return std::any_of(
+        loaded_rewrite_rules.begin(), loaded_rewrite_rules.end(),
+        [&](const auto & entry) { return entry.first == rule_name; });
 }
 
 MutableRewriteRuleObjectPtr RewriteRules::tryGet(
     const std::string & rule_name,
     std::lock_guard<std::mutex> &) const
 {
-    if (auto it = loaded_rewrite_rules.find(rule_name);
-        it != loaded_rewrite_rules.end())
+    auto it = std::find_if(
+        loaded_rewrite_rules.begin(), loaded_rewrite_rules.end(),
+        [&](const auto & entry) { return entry.first == rule_name; });
+    if (it != loaded_rewrite_rules.end())
         return it->second;
     return nullptr;
 }
@@ -108,27 +113,29 @@ MutableRewriteRuleObjectPtr RewriteRules::getMutable(
 void RewriteRules::add(
     const std::string & rule_name,
     MutableRewriteRuleObjectPtr rule,
-    std::lock_guard<std::mutex> &)
+    std::lock_guard<std::mutex> & lock)
 {
-    auto [it, inserted] = loaded_rewrite_rules.emplace(rule_name, rule);
-    if (!inserted)
+    if (exists(rule_name, lock))
     {
         throw Exception(
             ErrorCodes::REWRITE_RULE_ALREADY_EXISTS,
             "A rewrite rule `{}` already exists",
             rule_name);
     }
+    loaded_rewrite_rules.emplace_back(rule_name, std::move(rule));
 }
 
-void RewriteRules::add(RewriteRuleObjectsMap rules, std::lock_guard<std::mutex> & lock)
+void RewriteRules::add(RewriteRuleObjectsList rules, std::lock_guard<std::mutex> & lock)
 {
-    for (const auto & [rule_name, rule] : rules)
-        add(rule_name, rule, lock);
+    for (auto & [rule_name, rule] : rules)
+        add(rule_name, std::move(rule), lock);
 }
 
 void RewriteRules::remove(const std::string & rule_name, std::lock_guard<std::mutex> &)
 {
-    loaded_rewrite_rules.erase(rule_name);
+    std::erase_if(
+        loaded_rewrite_rules,
+        [&](const auto & entry) { return entry.first == rule_name; });
 }
 
 void RewriteRules::createRule(const ASTCreateRewriteRuleQuery & query)
@@ -174,7 +181,9 @@ void RewriteRules::updateRule(const ASTAlterRewriteRuleQuery & query)
             query.rule_name);
     }
 
-    auto it = loaded_rewrite_rules.find(query.rule_name);
+    auto it = std::find_if(
+        loaded_rewrite_rules.begin(), loaded_rewrite_rules.end(),
+        [&](const auto & entry) { return entry.first == query.rule_name; });
     if (it == loaded_rewrite_rules.end())
     {
         throw Exception(

@@ -14,7 +14,7 @@ class RewriteRulesStorage : private WithContext
 public:
     static std::unique_ptr<RewriteRulesStorage> create(const ContextPtr & context);
 
-    RewriteRuleObjectsMap getAll() const;
+    RewriteRuleObjectsList getAll() const;
 
     MutableRewriteRuleObjectPtr get(const std::string & rule_name) const;
 

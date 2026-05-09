@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <filesystem>
+#include <optional>
 #include <Core/Settings.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromFile.h>
@@ -93,13 +95,13 @@ public:
         if (!fs::exists(root_path))
             return {};
 
-        std::vector<std::string> elements;
+        std::vector<std::pair<fs::path, fs::file_time_type>> entries;
         for (fs::directory_iterator it{root_path}; it != fs::directory_iterator{}; ++it)
         {
             const auto & current_path = it->path();
             if (current_path.extension() == ".sql")
             {
-                elements.push_back(it->path());
+                entries.emplace_back(current_path, fs::last_write_time(current_path));
             }
             else
             {
@@ -110,6 +112,22 @@ public:
                 );
             }
         }
+
+        /// Sort by file modification time so that the load order matches the creation
+        /// order. `LocalStorage::write` preserves the original mtime on ALTER, so the
+        /// time is effectively a creation timestamp. Tie-break by path for determinism.
+        std::sort(entries.begin(), entries.end(),
+            [](const auto & a, const auto & b)
+            {
+                if (a.second != b.second)
+                    return a.second < b.second;
+                return a.first < b.first;
+            });
+
+        std::vector<std::string> elements;
+        elements.reserve(entries.size());
+        for (auto & [p, _] : entries)
+            elements.push_back(p.string());
         return elements;
     }
 
@@ -128,13 +146,21 @@ public:
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
-        if (!replace && fs::exists(getPath(file_name)))
+        const auto target_path = getPath(file_name);
+
+        std::optional<fs::file_time_type> preserved_mtime;
+        if (fs::exists(target_path))
         {
-            throw Exception(
-                ErrorCodes::REWRITE_RULE_ALREADY_EXISTS,
-                "File {} for query rule already exists",
-                file_name
-            );
+            if (!replace)
+            {
+                throw Exception(
+                    ErrorCodes::REWRITE_RULE_ALREADY_EXISTS,
+                    "File {} for query rule already exists",
+                    file_name
+                );
+            }
+            /// Preserve original mtime so that ALTER does not change the rule's place in creation order.
+            preserved_mtime = fs::last_write_time(target_path);
         }
 
         fs::create_directories(root_path);
@@ -148,7 +174,10 @@ public:
             out.sync();
         out.close();
 
-        fs::rename(tmp_path, getPath(file_name));
+        fs::rename(tmp_path, target_path);
+
+        if (preserved_mtime)
+            fs::last_write_time(target_path, *preserved_mtime);
     }
 
     void remove(const std::string & file_name) override
@@ -256,9 +285,32 @@ public:
             wait_event = std::make_shared<Poco::Event>();
 
         Coordination::Stat stat;
-        auto children = getClient()->getChildren(root_path, &stat, wait_event);
+        auto client = getClient();
+        auto children = client->getChildren(root_path, &stat, wait_event);
         collections_node_cversion = stat.cversion;
-        return children;
+
+        /// Sort children by `czxid` so the load order matches the creation order on this cluster.
+        std::vector<std::pair<std::string, int64_t>> entries;
+        entries.reserve(children.size());
+        for (const auto & child : children)
+        {
+            Coordination::Stat child_stat;
+            if (client->exists(getPath(child), &child_stat))
+                entries.emplace_back(child, child_stat.czxid);
+        }
+        std::sort(entries.begin(), entries.end(),
+            [](const auto & a, const auto & b)
+            {
+                if (a.second != b.second)
+                    return a.second < b.second;
+                return a.first < b.first;
+            });
+
+        std::vector<std::string> result;
+        result.reserve(entries.size());
+        for (auto & [name, _] : entries)
+            result.push_back(std::move(name));
+        return result;
     }
 
     bool exists(const std::string & file_name) const override
@@ -342,19 +394,22 @@ MutableRewriteRuleObjectPtr RewriteRulesStorage::get(const std::string & rule_na
     return RewriteRuleObject::create(query);
 }
 
-RewriteRuleObjectsMap RewriteRulesStorage::getAll() const
+RewriteRuleObjectsList RewriteRulesStorage::getAll() const
 {
-    RewriteRuleObjectsMap result;
+    RewriteRuleObjectsList result;
     for (const auto & rule_name : listRules())
     {
-        if (result.contains(rule_name))
+        const bool already_present = std::any_of(
+            result.begin(), result.end(),
+            [&](const auto & entry) { return entry.first == rule_name; });
+        if (already_present)
         {
             throw Exception(
                 ErrorCodes::REWRITE_RULE_ALREADY_EXISTS,
                 "Found duplicate rewrite rule `{}`",
                 rule_name);
         }
-        result.emplace(rule_name, get(rule_name));
+        result.emplace_back(rule_name, get(rule_name));
     }
     return result;
 }

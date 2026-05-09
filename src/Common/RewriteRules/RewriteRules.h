@@ -23,7 +23,7 @@ public:
 
     RewriteRuleObjectPtr tryGet(const std::string & rule_name) const;
 
-    RewriteRuleObjectsMap getAll() const;
+    RewriteRuleObjectsList getAll() const;
 
     void createRule(const ASTCreateRewriteRuleQuery & query);
 
@@ -48,7 +48,7 @@ public:
     void shutdown();
 
 protected:
-    mutable RewriteRuleObjectsMap loaded_rewrite_rules;
+    mutable RewriteRuleObjectsList loaded_rewrite_rules;
     mutable std::mutex mutex;
     mutable std::vector<MutableRewriteRuleLogPtr> logs;
 
@@ -69,7 +69,7 @@ protected:
 
     void add(const std::string & rule_name, MutableRewriteRuleObjectPtr rule, std::lock_guard<std::mutex> & lock);
 
-    void add(RewriteRuleObjectsMap rules, std::lock_guard<std::mutex> & lock);
+    void add(RewriteRuleObjectsList rules, std::lock_guard<std::mutex> & lock);
 
     void remove(const std::string & rule_name, std::lock_guard<std::mutex> & lock);
 
