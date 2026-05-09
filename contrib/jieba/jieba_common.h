@@ -106,13 +106,18 @@ inline Rune decodeUTF8Rune(const char * str, size_t len, size_t & out_len)
         out_len = 1;
     }
 
-    /// Map ASCII-range characters (0x00 ~ 0xFF) to Private Use Area (0xF000 ~ 0xF0FF)
-    /// Reason: For performance, we avoid constructing full UTF-16 key strings
-    /// when querying the dictionary. This ensures no null bytes (0x00) appear
-    /// in the encoded keys, which Darts-clone cannot handle in the middle of keys.
-    /// Only ASCII-range characters are remapped; all other BMP characters are unchanged.
-    if (rune <= 0xFF)
-        rune += 0xF000;
+    /// Replace any 0x00 byte in the rune's UTF-16-LE byte representation with 0xF0,
+    /// matching the dictionary key encoding produced by `generate_dict.py`.
+    /// This is required because Darts-clone cannot handle 0x00 bytes inside keys,
+    /// and we look up keys using the raw uint16_t bytes via `reinterpret_cast`.
+    /// This affects:
+    ///   - ASCII characters U+0000..U+00FF (high byte is 0x00) -> mapped into U+F0xx.
+    ///   - BMP characters whose codepoint is a multiple of 0x100 (low byte is 0x00),
+    ///     e.g. U+4E00 (一) -> stored as 0x4EF0.
+    if ((rune & 0xFF00) == 0)
+        rune |= 0xF000;
+    if ((rune & 0x00FF) == 0)
+        rune |= 0x00F0;
 
     return rune;
 }
