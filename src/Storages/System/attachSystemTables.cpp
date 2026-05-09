@@ -223,10 +223,11 @@ void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
         return;
 
     const auto & query_log_table_id = query_log->getTableID();
-    if (query_log_table_id.table_name == USER_QUERY_LOG_TABLE_NAME)
+    if (query_log_table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE && query_log_table_id.table_name == USER_QUERY_LOG_TABLE_NAME)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The `query_log.table` configuration parameter cannot be set to `{}` when `query_log.enable_user_query_log` is enabled",
+            "The `query_log.table` configuration parameter cannot be set to `{}` when `query_log.database` is `system` "
+            "and `query_log.enable_user_query_log` is enabled",
             USER_QUERY_LOG_TABLE_NAME);
 
     query_log->prepareTable();
@@ -235,7 +236,7 @@ void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
         context,
         system_database,
         USER_QUERY_LOG_TABLE_NAME,
-        "SELECT * FROM system." + backQuoteIfNeed(query_log_table_id.table_name) + " PREWHERE user = currentUser()",
+        "SELECT * FROM " + query_log_table_id.getFullTableName() + " PREWHERE user = currentUser()",
         QueryLogElement::getColumnsDescription(),
         "A view over `system.query_log` that shows queries submitted by the current user.",
         /* security_barrier */ true);
