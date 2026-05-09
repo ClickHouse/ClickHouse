@@ -87,19 +87,59 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
+            {"avg_over_time",
+             {
+                 "timeSeriesAvgOverTimeToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"min_over_time",
+             {
+                 "timeSeriesMinOverTimeToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"max_over_time",
+             {
+                 "timeSeriesMaxOverTimeToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"sum_over_time",
+             {
+                 "timeSeriesSumOverTimeToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"count_over_time",
+             {
+                 "timeSeriesCountOverTimeToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stddev_over_time",
+             {
+                 "timeSeriesStddevOverTimeToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stdvar_over_time",
+             {
+                 "timeSeriesStdvarOverTimeToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"present_over_time",
+             {
+                 "timeSeriesPresentOverTimeToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
             /// resets
             /// predict_linear
             /// deriv
-            /// avg_over_time
-            /// min_over_time
-            /// max_over_time
-            /// sum_over_time
-            /// count_over_time
             /// quantile_over_time
-            /// stddev_over_time"
-            /// stdvar_over_time
-            /// present_over_time
             /// absent_over_time
             /// mad_over_time
             /// ts_of_min_over_time
@@ -158,6 +198,7 @@ SQLQueryPiece applyFunctionOverRange(
     res.type = ResultType::INSTANT_VECTOR;
 
     bool has_group = false;
+    bool group_by_group = false;
     ASTPtr timestamps;
     ASTPtr values;
 
@@ -207,6 +248,7 @@ SQLQueryPiece applyFunctionOverRange(
             /// FROM <vector_grid>
             /// GROUP BY group
             has_group = true;
+            group_by_group = true;
 
             /// (timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS time_series).1
             ASTPtr ts = makeASTFunction(
@@ -232,6 +274,7 @@ SQLQueryPiece applyFunctionOverRange(
             /// FROM <raw_data>
             /// GROUP BY group
             has_group = true;
+            group_by_group = true;
 
             timestamps = make_intrusive<ASTIdentifier>(ColumnNames::Timestamp);
             values = make_intrusive<ASTIdentifier>(ColumnNames::Value);
@@ -275,7 +318,7 @@ SQLQueryPiece applyFunctionOverRange(
 
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
-    if (has_group)
+    if (group_by_group)
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     if (argument.select_query)

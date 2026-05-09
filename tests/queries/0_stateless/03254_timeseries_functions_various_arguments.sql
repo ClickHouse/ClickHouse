@@ -6,6 +6,26 @@ INSERT INTO ts_data_nullable SELECT id, timestamp, value FROM ts_data ARRAY JOIN
 
 SET allow_experimental_time_series_aggregate_functions = 1;
 
+SELECT timeSeriesSumOverTimeToGrid(90, 210, 15, 45)([110, 120, 130, 140, 190, 200, 210]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8]::Array(Float64));
+SELECT timeSeriesAvgOverTimeToGrid(90, 210, 15, 45)([110, 120, 130, 140, 190, 200, 210]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8]::Array(Float64));
+SELECT timeSeriesMinOverTimeToGrid(90, 210, 15, 45)([110, 120, 130, 140, 190, 200, 210]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8]::Array(Float64));
+SELECT timeSeriesMaxOverTimeToGrid(90, 210, 15, 45)([110, 120, 130, 140, 190, 200, 210]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8]::Array(Float64));
+SELECT timeSeriesCountOverTimeToGrid(90, 210, 15, 45)([110, 120, 130, 140, 190, 200, 210]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8]::Array(Float64));
+SELECT timeSeriesStddevOverTimeToGrid(90, 210, 15, 45)([110, 120, 130, 140, 190, 200, 210]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8]::Array(Float64));
+SELECT timeSeriesStdvarOverTimeToGrid(90, 210, 15, 45)([110, 120, 130, 140, 190, 200, 210]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8]::Array(Float64));
+SELECT timeSeriesPresentOverTimeToGrid(90, 210, 15, 45)([110, 120, 130, 140, 190, 200, 210]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8]::Array(Float64));
+SELECT timeSeriesAvgOverTimeToGrid(0, 30, 10, 10)([0, 10, 20, 30]::Array(UInt32), [nan, 1, 2, 3]::Array(Float64));
+SELECT toTypeName(timeSeriesSumOverTimeToGrid(90, 210, 15, 45)([110]::Array(UInt32), [1]::Array(Float32)));
+SELECT toTypeName(timeSeriesSumOverTimeToGrid(90, 210, 15, 45)(110::UInt32, 1::Float32));
+SELECT timeSeriesSumOverTimeToGridMerge(100, 200, 20, 60)(
+    initializeAggregation('timeSeriesSumOverTimeToGridState(100, 200, 20, 60)', (100 + number*10)::UInt32, number::Float64)
+) FROM numbers(5);
+SELECT timeSeriesAvgOverTimeToGrid(100, 200, 20)(toDateTime(105), 1.); -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+SELECT timeSeriesAvgOverTimeToGrid(100, 200, 20, 60)(toDateTime(105), [1., 2., 3.]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT timeSeriesAvgOverTimeToGrid(100, 200, 20, 60)([1, 2, 3]::Array(UInt32), 1.); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT timeSeriesAvgOverTimeToGrid(100, 200, 20, 60)([1, 2, 3]::Array(UInt32), [1, 2, 3]::Array(UInt8)); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT timeSeriesAvgOverTimeToGrid(100, 200, 20, 60)([1, 2, 3]::Array(Int32), [1, 2, 3]::Array(Float64)); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+
 -- Fail because of rows with non-matching lengths of timestamps and values
 SELECT timeSeriesResampleToGridWithStaleness(10, 120, 10, 10)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
 SELECT timeSeriesRateToGrid(10, 120, 10, 10)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
