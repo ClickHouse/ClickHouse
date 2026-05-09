@@ -55,6 +55,7 @@ namespace ErrorCodes
     DECLARE(UInt64, bypass_cache_threshold, FILECACHE_BYPASS_THRESHOLD, "Undocumented. Not recommended for use", 0) \
     DECLARE(Bool, write_cache_per_user_id_directory, false, "Internal ClickHouse Cloud setting", 0) \
     DECLARE(Bool, allow_dynamic_cache_resize, false, "Allow dynamic resize of filesystem cache", 0) \
+    DECLARE(UInt64, dynamic_resize_lock_wait_ms, 1000, "Timeout in milliseconds to acquire the dynamic resize exclusive lock before skipping the resize attempt", 0) \
     DECLARE(Double, max_size_ratio_to_total_space, 0, "Ratio of `max_size` to total disk space", 0) \
     DECLARE(Bool, skip_cache_on_disk_failure, false, "If true, bypass filesystem cache operations silently on disk IO errors. If false (default), disk IO errors are propagated as startup failures.", 0) \
     DECLARE(Bool, use_split_cache, false, "Use separation of files to system/data.", 0) \
