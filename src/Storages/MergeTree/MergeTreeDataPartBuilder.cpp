@@ -4,6 +4,9 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
+
 namespace DB
 {
 
@@ -38,6 +41,15 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     using PartType = MergeTreeDataPartType;
     using PartStorageType = MergeTreeDataPartStorageType;
 
+    /// Route every allocation produced while constructing the part (the `IMergeTreeDataPart`
+    /// object itself, its initializer-list members `Poco::LRUCache<String, ColumnSize>`,
+    /// `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`,
+    /// `index_granularity_info`, and also `MergeTreePartInfo::fromPartName` and
+    /// `data.getSettings()` clones below) into the dedicated MergeTree arena. These all share
+    /// the part's lifetime — much longer than a query — and pollute the default arena's pages
+    /// otherwise.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     if (!part_type)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create part {}, because part type is not set", name);
 
@@ -60,6 +72,7 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
         part_info = MergeTreePartInfo::fromPartName(name, data.format_version);
 
     auto data_settings = data.getSettings(projection);
+
     switch (part_type->getValue())
     {
         case PartType::Wide:
