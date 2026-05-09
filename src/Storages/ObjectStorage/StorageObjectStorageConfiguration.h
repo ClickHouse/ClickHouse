@@ -16,7 +16,6 @@
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <optional>
 #include <Databases/DataLake/StorageCredentials.h>
 
 namespace DB
