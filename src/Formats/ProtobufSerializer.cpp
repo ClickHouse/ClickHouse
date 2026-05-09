@@ -75,21 +75,16 @@ namespace
     using OneofDescriptor = google::protobuf::OneofDescriptor;
 
     /// Returns a mutable reference to a column that is borrowed from the caller.
-    /// Used in ProtobufSerializer where columns are passed for mutation during deserialization,
-    /// but the caller retains a reference for lifetime management, making the use_count > 1.
+    /// Used in `ProtobufSerializer` where columns are passed for mutation during deserialization,
+    /// but the caller retains a reference for lifetime management, so `use_count > 1`.
     /// The caller guarantees mutability by contract.
     ///
-    /// In debug/sanitizer builds we still assert that no extra owners (beyond the caller's
-    /// retained reference and our `col` parameter) hold the column, so unexpected sharing
-    /// is still flagged by the diagnostics added in this PR.
+    /// We do not assert on `use_count` here: legitimate ownership in `ProtobufSerializer`
+    /// includes the caller's storage, the message-level `mutable_columns` cache, and
+    /// each leaf field serializer's stored `ColumnPtr` for the same column, which can
+    /// add up to more than two owners even on the happy path.
     IColumn & borrowColumnRef(const ColumnPtr & col)
     {
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-        /// `use_count` here counts the caller's retained reference plus our `col` parameter.
-        /// Anything strictly greater than 2 means another owner is concurrently observing
-        /// the column, which must not happen during destructive deserialization.
-        chassert(col->use_count() <= 2);
-#endif
         return const_cast<IColumn &>(*col);
     }
 
@@ -248,8 +243,9 @@ namespace
 
         /// Returns a mutable reference to the column for deserialization.
         /// The column is borrowed from the caller who guarantees mutability,
-        /// but it is stored as ColumnPtr (shared with the caller), so we cannot use assumeMutableRef.
-        IColumn & columnRef() const { return const_cast<IColumn &>(*column); }
+        /// but it is stored as `ColumnPtr` (shared with the caller), so we cannot use `assumeMutableRef`.
+        /// Routed through `borrowColumnRef` so all single-value field serializers share the same helper.
+        IColumn & columnRef() const { return borrowColumnRef(column); }
 
         template <typename NumberType>
         void writeInt(NumberType value)
