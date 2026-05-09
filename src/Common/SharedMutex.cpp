@@ -51,7 +51,7 @@ void SharedMutex::unlock()
         futexWakeUpperAll(state);
 }
 
-void SharedMutex::lock_shared()
+void SharedMutex::lock_shared() const
 {
     UInt64 value = state.load();
     while (true)

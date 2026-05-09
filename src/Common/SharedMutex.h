@@ -38,8 +38,8 @@ private:
     static constexpr UInt64 readers = (1ull << 32ull) - 1ull; // Lower 32 bits of state
     static constexpr UInt64 writers = ~readers; // Upper 32 bits of state
 
-    std::atomic<UInt64> state;
-    std::atomic<UInt32> waiters;
+    mutable std::atomic<UInt64> state;
+    mutable std::atomic<UInt32> waiters;
 };
 
 }
