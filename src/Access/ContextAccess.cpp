@@ -9,6 +9,8 @@
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
+#include <Databases/DatabaseFactory.h>
+#include <Storages/StorageFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
@@ -39,27 +41,6 @@ namespace ErrorCodes
 
 namespace
 {
-    const std::vector<String> source_table_engines = {
-        "File",
-        "URL",
-        "Distributed",
-        "MongoDB",
-        "Redis",
-        "MySQL",
-        "PostgreSQL",
-        "SQLite",
-        "ODBC",
-        "JDBC",
-        "HDFS",
-        "S3",
-        "Hive",
-        "AzureBlobStorage",
-        "Kafka",
-        "NATS",
-        "RabbitMQ",
-    };
-
-
     AccessRights mixAccessRightsFromUserAndRoles(const User & user, const EnabledRolesInfo & roles_info)
     {
         AccessRights res = user.access;
@@ -73,6 +54,35 @@ namespace
         std::array<UUID, 1> ids;
         ids[0] = id;
         return ids;
+    }
+
+    /// Filter access-denied hint output (the "required grant"/"missing permissions" text in ACCESS_DENIED errors).
+    /// Column names from implicit expansion (e.g. SELECT *) require SHOW_COLUMNS to be shown in hints.
+    AccessRightsElement filterAccessElementForHints(const AccessRightsElement & element, const AccessRights & access)
+    {
+        if (element.columns.empty())
+            return element;
+
+        // Columns imply a resolved table and database (current DB is already substituted upstream).
+        assert(!element.table.empty());
+        assert(!element.database.empty());
+
+        if (access.isGranted(AccessType::SHOW_COLUMNS, element.database, element.table, element.columns))
+            return element;
+
+        // Hide column names unless SHOW_COLUMNS covers all required columns.
+        AccessRightsElement res = element;
+        res.columns.clear();
+        return res;
+    }
+
+    AccessRightsElements filterAccessElementsForHints(const AccessRightsElements & elements, const AccessRights & access)
+    {
+        AccessRightsElements filtered;
+        filtered.reserve(elements.size());
+        for (const auto & element : elements)
+            filtered.push_back(filterAccessElementForHints(element, access));
+        return filtered;
     }
 
     /// Helper for using in templates.
@@ -254,22 +264,46 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     }
 
     /// Sync SOURCE_READ/WRITE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
-    if (access_control.doesTableEnginesRequireGrant())
+    /// Source engine list is derived from StorageFactory — each engine declares its source_access_type
+    /// during registration, so this is always in sync without manual maintenance.
+    ///
+    /// We use grant() only (never revoke()) to avoid corrupting root_with_grant_option.
+    /// AccessRights::revoke() removes from BOTH root and root_with_grant_option, which would
+    /// break explicit GRANT TABLE ENGINE ... WITH GRANT OPTION for source engines. See #71544.
+    for (const auto & [engine_name, creator] : StorageFactory::instance().getAllStorages())
     {
-        for (const auto & table_engine : source_table_engines)
+        if (!creator.features.source_access_type)
         {
-            if (res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
-                res.grant(AccessType::TABLE_ENGINE, table_engine);
+            if (!access_control.doesTableEnginesRequireGrant())
+                res.grant(AccessType::TABLE_ENGINE, engine_name);
+        }
+        else
+        {
+            auto source_name = AccessTypeObjects::toStringSource(*creator.features.source_access_type);
+            if (res.isGranted(AccessType::READ | AccessType::WRITE, source_name))
+                res.grant(AccessType::TABLE_ENGINE, engine_name);
         }
     }
-    else
+
+    /// Database engines are registered in DatabaseFactory, not StorageFactory, but
+    /// CREATE DATABASE checks TABLE_ENGINE in InterpreterCreateQuery. Apply the same
+    /// source_access_type logic as the StorageFactory loop above.
+    ///
+    /// Engines that share names with StorageFactory (PostgreSQL, MySQL, SQLite, S3, etc.)
+    /// are processed by both loops with the same source_access_type — grant() is idempotent,
+    /// so duplicates are harmless.
+    for (const auto & [name, creator] : DatabaseFactory::instance().getDatabaseEngines())
     {
-        /// Add TABLE_ENGINE on * and then remove TABLE_ENGINE on particular engines.
-        res.grant(AccessType::TABLE_ENGINE);
-        for (const auto & table_engine : source_table_engines)
+        if (!creator.features.source_access_type)
         {
-            if (!res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
-                res.revoke(AccessType::TABLE_ENGINE, table_engine);
+            if (!access_control.doesTableEnginesRequireGrant())
+                res.grant(AccessType::TABLE_ENGINE, name);
+        }
+        else
+        {
+            auto source_name = AccessTypeObjects::toStringSource(*creator.features.source_access_type);
+            if (res.isGranted(AccessType::READ | AccessType::WRITE, source_name))
+                res.grant(AccessType::TABLE_ENGINE, name);
         }
     }
 
@@ -687,6 +721,17 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
     if (!granted)
     {
+        auto format_required_access = [&](AccessFlags access_flags, const auto & ... fmt_args)
+        {
+            AccessRightsElement required_access{access_flags, fmt_args...};
+            return filterAccessElementForHints(required_access, *acs).toStringWithoutOptions();
+        };
+
+        auto format_missing_permissions = [&](const AccessRights & difference)
+        {
+            return filterAccessElementsForHints(difference.getElements(), *acs).toStringWithoutOptions();
+        };
+
         auto access_denied_no_grant = [&]<typename... FmtArgs>(AccessFlags access_flags, FmtArgs && ...fmt_args)
         {
             if (grant_option && acs->isGranted(access_flags, fmt_args...))
@@ -695,7 +740,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                     "{}: Not enough privileges. "
                     "The required privileges have been granted, but without grant option. "
                     "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
-                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions());
+                    format_required_access(access_flags, fmt_args...));
             }
 
             if constexpr (!throw_if_denied)
@@ -711,14 +756,14 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                 {
                     return access_denied(ErrorCodes::ACCESS_DENIED,
                         "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                        AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+                        format_required_access(access_flags, fmt_args...) + (grant_option ? " WITH GRANT OPTION" : ""));
                 }
 
                 return access_denied(ErrorCodes::ACCESS_DENIED,
                     "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
                     "(Missing permissions: {}){}",
-                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
-                    difference.getElements().toStringWithoutOptions(),
+                    format_required_access(access_flags, fmt_args...) + (grant_option ? " WITH GRANT OPTION" : ""),
+                    format_missing_permissions(difference),
                     grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
             }
         };

@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_RECURSION;
+    extern const int SYNTAX_ERROR;
 }
 
 template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
@@ -275,6 +276,12 @@ void readStringUntilEquals(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilCharsInto<'='>(s, buf);
+}
+
+void readStringUntilColon(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<':'>(s, buf);
 }
 
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
@@ -2019,6 +2026,47 @@ void skipToNextLineOrEOF(ReadBuffer & buf)
             ++buf.position();
             return;
         }
+    }
+}
+
+
+void skipWhitespaceAndSQLComments(ReadBuffer & buf)
+{
+    while (true)
+    {
+        skipWhitespaceIfAny(buf);
+        if (buf.eof())
+            break;
+        if (buf.buffer().end() - buf.position() < 2)
+            break;
+        if (buf.position()[0] == '-' && buf.position()[1] == '-')
+        {
+            buf.position() += 2;
+            skipToNextLineOrEOF(buf);
+        }
+        else if (buf.position()[0] == '/' && buf.position()[1] == '*')
+        {
+            buf.position() += 2;
+            while (!buf.eof())
+            {
+                char * star = find_first_symbols<'*'>(buf.position(), buf.buffer().end());
+                buf.position() = star;
+                if (star == buf.buffer().end())
+                    continue;
+                ++buf.position();
+                if (buf.eof())
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Unterminated block comment: expected '*/' before end of input");
+                if (*buf.position() == '/')
+                {
+                    ++buf.position();
+                    break;
+                }
+            }
+            if (buf.eof())
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unterminated block comment: expected '*/' before end of input");
+        }
+        else
+            break;
     }
 }
 

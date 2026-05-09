@@ -25,7 +25,11 @@ class FunctionH3IsPentagon : public IFunction
 public:
     static constexpr auto name = "h3IsPentagon";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3IsPentagon>(); }
+    H3Validator validator;
+
+    explicit FunctionH3IsPentagon(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3IsPentagon>(context); }
 
     std::string getName() const override { return name; }
 
@@ -73,8 +77,9 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            validateH3Cell(data[row]);
-            auto res = static_cast<UInt8>(isPentagon(data[row]));
+            UInt8 res = 0;
+            if (validator.validateCell(data[row]))
+                res = static_cast<UInt8>(isPentagon(data[row]));
             dst_data[row] = res;
         }
         return dst;

@@ -49,6 +49,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
@@ -159,7 +160,7 @@ void listFilesWithRegexpMatchingImpl(
             /// We use fs::canonical to resolve the canonical path and check if the file does exists
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            fs::canonical(path_for_ls + for_match);
+            (void)fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             result.push_back(absolute_path.string());
@@ -1132,13 +1133,13 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 {
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
     /// and columns taken from file path (hive partitioning).
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
 {
     /// Reporting some fake sizes to enable prewhere optimization.
-    return getInMemoryMetadataPtr()->getFakeColumnSizes();
+    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
 }
 
 bool StorageFile::prefersLargeBlocks() const
@@ -1279,7 +1280,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         format_settings,
         args.getContext());
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
+    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
     setInMemoryMetadata(storage_metadata);
 
     supports_prewhere = format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
@@ -1653,9 +1654,10 @@ Chunk StorageFileSource::generate()
                 chunk, requested_virtual_columns,
                 {
                     .path = current_path,
+                    .storage_id = storage->getStorageID(),
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
-                    .last_modified = current_file_last_modified
+                    .last_modified = current_file_last_modified,
                 }, getContext());
 
             return chunk;
@@ -1822,7 +1824,8 @@ void StorageFile::read(
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
     bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
-        && context->getSettingsRef()[Setting::optimize_count_from_files];
+        && context->getSettingsRef()[Setting::optimize_count_from_files]
+        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto reading = std::make_unique<ReadFromFile>(
         column_names,
@@ -1847,7 +1850,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->paths,
         storage->archive_info,
         predicate,
-        storage->getVirtualsList(),
+        storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing);

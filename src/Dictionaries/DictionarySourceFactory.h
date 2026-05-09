@@ -44,6 +44,8 @@ public:
 
     void registerSource(const std::string & source_type, Creator create_source);
 
+    std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
     DictionarySourcePtr create(
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,

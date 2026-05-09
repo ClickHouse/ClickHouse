@@ -60,12 +60,19 @@ void BlobStorageLogWriter::addEvent(
 
 BlobStorageLogWriterPtr BlobStorageLogWriter::create(const String & disk_name)
 {
-    if (auto blob_storage_log = Context::getGlobalContextInstance()->getBlobStorageLog())
+    /// Prefer the current query context so that per-query settings such as `enable_blob_storage_log`
+    /// are honoured. Fall back to the global context for background operations that have no
+    /// associated query.
+    ContextPtr context = CurrentThread::tryGetQueryContext();
+    if (!context)
+        context = Context::getGlobalContextInstance();
+
+    if (auto blob_storage_log = context->getBlobStorageLog())
     {
         auto log_writer = std::make_shared<BlobStorageLogWriter>(std::move(blob_storage_log));
 
         log_writer->disk_name = disk_name;
-        if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
+        if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
             log_writer->query_id = CurrentThread::getQueryId();
 
         return log_writer;

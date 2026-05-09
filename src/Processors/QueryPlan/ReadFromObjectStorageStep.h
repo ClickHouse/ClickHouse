@@ -12,6 +12,7 @@ class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
 public:
     ReadFromObjectStorageStep(
+        const StorageID & storage_id_,
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
         const Names & columns_to_read,
@@ -46,6 +47,7 @@ public:
     InputOrderInfoPtr getDataOrder() const;
 
 private:
+    StorageID storage_id;
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
@@ -56,6 +58,7 @@ private:
     const bool need_only_count;
     const size_t max_block_size;
     size_t num_streams;
+    const size_t max_num_streams;
     const bool distributed_processing;
 
     void createIterator();

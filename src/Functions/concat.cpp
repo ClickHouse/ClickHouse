@@ -212,6 +212,12 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
+    bool isInjective(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// When called with a single argument, concat delegates to toString which is injective.
+        return arguments.size() == 1;
+    }
+
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (arguments.size() == 1)

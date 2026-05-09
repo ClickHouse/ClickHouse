@@ -147,10 +147,10 @@ public:
 
                 auto serialization = arguments[i +1].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, input_rows_count);
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
-                for (size_t row = 0; row < column->size(); ++row)
+                for (size_t row = 0; row < input_rows_count; ++row)
                 {
                     serialization->serializeText(*full_column, row, write_buffer, format_settings);
                     write_helper.finishRow();
