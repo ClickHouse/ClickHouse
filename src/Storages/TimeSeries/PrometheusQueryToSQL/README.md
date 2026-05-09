@@ -62,7 +62,7 @@ Downstream benchmark examples that motivate, but do not prove, ClickHouse work:
 - Do not add a separate PromQL runtime or fallback executor inside ClickHouse.
 - Do not import downstream request routing, shadow execution, or broad cost-based routing machinery.
 - Do not make performance claims from downstream promshim numbers alone.
-- Do not add manual `PREWHERE`, settings changes, thread caps, or cache assumptions without ClickHouse-local evidence that the executor-visible work changes for the target query family.
+- Do not add manual `PREWHERE`, settings changes, thread caps, or cache assumptions without ClickHouse evidence that the executor-visible work changes for the target query family.
 
 ## Validation checklist for optimization PRs
 

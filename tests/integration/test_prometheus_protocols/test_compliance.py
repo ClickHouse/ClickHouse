@@ -282,9 +282,9 @@ def _with_risk(semantic_risk, cases):
     return [(template, variant_args, should_fail, semantic_risk) for template, variant_args, should_fail in cases]
 
 
-# Fork-local cases beyond the upstream Prometheus compliance corpus. Each group
+# ClickHouse PromQL regression cases beyond the upstream Prometheus compliance corpus. Each group
 # names the semantic risk it protects so future additions have an obvious home.
-FORK_LOCAL_REGRESSION_CASES = [
+CLICKHOUSE_PROMQL_REGRESSION_CASES = [
     *_with_risk(RISK_LABEL_TRANSFORMATIONS, [
         # label_replace
         ('label_replace(demo_num_cpus, "job", "destination-value-$1", "instance", "demo.promlabs.com:(.*)")', [], False),
@@ -370,7 +370,7 @@ FORK_LOCAL_REGRESSION_CASES = [
 def _iter_case_definitions():
     for template, variant_args, should_fail in UPSTREAM_COMPLIANCE_TEST_CASES:
         yield template, variant_args, should_fail, "upstream compliance"
-    yield from FORK_LOCAL_REGRESSION_CASES
+    yield from CLICKHOUSE_PROMQL_REGRESSION_CASES
 
 
 def _expand_all_test_cases():
