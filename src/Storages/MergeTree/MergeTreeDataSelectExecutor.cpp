@@ -1003,7 +1003,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     {
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
-                            index_and_condition.condition_template->generateForPart(*ranges.data_part),
+                            index_and_condition.condition_template->generateForPartition(ranges.data_part->partition),
                             key_condition_rpn_template,
                             ranges.data_part,
                             ranges.ranges,
@@ -1201,7 +1201,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .name = index_name,
                     .part_name = parts_with_ranges[part_index].data_part->name,
                     .description = std::move(description),
-                    .condition = index_and_condition.condition_template->generateForPart(*parts_with_ranges[part_index].data_part)->getDescription(),
+                    .condition = index_and_condition.condition_template->generateForPartition(parts_with_ranges[part_index].data_part->partition)->getDescription(),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }

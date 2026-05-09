@@ -69,7 +69,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
-            index_and_condition.condition_template->generateForPart(*part.data_part),
+            index_and_condition.condition_template->generateForPartition(part.data_part->partition),
             key_condition_rpn_template,
             part.data_part,
             ranges,

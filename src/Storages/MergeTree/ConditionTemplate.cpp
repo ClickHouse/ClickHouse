@@ -70,27 +70,28 @@ std::vector<const ActionsDAG::Node *> collectReachableNodesPostOrder(
 
 ColumnPtr makeConstantColumnForSubstitution(
     const String & name,
-    const IMergeTreeDataPart & part,
+    const MergeTreePartition & partition,
+    const String & partition_id,
     const StorageMetadataPtr & metadata_snapshot)
 {
     if (name == PARTITION_ID_NAME)
     {
         auto column = metadata_snapshot->virtuals.get(PARTITION_ID_NAME, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
-        return column.type->createColumnConst(1, Field(part.info.getPartitionId()));
+        return column.type->createColumnConst(1, Field(partition_id));
     }
 
     if (name == PARTITION_VALUE_NAME)
     {
         Tuple tuple;
-        tuple.reserve(part.partition.value.size());
-        for (const auto & v : part.partition.value)
+        tuple.reserve(partition.value.size());
+        for (const auto & v : partition.value)
             tuple.push_back(v);
 
         auto column = metadata_snapshot->virtuals.get(PARTITION_VALUE_NAME, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
-        return column.type->createColumnConst(1, Field(part.info.getPartitionId()));
+        return column.type->createColumnConst(1, Field(std::move(tuple)));
     }
 
-    for (const auto [column, value] : std::views::zip(metadata_snapshot->getPartitionKey().sample_block, part.partition.value))
+    for (const auto [column, value] : std::views::zip(metadata_snapshot->getPartitionKey().sample_block, partition.value))
         if (column.name == name)
             return column.type->createColumnConst(1, value);
 
@@ -120,7 +121,8 @@ NameSet collectPartitionConstantColumnNames(
 ActionsDAG substituteConstantInputs(
     const ActionsDAG::Node * predicate_node,
     const NameSet & inputs_to_substitute,
-    const IMergeTreeDataPart & part,
+    const MergeTreePartition & partition,
+    const String & partition_id,
     const StorageMetadataPtr & metadata_snapshot)
 {
     chassert(predicate_node);
@@ -138,7 +140,7 @@ ActionsDAG substituteConstantInputs(
             {
                 if (inputs_to_substitute.contains(old_node->result_name))
                 {
-                    auto column = makeConstantColumnForSubstitution(old_node->result_name, part, metadata_snapshot);
+                    auto column = makeConstantColumnForSubstitution(old_node->result_name, partition, partition_id, metadata_snapshot);
                     new_node = &new_dag.addColumn(ColumnWithTypeAndName{column, old_node->result_type, old_node->result_name});
                 }
                 else
@@ -217,18 +219,18 @@ const Cond & ConditionTemplate<Cond>::generateUnsubstituted() const
 }
 
 template <typename Cond>
-const Cond & ConditionTemplate<Cond>::generateForPart(const IMergeTreeDataPart & part) const
+const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartition & partition) const
 {
     if (!dag || !dag->predicate)
         return generateUnsubstituted();
 
     std::unique_lock lock(mutex);
 
-    const String & partition_id = part.info.getPartitionId();
+    const String partition_id = partition.getID(metadata_snapshot->getPartitionKey().sample_block);
     if (auto it = cache.find(partition_id); it != cache.end())
         return it->second;
 
-    auto specialized = substituteConstantInputs(dag->predicate, partition_constant_names, part, metadata_snapshot);
+    auto specialized = substituteConstantInputs(dag->predicate, partition_constant_names, partition, partition_id, metadata_snapshot);
     chassert(!specialized.getOutputs().empty());
 
     Cond produced = factory(specialized.getOutputs().front());

@@ -70,7 +70,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     MergeTreeIndexDeserializationState state
     {
         .version = index_format.version,
-        .condition = index.condition.get(),
+        .condition = index.condition_template->generateUnsubstituted().get(),
         .part = *data_part,
         .index = *index.index,
     };
@@ -81,7 +81,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 
 void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader * main_reader)
 {
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     if (condition_text.getAllSearchPatterns().empty())
         return;
 
@@ -216,7 +216,7 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
 {
     is_always_true.resize(columns_to_read.size(), false);
     use_fallback.resize(columns_to_read.size(), false);
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     const auto & remaining_tokens = granule->getRemainingTokens();
 
     for (size_t i = 0; i < columns_to_read.size(); ++i)
@@ -698,7 +698,7 @@ void applyPostingsAll(
 void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows)
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
 
     size_t old_size = column_data.size();

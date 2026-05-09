@@ -4,6 +4,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <functional>
@@ -32,7 +33,7 @@ public:
     const ActionsDAG * getDAG() const { return &dag->dag.value(); }
 
     /// Substitutes partition level constants into dag.
-    const Cond & generateForPart(const IMergeTreeDataPart & part) const;
+    const Cond & generateForPartition(const MergeTreePartition & partition) const;
 
     /// Substitutes nothing.
     const Cond & generateUnsubstituted() const;
