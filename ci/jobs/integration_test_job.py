@@ -997,6 +997,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                         env=test_env,
                         report_name=f"parallel_{bugfix_bt}",
+                        timeout=session_timeout_parallel + 600,
                     )
                     bt_test_results.extend(bt_result_parallel.results)
                     _mark_infrastructure_errors(bt_result_parallel.results)
@@ -1012,6 +1013,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                         env=test_env,
                         report_name=f"sequential_{bugfix_bt}",
+                        timeout=session_timeout_sequential + 600,
                     )
                     bt_test_results.extend(bt_result_sequential.results)
                     _mark_infrastructure_errors(bt_result_sequential.results)
