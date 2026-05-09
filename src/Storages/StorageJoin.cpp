@@ -530,13 +530,13 @@ namespace
 {
 
 template <typename T>
-const char * rawData(T & t)
+const char * rawData(const T & t)
 {
     return reinterpret_cast<const char *>(&t);
 }
 
 template <typename T>
-size_t rawSize(T &)
+size_t rawSize(const T &)
 {
     return sizeof(T);
 }
