@@ -42,11 +42,46 @@ TEST(PerCPUMemoryBudget, Basic)
 #endif
 }
 
-/// `chargeAlloc` advances `state.nallocs` by `size`. Within a single SLICE
-/// bucket the call must not request a flush; crossing the bucket boundary
-/// must request one. The counter is shared with every other thread on this
-/// CPU, so we phrase the test in terms of "how far to the next boundary"
-/// rather than absolute values.
+/// Sub-buffer charges stay in the per-thread accumulator and never reach
+/// the per-CPU counter. The first charge with a size >= BUFFER_SIZE flushes
+/// the buffer to the per-CPU layer.
+TEST(PerCPUMemoryBudget, BufferDelaysPerCPUTouch)
+{
+    resetTrackers();
+
+    PerCPUMemoryBudget::PerCPUMemoryBudgetState state;
+    state.cpu = PerCPUMemoryBudget::currentCPU();
+    if (state.cpu < 0)
+        GTEST_SKIP() << "Per-CPU machinery unavailable on this platform";
+
+    constexpr UInt64 BUFFER_SIZE = PerCPUMemoryBudget::BUFFER_SIZE;
+
+    /// Each sub-buffer charge bumps state.pending_alloc but never touches
+    /// `state.nallocs` (which would happen on a per-CPU flush).
+    EXPECT_FALSE(PerCPUMemoryBudget::chargeAlloc(BUFFER_SIZE / 4, state));
+    EXPECT_FALSE(PerCPUMemoryBudget::chargeAlloc(BUFFER_SIZE / 4, state));
+    EXPECT_EQ(state.nallocs, 0u);
+    EXPECT_EQ(state.pending_alloc, BUFFER_SIZE / 2);
+
+    /// Now exceed the buffer — this charge flushes the accumulated bytes to
+    /// the per-CPU counter; `state.nallocs` becomes non-zero.
+    std::ignore = PerCPUMemoryBudget::chargeAlloc(BUFFER_SIZE, state);
+    EXPECT_GT(state.nallocs, 0u);
+    EXPECT_EQ(state.pending_alloc, 0u);
+
+    /// Symmetric for the free side.
+    EXPECT_FALSE(PerCPUMemoryBudget::chargeFree(BUFFER_SIZE / 2, state));
+    EXPECT_EQ(state.nfrees, 0u);
+    EXPECT_EQ(state.pending_free, BUFFER_SIZE / 2);
+    std::ignore = PerCPUMemoryBudget::chargeFree(BUFFER_SIZE, state);
+    EXPECT_GT(state.nfrees, 0u);
+    EXPECT_EQ(state.pending_free, 0u);
+}
+
+/// Crossing detection still fires when a per-CPU charge actually crosses a
+/// SLICE boundary. We use a single charge of size `SLICE` so the boundary
+/// is unambiguously crossed in one step (regardless of where on the CPU's
+/// counter we start).
 TEST(PerCPUMemoryBudget, AllocCrossingDetection)
 {
     resetTrackers();
@@ -56,21 +91,17 @@ TEST(PerCPUMemoryBudget, AllocCrossingDetection)
     if (state.cpu < 0)
         GTEST_SKIP() << "Per-CPU machinery unavailable on this platform";
 
-    /// Warm up: a zero-sized charge updates state.nallocs to the current
-    /// per-CPU counter value without moving it. After this we have a
-    /// meaningful baseline for the boundary-distance arithmetic below.
-    std::ignore = PerCPUMemoryBudget::chargeAlloc(0, state);
-
     constexpr UInt64 SLICE = PerCPUMemoryBudget::SLICE;
-    Int64 to_boundary = static_cast<Int64>(SLICE - (state.nallocs & (SLICE - 1)));
 
-    EXPECT_FALSE(PerCPUMemoryBudget::chargeAlloc(to_boundary - 1, state));
-    EXPECT_TRUE (PerCPUMemoryBudget::chargeAlloc(2, state));
-    EXPECT_FALSE(PerCPUMemoryBudget::chargeAlloc(1, state));
+    /// Warm-up: charge >= BUFFER_SIZE so the per-CPU counter is touched and
+    /// state.nallocs reflects a real position.
+    std::ignore = PerCPUMemoryBudget::chargeAlloc(SLICE, state);
+    /// Next per-CPU touch must be a charge of at least one more SLICE to
+    /// guarantee a bucket change.
+    EXPECT_TRUE(PerCPUMemoryBudget::chargeAlloc(SLICE, state));
 }
 
-/// `chargeFree` is symmetric with `chargeAlloc` but operates on the
-/// independent `nfrees` counter — they don't interfere.
+/// Symmetric crossing test for the free side.
 TEST(PerCPUMemoryBudget, FreeCrossingDetection)
 {
     resetTrackers();
@@ -80,14 +111,10 @@ TEST(PerCPUMemoryBudget, FreeCrossingDetection)
     if (state.cpu < 0)
         GTEST_SKIP() << "Per-CPU machinery unavailable on this platform";
 
-    std::ignore = PerCPUMemoryBudget::chargeFree(0, state);
-
     constexpr UInt64 SLICE = PerCPUMemoryBudget::SLICE;
-    Int64 to_boundary = static_cast<Int64>(SLICE - (state.nfrees & (SLICE - 1)));
 
-    EXPECT_FALSE(PerCPUMemoryBudget::chargeFree(to_boundary - 1, state));
-    EXPECT_TRUE (PerCPUMemoryBudget::chargeFree(2, state));
-    EXPECT_FALSE(PerCPUMemoryBudget::chargeFree(1, state));
+    std::ignore = PerCPUMemoryBudget::chargeFree(SLICE, state);
+    EXPECT_TRUE(PerCPUMemoryBudget::chargeFree(SLICE, state));
 }
 
 /// A single alloc/free pair on the same thread must not change

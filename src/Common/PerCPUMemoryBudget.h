@@ -53,6 +53,12 @@ constexpr UInt64 SLICE = 4 * 1024 * 1024;
 constexpr int    SLICE_LOG2 = 22;
 static_assert(SLICE == (UInt64{1} << SLICE_LOG2));
 
+/// Per-thread accumulator before touching the per-CPU counter. Larger means
+/// fewer rseq/atomic ops on the hot path (1 in `BUFFER_SIZE / avg_alloc_size`
+/// calls reach the slot) at the cost of a wider `Σ T_i` ceiling — each
+/// thread can carry up to ~2 * BUFFER_SIZE of unflushed pending bytes.
+constexpr UInt64 BUFFER_SIZE = 32 * 1024;
+
 struct alignas(CH_CACHE_LINE_SIZE) Slot
 {
     UInt64 nallocs;
@@ -202,16 +208,32 @@ ALWAYS_INLINE bool charge(Int64 size, PerCPUMemoryBudgetState & state)
 
 }
 
-/// Hot-path entry points. Atomically advance the per-CPU counter, update
-/// `state`, and return true when the caller should flush `untracked_memory`
-/// (either a SLICE crossing happened or this thread changed CPU).
+/// Hot-path entry points. Bytes are accumulated in a per-thread buffer
+/// (`state.pending_alloc` / `state.pending_free`) and only flushed to the
+/// per-CPU counter once `BUFFER_SIZE` is reached. The fast path is one TLS
+/// add + one branch — no rseq, no atomic.
+///
+/// Returns true when the caller should flush `untracked_memory` (a SLICE
+/// crossing on the per-CPU counter, or a CPU migration). Whenever the
+/// fast path returns false, the call has not touched the per-CPU layer at
+/// all — `state.cpu` is unchanged, no migration is observed.
 ALWAYS_INLINE inline bool chargeAlloc(Int64 size, PerCPUMemoryBudgetState & state)
 {
-    return detail::charge<true>(size, state);
+    state.pending_alloc += static_cast<UInt64>(size);
+    if (likely(state.pending_alloc < BUFFER_SIZE))
+        return false;
+    UInt64 to_charge = state.pending_alloc;
+    state.pending_alloc = 0;
+    return detail::charge<true>(static_cast<Int64>(to_charge), state);
 }
 ALWAYS_INLINE inline bool chargeFree(Int64 size, PerCPUMemoryBudgetState & state)
 {
-    return detail::charge<false>(size, state);
+    state.pending_free += static_cast<UInt64>(size);
+    if (likely(state.pending_free < BUFFER_SIZE))
+        return false;
+    UInt64 to_charge = state.pending_free;
+    state.pending_free = 0;
+    return detail::charge<false>(static_cast<Int64>(to_charge), state);
 }
 
 }

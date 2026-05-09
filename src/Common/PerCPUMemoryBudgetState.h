@@ -20,9 +20,11 @@ namespace DB::PerCPUMemoryBudget
 /// drag in librseq's heavy machinery.
 struct PerCPUMemoryBudgetState
 {
-    int    cpu = -1;     /// CPU we last successfully charged on; -1 = uninitialised
-    UInt64 nallocs = 0;  /// last-seen value of `nallocs[cpu]` for this thread
-    UInt64 nfrees  = 0;  /// last-seen value of `nfrees[cpu]`
+    int    cpu = -1;          /// CPU we last successfully charged on; -1 = uninitialised
+    UInt64 nallocs = 0;       /// last-seen value of `nallocs[cpu]` for this thread
+    UInt64 nfrees  = 0;       /// last-seen value of `nfrees[cpu]`
+    UInt64 pending_alloc = 0; /// bytes accumulated locally since last per-CPU `nallocs` charge
+    UInt64 pending_free  = 0; /// bytes accumulated locally since last per-CPU `nfrees`  charge
 };
 
 }
