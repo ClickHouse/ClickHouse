@@ -162,6 +162,53 @@ namespace
 {
 constexpr auto USER_QUERY_LOG_TABLE_NAME = "user_query_log";
 
+void attachSystemView(
+    ContextPtr context,
+    IDatabase & system_database,
+    const String & view_name,
+    const String & select_query,
+    const ColumnsDescription & columns,
+    const String & comment,
+    bool security_barrier)
+{
+    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+
+    if (system_database.isTableExist(view_name, context))
+        return;
+
+    auto create_query = "CREATE VIEW system." + backQuoteIfNeed(view_name) + " DEFINER = default SQL SECURITY DEFINER AS " + select_query;
+
+    ParserCreateQuery parser;
+    ASTPtr ast = parseQuery(
+        parser,
+        create_query.data(),
+        create_query.data() + create_query.size(),
+        "system view definition",
+        0,
+        DBMS_DEFAULT_MAX_PARSER_DEPTH,
+        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    const auto & ast_create = ast->as<ASTCreateQuery &>();
+
+    StorageID table_id(DatabaseCatalog::SYSTEM_DATABASE, view_name);
+    String path;
+    if (system_database.getUUID() != UUIDHelpers::Nil)
+    {
+        table_id.uuid = UUIDHelpers::generateV4();
+        DatabaseCatalog::instance().addUUIDMapping(table_id.uuid);
+        path = DatabaseCatalog::getStoreDirPath(table_id.uuid);
+    }
+
+    auto view = std::make_shared<StorageView>(
+        table_id,
+        ast_create,
+        columns,
+        comment,
+        /* is_parameterized_view_ */ false,
+        security_barrier);
+    system_database.attachTable(context, view_name, view, path);
+}
+
 void attachUserQueryLog(ContextPtr context, IDatabase & system_database)
 {
     assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
@@ -182,42 +229,14 @@ void attachUserQueryLog(ContextPtr context, IDatabase & system_database)
 
     query_log->prepareTable();
 
-    if (system_database.isTableExist(USER_QUERY_LOG_TABLE_NAME, context))
-        return;
-
-    auto create_query = "CREATE VIEW system." + backQuoteIfNeed(USER_QUERY_LOG_TABLE_NAME)
-        + " DEFINER = default SQL SECURITY DEFINER AS SELECT * FROM system." + backQuoteIfNeed(query_log_table_id.table_name)
-        + " PREWHERE user = currentUser()";
-
-    ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(
-        parser,
-        create_query.data(),
-        create_query.data() + create_query.size(),
-        "user query log view definition",
-        0,
-        DBMS_DEFAULT_MAX_PARSER_DEPTH,
-        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-    const auto & ast_create = ast->as<ASTCreateQuery &>();
-
-    StorageID table_id(DatabaseCatalog::SYSTEM_DATABASE, USER_QUERY_LOG_TABLE_NAME);
-    String path;
-    if (system_database.getUUID() != UUIDHelpers::Nil)
-    {
-        table_id.uuid = UUIDHelpers::generateV4();
-        DatabaseCatalog::instance().addUUIDMapping(table_id.uuid);
-        path = DatabaseCatalog::getStoreDirPath(table_id.uuid);
-    }
-
-    auto view = std::make_shared<StorageView>(
-        table_id,
-        ast_create,
+    attachSystemView(
+        context,
+        system_database,
+        USER_QUERY_LOG_TABLE_NAME,
+        "SELECT * FROM system." + backQuoteIfNeed(query_log_table_id.table_name) + " PREWHERE user = currentUser()",
         QueryLogElement::getColumnsDescription(),
         "A view over `system.query_log` that shows queries submitted by the current user.",
-        /* is_parameterized_view_ */ false,
-        /* security_barrier_ */ true);
-    system_database.attachTable(context, USER_QUERY_LOG_TABLE_NAME, view, path);
+        /* security_barrier */ true);
 }
 
 }
