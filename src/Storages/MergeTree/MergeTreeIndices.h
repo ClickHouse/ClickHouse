@@ -80,6 +80,17 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+struct TopNFilterParameters
+{
+    String column;
+    DataTypePtr type;
+    size_t limit;
+    bool include_equal_row;
+    size_t condition_hash;
+
+    TopNFilterParameters(String column_, DataTypePtr type_, size_t limit_, bool include_equal_row);
+};
+
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
 {

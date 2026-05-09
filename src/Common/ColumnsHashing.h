@@ -630,7 +630,7 @@ struct HashMethodABSerialized
         {
             if (row_sizes[i] <= std::numeric_limits<UInt32>::max())
             {
-                auto h = StringRefHash()({memories[i] - row_sizes[i], row_sizes[i]});
+                auto h = static_cast<UInt32>(StringRefHash()({memories[i] - row_sizes[i], row_sizes[i]}));
                 hashes.getData()[i] = h;
                 if (row_sizes[i] < 12)
                     serialized_keys[i].low |= static_cast<uint32_t>(h);

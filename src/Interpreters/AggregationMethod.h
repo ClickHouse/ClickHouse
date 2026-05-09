@@ -150,7 +150,7 @@ struct AggregationMethodABStringNoCache
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
     {
         static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -383,7 +383,7 @@ struct AggregationMethodABSerialized
         return State::shuffleKeyColumns(key_columns, key_sizes);
     }
 
-    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes);
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const IColumn::SerializationSettings *);
 };
 
 

@@ -186,6 +186,7 @@ public:
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
     using Cache = LastElementCache<Value, nullable>;
     static constexpr bool has_range_check = false;
+    static constexpr bool has_pre_computed_hashes = false;
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
 
