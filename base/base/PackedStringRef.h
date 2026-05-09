@@ -68,6 +68,7 @@
 ///   - isLarge()  : (high & LARGE_TAG) != 0
 ///   - isSmall()  : !isLarge() && inline_length != 0
 ///   - isMedium() : !isLarge() && inline_length == 0 && high != 0
+///   - isEmpty()  : high == 0
 struct PackedStringRef
 {
     uint64_t low;
@@ -94,9 +95,14 @@ struct PackedStringRef
         return (high & LARGE_TAG) != 0;
     }
 
+    ALWAYS_INLINE bool isEmpty() const
+    {
+        return high == 0;
+    }
+
     ALWAYS_INLINE bool isMedium() const
     {
-        return !isLarge() && getSmallSize() == 0;
+        return !isLarge() && getSmallSize() == 0 && !isEmpty();
     }
 
     ALWAYS_INLINE bool isSmall() const
@@ -159,6 +165,8 @@ struct PackedStringRef
 
     ALWAYS_INLINE explicit operator std::string_view() const
     {
+        if (isEmpty())
+            return {};
         if (isSmall())
             return {getSmallPtr(), getSmallSize()};
         if (isMedium())
