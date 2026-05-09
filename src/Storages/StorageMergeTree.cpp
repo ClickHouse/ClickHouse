@@ -301,7 +301,11 @@ void StorageMergeTree::startup()
                 }
                 else
                 {
-                    LOG_INFO(log, "Lost leadership, stopping background operations");
+                    /// Stop only write-side background tasks: merges/mutations, moves, and
+                    /// outdated-parts cleanup. The parts-refresh, statistics cache, and
+                    /// outdated-parts loader keep running on followers because the data
+                    /// lives on shared object storage and must remain readable.
+                    LOG_INFO(log, "Lost leadership, stopping background write operations");
                     background_operations_assignee.finish();
                     background_moves_assignee.finish();
                     cleanup_thread.stop();
