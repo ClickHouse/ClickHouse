@@ -7225,10 +7225,6 @@ Possible values:
 
 This options will produce different results depending on the settings used.
 
-:::note
-This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](/operations/settings/settings#max_parallel_replicas) for more details.
-:::
-
 ### Parallel processing using `SAMPLE` key
 
 A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
