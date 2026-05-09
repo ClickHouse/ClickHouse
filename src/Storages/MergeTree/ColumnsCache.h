@@ -115,6 +115,15 @@ private:
     PartIndexMap interval_index;
     mutable std::mutex interval_index_mutex;
 
+    /// Counts set() calls since the last compaction. Used to amortize the cost of
+    /// compactIntervalIndex() across many inserts.
+    size_t sets_since_compaction = 0;
+
+    /// Run a full compaction sweep every this many set() calls. Tuned so that
+    /// the amortized cost per set() is O(1): a compaction is O(count), and we
+    /// sweep at most once per `count` inserts.
+    static constexpr size_t COMPACT_INTERVAL_INDEX_EVERY_N_SETS = 1024;
+
 public:
     ColumnsCache(
         const String & cache_policy,
@@ -160,6 +169,16 @@ public:
         PartIdentifier part_id{key.table_uuid, key.part_name};
         auto & intervals = interval_index[part_id][key.column_name];
         intervals[{key.row_begin, key.row_end}] = key;
+
+        /// Eviction in `Base` happens via a callback that does not provide the key,
+        /// so `interval_index` retains entries for evicted keys. Sweep periodically
+        /// so that metadata memory cannot grow unboundedly when evicted entries are
+        /// never queried again (which would skip the lazy cleanup in `getIntersecting`).
+        if (++sets_since_compaction >= COMPACT_INTERVAL_INDEX_EVERY_N_SETS)
+        {
+            compactIntervalIndex();
+            sets_since_compaction = 0;
+        }
     }
 
     /// Remove all cached entries for a specific data part.
@@ -205,14 +224,21 @@ private:
     /// Must be called without holding the CacheBase lock to avoid deadlock.
     void removeStaleKeys(const std::vector<Key> & stale_keys);
 
+    /// Walk the entire interval_index and erase any key that is no longer in Base
+    /// (i.e., evicted by LRU). Must be called with interval_index_mutex held.
+    /// Cost is O(interval_index entries); amortized O(1) per set() because it runs
+    /// at most once per COMPACT_INTERVAL_INDEX_EVERY_N_SETS inserts.
+    void compactIntervalIndex();
+
     void onEntryRemoval(size_t weight_loss, const MappedPtr &) override
     {
         ProfileEvents::increment(ProfileEvents::ColumnsCacheEvictedEntries);
         ProfileEvents::increment(ProfileEvents::ColumnsCacheEvictedBytes, weight_loss);
 
-        /// Note: We don't remove from interval_index here because the eviction callback
-        /// doesn't provide the key. Stale entries are cleaned up lazily in getIntersecting
-        /// and eagerly in set (when overwriting) and removePart.
+        /// We can't remove from interval_index here because the eviction callback
+        /// doesn't provide the key. Stale entries are cleaned up lazily in
+        /// getIntersecting, eagerly in set/removePart, and via periodic compaction
+        /// driven by sets_since_compaction in set() (see compactIntervalIndex).
     }
 };
 

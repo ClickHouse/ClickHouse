@@ -16,6 +16,35 @@ ColumnsCache::ColumnsCache(
 {
 }
 
+void ColumnsCache::compactIntervalIndex()
+{
+    /// Caller must hold interval_index_mutex. Lock order: interval_index_mutex first,
+    /// then briefly the CacheBase mutex inside Base::contains, matching set/removePart.
+    for (auto part_it = interval_index.begin(); part_it != interval_index.end();)
+    {
+        auto & columns_map = part_it->second;
+        for (auto col_it = columns_map.begin(); col_it != columns_map.end();)
+        {
+            auto & intervals = col_it->second;
+            for (auto it = intervals.begin(); it != intervals.end();)
+            {
+                if (Base::contains(it->second))
+                    ++it;
+                else
+                    it = intervals.erase(it);
+            }
+            if (intervals.empty())
+                col_it = columns_map.erase(col_it);
+            else
+                ++col_it;
+        }
+        if (columns_map.empty())
+            part_it = interval_index.erase(part_it);
+        else
+            ++part_it;
+    }
+}
+
 void ColumnsCache::removeStaleKeys(const std::vector<Key> & stale_keys)
 {
     std::lock_guard lock(interval_index_mutex);
