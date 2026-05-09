@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/BorrowFromCache/BorrowFromCacheObjectStorage.h>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/copyData.h>
 #include <Interpreters/FileCache/FileCache.h>
@@ -34,6 +35,23 @@ namespace
     public:
         HoldingWriteBuffer(std::unique_ptr<WriteBuffer> impl_, std::shared_ptr<FileSegmentsHolder> holder_)
             : WriteBufferFromFileDecorator(std::move(impl_))
+            , holder(std::move(holder_))
+        {
+        }
+
+    private:
+        std::shared_ptr<FileSegmentsHolder> holder;
+    };
+
+    /// Decorator that keeps a shared `FileSegmentsHolder` alive for the lifetime of the read buffer.
+    /// `BorrowFromCacheObjectStorage::removeObjectIfExists` can erase the entry concurrently and
+    /// destroy the last holder, which for `Ephemeral` segments releases the underlying cache file.
+    /// Holding ownership here ensures the file stays alive until the reader is destroyed.
+    class HoldingReadBuffer : public ReadBufferFromFileDecorator
+    {
+    public:
+        HoldingReadBuffer(std::unique_ptr<ReadBufferFromFileBase> impl_, std::shared_ptr<FileSegmentsHolder> holder_)
+            : ReadBufferFromFileDecorator(std::move(impl_))
             , holder(std::move(holder_))
         {
         }
@@ -77,17 +95,23 @@ std::unique_ptr<ReadBufferFromFileBase> BorrowFromCacheObjectStorage::readObject
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint) const
 {
+    /// Capture both `cache_path` and the `holder` under the lock. The holder is shared
+    /// with the returned read buffer via `HoldingReadBuffer` so the underlying cache file
+    /// outlives concurrent removals from `entries`.
+    std::shared_ptr<FileSegmentsHolder> holder;
     std::string cache_path;
     {
         std::lock_guard lock(mutex);
         auto * entry = findEntry(object.remote_path);
         if (!entry)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Object not found in BorrowFromCacheObjectStorage: {}", object.remote_path);
+        holder = entry->holder;
         cache_path = entry->cache_path;
     }
 
     LOG_TEST(log, "Read object: {} -> {}", object.remote_path, cache_path);
-    return createReadBufferFromFileBase(cache_path, patchSettings(read_settings), read_hint);
+    auto inner = createReadBufferFromFileBase(cache_path, patchSettings(read_settings), read_hint);
+    return std::make_unique<HoldingReadBuffer>(std::move(inner), std::move(holder));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> BorrowFromCacheObjectStorage::writeObject( /// NOLINT
@@ -179,12 +203,16 @@ void BorrowFromCacheObjectStorage::removeObjectsIfExist(const StoredObjects & ob
 
 ObjectMetadata BorrowFromCacheObjectStorage::getObjectMetadata(const std::string & path, bool /* with_tags */) const
 {
+    /// Hold the `FileSegmentsHolder` for the whole method so the cache file is not removed
+    /// by a concurrent `removeObjectIfExists` between releasing the lock and reading metadata.
+    std::shared_ptr<FileSegmentsHolder> holder;
     std::string cache_path;
     {
         std::lock_guard lock(mutex);
         auto * entry = findEntry(path);
         if (!entry)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Object not found in BorrowFromCacheObjectStorage: {}", path);
+        holder = entry->holder;
         cache_path = entry->cache_path;
     }
 
@@ -199,12 +227,16 @@ ObjectMetadata BorrowFromCacheObjectStorage::getObjectMetadata(const std::string
 
 std::optional<ObjectMetadata> BorrowFromCacheObjectStorage::tryGetObjectMetadata(const std::string & path, bool /* with_tags */) const
 {
+    /// Hold the `FileSegmentsHolder` for the whole method so the cache file is not removed
+    /// by a concurrent `removeObjectIfExists` between releasing the lock and reading metadata.
+    std::shared_ptr<FileSegmentsHolder> holder;
     std::string cache_path;
     {
         std::lock_guard lock(mutex);
         auto * entry = findEntry(path);
         if (!entry)
             return std::nullopt;
+        holder = entry->holder;
         cache_path = entry->cache_path;
     }
 
