@@ -46,11 +46,23 @@ namespace
         }
     }
 
+    enum class PostProcessFunction
+    {
+        None,
+        Increase,
+    };
+
     struct ImplInfo
     {
         std::string_view ch_function_name;
         bool drop_metric_name = true;
+        PostProcessFunction post_process_function = PostProcessFunction::None;
     };
+
+    ASTPtr toFloat64(ASTPtr && x)
+    {
+        return makeASTFunction("toFloat64", std::move(x));
+    }
 
     /// Returns information about how the specified prometheus function is implemented.
     /// Returns nullptr if not found.
@@ -61,6 +73,13 @@ namespace
              {
                  "timeSeriesRateToGrid",
                  /* drop_metric_name = */ true,
+             }},
+
+            {"increase",
+             {
+                 "timeSeriesRateToGrid",
+                 /* drop_metric_name = */ true,
+                 PostProcessFunction::Increase,
              }},
 
             {"irate",
@@ -266,13 +285,33 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    builder.select_list.push_back(addParametersToAggregateFunction(
+    ASTPtr result_values = addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
         timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
         timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
         timeSeriesDurationToAST(step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type)));
+        timeSeriesDurationToAST(window, context.timestamp_data_type));
 
+    if (impl_info->post_process_function == PostProcessFunction::Increase)
+    {
+        /// timeSeriesRateToGrid already implements Prometheus counter extrapolation;
+        /// increase() is that per-second rate scaled back to the requested range length.
+        result_values = makeASTFunction(
+            "arrayMap",
+            makeASTLambda(
+                {"x"},
+                makeASTFunction(
+                    "if",
+                    makeASTFunction("isNull", make_intrusive<ASTIdentifier>("x")),
+                    make_intrusive<ASTLiteral>(Field{}),
+                    makeASTFunction(
+                        "multiply",
+                        make_intrusive<ASTIdentifier>("x"),
+                        toFloat64(timeSeriesDurationToAST(window, context.timestamp_data_type))))),
+            std::move(result_values));
+    }
+
+    builder.select_list.push_back(std::move(result_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     if (has_group)
