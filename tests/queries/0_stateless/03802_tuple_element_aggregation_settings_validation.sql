@@ -10,8 +10,8 @@ DROP TABLE test_alter_table;
 -- CREATE path.
 CREATE TABLE test_tuple_order (`n` Tuple(a UInt32, b UInt32)) ENGINE = SummingMergeTree ORDER BY n SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
 
--- ATTACH path (UUID form needed by Atomic DB for ATTACH with full definition).
-ATTACH TABLE test_attach_reject UUID '00000000-0000-0000-0000-000000038020' (`n` Tuple(a UInt32, b UInt32)) ENGINE = SummingMergeTree ORDER BY n SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+-- ATTACH path: validation must also reject plain Tuple sorting key on ATTACH.
+ATTACH TABLE test_attach_reject UUID 'ffffffff-ffff-ffff-ffff-ffffffffffff' (`n` Tuple(a UInt32, b UInt32)) ENGINE = SummingMergeTree ORDER BY n SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
 
 -- Unsupported engines accept the setting silently.
 CREATE TABLE test_replacing_engine (`n` Tuple(a UInt32, b UInt32)) ENGINE = ReplacingMergeTree ORDER BY tuple() SETTINGS allow_tuple_element_aggregation = 1;
