@@ -170,7 +170,7 @@ public:
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             bool serialize_string_with_zero_byte_);
 
-        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false)
+        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {
             Params new_params = *this;
             new_params.keys = keys_;
@@ -178,11 +178,6 @@ public:
             new_params.only_merge = only_merge_;
             return new_params;
         }
-
-        /// `aggregates` is declared `const` so it cannot be mutated after construction.
-        /// This helper builds a new `Params` instance with replacement keys and aggregates,
-        /// copying every other field from `*this`.
-        Params cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_) const;
 
         static Block
         getHeader(const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final);

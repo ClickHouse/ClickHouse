@@ -1,8 +1,5 @@
 #include <Planner/PlannerCorrelatedSubqueries.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 
@@ -23,7 +20,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinOperator.h>
 
-#include <Parsers/NullsAction.h>
 #include <Parsers/SelectUnionMode.h>
 
 #include <Planner/Planner.h>
@@ -258,8 +254,6 @@ QueryPlan decorrelateQueryPlan(
         auto input_header = decorrelated_query_plan.getCurrentHeader();
 
         expression_step->decorrelateActions();
-        expression_step->getExpression().reconcileInputTypesAfterDecorrelation(
-            *input_header, context.planner_context->getQueryContext());
         expression_step->getExpression().appendInputsForUnusedColumns(*input_header);
         for (const auto & column : input_header->getColumnsWithTypeAndName())
             expression_step->getExpression().tryRestoreColumn(column.name);
@@ -299,8 +293,6 @@ QueryPlan decorrelateQueryPlan(
         auto input_header = decorrelated_query_plan.getCurrentHeader();
 
         filter_step->decorrelateActions();
-        filter_step->getExpression().reconcileInputTypesAfterDecorrelation(
-            *input_header, context.planner_context->getQueryContext());
         filter_step->getExpression().appendInputsForUnusedColumns(*input_header);
         for (const auto & column : input_header->getColumnsWithTypeAndName())
             filter_step->getExpression().tryRestoreColumn(column.name);
@@ -377,53 +369,7 @@ QueryPlan decorrelateQueryPlan(
             new_keys.push_back(correlated_column_identifier);
         }
 
-        /// Rebuild aggregate functions whose argument types changed after decorrelation.
-        /// A correlated outer column may become `Nullable` (for example, due to
-        /// `group_by_use_nulls` + ROLLUP/CUBE). The aggregate function was bound at
-        /// analysis time to the original (non-Nullable) type and would otherwise raise
-        /// "Bad cast from type ColumnNullable to ColumnVector<...>" at runtime.
-        /// Build a fresh `AggregateDescriptions` and feed it into a new `Aggregator::Params`
-        /// via `cloneWithKeysAndAggregates` rather than mutating the const member in place.
-        AggregateDescriptions new_aggregates = original_aggregator_params.aggregates;
-        for (auto & agg : new_aggregates)
-        {
-            DataTypes actual_argument_types;
-            actual_argument_types.reserve(agg.argument_names.size());
-            bool can_inspect_all = true;
-            for (const auto & arg_name : agg.argument_names)
-            {
-                if (!input_header->has(arg_name))
-                {
-                    can_inspect_all = false;
-                    break;
-                }
-                actual_argument_types.push_back(input_header->getByName(arg_name).type);
-            }
-
-            if (!can_inspect_all)
-                continue;
-
-            const auto & expected_argument_types = agg.function->getArgumentTypes();
-            bool types_changed = expected_argument_types.size() != actual_argument_types.size();
-            for (size_t i = 0; !types_changed && i < actual_argument_types.size(); ++i)
-            {
-                if (!expected_argument_types[i]->equals(*actual_argument_types[i]))
-                    types_changed = true;
-            }
-
-            if (!types_changed)
-                continue;
-
-            AggregateFunctionProperties properties;
-            agg.function = AggregateFunctionFactory::instance().get(
-                agg.function->getName(),
-                NullsAction::EMPTY,
-                actual_argument_types,
-                agg.parameters,
-                properties);
-        }
-
-        auto new_aggregator_params = original_aggregator_params.cloneWithKeysAndAggregates(new_keys, new_aggregates);
+        auto new_aggregator_params = original_aggregator_params.cloneWithKeys(new_keys);
 
         auto result_step = std::make_unique<AggregatingStep>(
             std::move(input_header),
