@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     UsefulSkipIndexes skip_indexes_,
-    std::optional<KeyCondition> & key_condition_rpn_template_,
+    ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template_,
     bool use_for_disjunctions_,
     MarkCachePtr mark_cache_,
     UncompressedCachePtr uncompressed_cache_,
@@ -35,7 +35,7 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     MergeTreeReaderSettings reader_settings_,
     LoggerPtr log_)
     : skip_indexes(std::move(skip_indexes_))
-    , key_condition_rpn_template(key_condition_rpn_template_)
+    , key_condition_rpn_template(std::move(key_condition_rpn_template_))
     , use_for_disjunctions(use_for_disjunctions_)
     , mark_cache(std::move(mark_cache_))
     , uncompressed_cache(std::move(uncompressed_cache_))
@@ -70,7 +70,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition_template->generateForPartition(part.data_part->partition),
-            key_condition_rpn_template,
+            key_condition_rpn_template->generateForPartition(part.data_part->partition),
             part.data_part,
             ranges,
             part.read_hints,
@@ -95,7 +95,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     if (use_for_disjunctions)
     {
         ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
-                            part.data_part, ranges, key_condition_rpn_template.value(),
+                            part.data_part, ranges, key_condition_rpn_template->generateForPartition(part.data_part->partition),
                             partial_eval_results, reader_settings, log);
 
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",

@@ -875,8 +875,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     /// has only 1 element, but the template has the full RPN which can exceed 32 elements.
     bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
                                 && !use_skip_indexes_on_data_read_
-                                && key_condition_rpn_template.has_value()
-                                && key_condition_rpn_template->getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
+                                && key_condition_rpn_template != nullptr
+                                && key_condition_rpn_template->generateUnsubstituted().getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
 
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
@@ -1012,7 +1012,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
                             index_and_condition.condition_template->generateForPartition(ranges.data_part->partition),
-                            key_condition_rpn_template,
+                            key_condition_rpn_template->generateForPartition(ranges.data_part->partition),
                             ranges.data_part,
                             ranges.ranges,
                             ranges.read_hints,
@@ -1032,10 +1032,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
 
-                if (use_skip_indexes_for_disjunctions && key_condition_rpn_template.has_value())
+                if (use_skip_indexes_for_disjunctions && key_condition_rpn_template != nullptr)
                 {
                     ranges.ranges = mergePartialResultsForDisjunctions(ranges.data_part,
-                                        ranges.ranges, key_condition_rpn_template.value(),
+                                        ranges.ranges, key_condition_rpn_template->generateForPartition(ranges.data_part->partition),
                                         partial_eval_results, reader_settings, log);
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
