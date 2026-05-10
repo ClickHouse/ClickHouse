@@ -1168,6 +1168,13 @@ def test_math_functions():
     )
 
     do_query_test(
+        "clamp(vector(2), scalar(vector(5)), scalar(vector(1)))",
+        500,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    do_query_test(
         "sqrt(vector(1.44))",
         500,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "1.2"]}]}',

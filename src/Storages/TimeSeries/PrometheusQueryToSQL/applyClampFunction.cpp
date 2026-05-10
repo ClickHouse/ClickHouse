@@ -142,19 +142,32 @@ namespace
 
     ASTPtr makeClampBoth(ASTPtr value, ASTPtr min_bound, ASTPtr max_bound)
     {
+        auto min_is_nan = makeASTFunction("isNaN", min_bound->clone());
+        auto max_is_nan = makeASTFunction("isNaN", max_bound->clone());
+        auto bound_is_nan = makeASTFunction("or", min_is_nan->clone(), max_is_nan->clone());
+        auto bounds_are_empty = makeASTFunction(
+            "and",
+            makeASTFunction("not", std::move(min_is_nan)),
+            makeASTFunction("not", std::move(max_is_nan)),
+            makeASTFunction("less", max_bound->clone(), min_bound->clone()));
+
         ASTPtr clamped_value = makeASTFunction(
             "if",
-            makeASTFunction("or", makeASTFunction("isNaN", min_bound->clone()), makeASTFunction("isNaN", max_bound->clone())),
-            makeASTFunction("plus", min_bound->clone(), max_bound->clone()),
+            std::move(bounds_are_empty),
+            make_intrusive<ASTLiteral>(Field{}),
             makeASTFunction(
                 "if",
-                makeASTFunction("less", value->clone(), min_bound->clone()),
-                min_bound->clone(),
+                std::move(bound_is_nan),
+                makeASTFunction("plus", min_bound->clone(), max_bound->clone()),
                 makeASTFunction(
                     "if",
-                    makeASTFunction("greater", value->clone(), max_bound->clone()),
-                    max_bound->clone(),
-                    value->clone())));
+                    makeASTFunction("less", value->clone(), min_bound->clone()),
+                    min_bound->clone(),
+                    makeASTFunction(
+                        "if",
+                        makeASTFunction("greater", value->clone(), max_bound->clone()),
+                        max_bound->clone(),
+                        value->clone()))));
         return keepNullSamplesSparse(std::move(value), std::move(clamped_value));
     }
 }
