@@ -233,8 +233,6 @@ void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
     if (!context->getConfigRef().getBool("query_log.enable_user_query_log", true))
         return;
 
-    query_log->prepareTable();
-
     attachSystemView(
         context,
         system_database,
