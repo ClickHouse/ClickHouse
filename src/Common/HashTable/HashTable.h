@@ -1396,6 +1396,27 @@ public:
         }
     }
 
+    /// Inserts a cell during deserialization. All keys in the serialized stream are unique by
+    /// construction, so we can skip the key-equality check on each probe step: use
+    /// insertUniqueNonZero for non-zero keys (findEmptyCell only checks isZero, not keyEquals)
+    /// and copy directly into zeroValue storage for the zero key.
+    void insertForDeserialization(const Cell & x)
+    {
+        if constexpr (Cell::need_zero_value_storage)
+        {
+            if (Cell::isZero(Cell::getKey(x.getValue()), *this))
+            {
+                ++m_size;
+                this->setHasZero();
+                /// setHasZero default-constructs; overwrite with the actual deserialized cell.
+                /// Safe because Cell is required to be trivially copyable.
+                memcpy(static_cast<void *>(this->zeroValue()), &x, sizeof(x));
+                return;
+            }
+        }
+        insertUniqueNonZero(&x, x.getHash(*this));
+    }
+
     void read(DB::ReadBuffer & rb)
     {
         Cell::State::read(rb);
@@ -1417,7 +1438,7 @@ public:
         {
             Cell x;
             x.read(rb);
-            insert(x.getValue());
+            insertForDeserialization(x);
         }
     }
 
@@ -1441,7 +1462,7 @@ public:
             Cell x;
             DB::assertChar(',', rb);
             x.readText(rb);
-            insert(x.getValue());
+            insertForDeserialization(x);
         }
     }
 
