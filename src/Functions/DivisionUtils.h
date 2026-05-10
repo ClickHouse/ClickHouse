@@ -6,13 +6,6 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
-/// Mixed Float32 / Float64 expressions appear throughout the templated
-/// `apply` methods (Float32 operands compared against Float64
-/// `numeric_limits<...>::max/lowest`, Float32 trunc/quotient mixed with
-/// double-precision constants), so we keep the suppression at file scope.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 namespace DB
 {
 
@@ -66,6 +59,15 @@ inline auto checkedDivision(A a, B b)
         return a / static_cast<A>(b);
     else if constexpr (!is_floating_point<A> && is_floating_point<B>)
         return static_cast<B>(a) / b;
+    else if constexpr (is_floating_point<A> && is_floating_point<B>)
+    {
+        /// Both operands are floating-point; promote to the higher-precision type
+        /// explicitly so that mixed `Float32`/`Float64` calls do not implicitly widen.
+        if constexpr (sizeof(A) >= sizeof(B))
+            return a / static_cast<A>(b);
+        else
+            return static_cast<B>(a) / b;
+    }
     else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         return static_cast<A>(a / b);
     else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)
@@ -112,8 +114,15 @@ struct DivideIntegralImpl
             auto res = checkedDivision(CastA(a), CastB(b));
 
             if constexpr (is_floating_point<decltype(res)>)
+            {
+                /// `std::numeric_limits<Result>::max()` for 64-bit integer Result types does not
+                /// fit precisely in `Float32`, so promote `res` to `double` for the bounds check.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
                 if (isNaN(res) || res >= static_cast<double>(std::numeric_limits<Result>::max()) || res <= std::numeric_limits<Result>::lowest())
                     throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division, because it will produce infinite or too large number");
+#pragma clang diagnostic pop
+            }
 
             return static_cast<Result>(res);
         }
@@ -279,5 +288,3 @@ struct PositiveModuloOrNullImpl : PositiveModuloImpl<A, B>
 };
 
 }
-
-#pragma clang diagnostic pop
