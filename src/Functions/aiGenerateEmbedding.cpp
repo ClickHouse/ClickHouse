@@ -4,6 +4,8 @@
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
 
+#include <Access/Common/AccessFlags.h>
+
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -105,6 +107,8 @@ public:
         const auto * collection_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         chassert(collection_const, "First argument must be a constant String (validated by getReturnTypeImpl)");
         String collection_name = collection_const->getValue<String>();
+
+        getContext()->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
         const auto & named_collection = NamedCollectionFactory::instance().get(collection_name);
 
         String provider_name = named_collection->getOrDefault<String>("provider", "");
