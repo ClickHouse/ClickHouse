@@ -118,21 +118,12 @@ fn fill_boundary(boundary: &h3o::Boundary, out: &mut CellBoundary) {
 }
 
 // ---------------------------------------------------------------------------
-// Coordinate conversion
-// ---------------------------------------------------------------------------
-
-#[no_mangle]
-pub extern "C" fn degsToRads(degrees: f64) -> f64 {
-    degrees.to_radians()
-}
-
-#[no_mangle]
-pub extern "C" fn radsToDegs(radians: f64) -> f64 {
-    radians.to_degrees()
-}
-
-// ---------------------------------------------------------------------------
 // Index conversion: latLngToCell, cellToLatLng, cellToBoundary
+//
+// `degsToRads` / `radsToDegs` and the trivial bit-extraction inspectors
+// (`getResolution`, `getBaseCellNumber`, `isResClassIII`, `res0CellCount`,
+// `pentagonCount`) are inlined directly in `h3api.h` so they do not pay FFI
+// overhead in tight ClickHouse per-row loops.
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
@@ -333,45 +324,8 @@ pub extern "C" fn isValidCell(h: H3Index) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn getResolution(h: H3Index) -> i32 {
-    // Try as cell first (most common case).
-    if let Some(c) = try_cell(h) {
-        return u8::from(c.resolution()) as i32;
-    }
-    // For other valid H3 index types (edges, etc.), extract resolution
-    // directly from bits 52-55, which is the same for all index modes.
-    let mode = (h >> 59) & 0xF;
-    if (1..=4).contains(&mode) {
-        return ((h >> 52) & 0xF) as i32;
-    }
-    0
-}
-
-#[no_mangle]
-pub extern "C" fn getBaseCellNumber(h: H3Index) -> i32 {
-    // Try as cell first (most common case).
-    if let Some(c) = try_cell(h) {
-        return u8::from(c.base_cell()) as i32;
-    }
-    // For other valid H3 index types (edges, etc.), extract base cell
-    // directly from bits 45-51 (7 bits).
-    let mode = (h >> 59) & 0xF;
-    if (1..=4).contains(&mode) {
-        return ((h >> 45) & 0x7F) as i32;
-    }
-    0
-}
-
-#[no_mangle]
 pub extern "C" fn isPentagon(h: H3Index) -> i32 {
     try_cell(h).map_or(0, |c| if c.is_pentagon() { 1 } else { 0 })
-}
-
-#[no_mangle]
-pub extern "C" fn isResClassIII(h: H3Index) -> i32 {
-    try_cell(h).map_or(0, |c| {
-        if c.resolution().is_class3() { 1 } else { 0 }
-    })
 }
 
 // ---------------------------------------------------------------------------
@@ -933,11 +887,6 @@ pub unsafe extern "C" fn getNumCells(res: i32, out: *mut i64) -> H3Error {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn res0CellCount() -> i32 {
-    122
-}
-
 /// H3Error getRes0Cells(H3Index *out)
 #[no_mangle]
 pub unsafe extern "C" fn getRes0Cells(out: *mut H3Index) -> H3Error {
@@ -945,11 +894,6 @@ pub unsafe extern "C" fn getRes0Cells(out: *mut H3Index) -> H3Error {
         *out.add(i) = u64::from(cell);
     }
     E_SUCCESS
-}
-
-#[no_mangle]
-pub extern "C" fn pentagonCount() -> i32 {
-    12
 }
 
 /// H3Error getPentagons(int res, H3Index *out)
@@ -1133,24 +1077,6 @@ mod tests {
     }
 
     #[test]
-    fn test_degs_to_rads() {
-        let r = degsToRads(180.0);
-        assert!((r - std::f64::consts::PI).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_rads_to_degs() {
-        let d = radsToDegs(std::f64::consts::PI);
-        assert!((d - 180.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_get_resolution() {
-        let h = 0x85283473fffffff_u64;
-        assert_eq!(getResolution(h), 5);
-    }
-
-    #[test]
     fn test_max_grid_disk_size() {
         let mut out: i64 = 0;
         assert_eq!(unsafe { maxGridDiskSize(0, &mut out) }, E_SUCCESS);
@@ -1270,17 +1196,6 @@ mod tests {
         let mut orig: H3Index = 0;
         assert_eq!(unsafe { getDirectedEdgeOrigin(edge_valid, &mut orig) }, E_SUCCESS);
         assert_eq!(orig, 599686042433355775);
-    }
-
-    #[test]
-    fn test_resolution_and_base_cell_for_edges() {
-        // getResolution and getBaseCellNumber must work for edge indexes too,
-        // not just cell indexes.
-        let edge = 0x115283473FFFFFFF_u64;
-        // Resolution 5 is encoded in bits 52-55.
-        assert_eq!(getResolution(edge), 5);
-        // Base cell should be non-zero for this edge.
-        assert_ne!(getBaseCellNumber(edge), 0);
     }
 
     #[test]

@@ -10,10 +10,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef uint64_t H3Index;
 typedef uint32_t H3Error;
 
@@ -63,9 +59,42 @@ typedef struct {
     GeoLoop *holes;
 } GeoPolygon;
 
-/* Coordinate conversion */
-double degsToRads(double degrees);
-double radsToDegs(double radians);
+/*
+ * Trivial accessors are inlined here so the compiler can fold them into the
+ * surrounding C++ loops. The original H3 C library exposed the same
+ * operations as macros / inline functions; routing them through Rust FFI
+ * would add a function-call overhead per row that swamps the actual work
+ * (see PR #100272).
+ *
+ * Bit layouts match the C H3 library:
+ *   resolution  : bits 52..55 (4 bits)
+ *   base cell   : bits 45..51 (7 bits)
+ *   class III   : `resolution % 2`
+ *
+ * Note: literals are typed `double` rather than reusing the `long double`
+ * constants in `constants.h` so the multiplications stay in double precision.
+ */
+#ifdef __cplusplus
+static inline double degsToRads(double degrees) { return degrees * 0.017453292519943295; }
+static inline double radsToDegs(double radians) { return radians * 57.29577951308232; }
+static inline int getResolution(H3Index h) { return static_cast<int>((h >> 52) & 0xF); }
+static inline int getBaseCellNumber(H3Index h) { return static_cast<int>((h >> 45) & 0x7F); }
+static inline int isResClassIII(H3Index h) { return static_cast<int>(((h >> 52) & 0xF) % 2); }
+static inline int res0CellCount(void) { return 122; }
+static inline int pentagonCount(void) { return 12; }
+#else
+static inline double degsToRads(double degrees) { return degrees * 0.017453292519943295; }
+static inline double radsToDegs(double radians) { return radians * 57.29577951308232; }
+static inline int getResolution(H3Index h) { return (int)((h >> 52) & 0xF); }
+static inline int getBaseCellNumber(H3Index h) { return (int)((h >> 45) & 0x7F); }
+static inline int isResClassIII(H3Index h) { return (int)(((h >> 52) & 0xF) % 2); }
+static inline int res0CellCount(void) { return 122; }
+static inline int pentagonCount(void) { return 12; }
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Index conversion */
 H3Error latLngToCell(const LatLng *g, int res, H3Index *out);
@@ -83,12 +112,9 @@ H3Error gridPathCellsSize(H3Index start, H3Index end, int64_t *size);
 H3Error gridPathCells(H3Index start, H3Index end, H3Index *out);
 H3Error gridDistance(H3Index origin, H3Index h3, int64_t *distance);
 
-/* Cell inspection */
+/* Cell inspection (full validation; non-trivial). */
 int isValidCell(H3Index h);
-int getResolution(H3Index h);
-int getBaseCellNumber(H3Index h);
 int isPentagon(H3Index h);
-int isResClassIII(H3Index h);
 
 /* Cell hierarchy */
 H3Error cellToParent(H3Index h, int parentRes, H3Index *parent);
@@ -133,9 +159,7 @@ double greatCircleDistanceM(const LatLng *a, const LatLng *b);
 
 /* Cell count */
 H3Error getNumCells(int res, int64_t *out);
-int res0CellCount(void);
 H3Error getRes0Cells(H3Index *out);
-int pentagonCount(void);
 H3Error getPentagons(int res, H3Index *out);
 
 /* Icosahedron faces */
