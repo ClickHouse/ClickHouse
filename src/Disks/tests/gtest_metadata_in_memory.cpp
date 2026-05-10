@@ -5,6 +5,8 @@
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 
+#include <algorithm>
+
 
 class MetadataInMemoryTest : public testing::Test
 {
@@ -136,4 +138,44 @@ TEST_F(MetadataInMemoryTest, TestRollbackRestoresAllTouchedState)
 
     /// `dir/b` is still untouched.
     EXPECT_EQ(metadata->getFileSize("dir/b"), 200);
+}
+
+/// `MetadataStorageInMemory` stores entries with relative paths (e.g. `a/`, `a/file`).
+/// Root-path queries must still match other backends: the root always exists and
+/// `listDirectory("/")` must return top-level entries.
+TEST_F(MetadataInMemoryTest, TestRootPathSemantics)
+{
+    auto metadata = getMetadataStorage();
+
+    EXPECT_TRUE(metadata->existsDirectory("/"));
+    EXPECT_TRUE(metadata->existsFileOrDirectory("/"));
+    EXPECT_TRUE(metadata->listDirectory("/").empty());
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createDirectory("a");
+        transaction->createMetadataFile(
+            "top_file",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "top_file", 10)});
+        transaction->createMetadataFile(
+            "a/inner_file",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k2").serialize(), "a/inner_file", 20)});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/"));
+    EXPECT_TRUE(metadata->existsFileOrDirectory("/"));
+
+    auto root_children = metadata->listDirectory("/");
+    std::sort(root_children.begin(), root_children.end());
+    EXPECT_EQ(root_children, std::vector<std::string>({"a", "top_file"}));
+
+    /// Iterator output should match the relative form used by other lookups so values
+    /// can be passed back into `existsFile` / `findFile` without mangling.
+    auto iter = metadata->iterateDirectory("/");
+    std::vector<std::string> iter_paths;
+    for (; iter->isValid(); iter->next())
+        iter_paths.push_back(iter->path());
+    std::sort(iter_paths.begin(), iter_paths.end());
+    EXPECT_EQ(iter_paths, std::vector<std::string>({"a", "top_file"}));
 }

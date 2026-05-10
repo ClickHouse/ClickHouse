@@ -60,8 +60,13 @@ bool MetadataStorageInMemory::existsFile(const std::string & path) const
 bool MetadataStorageInMemory::existsDirectory(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
+    /// The disk root is implicit and not stored in `directories` (entries use relative paths
+    /// like `a/`, `a/b/`). Other backends (`MetadataStorageFromDisk`, plain object storage)
+    /// report the root as existing, so do the same here.
+    if (path == "/" || path.empty())
+        return true;
     std::string normalized = path;
-    if (!normalized.empty() && normalized.back() != '/')
+    if (normalized.back() != '/')
         normalized += '/';
     return directories.contains(normalized);
 }
@@ -69,11 +74,13 @@ bool MetadataStorageInMemory::existsDirectory(const std::string & path) const
 bool MetadataStorageInMemory::existsFileOrDirectory(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
+    if (path == "/" || path.empty())
+        return true;
     if (findFile(path) != nullptr)
         return true;
 
     std::string normalized = path;
-    if (!normalized.empty() && normalized.back() != '/')
+    if (normalized.back() != '/')
         normalized += '/';
     return directories.contains(normalized);
 }
@@ -94,9 +101,13 @@ Poco::Timestamp MetadataStorageInMemory::getLastModified(const std::string & pat
     if (entry)
         return entry->blob_group->last_modified;
 
+    /// Root is always a directory, regardless of whether anything was created under it.
+    if (path == "/" || path.empty())
+        return {};
+
     /// Check if it's a directory
     std::string normalized = path;
-    if (!normalized.empty() && normalized.back() != '/')
+    if (normalized.back() != '/')
         normalized += '/';
     if (directories.contains(normalized))
         return {};
@@ -108,9 +119,15 @@ std::vector<std::string> MetadataStorageInMemory::listDirectory(const std::strin
 {
     std::shared_lock lock(metadata_mutex);
 
-    std::string prefix = path;
-    if (!prefix.empty() && prefix.back() != '/')
-        prefix += '/';
+    /// Stored entries use relative paths (e.g. `a/`, `a/b/file`). For the disk root (`"/"` or
+    /// empty), treat the prefix as empty so all top-level entries are matched as direct children.
+    std::string prefix;
+    if (path != "/" && !path.empty())
+    {
+        prefix = path;
+        if (prefix.back() != '/')
+            prefix += '/';
+    }
 
     std::set<std::string> result;
 
@@ -145,9 +162,17 @@ std::vector<std::string> MetadataStorageInMemory::listDirectory(const std::strin
 DirectoryIteratorPtr MetadataStorageInMemory::iterateDirectory(const std::string & path) const
 {
     auto children = listDirectory(path);
-    std::string prefix = path;
-    if (!prefix.empty() && prefix.back() != '/')
-        prefix += '/';
+
+    /// Paths are stored relative to the disk root (e.g. `a/b/file` rather than `/a/b/file`),
+    /// and lookup methods like `findFile` match the stored form. Keep the iterator output
+    /// in the same form so its values can be passed back into other methods of this storage.
+    std::string prefix;
+    if (path != "/" && !path.empty())
+    {
+        prefix = path;
+        if (prefix.back() != '/')
+            prefix += '/';
+    }
 
     std::vector<fs::path> paths;
     paths.reserve(children.size());
