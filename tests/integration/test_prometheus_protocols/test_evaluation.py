@@ -356,11 +356,15 @@ def _sort_http_api_response_series(response):
 
 
 def do_unordered_query_test(query, timestamp, result, chresult, eps=0):
-    actual_prometheus_result = _sort_http_api_response_series(
-        execute_query_in_prometheus(query, timestamp)
+    actual_prometheus_reader_result = _sort_http_api_response_series(
+        execute_query_in_prometheus_reader(query, timestamp)
+    )
+    actual_prometheus_receiver_result = _sort_http_api_response_series(
+        execute_query_in_prometheus_receiver(query, timestamp)
     )
     expected_result = _sort_http_api_response_series(result)
-    assert http_api_response_close_to(actual_prometheus_result, expected_result, eps=eps)
+    assert http_api_response_close_to(actual_prometheus_reader_result, expected_result, eps=eps)
+    assert http_api_response_close_to(actual_prometheus_receiver_result, expected_result, eps=eps)
 
     actual_chresult = sorted(TSV.toMat(execute_query_in_clickhouse_sql(query, timestamp)))
     expected_chresult = sorted(chresult, key=lambda row: str(row))
