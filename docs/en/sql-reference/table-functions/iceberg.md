@@ -649,6 +649,47 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 - The catalog's own authorization (REST catalog auth, AWS Glue IAM, etc.) is enforced independently when ClickHouse updates the metadata
 :::
 
+## Altinity Antalya branch
+
+### Specify storage type in arguments
+
+Only in the Altinity Antalya branch does the `iceberg` table function support all storage types. The storage type can be specified using the named argument `storage_type`. Supported values are `s3`, `azure`, `hdfs`, and `local`.
+
+```sql
+iceberg(storage_type='s3', url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+iceberg(storage_type='azure', connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+iceberg(storage_type='hdfs', path_to_table, [,format] [,compression_method])
+
+iceberg(storage_type='local', path_to_table, [,format] [,compression_method])
+```
+
+### Specify storage type in named collection
+
+Only in the Altinity Antalya branch can storage_type be included as part of a named collection. This allows for centralized configuration of storage settings.
+
+```xml
+<clickhouse>
+    <named_collections>
+        <iceberg_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test<access_key_id>
+            <secret_access_key>test</secret_access_key>
+            <format>auto</format>
+            <structure>auto</structure>
+            <storage_type>s3</storage_type>
+        </iceberg_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+iceberg(named_collection[, option=value [,..]])
+```
+
+The default value for `storage_type` is `s3`.
+
 ## See Also {#see-also}
 
 * [Iceberg engine](/engines/table-engines/integrations/iceberg.md)

@@ -46,11 +46,13 @@ public:
     void getTableMetadata(
         const std::string & database_name,
         const std::string & table_name,
+        DB::ContextPtr context_,
         TableMetadata & result) const override;
 
     bool tryGetTableMetadata(
         const std::string & database_name,
         const std::string & table_name,
+        DB::ContextPtr context_,
         TableMetadata & result) const override;
 
     std::optional<StorageType> getStorageType() const override
@@ -78,6 +80,9 @@ private:
     std::string region;
     CatalogSettings settings;
     DB::ASTPtr table_engine_definition;
+    std::unordered_set<std::string> allowed_namespaces;
+
+    bool isNamespaceAllowed(const std::string & namespace_) const;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
     DB::Names getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;

@@ -39,8 +39,8 @@ ReadBufferIterator::ReadBufferIterator(
     , read_keys(read_keys_)
     , prev_read_keys_size(read_keys_.size())
 {
-    if (configuration->format != "auto")
-        format = configuration->format;
+    if (configuration->getFormat() != "auto")
+        format = configuration->getFormat();
 }
 
 SchemaCache::Key ReadBufferIterator::getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const
@@ -143,7 +143,7 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto impl
         = createReadBuffer(current_object_info->relative_path_with_metadata, object_storage, context, getLogger("ReadBufferIterator"));
 
-    const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
+    const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->getCompressionMethod());
     const auto zstd_window = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
 
     return wrapReadBufferWithCompressionMethod(std::move(impl), compression_method, zstd_window);
@@ -260,13 +260,13 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
         if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
         {
-            compression_method = chooseCompressionMethod(filename, configuration->compression_method);
+            compression_method = chooseCompressionMethod(filename, configuration->getCompressionMethod());
             const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else
         {
-            compression_method = chooseCompressionMethod(filename, configuration->compression_method);
+            compression_method = chooseCompressionMethod(filename, configuration->getCompressionMethod());
             read_buf = createReadBuffer(
                 current_object_info->relative_path_with_metadata, object_storage, getContext(), getLogger("ReadBufferIterator"));
         }

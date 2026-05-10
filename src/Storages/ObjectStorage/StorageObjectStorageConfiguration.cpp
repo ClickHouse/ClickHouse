@@ -90,80 +90,79 @@ bool StorageObjectStorageConfiguration::shouldReloadSchemaForConsistency(Context
 
 
 void StorageObjectStorageConfiguration::initialize(
-    StorageObjectStorageConfiguration & configuration_to_initialize,
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
     const StorageID * table_id)
 {
     std::string disk_name;
-    if (configuration_to_initialize.isDataLakeConfiguration())
+    if (isDataLakeConfiguration())
     {
-        const auto & storage_settings = configuration_to_initialize.getDataLakeSettings();
+        const auto & storage_settings = getDataLakeSettings();
         disk_name = storage_settings[DataLakeStorageSetting::disk].changed
             ? storage_settings[DataLakeStorageSetting::disk].value
             : "";
     }
     if (!disk_name.empty())
-        configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
+        fromDisk(disk_name, engine_args, local_context, with_table_structure);
     else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
-        configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
+        fromNamedCollection(*named_collection, local_context);
     else
-        configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
+        fromAST(engine_args, local_context, with_table_structure);
 
-    if (configuration_to_initialize.isNamespaceWithGlobs())
+    if (isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Expression can not have wildcards inside {} name", configuration_to_initialize.getNamespaceType());
+                        "Expression can not have wildcards inside {} name", getNamespaceType());
 
-    if (configuration_to_initialize.isDataLakeConfiguration())
+    if (isDataLakeConfiguration())
     {
-        if (configuration_to_initialize.partition_strategy_type != PartitionStrategyFactory::StrategyType::NONE)
+        if (getPartitionStrategyType() != PartitionStrategyFactory::StrategyType::NONE)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
         }
     }
-    else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
+    else if (getPartitionStrategyType() == PartitionStrategyFactory::StrategyType::NONE)
     {
-        if (configuration_to_initialize.getRawPath().hasPartitionWildcard())
+        if (getRawPath().hasPartitionWildcard())
         {
             // Promote to wildcard in case it is not data lake to make it backwards compatible
-            configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+            setPartitionStrategyType(PartitionStrategyFactory::StrategyType::WILDCARD);
         }
     }
 
-    if (configuration_to_initialize.format == "auto")
+    if (format == "auto")
     {
-        if (configuration_to_initialize.isDataLakeConfiguration())
+        if (isDataLakeConfiguration())
         {
-            configuration_to_initialize.format = "Parquet";
+            format = "Parquet";
         }
         else
         {
-            configuration_to_initialize.format
+            format
                 = FormatFactory::instance()
-                      .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : configuration_to_initialize.getRawPath().path)
+                      .tryGetFormatFromFileName(isArchive() ? getPathInArchive() : getRawPath().path)
                       .value_or("auto");
         }
     }
     else
-        FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
+        FormatFactory::instance().checkFormatName(format);
 
-    if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+    if (partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
     {
-        configuration_to_initialize.file_path_generator = std::make_shared<ObjectStorageAppendFilePathGenerator>(
-            configuration_to_initialize.getRawPath().path,
-            configuration_to_initialize.format);
+        file_path_generator = std::make_shared<ObjectStorageAppendFilePathGenerator>(
+            getRawPath().path,
+            format);
     }
     else
     {
-        configuration_to_initialize.file_path_generator = std::make_shared<ObjectStorageWildcardFilePathGenerator>(configuration_to_initialize.getRawPath().path);
+        file_path_generator = std::make_shared<ObjectStorageWildcardFilePathGenerator>(getRawPath().path);
     }
 
     /// We shouldn't set path for disk setup because path prefix is already set in used object_storage.
     if (disk_name.empty())
-        configuration_to_initialize.read_path = configuration_to_initialize.file_path_generator->getPathForRead();
+        read_path = file_path_generator->getPathForRead();
 
-    configuration_to_initialize.initialized = true;
+    initialized = true;
 }
 
 String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescription & columns)

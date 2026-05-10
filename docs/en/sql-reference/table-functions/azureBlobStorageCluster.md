@@ -54,6 +54,20 @@ SELECT count(*) FROM azureBlobStorageCluster(
 
 See [azureBlobStorage](/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
 
+## Altinity Antalya branch
+
+### `object_storage_cluster` setting.
+
+Only in the Altinity Antalya branch, the alternative syntax for the `azureBlobStorageCluster` table function is avilable. This allows the `azureBlobStorage` function to be used with the non-empty `object_storage_cluster` setting, specifying a cluster name. This enables distributed queries over Azure Blob Storage across a ClickHouse cluster.
+
+```sql
+SELECT count(*) FROM azureBlobStorage(
+        'http://azurite1:10000/devstoreaccount1', 'testcontainer', 'test_cluster_count.csv', 'devstoreaccount1',
+        'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
+        'auto', 'key UInt64')
+SETTINGS object_storage_cluster='cluster_simple'
+```
+
 ## Related {#related}
 
 - [AzureBlobStorage engine](../../engines/table-engines/integrations/azureBlobStorage.md)

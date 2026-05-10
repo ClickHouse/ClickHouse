@@ -818,6 +818,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     if (!src_storage_cluster)
         return {};
 
+    if (src_storage_cluster->getClusterName(local_context).empty())
+        return {};
+
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
         return {};
 

@@ -45,6 +45,17 @@ A table with the specified structure for reading data from cluster in the specif
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_etag` — The etag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
 
+## Altinity Antalya branch
+
+### `object_storage_cluster` setting.
+
+Only in the Altinity Antalya branch alternative syntax for `deltaLakeCluster` table function is available. This allows the `deltaLake` function to be used with the non-empty `object_storage_cluster` setting, specifying a cluster name. This enables distributed queries over Delta Lake Storage across a ClickHouse cluster.
+
+```sql
+SELECT count(*) FROM deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+SETTINGS object_storage_cluster='cluster_simple'
+```
+
 ## Related {#related}
 
 - [deltaLake engine](engines/table-engines/integrations/deltalake.md)

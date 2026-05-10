@@ -44,6 +44,10 @@ struct URI
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
     static void validateKey(const std::string & key, const Poco::URI & uri);
+
+    /// Returns true if 'region' string is an AWS S3 region
+    /// https://docs.aws.amazon.com/general/latest/gr/s3.html
+    static bool isAWSRegion(std::string_view region);
 };
 
 }

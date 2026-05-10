@@ -686,6 +686,9 @@ class ClickHouseCluster:
         self.minio_secret_key = minio_secret_key
 
         self.spark_session = None
+        self.spark_iceberg_external_port = 8080
+        self.spark_iceberg_external_port_2 = 10002
+        self.spark_iceberg_external_port_3 = 10003
         self.with_iceberg_catalog = False
         self.iceberg_rest_catalog_port = 8182
         self.with_glue_catalog = False
@@ -899,6 +902,8 @@ class ClickHouseCluster:
         # available when with_letsencrypt_pebble = True
         self._letsencrypt_pebble_api_port = 14000
         self._letsencrypt_pebble_management_port = 15000
+
+        self.iceberg_rest_external_port = 8182
 
         self.docker_client: docker.DockerClient = None
         self.is_up = False
@@ -1717,6 +1722,10 @@ class ClickHouseCluster:
     def setup_iceberg_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
     ):
+        env_variables["ICEBERG_REST_EXTERNAL_PORT"] = str(self.iceberg_rest_external_port)
+        env_variables["SPARK_ICEBERG_EXTERNAL_PORT"] = str(self.spark_iceberg_external_port)
+        env_variables["SPARK_ICEBERG_EXTERNAL_PORT_2"] = str(self.spark_iceberg_external_port_2)
+        env_variables["SPARK_ICEBERG_EXTERNAL_PORT_3"] = str(self.spark_iceberg_external_port_3)
         self.with_iceberg_catalog = True
         file_name = "docker_compose_iceberg_rest_catalog.yml"
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":

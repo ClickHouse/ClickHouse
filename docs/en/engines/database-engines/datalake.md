@@ -46,21 +46,22 @@ catalog_type,
 
 The following settings are supported:
 
-| Setting                 | Description                                                                             |
-|-------------------------|-----------------------------------------------------------------------------------------|
-| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg) |
-| `warehouse`             | The warehouse/database name to use in the catalog.                                      |
-| `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
-| `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
-| `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                        |
-| `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |
-| `oauth_server_uri`      | URI of the OAuth2 authorization server for authentication                               |
+| Setting                 | Description                                                                                   |
+|-------------------------|-----------------------------------------------------------------------------------------------|
+| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg)       |
+| `warehouse`             | The warehouse/database name to use in the catalog.                                            |
+| `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                            |
+| `auth_header`           | Custom HTTP header for authentication with the catalog service                                |
+| `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                              |
+| `storage_endpoint`      | Endpoint URL for the underlying storage                                                       |
+| `oauth_server_uri`      | URI of the OAuth2 authorization server for authentication                                     |
 | `vended_credentials`    | Boolean indicating whether to use vended credentials from the catalog (supports AWS S3 and Azure ADLS Gen2) |
-| `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                  |
-| `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials)              |
-| `region`                | AWS region for the service (e.g., `us-east-1`)                                          |
-| `dlf_access_key_id`     | Access key ID for DLF access                                                            |
-| `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
+| `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                        |
+| `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials)                    |
+| `region`                | AWS region for the service (e.g., `us-east-1`)                                                |
+| `dlf_access_key_id`     | Access key ID for DLF access                                                                  |
+| `dlf_access_key_secret` | Access key Secret for DLF access                                                              |
+| `namespaces`            | Comma-separated list of namespaces, implemented for catalog types: `rest`, `glue` and `unity` |
 
 ## Examples {#examples}
 
@@ -84,3 +85,29 @@ SETTINGS
 SHOW TABLES IN databse_name;       
 SELECT count() from database_name.table_name;
 ```
+
+## Namespace filter {#namespace}
+
+By default, ClickHouse reads tables from all namespaces available in the catalog. You can limit this behavior using the `namespaces` database setting. The value should be a comma‑separated list of namespaces that are allowed to be read.
+
+Supported catalog types are `rest`, `glue` and `unity`.
+
+For example, if the catalog contains three namespaces - `dev`, `stage`, and `prod` - and you want to read data only from dev and stage, set:
+```
+namespaces='dev,stage'
+```
+
+### Nested namespaces {#namespace-nested}
+
+The Iceberg (`rest`) catalog supports nested namespaces. The `namespaces` filter accepts the following patterns:
+
+- `namespace` - includes tables from the specified namespace, but not from its nested namespaces.
+- `namespace.nested` - includes tables from the nested namespace, but not from the parent.
+- `namespace.*` - includes tables from all nested namespaces, but not from the parent.
+
+If you need to include both a namespace and its nested namespaces, specify both explicitly. For example:
+```
+namespaces='namespace,namespace.*'
+```
+
+The default value is '*', which means all namespaces are included.

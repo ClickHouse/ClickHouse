@@ -112,7 +112,11 @@ StorageURLCluster::StorageURLCluster(
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
+void StorageURLCluster::updateQueryToSendIfNeeded(
+    ASTPtr & query,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context,
+    bool /*make_cluster_function*/)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)

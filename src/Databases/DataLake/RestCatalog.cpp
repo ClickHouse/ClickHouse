@@ -50,6 +50,7 @@ namespace DB::ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int CATALOG_NAMESPACE_DISABLED;
 }
 
 namespace DataLake
@@ -138,6 +139,7 @@ RestCatalog::RestCatalog(
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
+    const std::string & namespaces_,
     DB::ContextPtr context_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
@@ -146,6 +148,7 @@ RestCatalog::RestCatalog(
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
+    , allowed_namespaces(namespaces_)
 {
     if (!catalog_credential_.empty())
     {
@@ -165,6 +168,7 @@ RestCatalog::RestCatalog(
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
+    const std::string & namespaces_,
     DB::ContextPtr context_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
@@ -173,6 +177,7 @@ RestCatalog::RestCatalog(
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
+    , allowed_namespaces(namespaces_)
 {
 }
 
@@ -250,8 +255,9 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
+    const std::string & namespaces_,
     DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, context_)
+    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, namespaces_, context_)
     , tenant_id(onelake_tenant_id)
 {
     client_id = onelake_client_id;
@@ -361,8 +367,9 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_client_secret_,
     const std::string & google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
+    const std::string & namespaces_,
     DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, "", "", false, context_)
+    : RestCatalog(warehouse_, base_url_, "", "", false, namespaces_, context_)
     , google_project_id(google_project_id_)
     , google_service_account(google_service_account_)
     , google_metadata_service(google_metadata_service_)
@@ -574,6 +581,8 @@ bool RestCatalog::empty() const
     bool found_table = false;
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
+        if (!allowed_namespaces.isNamespaceAllowed(namespace_name, /*nested*/ false))
+            return false;
         const auto tables = getTables(namespace_name, /* limit */1);
         found_table = !tables.empty();
         return found_table;
@@ -597,6 +606,8 @@ DB::Names RestCatalog::getTables() const
 
         auto execute_for_each_namespace = [&](const std::string & current_namespace)
         {
+            if (!allowed_namespaces.isNamespaceAllowed(current_namespace, /*nested*/ false))
+                return;
             runner.enqueueAndKeepTrack(
             [=, &tables, &mutex, this]
             {
@@ -639,9 +650,21 @@ void RestCatalog::getNamespacesRecursive(
             break;
 
         if (func)
-            func(current_namespace);
+        {
+            if (allowed_namespaces.isNamespaceAllowed(current_namespace, /*nested*/ false))
+                func(current_namespace);
+            else
+            {
+                LOG_DEBUG(log, "Tables in namespace {} are filtered", current_namespace);
+            }
+        }
 
-        getNamespacesRecursive(current_namespace, result, stop_condition, func);
+        if (allowed_namespaces.isNamespaceAllowed(current_namespace, /*nested*/ true))
+            getNamespacesRecursive(current_namespace, result, stop_condition, func);
+        else
+        {
+            LOG_DEBUG(log, "Nested namespaces in namespace {} are filtered", current_namespace);
+        }
     }
 }
 
@@ -752,6 +775,10 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
 DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
 {
+    if (!allowed_namespaces.isNamespaceAllowed(base_namespace, /*nested*/ false))
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
+            "Namespace {} is filtered by `namespaces` database parameter", base_namespace);
+
     auto encoded_namespace = encodeNamespaceForURI(base_namespace);
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
 
@@ -807,20 +834,23 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
 bool RestCatalog::existsTable(const std::string & namespace_name, const std::string & table_name) const
 {
     TableMetadata table_metadata;
-    return tryGetTableMetadata(namespace_name, table_name, table_metadata);
+    return tryGetTableMetadata(namespace_name, table_name, getContext(), table_metadata);
 }
 
 bool RestCatalog::tryGetTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
+    DB::ContextPtr context_,
     TableMetadata & result) const
 {
     try
     {
-        return getTableMetadataImpl(namespace_name, table_name, result);
+        return getTableMetadataImpl(namespace_name, table_name, context_, result);
     }
     catch (const DB::Exception & ex)
     {
+        if (ex.code() == DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED)
+            throw;
         LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
         return false;
     }
@@ -829,18 +859,24 @@ bool RestCatalog::tryGetTableMetadata(
 void RestCatalog::getTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
+    DB::ContextPtr context_,
     TableMetadata & result) const
 {
-    if (!getTableMetadataImpl(namespace_name, table_name, result))
+    if (!getTableMetadataImpl(namespace_name, table_name, context_, result))
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from iceberg catalog");
 }
 
 bool RestCatalog::getTableMetadataImpl(
     const std::string & namespace_name,
     const std::string & table_name,
+    DB::ContextPtr context_,
     TableMetadata & result) const
 {
     LOG_DEBUG(log, "Checking table {} in namespace {}", table_name, namespace_name);
+
+    if (!allowed_namespaces.isNamespaceAllowed(namespace_name, /*nested*/ false))
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
+            "Namespace {} is filtered by `namespaces` database parameter", namespace_name);
 
     DB::HTTPHeaderEntries headers;
     if (result.requiresCredentials())
@@ -898,8 +934,8 @@ bool RestCatalog::getTableMetadataImpl(
     if (result.requiresSchema())
     {
         // int format_version = metadata_object->getValue<int>("format-version");
-        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor();
-        auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
+        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(context_);
+        auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, context_, log);
         auto schema = schema_processor.getClickhouseTableSchemaById(id);
         result.setSchema(*schema);
     }
@@ -997,6 +1033,10 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
 void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
 {
+    if (!allowed_namespaces.isNamespaceAllowed(namespace_name, /*nested*/ false))
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
+            "Failed to create table {}, namespace {} is filtered by `namespaces` database parameter", table_name, namespace_name);
+
     createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
 
     const std::string endpoint = fmt::format("{}/namespaces/{}/tables", base_url, namespace_name);
@@ -1101,6 +1141,11 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
 void RestCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
+    if (!allowed_namespaces.isNamespaceAllowed(namespace_name, /*nested*/ false))
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
+            "Failed to drop table {}, namespace {} is filtered by `namespaces` database parameter",
+            table_name, namespace_name);
+
     const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested=False", base_url, namespace_name, table_name);
 
     Poco::JSON::Object::Ptr request_body = nullptr;
@@ -1227,6 +1272,70 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         auto [new_credentials, _] = getCredentialsAndEndpoint(config_object, location);
         return new_credentials;
     };
+}
+
+/// "alpha,alpha.a1,bravo,bravo.*,charlie,delta.d1,echo.*"
+/// allows tables from
+/// - "alpha" namespace
+/// - "alpha.a1" namespace
+/// - "bravo" namespace
+/// - any nested namespaces of "bravo"
+/// - "charlie" namespace, but not from nested of "charlie"
+/// - "delta.d1" namespace, but not from "delta"
+/// - any nested namespaces of "echo", but not "echo" itself
+/// "bravo.*.b2" makes no sense for now, asterisk allows all nested
+RestCatalog::AllowedNamespaces::AllowedNamespaces(const std::string & namespaces_)
+{
+    std::vector<std::string> list_of_namespaces;
+    boost::split(list_of_namespaces, namespaces_, boost::is_any_of(", "), boost::token_compress_on);
+    for (const auto & ns : list_of_namespaces)
+    {
+        std::vector<std::string> list_of_nested_namespaces;
+        boost::split(list_of_nested_namespaces, ns, boost::is_any_of("."));
+
+        size_t len = list_of_nested_namespaces.size();
+        if (!len)
+            continue;
+
+        AllowedNamespaces * current = &(nested_namespaces[list_of_nested_namespaces[0]]);
+        for (size_t i = 1; i <= len; ++i)
+        {
+            if (i == len)
+                current->allow_tables = true;
+            else
+            {
+                current = &(current->nested_namespaces[list_of_nested_namespaces[i]]);
+                if (list_of_nested_namespaces[i] == "*")
+                {
+                    current->allow_tables = true;
+                    break;
+                }
+            }
+        }
+    }
+}
+
+bool RestCatalog::AllowedNamespaces::isNamespaceAllowed(const std::string & namespace_, bool nested) const
+{
+    // Trivial case, check here to avoid split namespace on nested
+    if (nested_namespaces.contains("*"))
+        return true;
+
+    std::vector<std::string> list_of_nested_namespaces;
+    boost::split(list_of_nested_namespaces, namespace_, boost::is_any_of("."));
+
+    const AllowedNamespaces * current = this;
+    for (const auto & nns : list_of_nested_namespaces)
+    {
+        if (current->nested_namespaces.contains("*"))
+            return true;
+        auto it = current->nested_namespaces.find(nns);
+        if (it == current->nested_namespaces.end())
+            return false;
+        current = &(it->second);
+    }
+
+    return nested ? !current->nested_namespaces.empty() : current->allow_tables;
 }
 
 }

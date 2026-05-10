@@ -6,9 +6,8 @@ from helpers.iceberg_utils import (
     execute_spark_query_general,
 )
 
-# TODO - turn on after merge alternative syntax
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
-def _test_cluster_joins(started_cluster_iceberg_with_spark, storage_type):
+def test_cluster_joins(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_cluster_joins_" + storage_type + "_" + get_uuid_str()

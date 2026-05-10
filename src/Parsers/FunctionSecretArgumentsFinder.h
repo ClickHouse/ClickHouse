@@ -3,9 +3,12 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/re2.h>
 #include <Common/maskURIPassword.h>
+#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Core/QualifiedTableName.h>
 #include <base/defines.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -29,6 +32,21 @@ public:
         virtual ~Arguments() = default;
         virtual size_t size() const = 0;
         virtual std::unique_ptr<Argument> at(size_t n) const = 0;
+        void skipArgument(size_t n) { skipped_indexes.insert(n); }
+        void unskipArguments() { skipped_indexes.clear(); }
+        size_t getRealIndex(size_t n) const
+        {
+            for (auto idx : skipped_indexes)
+            {
+                if (n < idx)
+                    break;
+                ++n;
+            }
+            return n;
+        }
+        size_t skippedSize() const { return skipped_indexes.size(); }
+    private:
+        std::set<size_t> skipped_indexes;
     };
 
     virtual ~AbstractFunction() = default;
@@ -77,14 +95,15 @@ protected:
     {
         if (index >= function->arguments->size())
             return;
+        auto real_index = function->arguments->getRealIndex(index);
         if (!result.count)
         {
-            result.start = index;
+            result.start = real_index;
             result.are_named = argument_is_named;
         }
-        chassert(index >= result.start); /// We always check arguments consecutively
+        chassert(real_index >= result.start); /// We always check arguments consecutively
         chassert(result.replacement.empty()); /// We shouldn't use replacement with masking other arguments
-        result.count = index + 1 - result.start;
+        result.count = real_index + 1 - result.start;
         if (!argument_is_named)
             result.are_named = false;
     }
@@ -102,8 +121,16 @@ protected:
         {
             findMongoDBSecretArguments();
         }
+        else if (function->name() == "iceberg")
+        {
+            findIcebergFunctionSecretArguments(/* is_cluster_function= */ false);
+        }
+        else if (function ->name() == "icebergCluster")
+        {
+            findIcebergFunctionSecretArguments(/* is_cluster_function= */ true);
+        }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
-                 (function->name() == "deltaLake") || (function->name() == "hudi") || (function->name() == "iceberg") ||
+                 (function->name() == "deltaLake") || (function->name() == "hudi") ||
                  (function->name() == "gcs") || (function->name() == "icebergS3") || (function->name() == "paimon") ||
                  (function->name() == "paimonS3"))
         {
@@ -112,7 +139,7 @@ protected:
         }
         else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
                  (function ->name() == "deltaLakeCluster") || (function ->name() == "deltaLakeS3Cluster") ||
-                 (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster"))
+                 (function ->name() == "icebergS3Cluster"))
         {
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
@@ -275,6 +302,12 @@ protected:
             findSecretNamedArgument("secret_access_key", 1);
             return;
         }
+        if (is_cluster_function && isNamedCollectionName(1))
+        {
+            /// s3Cluster(cluster, named_collection, ..., secret_access_key = 'secret_access_key', ...)
+            findSecretNamedArgument("secret_access_key", 2);
+            return;
+        }
 
         findSecretNamedArgument("secret_access_key", url_arg_idx);
 
@@ -282,6 +315,7 @@ protected:
         /// s3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
         /// s3('url', 'format', 'structure' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
         size_t count = excludeS3OrURLNestedMaps();
+
         if ((url_arg_idx + 3 <= count) && (count <= url_arg_idx + 4))
         {
             String second_arg;
@@ -346,6 +380,48 @@ protected:
             markSecretArgument(url_arg_idx + 4);
     }
 
+    std::string findIcebergStorageType(bool is_cluster_function)
+    {
+        std::string storage_type = "s3";
+
+        size_t count = function->arguments->size();
+        if (!count)
+            return storage_type;
+
+        auto storage_type_idx = findNamedArgument(&storage_type, "storage_type");
+        if (storage_type_idx != -1)
+        {
+            storage_type = Poco::toLower(storage_type);
+            function->arguments->skipArgument(storage_type_idx);
+        }
+        else if (isNamedCollectionName(is_cluster_function ? 1 : 0))
+        {
+            std::string collection_name;
+            if (function->arguments->at(is_cluster_function ? 1 : 0)->tryGetString(&collection_name, true))
+            {
+                NamedCollectionPtr collection = NamedCollectionFactory::instance().tryGet(collection_name);
+                if (collection && collection->has("storage_type"))
+                {
+                    storage_type = Poco::toLower(collection->get<std::string>("storage_type"));
+                }
+            }
+        }
+
+        return storage_type;
+    }
+
+    void findIcebergFunctionSecretArguments(bool is_cluster_function)
+    {
+        auto storage_type = findIcebergStorageType(is_cluster_function);
+
+        if (storage_type == "s3")
+            findS3FunctionSecretArguments(is_cluster_function);
+        else if (storage_type == "azure")
+            findAzureBlobStorageFunctionSecretArguments(is_cluster_function);
+
+        function->arguments->unskipArguments();
+    }
+
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0)
     {
         String url_arg;
@@ -369,7 +445,7 @@ protected:
             if (RE2::Replace(&url_arg, account_key_pattern, "AccountKey=[HIDDEN]\\1"))
             {
                 chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
-                result.start = url_arg_idx;
+                result.start = function->arguments->getRealIndex(url_arg_idx);
                 result.are_named = argument_is_named;
                 result.count = 1;
                 result.replacement = url_arg;
@@ -380,7 +456,7 @@ protected:
             if (RE2::Replace(&url_arg, sas_signature_pattern, "SharedAccessSignature=[HIDDEN]\\1"))
             {
                 chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
-                result.start = url_arg_idx;
+                result.start = function->arguments->getRealIndex(url_arg_idx);
                 result.are_named = argument_is_named;
                 result.count = 1;
                 result.replacement = url_arg;
@@ -551,6 +627,7 @@ protected:
     void findTableEngineSecretArguments()
     {
         const String & engine_name = function->name();
+
         if (engine_name == "ExternalDistributed")
         {
             /// ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password')
@@ -568,10 +645,13 @@ protected:
         {
             findMongoDBSecretArguments();
         }
+        else if (engine_name == "Iceberg")
+        {
+            findIcebergTableEngineSecretArguments();
+        }
         else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS")
                  || (engine_name == "DeltaLake") || (engine_name == "Hudi")
-                 || (engine_name == "Iceberg") || (engine_name == "IcebergS3")
-                 || (engine_name == "S3Queue"))
+                 || (engine_name == "IcebergS3") || (engine_name == "S3Queue"))
         {
             /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
             findS3TableEngineSecretArguments();
@@ -580,7 +660,7 @@ protected:
         {
             findURLSecretArguments();
         }
-        else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
+        else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue" || engine_name == "IcebergAzure")
         {
             findAzureBlobStorageTableEngineSecretArguments();
         }
@@ -698,6 +778,18 @@ protected:
         markSecretArgument(2);
     }
 
+    void findIcebergTableEngineSecretArguments()
+    {
+        auto storage_type = findIcebergStorageType(0);
+
+        if (storage_type == "s3")
+            findS3TableEngineSecretArguments();
+        else if (storage_type == "azure")
+            findAzureBlobStorageTableEngineSecretArguments();
+
+        function->arguments->unskipArguments();
+    }
+
     void findDatabaseEngineSecretArguments()
     {
         const String & engine_name = function->name();
@@ -714,7 +806,7 @@ protected:
             /// S3('url', 'access_key_id', 'secret_access_key')
             findS3DatabaseSecretArguments();
         }
-        else if (engine_name == "DataLakeCatalog")
+        else if (engine_name == "DataLakeCatalog" || engine_name == "Iceberg")
         {
             findDataLakeCatalogSecretArguments();
         }
