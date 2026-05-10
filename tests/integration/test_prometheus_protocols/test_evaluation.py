@@ -548,11 +548,10 @@ def test_label_functions():
         [["[('__name__','foo'),('metric_copy','foo_metric'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
     )
 
-    do_query_test(
-        'label_replace(foo{shape="square"}, "~valid_utf8", "$1", "shape", "(.*)")',
+    do_clickhouse_only_query_test_expect_error(
+        'label_replace(foo{shape="square"}, "~invalid", "$1", "shape", "(.*)")',
         130,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s", "~valid_utf8": "square"}, "value": [130, "40"]}]}',
-        [["[('__name__','foo'),('shape','square'),('size','s'),('~valid_utf8','square')]", "1970-01-01 00:02:10.000", 40]],
+        "invalid destination label name in label_replace()",
     )
 
     do_query_test(
@@ -629,6 +628,12 @@ def test_label_functions():
         'label_join(foo{shape="square"}, "", ":", "shape")',
         130,
         "invalid destination label name in label_join()",
+        "invalid destination label name in label_join()",
+    )
+
+    do_clickhouse_only_query_test_expect_error(
+        'label_join(foo{shape="square"}, "~invalid", ":", "shape")',
+        130,
         "invalid destination label name in label_join()",
     )
 

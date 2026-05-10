@@ -1,7 +1,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelFunction.h>
 
 #include <Common/Exception.h>
-#include <Common/isValidUTF8.h>
+#include <Common/StringUtils.h>
 #include <Common/re2.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -28,8 +28,13 @@ namespace
 
     bool isValidPrometheusLabelName(std::string_view label_name)
     {
-        return !label_name.empty()
-            && UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size());
+        if (label_name.empty())
+            return false;
+
+        if (!isAlphaASCII(label_name.front()) && label_name.front() != '_')
+            return false;
+
+        return std::ranges::all_of(label_name.substr(1), [](char c) { return isAlphaNumericASCII(c) || c == '_'; });
     }
 
     String makePrometheusRegex(std::string_view regex)
