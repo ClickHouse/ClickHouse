@@ -12,7 +12,6 @@
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -32,52 +31,6 @@ namespace ErrorCodes
 namespace
 {
 
-std::optional<ExternalResultDescription::ValueType> getValueTypeForDirectRead(const IDataType & type)
-{
-    WhichDataType which(type);
-
-    using ValueType = ExternalResultDescription::ValueType;
-
-    if (which.isUInt8())
-        return ValueType::vtUInt8;
-    if (which.isUInt16())
-        return ValueType::vtUInt16;
-    if (which.isUInt32())
-        return ValueType::vtUInt32;
-    if (which.isUInt64())
-        return ValueType::vtUInt64;
-    if (which.isInt8())
-        return ValueType::vtInt8;
-    if (which.isInt16())
-        return ValueType::vtInt16;
-    if (which.isInt32())
-        return ValueType::vtInt32;
-    if (which.isInt64())
-        return ValueType::vtInt64;
-    if (which.isFloat32())
-        return ValueType::vtFloat32;
-    if (which.isFloat64())
-        return ValueType::vtFloat64;
-    if (which.isEnum8())
-        return ValueType::vtEnum8;
-    if (which.isEnum16())
-        return ValueType::vtEnum16;
-    if (which.isString())
-        return ValueType::vtString;
-    if (which.isDate())
-        return ValueType::vtDate;
-    if (which.isDate32())
-        return ValueType::vtDate32;
-    if (which.isDateTime())
-        return ValueType::vtDateTime;
-    if (which.isUUID())
-        return ValueType::vtUUID;
-    if (which.isFixedString())
-        return ValueType::vtFixedString;
-
-    return std::nullopt;
-}
-
 std::string_view getTextValue(sqlite3_stmt * statement, int idx)
 {
     const char * data = reinterpret_cast<const char *>(sqlite3_column_text(statement, idx));
@@ -90,19 +43,27 @@ std::string_view getTextValue(sqlite3_stmt * statement, int idx)
 
 }
 
-SQLiteStatementReader::ColumnReadInfo SQLiteStatementReader::createColumnReadInfo(const ColumnWithTypeAndName & column) const
+SQLiteStatementReader::ColumnReadInfo SQLiteStatementReader::createColumnReadInfoForNative(
+    const ColumnWithTypeAndName & column,
+    ValueType native_value_type,
+    bool is_nullable) const
+{
+    ColumnReadInfo info;
+    auto type_not_nullable = removeNullable(column.type);
+    info.serialization = type_not_nullable->getDefaultSerialization();
+    info.is_nullable = is_nullable;
+    info.data_type = type_not_nullable;
+    info.native_value_type = native_value_type;
+
+    return info;
+}
+
+SQLiteStatementReader::ColumnReadInfo SQLiteStatementReader::createColumnReadInfoForText(const ColumnWithTypeAndName & column) const
 {
     ColumnReadInfo info;
     info.serialization = column.type->getDefaultSerialization();
     info.is_nullable = column.type->isNullable();
-
-    DataTypePtr type_for_direct_read = removeNullable(column.type);
-    info.data_type = type_for_direct_read;
-
-    if (value_read_mode == ValueReadMode::Native
-        && !WhichDataType(column.type).isLowCardinality()
-        && !WhichDataType(type_for_direct_read).isLowCardinality())
-        info.native_value_type = getValueTypeForDirectRead(*type_for_direct_read);
+    info.data_type = removeNullable(column.type);
 
     return info;
 }
@@ -111,14 +72,31 @@ SQLiteStatementReader::SQLiteStatementReader(
     const Block & sample_block_,
     const FormatSettings & format_settings_,
     ValueReadMode value_read_mode_)
-    : sample_block(sample_block_.cloneEmpty())
-    , format_settings(format_settings_)
-    , value_read_mode(value_read_mode_)
+    : format_settings(format_settings_)
 {
+    if (value_read_mode_ == ValueReadMode::Native)
+    {
+        ExternalResultDescription description;
+        description.init(sample_block_);
+
+        sample_block = description.sample_block.cloneEmpty();
+        columns_info.reserve(description.sample_block.columns());
+
+        for (size_t i = 0; i != description.sample_block.columns(); ++i)
+        {
+            const auto & column = description.sample_block.getByPosition(i);
+            const auto & [value_type, is_nullable] = description.types[i];
+            columns_info.push_back(createColumnReadInfoForNative(column, value_type, is_nullable));
+        }
+
+        return;
+    }
+
+    sample_block = sample_block_.cloneEmpty();
     columns_info.reserve(sample_block.columns());
 
     for (const auto & column : sample_block)
-        columns_info.push_back(createColumnReadInfo(column));
+        columns_info.push_back(createColumnReadInfoForText(column));
 }
 
 Chunk SQLiteStatementReader::readChunk(sqlite3 * db, sqlite3_stmt * statement, UInt64 max_block_size, bool & finished)

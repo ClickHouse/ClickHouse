@@ -45,14 +45,17 @@ private:
         bool is_nullable = false;
     };
 
-    ColumnReadInfo createColumnReadInfo(const ColumnWithTypeAndName & column) const;
+    ColumnReadInfo createColumnReadInfoForNative(
+        const ColumnWithTypeAndName & column,
+        ValueType native_value_type,
+        bool is_nullable) const;
+    ColumnReadInfo createColumnReadInfoForText(const ColumnWithTypeAndName & column) const;
 
     void insertValue(IColumn & column, const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const;
     void insertTextValue(IColumn & column, const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const;
 
     Block sample_block;
     FormatSettings format_settings;
-    ValueReadMode value_read_mode;
     std::vector<ColumnReadInfo> columns_info;
 };
 
