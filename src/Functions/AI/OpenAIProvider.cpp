@@ -154,25 +154,8 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     return ai_response;
 }
 
-Poco::URI OpenAIProvider::deriveEmbeddingURI() const
-{
-    const String & path = uri.getPath();
-    if (path.find("/embeddings") != String::npos)
-        return uri;
-
-    Poco::URI embedding_uri(uri);
-    size_t pos = path.find("/chat/completions");
-    if (pos != String::npos)
-        embedding_uri.setPath(path.substr(0, pos) + "/embeddings");
-    else
-        embedding_uri.setPath("/v1/embeddings");
-    return embedding_uri;
-}
-
 AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts)
 {
-    Poco::URI embedding_uri = deriveEmbeddingURI();
-
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_embedding_request.model);
 
@@ -195,9 +178,9 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     root->stringify(body_stream);
     String body = std::move(body_stream).str();
 
-    auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, embedding_uri, timeouts, ProxyConfiguration{});
+    auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, timeouts, ProxyConfiguration{});
 
-    Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, embedding_uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
+    Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
     if (!api_key.empty())
         http_request.set("Authorization", "Bearer " + api_key);

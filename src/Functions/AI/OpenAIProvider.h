@@ -37,10 +37,6 @@ public:
     AIEmbeddingResponse embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts) override;
 
 private:
-    /// Derive the embedding endpoint from the configured chat endpoint. If the endpoint already points at an embeddings path,
-    /// it is used as-is; otherwise `/chat/completions` is rewritten to `/embeddings` (or `/v1/embeddings` appended).
-    Poco::URI deriveEmbeddingURI() const;
-
     const String endpoint;
     const String api_key;
     const Poco::URI uri;
