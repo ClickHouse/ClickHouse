@@ -175,6 +175,28 @@ bool ExportPartTask::executeStep()
         manifest.query_id,
         local_context);
 
+    /*
+        This is a hack to fix the issue where S3 is out, ClickHouse keeps retrying S3 requests deep
+        in the AWS SDK and never check for the `isCancelled()` flag. That prevents the task from being killed / cancelled. It also prevents the table from being dropped.
+
+        Merges and mutations don't suffer from this problem because they don't make requests to S3 :). Select statements
+        do make requests to S3, but the cancel predicate is properly setup for regular queries.
+
+        I think this is the first time we have a background operation that makes requests to S3, so we need to connect the dots.
+
+        The simples way is this one, and given the release timeline, I am opting for it.
+    */
+    (*exports_list_entry)->thread_group->setCancelPredicate(
+        [weak_this = weak_from_this()]() -> bool
+        {
+            if (auto shared_this = weak_this.lock())
+            {
+                return shared_this->isCancelled();
+            }
+
+            return true;
+        });
+
     SinkToStoragePtr sink;
 
     const auto new_file_path_callback = [&exports_list_entry](const std::string & file_path)
@@ -185,6 +207,8 @@ bool ExportPartTask::executeStep()
 
     try
     {
+        ThreadGroupSwitcher switcher((*exports_list_entry)->thread_group, ThreadName::EXPORT_PART);
+
         const auto filename = buildDestinationFilename(manifest, storage.getStorageID(), local_context);
 
         sink = destination_storage->import(
@@ -232,8 +256,6 @@ bool ExportPartTask::executeStep()
             prefetch,
             local_context,
             getLogger("ExportPartition"));
-
-        ThreadGroupSwitcher switcher((*exports_list_entry)->thread_group, ThreadName::EXPORT_PART);
 
         /// We need to support exporting materialized and alias columns to object storage. For some reason, object storage engines don't support them.
         /// This is a hack that materializes the columns before the export so they can be exported to tables that have matching columns
