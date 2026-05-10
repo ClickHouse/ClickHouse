@@ -322,10 +322,7 @@ public:
         bool inserted;
         this->emplace(x, it, inserted);
         if (inserted)
-        {
-            new (&it->getMapped()) typename Cell::Mapped();
-            it->getMapped() = value;
-        }
+            new (&it->getMapped()) typename Cell::Mapped(value);
     }
 
     void ALWAYS_INLINE insertIfNotPresent(const Key & x, size_t hash, const typename Cell::Mapped & value)
@@ -334,10 +331,7 @@ public:
         bool inserted;
         this->emplace(x, it, inserted, hash);
         if (inserted)
-        {
-            new (&it->getMapped()) typename Cell::Mapped();
-            it->getMapped() = value;
-        }
+            new (&it->getMapped()) typename Cell::Mapped(value);
     }
 
     const typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const
