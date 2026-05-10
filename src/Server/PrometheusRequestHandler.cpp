@@ -329,34 +329,42 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
         }
 
-        prometheus::ReadResponse read_response;
-
-        size_t num_queries = read_request.queries_size();
-        for (size_t i = 0; i != num_queries; ++i)
+        /// Prometheus remote-read uses raw snappy block compression (not the snappy framing format
+        /// used by `SnappyWriteBuffer` for HTTP `Content-Encoding`). The wire format is
+        /// `varint(uncompressed_total) || compressed_payload`, where the public snappy API only
+        /// compresses a complete buffer (always emitting the varint prefix). True chunked streaming
+        /// would require either threading or snappy's private `internal::CompressFragment`, neither
+        /// of which is justified here. Instead, we drop the `prometheus::ReadResponse` object tree
+        /// before running compression so only the serialized wire-format buffer is held during
+        /// `snappy::Compress`, then forward compressed chunks straight into the response
+        /// `WriteBuffer` through a `snappy::Sink`.
+        String serialized;
         {
-            const auto & query = read_request.queries(static_cast<int>(i));
-            auto & new_query_result = *read_response.add_results();
-            protocol.readTimeSeries(
-                *new_query_result.mutable_timeseries(),
-                query.start_timestamp_ms(),
-                query.end_timestamp_ms(),
-                query.matchers(),
-                query.hints());
-        }
+            prometheus::ReadResponse read_response;
+
+            size_t num_queries = read_request.queries_size();
+            for (size_t i = 0; i != num_queries; ++i)
+            {
+                const auto & query = read_request.queries(static_cast<int>(i));
+                auto & new_query_result = *read_response.add_results();
+                protocol.readTimeSeries(
+                    *new_query_result.mutable_timeseries(),
+                    query.start_timestamp_ms(),
+                    query.end_timestamp_ms(),
+                    query.matchers(),
+                    query.hints());
+            }
 
 #    if 0
-    LOG_DEBUG(log, "ReadResponse = {}", read_response.DebugString());
+            LOG_DEBUG(log, "ReadResponse = {}", read_response.DebugString());
 #    endif
+
+            read_response.SerializeToString(&serialized);
+        }
 
         response.setContentType("application/x-protobuf");
         response.set("Content-Encoding", "snappy");
 
-        /// Prometheus remote-read uses raw snappy block compression (not the snappy framing format
-        /// used by `SnappyWriteBuffer` for HTTP `Content-Encoding`). Stream the compressed bytes
-        /// directly into the response writer through a `snappy::Sink` so we avoid materializing
-        /// a full-size compressed buffer in addition to the serialized protobuf.
-        String serialized;
-        read_response.SerializeToString(&serialized);
         auto & out = getOutputStream(response);
         snappy::ByteArraySource source(serialized.data(), serialized.size());
         WriteBufferSnappySink sink(out);
