@@ -6,7 +6,7 @@ SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 DROP TABLE IF EXISTS events;
 CREATE TABLE events ( Time DateTime, Id String ) ENGINE = MergeTree ORDER BY Time
 SETTINGS index_granularity = 8192;
-INSERT INTO events SELECT toDateTime('2024-01-01 00:00:00') + INTERVAL number SECONDS AS Time, toString(number) AS Id FROM numbers(500_000);
+INSERT INTO events SELECT toDateTime('2024-01-01 00:00:00') + INTERVAL number SECONDS AS Time, toString(number) AS Id FROM numbers(200_000);
 INSERT INTO events SELECT toDateTime('2024-02-02 00:00:00') + INTERVAL number SECONDS AS Time, toString(number) AS Id FROM numbers(30);
 
 DROP TABLE IF EXISTS payloads;
@@ -158,7 +158,7 @@ WHERE type = 'QueryFinish'
 SELECT '--';
 
 SELECT
-    if(read_rows >= 500_000, 'OK', format('Fail: {} rows read, query_id="{}"', read_rows, query_id)) as status
+    if(read_rows >= 200_000, 'OK', format('Fail: {} rows read, query_id="{}"', read_rows, query_id)) as status
 FROM system.query_log
 WHERE type = 'QueryFinish'
     AND log_comment == '03711_read_in_order_through_join_no_optimize'
