@@ -853,27 +853,21 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// scheduler pops the most recently idle thread from the stack, sets
             /// its `idle_wakeup_flag`, and notifies only that thread's CV.
             ///
-            /// The predicate also checks the real pool state. This is required for
-            /// safety: if the idle bookkeeping ever misses a wake-up, a notified or
-            /// spuriously-woken worker must still notice queued jobs, shutdown, or
-            /// a reduced thread limit instead of sleeping forever.
+            /// The notifier always pops us from the idle stack before setting the
+            /// flag (see `popNewestIdleThreadNoLock`, `wakeUpAllIdleThreadsNoLock`,
+            /// `wakeUpExcessIdleThreadsNoLock`), so when `cv.wait` returns, this
+            /// thread is no longer in the stack. The outer `while` re-checks the
+            /// pool state to handle the rare race where the queued job was already
+            /// taken by a busy thread before this one woke up — in that case we
+            /// just push ourselves back onto the idle stack and wait again.
             while (parent_pool.jobs.empty()
                 && !parent_pool.shutdown
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
                 idle_wakeup_flag = false;
                 parent_pool.pushIdleThreadNoLock(this);
-                cv.wait(lock, [this]
-                {
-                    return idle_wakeup_flag
-                        || !parent_pool.jobs.empty()
-                        || parent_pool.shutdown
-                        || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
-                });
-
-                /// If this worker woke through the fallback predicate rather than
-                /// being LIFO-selected, it is still linked in the idle stack.
-                parent_pool.removeIdleThreadNoLock(this);
+                cv.wait(lock, [this] { return idle_wakeup_flag; });
+                chassert(!in_idle_stack);
             }
 
             if (parent_pool.jobs.empty() || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
