@@ -2542,6 +2542,18 @@ void ClientBase::processParsedSingleQuery(
     {
         output_stream << "Processed rows: " << processed_rows << "\n";
     }
+
+    /// Optional ASCII `BEL` chime when a query finishes after running for at least
+    /// `chime-threshold-seconds`. Emitted on both success and error paths so that a
+    /// user attending to other work is alerted when a long-running query completes.
+    /// The terminal decides whether to make a sound or a visual flash, based on the
+    /// user's terminal preferences.
+    UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 0);
+    if (chime_threshold_seconds > 0 && progress_indication.elapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
+    {
+        error_stream << '\x07';
+        error_stream.flush();
+    }
 }
 
 
@@ -3370,6 +3382,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 
         ("time,t", "Print query execution time to stderr in non-interactive mode (for benchmarks)")
         ("memory-usage", po::value<std::string>()->implicit_value("default")->default_value("none"), "Print memory usage to stderr in non-interactive mode (for benchmarks). Values: 'none', 'default', 'readable'")
+        ("chime", po::value<UInt64>()->implicit_value(10)->default_value(0), "If a query takes longer than this many seconds, write the ASCII `BEL` control character (`\\x07`) to stderr when the query finishes (on success and on error). Useful to alert when a long-running query completes. Use `--chime` alone for the default 10 seconds, `--chime N` for a custom threshold, or omit it (or `--chime 0`) to disable. Whether the terminal makes a sound or visual flash depends on the terminal's user preferences.")
 
         ("echo", "In batch mode, print query before execution")
 
@@ -3460,6 +3473,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("print-profile-events", true);
     if (options.contains("profile-events-delay-ms"))
         getClientConfiguration().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
+    if (options.contains("chime"))
+        getClientConfiguration().setUInt64("chime-threshold-seconds", options["chime"].as<UInt64>());
     /// Whether to print the number of processed rows at
     if (options.contains("processed-rows"))
         getClientConfiguration().setBool("print-num-processed-rows", true);

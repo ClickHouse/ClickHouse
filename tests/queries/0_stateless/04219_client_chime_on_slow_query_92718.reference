@@ -1,0 +1,5 @@
+1. clickhouse-client --chime 1, slow query: BEL
+2. clickhouse-client --chime 10, fast query: no BEL
+3. clickhouse-client (no --chime), slow query: no BEL
+4. clickhouse-client --chime 1, slow query then error: BEL
+5. clickhouse-local --chime 1, slow query: BEL
