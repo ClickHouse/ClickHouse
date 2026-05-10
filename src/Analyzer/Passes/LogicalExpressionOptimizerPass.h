@@ -106,7 +106,7 @@ namespace DB
  * SELECT * FROM table WHERE a < b AND b < c AND c < 5 AND b < 5 AND a < 5;
  * -------------------------------
  *
- * 8. Prune redundant and detect conflicting comparison conditions on the same expression
+ * 8. Prune redundant comparisons and detect conflicting comparison conditions on the same expression
  *     within AND chains.  Controlled by setting `optimize_redundant_comparisons`.
  *     Handles all six comparison operators (=, !=, <, <=, >, >=) and their combinations:
  *     duplicate removal, contradiction detection, and range tightening.
