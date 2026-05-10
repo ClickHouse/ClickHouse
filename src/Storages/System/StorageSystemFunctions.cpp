@@ -142,9 +142,7 @@ namespace
         ExtraInfo info;
         try
         {
-            /// Pass track_in_query_log=false: introspection of system.functions must not
-            /// pollute query_log.used_functions for the current query.
-            auto resolver = factory.tryGet(name, context, /* track_in_query_log */ false);
+            auto resolver = factory.tryGet(name, context);
             if (!resolver)
                 return info;
 
@@ -252,6 +250,12 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
 
 void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
+    /// Resolving every function (and the helpers their constructors create internally —
+    /// e.g. coalesce constructs isNotNull/assumeNotNull/if; map constructs array/mapFromArrays;
+    /// monthName constructs dateName) would otherwise pollute query_log.used_functions for
+    /// the user's query. Suppress factory accounting for the duration of the read.
+    Context::SuppressQueryFactoriesInfoScope suppress_factory_info;
+
     const auto & functions_factory = FunctionFactory::instance();
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & function_name : function_names)
