@@ -23,7 +23,7 @@ namespace ErrorCodes
 }
 
 UserDefinedSQLObjectsStorageBase::UserDefinedSQLObjectsStorageBase(ContextPtr global_context_)
-    : global_context(std::move(global_context_))
+    : WithContext(global_context_)
 {}
 
 ASTPtr UserDefinedSQLObjectsStorageBase::get(const String & object_name) const
@@ -144,7 +144,7 @@ void UserDefinedSQLObjectsStorageBase::setAllObjects(const std::vector<std::pair
 {
     std::unordered_map<String, ASTPtr> normalized_functions;
     for (const auto & [function_name, create_query] : new_objects)
-        normalized_functions[function_name] = normalizeCreateFunctionQuery(*create_query, global_context);
+        normalized_functions[function_name] = normalizeCreateFunctionQuery(*create_query, getContext());
 
     std::lock_guard lock(mutex);
     object_name_to_create_object_map = std::move(normalized_functions);
@@ -162,7 +162,7 @@ std::vector<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorageBase::getAllO
 void UserDefinedSQLObjectsStorageBase::setObject(const String & object_name, const IAST & create_object_query)
 {
     std::lock_guard lock(mutex);
-    object_name_to_create_object_map[object_name] = normalizeCreateFunctionQuery(create_object_query, global_context);
+    object_name_to_create_object_map[object_name] = normalizeCreateFunctionQuery(create_object_query, getContext());
 }
 
 void UserDefinedSQLObjectsStorageBase::removeObject(const String & object_name)

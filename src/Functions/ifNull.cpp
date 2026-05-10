@@ -29,8 +29,10 @@ class FunctionIfNull : public IFunction
 public:
     static constexpr auto name = "ifNull";
 
-    explicit FunctionIfNull(ContextPtr context_, bool use_variant_as_common_type_)
-        : context(context_)
+    explicit FunctionIfNull(ContextPtr context, bool use_variant_as_common_type_)
+        : is_not_null(FunctionFactory::instance().get("isNotNull", context))
+        , assume_not_null(FunctionFactory::instance().get("assumeNotNull", context))
+        , if_function(FunctionFactory::instance().get("if", context))
         , use_variant_as_common_type(use_variant_as_common_type_)
     {}
 
@@ -95,27 +97,26 @@ public:
 
         ColumnsWithTypeAndName columns{arguments[0]};
 
-        auto is_not_null = FunctionFactory::instance().get("isNotNull", context)->build(columns);
         auto is_not_null_type = std::make_shared<DataTypeUInt8>();
-        auto is_not_null_res = is_not_null->execute(columns, is_not_null_type, input_rows_count, /* dry_run = */ false);
+        auto is_not_null_res = is_not_null->build(columns)->execute(columns, is_not_null_type, input_rows_count, /* dry_run = */ false);
 
-        auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context)->build(columns);
         auto assume_not_null_type = removeNullable(arguments[0].type);
-        auto assume_nut_null_res = assume_not_null->execute(columns, assume_not_null_type, input_rows_count, /* dry_run = */ false);
+        auto assume_not_null_res = assume_not_null->build(columns)->execute(columns, assume_not_null_type, input_rows_count, /* dry_run = */ false);
 
         ColumnsWithTypeAndName if_columns
         {
                 {is_not_null_res, is_not_null_type, ""},
-                {assume_nut_null_res, assume_not_null_type, ""},
+                {assume_not_null_res, assume_not_null_type, ""},
                 arguments[1],
         };
 
-        auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
-        return func_if->execute(if_columns, result_type, input_rows_count, /* dry_run = */ false);
+        return if_function->build(if_columns)->execute(if_columns, result_type, input_rows_count, /* dry_run = */ false);
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr is_not_null;
+    FunctionOverloadResolverPtr assume_not_null;
+    FunctionOverloadResolverPtr if_function;
     bool use_variant_as_common_type = false;
 };
 

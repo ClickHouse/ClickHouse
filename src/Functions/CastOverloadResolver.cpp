@@ -64,7 +64,7 @@ FunctionBasePtr createFunctionBaseCast(
   * Cast preserves nullability according to setting `cast_keep_nullable`,
   * i.e. Cast(toNullable(toInt8(1)) as Int32) will be Nullable(Int32(1)) if `cast_keep_nullable` == 1.
   */
-class CastOverloadResolverImpl : public IFunctionOverloadResolver
+class CastOverloadResolverImpl : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static const char * getNameImpl(CastType cast_type, bool internal)
@@ -88,7 +88,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     explicit CastOverloadResolverImpl(ContextPtr context_, CastType cast_type_, bool internal_, std::optional<CastDiagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
-        : context(context_)
+        : WithContext(context_)
         , cast_type(cast_type_)
         , internal(internal_)
         , diagnostic(std::move(diagnostic_))
@@ -97,14 +97,14 @@ public:
     {
     }
 
-    static FunctionOverloadResolverPtr create(ContextPtr context, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
+    static FunctionOverloadResolverPtr create(ContextPtr context_, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
     {
         if (internal)
-            return std::make_unique<CastOverloadResolverImpl>(context, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
+            return std::make_unique<CastOverloadResolverImpl>(context_, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
 
-        const auto & settings_ref = context->getSettingsRef();
+        const auto & settings_ref = context_->getSettingsRef();
         return std::make_unique<CastOverloadResolverImpl>(
-            context, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
+            context_, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
     }
 
     static FunctionBasePtr createInternalCast(
@@ -112,7 +112,7 @@ public:
         DataTypePtr to,
         CastType cast_type,
         std::optional<CastDiagnostic> diagnostic,
-        ContextPtr context)
+        ContextPtr context_)
     {
         if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
         {
@@ -125,14 +125,14 @@ public:
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
         return createFunctionBaseCast(
-            context, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
+            context_, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
     }
 
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         return createFunctionBaseCast(
-            context,
+            getContext(),
             getNameImpl(cast_type, internal),
             arguments,
             return_type,
@@ -184,7 +184,6 @@ protected:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
 private:
-    ContextPtr context;
     CastType cast_type;
     bool internal;
     std::optional<CastDiagnostic> diagnostic;

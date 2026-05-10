@@ -508,7 +508,20 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else
         {
             ParserDataType data_type_parser;
-            ParserAllCollectionsOfLiterals literal_parser(false);
+            /// Only accept simple literals (numbers, strings, NULL, ...) as
+            /// data-type arguments. We deliberately do NOT accept collection
+            /// literals like `(1)`, `[1, 2]` or `{a: 1}` here: no real data
+            /// type takes a tuple/array/map literal as an argument, and
+            /// accepting them produces an `ASTLiteral` with `Field::Tuple`
+            /// (or `Field::Array`) inside the type's argument list. The
+            /// formatter then prints such a Tuple literal as `tuple(...)`
+            /// (the explicit function form -- see
+            /// `FieldVisitorToString::operator()(const Tuple &)`), and
+            /// re-parsing `tuple(...)` in this context yields an
+            /// `ASTDataType("tuple")` instead of an `ASTLiteral`, breaking
+            /// the AST round-trip check in `executeQuery` (DEBUG/sanitizer
+            /// builds). See STID 1941-1bfa.
+            ParserLiteral literal_parser;
 
             const char * operators[] = {"=", "equals", nullptr};
             ParserLeftAssociativeBinaryOperatorList enum_parser(operators, std::make_unique<ParserLiteral>());

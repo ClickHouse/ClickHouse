@@ -19,6 +19,10 @@ class ServerDied(Exception):
     pass
 
 
+def escape_tsv_info(text: str) -> str:
+    return text.replace("\0", "\\0").replace("\t", "\\t").replace("\n", "\\n")
+
+
 class RandomQueryKiller:
     """Background thread that randomly kills queries and client processes during stress tests.
 
@@ -677,11 +681,9 @@ def main():
                             " the full output; showing last 32 KiB)\n...\n"
                             + log_text
                         )
-                    # Escape so tab and newline survive the TSV encoding,
+                    # Escape so NUL, tab, and newline survive the TSV encoding,
                     # matching the decoder in read_test_results().
-                    info_field = log_text.replace("\t", "\\t").replace(
-                        "\n", "\\n"
-                    )
+                    info_field = escape_tsv_info(log_text)
                 except OSError as ex:
                     logging.warning(
                         "Failed to read hung_check.log to embed in"

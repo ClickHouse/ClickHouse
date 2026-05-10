@@ -17,6 +17,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/castTypeToEither.h>
 
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 
 #include <base/TypeList.h>
@@ -454,9 +455,9 @@ class MidpointResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "midpoint";
-    static FunctionOverloadResolverPtr create(ContextPtr context)
+    static FunctionOverloadResolverPtr create(ContextPtr context_)
     {
-        return std::make_unique<MidpointResolver<SpecializedFunction>>(context);
+        return std::make_unique<MidpointResolver<SpecializedFunction>>(context_);
     }
 
     explicit MidpointResolver(ContextPtr context_)
@@ -510,7 +511,7 @@ public:
         return getLeastSupertype(types);
     }
 
-protected:
+private:
     ContextPtr context;
 };
 

@@ -225,13 +225,13 @@ void NBModelRegistry::load(ContextPtr context)
 class FunctionNaiveBayesClassifier : public IFunction
 {
 private:
-    ContextPtr context;
+    const NBModelRegistry::Models & models;
 
 public:
     static constexpr auto name = "naiveBayesClassifier";
 
     explicit FunctionNaiveBayesClassifier(ContextPtr context_)
-        : context(context_)
+        : models(NBModelRegistry::instance(context_))
     {
     }
 
@@ -270,8 +270,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const auto & models = NBModelRegistry::instance(context);
-
         const auto * const_model_name_col = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
         const auto * const_input_text_col = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
         if (const_model_name_col and const_input_text_col)
@@ -310,8 +308,6 @@ public:
 private:
     void validateModelName(const String & model_name) const
     {
-        const auto & models = NBModelRegistry::instance(context);
-
         if (!models.contains(model_name))
         {
             throw Exception(
