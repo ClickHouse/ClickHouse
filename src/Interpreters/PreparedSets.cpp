@@ -57,6 +57,19 @@ bool hasCorrelatedExpressions(QueryPlan::Node * node)
     return false;
 }
 
+/// Extract a subplan and carry over the parent plan's resources and settings.
+/// `QueryPlan::extractSubplan` only moves the node tree; without this the new sub-plan loses
+/// `interpreter_context`, table locks, storage holders, and `max_threads`/`concurrency_control`,
+/// which keep storage and contexts alive for the delayed build that runs later.
+std::unique_ptr<QueryPlan> extractSubplanInheritingResources(QueryPlan & parent_plan, QueryPlan::Node * subplan_root)
+{
+    auto extracted = std::make_unique<QueryPlan>(parent_plan.extractSubplan(subplan_root));
+    extracted->addResources(parent_plan.detachResources());
+    extracted->setMaxThreads(parent_plan.getMaxThreads());
+    extracted->setConcurrencyControl(parent_plan.getConcurrencyControl());
+    return extracted;
+}
+
 }
 
 namespace Setting
@@ -463,7 +476,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
                     "Cannot restore source query plan for set {} after failed in-place build without retry snapshot",
                     set_and_key->key);
 
-            setQueryPlan(std::make_unique<QueryPlan>(plan->extractSubplan(root->children.front())));
+            setQueryPlan(extractSubplanInheritingResources(*plan, root->children.front()));
         }
         return;
     }
@@ -553,7 +566,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
                     "Cannot restore source query plan for set {} after failed ordered in-place build without retry snapshot",
                     set_and_key->key);
 
-            setQueryPlan(std::make_unique<QueryPlan>(plan->extractSubplan(root->children.front())));
+            setQueryPlan(extractSubplanInheritingResources(*plan, root->children.front()));
         }
         return nullptr;
     }
