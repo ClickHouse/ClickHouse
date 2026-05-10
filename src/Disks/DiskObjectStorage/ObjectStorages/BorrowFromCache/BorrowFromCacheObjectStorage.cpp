@@ -56,6 +56,11 @@ namespace
         {
         }
 
+        /// `ReadBufferFromFileDecorator` does not forward this, so the base `SeekableReadBuffer`
+        /// version throws `NOT_IMPLEMENTED`. `ReadBufferFromRemoteFSGather` calls this in a
+        /// `chassert`, which trips on debug/sanitizer builds during `IDisk::checkAccess`.
+        size_t getFileOffsetOfBufferEnd() const override { return impl->getFileOffsetOfBufferEnd(); }
+
     private:
         std::shared_ptr<FileSegmentsHolder> holder;
     };
