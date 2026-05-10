@@ -20,6 +20,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int SQLITE_ENGINE_ERROR;
+}
+
 namespace
 {
 
@@ -145,7 +150,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        const auto columns = chunk.getColumns();
+        const auto & columns = chunk.getColumns();
 
         for (size_t row = 0; row != chunk.getNumRows(); ++row)
         {
