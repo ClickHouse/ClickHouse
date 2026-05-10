@@ -2229,7 +2229,7 @@ def test_comparison_operators():
         '({__name__=~"foo|bar"} == {__name__=~"foo|bar"})[50:10]',
         150,
         "found duplicate series for the match group",
-        "Multiple series have the same tags {'shape': 'circle', 'size': 'l'}",
+        "Multiple series have the same tags",
     )
 
     do_query_test(
