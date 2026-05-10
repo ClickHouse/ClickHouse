@@ -12,7 +12,7 @@ trap 'rm -f "$DB" "$CUSTOM_DB"' EXIT
 STRUCTURE="id UInt64, name String, amount Decimal64(2), created DateTime, value Nullable(String)"
 
 echo "Format registration"
-${CLICKHOUSE_LOCAL} --query "SELECT name, is_input, is_output FROM system.formats WHERE name = 'SQLite' FORMAT TSV"
+${CLICKHOUSE_LOCAL} --query "SELECT name, is_input, is_output, supports_append FROM system.formats WHERE name = 'SQLite' FORMAT TSV"
 
 ${CLICKHOUSE_LOCAL} --query "
     SELECT

@@ -370,6 +370,7 @@ void registerOutputFormatSQLite(FormatFactory & factory)
         [](WriteBuffer & buf, const Block & sample, const FormatSettings & settings, FormatFilterInfoPtr /*format_filter_info*/)
         { return std::make_shared<SQLiteOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
 
+    factory.markFormatHasNoAppendSupport("SQLite");
     factory.markOutputFormatNotTTYFriendly("SQLite");
     factory.setContentType("SQLite", "application/vnd.sqlite3");
 }

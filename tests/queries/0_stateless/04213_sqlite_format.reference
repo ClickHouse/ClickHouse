@@ -1,5 +1,5 @@
 Format registration
-SQLite	1	1
+SQLite	1	1	0
 Roundtrip default table
 42	world	-7.5	2021-05-06 07:08:09	text
 9223372036854775808	hello	123.45	2020-01-02 03:04:05	\N
