@@ -247,8 +247,11 @@ public:
 
     size_t getLinearMemorySize() const override
     {
-        return const_cast<WasmTimeCompartment *>(this)->getMemory().data(
-            const_cast<wasmtime::Store &>(store)).size();
+        auto & store_ref = const_cast<wasmtime::Store &>(store);
+        auto mem_result = const_cast<wasmtime::Instance &>(instance).get(store_ref, "memory");
+        if (!mem_result || !std::holds_alternative<wasmtime::Memory>(mem_result.value()))
+            return 0;
+        return std::get<wasmtime::Memory>(mem_result.value()).data(store_ref).size();
     }
 
     VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override
