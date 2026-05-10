@@ -16,6 +16,7 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/SHA1Engine.h>
 
+#include <base/errnoToString.h>
 #include <base/scope_guard.h>
 #include <Common/Stopwatch.h>
 
@@ -47,20 +48,13 @@ String computeWebSocketAccept(const String & key)
     return base64Encode(String(reinterpret_cast<const char *>(digest.data()), digest.size()));
 }
 
-/// Validate that Sec-WebSocket-Key is a base64-encoded 16-byte nonce per RFC 6455
+/// Validate that Sec-WebSocket-Key is a base64-encoded 16-byte nonce per RFC 6455.
+/// Throws on malformed base64; the caller treats that as a handshake failure.
 bool isValidWebSocketKey(const String & key)
 {
     if (key.empty() || key.size() > 128)
         return false;
-    try
-    {
-        String decoded = base64Decode(key);
-        return decoded.size() == 16;
-    }
-    catch (...) // Ok: malformed base64 means invalid key
-    {
-        return false;
-    }
+    return base64Decode(key).size() == 16;
 }
 
 /// Send all bytes to the socket, handling partial writes.
@@ -240,58 +234,38 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket, UInt64 deadl
     return frame;
 }
 
-/// Parse the JSON document and return its root object. Returns nullptr if the
-/// input is malformed or the root is not an object. We must parse the full
-/// structure (rather than searching for keys by substring) because top-level
-/// fields like `type`/`user`/`password` could otherwise be matched inside
-/// nested objects in attacker-controlled input.
+/// Parse the JSON document and return its root object. Throws on malformed
+/// input; the caller treats that as an invalid message and closes the socket.
+/// We must parse the full structure (rather than searching for keys by
+/// substring) because top-level fields like `type`/`user`/`password` could
+/// otherwise be matched inside nested objects in attacker-controlled input.
 Poco::JSON::Object::Ptr parseRootObject(const String & json)
 {
-    try
-    {
-        Poco::JSON::Parser parser;
-        return parser.parse(json).extract<Poco::JSON::Object::Ptr>();
-    }
-    catch (...) // Ok: malformed JSON or non-object root
-    {
-        return nullptr;
-    }
+    Poco::JSON::Parser parser;
+    return parser.parse(json).extract<Poco::JSON::Object::Ptr>();
 }
 
-/// Read a top-level string field. Returns empty string if missing or not a string.
+/// Read a top-level string field. Returns empty string if the key is missing.
+/// Throws on type mismatch.
 String getStringField(const Poco::JSON::Object::Ptr & object, const char * key)
 {
     if (!object->has(key))
         return {};
-    try
-    {
-        return object->getValue<String>(key);
-    }
-    catch (...) // Ok: type mismatch
-    {
-        return {};
-    }
+    return object->getValue<String>(key);
 }
 
 /// Read a top-level integer field, clamped to [0, max_value]. Returns -1 if
-/// missing or not an integer.
+/// the key is missing. Throws on type mismatch.
 int getIntField(const Poco::JSON::Object::Ptr & object, const char * key, int max_value)
 {
     if (!object->has(key))
         return -1;
-    try
-    {
-        Int64 value = object->getValue<Int64>(key);
-        if (value < 0)
-            return -1;
-        if (value > max_value)
-            return max_value;
-        return static_cast<int>(value);
-    }
-    catch (...) // Ok: type mismatch or non-integer numeric value
-    {
+    Int64 value = object->getValue<Int64>(key);
+    if (value < 0)
         return -1;
-    }
+    if (value > max_value)
+        return max_value;
+    return static_cast<int>(value);
 }
 
 /// Parse a control message like {"type":"resize","cols":80,"rows":24}.
@@ -362,6 +336,8 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         return;
     }
 
+    /// RFC 6455 fixed the WebSocket protocol at version 13; earlier drafts
+    /// (00, 7, 8, etc.) are obsolete and not implemented here.
     String ws_version = request.get("Sec-WebSocket-Version", "");
     if (ws_version != "13")
     {
@@ -491,19 +467,9 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// {"type":"auth","user":"...","password":"..."}
     /// Set a per-read timeout and a total deadline to prevent slow-trickle attacks
     /// where a malicious client sends one byte at a time to hold the connection.
-    WebSocketFrame auth_frame;
     socket.setReceiveTimeout(Poco::Timespan(5, 0)); /// 5 seconds per individual read
     UInt64 auth_deadline = clock_gettime_ns() + 5'000'000'000ULL; /// 5 seconds total
-    try
-    {
-        auth_frame = readWebSocketFrame(socket, auth_deadline);
-    }
-    catch (...)
-    {
-        LOG_DEBUG(log, "Auth frame read failed: {}", getCurrentExceptionMessage(false));
-        try { sendWebSocketClose(socket, 1002, "Auth timeout"); } catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort close on already-failing connection
-        return;
-    }
+    WebSocketFrame auth_frame = readWebSocketFrame(socket, auth_deadline);
     socket.setReceiveTimeout(Poco::Timespan(0)); /// Clear timeout for the main loop
     if (auth_frame.protocol_error)
     {
@@ -535,26 +501,29 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         return;
     }
 
-    /// Authenticate the user
+    /// Authenticate the user. Authentication failures propagate as exceptions
+    /// and are logged by the upper HTTP framework.
     /// Note: do not call makeSessionContext() here - it will be called by ClientEmbedded's constructor.
     auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
-    try
-    {
-        session->authenticate(BasicCredentials(auth_user, auth_password), request.clientAddress());
-    }
-    catch (...)
-    {
-        LOG_WARNING(log, "WebSocket authentication failed for user {}: {}", auth_user, getCurrentExceptionMessage(false));
-        sendWebSocketClose(socket, 1008, "Authentication failed");
-        return;
-    }
+    session->authenticate(BasicCredentials(auth_user, auth_password), request.clientAddress());
 
-    LOG_INFO(log, "WebSocket connection established for user {}", auth_user);
+    LOG_DEBUG(log, "WebSocket connection established for user {}", auth_user);
 
-    /// Create PTY for the embedded client
+    /// Create PTY for the embedded client.
+    /// 80x24 is the conventional default terminal geometry inherited from the
+    /// VT100 / DEC VT family; see https://en.wikipedia.org/wiki/VT100. The
+    /// browser sends a `resize` control message right after connecting, so this
+    /// only matters until the first resize.
     static constexpr int DEFAULT_COLS = 80;
     static constexpr int DEFAULT_ROWS = 24;
 
+    /// `xterm-256color` is the terminfo entry advertised to clickhouse-client
+    /// inside the PTY. It is the most broadly-available entry that signals
+    /// 256-color and modern xterm-style escape sequences. We do not request a
+    /// truecolor entry like `xterm-direct`, because terminfo databases inside
+    /// the container may not include it; clickhouse-client itself emits 24-bit
+    /// (truecolor) ANSI escape sequences directly, so the chosen TERM only
+    /// affects libraries (e.g. ncurses) that consult terminfo.
     auto pty_descriptors = std::make_unique<PtyClientDescriptorSet>("xterm-256color", DEFAULT_COLS, DEFAULT_ROWS, 0, 0);
     auto client_runner = std::make_unique<ClientEmbeddedRunner>(std::move(pty_descriptors), std::move(session));
 
@@ -573,8 +542,8 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     int flags = fcntl(pty_master_fd, F_GETFL, 0);
     if (flags == -1 || fcntl(pty_master_fd, F_SETFL, flags | O_NONBLOCK) == -1)
     {
-        LOG_DEBUG(log, "Failed to set PTY master non-blocking: errno={}", errno);
-        try { sendWebSocketClose(socket, 1011, "Internal error"); } catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort close
+        LOG_DEBUG(log, "Failed to set PTY master non-blocking: {}", errnoToString());
+        sendWebSocketClose(socket, 1011, "Internal error");
         return;
     }
 
@@ -591,14 +560,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         if (close_sent)
             return;
         close_sent = true;
-        try
-        {
-            sendWebSocketClose(socket, code, reason);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to send WebSocket close frame");
-        }
+        sendWebSocketClose(socket, code, reason);
     };
 
     /// State for WebSocket frame reassembly (RFC 6455 fragmentation)
@@ -631,21 +593,15 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
             break;
         }
 
-        /// Data from PTY -> send to WebSocket
+        /// Data from PTY -> send to WebSocket. A failure inside `sendWebSocketBinary`
+        /// (for example, the client closing the socket) propagates out of
+        /// the loop; `SCOPE_EXIT` shuts down the socket.
         if (fds[1].revents & POLLIN)
         {
             ssize_t n = read(pty_master_fd, pty_buf, sizeof(pty_buf));
             if (n > 0)
             {
-                try
-                {
-                    sendWebSocketBinary(socket, pty_buf, static_cast<size_t>(n));
-                }
-                catch (...)
-                {
-                    LOG_DEBUG(log, "Failed to send to WebSocket: {}", getCurrentExceptionMessage(false));
-                    running = false;
-                }
+                sendWebSocketBinary(socket, pty_buf, static_cast<size_t>(n));
             }
             else if (n == 0)
             {
