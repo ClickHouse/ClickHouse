@@ -238,9 +238,13 @@ bool rewriteOrderByLimit(QueryTreeNodePtr & original_query, const StoragePtr & t
     new_order_by_limit_subquery_node->resolveProjectionColumns(
         {{"_cumulative_part_offset", func_plus_part_starting_and_part_offset->getResultType()}});
 
-    /// 3. Clear the `LIMIT`/`PREWHERE`/`WHERE` and retain the `ORDER BY` in the main query,
-    /// and construct `(_part_starting_offset + _part_offset) IN subquery` as the `WHERE` condition
+    /// 3. Clear the `LIMIT`/`OFFSET`/`PREWHERE`/`WHERE` and retain the `ORDER BY` in the main query,
+    /// and construct `(_part_starting_offset + _part_offset) IN subquery` as the `WHERE` condition.
+    /// `OFFSET` must be cleared on the main query: the cloned subquery already applies the original
+    /// `LIMIT`/`OFFSET` and so returns positions of the surviving N rows; if the main query also kept
+    /// `OFFSET`, it would skip rows a second time.
     main_query_node->getLimit().reset();
+    main_query_node->getOffset().reset();
     main_query_node->getWhere().reset();
     main_query_node->getPrewhere().reset();
     auto main_column_source = get_column_source_from_proj(*main_query_node);
