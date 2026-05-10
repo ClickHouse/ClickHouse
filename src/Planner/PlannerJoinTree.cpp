@@ -426,7 +426,7 @@ bool applyTrivialCountIfPossible(
     auto block_with_count = std::make_shared<const Block>(Block{
         {std::move(column),
          std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), agg_count.getArgumentTypes(), Array{}),
-         std::move(trivial_count_column_name)}});
+         trivial_count_column_name}});
 
     auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
     auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
