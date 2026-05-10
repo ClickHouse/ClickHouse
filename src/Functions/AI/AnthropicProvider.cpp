@@ -159,7 +159,7 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
         auto block = content->getObject(i);
         if (!block)
             throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-                "Anthropic response 'content' does not contain output", i);
+                "Anthropic response 'content' does not contain output");
         String type = block->optValue<String>("type", "");
         if (type == "text")
         {
@@ -171,7 +171,7 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
             auto input = block->getObject("input");
             if (!input)
                 throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-                    "Anthropic response output is missing for tool_use block", i);
+                    "Anthropic response output is missing for tool_use block");
             std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
             input->stringify(ss);
             ai_response.result = ss.str();
