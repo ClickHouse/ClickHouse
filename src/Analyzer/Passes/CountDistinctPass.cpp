@@ -9,6 +9,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
@@ -49,10 +50,18 @@ public:
         if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::CROSS_JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
             return;
 
-        /// Check only local table
-        if (auto * table_node = query_node->getJoinTree()->as<TableNode>())
+        /// Check only local table. The rewrite must not apply to remote storages
+        /// (e.g. `Distributed` or `remote(...)` table function), where distributed
+        /// aggregation already handles `count(DISTINCT)` correctly.
+        auto & join_tree = query_node->getJoinTree();
+        if (auto * table_node = join_tree->as<TableNode>())
         {
             if (table_node->getStorage()->isRemote())
+                return;
+        }
+        else if (auto * table_function_node = join_tree->as<TableFunctionNode>())
+        {
+            if (table_function_node->getStorageOrThrow()->isRemote())
                 return;
         }
 
