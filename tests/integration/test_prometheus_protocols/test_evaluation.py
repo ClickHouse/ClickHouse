@@ -2614,6 +2614,12 @@ def test_aggregation_operators():
         [],
     )
 
+    do_clickhouse_only_query_test_expect_error(
+        'count_values("~invalid", vector(1))',
+        120,
+        "Aggregation operator 'count_values' called with invalid label name",
+    )
+
     do_query_test(
         "(avg(last_over_time(bar[10])) by (size))[50:10]",
         150,
