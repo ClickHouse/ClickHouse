@@ -215,9 +215,6 @@ void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
 {
     assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
 
-    if (!context->getConfigRef().getBool("query_log.enable_user_query_log", true))
-        return;
-
     auto query_log = context->getQueryLog();
     if (!query_log)
         return;
@@ -226,9 +223,15 @@ void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
     if (query_log_table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE && query_log_table_id.table_name == USER_QUERY_LOG_TABLE_NAME)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The `query_log.table` configuration parameter cannot be set to `{}` when `query_log.database` is `system` "
-            "and `query_log.enable_user_query_log` is enabled",
+            "The `query_log.table` configuration parameter cannot be set to `{}` when `query_log.database` is `{}` "
+            "because `{}.{}` is reserved for the filtered user query log view",
+            USER_QUERY_LOG_TABLE_NAME,
+            DatabaseCatalog::SYSTEM_DATABASE,
+            DatabaseCatalog::SYSTEM_DATABASE,
             USER_QUERY_LOG_TABLE_NAME);
+
+    if (!context->getConfigRef().getBool("query_log.enable_user_query_log", true))
+        return;
 
     query_log->prepareTable();
 
