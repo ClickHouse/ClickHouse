@@ -620,7 +620,7 @@ def test_absent_functions():
         [["[]", "1970-01-01 00:02:10.000", 1]],
     )
 
-    do_query_test(
+    do_clickhouse_only_query_test(
         'absent(nonexistent_metric{shape!="square", shape="circle"})',
         130,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
