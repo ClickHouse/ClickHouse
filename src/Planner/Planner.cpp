@@ -756,13 +756,15 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
     bool is_remote_storage = false;
     bool parallel_replicas_from_merge_tree = false;
 
+    /// Walk every entry rather than gating on size() == 1: ARRAY JOIN / JOIN / subqueries
+    /// each add an entry, but only TableNode/TableFunctionNode entries set isRemote/isMergeTree.
     const auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
-    if (table_expression_node_to_data.size() == 1)
+    for (const auto & [_, table_expression_data] : table_expression_node_to_data)
     {
-        auto it = table_expression_node_to_data.begin();
-        is_remote_storage = it->second.isRemote();
-        parallel_replicas_from_merge_tree = it->second.isMergeTree() && query_context->canUseParallelReplicasOnInitiator();
+        is_remote_storage |= table_expression_data.isRemote();
+        parallel_replicas_from_merge_tree |= table_expression_data.isMergeTree();
     }
+    parallel_replicas_from_merge_tree = parallel_replicas_from_merge_tree && query_context->canUseParallelReplicasOnInitiator();
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentHeader(),
