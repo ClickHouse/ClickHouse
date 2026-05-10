@@ -1007,7 +1007,7 @@ SELECT timeSeriesResetsToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like quantile_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#aggregation_over_time) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `quantile_over_time` are considered within the specified time window.
 
 :::note
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesQuantileToGrid = R"(

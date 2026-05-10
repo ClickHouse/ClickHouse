@@ -43,7 +43,12 @@ struct AggregateFunctionTimeseriesQuantileTraits
         {
             auto it = samples.find(timestamp);
             if (it != samples.end())
-                it->second = std::max(it->second, value);
+            {
+                const bool current_nan = std::isnan(it->second);
+                const bool value_nan = std::isnan(value);
+                if ((current_nan && !value_nan) || (!current_nan && !value_nan && it->second < value))
+                    it->second = value;
+            }
             else
                 samples[timestamp] = value;
         }
