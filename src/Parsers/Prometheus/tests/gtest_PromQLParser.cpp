@@ -177,6 +177,35 @@ PrometheusQueryTree(INSTANT_VECTOR):
         {__name__=~".*"}
         )"), DB::Exception);
 
+    EXPECT_THROW(parse(R"(
+        {job=~".*"}
+        )"), DB::Exception);
+
+    EXPECT_THROW(parse(R"(
+        {job!="demo"}
+        )"), DB::Exception);
+
+    EXPECT_EQ(parse(R"(
+        {__name__=~".+"}
+        )"), R"(
+{__name__=~".+"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ RE '.+'
+)");
+
+    EXPECT_EQ(parse(R"(
+        {__name__=~".+", job=~".*"}
+        )"), R"(
+{__name__=~".+",job=~".*"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ RE '.+'
+        job RE '.*'
+)");
+
     /// Aggregation operators.
     EXPECT_EQ(parse("sum(demo_memory_usage_bytes)"), R"(
 sum(demo_memory_usage_bytes)
