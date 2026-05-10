@@ -377,15 +377,30 @@ def _expand_all_test_cases():
     result = []
     seen = {}
     duplicate_queries = []
+    conflicting_expectations = []
 
     for template, variant_args, should_fail, semantic_risk in _iter_case_definitions():
         for query in _expand_query(template, variant_args):
-            key = (query, should_fail)
-            if key in seen:
-                duplicate_queries.append((query, seen[key], semantic_risk))
+            if query in seen:
+                first_should_fail, first_risk = seen[query]
+                if first_should_fail != should_fail:
+                    conflicting_expectations.append(
+                        (query, first_risk, first_should_fail, semantic_risk, should_fail)
+                    )
+                else:
+                    duplicate_queries.append((query, first_risk, semantic_risk))
             else:
-                seen[key] = semantic_risk
+                seen[query] = (should_fail, semantic_risk)
             result.append((query, should_fail))
+
+    if conflicting_expectations:
+        examples = "; ".join(
+            f"{query!r} in {first_risk!r} expects should_fail={first_should_fail}, "
+            f"but {second_risk!r} expects should_fail={second_should_fail}"
+            for query, first_risk, first_should_fail, second_risk, second_should_fail
+            in conflicting_expectations[:5]
+        )
+        raise AssertionError(f"conflicting PromQL compliance expectations: {examples}")
 
     if duplicate_queries:
         examples = "; ".join(
