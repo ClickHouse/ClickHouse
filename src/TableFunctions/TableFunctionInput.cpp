@@ -1,7 +1,10 @@
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Common/Exception.h>
 #include <Storages/StorageInput.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -75,6 +78,21 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr contex
 {
     if (structure == "auto")
     {
+        /// Some formats have a fixed schema that can be derived without reading any data
+        /// (e.g. `LineAsString`, `RawBLOB`, `JSONAsString`). When the surrounding `INSERT`
+        /// query specifies such a format, use it as the source of truth so the user does
+        /// not have to repeat the structure on the table function.
+        const auto & insert_format = context->getInsertFormat();
+        if (!insert_format.empty())
+        {
+            const auto & factory = FormatFactory::instance();
+            if (factory.checkIfFormatHasExternalSchemaReader(insert_format))
+            {
+                auto external_schema_reader = factory.getExternalSchemaReader(insert_format, context);
+                return ColumnsDescription(external_schema_reader->readSchema());
+            }
+        }
+
         if (structure_hint.empty())
             throw Exception(
                 ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
