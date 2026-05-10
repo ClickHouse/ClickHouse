@@ -129,17 +129,22 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     AIResponse ai_response;
 
     auto choices = json_obj->getArray("choices");
-    if (choices && choices->size() > 0)
-    {
-        auto choice = choices->getObject(0);
-        if (choice)
-        {
-            auto message = choice->getObject("message");
-            if (message)
-                ai_response.result = message->optValue<String>("content", "");
-            ai_response.finish_reason = choice->optValue<String>("finish_reason", "stop");
-        }
-    }
+    if (!choices || choices->size() == 0)
+        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "AI chat response is missing or has empty 'choices' array");
+
+    auto choice = choices->getObject(0);
+    if (!choice)
+        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "AI chat response is improperly formatted, JSON does not contain a response.");
+
+    auto message = choice->getObject("message");
+    if (!message)
+        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "AI chat response is missing output message");
+
+    ai_response.result = message->optValue<String>("content", "");
+    ai_response.finish_reason = choice->optValue<String>("finish_reason", "stop");
 
     if (json_obj->has("usage"))
     {
