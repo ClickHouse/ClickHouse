@@ -1211,20 +1211,23 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
         {
-            if (!settings[Setting::allow_experimental_json_ast_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Support for clickhouse_json dialect is disabled "
-                    "(turn on setting 'allow_experimental_json_ast_dialect')");
-
             /// Allow `SET` queries in plain SQL so users can switch back to another dialect
-            /// without being locked into JSON-only input.
-            if (isClickHouseJsonSetEscape(begin, end))
+            /// without being locked into JSON-only input. The experimental gate must be
+            /// applied only to the JSON-deserialization branch — otherwise a session with
+            /// `dialect = clickhouse_json` and `allow_experimental_json_ast_dialect = 0`
+            /// cannot execute `SET dialect = 'clickhouse'` to recover.
+            if (isClickHouseJSONSetEscape(begin, end))
             {
                 ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
                 out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             }
             else
             {
+                if (!settings[Setting::allow_experimental_json_ast_dialect])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Support for clickhouse_json dialect is disabled "
+                        "(turn on setting 'allow_experimental_json_ast_dialect')");
+
                 out_ast = IAST::createFromJSON(String(begin, end),
                     settings[Setting::max_ast_depth],
                     settings[Setting::max_ast_elements]);

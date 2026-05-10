@@ -14,6 +14,12 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&dialect=clickhouse_json" --data-binary
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_json_ast_dialect=1&dialect=clickhouse_json" --data-binary @- <<< "SET dialect = 'clickhouse'"
 echo 'set ok'
 
+# 2a. The `SET` escape hatch must work even when the experimental gate is off, so a
+#     session with `dialect = clickhouse_json` and `allow_experimental_json_ast_dialect = 0`
+#     can still issue `SET dialect = 'clickhouse'` to recover.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&dialect=clickhouse_json" --data-binary @- <<< "SET dialect = 'clickhouse'"
+echo 'set escape ok'
+
 # 3. With the experimental setting on, a valid JSON-encoded query produced by
 #    `parseQueryToJSON` is accepted through the `clickhouse_json` dialect.
 JSON=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT parseQueryToJSON('SELECT 42 AS answer') FORMAT TSVRaw")
