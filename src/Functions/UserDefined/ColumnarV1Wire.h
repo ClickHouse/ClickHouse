@@ -171,6 +171,32 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
     std::memcpy(dst, col.getRawData().data(), n * col.sizeOfValueIfFixed());
 }
 
+// Recursively check if a column tree contains Nullable at any depth.
+inline bool hasNullableNestedColumn(const IColumn & col)
+{
+    if (typeid_cast<const ColumnNullable *>(&col))
+        return true;
+
+    if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
+        return hasNullableNestedColumn(arr->getData());
+
+    if (const auto * tup = typeid_cast<const ColumnTuple *>(&col))
+    {
+        for (const auto & field : tup->getColumns())
+            if (hasNullableNestedColumn(*field))
+                return true;
+    }
+
+    if (const auto * var = typeid_cast<const ColumnVariant *>(&col))
+    {
+        for (const auto & variant : var->getVariants())
+            if (hasNullableNestedColumn(*variant))
+                return true;
+    }
+
+    return false;
+}
+
 // Compute byte layout for a single column and fill in desc.
 // Returns the next free offset in the output buffer.
 inline uint32_t buildColDescriptor(
@@ -236,10 +262,11 @@ inline uint32_t buildColDescriptor(
     // ── Array column → COL_COMPLEX ────────────────────────────────────────────
     if (const auto * arr_col = typeid_cast<const ColumnArray *>(col))
     {
-        // COL_COMPLEX does not support nullable nested types (no null-map encoding).
-        if (typeid_cast<const ColumnNullable *>(&arr_col->getData()))
+        // COL_COMPLEX does not support nullable nested types at any depth (no
+        // null-map encoding).  Reject Array(Nullable(...)), Array(Array(Nullable(...))), etc.
+        if (hasNullableNestedColumn(arr_col->getData()))
             throw Exception(ErrorCodes::WASM_ERROR,
-                "COLUMNAR_V1: Array(Nullable(...)) is not supported by COL_COMPLEX");
+                "COLUMNAR_V1: Array with Nullable nested type is not supported by COL_COMPLEX");
 
         desc.type        = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
         desc.null_offset = 0;
@@ -260,12 +287,13 @@ inline uint32_t buildColDescriptor(
     // ── Tuple column → COL_COMPLEX (no outer offsets, fields concatenated) ───
     if (const auto * tup_col = typeid_cast<const ColumnTuple *>(col))
     {
-        // COL_COMPLEX does not support nullable tuple fields (no null-map encoding).
+        // COL_COMPLEX does not support nullable tuple fields at any depth (no
+        // null-map encoding).  Reject Tuple(Nullable(...)), Tuple(Array(Nullable(...))), etc.
         const auto & tuple_cols = tup_col->getColumns();
         for (const auto & tuple_col : tuple_cols)
-            if (typeid_cast<const ColumnNullable *>(tuple_col.get()))
+            if (hasNullableNestedColumn(*tuple_col))
                 throw Exception(ErrorCodes::WASM_ERROR,
-                    "COLUMNAR_V1: Tuple with Nullable fields is not supported by COL_COMPLEX");
+                    "COLUMNAR_V1: Tuple with Nullable nested type is not supported by COL_COMPLEX");
 
         desc.type           = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
         desc.null_offset    = 0;

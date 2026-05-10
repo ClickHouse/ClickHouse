@@ -739,10 +739,12 @@ public:
             {
                 auto stop_token = interrupt_source.get_token();
                 auto result = cv1->executeColumnar(compartment_ptr, arguments, input_rows_count, context, stop_token);
-                if (result->getName() != user_defined_function->getResultType()->getName())
+                auto expected_col = user_defined_function->getResultType()->createColumn();
+                if (!result->structureEquals(*expected_col))
                     throw Exception(ErrorCodes::WASM_ERROR,
-                        "COLUMNAR_V1: returned column type {} does not match declared result type {}",
-                        result->getName(), user_defined_function->getResultType()->getName());
+                        "COLUMNAR_V1: returned column structure {} does not match declared type {}",
+                        result->dumpStructure(),
+                        user_defined_function->getResultType()->getName());
                 return result;
             }
 
