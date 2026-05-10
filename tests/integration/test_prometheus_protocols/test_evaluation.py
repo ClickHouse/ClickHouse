@@ -621,6 +621,13 @@ def test_absent_functions():
     )
 
     do_query_test(
+        'absent(nonexistent_metric{shape!="square", shape="circle"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
         'sum(absent(foo{shape="hexagon"}))',
         130,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',

@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <fmt/format.h>
 
@@ -84,21 +85,28 @@ Labels getLabelsForAbsentFunction(const Node * argument_node)
     if (!matchers)
         return labels;
 
-    std::unordered_map<String, bool> has;
+    struct LabelState
+    {
+        size_t matcher_count = 0;
+        std::optional<String> equal_value;
+    };
+
+    std::unordered_map<String, LabelState> label_states;
     for (const auto & matcher : *matchers)
     {
         if (matcher.label_name == kMetricName)
             continue;
 
-        if ((matcher.matcher_type == PQT::MatcherType::EQ) && !has[matcher.label_name])
-        {
-            labels[matcher.label_name] = matcher.label_value;
-            has[matcher.label_name] = true;
-        }
-        else
-        {
-            labels.erase(matcher.label_name);
-        }
+        auto & state = label_states[matcher.label_name];
+        ++state.matcher_count;
+        if (matcher.matcher_type == PQT::MatcherType::EQ)
+            state.equal_value = matcher.label_value;
+    }
+
+    for (const auto & [label_name, state] : label_states)
+    {
+        if ((state.matcher_count == 1) && state.equal_value)
+            labels[label_name] = *state.equal_value;
     }
 
     return labels;
