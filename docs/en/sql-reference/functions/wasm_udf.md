@@ -366,6 +366,10 @@ CREATE FUNCTION as_greet
 This ABI is experimental and subject to change in future releases.
 :::
 
+:::note
+For most use cases, the `BUFFERED_V1` ABI is recommended as the general-purpose interface. Use `COLUMNAR_V1` only when you need to eliminate serialization overhead for large data blocks.
+:::
+
 A high-performance ABI that passes columnar data directly in WASM linear memory without (de)serialization overhead.
 
 Unlike `BUFFERED_V1`, which serializes each row as a self-contained block, ClickHouse writes entire columns in a compact wire format and passes pointers to the WASM module. The guest code reads columns directly from memory and writes results back in the same format. This eliminates per-row serialization and deserialization costs, which can be significant for large blocks.

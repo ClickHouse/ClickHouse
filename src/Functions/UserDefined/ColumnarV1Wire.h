@@ -236,6 +236,11 @@ inline uint32_t buildColDescriptor(
     // ── Array column → COL_COMPLEX ────────────────────────────────────────────
     if (const auto * arr_col = typeid_cast<const ColumnArray *>(col))
     {
+        // COL_COMPLEX does not support nullable nested types (no null-map encoding).
+        if (typeid_cast<const ColumnNullable *>(&arr_col->getData()))
+            throw Exception(ErrorCodes::WASM_ERROR,
+                "COLUMNAR_V1: Array(Nullable(...)) is not supported by COL_COMPLEX");
+
         desc.type        = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
         desc.null_offset = 0;
 
@@ -255,6 +260,13 @@ inline uint32_t buildColDescriptor(
     // ── Tuple column → COL_COMPLEX (no outer offsets, fields concatenated) ───
     if (const auto * tup_col = typeid_cast<const ColumnTuple *>(col))
     {
+        // COL_COMPLEX does not support nullable tuple fields (no null-map encoding).
+        const auto & tuple_cols = tup_col->getColumns();
+        for (size_t i = 0; i < tuple_cols.size(); ++i)
+            if (typeid_cast<const ColumnNullable *>(tuple_cols[i].get()))
+                throw Exception(ErrorCodes::WASM_ERROR,
+                    "COLUMNAR_V1: Tuple with Nullable fields is not supported by COL_COMPLEX");
+
         desc.type           = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
         desc.null_offset    = 0;
         desc.offsets_offset = 0;
