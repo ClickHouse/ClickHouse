@@ -698,16 +698,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                         int cols = 0;
                         int rows = 0;
                         if (parseResizeMessage(fragment_buffer, cols, rows))
-                        {
-                            try
-                            {
-                                client_runner->changeWindowSize(cols, rows, 0, 0);
-                            }
-                            catch (...)
-                            {
-                                LOG_DEBUG(log, "Failed to resize PTY: {}", getCurrentExceptionMessage(false));
-                            }
-                        }
+                            client_runner->changeWindowSize(cols, rows, 0, 0);
                         break;
                     }
                     case 0x02: /// Binary message - terminal input
