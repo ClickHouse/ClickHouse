@@ -78,10 +78,23 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr contex
 {
     if (structure == "auto")
     {
-        /// Some formats have a fixed schema that can be derived without reading any data
-        /// (e.g. `LineAsString`, `RawBLOB`, `JSONAsString`). When the surrounding `INSERT`
-        /// query specifies such a format, use it as the source of truth so the user does
-        /// not have to repeat the structure on the table function.
+        /// The analyzer may have already set a structure hint by mapping
+        /// destination-table columns to identifier expressions in the surrounding
+        /// `INSERT ... SELECT` (see `Context::executeTableFunction` and
+        /// `QueryAnalyzer::resolveTableFunction`). Honour that hint first — the
+        /// user's destination column names take precedence over a format's
+        /// fixed schema, so queries like
+        ///     INSERT INTO t (data String) SELECT data FROM input() FORMAT LineAsString
+        /// keep working even though `LineAsString` declares its column as `line`.
+        if (!structure_hint.empty())
+            return structure_hint;
+
+        /// No analyzer hint. If the surrounding `INSERT` specifies a fixed-schema
+        /// format (`LineAsString`, `RawBLOB`, `JSONAsString`, ...), derive the
+        /// structure from the format. This handles the case from #104532 where
+        /// the SELECT list cannot be matched to the destination columns by name
+        /// (e.g. literals projected before the input column), so `structure_hint`
+        /// is left empty.
         const auto & insert_format = context->getInsertFormat();
         if (!insert_format.empty())
         {
@@ -93,13 +106,11 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr contex
             }
         }
 
-        if (structure_hint.empty())
-            throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                "Table function '{}' was used without structure argument but structure could not be determined automatically. Please, "
-                "provide structure manually",
-                getName());
-        return structure_hint;
+        throw Exception(
+            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+            "Table function '{}' was used without structure argument but structure could not be determined automatically. Please, "
+            "provide structure manually",
+            getName());
     }
     return parseColumnsListFromString(structure, context);
 }
