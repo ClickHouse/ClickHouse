@@ -6,12 +6,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_XXXXXX.sqlite")
+NUMERIC_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_numeric_XXXXXX.sqlite")
 COMPLEX_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_complex_XXXXXX.sqlite")
 NESTED_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_nested_XXXXXX.sqlite")
 SPECIAL_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_special_XXXXXX.sqlite")
 MULTIBLOCK_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_multiblock_XXXXXX.sqlite")
 EMPTY_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_empty_XXXXXX.sqlite")
-trap 'rm -f "$DB" "$COMPLEX_DB" "$NESTED_DB" "$SPECIAL_DB" "$MULTIBLOCK_DB" "$EMPTY_DB"' EXIT
+trap 'rm -f "$DB" "$NUMERIC_DB" "$COMPLEX_DB" "$NESTED_DB" "$SPECIAL_DB" "$MULTIBLOCK_DB" "$EMPTY_DB"' EXIT
 
 STRUCTURE="c1 Enum8('a' = 1), c2 Enum16('b' = 1), c3 Date32, c4 Int128, c5 UInt128, c6 Int256, c7 UInt256, c8 Decimal32(2), c9 Decimal64(2), c10 Decimal128(2), c11 Decimal256(2), c12 UUID, c13 IPv4, c14 IPv6, c15 Bool, c16 Nullable(UInt256), c17 LowCardinality(String), c18 DateTime64(3, 'UTC'), c19 FixedString(4), c20 Date, c21 DateTime('UTC'), c22 LowCardinality(Nullable(String))"
 
@@ -53,6 +54,50 @@ ${CLICKHOUSE_LOCAL} \
     --input-format SQLite \
     --output-format TSV \
     --query "SELECT * FROM table" < "$DB"
+
+${CLICKHOUSE_LOCAL} --query "
+    SELECT
+        CAST(-8, 'Int8') AS i8,
+        CAST(-1600, 'Int16') AS i16,
+        CAST(-32000, 'Int32') AS i32,
+        CAST(-9223372036854775807, 'Int64') AS i64,
+        CAST(255, 'UInt8') AS u8,
+        CAST(65535, 'UInt16') AS u16,
+        CAST(4294967295, 'UInt32') AS u32,
+        CAST(1.5, 'Float32') AS f32,
+        CAST(-2.25, 'Float64') AS f64,
+        CAST(1, 'Bool') AS b,
+        toUInt64(9223372036854775808) AS u64,
+        CAST('9223372036854775808', 'Int128') AS i128,
+        CAST('340282366920938463463374607431768211455', 'UInt128') AS u128,
+        CAST('-170141183460469231731687303715884105729', 'Int256') AS i256,
+        CAST('340282366920938463463374607431768211456', 'UInt256') AS u256,
+        toDecimal64(12.34, 2) AS d
+    FORMAT SQLite" > "$NUMERIC_DB"
+
+echo "Native numeric bindings with schema inference"
+${CLICKHOUSE_LOCAL} \
+    --input-format SQLite \
+    --output-format TSV \
+    --query "
+        SELECT
+            i8, toTypeName(i8),
+            i16, toTypeName(i16),
+            i32, toTypeName(i32),
+            i64, toTypeName(i64),
+            u8, toTypeName(u8),
+            u16, toTypeName(u16),
+            u32, toTypeName(u32),
+            f32, toTypeName(f32),
+            f64, toTypeName(f64),
+            b, toTypeName(b),
+            u64, toTypeName(u64),
+            i128, toTypeName(i128),
+            u128, toTypeName(u128),
+            i256, toTypeName(i256),
+            u256, toTypeName(u256),
+            d, toTypeName(d)
+        FROM table" < "$NUMERIC_DB"
 
 ${CLICKHOUSE_LOCAL} --query "
     SELECT

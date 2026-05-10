@@ -126,6 +126,64 @@ String makeInsertQuery(const Block & header, const String & table_name)
     return query.str();
 }
 
+void bindSQLiteValue(
+    sqlite3 * db,
+    sqlite3_stmt * statement,
+    int sqlite_index,
+    const IColumn & column,
+    size_t row,
+    const DataTypePtr & type,
+    const ISerialization & serialization,
+    const FormatSettings & settings)
+{
+    auto nested_type = removeLowCardinalityAndNullable(type);
+    WhichDataType which(nested_type);
+
+    if (isBool(nested_type))
+    {
+        checkSQLiteStatus(
+            db,
+            sqlite3_bind_int64(statement, sqlite_index, column[row].safeGet<UInt64>() != 0),
+            "Cannot bind boolean value");
+        return;
+    }
+
+    if (which.isNativeInt())
+    {
+        checkSQLiteStatus(
+            db,
+            sqlite3_bind_int64(statement, sqlite_index, column[row].safeGet<Int64>()),
+            "Cannot bind integer value");
+        return;
+    }
+
+    if (which.isUInt8() || which.isUInt16() || which.isUInt32())
+    {
+        checkSQLiteStatus(
+            db,
+            sqlite3_bind_int64(statement, sqlite_index, static_cast<sqlite3_int64>(column[row].safeGet<UInt64>())),
+            "Cannot bind unsigned integer value");
+        return;
+    }
+
+    if (which.isFloat())
+    {
+        checkSQLiteStatus(
+            db,
+            sqlite3_bind_double(statement, sqlite_index, column[row].safeGet<Float64>()),
+            "Cannot bind floating-point value");
+        return;
+    }
+
+    WriteBufferFromOwnString value;
+    serialization.serializeText(column, row, value, settings);
+    const auto value_string = value.str();
+    checkSQLiteStatus(
+        db,
+        sqlite3_bind_text(statement, sqlite_index, value_string.data(), static_cast<int>(value_string.size()), SQLITE_TRANSIENT),
+        "Cannot bind text value");
+}
+
 class SQLiteOutputFormat final : public IOutputFormat
 {
 public:
@@ -166,14 +224,15 @@ public:
                     continue;
                 }
 
-                WriteBufferFromOwnString value;
-                serializations[column_index]->serializeText(*columns[column_index], row, value, settings);
-                const auto value_string = value.str();
-                checkSQLiteStatus(
+                bindSQLiteValue(
                     sqlite_db.get(),
-                    sqlite3_bind_text(
-                        insert_statement.get(), sqlite_index, value_string.data(), static_cast<int>(value_string.size()), SQLITE_TRANSIENT),
-                    "Cannot bind text value");
+                    insert_statement.get(),
+                    sqlite_index,
+                    *columns[column_index],
+                    row,
+                    header->getByPosition(column_index).type,
+                    *serializations[column_index],
+                    settings);
             }
 
             int status = sqlite3_step(insert_statement.get());
