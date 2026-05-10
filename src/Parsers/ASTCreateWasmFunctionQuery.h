@@ -25,7 +25,6 @@ public:
         bool is_deterministic = false;
 
         WebAssemblyFunctionSettings settings;
-        bool is_deterministic = false;
     };
 
     bool or_replace = false;

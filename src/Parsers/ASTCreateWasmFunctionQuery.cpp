@@ -176,8 +176,6 @@ ASTCreateWasmFunctionQuery::Definition ASTCreateWasmFunctionQuery::validateAndGe
     for (const auto & setting : function_settings)
         info.settings.trySet(setting.name, setting.value);
 
-    info.is_deterministic = info.settings.getValue("is_deterministic").safeGet<UInt64>() != 0;
-
     return info;
 }
 
