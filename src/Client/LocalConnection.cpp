@@ -23,6 +23,7 @@
 #include <Common/CurrentThread.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
@@ -235,7 +236,11 @@ void LocalConnection::sendQuery(
         const Dialect & dialect = settings[Setting::dialect];
 
         ASTPtr parsed_query;
-        if (dialect == Dialect::clickhouse_json)
+        /// In `clickhouse_json` dialect, route the query through `IAST::createFromJSON`,
+        /// except for plain `SET` queries which are still parsed with `ParserQuery` so
+        /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
+        /// without being locked into JSON-only input.
+        if (dialect == Dialect::clickhouse_json && !isClickHouseJsonSetEscape(begin, end))
         {
             if (!settings[Setting::allow_experimental_json_ast_dialect])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

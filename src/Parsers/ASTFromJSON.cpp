@@ -329,4 +329,20 @@ size_t getJSONDeserializationMaxDepth()
     return json_deser_max_depth;
 }
 
+bool isClickHouseJsonSetEscape(const char * begin, const char * end)
+{
+    std::string_view query_view(begin, end - begin);
+    size_t pos = query_view.find_first_not_of(" \t\r\n");
+    if (pos == std::string_view::npos || query_view.size() - pos < 3)
+        return false;
+    if ((query_view[pos] != 'S' && query_view[pos] != 's')
+        || (query_view[pos + 1] != 'E' && query_view[pos + 1] != 'e')
+        || (query_view[pos + 2] != 'T' && query_view[pos + 2] != 't'))
+        return false;
+    if (query_view.size() - pos == 3)
+        return true;
+    char next = query_view[pos + 3];
+    return next == ' ' || next == '\t' || next == '\r' || next == '\n';
+}
+
 }

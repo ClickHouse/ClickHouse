@@ -18,3 +18,10 @@ echo 'set ok'
 #    `parseQueryToJSON` is accepted through the `clickhouse_json` dialect.
 JSON=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT parseQueryToJSON('SELECT 42 AS answer') FORMAT TSVRaw")
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_json_ast_dialect=1&dialect=clickhouse_json" --data-binary "$JSON"
+
+# 4. The same `SET` escape hatch must work in `clickhouse-client` so an interactive
+#    user who issues `SET dialect = 'clickhouse_json'` can still switch back.
+${CLICKHOUSE_CLIENT} --allow_experimental_json_ast_dialect 1 --multiquery -q "SET dialect = 'clickhouse_json'; SET dialect = 'clickhouse'; SELECT 100;"
+
+# 5. The same `SET` escape hatch must work in `clickhouse-local`.
+${CLICKHOUSE_LOCAL} --allow_experimental_json_ast_dialect 1 --multiquery -q "SET dialect = 'clickhouse_json'; SET dialect = 'clickhouse'; SELECT 200;"

@@ -32,6 +32,7 @@
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Parsers/toOneLineQuery.h>
@@ -1215,17 +1216,9 @@ static BlockIO executeQueryImpl(
                     "Support for clickhouse_json dialect is disabled "
                     "(turn on setting 'allow_experimental_json_ast_dialect')");
 
-            std::string_view query_view(begin, end - begin);
-
-            /// Allow SET queries in plain SQL so users can switch back to another dialect.
-            /// Detect by checking if the query starts with "SET" (after trimming whitespace).
-            size_t pos = query_view.find_first_not_of(" \t\r\n");
-            if (pos != std::string_view::npos
-                && query_view.size() - pos >= 3
-                && (query_view[pos] == 'S' || query_view[pos] == 's')
-                && (query_view[pos + 1] == 'E' || query_view[pos + 1] == 'e')
-                && (query_view[pos + 2] == 'T' || query_view[pos + 2] == 't')
-                && (query_view.size() - pos == 3 || query_view[pos + 3] == ' ' || query_view[pos + 3] == '\t' || query_view[pos + 3] == '\r' || query_view[pos + 3] == '\n'))
+            /// Allow `SET` queries in plain SQL so users can switch back to another dialect
+            /// without being locked into JSON-only input.
+            if (isClickHouseJsonSetEscape(begin, end))
             {
                 ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
                 out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);

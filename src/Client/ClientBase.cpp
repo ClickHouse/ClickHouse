@@ -42,6 +42,7 @@
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -411,7 +412,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
     const Dialect dialect = settings[Setting::dialect];
 
-    if (dialect == Dialect::clickhouse_json)
+    /// In `clickhouse_json` dialect, route the query through `IAST::createFromJSON`,
+    /// except for plain `SET` queries which are still parsed with `ParserQuery` so
+    /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
+    /// without being locked into JSON-only input.
+    if (dialect == Dialect::clickhouse_json && !isClickHouseJsonSetEscape(pos, end))
     {
         if (!settings[Setting::allow_experimental_json_ast_dialect])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
