@@ -57,6 +57,20 @@ class TestRewriteAnyComparison(unittest.TestCase):
         sql = "SELECT * FROM t WHERE a + b = ANY(arr)"
         self.assertEqual(rewrite_any_comparison(sql), sql)
 
+    def test_subquery_operand_not_rewritten(self):
+        # `a = ANY(SELECT ...)` must not become `has(SELECT ..., a)`, because
+        # `has` requires an array argument, not a subquery.
+        sql = "SELECT * FROM t WHERE a = ANY(SELECT b FROM u)"
+        self.assertEqual(rewrite_any_comparison(sql), sql)
+
+    def test_subquery_operand_with_with_clause_not_rewritten(self):
+        sql = "SELECT * FROM t WHERE a = ANY(WITH x AS (SELECT 1) SELECT b FROM u)"
+        self.assertEqual(rewrite_any_comparison(sql), sql)
+
+    def test_subquery_operand_not_equal_not_rewritten(self):
+        sql = "SELECT * FROM t WHERE a != ANY(SELECT b FROM u)"
+        self.assertEqual(rewrite_any_comparison(sql), sql)
+
 
 class TestFetchOffsetRewrite(unittest.TestCase):
     def test_offset_rows_fetch_first_rows_only(self):

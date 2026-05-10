@@ -476,6 +476,14 @@ def rewrite_any_comparison(sql):
 
         array_expr = sql[paren_start + 1:paren_end]
 
+        # `ANY(SELECT ...)` / `ANY(WITH ...)` is a subquery, not an array. `has`
+        # only accepts an array argument, so rewriting `a = ANY(SELECT b FROM u)`
+        # to `has(SELECT b FROM u, a)` would produce invalid SQL. Skip those.
+        if re.match(r'\s*(?:SELECT|WITH)\b', array_expr, re.IGNORECASE):
+            result.append(sql[m.start():paren_end + 1])
+            i = paren_end + 1
+            continue
+
         # Extract the LHS from what we've accumulated so far.
         # Only match simple identifiers (possibly qualified with table/db prefix),
         # not arbitrary expressions like `a + b` or `a::integer` — rewriting those
