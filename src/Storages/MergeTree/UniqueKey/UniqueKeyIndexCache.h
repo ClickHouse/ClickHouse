@@ -35,9 +35,6 @@ struct UniqueKeyIndexCacheEntry
     /// Memory allocator passed at Insert time (must outlive the cache; RocksDB
     /// contract). Forwarded to helper->del_cb on eviction.
     void * allocator = nullptr;
-    /// Number of live HandlePins referring to this entry. Drives pinned-charge
-    /// accounting: 0→1 transition adds charge to pinned total; 1→0 removes it.
-    std::atomic<int32_t> pin_count{0};
 
     UniqueKeyIndexCacheEntry() = default;
     ~UniqueKeyIndexCacheEntry();
@@ -86,20 +83,20 @@ UInt128 uniqueKeyIndexHashKey(const char * data, size_t size);
 /// accounting flows through `system.caches` via `UniqueKeyIndexCacheBytes` /
 /// `UniqueKeyIndexCacheEntries` CurrentMetrics.
 ///
-/// Design notes:
-///   - Single-sharded. Sharding is delegated to `CacheBase`'s internal mutex;
-///     benchmarks will decide later whether to stripe.
-///   - `Handle*` lifetime: Lookup allocates a `HandlePin` on the heap holding
-///     a `std::shared_ptr<UniqueKeyIndexCacheEntry>` keeping the entry alive and
-///     an atomic ref count. `Ref` increments, `Release` decrements and deletes
-///     the pin at zero.
-///   - Secondary cache: not supported. `create_context`, `StartAsyncLookup`,
-///     `WaitAll`, `SecondaryCache*` surfaces are no-ops (inherited defaults).
-///   - Eviction callback: `CacheBase::onEntryRemoval` fires RocksDB's
-///     `helper->del_cb` for each evicted object.
+/// Best-effort capacity, matching `MarkCache` / `UncompressedCache`.
+/// `SetStrictCapacityLimit(true)` is accepted and reported by
+/// `HasStrictCapacityLimit()` but admission is not gated on the flag.
+/// `GetPinnedUsage()` returns 0; RocksDB callers use it as a metric, not for
+/// correctness, and our consumers don't read it.
 ///
-/// The adapter is registered on `Context` alongside `MarkCache`; see
-/// `Context::setUniqueKeyIndexCache`.
+/// `Handle*` lifetime: Lookup / Insert(handle) allocate a `HandlePin` on the
+/// heap holding a `shared_ptr<UniqueKeyIndexCacheEntry>` (keeping the entry
+/// alive past backing eviction) and an atomic ref count. `Ref` increments,
+/// `Release` decrements and deletes the pin at zero.
+///
+/// Eviction callback: `UniqueKeyIndexCacheEntry::~UniqueKeyIndexCacheEntry`
+/// fires RocksDB's `helper->del_cb` when the entry's last `shared_ptr` drops.
+/// Secondary cache and async lookup surfaces are inherited no-ops.
 class UniqueKeyIndexCache : public ROCKSDB_NAMESPACE::Cache
 {
 public:
@@ -183,7 +180,6 @@ private:
     UniqueKeyIndexCacheBackingPtr backing;
     std::atomic<bool> strict_capacity_limit{false};
     std::atomic<uint64_t> next_id{1};
-    std::atomic<size_t> pinned_charge_total{0};
 };
 
 using UniqueKeyIndexCachePtr = std::shared_ptr<UniqueKeyIndexCache>;
