@@ -9,6 +9,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
@@ -125,6 +126,8 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'model'", collection_name);
         if (api_key.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'api_key'", collection_name);
+
+        getContext()->getRemoteHostFilter().checkURL(Poco::URI(endpoint));
 
         UInt64 dimensions = 0;
         if (arguments.size() > 2)
