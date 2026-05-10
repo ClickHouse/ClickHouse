@@ -20,8 +20,11 @@ class IMergeTreeDataPart;
 template <class Cond>
 class ConditionTemplate
 {
+    Cond generate(const ActionsDAG::Node * root) const;
+
 public:
     using Factory = std::function<Cond(const ActionsDAG::Node *)>;
+    using Transformer = std::function<void(Cond &)>;
     using Ptr = std::shared_ptr<ConditionTemplate<Cond>>;
 
     ConditionTemplate(
@@ -32,15 +35,19 @@ public:
 
     const ActionsDAG * getDAG() const { return &dag->dag.value(); }
 
+    /// Substitutes nothing.
+    const Cond & generateUnsubstituted() const;
+
     /// Substitutes partition level constants into dag.
     const Cond & generateForPartition(const MergeTreePartition & partition) const;
 
-    /// Substitutes nothing.
-    const Cond & generateUnsubstituted() const;
+    /// Maps already generated condition using provided lambda.
+    void addTransformation(Transformer transformer_);
 
 private:
     std::shared_ptr<ActionsDAGWithInversionPushDown> dag;
     Factory factory;
+    Transformer transformer;
     StorageMetadataPtr metadata_snapshot;
     ContextPtr context;
     NameSet partition_constant_names;

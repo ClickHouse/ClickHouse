@@ -2000,14 +2000,15 @@ void ReadFromMergeTree::buildIndexes(
     auto filter_dag_ptr = std::make_shared<ActionsDAGWithInversionPushDown>(filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr, query_context);
     const auto & filter_dag = *filter_dag_ptr;
 
-    indexes.emplace(
-        ReadFromMergeTree::Indexes{KeyCondition{
-            filter_dag,
-            query_context,
-            primary_key_column_names,
-            primary_key.expression,
-            /* single_point_ = */ false,
-            /* skip_analysis_ = */ !settings[Setting::use_primary_key]}});
+    {
+        auto key_condition_factory = [query_context, primary_key_column_names, primary_key](const ActionsDAG::Node * predicate)
+        {
+            ActionsDAGWithInversionPushDown wrapped(predicate, query_context);
+            return KeyCondition{wrapped, query_context, primary_key_column_names, primary_key.expression, /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
+        };
+        auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, key_condition_factory, metadata_snapshot, query_context);
+        indexes.emplace(std::move(key_condition_template));
+    }
 
     NamesAndTypesList dummy_names_and_types;
     indexes->key_condition_rpn_template = KeyCondition{filter_dag, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(dummy_names_and_types))};
@@ -2466,7 +2467,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
 
-    if (indexes->key_condition.alwaysUnknownOrTrue())
+    if (indexes->key_condition->generateUnsubstituted().alwaysUnknownOrTrue())
     {
         if (settings[Setting::force_primary_key])
         {
@@ -2479,7 +2480,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         ProfileEvents::increment(ProfileEvents::SelectQueriesWithPrimaryKeyUsage);
     }
 
-    LOG_DEBUG(log, "Key condition: {}", indexes->key_condition.toString());
+    LOG_DEBUG(log, "Key condition: {}", indexes->key_condition->generateUnsubstituted().toString());
 
     if (indexes->part_offset_condition)
         LOG_DEBUG(log, "Part offset condition: {}", indexes->part_offset_condition->toString());
@@ -2487,7 +2488,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (indexes->total_offset_condition)
         LOG_DEBUG(log, "Total offset condition: {}", indexes->total_offset_condition->toString());
 
-    if (indexes->key_condition.alwaysFalse())
+    if (indexes->key_condition->generateUnsubstituted().alwaysFalse())
         return std::make_shared<AnalysisResult>(std::move(result));
 
     size_t total_marks_pk = 0;
@@ -2662,7 +2663,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                     analyzed_parts_ranges.insert_range(std::move(parts_on_replica));
                 }
 
-                auto index_description = indexes->key_condition.getDescription();
+                auto index_description = indexes->key_condition->generateUnsubstituted().getDescription();
                 result.index_stats.emplace_back(IndexStat{
                     .type = IndexType::PrimaryKey,
                     .condition = index_description.condition,

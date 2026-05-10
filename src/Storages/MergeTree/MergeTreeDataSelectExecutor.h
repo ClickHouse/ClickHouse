@@ -254,7 +254,7 @@ public:
         const SelectQueryInfo & select_query_info,
         NamesAndTypesList available_real_columns,
         const RangesInDataParts & parts,
-        KeyCondition & key_condition,
+        ConditionTemplate<KeyCondition>::Ptr & key_condition,
         const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,

@@ -185,9 +185,21 @@ ActionsDAG substituteConstantInputs(
     }
 
     new_dag.getOutputs().push_back(mapping.at(predicate_node));
+    new_dag.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/true);
     return new_dag;
 }
 
+}
+
+template <typename Cond>
+Cond ConditionTemplate<Cond>::generate(const ActionsDAG::Node * root) const
+{
+    Cond condition = factory(root);
+
+    if (transformer)
+        transformer(condition);
+
+    return condition;
 }
 
 template <typename Cond>
@@ -212,7 +224,7 @@ const Cond & ConditionTemplate<Cond>::generateUnsubstituted() const
         return unsubstituted.value();
 
     const ActionsDAG::Node * predicate = dag ? dag->predicate : nullptr;
-    Cond produced = factory(predicate);
+    Cond produced = generate(predicate);
     unsubstituted.emplace(std::move(produced));
 
     return unsubstituted.value();
@@ -233,11 +245,30 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartit
     auto specialized = substituteConstantInputs(dag->predicate, partition_constant_names, partition, partition_id, metadata_snapshot);
     chassert(!specialized.getOutputs().empty());
 
-    Cond produced = factory(specialized.getOutputs().front());
+    Cond produced = generate(specialized.getOutputs().front());
     const auto [it, inserted] = cache.emplace(partition_id, std::move(produced));
     chassert(inserted);
 
     return it->second;
+}
+
+template <typename Cond>
+void ConditionTemplate<Cond>::addTransformation(Transformer transformer_)
+{
+    std::unique_lock lock(mutex);
+
+    if (!transformer)
+    {
+        transformer = std::move(transformer_);
+        return;
+    }
+
+    transformer = [prev_transform = std::exchange(transformer, nullptr), next_transform = std::move(transformer_)](Cond & condition) -> Cond
+    {
+        prev_transform(condition);
+        next_transform(condition);
+        return condition;
+    };
 }
 
 template class ConditionTemplate<KeyCondition>;

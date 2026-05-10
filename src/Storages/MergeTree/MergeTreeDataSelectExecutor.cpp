@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
@@ -42,6 +43,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/CurrentMetrics.h>
@@ -202,7 +204,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     const SelectQueryInfo & select_query_info,
     NamesAndTypesList available_real_columns,
     const RangesInDataParts & parts,
-    KeyCondition & key_condition,
+    ConditionTemplate<KeyCondition>::Ptr & key_condition,
     const MergeTreeData & data,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
@@ -256,7 +258,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         /// read) into the relative `SAMPLE 0.1` (how much data to read).
         size_t approx_total_rows = 0;
         if (relative_sample_size > 1 || relative_sample_offset > 1)
-            approx_total_rows = getApproximateTotalRowsToRead(parts, metadata_snapshot, key_condition, settings, log);
+            approx_total_rows = getApproximateTotalRowsToRead(parts, metadata_snapshot, key_condition->generateUnsubstituted(), settings, log);
 
         if (relative_sample_size > 1)
         {
@@ -411,10 +413,13 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             if (has_lower_limit)
             {
-                if (!key_condition.addCondition(
-                        sampling_key.column_names[0],
-                        Range::createLeftBounded(lower, true, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
+                if (!std::ranges::contains(metadata_snapshot->getPrimaryKey().column_names, sampling_key.column_names[0]))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
+
+                key_condition->addTransformation([lower, sampling_key_name = sampling_key.column_names[0], sampling_key_type = sampling_key.data_types[0]](KeyCondition & condition)
+                {
+                    condition.addCondition(sampling_key_name, Range::createLeftBounded(lower, true, isNullableOrLowCardinalityNullable(sampling_key_type)));
+                });
 
                 ASTPtr args = make_intrusive<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
@@ -430,10 +435,13 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             if (has_upper_limit)
             {
-                if (!key_condition.addCondition(
-                        sampling_key.column_names[0],
-                        Range::createRightBounded(upper, false, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
+                if (!std::ranges::contains(metadata_snapshot->getPrimaryKey().column_names, sampling_key.column_names[0]))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
+
+                key_condition->addTransformation([upper, sampling_key_name = sampling_key.column_names[0], sampling_key_type = sampling_key.data_types[0]](KeyCondition & condition)
+                {
+                    condition.addCondition(sampling_key_name, Range::createRightBounded(upper, false, isNullableOrLowCardinalityNullable(sampling_key_type)));
+                });
 
                 ASTPtr args = make_intrusive<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
@@ -912,7 +920,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
                     metadata_snapshot,
-                    key_condition,
+                    key_condition->generateForPartition(ranges.data_part->partition),
                     part_offset_condition,
                     total_offset_condition,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
@@ -1161,7 +1169,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             pk_stat.elapsed_us.load() / 1000,
             num_threads);
 
-        auto description = key_condition.getDescription();
+        auto description = key_condition->generateUnsubstituted().getDescription();
 
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::PrimaryKey,

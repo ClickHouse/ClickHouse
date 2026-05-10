@@ -271,7 +271,7 @@ public:
 
     struct Indexes
     {
-        explicit Indexes(KeyCondition key_condition_)
+        explicit Indexes(ConditionTemplate<KeyCondition>::Ptr key_condition_)
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
             , use_skip_indexes_for_disjunctions(false)
@@ -279,7 +279,7 @@ public:
             , use_skip_indexes_on_data_read(false)
         {}
 
-        KeyCondition key_condition;
+        ConditionTemplate<KeyCondition>::Ptr key_condition;
         std::optional<KeyCondition> key_condition_rpn_template; /// skeleton of the key condition without resolved columns
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
