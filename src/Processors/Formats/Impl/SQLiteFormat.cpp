@@ -358,6 +358,7 @@ void registerInputFormatSQLite(FormatFactory & factory)
         [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams & params, const FormatSettings & settings)
         { return std::make_shared<SQLiteInputFormat>(buf, std::make_shared<const Block>(sample), settings, params.max_block_size_rows); });
 
+    factory.markFormatSupportsSubsetOfColumns("SQLite");
     factory.registerFileExtension("sqlite", "SQLite");
     factory.registerFileExtension("sqlite3", "SQLite");
 }
