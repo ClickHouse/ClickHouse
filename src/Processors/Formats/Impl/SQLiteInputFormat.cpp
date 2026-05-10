@@ -105,7 +105,8 @@ private:
     void initialize()
     {
         sqlite_db = openSQLiteDatabaseForRead(*in, settings);
-        statement = prepareSQLiteStatement(sqlite_db.get(), makeSelectQuery(*header, resolveInputTableName(sqlite_db.get(), settings)));
+        const auto table_name = resolveInputTableName(sqlite_db.get(), settings);
+        statement = prepareSQLiteStatement(sqlite_db.get(), makeSelectQuery(*header, table_name));
         initialized = true;
     }
 

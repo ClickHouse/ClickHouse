@@ -33,3 +33,15 @@ then
 else
     grep -o "UNEXPECTED_DATA_AFTER_PARSED_VALUE" "$CLICKHOUSE_TMP/sqlite_format_projection_error.log"
 fi
+
+echo "Read missing column"
+if ${CLICKHOUSE_LOCAL} \
+    --input-format SQLite \
+    --input_format_sqlite_table_name data \
+    --structure "id UInt64, missing String, payload String" \
+    --query "SELECT missing FROM table" < "$DB" > /dev/null 2> "$CLICKHOUSE_TMP/sqlite_format_projection_missing_column_error.log"
+then
+    echo "Fail"
+else
+    grep -o "SQLITE_ENGINE_ERROR" "$CLICKHOUSE_TMP/sqlite_format_projection_missing_column_error.log"
+fi

@@ -60,6 +60,10 @@ inline SQLitePtr openSQLiteDatabase(const String & path)
             sqlite3_close(db);
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot open SQLite database {}. Status: {}. Message: {}", path, status, message);
     }
+
+    checkSQLiteStatus(db, sqlite3_db_config(db, SQLITE_DBCONFIG_DQS_DDL, 0, nullptr), "Cannot disable SQLite DQS in DDL statements");
+    checkSQLiteStatus(db, sqlite3_db_config(db, SQLITE_DBCONFIG_DQS_DML, 0, nullptr), "Cannot disable SQLite DQS in DML statements");
+
     return SQLitePtr(db, sqlite3_close);
 }
 
