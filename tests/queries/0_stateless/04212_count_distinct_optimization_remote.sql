@@ -7,6 +7,8 @@
 -- was replaced by a direct `IStorage::isRemote` check, which must cover both
 -- `TableNode` and `TableFunctionNode` join trees.
 
+SET enable_analyzer = 1; -- `EXPLAIN QUERY TREE` requires the analyzer
+
 DROP TABLE IF EXISTS data_04212;
 DROP TABLE IF EXISTS dist_04212;
 
