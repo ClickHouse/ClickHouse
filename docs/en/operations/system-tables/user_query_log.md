@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 ## Description {#description}
 
-The `system.user_query_log` table is a view over `system.query_log` that returns only rows where the `user` column is equal to `currentUser`.
+The `system.user_query_log` table is a view over `system.query_log` that returns only rows where the `user` column is equal to `currentUser()`.
 
 The view is created with `SQL SECURITY DEFINER` and the `default` user as the definer, so a user can read their own query log rows through `system.user_query_log` without being granted direct access to `system.query_log`. Users do not need an explicit `SELECT` grant on `system.user_query_log`.
 
