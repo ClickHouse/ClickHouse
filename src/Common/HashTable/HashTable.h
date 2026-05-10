@@ -1400,8 +1400,14 @@ public:
     /// construction, so we can skip the key-equality check on each probe step: use
     /// insertUniqueNonZero for non-zero keys (findEmptyCell only checks isZero, not keyEquals)
     /// and copy directly into zeroValue storage for the zero key.
-    void insertForDeserialization(const Cell & x)
+    /// Takes x by value so we can call setHash on it: read() does not deserialize saved_hash
+    /// for cells like HashMapCellWithSavedHash, so we must initialize it from the key before
+    /// copying the cell into the buffer (affects both keyEquals fast-path and reinsert on resize).
+    void insertForDeserialization(Cell x)
     {
+        const size_t hash_value = this->hash(Cell::getKey(x.getValue()));
+        x.setHash(hash_value);
+
         if constexpr (Cell::need_zero_value_storage)
         {
             if (Cell::isZero(Cell::getKey(x.getValue()), *this))
@@ -1414,7 +1420,7 @@ public:
                 return;
             }
         }
-        insertUniqueNonZero(&x, x.getHash(*this));
+        insertUniqueNonZero(&x, hash_value);
     }
 
     void read(DB::ReadBuffer & rb)
