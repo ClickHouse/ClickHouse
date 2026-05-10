@@ -87,9 +87,17 @@ void optimizeCountByGranularity(QueryPlan::Node & node, QueryPlan::Nodes & nodes
 
     /// Bail out if any part has lightweight deletes — getRowsCountInRange counts
     /// physical rows, not visible rows, so we'd overcount.
+    /// Also bail out if any part's primary index has fewer columns than the PK:
+    /// the `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns` setting
+    /// can drop suffix columns from the in-memory index when their cardinality is
+    /// high enough, and the bucket expression needs all PK columns to evaluate.
     for (const auto & part : reading->getParts())
     {
         if (part.data_part->hasLightweightDelete())
+            return;
+
+        auto index = part.data_part->getIndex();
+        if (!index || index->size() < primary_key.column_names.size())
             return;
     }
 

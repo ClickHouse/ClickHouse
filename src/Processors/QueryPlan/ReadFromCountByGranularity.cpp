@@ -670,7 +670,13 @@ private:
                     }
                     else
                     {
-                        size_t rows = is_last
+                        /// `is_last` means "last mark in the non-null section",
+                        /// not "last mark in the part". Only the actual last mark
+                        /// of the part may have a partial row count, so use the
+                        /// per-granule row count for any mark that is not the
+                        /// final one.
+                        bool is_last_in_part = (mark + 1 >= marks_without_final);
+                        size_t rows = is_last_in_part
                             ? part.rows_count - granularity.getRowsCountInRange(0, mark)
                             : granularity.getRowsCountInRange(mark, mark + 1);
                         if (rows > 0 && reader)

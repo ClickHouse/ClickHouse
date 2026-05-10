@@ -297,9 +297,11 @@ DROP TABLE t_pk_expr;
 
 -- =====================================================
 -- 24. Nullable PK column
+-- Pin index_granularity so the boundary granule (mark whose first row
+-- is non-null but later rows are NULL) is exercised deterministically.
 -- =====================================================
 DROP TABLE IF EXISTS t_nullable_pk;
-CREATE TABLE t_nullable_pk (k Nullable(UInt32)) ENGINE = MergeTree() ORDER BY k SETTINGS allow_nullable_key = 1;
+CREATE TABLE t_nullable_pk (k Nullable(UInt32)) ENGINE = MergeTree() ORDER BY k SETTINGS allow_nullable_key = 1, index_granularity = 64;
 INSERT INTO t_nullable_pk SELECT if(number % 10 = 0, NULL, number) FROM numbers(1000);
 SET optimize_trivial_group_by_count_query = 1;
 SELECT 'nullable_pk_on';
