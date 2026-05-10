@@ -1314,7 +1314,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     auto drop_mark_ranges = [&](const ActionsDAG::Node * dag)
     {
-        UInt64 condition_hash = dag->getHash();
+        /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
+        /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
+        size_t condition_hash = dag->getHash();
 
         /// Mirror the salting done by `updateQueryConditionCache` on the write path: when the read
         /// goes through a TopK filter, the cached granule decisions are valid only for the same
