@@ -853,21 +853,38 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// scheduler pops the most recently idle thread from the stack, sets
             /// its `idle_wakeup_flag`, and notifies only that thread's CV.
             ///
-            /// The notifier always pops us from the idle stack before setting the
-            /// flag (see `popNewestIdleThreadNoLock`, `wakeUpAllIdleThreadsNoLock`,
-            /// `wakeUpExcessIdleThreadsNoLock`), so when `cv.wait` returns, this
-            /// thread is no longer in the stack. The outer `while` re-checks the
-            /// pool state to handle the rare race where the queued job was already
-            /// taken by a busy thread before this one woke up — in that case we
-            /// just push ourselves back onto the idle stack and wait again.
+            /// The wait predicate also re-checks the real pool state. This is a
+            /// required safety net: a previous attempt to drop it
+            /// (commit `9322e66151ea`) deadlocked the
+            /// `SchedulerWorkloadResourceManager.DropNotEmptyQueueLong` unit test
+            /// under TSan. Even though every notifier
+            /// (`popNewestIdleThreadNoLock`, `wakeUpAllIdleThreadsNoLock`,
+            /// `wakeUpExcessIdleThreadsNoLock`) sets `idle_wakeup_flag` before
+            /// notifying the per-thread CV, there are interleavings where a
+            /// queued job becomes visible to this worker without a paired
+            /// notification. Re-checking the pool state in the predicate lets a
+            /// notified or spuriously-woken worker pick up such jobs (or observe
+            /// shutdown / a reduced thread limit) instead of sleeping forever.
+            ///
+            /// If the worker wakes through this fallback predicate it is still
+            /// linked in the idle stack, so we explicitly remove it after the
+            /// wait. When the worker wakes via the LIFO path the notifier has
+            /// already popped it and `removeIdleThreadNoLock` is a no-op.
             while (parent_pool.jobs.empty()
                 && !parent_pool.shutdown
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
                 idle_wakeup_flag = false;
                 parent_pool.pushIdleThreadNoLock(this);
-                cv.wait(lock, [this] { return idle_wakeup_flag; });
-                chassert(!in_idle_stack);
+                cv.wait(lock, [this]
+                {
+                    return idle_wakeup_flag
+                        || !parent_pool.jobs.empty()
+                        || parent_pool.shutdown
+                        || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
+                });
+
+                parent_pool.removeIdleThreadNoLock(this);
             }
 
             if (parent_pool.jobs.empty() || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
