@@ -71,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
+            {"optimize_in_to_equal", false, true, "New setting: optimize `IN` with single element to `equals`, and `NOT IN` to `notEquals`."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -146,7 +147,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"webassembly_udf_max_instances", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."},
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
             {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
-            {"optimize_in_to_equal", true, true, "Optimize IN with single element to equals, and NOT IN to notEquals"},
             {"allow_statistics", false, true, "Column statistics are now GA"},
             {"allow_experimental_statistics", false, true, "Column statistics are now GA"},
             {"allow_experimental_expire_snapshots", false, false, "New setting."},
