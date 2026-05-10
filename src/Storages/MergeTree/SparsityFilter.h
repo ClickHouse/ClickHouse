@@ -26,10 +26,11 @@ namespace DB
 ///   1. **Per-part flag.** `SerializationInfo::Data::add(const IColumn &)`
 ///      computes `num_defaults` exactly via `IColumn::getNumberOfDefaultRows`,
 ///      and the writer marks the entry with `exact_num_defaults: true` in
-///      `serialization.json`. `MergeTreeData::getColumnDefaultnessStats`
-///      requires this flag *and* a `Sparse` kind on every visible part; if
-///      any part is missing either (e.g. parts written by older servers
-///      without the flag) the rewrite is skipped storage-wide.
+///      `serialization.json`. The flag is set for every sparse-eligible
+///      column regardless of which serialization kind was ultimately chosen
+///      (Default or Sparse). `MergeTreeData::getColumnDefaultnessStats`
+///      requires the flag on every visible part; parts written by older
+///      servers without it cause the rewrite to skip storage-wide.
 ///
 ///   2. **Storage-level invariants** (also checked by
 ///      `MergeTreeData::getColumnDefaultnessStats`):

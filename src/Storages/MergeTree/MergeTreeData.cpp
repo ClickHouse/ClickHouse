@@ -5865,14 +5865,12 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
         if (it == infos.end())
             return std::nullopt;
 
-        /// `SerializationInfo::Data::add(IColumn)` records the exact count, and the
-        /// writer persists `exact_num_defaults: true` in `serialization.json` so old
-        /// parts (pre-flag) are treated as non-trustworthy. The Sparse-kind check is
-        /// defence in depth -- only sparse-encoded columns get the flag set.
-        const auto & info = *it->second;
-        const auto & info_data = info.getData();
-        if (!info_data.exact_num_defaults
-            || !ISerialization::hasKind(info.getKindStack(), ISerialization::Kind::SPARSE))
+        /// `SerializationInfo::Data::add(IColumn)` records the exact count for every
+        /// sparse-eligible column (including those that end up Default-encoded), and
+        /// the writer persists `exact_num_defaults: true` so old parts (pre-flag) are
+        /// treated as non-trustworthy.
+        const auto & info_data = it->second->getData();
+        if (!info_data.exact_num_defaults)
             return std::nullopt;
 
         aggregate.num_rows += part->rows_count;
