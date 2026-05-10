@@ -1,0 +1,37 @@
+More data types schema inference
+c1	String
+c2	String
+c3	String
+c4	String
+c5	String
+c6	String
+c7	String
+c8	String
+c9	String
+c10	String
+c11	String
+c12	String
+c13	String
+c14	String
+c15	Int64
+c16	Nullable(String)
+c17	String
+c18	String
+c19	String
+c20	String
+c21	String
+c22	Nullable(String)
+More data types roundtrip
+a	b	2020-01-01	9223372036854775808	42	-9223372036854775809	42	42.42	42.42	42.42	42.42	00112233-4455-6677-8899-aabbccddeeff	192.168.1.10	2001:db8::1	true	\N	low	2024-02-29 12:34:56.789	test	2024-02-29	2024-02-29 12:34:56	nullable low
+Complex data types roundtrip
+(42,'Hello')	({42:[1,2,3]},[([(1,2),(1,2)],'Hello',[1,2,3]),([],'World',[1])])	[1,NULL,3]	{'x':10,'y':NULL}
+String bytes and complex DateTime roundtrip
+275C090A00	5	610062	3	{'Hello':'2020-01-01 00:00:00'}
+Multi-block roundtrip
+0	[0,1]	{'k0':0}
+1	[1,2]	{'k1':1}
+2	[2,3]	{'k2':2}
+3	[3,4]	{'k3':3}
+4	[4,5]	{'k4':4}
+Empty result set
+0
