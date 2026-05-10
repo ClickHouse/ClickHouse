@@ -11,6 +11,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/BoolMask.h>
 
 #include <Common/FieldAccurateComparison.h>
@@ -214,12 +215,21 @@ const ActionsDAG::Node & addConstUInt8(ActionsDAG & dag, UInt8 value, const Stri
     return dag.addColumn(std::move(c));
 }
 
-/// Add a literal (constant) column with the given DataType and value.
-const ActionsDAG::Node & addLiteral(ActionsDAG & dag, const DataTypePtr & type, const Field & value, const String & name_hint)
+/// Add a literal (constant) column with the given DataType and value. The KeyCondition's range
+/// bounds carry Fields whose underlying type does not always match the index column's
+/// `DataType` - e.g. an `event_time DateTime64` index against `event_time >= now() - 600` ends
+/// up with a `UInt64`-tagged Field bound while the column expects `Decimal64`. Run
+/// `convertFieldToType` so the Field is reshaped to what `createColumnConst` requires;
+/// returns `nullptr` (and the caller bails out of the bulk path) if no representable value
+/// exists in the target type.
+const ActionsDAG::Node * addLiteral(ActionsDAG & dag, const DataTypePtr & type, const Field & value, const String & name_hint)
 {
-    auto column = type->createColumnConst(1, value);
+    Field converted = convertFieldToType(value, *type);
+    if (converted.isNull() && !value.isNull())
+        return nullptr;
+    auto column = type->createColumnConst(1, converted);
     ColumnWithTypeAndName c{column, type, name_hint};
-    return dag.addColumn(std::move(c));
+    return &dag.addColumn(std::move(c));
 }
 
 const ActionsDAG::Node & addNamedFunction(ActionsDAG & dag, const String & fn_name, ActionsDAG::NodeRawConstPtrs children, ContextPtr context)
@@ -279,9 +289,11 @@ buildIntersectsAndContains(
     }
     else
     {
-        const auto & right_lit = addLiteral(dag, column_type, range.right, fmt::format("__minmax_lit_right_{}", key_column));
-        intersects_upper = &addNamedFunction(dag, range.right_included ? "lessOrEquals" : "less", {&min_node, &right_lit}, context);
-        contains_upper = &addNamedFunction(dag, range.right_included ? "lessOrEquals" : "less", {&max_node, &right_lit}, context);
+        const auto * right_lit = addLiteral(dag, column_type, range.right, fmt::format("__minmax_lit_right_{}", key_column));
+        if (!right_lit)
+            return {nullptr, nullptr};
+        intersects_upper = &addNamedFunction(dag, range.right_included ? "lessOrEquals" : "less", {&min_node, right_lit}, context);
+        contains_upper = &addNamedFunction(dag, range.right_included ? "lessOrEquals" : "less", {&max_node, right_lit}, context);
     }
 
     if (left_is_neg_inf)
@@ -291,9 +303,11 @@ buildIntersectsAndContains(
     }
     else
     {
-        const auto & left_lit = addLiteral(dag, column_type, range.left, fmt::format("__minmax_lit_left_{}", key_column));
-        intersects_lower = &addNamedFunction(dag, range.left_included ? "greaterOrEquals" : "greater", {&max_node, &left_lit}, context);
-        contains_lower = &addNamedFunction(dag, range.left_included ? "greaterOrEquals" : "greater", {&min_node, &left_lit}, context);
+        const auto * left_lit = addLiteral(dag, column_type, range.left, fmt::format("__minmax_lit_left_{}", key_column));
+        if (!left_lit)
+            return {nullptr, nullptr};
+        intersects_lower = &addNamedFunction(dag, range.left_included ? "greaterOrEquals" : "greater", {&max_node, left_lit}, context);
+        contains_lower = &addNamedFunction(dag, range.left_included ? "greaterOrEquals" : "greater", {&min_node, left_lit}, context);
     }
 
     const auto & intersects = addNamedFunction(dag, "and", {intersects_upper, intersects_lower}, context);
@@ -460,8 +474,22 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     /// Field-variant dispatch. `minmax_actions` stays null for unsupported RPN shapes
     /// (monotonic chains, space-filling curves, polygons, bloom filters, relaxed predicates,
     /// non-collapsed IN_SET); in that case the caller falls back to the generic path.
-    minmax_actions = tryBuildMinMaxActions(condition, index_data_types, context, minmax_input_names,
-                                           OUTPUT_CAN_BE_TRUE, OUTPUT_CAN_BE_FALSE);
+    ///
+    /// The condition object is constructed during query analysis on every read of every
+    /// minmax-indexed table, regardless of whether `use_minmax_index_bulk_filtering` is on.
+    /// An unexpected Field/Type combination that escapes the explicit eligibility checks
+    /// would otherwise fail the whole query; the per-granule scalar path is correct on
+    /// every shape, so the safe fallback is to leave `minmax_actions` null.
+    try
+    {
+        minmax_actions = tryBuildMinMaxActions(condition, index_data_types, context, minmax_input_names,
+                                               OUTPUT_CAN_BE_TRUE, OUTPUT_CAN_BE_FALSE);
+    }
+    catch (...)
+    {
+        minmax_actions = nullptr;
+        minmax_input_names.clear();
+    }
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
