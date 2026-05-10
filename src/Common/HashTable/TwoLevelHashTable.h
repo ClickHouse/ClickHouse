@@ -89,8 +89,6 @@ public:
 
     Impl impls[NUM_BUCKETS];
 
-    size_t m_size = 0;
-
     /// Cached prefix sums of bucket capacities in cells to speed up offsetInternal
     /// bucket_cells_prefix[b] = sum_{i=0..b-1} impls[i].getBufferSizeInCells()
     mutable std::array<size_t, NUM_BUCKETS> bucket_cells_prefix{};
@@ -125,11 +123,6 @@ public:
             size_t buck = getBucketFromHash(hash_value);
             impls[buck].insertUniqueNonZero(cell, hash_value);
         }
-
-        /// insertUniqueNonZero bypasses emplace, so recount from the bucket sizes.
-        m_size = 0;
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
-            m_size += impls[i].size();
     }
 
 
@@ -312,8 +305,6 @@ public:
     {
         size_t buck = getBucketFromHash(hash_value);
         impls[buck].emplace(key_holder, it, inserted, hash_value);
-        if (inserted)
-            ++m_size;
     }
 
     LookupResult ALWAYS_INLINE find(Key x, size_t hash_value)
@@ -352,9 +343,6 @@ public:
     {
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             impls[i].read(rb);
-        m_size = 0;
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
-            m_size += impls[i].size();
     }
 
     void readText(DB::ReadBuffer & rb)
@@ -365,15 +353,26 @@ public:
                 DB::assertChar(',', rb);
             impls[i].readText(rb);
         }
-        m_size = 0;
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
-            m_size += impls[i].size();
     }
 
 
-    size_t size() const { return m_size; }
+    size_t size() const
+    {
+        size_t res = 0;
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+            res += impls[i].size();
 
-    bool empty() const { return m_size == 0; }
+        return res;
+    }
+
+    bool empty() const
+    {
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+            if (!impls[i].empty())
+                return false;
+
+        return true;
+    }
 
     size_t getBufferSizeInBytes() const
     {
