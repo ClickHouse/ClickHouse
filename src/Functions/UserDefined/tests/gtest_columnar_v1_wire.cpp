@@ -870,9 +870,9 @@ TEST(ColumnarV1Wire, BoundsCheckComplexTotalElemsExceedsData)
     const uint32_t num_rows = 1;
     const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
 
-    // Array(UInt64) for 1 row: outer_offsets = [0, 0, 0xFFFFFFFF]
-    // total_elems = 0xFFFFFFFF — huge, but only 0 bytes of actual data
-    std::vector<uint8_t> buf(data_off + 3 * 4);
+    // Array(UInt64) for 1 row: outer_offsets = [0, 0xFFFFFFFF]
+    // total_elems = outer_offs[n] = 0xFFFFFFFF — huge, but only 4 bytes of actual data
+    std::vector<uint8_t> buf(data_off + 2 * 4);
     uint32_t one = 1;
     std::memcpy(buf.data(), &num_rows, 4);
     std::memcpy(buf.data() + 4, &one, 4);
@@ -880,13 +880,12 @@ TEST(ColumnarV1Wire, BoundsCheckComplexTotalElemsExceedsData)
     ColDescriptor desc{};
     desc.type        = COL_COMPLEX;
     desc.data_offset = data_off;
-    desc.data_size   = 3 * 4;
+    desc.data_size   = 2 * 4;
     std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
 
     uint32_t * outer_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
     outer_offs[0] = 0;
-    outer_offs[1] = 0;
-    outer_offs[2] = 0xFFFFFFFF;
+    outer_offs[1] = 0xFFFFFFFF;
 
     auto arr_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);

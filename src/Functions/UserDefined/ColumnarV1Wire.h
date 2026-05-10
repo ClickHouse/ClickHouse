@@ -829,9 +829,10 @@ inline MutableColumnPtr readColumnarOutput(
             // Validate allocation size before creating the column (prevent memory exhaustion).
             uint32_t elem_bytes = static_cast<uint32_t>(type->getSizeOfValueInMemory());
             uint64_t data_bytes = static_cast<uint64_t>(n) * elem_bytes;
-            if (static_cast<uint64_t>(data_end - p) < data_bytes)
+            uint64_t remaining = static_cast<uint64_t>(data_end - p);
+            if (remaining < data_bytes)
                 throw Exception(ErrorCodes::WASM_ERROR,
-                    "COLUMNAR_V1 COL_COMPLEX: fixed data overflow buffer");
+                    "COLUMNAR_V1 COL_COMPLEX: fixed data overflow buffer (remaining {} < needed {})", remaining, data_bytes);
 
             auto col = type->createColumn();
             col->insertManyDefaults(n);
