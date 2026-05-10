@@ -466,20 +466,23 @@ GradualResizeProcessor::GradualResizeProcessor(SharedHeader header, size_t num_i
 
 void GradualResizeProcessor::maybeActivateMoreOutputs()
 {
-    while (num_active_outputs < output_ports.size())
-    {
-        /// Use division to avoid potential overflow with large user-configured thresholds.
-        bool rows_threshold = min_rows_per_output > 0 && total_rows_pushed / num_active_outputs >= min_rows_per_output;
-        bool bytes_threshold = min_bytes_per_output > 0 && total_bytes_pushed / num_active_outputs >= min_bytes_per_output;
-
-        if (!rows_threshold && !bytes_threshold)
-            break;
-
-        ++num_active_outputs;
-    }
-
     if (num_active_outputs >= output_ports.size())
-        all_outputs_active = true;
+        return;
+
+    /// Once the per-output threshold is crossed, activate all outputs at once instead of
+    /// ramping up one at a time. Gradual ramp-up causes permanent imbalance in downstream
+    /// aggregator hash tables: chunks pushed during the ramp land disproportionately in
+    /// early outputs, and the downstream merge then combines N uneven partial states. For
+    /// heavy aggregate states (`groupArraySorted`, `uniqExact`, ...) the merge cost scales
+    /// super-linearly with table size, so the early skew hurts even when total data is large.
+    bool rows_threshold = min_rows_per_output > 0 && total_rows_pushed >= min_rows_per_output;
+    bool bytes_threshold = min_bytes_per_output > 0 && total_bytes_pushed >= min_bytes_per_output;
+
+    if (!rows_threshold && !bytes_threshold)
+        return;
+
+    num_active_outputs = output_ports.size();
+    all_outputs_active = true;
 }
 
 void GradualResizeProcessor::promoteInactiveWaitingOutputs()

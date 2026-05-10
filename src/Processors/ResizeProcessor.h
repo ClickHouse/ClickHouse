@@ -147,10 +147,14 @@ private:
     std::vector<Port::Data> abandoned_chunks;
 };
 
-/** Like ResizeProcessor, but gradually activates output ports as data volume grows.
-  * Starts by routing data to only 1 output port, and activates more as total_rows or total_bytes
-  * exceed thresholds (min_rows_per_output * num_active_outputs, min_bytes_per_output * num_active_outputs).
-  * For small datasets, only a few aggregating threads receive data; for large datasets, all are used.
+/** Like ResizeProcessor, but limits effective parallelism for small datasets.
+  * Starts by routing data to only 1 output port. Once total_rows >= min_rows_per_output
+  * (or total_bytes >= min_bytes_per_output), activates all remaining output ports at once.
+  *
+  * The "jump to all" semantics avoid permanent imbalance in downstream aggregator hash tables:
+  * a gradual one-at-a-time ramp would push the first chunks disproportionately into early
+  * outputs, and the downstream merge would then have to combine N uneven partial states.
+  * For heavy aggregate states (`groupArraySorted`, `uniqExact`, ...) that hurts even at scale.
   *
   * All inputs are kept active at all times so upstream parallelism is never throttled.
   * Data from inputs is collected and routed only to active output ports.
