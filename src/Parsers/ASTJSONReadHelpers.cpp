@@ -1,5 +1,8 @@
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTFromJSON.h>
 #include <IO/ReadHelpers.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -7,6 +10,48 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// Compute the maximum bracket nesting depth of a `Field::restoreFromDump` payload.
+/// `restoreFromDump` recursively parses `Array_[...]`, `Tuple_(...)`, `Map_(...)` and
+/// `AggregateFunctionState_(...)` payloads; without a depth bound, a hostile JSON
+/// `value` string can drive unbounded recursion regardless of the JSON object depth.
+/// Quoted strings (single quotes, with backslash escapes) are skipped so that brackets
+/// inside string literals do not count.
+size_t computeFieldDumpNestingDepth(std::string_view dump)
+{
+    size_t depth = 0;
+    size_t max_depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (char c : dump)
+    {
+        if (in_string)
+        {
+            if (escaped)
+                escaped = false;
+            else if (c == '\\')
+                escaped = true;
+            else if (c == '\'')
+                in_string = false;
+            continue;
+        }
+        if (c == '\'')
+            in_string = true;
+        else if (c == '[' || c == '(')
+        {
+            ++depth;
+            max_depth = std::max(max_depth, depth);
+        }
+        else if ((c == ']' || c == ')') && depth > 0)
+            --depth;
+    }
+    return max_depth;
+}
+
 }
 
 Field JSONObjectReader::readFieldFromObject(const Poco::JSON::Object & obj)
@@ -86,6 +131,17 @@ Field JSONObjectReader::readFieldFromObject(const Poco::JSON::Object & obj)
 
     /// For complex types, use Field::restoreFromDump.
     String dump_str = obj.getValue<String>("value");
+
+    /// `Field::restoreFromDump` recursively parses nested `Array_`/`Tuple_`/`Map_` dumps
+    /// without an internal depth limit, so a hostile JSON payload could trigger unbounded
+    /// recursion even when the JSON object itself is shallow. Reject overly deep payloads
+    /// against the same depth bound used for AST node construction.
+    if (size_t max_depth = getJSONDeserializationMaxDepth();
+        max_depth > 0 && computeFieldDumpNestingDepth(dump_str) > max_depth)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Field dump payload exceeds maximum AST depth limit ({}) during JSON AST deserialization",
+            max_depth);
+
     return Field::restoreFromDump(dump_str);
 }
 

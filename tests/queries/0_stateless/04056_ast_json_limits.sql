@@ -41,3 +41,10 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT a FROM t ORDER BY a 
 -- Field value must be a JSON object: malformed shape (e.g. string instead of object) must be rejected
 -- instead of silently becoming NULL.
 SELECT formatQueryFromJSON('{"type":"Literal","value":"oops"}'); -- { serverError BAD_ARGUMENTS }
+
+-- A `value` payload routed through `Field::restoreFromDump` (i.e. a `field_type` that is not one of
+-- the explicitly-handled scalar/Array/Tuple/Map cases) must respect `max_ast_depth`. Otherwise a
+-- shallow JSON object could smuggle a deeply nested `Array_[Array_[...]]` dump and exhaust the stack.
+SET max_ast_depth = 8;
+SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"AggregateFunctionState","value":"Array_[Array_[Array_[Array_[Array_[Array_[Array_[Array_[Array_[Array_[Array_[Array_[1]]]]]]]]]]]]"}}'); -- { serverError BAD_ARGUMENTS }
+SET max_ast_depth = 1000;

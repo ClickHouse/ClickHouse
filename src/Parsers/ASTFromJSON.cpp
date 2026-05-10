@@ -324,4 +324,9 @@ ASTPtr deserializeASTFromJSON(const Poco::JSON::Object & json)
     return IAST::createFromJSON(json);
 }
 
+size_t getJSONDeserializationMaxDepth()
+{
+    return json_deser_max_depth;
+}
+
 }
