@@ -97,6 +97,8 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Increment.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
@@ -706,7 +708,11 @@ MergeTreeData::MergeTreeData(
         const auto & ac = getContext()->getAccessControl();
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
-        settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
+        settings->sanityCheck(
+            getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
+            allow_experimental,
+            allow_beta,
+            getContext()->wasBackgroundPoolAutoLowered());
     }
 
     if (!date_column_name.empty())
@@ -1205,6 +1211,12 @@ void MergeTreeData::setProperties(
     bool attach,
     ContextPtr local_context)
 {
+    /// Route the table-level metadata clones produced here (the new `StorageInMemoryMetadata`
+    /// stored in `metadata.set(...)`, the cloned `ColumnsDescription`, `VirtualColumnsDescription`,
+    /// and key/index AST trees, plus any expressions built by `checkProperties`) into the
+    /// dedicated MergeTree arena. This state lives as long as the table object itself.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     checkProperties(
         new_metadata,
         old_metadata,
@@ -1925,6 +1937,9 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
     const DiskPtr & part_disk_ptr = state.loading_info->disk;
     LOG_TRACE(log, "Loading unexpected part {} from disk {}", part_name, part_disk_ptr->getName());
 
+    /// Same rationale as `loadDataPart`: the volume / storage objects live for the part's lifetime.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     LoadPartResult res;
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
     auto data_part_storage = std::make_shared<DataPartStorageOnDiskFull>(single_disk_volume, relative_data_path, part_name);
@@ -1967,6 +1982,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::loadDataPart");
     LOG_TRACE(log, "Loading {} part {} from disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
+
+    /// Route the per-part `SingleDiskVolume` and `DataPartStorageOnDiskFull` clones below into
+    /// the MergeTree arena — both are stored on the resulting `IMergeTreeDataPart` and share its
+    /// lifetime. Without this scope they would land in the default arena, slipping past the
+    /// per-part guards in `MergeTreeDataPartBuilder::build` / `loadColumnsChecksumsIndexes`.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     LoadPartResult res;
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
@@ -4860,7 +4881,11 @@ void MergeTreeData::changeSettings(
         const auto & ac = getContext()->getAccessControl();
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
-        copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
+        copy->sanityCheck(
+            getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
+            allow_experimental,
+            allow_beta,
+            getContext()->wasBackgroundPoolAutoLowered());
 
         bool has_escape_index_filenames_changed
             = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
@@ -4869,6 +4894,11 @@ void MergeTreeData::changeSettings(
             = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
 
         storage_settings.set(std::move(copy));
+
+        /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
+        /// `setInMemoryMetadata`) into the dedicated MergeTree arena.
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
         StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(getContext(), false);
         new_metadata.setSettingsChanges(new_settings);
 
@@ -7045,6 +7075,9 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
 {
+    /// Same rationale as `loadDataPart`: the `SingleDiskVolume` below lives for the part's lifetime.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     MutableDataPartPtr part;
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
@@ -7958,6 +7991,9 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     LOG_DEBUG(log, "Checking {} parts", renamed_parts.old_and_new_names.size());
     MutableDataPartsVector loaded_parts;
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
+
+    /// Same rationale as `loadDataPart`: the per-part `SingleDiskVolume` below lives for the part's lifetime.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     for (const auto & [part_name, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
@@ -10353,6 +10389,10 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
 
 void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 {
+    /// `serialization_hints` is a per-table aggregation of the active parts' `SerializationInfoByName`
+    /// — same lifetime profile as the per-part metadata. Route into the parts arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     SerializationInfo::Settings settings
     {
         (*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
@@ -10377,6 +10417,10 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 template <typename AddedParts, typename RemovedParts>
 void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & /*lock*/)
 {
+    /// Same rationale as `resetSerializationHints`: incremental updates to the per-table hints
+    /// belong in the parts arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     const auto & storage_columns = metadata_snapshot->getColumns();
 
