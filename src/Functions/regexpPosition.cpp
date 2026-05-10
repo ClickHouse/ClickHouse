@@ -109,6 +109,9 @@ public:
         const ColumnPtr col_return_option = arguments.size() >= 5 ? arguments[4].column : nullptr;
         const ColumnPtr col_subexpression = arguments.size() >= 7 ? arguments[6].column : nullptr;
 
+        const auto & offsets = col_haystack_vector->getOffsets();
+        const auto & chars = col_haystack_vector->getChars();
+
         OptimizedRegularExpression::MatchVec matches;
         matches.reserve(num_captures + 1);
 
@@ -134,11 +137,9 @@ public:
                     getName(),
                     num_captures);
 
-            const auto & offsets = col_haystack_vector->getOffsets();
             const size_t row_data_offset = i == 0 ? 0 : offsets[i - 1];
-            /// `offsets[i]` points past the trailing `\0` terminator stored by `ColumnString`; subtract one to get the logical string length.
-            const size_t row_size = offsets[i] - row_data_offset - 1;
-            const char * row_data = reinterpret_cast<const char *>(&col_haystack_vector->getChars()[row_data_offset]);
+            const size_t row_size = offsets[i] - row_data_offset;
+            const char * row_data = reinterpret_cast<const char *>(&chars[row_data_offset]);
 
             const size_t start_offset = static_cast<size_t>(position) - 1;
             if (start_offset > row_size)
@@ -155,7 +156,6 @@ public:
                 static_cast<size_t>(occurrence),
                 return_option == 1,
                 static_cast<size_t>(subexpression),
-                num_captures,
                 matches);
         }
 
@@ -168,25 +168,23 @@ private:
         if (flags.empty())
             return pattern;
 
-        /// Track effective state in scan order so conflicting flags follow PostgreSQL's "last one wins" rule (e.g. `ic` is case-sensitive, `ci` is case-insensitive).
         bool case_insensitive = false;
         bool multiline = false;
         bool dot_nl = false;
-        bool extended = false;
         for (char c : flags)
         {
             switch (c)
             {
                 case 'i': case_insensitive = true; break;
                 case 'c': case_insensitive = false; break;
-                case 'm': /* fallthrough */
+                case 'm':
+                    [[fallthrough]];
                 case 'n': multiline = true; break;
                 case 's': dot_nl = true; break;
-                case 'x': extended = true; break;
                 default:
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Unknown regex flag '{}' for function {}. Supported flags are 'i', 'c', 'm', 'n', 's', 'x'.",
+                        "Unknown regex flag '{}' for function {}. Supported flags are 'i', 'c', 'm', 'n', 's'.",
                         String(1, c),
                         function_name);
             }
@@ -199,8 +197,6 @@ private:
             inline_on += 'm';
         if (dot_nl)
             inline_on += 's';
-        if (extended)
-            inline_on += 'x';
 
         String prefix = "(?";
         prefix += inline_on;
@@ -221,14 +217,15 @@ private:
         size_t occurrence,
         bool return_after_match,
         size_t subexpression,
-        unsigned num_captures,
         OptimizedRegularExpression::MatchVec & matches)
     {
+        const unsigned capture_limit = std::max<unsigned>(1, static_cast<unsigned>(subexpression) + 1);
+
         size_t cur_offset = start_offset;
         for (size_t n = 0; n < occurrence; ++n)
         {
             matches.clear();
-            regexp.match(data + cur_offset, size - cur_offset, matches, num_captures + 1);
+            regexp.match(data + cur_offset, size - cur_offset, matches, capture_limit);
             if (matches.empty() || matches[0].offset == std::string::npos)
                 return 0;
 
@@ -242,7 +239,7 @@ private:
                 return abs_offset + (return_after_match ? m.length : 0) + 1;
             }
 
-            /// Advance past this match. Avoid infinite loop on zero-length matches.
+            /// Step by 1 on zero-length matches to avoid an infinite loop.
             const size_t advance = whole.length == 0 ? 1 : whole.length;
             cur_offset += whole.offset + advance;
             if (cur_offset > size)
@@ -274,7 +271,7 @@ Provided for compatibility with PostgreSQL's `regexp_instr` (also exposed under 
         {"position", "Optional. 1-based byte position to start the search. Default: 1.", {"(U)Int*"}},
         {"occurrence", "Optional. Which match to return. Default: 1.", {"(U)Int*"}},
         {"return_option", "Optional. 0 returns the position of the match start, 1 returns the position right after the match. Default: 0.", {"(U)Int*"}},
-        {"flags", "Optional. Regex flags. Supported: `i` (case-insensitive), `c` (case-sensitive), `m`/`n` (multiline anchors), `s` (dot matches newline), `x` (extended). Default: empty.", {"const String"}},
+        {"flags", "Optional. Regex flags. Supported: `i` (case-insensitive), `c` (case-sensitive), `m`/`n` (multiline anchors), `s` (dot matches newline). Default: empty.", {"const String"}},
         {"subexpression", "Optional. Index of capture group whose position to return. 0 means whole match. Default: 0.", {"(U)Int*"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {

@@ -33,6 +33,11 @@ SELECT regexpPosition('Hello WORLD', 'world', 1, 1, 0, 'ci');
 SELECT regexpPosition('a\nb', 'a.b');
 SELECT regexpPosition('a\nb', 'a.b', 1, 1, 0, 's');
 
+-- `m` and `n` are synonyms: both make `^` anchor at line starts.
+SELECT regexpPosition('foo\nbar', '^bar');
+SELECT regexpPosition('foo\nbar', '^bar', 1, 1, 0, 'm');
+SELECT regexpPosition('foo\nbar', '^bar', 1, 1, 0, 'n');
+
 -- subexpression
 SELECT regexpPosition('foo123bar456', '([a-z]+)([0-9]+)', 1, 1, 0, '', 0);
 SELECT regexpPosition('foo123bar456', '([a-z]+)([0-9]+)', 1, 1, 0, '', 1);
@@ -78,10 +83,15 @@ SELECT regexpPosition('ab', '(a)?', 1, 1, 0, '', 1);
 SELECT regexpPosition('ab', '(a)?', 1, 2, 0, '', 1);
 SELECT regexpPosition('ab', '(a)?', 1, 3, 0, '', 1);
 
+-- Positions are byte-based: a 2-byte UTF-8 `ä` at byte 1 puts the next char at byte 3.
+SELECT regexpPosition('äbc', 'b');
+SELECT regexpPosition('äbc', 'c');
+
 -- Errors.
 SELECT regexpPosition('abc', 'a', 0); -- { serverError BAD_ARGUMENTS }
 SELECT regexpPosition('abc', 'a', 1, 0); -- { serverError BAD_ARGUMENTS }
 SELECT regexpPosition('abc', 'a', 1, 1, 2); -- { serverError BAD_ARGUMENTS }
 SELECT regexpPosition('abc', '(a)', 1, 1, 0, '', 5); -- { serverError INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE }
 SELECT regexpPosition('abc', 'a', 1, 1, 0, 'z'); -- { serverError BAD_ARGUMENTS }
+SELECT regexpPosition('abc', 'a', 1, 1, 0, 'x'); -- { serverError BAD_ARGUMENTS }
 SELECT regexpPosition('abc', materialize('a')); -- { serverError ILLEGAL_COLUMN }
