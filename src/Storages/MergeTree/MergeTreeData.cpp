@@ -2,6 +2,7 @@
 #include <Disks/DiskType.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
@@ -8658,30 +8659,22 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
     size_t rows = parts.size();
     ColumnPtr part_name_column;
-    std::optional<PartitionPruner> partition_pruner;
-    std::optional<KeyCondition> minmax_idx_condition;
+    ConditionTemplate<KeyCondition>::Ptr minmax_idx_condition;
     DataTypes minmax_columns_types;
     if (filter_dag)
     {
         if (metadata_snapshot->hasPartitionKey())
         {
-            const auto & partition_key = metadata_snapshot->getPartitionKey();
-            auto minmax_columns_names = getMinMaxColumnsNames(partition_key);
-            minmax_columns_types = getMinMaxColumnsTypes(partition_key);
-
-            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
-            bool skip_partition_analysis = !query_context->getSettingsRef()[Setting::use_partition_pruning];
-            minmax_idx_condition.emplace(
-                inverted_dag, query_context, minmax_columns_names,
-                getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)),
-                /* single_point_ = */ false,
-                /* skip_analysis_ = */ skip_partition_analysis);
-            partition_pruner.emplace(
-                metadata_snapshot,
-                inverted_dag,
-                query_context,
-                false /* strict */,
-                skip_partition_analysis);
+            auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG::Node * predicate)
+            {
+                const auto & partition_key = metadata_snapshot->getPartitionKey();
+                auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+                auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
+                ActionsDAGWithInversionPushDown wrapped(predicate, query_context);
+                return KeyCondition{wrapped, query_context, minmax_columns_names, minmax_expression_actions, /*single_point=*/false, /*skip_analysis=*/!query_context->getSettingsRef()[Setting::use_partition_pruning]};
+            };
+            auto inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(filter_dag->getOutputs().front(), query_context);
+            minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(inverted_dag, key_condition_factory, metadata_snapshot, query_context);
         }
 
         const auto * predicate = filter_dag->getOutputs().at(0);
@@ -8724,15 +8717,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 continue;
         }
 
-        if (minmax_idx_condition
-            && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
+        if (minmax_idx_condition && !minmax_idx_condition->generateForPartition(part->partition).checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
-
-        if (partition_pruner)
-        {
-            if (partition_pruner->canBePruned(*part))
-                continue;
-        }
 
         /// It's extremely rare that some parts have final marks while others don't. To make it
         /// straightforward, disable minmax_count projection when `max(pk)' encounters any part with

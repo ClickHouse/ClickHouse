@@ -2021,21 +2021,15 @@ void ReadFromMergeTree::buildIndexes(
 
     if (metadata_snapshot->hasPartitionKey())
     {
-        const auto & partition_key = metadata_snapshot->getPartitionKey();
-        auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-        auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
-
-        bool skip_partition_analysis = skip_partition_pruning_ || !settings[Setting::use_partition_pruning];
-        indexes->minmax_idx_condition.emplace(
-            filter_dag, query_context, minmax_columns_names, minmax_expression_actions,
-            /* single_point_ = */ false,
-            /* skip_analysis_ = */ skip_partition_analysis);
-        indexes->partition_pruner.emplace(
-            metadata_snapshot,
-            filter_dag,
-            query_context,
-            false /* strict */,
-            skip_partition_analysis);
+        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_](const ActionsDAG::Node * predicate)
+        {
+            const auto & partition_key = metadata_snapshot->getPartitionKey();
+            auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+            auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
+            ActionsDAGWithInversionPushDown wrapped(predicate, query_context);
+            return KeyCondition{wrapped, query_context, minmax_columns_names, minmax_expression_actions, /*single_point=*/false, /*skip_analysis=*/skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning]};
+        };
+        indexes->minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, key_condition_factory, metadata_snapshot, query_context);
     }
 
     indexes->part_values
@@ -2503,7 +2497,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     res_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
         parts,
-        indexes->partition_pruner,
         indexes->minmax_idx_condition,
         indexes->part_values,
         metadata_snapshot,
