@@ -1996,8 +1996,19 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
 
         auto table_metadata_and_version = zookeeper->tryGet(paths_to_fetch);
 
+        /// Symmetric to the `tryGet` at the top of this iteration: if `DROP DATABASE` removed
+        /// `/metadata` between the initial check and here, surface the same operation-level
+        /// error as the other drop/recreate windows instead of leaking a `KEEPER_EXCEPTION`.
         Coordination::Stat current_metadata_path_stat;
-        zookeeper->get(metadata_path, &current_metadata_path_stat);
+        String unused_current_metadata_value;
+        if (!zookeeper->tryGet(metadata_path, unused_current_metadata_value, &current_metadata_path_stat))
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(metadata node missing during retry iteration {})",
+                iteration);
+        }
 
         if (current_metadata_path_stat.czxid != prev_metadata_path_stat.czxid)
         {
