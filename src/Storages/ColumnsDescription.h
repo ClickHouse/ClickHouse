@@ -131,7 +131,7 @@ public:
     /// Mutable cache members (`get_cache_mutex`, `get_cache`) are non-copyable; define
     /// explicit copy / move so a copied / moved instance starts with an empty cache.
     ColumnsDescription(const ColumnsDescription & other) : IHints<>(other), columns(other.columns), subcolumns(other.subcolumns) {}
-    ColumnsDescription(ColumnsDescription && other) noexcept : IHints<>(std::move(other)), columns(std::move(other.columns)), subcolumns(std::move(other.subcolumns)) {}
+    ColumnsDescription(ColumnsDescription && other) noexcept : columns(std::move(other.columns)), subcolumns(std::move(other.subcolumns)) {}
     ColumnsDescription & operator=(const ColumnsDescription & other);
     ColumnsDescription & operator=(ColumnsDescription && other) noexcept;
 
