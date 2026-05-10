@@ -80,9 +80,14 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
+    /// func has side effects, f.e. each call updates quota, makes potentially expensive outside call, etc.
     bool isStateful() const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
+
+    /// Unlike the other AI funcs, it's ok and actually preferable for
+    /// optimizer to fold calls with same args together
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForNulls() const override { return true; }
