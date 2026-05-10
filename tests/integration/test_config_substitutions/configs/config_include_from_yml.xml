@@ -1,5 +1,5 @@
 <clickhouse>
-  <include_from>/etc/clickhouse-server/config.d/include_from_source.yml</include_from>
+  <include_from>/etc/clickhouse-server/extra_conf.d/include_from_source.yml</include_from>
   <profiles>
     <default>
         <max_query_size incl="mqs" />

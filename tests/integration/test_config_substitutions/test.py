@@ -26,7 +26,7 @@ node3 = cluster.add_instance(
 node4 = cluster.add_instance(
     "node4",
     user_configs=["configs/config_incl.xml"],
-    main_configs=["configs/include_from_source.xml"],
+    extra_configs=["configs/include_from_source.xml"],
 )  # include value 77777
 node5 = cluster.add_instance(
     "node5", user_configs=["configs/config_allow_databases.xml"]
@@ -35,9 +35,9 @@ node6 = cluster.add_instance(
     "node6",
     user_configs=["configs/config_include_from_env.xml"],
     env_variables={
-        "INCLUDE_FROM_ENV": "/etc/clickhouse-server/config.d/include_from_source.xml"
+        "INCLUDE_FROM_ENV": "/etc/clickhouse-server/extra_conf.d/include_from_source.xml"
     },
-    main_configs=["configs/include_from_source.xml"],
+    extra_configs=["configs/include_from_source.xml"],
 )
 node7 = cluster.add_instance(
     "node7",
@@ -59,7 +59,7 @@ node7 = cluster.add_instance(
 node8 = cluster.add_instance(
     "node8",
     user_configs=["configs/config_include_from_yml.xml"],
-    main_configs=["configs/include_from_source.yml"],
+    extra_configs=["configs/include_from_source.yml"],
 )
 
 
