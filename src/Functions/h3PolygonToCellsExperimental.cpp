@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 #include <Interpreters/ProcessList.h>
 
 #include <constants.h>
