@@ -7,6 +7,7 @@
 #include <boost/noncopyable.hpp>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
@@ -69,6 +70,8 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int BACKUP_ENTRY_NOT_FOUND;
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace FailPoints
@@ -236,6 +239,21 @@ static inline void updateBlockData(Block & old_block, const Block & new_block)
     }
 }
 
+static bool pullMutationBlock(PullingPipelineExecutor & executor, Block & block, const QueryStatusPtr & process_list_element)
+{
+    if (process_list_element)
+        process_list_element->checkTimeLimit();
+
+    if (executor.pull(block))
+        return true;
+
+    /// `PullingPipelineExecutor` returns `false` on cancellation and soft timeout.
+    if (process_list_element && !process_list_element->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
+
+    return false;
+}
+
 void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
 {
     /// Some validation will be added
@@ -258,10 +276,11 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
+    auto process_list_element = new_context->getProcessListElementSafe();
 
     Blocks out;
     Block block;
-    while (executor.pull(block))
+    while (pullMutationBlock(executor, block, process_list_element))
     {
         if ((*memory_settings)[MemorySetting::compress])
             for (auto & elem : block)
@@ -280,7 +299,16 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     else
     {
         /// just some of the column affected, we need update it with new column
-        new_data = std::make_unique<Blocks>(*(data.get()));
+        const auto & old_data = *(data.get());
+        if (out.size() != old_data.size())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mutation of `Memory` table produced {} blocks, expected {} blocks",
+                out.size(), old_data.size());
+        }
+
+        new_data = std::make_unique<Blocks>(old_data);
         auto data_it = new_data->begin();
         auto out_it = out.begin();
 
