@@ -7602,12 +7602,14 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0) \
     DECLARE(UInt64, min_rows_per_stream_for_gradual_resize, 1000, R"(
-Minimum number of rows per aggregation stream before an additional parallel aggregation stream is activated. When non-zero, the query pipeline starts `GROUP BY` aggregation with a single stream and gradually increases parallelism as data volume grows. This reduces the overhead of merging partial aggregation states when the result set is small. When set to 0, all aggregation streams are used from the start.
+Total number of rows that must be pushed through the `GROUP BY` pre-aggregation resize stage before all aggregation streams are activated. When non-zero, the pipeline starts `GROUP BY` aggregation with a single active stream; once the cumulative row count crosses this threshold, all `max_threads` streams are activated at once. This avoids the merge overhead of many nearly-empty partial hash tables when the input data is small. When set to 0, all aggregation streams are used from the start.
+
+The activation is a single-threshold switch from one stream to all streams, not a per-stream gradual ramp: ramping streams up one at a time would skew the data distribution across downstream aggregator hash tables and increase merge cost for heavy aggregate states such as `uniq`, `uniqExact`, or `groupArray`.
 
 Only affects `GROUP BY` queries with non-empty grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected: serializing the upstream scan/filter work would lose parallel-scan throughput while still producing one partial state per stream.
 )", 0) \
     DECLARE(UInt64, min_bytes_per_stream_for_gradual_resize, 0, R"(
-Minimum number of bytes per aggregation stream before an additional parallel aggregation stream is activated. When set to 0 (default), this threshold is not used. Works together with `min_rows_per_stream_for_gradual_resize` — either threshold being met will activate the next aggregation stream.
+Total number of bytes that must be pushed through the `GROUP BY` pre-aggregation resize stage before all aggregation streams are activated. When set to 0 (default), this threshold is not used. Works together with `min_rows_per_stream_for_gradual_resize` — either threshold being met will activate all aggregation streams at once.
 
 Only affects `GROUP BY` queries with non-empty grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected.
 )", 0) \
