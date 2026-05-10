@@ -36,6 +36,9 @@
 #include <mutex>
 #include <string>
 #include <utility>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 #include <base/isSharedPtrUnique.h>
 #include <boost/range/adaptor/map.hpp>
@@ -1150,6 +1153,13 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context) const
 {
+#if CLICKHOUSE_CLOUD
+    if (SharedDatabaseCatalog::initialized())
+    {
+        if (auto res = SharedDatabaseCatalog::instance().tryGetStorageFromIntentions(table_id, local_context))
+            return res;
+    }
+#endif
     std::optional<Exception> exc;
     auto table = local_context->hasQueryContext() ?
         local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }).second :

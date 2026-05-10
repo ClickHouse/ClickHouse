@@ -705,6 +705,9 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
     /// For now, consider it is ok. See 02461_alter_update_respect_part_column_type_bug for an example.
     ///
     /// metadata_snapshot->check(part->getColumns());
+#if CLICKHOUSE_CLOUD
+    part->is_prewarmed = true;
+#endif
 
     CommitRetryContext retry_context;
 
