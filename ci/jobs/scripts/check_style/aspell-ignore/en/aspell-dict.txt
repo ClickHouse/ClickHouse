@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3885
+personal_ws-1.1 en 3888 
 AArch
 ABIs
 ACLs
@@ -734,10 +734,10 @@ LinfNorm
 LinfNormalize
 LinksDeployment
 Linq
-LiteLLM
 ListObject
 ListObjects
 Lisu
+LiteLLM
 Llla
 LoadAverage
 LoadBalancing
@@ -1073,6 +1073,7 @@ PointDistKm
 PointDistM
 PointDistRads
 PolygonToCells
+PolygonToCellsWithContainment
 PostHistory
 PostLink
 PostLinks
@@ -2440,8 +2441,8 @@ hasAll
 hasAllTokens
 hasAny
 hasAnyTokens
-hasPhrase
 hasColumnInTable
+hasPhrase
 hasSubsequence
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF
