@@ -18,9 +18,16 @@ add_library(_stringzilla ${STRINGZILLA_SOURCES} ${STRINGZILLA_HEADERS})
 add_library(ch_contrib::stringzilla ALIAS _stringzilla)
 target_include_directories(_stringzilla SYSTEM PUBLIC "${STRINGZILLA_SOURCE_DIR}/include")
 
+# SZ_USE_* must be PUBLIC: SZ_DYNAMIC_DISPATCH=1 (set below) makes consumer TUs enter the dispatch
+# codepaths in stringzilla/hash.h that reference per-ISA helpers (e.g. sz_hash_*_westmere_*). If
+# these flags were PRIVATE, consumer TUs would fall back to the auto-detection in stringzilla/types.h,
+# which can disagree with the values set here. For example, Westmere auto-detection requires both
+# __SSE4_2__ and __AES__, but -march=x86-64-v4 defines __SSE4_2__ without __AES__, so consumers see
+# SZ_USE_WESTMERE=0 while the library was built with SZ_USE_WESTMERE=1, leaving the referenced
+# helpers undeclared.
 if (ARCH_AMD64)
     target_compile_definitions(
-            _stringzilla PRIVATE
+            _stringzilla PUBLIC
             "SZ_USE_WESTMERE=1"
             "SZ_USE_GOLDMONT=1"
             "SZ_USE_HASWELL=1"
@@ -35,7 +42,7 @@ if (ARCH_AMD64)
     )
 elseif (ARCH_AARCH64)
     target_compile_definitions(
-            _stringzilla PRIVATE
+            _stringzilla PUBLIC
             "SZ_USE_WESTMERE=0"
             "SZ_USE_GOLDMONT=0"
             "SZ_USE_HASWELL=0"
