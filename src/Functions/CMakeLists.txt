@@ -20,8 +20,6 @@ set(DBMS_FUNCTIONS
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
-    searchAnyAll.cpp # FunctionSearchImpl (Used by MergeTreeIndexGin.cpp)
-    topN.cpp # createInternalFunctionTopN (Used by ReadFromMergeTree.cpp)
     FunctionsConversion_impl00.cpp
     FunctionsConversion_impl01.cpp
     FunctionsConversion_impl02.cpp
