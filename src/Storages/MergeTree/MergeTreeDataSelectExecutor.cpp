@@ -1973,13 +1973,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         part->index_granularity_info.fixed_index_granularity,
         part->index_granularity_info.index_granularity_bytes);
 
-    /// The vector similarity index can only be used if the PK did not prune some ranges within the part.
-    /// (the vector index is built on the entire part).
-    const bool all_match  = (marks_count == ranges.getNumberOfMarks());
-    if (index_helper->isVectorSimilarityIndex() && !all_match)
-    {
-        return {ranges, in_read_hints};
-    }
+    /// If PK leaves a subset of marks (`!all_match`), vector search still runs; neighbors are filtered to those marks.
+    const bool all_match = (marks_count == ranges.getNumberOfMarks());
 
     MarkRanges index_ranges;
     for (const auto & range : ranges)
@@ -2118,7 +2113,19 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
-                    read_hints.vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
+                    MarkRanges pk_ranges_single;
+                    std::optional<IMergeTreeIndexCondition::GranuleRowFilter> row_filter;
+                    if (!all_match)
+                    {
+                        pk_ranges_single.push_back(ranges[i]);
+                        row_filter.emplace(IMergeTreeIndexCondition::GranuleRowFilter{
+                            part->index_granularity.get(),
+                            std::move(pk_ranges_single),
+                            index_mark,
+                            skip_index_granularity});
+                    }
+
+                    read_hints.vector_search_results = condition->calculateApproximateNearestNeighbors(granule, row_filter);
 
                     /// We need to sort the result ranges ascendingly
                     auto rows = read_hints.vector_search_results.value().rows;

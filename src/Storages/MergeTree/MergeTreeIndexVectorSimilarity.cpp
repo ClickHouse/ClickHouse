@@ -14,6 +14,7 @@
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
+#include <base/defines.h>
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -24,9 +25,13 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
 
+#include <algorithm>
 #include <cmath>
 #include <ranges>
 #include <string_view>
+
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MarkRange.h>
 
 #include <fmt/ranges.h>
 
@@ -109,6 +114,43 @@ String joinByComma(const T & t)
         return fmt::format("{}", fmt::join(keys, ", "));
     }
     std::unreachable();
+}
+
+bool granuleLocalKeyAllowed(USearchIndex::vector_key_t key, const IMergeTreeIndexCondition::GranuleRowFilter & filter)
+{
+    const MergeTreeIndexGranularity * index_granularity = filter.index_granularity;
+
+    const size_t base_mark = filter.index_mark * filter.skip_index_granularity;
+    const size_t marks_without_final = index_granularity->getMarksCountWithoutFinal();
+    if (base_mark >= marks_without_final)
+        return false;
+
+    const size_t end_mark = std::min(base_mark + filter.skip_index_granularity, marks_without_final);
+    const size_t granule_row_base = index_granularity->getMarkStartingRow(base_mark);
+    const size_t rows_in_granule = index_granularity->getRowsCountInRange(base_mark, end_mark);
+
+    const auto key_u64 = static_cast<UInt64>(key);
+    if (key_u64 >= rows_in_granule)
+        return false;
+
+    const size_t global_row = granule_row_base + static_cast<size_t>(key_u64);
+    const MarkRange mark_for_row = index_granularity->getMarkRangeForRowOffset(global_row);
+    chassert(mark_for_row.begin + 1 == mark_for_row.end);
+    const size_t data_mark = mark_for_row.begin;
+    chassert(data_mark < marks_without_final);
+
+    if (filter.pk_ranges.size() == 1)
+    {
+        const MarkRange & pk_range = filter.pk_ranges.front();
+        return data_mark >= pk_range.begin && data_mark < pk_range.end;
+    }
+
+    for (const auto & pk_range : filter.pk_ranges)
+    {
+        if (data_mark >= pk_range.begin && data_mark < pk_range.end)
+            return true;
+    }
+    return false;
 }
 
 }
@@ -537,7 +579,8 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
     return false;
 }
 
-NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
+NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(
+    MergeTreeIndexGranulePtr granule_, const std::optional<IMergeTreeIndexCondition::GranuleRowFilter> & row_filter) const
 {
     if (!parameters)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected vector_search_parameters to be set");
@@ -557,16 +600,28 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
         granule->scalar_kind, ErrorCodes::INCORRECT_QUERY, "reference vector in the SELECT query");
 
     size_t limit = parameters->limit;
-    if (parameters->additional_filters_present || is_rescoring)
-        /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
-        /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
+    if (parameters->additional_filters_present || is_rescoring || row_filter.has_value())
+        /// Post-filters / rescoring / PK row filter can drop candidates; fetch more from the index (same multiplier).
         limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
 
-    /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
-    /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
-    /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
-    /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
-    auto search_result = index->search(parameters->reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
+    auto search_result = [&]()
+    {
+        if (!row_filter.has_value())
+        {
+            /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
+            /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
+            /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
+            /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
+            return index->search(parameters->reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
+        }
+
+        IMergeTreeIndexCondition::GranuleRowFilter rf = row_filter.value();
+        auto predicate = [rf](USearchIndex::vector_key_t key) { return granuleLocalKeyAllowed(key, rf); };
+        return index->filtered_search(parameters->reference_vector.data(), limit, std::move(predicate), USearchIndex::any_thread(), false, expansion_search);
+    }();
+
+    /// `filtered_search` may return fewer than `limit` hits when the predicate rejects most keys.
+
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
 

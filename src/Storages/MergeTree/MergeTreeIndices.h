@@ -4,16 +4,20 @@
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace DB
 {
+
+class MergeTreeIndexGranularity;
 
 namespace Internal
 {
@@ -166,12 +170,25 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
     }
 
+    /// PK mark ranges for this chunk after pruning (filterMarksUsingIndex).
+    struct GranuleRowFilter
+    {
+        const MergeTreeIndexGranularity * index_granularity;
+        MarkRanges pk_ranges;
+        size_t index_mark;
+        size_t skip_index_granularity;
+    };
+
     /// Special method for vector similarity indexes:
     /// Returns the N nearest neighbors of a reference vector in the index granule.
     /// The nearest neighbors are returned as row positions.
     /// If VectorSearchParameters::return_distances = true, then the distances are returned as well.
-    virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
+    /// With `row_filter`, drops neighbors whose row is outside `pk_ranges`. May return fewer than requested.
+    virtual NearestNeighbours calculateApproximateNearestNeighbors(
+        MergeTreeIndexGranulePtr /*granule*/,
+        const std::optional<GranuleRowFilter> & row_filter = std::nullopt) const
     {
+        (void)row_filter;
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
 
