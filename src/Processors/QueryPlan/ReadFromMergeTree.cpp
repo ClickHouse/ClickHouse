@@ -71,6 +71,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <boost/functional/hash.hpp>
+
 #include <fmt/ranges.h>
 
 #include "config.h"
@@ -2687,7 +2689,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
-                condition_hash = outputs.front()->getHash();
+            {
+                size_t hash = outputs.front()->getHash();
+                /// Match the salting done on the read side in `filterPartsByQueryConditionCache` and
+                /// on the write side in `updateQueryConditionCache` so write/read keys agree under
+                /// `ORDER BY ... LIMIT N` plans.
+                if (top_k_filter_info)
+                    boost::hash_combine(hash, top_k_filter_info->condition_hash);
+                condition_hash = hash;
+            }
         }
 
         /// Fill query condition cache with ranges excluded by index analysis.
