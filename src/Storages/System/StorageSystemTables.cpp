@@ -1,6 +1,9 @@
 #include <Storages/System/StorageSystemTables.h>
 
 #include <Access/ContextAccess.h>
+#if CLICKHOUSE_CLOUD
+#include <Backups/BackupsHelper.h>
+#endif
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>

@@ -50,7 +50,8 @@ public:
         const DataTypes & arguments_,
         const DataTypePtr & result_type_,
         WasmAbiVersion abi_type,
-        WebAssemblyFunctionSettings function_settings_);
+        WebAssemblyFunctionSettings function_settings_,
+        bool is_deterministic_ = false);
 
     const String & getInternalFunctionName() const { return function_name; }
     const DataTypes & getArguments() const { return arguments; }
@@ -58,6 +59,7 @@ public:
     const DataTypePtr & getResultType() const { return result_type; }
     std::shared_ptr<WebAssembly::WasmModule> getModule() const { return wasm_module; }
     const WebAssemblyFunctionSettings & getSettings() const { return settings; }
+    bool getIsDeterministic() const { return is_deterministic; }
 
 protected:
 
@@ -67,7 +69,8 @@ protected:
         const Strings & argument_names_,
         const DataTypes & arguments_,
         const DataTypePtr & result_type_,
-        WebAssemblyFunctionSettings function_settings_);
+        WebAssemblyFunctionSettings function_settings_,
+        bool is_deterministic_ = false);
 
     String function_name;
     Strings argument_names;
@@ -77,6 +80,7 @@ protected:
     std::shared_ptr<WebAssembly::WasmModule> wasm_module;
 
     WebAssemblyFunctionSettings settings;
+    bool is_deterministic = false;
 };
 
 class WasmModuleManager;

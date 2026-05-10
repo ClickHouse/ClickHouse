@@ -7,6 +7,9 @@
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/ObjectStorage/S3/Serde.h>
+#endif
 #include <Parsers/IAST_fwd.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 

@@ -6,6 +6,9 @@
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
+#if CLICKHOUSE_CLOUD
+#include <Processors/QueryPlan/ExchangeLookup.h>
+#endif
 #include <Parsers/IAST_fwd.h>
 
 #include <list>
@@ -76,6 +79,9 @@ struct ExplainPlanOptions
 
     SettingsChanges toSettingsChanges() const;
 };
+#if CLICKHOUSE_CLOUD
+struct DistributedQueryPlan;
+#endif
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -111,6 +117,11 @@ public:
     void resolveStorages(const ContextPtr & context);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
+#if CLICKHOUSE_CLOUD
+    /// Converts the original plan to distributed plan and replaces the original plan with a plan that
+    /// contains a step that executes the distributed plan and a step that receives the result.
+    void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
+#endif
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,

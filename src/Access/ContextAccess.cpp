@@ -445,6 +445,9 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
     roles_info = roles_info_;
 
     enabled_row_policies = access_control->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
+#if CLICKHOUSE_CLOUD
+    enabled_masking_policies = access_control->getEnabledMaskingPolicies(*params.user_id, roles_info->enabled_roles);
+#endif
 
     enabled_settings = access_control->getEnabledSettings(
         *params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
@@ -517,6 +520,13 @@ std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
     static const auto no_roles = std::make_shared<EnabledRolesInfo>();
     return no_roles;
 }
+#if CLICKHOUSE_CLOUD
+std::shared_ptr<const EnabledMaskingPolicies> ContextAccess::getEnabledMaskingPolicies() const
+{
+    std::lock_guard lock{mutex};
+    return enabled_masking_policies;
+}
+#endif
 
 RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {

@@ -17,6 +17,9 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
+#if CLICKHOUSE_CLOUD
+#include <Dictionaries/SystemDictionaryUUIDs.h>
+#endif
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Core/ServerSettings.h>
@@ -156,6 +159,10 @@ StorageDictionary::StorageDictionary(
         Location::SameDatabaseAndNameAsDictionary,
         context_)
 {
+#if CLICKHOUSE_CLOUD
+    if (table_id.database_name == "system")
+        SystemDictionaryUUIDs::instance().add(table_id.uuid);
+#endif
     configuration = dictionary_configuration;
 
     auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
@@ -164,6 +171,10 @@ StorageDictionary::StorageDictionary(
 
 StorageDictionary::~StorageDictionary()
 {
+#if CLICKHOUSE_CLOUD
+    if (getStorageID().database_name == "system")
+        SystemDictionaryUUIDs::instance().remove(getStorageID().uuid);
+#endif
     removeDictionaryConfigurationFromRepository();
 }
 
