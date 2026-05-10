@@ -50,6 +50,7 @@ namespace Setting
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_prewhere;
     extern const SettingsBool query_plan_push_down_limit;
+    extern const SettingsBool query_plan_push_down_order_by_limit;
     extern const SettingsBool query_plan_read_in_order_through_join;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
@@ -58,8 +59,6 @@ namespace Setting
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
-    extern const SettingsBool query_plan_convert_join_to_in;
-    extern const SettingsBool query_plan_push_down_order_by_limit;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_skip_indexes_for_top_k;
