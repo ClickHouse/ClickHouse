@@ -182,8 +182,7 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty())
-        http_request.set("Authorization", "Bearer " + api_key);
+    http_request.set("Authorization", "Bearer " + api_key);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
@@ -215,27 +214,31 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     ai_embedding_response.embeddings.resize(ai_embedding_request.inputs.size());
 
     auto data_arr = json_obj->getArray("data");
-    if (data_arr)
+    if (!data_arr)
+        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER, "AI embedding response is missing 'data' array");
+
+    for (unsigned i = 0; i < data_arr->size(); ++i)
     {
-        for (unsigned i = 0; i < data_arr->size(); ++i)
-        {
-            auto item = data_arr->getObject(i);
-            if (!item)
-                continue;
+        auto item = data_arr->getObject(i);
+        if (!item)
+            throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "AI embedding response 'data[{}]' is not an object", i);
 
-            /// `index` tells us which input this embedding corresponds to. Defaults to `i` when missing (TEI).
-            UInt64 idx = item->optValue<UInt64>("index", i);
-            if (idx >= ai_embedding_response.embeddings.size())
-                continue;
+        /// `index` tells us which input this embedding corresponds to. Defaults to `i` when missing (TEI).
+        UInt64 idx = item->optValue<UInt64>("index", i);
+        if (idx >= ai_embedding_response.embeddings.size())
+            throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "AI embedding response 'data[{}].index' = {} is out of range (expected < {})",
+                i, idx, ai_embedding_response.embeddings.size());
 
-            auto embedding_arr = item->getArray("embedding");
-            if (embedding_arr)
-            {
-                ai_embedding_response.embeddings[idx].reserve(embedding_arr->size());
-                for (unsigned j = 0; j < embedding_arr->size(); ++j)
-                    ai_embedding_response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
-            }
-        }
+        auto embedding_arr = item->getArray("embedding");
+        if (!embedding_arr)
+            throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "AI embedding response 'data[{}].embedding' is missing or not an array", i);
+
+        ai_embedding_response.embeddings[idx].reserve(embedding_arr->size());
+        for (unsigned j = 0; j < embedding_arr->size(); ++j)
+            ai_embedding_response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
     }
 
     if (json_obj->has("usage"))
