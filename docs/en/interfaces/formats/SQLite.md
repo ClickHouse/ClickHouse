@@ -19,9 +19,9 @@ The `SQLite` format reads and writes a SQLite database file.
 
 On output, ClickHouse writes the query result into a single table in the SQLite database. On input, ClickHouse reads a single table from the SQLite database.
 
-ClickHouse uses an internal temporary SQLite file while reading or writing this format.
+For local regular files, ClickHouse opens the SQLite database file directly. For other input and output streams, ClickHouse materializes the SQLite database in memory.
 
-By default, the table name is `table`. You can change it with the `output_format_sqlite_table_name` setting on output and the `input_format_sqlite_table_name` setting on input.
+On input, ClickHouse reads the first table from the SQLite database by default. You can change it with the `input_format_sqlite_table_name` setting. On output, the default table name is `table`; you can change it with the `output_format_sqlite_table_name` setting.
 
 ## Example usage {#example-usage}
 
@@ -61,5 +61,5 @@ When the ClickHouse table structure is specified explicitly, SQLite values are r
 
 | Setting                                                                                                                     | Description                                      | Default   |
 |-----------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------|-----------|
-| [`input_format_sqlite_table_name`](../../operations/settings/settings-formats.md/#input_format_sqlite_table_name)           | The name of the table to read from SQLite input. | `'table'` |
+| [`input_format_sqlite_table_name`](../../operations/settings/settings-formats.md/#input_format_sqlite_table_name)           | The name of the table to read from SQLite input. If empty, the first table is used. | `''` |
 | [`output_format_sqlite_table_name`](../../operations/settings/settings-formats.md/#output_format_sqlite_table_name)         | The name of the table in SQLite output.          | `'table'` |

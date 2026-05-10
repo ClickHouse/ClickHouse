@@ -22,5 +22,7 @@ name	String
 amount	String
 created	String
 value	Nullable(String)
+Read first table by default
+7	first
 Custom table name
 1	custom

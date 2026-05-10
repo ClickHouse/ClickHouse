@@ -43,6 +43,31 @@ String makeSelectQuery(const Block & header, const String & table_name)
     return query.str();
 }
 
+String resolveInputTableName(sqlite3 * db, const FormatSettings & settings)
+{
+    if (!settings.sqlite.input_table_name.empty())
+        return settings.sqlite.input_table_name;
+
+    auto statement = prepareSQLiteStatement(
+        db,
+        "SELECT name FROM sqlite_master "
+        "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
+        "ORDER BY rowid LIMIT 1");
+
+    int status = sqlite3_step(statement.get());
+    if (status == SQLITE_DONE)
+        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot find any table in SQLite database");
+
+    checkSQLiteStatus(db, status, "Cannot fetch first SQLite table name");
+
+    const char * data = reinterpret_cast<const char *>(sqlite3_column_text(statement.get(), 0));
+    int size = sqlite3_column_bytes(statement.get(), 0);
+    if (!data && size)
+        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot read first SQLite table name");
+
+    return String(data ? data : "", static_cast<size_t>(size));
+}
+
 class SQLiteInputFormat final : public IInputFormat
 {
 public:
@@ -80,7 +105,7 @@ private:
     void initialize()
     {
         sqlite_db = openSQLiteDatabaseForRead(*in, settings);
-        statement = prepareSQLiteStatement(sqlite_db.get(), makeSelectQuery(*header, settings.sqlite.input_table_name));
+        statement = prepareSQLiteStatement(sqlite_db.get(), makeSelectQuery(*header, resolveInputTableName(sqlite_db.get(), settings)));
         initialized = true;
     }
 
@@ -106,11 +131,12 @@ public:
     NamesAndTypesList readSchema() override
     {
         auto db = openSQLiteDatabaseForRead(in, settings);
-        auto columns = fetchSQLiteTableStructure(db.get(), settings.sqlite.input_table_name);
+        auto table_name = resolveInputTableName(db.get(), settings);
+        auto columns = fetchSQLiteTableStructure(db.get(), table_name);
 
         if (!columns)
             throw Exception(
-                ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot fetch table structure for SQLite table {}", settings.sqlite.input_table_name);
+                ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot fetch table structure for SQLite table {}", table_name);
 
         return *columns;
     }

@@ -1459,8 +1459,8 @@ Use REPLACE statement instead of INSERT
 Quote column names with '`' characters
 )", 0) \
     \
-    DECLARE(String, input_format_sqlite_table_name, "table", R"(
-Name of the table in SQLite input from which to read data
+    DECLARE(String, input_format_sqlite_table_name, "", R"(
+Name of the table in SQLite input from which to read data. If empty, the first table from the SQLite database is used.
 )", 0) \
     DECLARE(String, output_format_sqlite_table_name, "table", R"(
 Name of the table in SQLite output

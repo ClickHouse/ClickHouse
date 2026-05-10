@@ -7,9 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_format_XXXXXX.sqlite")
 CUSTOM_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_format_custom_XXXXXX.sqlite")
+FIRST_TABLE_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_format_first_table_XXXXXX.sqlite")
 DIRECT_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_format_direct_XXXXXX.sqlite")
 rm -f "$DIRECT_DB"
-trap 'rm -f "$DB" "$CUSTOM_DB" "$DIRECT_DB"' EXIT
+trap 'rm -f "$DB" "$CUSTOM_DB" "$FIRST_TABLE_DB" "$DIRECT_DB"' EXIT
 
 STRUCTURE="id UInt64, name String, amount Decimal64(2), created DateTime, value Nullable(String)"
 
@@ -61,6 +62,18 @@ ${CLICKHOUSE_LOCAL} \
     --input-format SQLite \
     --output-format TSV \
     --query "DESCRIBE TABLE table" < "$DB" | cut -f1,2
+
+${CLICKHOUSE_LOCAL} --query "
+    SELECT 7 AS id, 'first' AS name
+    FORMAT SQLite
+    SETTINGS output_format_sqlite_table_name = 'first_table'" > "$FIRST_TABLE_DB"
+
+echo "Read first table by default"
+${CLICKHOUSE_LOCAL} \
+    --structure "id UInt8, name String" \
+    --input-format SQLite \
+    --output-format TSV \
+    --query "SELECT * FROM table" < "$FIRST_TABLE_DB"
 
 ${CLICKHOUSE_LOCAL} --query "
     SELECT 1 AS x, 'custom' AS y
