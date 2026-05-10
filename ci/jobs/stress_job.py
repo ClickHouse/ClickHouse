@@ -13,10 +13,17 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 
+def sanitize_test_result_line(line: str) -> str:
+    return line.replace("\0", "\\0")
+
+
 def read_test_results(results_path: Path, with_raw_logs: bool = True):
     results = []
     with open(results_path, "r", encoding="utf-8") as descriptor:
-        reader = csv.reader(descriptor, delimiter="\t")
+        reader = csv.reader(
+            (sanitize_test_result_line(line) for line in descriptor),
+            delimiter="\t",
+        )
         for line in reader:
             name = line[0]
             status = line[1]
