@@ -7,7 +7,6 @@
 #include <Server/HTTP/HTTPContext.h>
 #include <Server/TCPProtocolStackFactory.h>
 #include <Server/ServerType.h>
-#include <Server/createServer.h>
 #include <Poco/Net/HTTPServerParams.h>
 
 /** Server provides three interfaces:
@@ -94,6 +93,7 @@ private:
         AsynchronousMetrics & async_metrics,
         bool & is_secure);
 
+    using CreateServerFunc = std::function<ProtocolServerAdapter(UInt16)>;
     void createServer(
         Poco::Util::AbstractConfiguration & config,
         const std::string & listen_host,
