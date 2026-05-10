@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -10,6 +11,8 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <boost/dynamic_bitset.hpp>
+
+struct PreformattedMessage;
 
 namespace DB
 {
@@ -277,6 +280,14 @@ public:
         const PartialDisjunctionResult & partial_eval_results,
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
+
+    /// Check if a skip index can be used when there are lightweight updates.
+    /// Returns an error message if the index depends on a column that will be updated on the fly.
+    static std::expected<void, PreformattedMessage> canUseIndex(
+        const MergeTreeIndexPtr & index,
+        const StorageMetadataPtr & metadata_snapshot,
+        const NameSet & all_updated_columns);
+
 
 };
 

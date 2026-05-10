@@ -88,6 +88,8 @@ public:
 
     virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
 
+    StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
+
 protected:
     /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
     /// propagated. Used when compiling default or virtual-column expressions at read time.

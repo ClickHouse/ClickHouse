@@ -196,12 +196,32 @@ String ContainerClientWrapper::GetBlobPath(const String & blob_name) const
     return blob_prefix + blob_name;
 }
 
+/// The Azure SDK throws std::logic_error subtypes (std::invalid_argument from
+/// std::stoi for malformed ports, std::out_of_range for port overflow) when a
+/// connection string or blob URL has malformed components. These are user-input
+/// errors but must be translated to DB::Exception, otherwise they propagate to
+/// getCurrentExceptionMessageAndPattern, which catches std::logic_error and calls
+/// abortOnFailedAssertion in debug/sanitizer builds — turning a user typo into a
+/// "Logical error" abort.
+[[noreturn]] static void translateAzureSdkParseError(const std::logic_error & e)
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Failed to parse Azure connection string or blob URL: {}", e.what());
+}
+
 String ConnectionParams::getConnectionURL() const
 {
     if (std::holds_alternative<ConnectionString>(auth_method))
     {
-        auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
-        return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
+        try
+        {
+            auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
+            return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
+        }
+        catch (const std::logic_error & e)
+        {
+            translateAzureSdkParseError(e);
+        }
     }
 
     return endpoint.storage_account_url;
@@ -209,36 +229,50 @@ String ConnectionParams::getConnectionURL() const
 
 std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
 {
-    return std::visit([this]<typename T>(const T & auth)
+    try
     {
-        if constexpr (std::is_same_v<T, ConnectionString>)
-            return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
-        else
-            return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
-    }, auth_method);
+        return std::visit([this]<typename T>(const T & auth)
+        {
+            if constexpr (std::is_same_v<T, ConnectionString>)
+                return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
+            else
+                return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
+        }, auth_method);
+    }
+    catch (const std::logic_error & e)
+    {
+        translateAzureSdkParseError(e);
+    }
 }
 
 std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
 {
-    if (!endpoint.sas_auth.empty())
+    try
     {
-        RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
-        return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-    }
+        if (!endpoint.sas_auth.empty())
+        {
+            RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
+            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+        }
 
-    return std::visit([this]<typename T>(const T & auth)
+        return std::visit([this]<typename T>(const T & auth)
+        {
+            if constexpr (std::is_same_v<T, ConnectionString>)
+            {
+                auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
+                return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+            }
+            else
+            {
+                RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
+                return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+            }
+        }, auth_method);
+    }
+    catch (const std::logic_error & e)
     {
-        if constexpr (std::is_same_v<T, ConnectionString>)
-        {
-            auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-        }
-        else
-        {
-            RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-        }
-    }, auth_method);
+        translateAzureSdkParseError(e);
+    }
 }
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method)
