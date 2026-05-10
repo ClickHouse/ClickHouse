@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & function_, const String & type_name_, size_t version_)
@@ -42,7 +43,7 @@ UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & fun
 
 namespace
 {
-void deserializeFromString(const AggregateFunctionPtr & function, IColumn & column, ReadBuffer & read_buf, size_t version)
+void deserializeFromString(const AggregateFunctionPtr & function, IColumn & column, ReadBuffer & read_buf, size_t version, bool check_buffer_consumed = false)
 {
     ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
 
@@ -55,6 +56,15 @@ void deserializeFromString(const AggregateFunctionPtr & function, IColumn & colu
     try
     {
         function->deserialize(place, read_buf, version, &arena);
+
+        if (check_buffer_consumed && !read_buf.eof())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "AggregateFunction state for `{}` has {} trailing byte(s) after deserialization",
+                function->getName(),
+                read_buf.available());
+        }
     }
     catch (...)
     {
@@ -288,7 +298,7 @@ void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, Re
         String s;
         settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
         ReadBufferFromString str_buf(s);
-        deserializeFromString(function, column, str_buf, version);
+        deserializeFromString(function, column, str_buf, version, /* check_buffer_consumed */ true);
         return;
     }
 
@@ -310,7 +320,7 @@ void SerializationAggregateFunction::deserializeTextQuoted(IColumn & column, Rea
         String s;
         readQuotedStringWithSQLStyle(s, istr);
         ReadBufferFromString str_buf(s);
-        deserializeFromString(function, column, str_buf, version);
+        deserializeFromString(function, column, str_buf, version, /* check_buffer_consumed */ true);
         return;
     }
 
@@ -323,8 +333,7 @@ void SerializationAggregateFunction::deserializeWholeText(IColumn & column, Read
 {
     if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::State)
     {
-        deserializeFromString(function, column, istr, version);
-        istr.ignoreAll();
+        deserializeFromString(function, column, istr, version, /* check_buffer_consumed */ true);
         return;
     }
 
@@ -346,7 +355,7 @@ void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadB
         String s;
         readJSONString(s, istr, settings.json);
         ReadBufferFromString str_buf(s);
-        deserializeFromString(function, column, str_buf, version);
+        deserializeFromString(function, column, str_buf, version, /* check_buffer_consumed */ true);
         return;
     }
 
@@ -374,7 +383,7 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
         String s;
         readCSV(s, istr, settings.csv);
         ReadBufferFromString str_buf(s);
-        deserializeFromString(function, column, str_buf, version);
+        deserializeFromString(function, column, str_buf, version, /* check_buffer_consumed */ true);
         return;
     }
 
