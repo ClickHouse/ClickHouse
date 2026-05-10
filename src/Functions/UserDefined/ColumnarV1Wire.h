@@ -70,10 +70,10 @@ static_assert(sizeof(ColDescriptor) == COLUMNAR_DESC_BYTES);
 // Budget: scan at most PERIOD_SCAN_LIMIT elements; period must not exceed MAX_PERIOD.
 inline uint32_t detectPeriod(const IColumn * col, uint32_t num_rows)
 {
-    constexpr uint32_t PERIOD_SCAN_LIMIT = 8192;
-    constexpr uint32_t MAX_PERIOD        = 4096;
-    uint32_t scan = std::min(num_rows, PERIOD_SCAN_LIMIT);
-    for (uint32_t r = 1; r <= std::min(scan / 2, MAX_PERIOD); ++r)
+    constexpr uint32_t period_scan_limit = 8192;
+    constexpr uint32_t max_period        = 4096;
+    uint32_t scan = std::min(num_rows, period_scan_limit);
+    for (uint32_t r = 1; r <= std::min(scan / 2, max_period); ++r)
     {
         bool ok = true;
         for (uint32_t i = r; i < scan; ++i)
@@ -182,7 +182,7 @@ inline uint32_t buildColDescriptor(
     ColDescriptor & desc)
 {
     // Budget for COL_IS_REPEAT: only encode if the R unique rows fit under this limit.
-    constexpr uint64_t REPEAT_DATA_LIMIT = 64u * 1024u * 1024u;  // 64 MB
+    constexpr uint64_t repeat_data_limit = 64u * 1024u * 1024u;  // 64 MB
 
     // ── Variant column → COL_VARIANT ─────────────────────────────────────────
     // Wire layout:
@@ -298,7 +298,7 @@ inline uint32_t buildColDescriptor(
                 // str_col->getOffsets()[R-1].  Add R null terminators for wire format.
                 uint64_t unique_chars = static_cast<uint64_t>(str_col->getOffsets()[r - 1]) + r;
                 uint64_t unique_data  = (r + 1u) * sizeof(uint32_t) + unique_chars;
-                if (unique_data < REPEAT_DATA_LIMIT)
+                if (unique_data < repeat_data_limit)
                 {
                     desc.type           = base_type | COL_IS_REPEAT;
                     desc.null_offset    = 0;
@@ -354,7 +354,7 @@ inline uint32_t buildColDescriptor(
         if (r > 0 && r < num_rows)
         {
             uint64_t unique_data = static_cast<uint64_t>(r) * wire_elem_size;
-            if (unique_data < REPEAT_DATA_LIMIT)
+            if (unique_data < repeat_data_limit)
             {
                 desc.type           = base_type | COL_IS_REPEAT;
                 desc.null_offset    = 0;
@@ -565,7 +565,7 @@ inline MutableColumnPtr readColumnarOutput(
 
     uint32_t raw_type = desc.type & ~(COL_IS_CONST | COL_IS_REPEAT);
 
-    auto checkRange = [&](uint64_t offset, uint64_t size, const char * what)
+    auto check_range = [&](uint64_t offset, uint64_t size, const char * what)
     {
         if (offset + size > static_cast<uint64_t>(buf.size()))
             throw Exception(ErrorCodes::WASM_ERROR,
@@ -575,10 +575,10 @@ inline MutableColumnPtr readColumnarOutput(
 
     if (raw_type == COL_BYTES || raw_type == COL_NULL_BYTES)
     {
-        checkRange(desc.offsets_offset, (static_cast<uint64_t>(num_rows) + 1) * 4, "string offsets");
-        checkRange(desc.data_offset, desc.data_size, "string data");
+        check_range(desc.offsets_offset, (static_cast<uint64_t>(num_rows) + 1) * 4, "string offsets");
+        check_range(desc.data_offset, desc.data_size, "string data");
         if (raw_type == COL_NULL_BYTES && desc.null_offset)
-            checkRange(desc.null_offset, num_rows, "string null map");
+            check_range(desc.null_offset, num_rows, "string null map");
 
         const uint32_t * wire_offsets = reinterpret_cast<const uint32_t *>(buf.data() + desc.offsets_offset);
         const uint8_t * data = buf.data() + desc.data_offset;
@@ -615,9 +615,9 @@ inline MutableColumnPtr readColumnarOutput(
 
     if (raw_type == COL_FIXED8 || raw_type == COL_NULL_FIXED8)
     {
-        checkRange(desc.data_offset, num_rows, "fixed8 data");
+        check_range(desc.data_offset, num_rows, "fixed8 data");
         if (raw_type == COL_NULL_FIXED8 && desc.null_offset)
-            checkRange(desc.null_offset, num_rows, "fixed8 null map");
+            check_range(desc.null_offset, num_rows, "fixed8 null map");
 
         const DataTypePtr & base_type = (raw_type == COL_NULL_FIXED8)
             ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
@@ -642,9 +642,9 @@ inline MutableColumnPtr readColumnarOutput(
     // Fixed32 — create column matching the declared return type (Int32, UInt32, Float32, etc.)
     if (raw_type == COL_FIXED32 || raw_type == COL_NULL_FIXED32)
     {
-        checkRange(desc.data_offset, static_cast<uint64_t>(num_rows) * 4, "fixed32 data");
+        check_range(desc.data_offset, static_cast<uint64_t>(num_rows) * 4, "fixed32 data");
         if (raw_type == COL_NULL_FIXED32 && desc.null_offset)
-            checkRange(desc.null_offset, num_rows, "fixed32 null map");
+            check_range(desc.null_offset, num_rows, "fixed32 null map");
 
         const DataTypePtr & base_type = (raw_type == COL_NULL_FIXED32)
             ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
@@ -668,9 +668,9 @@ inline MutableColumnPtr readColumnarOutput(
 
     if (raw_type == COL_FIXED64 || raw_type == COL_NULL_FIXED64)
     {
-        checkRange(desc.data_offset, static_cast<uint64_t>(num_rows) * 8, "fixed64 data");
+        check_range(desc.data_offset, static_cast<uint64_t>(num_rows) * 8, "fixed64 data");
         if (raw_type == COL_NULL_FIXED64 && desc.null_offset)
-            checkRange(desc.null_offset, num_rows, "fixed64 null map");
+            check_range(desc.null_offset, num_rows, "fixed64 null map");
 
         const DataTypePtr & base_type = (raw_type == COL_NULL_FIXED64)
             ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
@@ -694,7 +694,7 @@ inline MutableColumnPtr readColumnarOutput(
 
     if (raw_type == COL_COMPLEX)
     {
-        checkRange(desc.data_offset, desc.data_size, "complex data");
+        check_range(desc.data_offset, desc.data_size, "complex data");
 
         const uint8_t * data_ptr = buf.data() + desc.data_offset;
         const uint8_t * data_end = buf.data() + desc.data_offset + desc.data_size;
