@@ -738,7 +738,12 @@ public:
             if (const auto * cv1 = dynamic_cast<const UserDefinedWebAssemblyFunctionColumnarV1 *>(user_defined_function.get()))
             {
                 auto stop_token = interrupt_source.get_token();
-                return cv1->executeColumnar(compartment_ptr, arguments, input_rows_count, context, stop_token);
+                auto result = cv1->executeColumnar(compartment_ptr, arguments, input_rows_count, context, stop_token);
+                if (result->getName() != user_defined_function->getResultType()->getName())
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "COLUMNAR_V1: returned column type {} does not match declared result type {}",
+                        result->getName(), user_defined_function->getResultType()->getName());
+                return result;
             }
 
             return execute(compartment_ptr, arguments, input_rows_count);
