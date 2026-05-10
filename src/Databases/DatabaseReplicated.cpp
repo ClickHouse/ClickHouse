@@ -130,6 +130,7 @@ namespace FailPoints
     extern const char database_replicated_drop_before_removing_keeper_failed[];
     extern const char database_replicated_drop_after_removing_keeper_failed[];
     extern const char database_replicated_force_metadata_digest_check[];
+    extern const char database_replicated_pause_after_reading_log_pointer[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -2547,6 +2548,16 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
     auto zookeeper = getZooKeeper();
     UInt32 snapshot_version = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
+
+    /// Test-only: deterministically reproduce the DROP+RECREATE race that originally
+    /// surfaced as a `chassert(max_log_ptr == new_max_log_ptr)` LOGICAL_ERROR. The test
+    /// enables this failpoint, submits a backup, waits for the pause, runs DROP+RECREATE
+    /// to advance `/max_log_ptr`'s `czxid` and reset its value below `snapshot_version`,
+    /// then notifies the failpoint. On resume, `getConsistentMetadataSnapshotImpl` sees
+    /// the rollback and throws `Replicated database was dropped` from the in-loop
+    /// monotonicity guard, instead of firing the pre-fix chassert / retry-exhaustion path.
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_after_reading_log_pointer);
+
     auto snapshot = getConsistentMetadataSnapshotImpl(zookeeper, filter, /* max_retries= */ 20, snapshot_version);
 
     std::vector<std::pair<ASTPtr, StoragePtr>> res;

@@ -1,20 +1,30 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-fasttest, no-random-settings
+# Tags: zookeeper, no-fasttest, no-parallel
+# no-parallel: the `database_replicated_pause_after_reading_log_pointer` failpoint
+#   is `PAUSEABLE_ONCE` and fires globally; a concurrent backup from another test
+#   could steal the pause from this test's submitted backup, causing
+#   `SYSTEM WAIT FAILPOINT ... PAUSE` to hang or to be unblocked by the wrong query.
 
-# Regression test: backup of a DatabaseReplicated must not cause a logical error
-# exception when the database is dropped and recreated (resetting max_log_ptr)
+# Regression test: backup of a `DatabaseReplicated` must not cause a logical-error
+# exception when the database is dropped and recreated (resetting `max_log_ptr`)
 # concurrently with the backup operation.
 #
 # Before the fix, `getConsistentMetadataSnapshotImpl` had
-# `chassert(max_log_ptr == new_max_log_ptr)` that fired when the log pointer
-# went backwards after database recreation. After the fix, such backups fail
-# cleanly with `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT`.
+# `chassert(max_log_ptr == new_max_log_ptr)` that fired when the log pointer went
+# backwards after database recreation. In release builds the chassert was a no-op
+# and the retry loop instead exhausted, throwing `Cannot get consistent metadata
+# snapshot`. After the fix, such backups fail cleanly with
+# `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` and the message
+# `Replicated database was dropped`.
 #
-# `no-random-settings` is required because settings like `fsync_metadata=1` and
-# `max_threads=1` make `CREATE DATABASE Replicated` and `DROP DATABASE SYNC`
-# slow enough to push the stress loop past the 180s test budget under
-# sanitizer builds, while none of the randomized settings affect what this
-# test is checking.
+# This test triggers the race deterministically with the
+# `database_replicated_pause_after_reading_log_pointer` failpoint, which pauses
+# `getTablesForBackup` after it has read `snapshot_version` from the old database
+# but before it calls `getConsistentMetadataSnapshotImpl`. While paused, the test
+# does `DROP DATABASE` + `CREATE DATABASE` at the same Keeper path so the new
+# database starts with `max_log_ptr = 1` (below the captured `snapshot_version`),
+# then notifies the failpoint. On resume, the in-loop monotonicity guard fires
+# with `Replicated database was dropped`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,176 +32,93 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DB="db_$CLICKHOUSE_DATABASE"
 ZK_PATH="/clickhouse/databases/$DB"
+BACKUP_ID="${CLICKHOUSE_DATABASE}_recreate_test"
+FAILPOINT="database_replicated_pause_after_reading_log_pointer"
 
-TIMEOUT=45
-
-# A non-trivial number of tables widens the race window inside
-# `getConsistentMetadataSnapshotImpl`: every iteration of its retry loop calls
-# `tryGet` over one Keeper path per table, so more tables means a longer
-# wall-clock iteration during which a concurrent `DROP`+recreate can land
-# between reading `snapshot_version` and reading `max_log_ptr`. With a single
-# table the iteration completes in a few milliseconds, which made the
-# pre-fix `Log pointer moved backwards` symptom miss most of the time in
-# bugfix validation.
-NUM_TABLES=20
-
-function create_and_populate()
+function cleanup()
 {
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FAILPOINT" > /dev/null 2>&1 ||:
+    $CLICKHOUSE_CLIENT --query "SYSTEM UNFREEZE WITH ID = '$BACKUP_ID'" > /dev/null 2>&1 ||:
+    $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC" > /dev/null 2>&1 ||:
+}
+trap cleanup EXIT
+cleanup
+
+# Create the original database with a handful of tables so `max_log_ptr` advances
+# above 1 (each `CREATE TABLE` bumps `max_log_ptr`). When we recreate the database
+# below, the new instance starts at `max_log_ptr = 1`, which is strictly less than
+# the `snapshot_version` captured before the recreate. This is the rollback the
+# in-loop monotonicity guard catches.
+$CLICKHOUSE_CLIENT --query "
+    CREATE DATABASE $DB ENGINE = Replicated('$ZK_PATH', 's0', 'r0');
+" > /dev/null
+for i in $(seq 1 10); do
     $CLICKHOUSE_CLIENT --query "
-        CREATE DATABASE IF NOT EXISTS $DB ENGINE = Replicated('$ZK_PATH', 's0', 'r0');
-    " > /dev/null 2>&1
-    local create_tables=""
-    for i in $(seq 1 $NUM_TABLES); do
-        create_tables+="CREATE TABLE IF NOT EXISTS $DB.t_$i (x UInt64) ENGINE = MergeTree ORDER BY x;"
-    done
-    $CLICKHOUSE_CLIENT --query "$create_tables" > /dev/null 2>&1
-}
-
-function do_backups()
-{
-    local WORKER_ID=$BASHPID
-    local I=0
-    while true; do
-        [[ $SECONDS -gt $TIMEOUT ]] && break
-        I=$((I + 1))
-        $CLICKHOUSE_CLIENT --query "
-            BACKUP DATABASE $DB TO Disk('backups', '${CLICKHOUSE_DATABASE}_recreate_${WORKER_ID}_$I')
-            SETTINGS id = '${CLICKHOUSE_DATABASE}_recreate_${WORKER_ID}_$I' ASYNC
-        " > /dev/null 2>&1
-    done
-}
-
-# Set up the initial database.
-create_and_populate
-
-# Start backup workers in the background. They submit `BACKUP ... ASYNC`
-# requests in a tight loop; the backups run concurrently on the server. More
-# workers widen the chance of catching the narrow race between reading
-# `snapshot_version` and entering the snapshot loop in
-# `getConsistentMetadataSnapshotImpl`.
-do_backups &
-do_backups &
-do_backups &
-do_backups &
-do_backups &
-do_backups &
-
-# Run database recreation in the foreground synchronously. Foreground execution
-# guarantees that recreate cycles actually complete and are not lost to the
-# background scheduler under randomized settings.
-#
-# Bound each `DROP DATABASE SYNC` with `max_execution_time`. Under flaky-check
-# stress (the test runs ~10 times back-to-back on a busy CI host), six backup
-# workers in tight submission loops can starve the foreground drop for the
-# entire 45-second window, leaving `RECREATE_COUNT == 0` and the regression
-# path untested. With a per-attempt cap, a stuck drop is killed and the loop
-# retries instead of consuming the whole budget on a single hang.
-RECREATE_COUNT=0
-while [[ $SECONDS -lt $TIMEOUT ]]; do
-    if $CLICKHOUSE_CLIENT --max_execution_time=10 --query "DROP DATABASE IF EXISTS $DB SYNC" > /dev/null 2>&1; then
-        RECREATE_COUNT=$((RECREATE_COUNT + 1))
-    fi
-    create_and_populate
+        CREATE TABLE $DB.t_$i (x UInt64) ENGINE = MergeTree ORDER BY x;
+    " > /dev/null
 done
 
-wait
+# Arm the failpoint and submit the backup. `BACKUP ... ASYNC` returns immediately;
+# the actual snapshot work runs on a server background thread, which is the thread
+# that hits the failpoint inside `getTablesForBackup`.
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FAILPOINT"
+$CLICKHOUSE_CLIENT --query "
+    BACKUP DATABASE $DB TO Disk('backups', '$BACKUP_ID')
+    SETTINGS id = '$BACKUP_ID' ASYNC
+" > /dev/null
 
-# Fallback: under flaky-check stress, six backup workers in tight submission
-# loops can starve every foreground `DROP DATABASE SYNC` for the entire 45s
-# window, leaving `RECREATE_COUNT == 0`. Once the workers have stopped
-# submitting new backups (`wait` above) the contention drops sharply, but
-# previously-submitted backups are still running on the server. Doing one
-# more drop+recreate cycle here guarantees that `max_log_ptr` moves
-# backwards at least once and gives the still-draining backups a chance
-# to observe it.
-if [[ $RECREATE_COUNT -eq 0 ]]; then
-    if $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC" > /dev/null 2>&1; then
-        RECREATE_COUNT=$((RECREATE_COUNT + 1))
-        create_and_populate
-    fi
-fi
+# Block until the backup thread is paused at the failpoint (i.e. has finished
+# reading `snapshot_version` but has not yet entered the snapshot loop).
+$CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FAILPOINT PAUSE"
 
-# Verify the test actually exercised the regression path: at least one full
-# DROP+recreate cycle must have completed, otherwise `max_log_ptr` never moved
-# backwards and the regression is untested.
-if [[ $RECREATE_COUNT -ge 1 ]]; then
-    echo "recreated"
-else
-    echo "not recreated: $RECREATE_COUNT"
-fi
+# Drop and recreate at the same Keeper path. This removes `/max_log_ptr` and
+# recreates it with a new `czxid` and value `1`. The paused backup still holds
+# a `DatabasePtr` to the old in-memory `DatabaseReplicated`, so when it resumes
+# it will read the new database's metadata via the old object's `zookeeper_path`.
+$CLICKHOUSE_CLIENT --query "DROP DATABASE $DB SYNC"
+$CLICKHOUSE_CLIENT --query "
+    CREATE DATABASE $DB ENGINE = Replicated('$ZK_PATH', 's0', 'r0');
+" > /dev/null
 
-# `BACKUP ... ASYNC` only waits for submission; in-flight backups may still hit
-# the racy code path after the loops above exit. Wait for submitted backups to
-# leave `CREATING_BACKUP` before checking error states. The race window is at
-# the very start of the backup (the `getConsistentMetadataSnapshotImpl` loop),
-# so a backup that is still running after this drain has already passed the
-# racy phase and cannot be hiding a delayed `LOGICAL_ERROR`. The bound exists
-# only to keep the test inside the 180s budget on slow sanitizer builds.
+# Resume the backup. It will enter `getConsistentMetadataSnapshotImpl` with
+# `max_log_ptr = snapshot_version` (e.g. 11, captured from the old database) and
+# read `new_max_log_ptr = 1` from the recreated database. The
+# `max_log_ptr > new_max_log_ptr` branch throws `Replicated database was dropped`.
+$CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT $FAILPOINT"
+
+# Wait for the backup to leave `CREATING_BACKUP`. The failpoint fires once and
+# the snapshot path either succeeds or fails immediately, so this drain should
+# complete in well under a second; the deadline is just a safety bound.
 DEADLINE=$((SECONDS + 30))
 while [[ $SECONDS -lt $DEADLINE ]]; do
-    IN_PROGRESS=$($CLICKHOUSE_CLIENT --query "
-        SELECT count() FROM system.backups
-        WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%' AND status = 'CREATING_BACKUP'
+    STATUS=$($CLICKHOUSE_CLIENT --query "
+        SELECT status FROM system.backups WHERE id = '$BACKUP_ID' LIMIT 1
     ")
-    [[ "$IN_PROGRESS" == "0" ]] && break
-    sleep 0.5
+    [[ "$STATUS" != "CREATING_BACKUP" ]] && break
+    sleep 0.1
 done
 
-# Detect the original regression. Pre-fix, the bug manifests in two ways:
-#   * In debug builds, the `chassert(max_log_ptr == new_max_log_ptr)` fires
-#     and surfaces as a `LOGICAL_ERROR` exception in the backup error.
-#   * In release builds, the chassert is a no-op and the loop silently retries
-#     until `max_retries` is exhausted, then throws
-#     `Cannot get consistent metadata snapshot`.
-# The fix replaces both with a distinct `Replicated database was dropped`
-# exception, so neither pre-fix symptom can appear.
+# Bugfix-validation signal #1 (regression detection): the pre-fix code paths must
+# not fire. Pre-fix in debug builds the `chassert(max_log_ptr == new_max_log_ptr)`
+# fires and surfaces as a `LOGICAL_ERROR` exception in the backup error; in
+# release builds the chassert is a no-op and the retry loop exhausts, throwing
+# `Cannot get consistent metadata snapshot`. The fix replaces both with the
+# `Replicated database was dropped` message, so neither pre-fix symptom can
+# appear here.
 $CLICKHOUSE_CLIENT --query "
     SELECT count() FROM system.backups
-    WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%'
+    WHERE id = '$BACKUP_ID'
       AND (error LIKE '%LOGICAL_ERROR%'
            OR error LIKE '%Cannot get consistent metadata snapshot%')
 "
 
-# Verify the fix actually engaged on the race condition. With the stress loop
-# above (six backup workers in tight submission loops + foreground recreates),
-# the recreate-during-backup window must have triggered the new guards at
-# least once: the entry-time `tryGet` on `/max_log_ptr`, the in-loop
-# monotonicity check, the post-loop `czxid` identity check, or the entry-time
-# `tryGet` on `/metadata` in the slow path. All four throw
-# `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` with a message starting
-# `Replicated database was dropped`. This message does not exist in unfixed
-# code, so a non-zero count is a deterministic signal that the fix is in
-# place. Without this assertion, bugfix validation (which runs the new test
-# against the master HEAD release binary, where the silent fast-path
-# corruption produces no error) treats the test as unable to reproduce the
-# bug.
+# Bugfix-validation signal #2 (fix engagement): with the failpoint pause we
+# guarantee the backup observes the recreate, so the new error must fire exactly
+# once. This message does not exist in unfixed code.
 $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0 FROM system.backups
-    WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%'
-      AND error LIKE '%Replicated database was dropped%'
+    WHERE id = '$BACKUP_ID' AND error LIKE '%Replicated database was dropped%'
 "
-
-# Clean up backup state. The stress loop submits thousands of backup IDs, and
-# unfreezing each one is a sequential round trip to the server. Bound the
-# cleanup so a slow run does not push the test past the 180s budget; any
-# leftover frozen hardlinks are removed by the test infrastructure when the
-# database directory is wiped between runs.
-#
-# Read all IDs into an array first instead of streaming through a pipe: when
-# the deadline triggers `break` mid-iteration, a piped `clickhouse-client`
-# would still be writing and would surface a `Broken pipe` error on stderr,
-# failing the test on the harness's "having stderror" check.
-CLEANUP_DEADLINE=$((SECONDS + 20))
-mapfile -t BACKUP_IDS < <($CLICKHOUSE_CLIENT --query "
-    SELECT id FROM system.backups
-    WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%'
-")
-for backup_id in "${BACKUP_IDS[@]}"; do
-    [[ $SECONDS -gt $CLEANUP_DEADLINE ]] && break
-    $CLICKHOUSE_CLIENT --query "SYSTEM UNFREEZE WITH ID = '$backup_id'" > /dev/null 2>&1
-done
-
-$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC" > /dev/null 2>&1
 
 # Liveness check: the server is still alive.
 $CLICKHOUSE_CLIENT --query "SELECT 1"
