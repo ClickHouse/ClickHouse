@@ -221,7 +221,7 @@ bool rewriteOrderByLimit(QueryTreeNodePtr & original_query, const StoragePtr & t
         return collectVec(
             column_names_and_types
             | std::views::transform(
-                [&](const NameAndTypePair & pair) -> QueryTreeNodePtr { return std::make_shared<ColumnNode>(pair, std::move(source)); }));
+                [&](const NameAndTypePair & pair) -> QueryTreeNodePtr { return std::make_shared<ColumnNode>(pair, source); }));
     };
 
     auto part_offset_column_info = NamesAndTypes{*part_column, *part_offset_column};
@@ -273,6 +273,11 @@ void RewriteOrderByLimitPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr
         if (rewriteOrderByLimit(query_node.first, query_node.second, context))
         {
             has_rewrite = true;
+            /// Both the rewritten subquery and the main query must observe the same parts so that
+            /// `_part_starting_offset + _part_offset` resolves identically on both sides of the IN.
+            auto * rewritten_query = query_node.first->as<QueryNode>();
+            chassert(rewritten_query != nullptr);
+            rewritten_query->getMutableContext()->setSetting("enable_shared_storage_snapshot_in_query", true);
         }
     }
 
@@ -282,10 +287,6 @@ void RewriteOrderByLimitPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr
             &Poco::Logger::get("RewriteOrderByLimitPass"),
             "Rewrite ORDER BY LIMIT successfully, current query: {}",
             query_tree_node->dumpTree());
-
-        auto * query = query_tree_node->as<QueryNode>();
-        auto & mutable_context = query->getMutableContext();
-        mutable_context->setSetting("enable_shared_storage_snapshot_in_query", true);
     }
 }
 
