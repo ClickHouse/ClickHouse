@@ -12,7 +12,6 @@
 #    include <Formats/FormatFactory.h>
 #    include <IO/copyData.h>
 #    include <IO/ReadBufferFromFile.h>
-#    include <IO/ReadBufferFromString.h>
 #    include <IO/WriteBufferFromFile.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/WriteHelpers.h>
@@ -20,6 +19,7 @@
 #    include <Processors/Formats/IOutputFormat.h>
 #    include <Processors/Formats/IRowInputFormat.h>
 #    include <Processors/Formats/ISchemaReader.h>
+#    include <Processors/Sources/SQLiteStatementReader.h>
 #    include <Common/quoteString.h>
 
 #    include <Poco/TemporaryFile.h>
@@ -205,9 +205,8 @@ public:
         , header(std::move(header_))
         , settings(settings_)
         , max_block_size(max_block_size_)
+        , statement_reader(*header, settings, SQLiteStatementReader::ValueReadMode::Text)
     {
-        for (const auto & column : *header)
-            serializations.emplace_back(column.type->getDefaultSerialization());
     }
 
     String getName() const override { return "SQLite"; }
@@ -220,43 +219,15 @@ public:
         if (!initialized)
             initialize();
 
-        MutableColumns columns = header->cloneEmptyColumns();
-        size_t num_rows = 0;
-
-        while (num_rows < max_block_size)
+        bool finished = false;
+        auto chunk = statement_reader.readChunk(sqlite_db.get(), statement.get(), max_block_size, finished);
+        if (finished)
         {
-            int status = sqlite3_step(statement.get());
-
-            if (status == SQLITE_DONE)
-            {
-                statement.reset();
-                sqlite_finished = true;
-                return num_rows ? Chunk(std::move(columns), num_rows) : Chunk{};
-            }
-
-            checkSQLiteStatus(sqlite_db.get(), status, "Cannot read row from SQLite database");
-
-            for (size_t column_index = 0; column_index != columns.size(); ++column_index)
-            {
-                if (sqlite3_column_type(statement.get(), static_cast<int>(column_index)) == SQLITE_NULL)
-                {
-                    columns[column_index]->insertDefault();
-                    continue;
-                }
-
-                const char * data = reinterpret_cast<const char *>(sqlite3_column_text(statement.get(), static_cast<int>(column_index)));
-                int size = sqlite3_column_bytes(statement.get(), static_cast<int>(column_index));
-                if (!data && size)
-                    throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot read text value from SQLite database");
-
-                ReadBufferFromString value(std::string_view(data ? data : "", size));
-                serializations[column_index]->deserializeWholeText(*columns[column_index], value, settings);
-            }
-
-            ++num_rows;
+            statement.reset();
+            sqlite_finished = true;
         }
 
-        return Chunk(std::move(columns), num_rows);
+        return chunk;
     }
 
 private:
@@ -270,7 +241,7 @@ private:
     SharedHeader header;
     FormatSettings settings;
     UInt64 max_block_size;
-    std::vector<SerializationPtr> serializations;
+    SQLiteStatementReader statement_reader;
     SQLiteTemporaryFile temporary_file;
     SQLitePtr sqlite_db{nullptr, sqlite3_close};
     SQLiteStatementPtr statement{nullptr, sqlite3_finalize};
