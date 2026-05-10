@@ -1869,7 +1869,7 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
-    Supported statistics types: tdigest, countmin, minmax, uniq.
+    Supported statistics types: tdigest, countmin, minmax, nullcount, uniq.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
@@ -2229,7 +2229,7 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
+    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
 };
 
 static void validateTableDisk(const DiskPtr & disk)
@@ -2328,7 +2328,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
 {
     if (!allow_experimental || !allow_beta)
     {
@@ -2357,7 +2357,14 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
     }
 
 
-    if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks)
+    /// Skip these checks when the background pool was auto-lowered by the low-memory heuristic
+    /// AND the corresponding table-level threshold is at its default. On small systems the pool
+    /// may be tuned below the default thresholds, and we do not want to fail table creation in
+    /// that mode. However, if the operator explicitly overrides one of these thresholds at the
+    /// table level, the check must still fire so a misconfiguration that would silently disable
+    /// mutations or merge sizing is caught early.
+    if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks
+        && !(background_pool_auto_lowered && !number_of_free_entries_in_pool_to_execute_mutation.changed))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_mutation' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -2369,7 +2376,8 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             background_pool_tasks);
     }
 
-    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge > background_pool_tasks)
+    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge > background_pool_tasks
+        && !(background_pool_auto_lowered && !number_of_free_entries_in_pool_to_lower_max_size_of_merge.changed))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_lower_max_size_of_merge' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -2381,7 +2389,8 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             background_pool_tasks);
     }
 
-    if (number_of_free_entries_in_pool_to_execute_optimize_entire_partition > background_pool_tasks)
+    if (number_of_free_entries_in_pool_to_execute_optimize_entire_partition > background_pool_tasks
+        && !(background_pool_auto_lowered && !number_of_free_entries_in_pool_to_execute_optimize_entire_partition.changed))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -2657,9 +2666,9 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || (impl->min_compressed_bytes_to_fsync_after_merge && input_bytes >= impl->min_compressed_bytes_to_fsync_after_merge));
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta);
+    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta, background_pool_auto_lowered);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const

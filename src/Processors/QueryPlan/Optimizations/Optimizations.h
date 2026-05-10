@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/Joins.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
@@ -7,6 +8,8 @@ class SipHash;
 
 namespace DB
 {
+
+class JoinStepLogical;
 
 namespace QueryPlanOptimizations
 {
@@ -44,6 +47,7 @@ struct Optimization
 
         bool use_skip_indexes_for_top_k;
         bool use_top_k_dynamic_filtering;
+        bool use_top_k_dynamic_filtering_for_variable_length_types;
         size_t max_limit_for_top_k_optimization;
         bool use_skip_indexes_on_data_read;
         bool read_in_order;
@@ -193,6 +197,19 @@ void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPl
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
 std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
 
+/// Populates two maps in lock-step:
+///   raw_hashes[N]  = bottom-up hash of the sub-plan rooted at N, independent of N's parent.
+///   cache_keys[N]  = raw_hashes[N] XOR (the per-side contribution of N's parent join step).
+/// `raw_hashes` is what the join reorder pass needs to derive cache keys for sub-join nodes
+/// it builds itself; `cache_keys` matches the value `HashTablesStatistics` is keyed by.
+void calculateHashTableCacheKeys(
+    const QueryPlan::Node & root,
+    std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
+    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes);
+
+/// Per-side join-step hash used to derive HashTablesStatistics cache keys after join reorder.
+UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side);
+
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,
     QueryPlan::Nodes &,
@@ -207,16 +224,12 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
-    bool allow_implicit_projections,
-    bool is_parallel_replicas_initiator_with_projection_support,
-    size_t max_step_description_length);
+    const QueryPlanOptimizationSettings & optimization_settings);
 
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
-    const QueryPlanOptimizationSettings & optimization_settings,
-    bool is_parallel_replicas_initiator_with_projection_support,
-    size_t max_step_description_length);
+    const QueryPlanOptimizationSettings & optimization_settings);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
