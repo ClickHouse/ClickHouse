@@ -10,6 +10,9 @@
 #include <Server/StaticRequestHandler.h>
 #include <Server/WebUIRequestHandler.h>
 #include <Server/WebTerminalRequestHandler.h>
+#if CLICKHOUSE_CLOUD
+#include <Server/CloudReadinessHandler.h>
+#endif
 
 #if USE_SSL
 #include <Server/ACME/RequestHandler.h>
@@ -257,6 +260,12 @@ static inline auto createHandlersFactoryFromConfig(
                 main_handler_factory->addHandler(std::move(handler));
             }
 #endif
+#if CLICKHOUSE_CLOUD
+            else if (handler_type == "cloud")
+            {
+                main_handler_factory->addHandler(createCloudHandlerFactory(server, config, prefix + "." + key));
+            }
+#endif
             else
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown handler type '{}' in config here: {}.{}.handler.type",
                     handler_type, prefix, key);
@@ -304,6 +313,10 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
         return createPrometheusHandlerFactory(server, config, async_metrics, name);
     if (name == "KeeperPrometheusHandler-factory")
         return createKeeperPrometheusHandlerFactory(server, config, async_metrics, name);
+#if CLICKHOUSE_CLOUD
+    if (name == "CloudHandler-factory")
+        return createCloudMainHandlerFactory(server, config, name);
+#endif
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown HTTP handler factory name.");
 }
