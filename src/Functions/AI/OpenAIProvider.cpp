@@ -164,17 +164,10 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_embedding_request.model);
 
-    if (ai_embedding_request.inputs.size() == 1)
-    {
-        root->set("input", ai_embedding_request.inputs[0]);
-    }
-    else
-    {
-        Poco::JSON::Array::Ptr input_array = new Poco::JSON::Array;
-        for (const auto & text : ai_embedding_request.inputs)
-            input_array->add(text);
-        root->set("input", input_array);
-    }
+    Poco::JSON::Array::Ptr input_array = new Poco::JSON::Array;
+    for (const auto & text : ai_embedding_request.inputs)
+        input_array->add(text);
+    root->set("input", input_array);
 
     if (ai_embedding_request.dimensions > 0)
         root->set("dimensions", static_cast<Int64>(ai_embedding_request.dimensions));
