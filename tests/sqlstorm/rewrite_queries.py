@@ -682,9 +682,21 @@ def rewrite_query(sql):
         flags=re.IGNORECASE,
     )
 
-    # 8. Convert FETCH FIRST N ROWS ONLY without preceding ORDER BY to LIMIT N
+    # 8a. Rewrite SQL standard OFFSET N ROW[S] FETCH FIRST M ROW[S] ONLY together.
+    #     ClickHouse supports this form, but only with ORDER BY; rewriting to
+    #     LIMIT M OFFSET N works in both cases. Must run before 8b so that the
+    #     standalone FETCH rewrite below does not strip FETCH while leaving the
+    #     orphan OFFSET ... ROWS behind (which is invalid ClickHouse SQL).
     sql = re.sub(
-        r'\bFETCH\s+FIRST\s+(\d+)\s+ROWS\s+ONLY\b',
+        r'\bOFFSET\s+(\d+)\s+ROWS?\s+FETCH\s+FIRST\s+(\d+)\s+ROWS?\s+ONLY\b',
+        r'LIMIT \2 OFFSET \1',
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    # 8b. Convert standalone FETCH FIRST N ROWS ONLY to LIMIT N.
+    sql = re.sub(
+        r'\bFETCH\s+FIRST\s+(\d+)\s+ROWS?\s+ONLY\b',
         r'LIMIT \1',
         sql,
         flags=re.IGNORECASE,

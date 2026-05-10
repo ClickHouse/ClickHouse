@@ -11,7 +11,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from rewrite_queries import rewrite_any_comparison
+from rewrite_queries import rewrite_any_comparison, rewrite_query
 
 
 class TestRewriteAnyComparison(unittest.TestCase):
@@ -56,6 +56,30 @@ class TestRewriteAnyComparison(unittest.TestCase):
         # `a + b = ANY(arr)` must not become `a + has(arr, b)`
         sql = "SELECT * FROM t WHERE a + b = ANY(arr)"
         self.assertEqual(rewrite_any_comparison(sql), sql)
+
+
+class TestFetchOffsetRewrite(unittest.TestCase):
+    def test_offset_rows_fetch_first_rows_only(self):
+        # SQL standard: rewriting only FETCH FIRST while leaving OFFSET ... ROWS
+        # behind would produce invalid ClickHouse SQL like
+        # `OFFSET 5 ROWS LIMIT 10`. Both clauses must be rewritten together.
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t ORDER BY x OFFSET 5 ROWS FETCH FIRST 10 ROWS ONLY"),
+            "SELECT * FROM t ORDER BY x LIMIT 10 OFFSET 5",
+        )
+
+    def test_offset_row_fetch_first_row_only(self):
+        # Singular ROW form must be handled too.
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t ORDER BY x OFFSET 5 ROW FETCH FIRST 1 ROW ONLY"),
+            "SELECT * FROM t ORDER BY x LIMIT 1 OFFSET 5",
+        )
+
+    def test_standalone_fetch_first_rows_only(self):
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t FETCH FIRST 10 ROWS ONLY"),
+            "SELECT * FROM t LIMIT 10",
+        )
 
 
 def _sort_key(f):
