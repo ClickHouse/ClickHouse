@@ -1,0 +1,26 @@
+u_sparse = 0	9501
+u_sparse = 0 baseline	9501
+u_sparse > 0	499
+u_sparse >= 1	499
+u_sparse < 1	9501
+u_sparse <= 0	9501
+u_sparse != 0	499
+u_dense = 0	5000
+u_dense = 0 baseline	5000
+u_dense != 0	5000
+u_dense > 0	5000
+u_dense > 0 baseline	5000
+empty(s_sparse)	9500
+empty(s_sparse) baseline	9500
+notEmpty(s_sparse)	500
+empty(s_dense)	100
+empty(s_dense) baseline	100
+nul_sparse IS NULL	9500
+nul_sparse IS NULL baseline	9500
+nul_sparse IS NOT NULL	500
+b_sparse = true	500
+b_sparse = true baseline	500
+b_sparse != true	9500
+unrecognised: u_sparse > 5	499
+unrecognised: id > 0	9999
+unrecognised: AND	4501
