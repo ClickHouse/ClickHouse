@@ -19,6 +19,8 @@ The `SQLite` format reads and writes a SQLite database file.
 
 On output, ClickHouse writes the query result into a single table in the SQLite database. On input, ClickHouse reads a single table from the SQLite database.
 
+ClickHouse uses an internal temporary SQLite file while reading or writing this format.
+
 By default, the table name is `table`. You can change it with the `output_format_sqlite_table_name` setting on output and the `input_format_sqlite_table_name` setting on input.
 
 ## Example usage {#example-usage}

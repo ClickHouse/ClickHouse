@@ -10,20 +10,20 @@
 #    include <DataTypes/Serializations/ISerialization.h>
 #    include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #    include <Formats/FormatFactory.h>
+#    include <IO/copyData.h>
+#    include <IO/ReadBufferFromFile.h>
 #    include <IO/ReadBufferFromString.h>
-#    include <IO/ReadHelpers.h>
+#    include <IO/WriteBufferFromFile.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/WriteHelpers.h>
 #    include <Processors/Formats/IInputFormat.h>
 #    include <Processors/Formats/IOutputFormat.h>
 #    include <Processors/Formats/IRowInputFormat.h>
 #    include <Processors/Formats/ISchemaReader.h>
-#    include <base/scope_guard.h>
 #    include <Common/quoteString.h>
 
+#    include <Poco/TemporaryFile.h>
 #    include <sqlite3.h>
-
-#    include <cstring>
 
 namespace DB
 {
@@ -39,6 +39,22 @@ namespace
 using SQLitePtr = std::unique_ptr<sqlite3, decltype(&sqlite3_close)>;
 using SQLiteStatementPtr = std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)>;
 
+class SQLiteTemporaryFile
+{
+public:
+    SQLiteTemporaryFile()
+        : file(std::make_unique<Poco::TemporaryFile>())
+        , path(file->path())
+    {
+    }
+
+    const String & getPath() const { return path; }
+
+private:
+    std::unique_ptr<Poco::TemporaryFile> file;
+    String path;
+};
+
 void checkSQLiteStatus(sqlite3 * db, int status, std::string_view message)
 {
     if (status != SQLITE_OK && status != SQLITE_DONE && status != SQLITE_ROW)
@@ -52,46 +68,26 @@ void checkSQLiteStatus(sqlite3 * db, int status, std::string_view message)
     }
 }
 
-SQLitePtr openSQLiteMemoryDatabase()
+SQLitePtr openSQLiteDatabase(const String & path)
 {
     sqlite3 * db = nullptr;
-    int status = sqlite3_open(":memory:", &db);
+    int status = sqlite3_open(path.c_str(), &db);
     if (status != SQLITE_OK)
     {
         String message = db ? sqlite3_errmsg(db) : sqlite3_errstr(status);
         if (db)
             sqlite3_close(db);
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot open in-memory SQLite database. Status: {}. Message: {}", status, message);
+        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot open SQLite database {}. Status: {}. Message: {}", path, status, message);
     }
     return SQLitePtr(db, sqlite3_close);
 }
 
-SQLitePtr deserializeSQLiteDatabase(ReadBuffer & in)
+SQLitePtr copyToTemporaryFileAndOpenSQLiteDatabase(ReadBuffer & in, const SQLiteTemporaryFile & temporary_file)
 {
-    String data;
-    readStringUntilEOF(data, in);
-
-    auto db = openSQLiteMemoryDatabase();
-
-    auto * sqlite_data = static_cast<unsigned char *>(sqlite3_malloc64(data.size()));
-    if (!sqlite_data && !data.empty())
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot allocate {} bytes for SQLite database", data.size());
-
-    if (!data.empty())
-        memcpy(sqlite_data, data.data(), data.size());
-
-    int status = sqlite3_deserialize(
-        db.get(),
-        "main",
-        sqlite_data,
-        static_cast<sqlite3_int64>(data.size()),
-        static_cast<sqlite3_int64>(data.size()),
-        SQLITE_DESERIALIZE_FREEONCLOSE);
-
-    if (status != SQLITE_OK)
-        checkSQLiteStatus(db.get(), status, "Cannot deserialize SQLite database");
-
-    return db;
+    WriteBufferFromFile file_out(temporary_file.getPath());
+    copyData(in, file_out);
+    file_out.finalize();
+    return openSQLiteDatabase(temporary_file.getPath());
 }
 
 void executeSQLite(sqlite3 * db, const String & query)
@@ -266,7 +262,7 @@ public:
 private:
     void initialize()
     {
-        sqlite_db = deserializeSQLiteDatabase(*in);
+        sqlite_db = copyToTemporaryFileAndOpenSQLiteDatabase(*in, temporary_file);
         statement = prepareSQLiteStatement(sqlite_db.get(), makeSelectQuery(*header, settings.sqlite.input_table_name));
         initialized = true;
     }
@@ -275,6 +271,7 @@ private:
     FormatSettings settings;
     UInt64 max_block_size;
     std::vector<SerializationPtr> serializations;
+    SQLiteTemporaryFile temporary_file;
     SQLitePtr sqlite_db{nullptr, sqlite3_close};
     SQLiteStatementPtr statement{nullptr, sqlite3_finalize};
     bool initialized = false;
@@ -288,7 +285,7 @@ public:
         : IOutputFormat(header_, out_)
         , header(std::move(header_))
         , settings(settings_)
-        , sqlite_db(openSQLiteMemoryDatabase())
+        , sqlite_db(openSQLiteDatabase(temporary_file.getPath()))
     {
         for (const auto & column : *header)
             serializations.emplace_back(column.type->getDefaultSerialization());
@@ -340,20 +337,17 @@ public:
     {
         insert_statement.reset();
         executeSQLite(sqlite_db.get(), "COMMIT");
+        sqlite_db.reset();
 
-        sqlite3_int64 size = 0;
-        unsigned char * data = sqlite3_serialize(sqlite_db.get(), "main", &size, 0);
-        if (!data)
-            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot serialize SQLite database");
-
-        SCOPE_EXIT({ sqlite3_free(data); });
-        out.write(reinterpret_cast<const char *>(data), size);
+        ReadBufferFromFile file_in(temporary_file.getPath());
+        copyData(file_in, out);
     }
 
 private:
     SharedHeader header;
     FormatSettings settings;
     std::vector<SerializationPtr> serializations;
+    SQLiteTemporaryFile temporary_file;
     SQLitePtr sqlite_db;
     SQLiteStatementPtr insert_statement{nullptr, sqlite3_finalize};
 };
@@ -369,7 +363,7 @@ public:
 
     NamesAndTypesList readSchema() override
     {
-        auto db = deserializeSQLiteDatabase(in);
+        auto db = copyToTemporaryFileAndOpenSQLiteDatabase(in, temporary_file);
         auto columns = fetchSQLiteTableStructure(db.get(), settings.sqlite.input_table_name);
 
         if (!columns)
@@ -381,6 +375,7 @@ public:
 
 private:
     FormatSettings settings;
+    SQLiteTemporaryFile temporary_file;
 };
 
 }
