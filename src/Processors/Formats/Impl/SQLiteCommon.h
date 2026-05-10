@@ -4,12 +4,13 @@
 
 #if USE_SQLITE
 
+#    include <Formats/FormatSettings.h>
 #    include <IO/ReadBuffer.h>
-#    include <IO/WriteBufferFromFile.h>
+#    include <IO/ReadBufferFromFileBase.h>
+#    include <IO/WriteBufferFromString.h>
 #    include <IO/copyData.h>
 #    include <Common/Exception.h>
 
-#    include <Poco/TemporaryFile.h>
 #    include <sqlite3.h>
 
 namespace DB
@@ -26,20 +27,13 @@ namespace SQLiteFormatImpl
 using SQLitePtr = std::unique_ptr<sqlite3, decltype(&sqlite3_close)>;
 using SQLiteStatementPtr = std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)>;
 
-class SQLiteTemporaryFile
+class SQLiteDatabase
 {
 public:
-    SQLiteTemporaryFile()
-        : file(std::make_unique<Poco::TemporaryFile>())
-        , path(file->path())
-    {
-    }
+    sqlite3 * get() const { return db.get(); }
 
-    const String & getPath() const { return path; }
-
-private:
-    std::unique_ptr<Poco::TemporaryFile> file;
-    String path;
+    SQLitePtr db{nullptr, sqlite3_close};
+    String serialized_database;
 };
 
 inline void checkSQLiteStatus(sqlite3 * db, int status, std::string_view message)
@@ -69,12 +63,40 @@ inline SQLitePtr openSQLiteDatabase(const String & path)
     return SQLitePtr(db, sqlite3_close);
 }
 
-inline SQLitePtr copyToTemporaryFileAndOpenSQLiteDatabase(ReadBuffer & in, const SQLiteTemporaryFile & temporary_file)
+inline SQLiteDatabase openSQLiteDatabaseFromMemory(ReadBuffer & in)
 {
-    WriteBufferFromFile file_out(temporary_file.getPath());
-    copyData(in, file_out);
-    file_out.finalize();
-    return openSQLiteDatabase(temporary_file.getPath());
+    SQLiteDatabase result;
+    {
+        WriteBufferFromString memory_out(result.serialized_database);
+        copyData(in, memory_out);
+    }
+
+    result.db = openSQLiteDatabase(":memory:");
+    int status = sqlite3_deserialize(
+        result.db.get(),
+        "main",
+        reinterpret_cast<unsigned char *>(result.serialized_database.data()),
+        static_cast<sqlite3_int64>(result.serialized_database.size()),
+        static_cast<sqlite3_int64>(result.serialized_database.size()),
+        SQLITE_DESERIALIZE_READONLY);
+    checkSQLiteStatus(result.db.get(), status, "Cannot deserialize SQLite database from memory");
+
+    return result;
+}
+
+inline SQLiteDatabase openSQLiteDatabaseForRead(ReadBuffer & in, const FormatSettings & settings)
+{
+    if (settings.seekable_read)
+    {
+        if (auto * file_in = dynamic_cast<ReadBufferFromFileBase *>(&in))
+        {
+            size_t view_offset = 0;
+            if (file_in->isRegularLocalFile(&view_offset) && view_offset == 0)
+                return SQLiteDatabase{openSQLiteDatabase(file_in->getFileName()), {}};
+        }
+    }
+
+    return openSQLiteDatabaseFromMemory(in);
 }
 
 inline void executeSQLite(sqlite3 * db, const String & query)

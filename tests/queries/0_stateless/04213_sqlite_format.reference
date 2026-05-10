@@ -3,6 +3,19 @@ SQLite	1	1	0
 Roundtrip default table
 42	world	-7.5	2021-05-06 07:08:09	text
 9223372036854775808	hello	123.45	2020-01-02 03:04:05	\N
+Local file table function
+42	world
+9223372036854775808	hello
+Local file output
+0	name_0
+1	name_1
+2	name_2
+Local file output no append
+CANNOT_APPEND_TO_FILE
+t0
+Local file output truncate
+t1
+2
 Schema inference
 id	String
 name	String

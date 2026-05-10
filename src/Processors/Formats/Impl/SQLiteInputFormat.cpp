@@ -79,7 +79,7 @@ public:
 private:
     void initialize()
     {
-        sqlite_db = copyToTemporaryFileAndOpenSQLiteDatabase(*in, temporary_file);
+        sqlite_db = openSQLiteDatabaseForRead(*in, settings);
         statement = prepareSQLiteStatement(sqlite_db.get(), makeSelectQuery(*header, settings.sqlite.input_table_name));
         initialized = true;
     }
@@ -88,8 +88,7 @@ private:
     FormatSettings settings;
     UInt64 max_block_size;
     SQLiteStatementReader statement_reader;
-    SQLiteTemporaryFile temporary_file;
-    SQLitePtr sqlite_db{nullptr, sqlite3_close};
+    SQLiteDatabase sqlite_db;
     SQLiteStatementPtr statement{nullptr, sqlite3_finalize};
     bool initialized = false;
     bool sqlite_finished = false;
@@ -106,7 +105,7 @@ public:
 
     NamesAndTypesList readSchema() override
     {
-        auto db = copyToTemporaryFileAndOpenSQLiteDatabase(in, temporary_file);
+        auto db = openSQLiteDatabaseForRead(in, settings);
         auto columns = fetchSQLiteTableStructure(db.get(), settings.sqlite.input_table_name);
 
         if (!columns)
@@ -118,7 +117,6 @@ public:
 
 private:
     FormatSettings settings;
-    SQLiteTemporaryFile temporary_file;
 };
 
 }

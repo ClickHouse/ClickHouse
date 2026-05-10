@@ -8,12 +8,14 @@
 #    include <DataTypes/IDataType.h>
 #    include <DataTypes/Serializations/ISerialization.h>
 #    include <Formats/FormatFactory.h>
-#    include <IO/ReadBufferFromFile.h>
+#    include <IO/WriteBufferFromFile.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/WriteHelpers.h>
 #    include <Processors/Formats/IOutputFormat.h>
 #    include <Processors/Formats/Impl/SQLiteCommon.h>
 #    include <Common/quoteString.h>
+
+#    include <sys/stat.h>
 
 namespace DB
 {
@@ -22,6 +24,34 @@ namespace
 {
 
 using namespace SQLiteFormatImpl;
+
+SQLitePtr openSQLiteDatabaseForOutput(WriteBuffer & out, bool & write_serialized_database_to_output)
+{
+    if (auto * file_out = dynamic_cast<WriteBufferFromFile *>(&out))
+    {
+        const auto file_name = file_out->getFileName();
+        struct stat statbuf;
+        if (fstat(file_out->getFD(), &statbuf) == 0 && S_ISREG(statbuf.st_mode) && !file_name.empty() && !file_name.starts_with("(fd = "))
+        {
+            write_serialized_database_to_output = false;
+            return openSQLiteDatabase(file_name);
+        }
+    }
+
+    write_serialized_database_to_output = true;
+    return openSQLiteDatabase(":memory:");
+}
+
+void writeSerializedSQLiteDatabase(sqlite3 * db, WriteBuffer & out)
+{
+    sqlite3_int64 database_size = 0;
+    unsigned char * data = sqlite3_serialize(db, "main", &database_size, 0);
+    if (!data)
+        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot serialize SQLite database to memory");
+
+    std::unique_ptr<unsigned char, decltype(&sqlite3_free)> serialized_database(data, sqlite3_free);
+    out.write(reinterpret_cast<const char *>(serialized_database.get()), static_cast<size_t>(database_size));
+}
 
 String sqliteTypeName(const DataTypePtr & type)
 {
@@ -98,7 +128,7 @@ public:
         : IOutputFormat(header_, out_)
         , header(std::move(header_))
         , settings(settings_)
-        , sqlite_db(openSQLiteDatabase(temporary_file.getPath()))
+        , sqlite_db(openSQLiteDatabaseForOutput(out, write_serialized_database_to_output))
     {
         for (const auto & column : *header)
             serializations.emplace_back(column.type->getDefaultSerialization());
@@ -150,17 +180,18 @@ public:
     {
         insert_statement.reset();
         executeSQLite(sqlite_db.get(), "COMMIT");
-        sqlite_db.reset();
 
-        ReadBufferFromFile file_in(temporary_file.getPath());
-        copyData(file_in, out);
+        if (write_serialized_database_to_output)
+            writeSerializedSQLiteDatabase(sqlite_db.get(), out);
+
+        sqlite_db.reset();
     }
 
 private:
     SharedHeader header;
     FormatSettings settings;
     std::vector<SerializationPtr> serializations;
-    SQLiteTemporaryFile temporary_file;
+    bool write_serialized_database_to_output = false;
     SQLitePtr sqlite_db;
     SQLiteStatementPtr insert_statement{nullptr, sqlite3_finalize};
 };

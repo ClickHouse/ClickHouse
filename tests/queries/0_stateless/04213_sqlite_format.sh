@@ -7,7 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_format_XXXXXX.sqlite")
 CUSTOM_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_format_custom_XXXXXX.sqlite")
-trap 'rm -f "$DB" "$CUSTOM_DB"' EXIT
+DIRECT_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_format_direct_XXXXXX.sqlite")
+rm -f "$DIRECT_DB"
+trap 'rm -f "$DB" "$CUSTOM_DB" "$DIRECT_DB"' EXIT
 
 STRUCTURE="id UInt64, name String, amount Decimal64(2), created DateTime, value Nullable(String)"
 
@@ -36,6 +38,23 @@ ${CLICKHOUSE_LOCAL} \
     --input-format SQLite \
     --output-format TSV \
     --query "SELECT id, name, amount, created, value FROM table ORDER BY id" < "$DB"
+
+echo "Local file table function"
+${CLICKHOUSE_LOCAL} --query "SELECT id, name FROM file('$DB', 'SQLite') ORDER BY id"
+
+echo "Local file output"
+${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('$DIRECT_DB', 'SQLite', 'id UInt64, name String') SELECT number AS id, concat('name_', toString(number)) AS name FROM numbers(3)"
+${CLICKHOUSE_LOCAL} --query "SELECT id, name FROM file('$DIRECT_DB', 'SQLite') ORDER BY id"
+
+echo "Local file output no append"
+${CLICKHOUSE_LOCAL} --query "SELECT 10 AS x FORMAT SQLite SETTINGS output_format_sqlite_table_name = 't0'" > "$DIRECT_DB"
+${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('$DIRECT_DB', 'SQLite', 'y UInt8') SELECT 2 AS y SETTINGS output_format_sqlite_table_name = 't1'" 2>&1 | grep -o "CANNOT_APPEND_TO_FILE"
+${CLICKHOUSE_LOCAL} --query "SELECT name FROM file('$DIRECT_DB', 'SQLite', 'name String') SETTINGS input_format_sqlite_table_name = 'sqlite_master'"
+
+echo "Local file output truncate"
+${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('$DIRECT_DB', 'SQLite', 'y UInt8') SELECT 2 AS y SETTINGS output_format_sqlite_table_name = 't1', engine_file_truncate_on_insert = 1"
+${CLICKHOUSE_LOCAL} --query "SELECT name FROM file('$DIRECT_DB', 'SQLite', 'name String') SETTINGS input_format_sqlite_table_name = 'sqlite_master'"
+${CLICKHOUSE_LOCAL} --query "SELECT y FROM file('$DIRECT_DB', 'SQLite', 'y UInt8') SETTINGS input_format_sqlite_table_name = 't1'"
 
 echo "Schema inference"
 ${CLICKHOUSE_LOCAL} \
