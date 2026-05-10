@@ -210,6 +210,8 @@ void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer
         function->destroy(place);
         throw;
     }
+
+    function->destroy(place);
 }
 
 void SerializationAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
