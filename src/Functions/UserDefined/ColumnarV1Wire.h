@@ -262,8 +262,8 @@ inline uint32_t buildColDescriptor(
     {
         // COL_COMPLEX does not support nullable tuple fields (no null-map encoding).
         const auto & tuple_cols = tup_col->getColumns();
-        for (size_t i = 0; i < tuple_cols.size(); ++i)
-            if (typeid_cast<const ColumnNullable *>(tuple_cols[i].get()))
+        for (const auto & tuple_col : tuple_cols)
+            if (typeid_cast<const ColumnNullable *>(tuple_col.get()))
                 throw Exception(ErrorCodes::WASM_ERROR,
                     "COLUMNAR_V1: Tuple with Nullable fields is not supported by COL_COMPLEX");
 
