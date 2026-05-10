@@ -102,7 +102,13 @@ public:
                 arguments[1].column->getName(), getName());
         const auto & data_resolution = col_resolution->getData();
 
-        auto col_flags_full = arguments[2].column->convertToFullColumnIfConst();
+        auto col_flags_materialized = arguments[2].column->convertToFullColumnIfConst();
+        const auto * col_flags = checkAndGetColumn<ColumnUInt8>(col_flags_materialized.get());
+        if (!col_flags)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column type {} of argument 3 of function {}. Must be UInt8",
+                arguments[2].column->getName(), getName());
+        const auto & data_flags = col_flags->getData();
 
         auto dst = ColumnArray::create(ColumnUInt64::create());
         auto & dst_data = dst->getData();
@@ -154,7 +160,7 @@ public:
                         "The argument 'resolution' ({}) of function {} is out of bounds (max {})",
                         toString(resolution), getName(), toString(MAX_H3_RES));
 
-                UInt32 flags = static_cast<UInt32>(col_flags_full->getUInt(row));
+                UInt32 flags = static_cast<UInt32>(data_flags[row]);
                 if (flags >= CONTAINMENT_INVALID)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                         "The argument 'flags' ({}) of function {} is invalid (must be 0..3: "
