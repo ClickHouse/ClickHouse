@@ -17,7 +17,6 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 
 #include <IO/ConnectionTimeouts.h>
