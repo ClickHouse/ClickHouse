@@ -240,7 +240,7 @@ void LocalConnection::sendQuery(
         /// except for plain `SET` queries which are still parsed with `ParserQuery` so
         /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
         /// without being locked into JSON-only input.
-        if (dialect == Dialect::clickhouse_json && !isClickHouseJsonSetEscape(begin, end))
+        if (dialect == Dialect::clickhouse_json && !isClickHouseJSONSetEscape(begin, end))
         {
             if (!settings[Setting::allow_experimental_json_ast_dialect])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

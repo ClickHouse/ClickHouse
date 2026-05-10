@@ -329,7 +329,7 @@ size_t getJSONDeserializationMaxDepth()
     return json_deser_max_depth;
 }
 
-bool isClickHouseJsonSetEscape(const char * begin, const char * end)
+bool isClickHouseJSONSetEscape(const char * begin, const char * end)
 {
     std::string_view query_view(begin, end - begin);
     size_t pos = query_view.find_first_not_of(" \t\r\n");

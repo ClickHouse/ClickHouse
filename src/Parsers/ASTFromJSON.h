@@ -25,6 +25,6 @@ size_t getJSONDeserializationMaxDepth();
 /// `dialect = clickhouse_json` is active so users can still send `SET dialect = ...`
 /// queries in plain SQL to switch back to another dialect, instead of being locked
 /// into JSON-only input.
-bool isClickHouseJsonSetEscape(const char * begin, const char * end);
+bool isClickHouseJSONSetEscape(const char * begin, const char * end);
 
 }
