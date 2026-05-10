@@ -33,6 +33,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
 }
 
@@ -214,6 +215,8 @@ void MergeTreeSink::consume(Chunk & chunk)
     finishDelayedChunk();
     delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
+    if (settings[Setting::input_format_max_block_wait_ms] != 0)
+        finishDelayedChunk();
 
     ++num_blocks_processed;
 }
