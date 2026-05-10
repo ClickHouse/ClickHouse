@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/ExpressionActions.h>
@@ -55,6 +54,24 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Variant:
         case TypeIndex::Dynamic:
             return false;
+        /// `Map` is not safe as a primary key for the splitter.
+        ///
+        /// The primary key index is written via `SerializationMap::serializeBinary` with the
+        /// default (`basic`) per-type serialization, which writes the nested `Array(Tuple(K, V))`
+        /// in its in-memory positional order. Parts using `map_serialization_version_for_zero_level_parts = 'with_buckets'`
+        /// store the same data on disk by hashing keys into buckets and serializing each bucket
+        /// independently; when read back via `SerializationMap::deserializeBinaryBulkWithMultipleStreams`
+        /// + `collectMapFromBuckets`, the per-row key order reflects ascending bucket index, not the
+        /// original insertion order.
+        ///
+        /// The splitter compares index values (insertion order) against actual row values
+        /// (bucket order). Under positional `ColumnMap::compareAt`, these are different values,
+        /// so `FilterSortedStreamByRange` drops rows that would otherwise fall inside a layer's
+        /// PK range. Falling back to the single in-order merging pipe (the `!isSafePrimaryKey`
+        /// branch in `splitPartsWithRangesByPrimaryKey`) bypasses the layer split and the
+        /// intersecting/non-intersecting separation, both of which depend on this comparison.
+        case TypeIndex::Map:
+            return false;
         case TypeIndex::Array:
         {
             const auto & data_type_array = static_cast<const DataTypeArray &>(data_type);
@@ -74,11 +91,6 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         {
             const auto & data_type_low_cardinality = static_cast<const DataTypeLowCardinality &>(data_type);
             return isSafePrimaryDataKeyType(*data_type_low_cardinality.getDictionaryType());
-        }
-        case TypeIndex::Map:
-        {
-            const auto & data_type_map = static_cast<const DataTypeMap &>(data_type);
-            return isSafePrimaryDataKeyType(*data_type_map.getKeyType()) && isSafePrimaryDataKeyType(*data_type_map.getValueType());
         }
         default:
         {
