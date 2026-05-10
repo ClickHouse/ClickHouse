@@ -219,7 +219,7 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
                 if (columms_start_pos->type == TokenType::BareWord && function_name.empty())
                     function_name = String(columms_start_pos->begin, columms_start_pos->end);
 
-                auto expr = IParserKQLFunction::getExpression(columms_start_pos);
+                auto expr = IParserKQLFunction(max_query_size).getExpression(columms_start_pos);
                 tokens.push_back(expr);
             }
             ++columms_start_pos;

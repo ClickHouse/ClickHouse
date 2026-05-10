@@ -25,8 +25,26 @@ private:
     Representation min = min_bound;
 };
 
+template <class ParserKQLFunctionT>
+std::unique_ptr<ParserKQLFunctionT> getParserKQLFunction(size_t max_query_size)
+{
+    auto parser_kql_function = std::make_unique<ParserKQLFunctionT>();
+    parser_kql_function->setMaxQuerySize(max_query_size);
+    return parser_kql_function;
+}
+
 class IParserKQLFunction
 {
+    template <class ParserKQLFunctionT>
+    friend std::unique_ptr<ParserKQLFunctionT> getParserKQLFunction(size_t max_query_size);
+protected:
+    IParserKQLFunction() = default;
+private:
+    void setMaxQuerySize(size_t max_query_size_)
+    {
+        max_query_size = max_query_size_;
+    }
+
 public:
     enum class ArgumentState : uint8_t
     {
@@ -61,31 +79,34 @@ public:
     }
 
     bool convert(String & out, IParser::Pos & pos);
-    virtual const char * getName() const = 0;
+    virtual const char * getName() const;
     virtual ~IParserKQLFunction() = default;
 
     static String generateUniqueIdentifier();
-    static String getArgument(const String & function_name, DB::IParser::Pos & pos, ArgumentState argument_state = ArgumentState::Parsed);
-    static std::vector<std::string> getArguments(
+    String getArgument(const String & function_name, DB::IParser::Pos & pos, ArgumentState argument_state = ArgumentState::Parsed);
+    std::vector<std::string> getArguments(
         const String & function_name,
         DB::IParser::Pos & pos,
         ArgumentState argument_state = ArgumentState::Parsed,
         const Interval & argument_count_interval = {0, Interval::max_bound});
-    static String getConvertedArgument(const String & fn_name, IParser::Pos & pos);
-    static String getExpression(IParser::Pos & pos);
+    String getConvertedArgument(const String & fn_name, IParser::Pos & pos);
+    String getExpression(IParser::Pos & pos);
+    static String getExpressionStatic(IParser::Pos & pos);
     static String getKQLFunctionName(IParser::Pos & pos);
-    static std::optional<String>
+    std::optional<String>
     getOptionalArgument(const String & function_name, DB::IParser::Pos & pos, ArgumentState argument_state = ArgumentState::Parsed);
-    static String
+    String
     kqlCallToExpression(std::string_view function_name, std::initializer_list<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks);
-    static String kqlCallToExpression(std::string_view function_name, std::span<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks);
+    String kqlCallToExpression(std::string_view function_name, std::span<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks);
     static String escapeSingleQuotes(const String & input);
 
 protected:
-    virtual bool convertImpl(String & out, IParser::Pos & pos) = 0;
+    virtual bool convertImpl(String & out, IParser::Pos & pos);
 
-    static bool directMapping(
+    bool directMapping(
         String & out, IParser::Pos & pos, std::string_view ch_fn, const Interval & argument_count_interval = {0, Interval::max_bound});
     static void validateEndOfFunction(const String & fn_name, IParser::Pos & pos);
+private:
+    size_t max_query_size = DBMS_DEFAULT_MAX_QUERY_SIZE;
 };
 }
