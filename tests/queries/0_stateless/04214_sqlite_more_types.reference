@@ -25,6 +25,8 @@ More data types roundtrip
 a	b	2020-01-01	9223372036854775808	42	-9223372036854775809	42	42.42	42.42	42.42	42.42	00112233-4455-6677-8899-aabbccddeeff	192.168.1.10	2001:db8::1	true	\N	low	2024-02-29 12:34:56.789	test	2024-02-29	2024-02-29 12:34:56	nullable low
 Complex data types roundtrip
 (42,'Hello')	({42:[1,2,3]},[([(1,2),(1,2)],'Hello',[1,2,3]),([],'World',[1])])	[1,NULL,3]	{'x':10,'y':NULL}
+Nested data types roundtrip
+[(1,'a',{'k':['2024-01-01 00:00:00.123',NULL]})]	{'group':[(7,12.34,[('x',9),('y',NULL)])]}
 String bytes and complex DateTime roundtrip
 275C090A00	5	610062	3	{'Hello':'2020-01-01 00:00:00'}
 Multi-block roundtrip

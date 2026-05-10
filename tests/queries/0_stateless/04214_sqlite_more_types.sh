@@ -7,10 +7,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_XXXXXX.sqlite")
 COMPLEX_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_complex_XXXXXX.sqlite")
+NESTED_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_nested_XXXXXX.sqlite")
 SPECIAL_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_special_XXXXXX.sqlite")
 MULTIBLOCK_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_multiblock_XXXXXX.sqlite")
 EMPTY_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_empty_XXXXXX.sqlite")
-trap 'rm -f "$DB" "$COMPLEX_DB" "$SPECIAL_DB" "$MULTIBLOCK_DB" "$EMPTY_DB"' EXIT
+trap 'rm -f "$DB" "$COMPLEX_DB" "$NESTED_DB" "$SPECIAL_DB" "$MULTIBLOCK_DB" "$EMPTY_DB"' EXIT
 
 STRUCTURE="c1 Enum8('a' = 1), c2 Enum16('b' = 1), c3 Date32, c4 Int128, c5 UInt128, c6 Int256, c7 UInt256, c8 Decimal32(2), c9 Decimal64(2), c10 Decimal128(2), c11 Decimal256(2), c12 UUID, c13 IPv4, c14 IPv6, c15 Bool, c16 Nullable(UInt256), c17 LowCardinality(String), c18 DateTime64(3, 'UTC'), c19 FixedString(4), c20 Date, c21 DateTime('UTC'), c22 LowCardinality(Nullable(String))"
 
@@ -72,6 +73,29 @@ ${CLICKHOUSE_LOCAL} \
     --input-format SQLite \
     --output-format TSV \
     --query "SELECT * FROM table" < "$COMPLEX_DB"
+
+${CLICKHOUSE_LOCAL} --query "
+    SELECT
+        CAST(
+            [tuple(
+                1,
+                CAST('a', 'Nullable(String)'),
+                map('k', [toNullable(toDateTime64('2024-01-01 00:00:00.123', 3, 'UTC')), CAST(NULL, 'Nullable(DateTime64(3, \'UTC\'))')]))],
+            'Array(Tuple(id UInt32, name Nullable(String), events Map(String, Array(Nullable(DateTime64(3, \'UTC\'))))))') AS c1,
+        CAST(
+            map('group', [tuple(
+                toNullable(toUInt8(7)),
+                toDecimal64(12.34, 2),
+                [tuple('x', toNullable(toUInt16(9))), tuple('y', CAST(NULL, 'Nullable(UInt16)'))])]),
+            'Map(String, Array(Tuple(flag Nullable(UInt8), amount Decimal64(2), items Array(Tuple(label String, value Nullable(UInt16))))))') AS c2
+    FORMAT SQLite" > "$NESTED_DB"
+
+echo "Nested data types roundtrip"
+${CLICKHOUSE_LOCAL} \
+    --structure "c1 Array(Tuple(id UInt32, name Nullable(String), events Map(String, Array(Nullable(DateTime64(3, 'UTC')))))), c2 Map(String, Array(Tuple(flag Nullable(UInt8), amount Decimal64(2), items Array(Tuple(label String, value Nullable(UInt16))))))" \
+    --input-format SQLite \
+    --output-format TSV \
+    --query "SELECT * FROM table" < "$NESTED_DB"
 
 ${CLICKHOUSE_LOCAL} --query "
     SELECT
