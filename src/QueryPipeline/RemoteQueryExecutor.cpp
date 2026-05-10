@@ -30,6 +30,7 @@
 #include <Storages/StorageMemory.h>
 
 #include <Columns/ColumnBLOB.h>
+#include <Common/assert_cast.h>
 
 #include <Access/AccessControl.h>
 #include <Access/User.h>
@@ -384,10 +385,13 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
         else
         {
             const auto & col = block.getByName(elem.name);
-            if (auto * blob = typeid_cast<ColumnBLOB *>(col.column->assumeMutable().get()))
+            if (typeid_cast<const ColumnBLOB *>(col.column.get()))
             {
-                blob->addCast(col.type, elem.type);
-                column = col.column;
+                /// `col.column` may be shared with the input block, so unshare via
+                /// `IColumn::mutate` before mutating in place.
+                auto mutable_blob = IColumn::mutate(col.column);
+                assert_cast<ColumnBLOB &>(*mutable_blob).addCast(col.type, elem.type);
+                column = std::move(mutable_blob);
             }
             else
                 column = castColumn(col, elem.type);

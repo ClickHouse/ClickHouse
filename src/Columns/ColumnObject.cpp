@@ -459,7 +459,10 @@ void ColumnObject::setDynamicPaths(const VectorWithMemoryTracking<std::pair<Stri
 
     for (const auto & [path, column] : paths)
     {
-        auto it = dynamic_paths.emplace(path, column).first;
+        /// `column` may still be held by the caller (`use_count > 1`), so detach
+        /// via `IColumn::mutate` before storing to satisfy the COW ownership
+        /// invariant on the `WrappedPtr` in `dynamic_paths`.
+        auto it = dynamic_paths.emplace(path, IColumn::mutate(column)).first;
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(it->second.get());
         sorted_dynamic_paths.insert(it->first);
     }
