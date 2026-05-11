@@ -801,18 +801,41 @@ void Pipe::resizeGradual(size_t num_streams, size_t min_rows_per_output, size_t 
     if (numOutputPorts() == 1 && num_streams == 1)
         return;
 
-    SharedHeader header_for_factory = getSharedHeader();
-    auto factory = [min_rows_per_output, min_bytes_per_output, header_for_factory](size_t num_inputs, size_t num_outputs) -> ProcessorPtr
-    {
-        return std::make_shared<GradualResizeProcessor>(
-            header_for_factory, num_inputs, num_outputs, min_rows_per_output, min_bytes_per_output);
-    };
-
     /// Apply the same split-resize optimization as `resize` to mitigate `ExecutingGraph::Node::status_mutex`
     /// contention at high parallelism. With G groups, the gradual ramp-up starts with G initial active outputs
     /// instead of 1 — but G is bounded (e.g. 2 for `max_threads = 64` with the default
     /// `min_outstreams_per_resize_after_split = 24`), so the merging-overhead reduction is mostly preserved.
-    if (output_ports.size() > 1 && min_outstreams_per_resize_after_split != 0 && num_streams / min_outstreams_per_resize_after_split > 1)
+    const bool use_split = output_ports.size() > 1
+        && min_outstreams_per_resize_after_split != 0
+        && num_streams / min_outstreams_per_resize_after_split > 1;
+
+    /// When split-resize is applied, each group's `GradualResizeProcessor` tracks its own
+    /// row/byte counters. Divide the global thresholds among groups so cumulative behavior
+    /// across all groups matches the documented global semantics under balanced data:
+    /// after `min_rows_per_stream_for_gradual_resize` total rows have flowed through the
+    /// pre-aggregation resize stage, all outputs in all groups are activated.
+    size_t per_group_min_rows = min_rows_per_output;
+    size_t per_group_min_bytes = min_bytes_per_output;
+    if (use_split)
+    {
+        size_t groups = std::min<size_t>(numOutputPorts(), num_streams / min_outstreams_per_resize_after_split);
+        if (groups > 1)
+        {
+            if (min_rows_per_output > 0)
+                per_group_min_rows = std::max<size_t>(1, (min_rows_per_output + groups - 1) / groups);
+            if (min_bytes_per_output > 0)
+                per_group_min_bytes = std::max<size_t>(1, (min_bytes_per_output + groups - 1) / groups);
+        }
+    }
+
+    SharedHeader header_for_factory = getSharedHeader();
+    auto factory = [per_group_min_rows, per_group_min_bytes, header_for_factory](size_t num_inputs, size_t num_outputs) -> ProcessorPtr
+    {
+        return std::make_shared<GradualResizeProcessor>(
+            header_for_factory, num_inputs, num_outputs, per_group_min_rows, per_group_min_bytes);
+    };
+
+    if (use_split)
     {
         addSplitResizeTransform(num_streams, min_outstreams_per_resize_after_split, factory);
         return;

@@ -7609,10 +7609,14 @@ Total number of rows that must be pushed through the `GROUP BY` pre-aggregation 
 
 The activation is a single-threshold switch from one stream to all streams, not a per-stream gradual ramp: ramping streams up one at a time would skew the data distribution across downstream aggregator hash tables and increase merge cost for heavy aggregate states such as `uniq`, `uniqExact`, or `groupArray`.
 
+When the pre-aggregation resize is split into `G` groups (see `min_outstreams_per_resize_after_split`) to mitigate lock contention at high parallelism, this threshold is divided by `G` so the cumulative behavior across all groups matches the documented global semantics under balanced data distribution.
+
 Only affects `GROUP BY` queries with non-empty grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected: serializing the upstream scan/filter work would lose parallel-scan throughput while still producing one partial state per stream.
 )", 0) \
     DECLARE(UInt64, min_bytes_per_stream_for_gradual_resize, 0, R"(
 Total number of bytes that must be pushed through the `GROUP BY` pre-aggregation resize stage before all aggregation streams are activated. When set to 0 (default), this threshold is not used. Works together with `min_rows_per_stream_for_gradual_resize` — either threshold being met will activate all aggregation streams at once.
+
+When the pre-aggregation resize is split into `G` groups (see `min_outstreams_per_resize_after_split`) to mitigate lock contention at high parallelism, this threshold is divided by `G` so the cumulative behavior across all groups matches the documented global semantics under balanced data distribution.
 
 Only affects `GROUP BY` queries with non-empty grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected.
 )", 0) \

@@ -71,3 +71,19 @@ SELECT count() FROM
     ORDER BY k
     LIMIT 1
 );
+
+-- Per-group threshold scaling under split-resize: with split-resize active, each split
+-- group's `GradualResizeProcessor` has its own counter. The global threshold must be
+-- divided among groups so cumulative behavior across groups matches the documented
+-- semantics. Use a high threshold relative to the input so that, without scaling,
+-- groups would never fully activate and merge counts would still be correct but skewed;
+-- result correctness is the regression we check here.
+SET min_rows_per_stream_for_gradual_resize = 100000;
+SET min_bytes_per_stream_for_gradual_resize = 0;
+SET min_outstreams_per_resize_after_split = 4;
+SET max_threads = 16;
+
+SELECT k, count() AS c
+FROM (SELECT number % 7 AS k FROM numbers(50000))
+GROUP BY k
+ORDER BY k;
