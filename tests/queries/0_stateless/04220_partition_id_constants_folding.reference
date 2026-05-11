@@ -11,6 +11,10 @@ Expression ((Project names + Projection))
         Condition: true
         Parts: 3/3
         Granules: 9/9
+      Partition
+        Condition: true
+        Parts: 3/3
+        Granules: 9/9
       PrimaryKey
         Keys:
           b

@@ -13,6 +13,12 @@ Expression ((Project names + Projection))
         Condition: or((a in [3, 3]), or((a in [2, 2]), (a in [1, 1])))
         Parts: 3/3
         Granules: 9/9
+      Partition
+        Keys:
+          a
+        Condition: or((a in [3, 3]), or((a in [2, 2]), (a in [1, 1])))
+        Parts: 3/3
+        Granules: 9/9
       PrimaryKey
         Keys:
           b

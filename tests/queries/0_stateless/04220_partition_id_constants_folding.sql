@@ -2,6 +2,7 @@
 
 SET optimize_move_to_prewhere=1;
 SET query_plan_optimize_prewhere=1;
+SET use_constant_folding_in_index_analysis=1;
 
 DROP TABLE IF EXISTS partition_id_folding;
 
