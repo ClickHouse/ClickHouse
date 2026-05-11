@@ -54,6 +54,8 @@ struct StorageInMemoryMetadata
     KeyDescription sorting_key;
     /// SAMPLE BY expression. Supported for MergeTree only.
     KeyDescription sampling_key;
+    /// UNIQUE KEY expression. Supported for MergeTree only. Experimental.
+    KeyDescription unique_key;
     /// Separate ttl expressions for columns
     TTLColumnsDescription column_ttls_by_name;
     /// TTL expressions for table (Move and Rows)
@@ -280,6 +282,17 @@ struct StorageInMemoryMetadata
     /// Returns columns names in sorting key specified by. For example: 'a', 'x
     /// * y', 'toStartOfMonth(date)', etc.
     Names getPrimaryKeyColumns() const;
+
+    /// Returns structure with unique key (UNIQUE KEY clause).
+    const KeyDescription & getUniqueKey() const;
+    /// Returns AST of unique key expression for storage or nullptr if there is none.
+    ASTPtr getUniqueKeyAST() const { return unique_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) unique key.
+    bool isUniqueKeyDefined() const;
+    /// Storage has unique key (at least one column).
+    bool hasUniqueKey() const;
+    /// Returns column names from UNIQUE KEY clause.
+    Names getUniqueKeyColumns() const;
 
     /// Storage settings
     ASTPtr getSettingsChanges() const;

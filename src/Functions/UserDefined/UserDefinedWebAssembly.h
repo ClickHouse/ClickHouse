@@ -88,18 +88,34 @@ class WasmModuleManager;
 class UserDefinedWebAssemblyFunctionFactory
 {
 public:
+    struct RegisteredFunction
+    {
+        String sql_name;
+        std::shared_ptr<UserDefinedWebAssemblyFunction> function;
+        ASTPtr create_query;
+    };
+
     std::shared_ptr<UserDefinedWebAssemblyFunction> addOrReplace(ASTPtr create_function_query, WasmModuleManager & module_manager);
 
-    bool has(const String & function_name);
+    bool has(const String & function_name) const;
     FunctionOverloadResolverPtr get(const String & function_name, ContextPtr context);
 
     /// Returns true if function was removed
     bool dropIfExists(const String & function_name);
 
+    /// Returns all registered WASM functions with their metadata for introspection (e.g. system.functions).
+    std::vector<RegisteredFunction> getAllFunctions() const;
+
     static UserDefinedWebAssemblyFunctionFactory & instance();
 private:
-    DB::SharedMutex registry_mutex;
-    std::unordered_map<String, std::shared_ptr<UserDefinedWebAssemblyFunction>> registry;
+    struct RegistryEntry
+    {
+        std::shared_ptr<UserDefinedWebAssemblyFunction> function;
+        ASTPtr create_query;
+    };
+
+    mutable DB::SharedMutex registry_mutex;
+    std::unordered_map<String, RegistryEntry> registry;
 };
 
 }

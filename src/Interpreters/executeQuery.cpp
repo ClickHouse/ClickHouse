@@ -779,6 +779,34 @@ void logQueryFinish(
     logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
 }
 
+/// Bump the FailedQuery / FailedInsertQuery / FailedSelectQuery family of ProfileEvents.
+/// Shared between `logQueryException` (failures during execution) and `logExceptionBeforeStart`
+/// (failures before execution starts) so the two paths never drift.
+static void incrementFailedQueryProfileEvents(const ASTPtr & ast, const ClientInfo & client_info, bool internal)
+{
+    ProfileEvents::increment(ProfileEvents::FailedQuery);
+    if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+    else if (ast->as<ASTInsertQuery>())
+        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        ProfileEvents::increment(ProfileEvents::FailedInitialQuery);
+        if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInitialSelectQuery);
+    }
+
+    if (internal)
+    {
+        ProfileEvents::increment(ProfileEvents::FailedInternalQuery);
+        if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInternalSelectQuery);
+        else if (ast->as<ASTInsertQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInternalInsertQuery);
+    }
+}
+
 void logQueryException(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
@@ -806,27 +834,7 @@ void logQueryException(
     elem.event_time = timeInSeconds(time_now);
     elem.event_time_microseconds = timeInMicroseconds(time_now);
 
-    ProfileEvents::increment(ProfileEvents::FailedQuery);
-    if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
-    else if (query_ast->as<ASTInsertQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
-
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        ProfileEvents::increment(ProfileEvents::FailedInitialQuery);
-        if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInitialSelectQuery);
-    }
-
-    if (internal)
-    {
-        ProfileEvents::increment(ProfileEvents::FailedInternalQuery);
-        if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInternalSelectQuery);
-        else if (query_ast->as<ASTInsertQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInternalInsertQuery);
-    }
+    incrementFailedQueryProfileEvents(query_ast, context->getClientInfo(), internal);
 
     QueryStatusInfoPtr info;
     if (process_list_elem)
@@ -940,18 +948,7 @@ void logExceptionBeforeStart(
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
 
-    ProfileEvents::increment(ProfileEvents::FailedQuery);
-    if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
-    else if (ast->as<ASTInsertQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
-
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        ProfileEvents::increment(ProfileEvents::FailedInitialQuery);
-        if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInitialSelectQuery);
-    }
+    incrementFailedQueryProfileEvents(ast, context->getClientInfo(), internal);
 
     QueryStatusInfoPtr info;
     if (QueryStatusPtr process_list_elem = context->getProcessListElementSafe())

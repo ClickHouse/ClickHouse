@@ -207,12 +207,12 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         {
             Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param) * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(target_scale));
             res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_predict>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
+                (argument_types, parameters, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
         }
         else
         {
             res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate_or_resets>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, target_scale);
+                (argument_types, parameters, start_timestamp, end_timestamp, step, window, target_scale);
         }
     }
     else if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
@@ -226,12 +226,12 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         {
             Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param);
             res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_predict>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, 0, predict_offset);
+                (argument_types, parameters, start_timestamp, end_timestamp, step, window, 0, predict_offset);
         }
         else
         {
             res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_rate_or_resets>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, 0);
+                (argument_types, parameters, start_timestamp, end_timestamp, step, window, 0);
         }
     }
 

@@ -4241,10 +4241,113 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 "ADD PROJECTION is not supported in {} with deduplicate_merge_projection_mode = throw. "
                 "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                 getName());
+
+        if (old_metadata.hasUniqueKey())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "ADD PROJECTION is not supported on tables with UNIQUE KEY");
+    }
+
+    /// Reject DROP/RENAME/MODIFY of UK columns and MODIFY ORDER BY. Must run
+    /// before `columns_alter_type_forbidden` so error 524 with the UK message
+    /// fires instead of error 47 from the sort-key re-check.
+    if (old_metadata.hasUniqueKey())
+    {
+        const auto & uk_columns = old_metadata.unique_key.column_names;
+        NameSet uk_set(uk_columns.begin(), uk_columns.end());
+
+        auto uk_list_str = [&uk_columns]()
+        {
+            String s;
+            for (size_t i = 0; i < uk_columns.size(); ++i)
+            {
+                if (i > 0)
+                    s += ", ";
+                s += backQuoteIfNeed(uk_columns[i]);
+            }
+            return s;
+        };
+
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::MODIFY_ORDER_BY)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "MODIFY ORDER BY is not supported on tables with UNIQUE KEY. "
+                    "The dense-index SSTs produced at write time depend on the sort order.");
+
+            const bool affects_column =
+                command.type == AlterCommand::DROP_COLUMN
+                || command.type == AlterCommand::RENAME_COLUMN
+                || command.type == AlterCommand::MODIFY_COLUMN;
+
+            if (!affects_column)
+                continue;
+
+            if (!uk_set.contains(command.column_name))
+                continue;
+
+            const char * action_str = (command.type == AlterCommand::DROP_COLUMN) ? "DROP"
+                : (command.type == AlterCommand::RENAME_COLUMN) ? "RENAME"
+                : "MODIFY";
+
+            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "ALTER {} COLUMN {} is forbidden: the column is part of the table's "
+                "UNIQUE KEY ({}). Drop the UNIQUE KEY first (not supported in the "
+                "current phase) or pick a different column.",
+                action_str,
+                backQuoteIfNeed(command.column_name),
+                uk_list_str());
+        }
     }
 
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
+
+    /// UNIQUE KEY tables must remain on a local-only storage policy. Mirror the
+    /// CREATE-time check from registerStorageMergeTree.cpp here so ALTER ...
+    /// MODIFY/RESET SETTING storage_policy|disk cannot bypass the gate. Runs on
+    /// the post-apply new_metadata so a MODIFY_SETTING that injects
+    /// settings_changes into a previously-empty old_metadata is also covered.
+    if (old_metadata.hasUniqueKey())
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::RESET_SETTING
+                && (command.settings_resets.contains("storage_policy")
+                    || command.settings_resets.contains("disk")))
+            {
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... RESET SETTING storage_policy|disk is not supported "
+                    "on tables with UNIQUE KEY: the table must remain on a local-only "
+                    "storage policy.");
+            }
+        }
+
+        if (new_metadata.settings_changes)
+        {
+            const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            for (const auto & changed : new_changes)
+            {
+                StoragePolicyPtr new_policy;
+                if (changed.name == "storage_policy")
+                    new_policy = local_context->getStoragePolicy(changed.value.safeGet<String>());
+                else if (changed.name == "disk")
+                    new_policy = local_context->getStoragePolicyFromDisk(changed.value.safeGet<String>());
+                else
+                    continue;
+
+                for (const auto & disk : new_policy->getDisks())
+                {
+                    const auto & desc = disk->getDataSourceDescription();
+                    if (desc.type != DataSourceType::Local)
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "UNIQUE KEY on non-local disks is not yet supported "
+                            "(disk `{}` has source type `{}`). "
+                            "UNIQUE KEY tables must currently reside on a local-only storage policy.",
+                            disk->getName(), desc.toString());
+                }
+            }
+        }
+    }
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
@@ -4763,6 +4866,39 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
+
+    /// Reject mutations that bypass UK dedup: DELETE/UPDATE rewrite rows;
+    /// MATERIALIZE COLUMN / CLEAR COLUMN (the latter serialized as
+    /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes.
+    if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
+    {
+        const auto & uk_column_names = uk_metadata->getUniqueKeyColumns();
+        auto is_uk_column = [&](const String & column)
+        {
+            return std::find(uk_column_names.begin(), uk_column_names.end(), column) != uk_column_names.end();
+        };
+
+        for (const auto & command : commands)
+        {
+            if (command.type == MutationCommand::DELETE || command.type == MutationCommand::UPDATE)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER DELETE / ALTER UPDATE is not supported on tables with UNIQUE KEY");
+
+            if (command.type == MutationCommand::MATERIALIZE_COLUMN && is_uk_column(command.column_name))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported: the column is part of the UNIQUE KEY, "
+                    "and MATERIALIZE would rewrite stored values without going through UNIQUE KEY dedup, "
+                    "producing duplicate live keys. UNIQUE KEY columns: ({}).",
+                    command.column_name, fmt::join(uk_column_names, ", "));
+
+            if (command.type == MutationCommand::DROP_COLUMN && command.clear && is_uk_column(command.column_name))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... CLEAR COLUMN `{}` is not supported: the column is part of the UNIQUE KEY, "
+                    "and CLEAR would rewrite stored values without going through UNIQUE KEY dedup, "
+                    "producing duplicate live keys. UNIQUE KEY columns: ({}).",
+                    command.column_name, fmt::join(uk_column_names, ", "));
+        }
+    }
 
     const auto index_mode = (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
     if (index_mode == AlterColumnSecondaryIndexMode::THROW && getInMemoryMetadataPtr(getContext(), false)->hasSecondaryIndices())
@@ -6626,6 +6762,13 @@ Pipe MergeTreeData::alterPartition(
     const PartitionCommands & commands,
     ContextPtr query_context)
 {
+    /// Reject all ALTER ... PARTITION ... operations on UNIQUE KEY tables.
+    /// Each command interacts with the dense-index sidecar and bitmap state
+    /// in ways that require UK-aware semantics not yet implemented.
+    if (metadata_snapshot && metadata_snapshot->hasUniqueKey() && !commands.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
+
     /// Wait for loading of outdated parts
     /// because partition commands (DROP, MOVE, etc.)
     /// must be applied to all parts on disk.
@@ -10025,6 +10168,15 @@ MergeTreeData::MergingParams MergeTreeData::getMergingParamsForPatchParts()
 
 std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdate() const
 {
+    /// Lightweight updates rewrite stored row bytes via patch parts, bypassing
+    /// MergeTreeSinkUniqueKeyCommit::run. Allowing them on UNIQUE KEY tables
+    /// would produce duplicate live keys. Reject here so the rewrite path in
+    /// InterpreterAlterQuery::tryRewriteToLightweightUpdate falls back through
+    /// the heavy path, which is rejected by checkMutationIsPossible.
+    if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
+        return std::unexpected(PreformattedMessage::create(
+            "Lightweight updates are not supported on tables with UNIQUE KEY"));
+
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         return std::unexpected(PreformattedMessage::create(
             "Lightweight updates are supported only for tables with custom partitioning"));

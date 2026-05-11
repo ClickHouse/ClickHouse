@@ -124,18 +124,20 @@ void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDr
     if (uuid_to_wait == UUIDHelpers::Nil)
         return;
 
+    QueryStatusPtr query_status = context_->getProcessListElementSafe();
+    auto throw_if_cancelled = [&]()
+    {
+        if (query_status)
+            query_status->throwIfKilled();
+    };
+
     if (query.kind == ASTDropQuery::Kind::Drop)
     {
-        QueryStatusPtr query_status = context_->getProcessListElementSafe();
-        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait, [&]()
-        {
-            if (query_status)
-                query_status->throwIfKilled();
-        });
+        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait, throw_if_cancelled);
     }
     else if (query.kind == ASTDropQuery::Kind::Detach)
     {
-        db->waitDetachedTableNotInUse(uuid_to_wait);
+        db->waitDetachedTableNotInUse(uuid_to_wait, throw_if_cancelled);
     }
 }
 
@@ -757,8 +759,13 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (!drop && !truncate && query.sync)
     {
         /// Avoid "some tables are still in use" when sync mode is enabled
+        QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
         for (const auto & table_uuid : uuids_to_wait)
-            database->waitDetachedTableNotInUse(table_uuid);
+            database->waitDetachedTableNotInUse(table_uuid, [&]()
+            {
+                if (query_status)
+                    query_status->throwIfKilled();
+            });
     }
 
     /// Allow tests to pause here: all tables have been processed but the database has not yet

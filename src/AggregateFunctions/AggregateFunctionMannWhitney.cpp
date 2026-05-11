@@ -142,6 +142,7 @@ private:
     bool continuity_correction{true};
 
 public:
+    /// TODO: We need to pass params to the base constructor for consistency with other aggregation functions.
     explicit AggregateFunctionMannWhitney(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {}, createResultType())
     {

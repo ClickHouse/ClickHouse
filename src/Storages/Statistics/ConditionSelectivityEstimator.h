@@ -34,6 +34,23 @@ class ConditionSelectivityEstimator : public WithContext
 {
     struct ColumnEstimator;
     using ColumnEstimators = std::unordered_map<String, ColumnEstimator>;
+    /// Selectivity of a SQL boolean predicate under three-valued logic (TRUE / NULL / FALSE).
+    /// `true_sel` is the fraction of rows where the predicate is TRUE (the usual "selectivity").
+    /// `null_sel` is the fraction of rows where the predicate is NULL (input column is NULL).
+    /// The FALSE fraction is implicitly `1 - true_sel - null_sel`.
+    struct Selectivity
+    {
+        Float64 true_sel;
+        Float64 null_sel;
+
+        Selectivity() : true_sel(0), null_sel(0) {}
+        explicit Selectivity(Float64 true_sel_) : true_sel(true_sel_), null_sel(0) {}
+        Selectivity(Float64 true_sel_, Float64 null_sel_) : true_sel(true_sel_), null_sel(null_sel_) {}
+        Selectivity applyNot() const;
+        Selectivity applyOr(const Selectivity & other) const;
+        Selectivity applyAnd(const Selectivity & other) const;
+    };
+
 
     friend class ConditionSelectivityEstimatorBuilder;
 public:
@@ -76,7 +93,7 @@ public:
         /// columns checked with IS NOT NULL predicate
         std::unordered_set<String> not_null_check_columns;
         bool finalized = false;
-        Float64 selectivity = 0;
+        Selectivity selectivity;
 
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
         void finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata);
@@ -90,8 +107,7 @@ private:
     {
         ColumnStatisticsPtr stats;
 
-        Float64 estimateRanges(const PlainRanges & ranges) const;
-        Float64 estimateNotRanges(const PlainRanges & ranges) const;
+        Selectivity estimateRanges(const PlainRanges & ranges) const;
         UInt64 estimateCardinality() const;
     };
 

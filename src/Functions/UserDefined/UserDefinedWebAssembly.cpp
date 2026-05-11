@@ -708,11 +708,11 @@ UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query
         function_def.is_deterministic);
 
     std::unique_lock lock(registry_mutex);
-    registry[function_def.function_name] = wasm_func;
+    registry[function_def.function_name] = RegistryEntry{wasm_func, create_function_query};
     return wasm_func;
 }
 
-bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name)
+bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name) const
 {
     std::shared_lock lock(registry_mutex);
     return registry.contains(function_name);
@@ -732,7 +732,7 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const Str
                 function_name,
                 fmt::join(registry | std::views::transform([](const auto & pair) { return pair.first; }), ", "));
         }
-        wasm_func = it->second;
+        wasm_func = it->second.function;
     }
 
     auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
@@ -743,6 +743,16 @@ bool UserDefinedWebAssemblyFunctionFactory::dropIfExists(const String & function
 {
     std::unique_lock lock(registry_mutex);
     return registry.erase(function_name) > 0;
+}
+
+std::vector<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> UserDefinedWebAssemblyFunctionFactory::getAllFunctions() const
+{
+    std::shared_lock lock(registry_mutex);
+    std::vector<RegisteredFunction> result;
+    result.reserve(registry.size());
+    for (const auto & [sql_name, entry] : registry)
+        result.push_back(RegisteredFunction{sql_name, entry.function, entry.create_query});
+    return result;
 }
 
 UserDefinedWebAssemblyFunctionFactory & UserDefinedWebAssemblyFunctionFactory::instance()
