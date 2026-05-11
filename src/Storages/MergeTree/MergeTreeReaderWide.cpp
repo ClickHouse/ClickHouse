@@ -322,15 +322,6 @@ size_t MergeTreeReaderWide::readRows(
             }
         }
 
-        /// Count cache hits/misses at request level, not per-entry.
-        if (cache_enabled && settings.enable_columns_cache_reads)
-        {
-            if (serving_from_cache)
-                ProfileEvents::increment(ProfileEvents::ColumnsCacheHits);
-            else
-                ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses);
-        }
-
         /// Calculate offset within the cached block and how many rows to extract.
         /// These are only meaningful when `serving_from_cache` is true.
         const size_t offset_in_cache = serving_from_cache ? (row_begin - cached_row_begin) : 0;
@@ -360,6 +351,17 @@ size_t MergeTreeReaderWide::readRows(
                     break;
                 }
             }
+        }
+
+        /// Count cache hits/misses at request level, not per-entry.
+        /// Must happen after validation above, which may flip `serving_from_cache` to false
+        /// on a size mismatch and fall back to a disk read.
+        if (cache_enabled && settings.enable_columns_cache_reads)
+        {
+            if (serving_from_cache)
+                ProfileEvents::increment(ProfileEvents::ColumnsCacheHits);
+            else
+                ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses);
         }
 
         if (serving_from_cache)
