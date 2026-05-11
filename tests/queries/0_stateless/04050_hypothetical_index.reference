@@ -1,5 +1,5 @@
 --- CREATE / system table ---
-idx_b	t_hypo	set	1	session
+idx_b	t_hypo	set	1
 --- Duplicate errors ---
 BAD_ARGUMENTS
 --- IF NOT EXISTS is silent ---

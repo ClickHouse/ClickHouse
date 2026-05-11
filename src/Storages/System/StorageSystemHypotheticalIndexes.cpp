@@ -19,7 +19,6 @@ ColumnsDescription StorageSystemHypotheticalIndexes::getColumnsDescription()
         {"type", std::make_shared<DataTypeString>(), "Index type (minmax, set, bloom_filter, etc)"},
         {"expression", std::make_shared<DataTypeString>(), "Index expression"},
         {"granularity", std::make_shared<DataTypeUInt64>(), "Index granularity"},
-        {"scope", std::make_shared<DataTypeString>(), "Scope (always 'session')"},
     };
 }
 
@@ -47,7 +46,6 @@ void StorageSystemHypotheticalIndexes::fillData(
         res_columns[col++]->insert(expr_str);
 
         res_columns[col++]->insert(entry.index.granularity);
-        res_columns[col++]->insert("session");
     }
 }
 

@@ -22,21 +22,20 @@ The contents are session-scoped: each connection sees only its own hypothetical 
 | `type`        | `String` | Index type (`minmax`, `set`, `bloom_filter`, etc.).          |
 | `expression`  | `String` | Index expression as written in `CREATE HYPOTHETICAL INDEX`.  |
 | `granularity` | `UInt64` | Number of data granules per index granule.                   |
-| `scope`       | `String` | Always `session`.                                            |
 
 ## Example {#example}
 
 ```sql
 CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
 
-SELECT name, table, type, granularity, scope
+SELECT name, table, type, granularity
 FROM system.hypothetical_indexes;
 ```
 
 ```text
-┌─name──┬─table─┬─type───┬─granularity─┬─scope───┐
-│ idx_b │ t     │ minmax │           1 │ session │
-└───────┴───────┴────────┴─────────────┴─────────┘
+┌─name──┬─table─┬─type───┬─granularity─┐
+│ idx_b │ t     │ minmax │           1 │
+└───────┴───────┴────────┴─────────────┘
 ```
 
 ## See also {#see-also}
