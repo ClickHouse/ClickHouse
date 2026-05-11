@@ -5,7 +5,6 @@
 #include <Core/Types.h>
 #include <fmt/format.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {

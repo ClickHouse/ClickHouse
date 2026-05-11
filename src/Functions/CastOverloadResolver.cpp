@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -22,6 +23,32 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+/// accurateCastOrNull wraps the result in Nullable to represent conversion failures.
+/// Types that cannot be inside Nullable (Array, Map, etc.) are not supported.
+/// The nested elements need to be Nullable-capable so that we can propagate NULLs which tell
+/// us whether the conversion is accurate or not.
+/// This check walks Tuple elements recursively to also reject cases like
+/// Tuple(Array(UInt8)) where the unsupported type is nested inside a Tuple.
+static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
+{
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & element : tuple_type->getElements())
+            validateNestedTypesForAccurateCastOrNull(element);
+    }
+    else if (type->isNullable())
+    {
+        validateNestedTypesForAccurateCastOrNull(removeNullable(type));
+    }
+    else if (!type->canBeInsideNullable() && !canContainNull(*type))
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Type {} is not supported for accurateCastOrNull because it cannot be inside Nullable",
+            type->getName());
+    }
+}
+
 FunctionBasePtr createFunctionBaseCast(
     ContextPtr context,
     const char * name,
@@ -37,7 +64,7 @@ FunctionBasePtr createFunctionBaseCast(
   * Cast preserves nullability according to setting `cast_keep_nullable`,
   * i.e. Cast(toNullable(toInt8(1)) as Int32) will be Nullable(Int32(1)) if `cast_keep_nullable` == 1.
   */
-class CastOverloadResolverImpl : public IFunctionOverloadResolver
+class CastOverloadResolverImpl : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static const char * getNameImpl(CastType cast_type, bool internal)
@@ -61,7 +88,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     explicit CastOverloadResolverImpl(ContextPtr context_, CastType cast_type_, bool internal_, std::optional<CastDiagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
-        : context(context_)
+        : WithContext(context_)
         , cast_type(cast_type_)
         , internal(internal_)
         , diagnostic(std::move(diagnostic_))
@@ -70,14 +97,14 @@ public:
     {
     }
 
-    static FunctionOverloadResolverPtr create(ContextPtr context, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
+    static FunctionOverloadResolverPtr create(ContextPtr context_, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
     {
         if (internal)
-            return std::make_unique<CastOverloadResolverImpl>(context, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
+            return std::make_unique<CastOverloadResolverImpl>(context_, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
 
-        const auto & settings_ref = context->getSettingsRef();
+        const auto & settings_ref = context_->getSettingsRef();
         return std::make_unique<CastOverloadResolverImpl>(
-            context, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
+            context_, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
     }
 
     static FunctionBasePtr createInternalCast(
@@ -85,24 +112,27 @@ public:
         DataTypePtr to,
         CastType cast_type,
         std::optional<CastDiagnostic> diagnostic,
-        ContextPtr context)
+        ContextPtr context_)
     {
-        if (cast_type == CastType::accurateOrNull && !isVariant(to))
+        if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
+        {
+            validateNestedTypesForAccurateCastOrNull(to);
             to = makeNullable(to);
+        }
 
         ColumnsWithTypeAndName arguments;
         arguments.emplace_back(std::move(from));
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
         return createFunctionBaseCast(
-            context, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
+            context_, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
     }
 
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         return createFunctionBaseCast(
-            context,
+            getContext(),
             getNameImpl(cast_type, internal),
             arguments,
             return_type,
@@ -129,15 +159,20 @@ protected:
         if (cast_type == CastType::accurateOrNull)
         {
             /// Variant handles NULLs by itself during conversions.
-            if (!isVariant(type))
+            if (!canContainNull(*type))
+            {
+                /// Reject types inside Tuple that cannot handle accurateOrNull's
+                /// ColumnNullable failure mechanism (e.g., Array, Map).
+                validateNestedTypesForAccurateCastOrNull(type);
                 return makeNullable(type);
+            }
         }
 
         if (internal)
             return type;
 
         if (keep_nullable
-            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable())
+            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable() || isDynamic(*arguments.front().type))
             && type->canBeInsideNullable())
             return makeNullable(type);
 
@@ -149,7 +184,6 @@ protected:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
 private:
-    ContextPtr context;
     CastType cast_type;
     bool internal;
     std::optional<CastDiagnostic> diagnostic;

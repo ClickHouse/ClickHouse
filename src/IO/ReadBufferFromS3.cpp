@@ -5,11 +5,13 @@
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromS3.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
 
 #include <Common/Stopwatch.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -28,6 +30,12 @@ namespace ProfileEvents
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;
+}
+
+namespace HistogramMetrics
+{
+    extern Metric & S3ReadRequestDuration;
+    extern Metric & S3ReadRequestBytes;
 }
 
 namespace DB
@@ -66,7 +74,8 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t read_until_position_,
     bool restricted_seek_,
     std::optional<size_t> file_size_,
-    const S3CredentialsRefreshCallback & credentials_refresh_callback_)
+    const S3CredentialsRefreshCallback & credentials_refresh_callback_,
+    BlobStorageLogWriterPtr blob_storage_log_)
     : ReadBufferFromFileBase()
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
@@ -79,6 +88,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
     , credentials_refresh_callback(credentials_refresh_callback_)
+    , blob_storage_log(std::move(blob_storage_log_))
 {
     file_size = file_size_;
 }
@@ -242,6 +252,17 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
     {
         bool last_attempt = attempt >= request_settings[S3RequestSetting::max_single_read_retries];
         size_t bytes_copied = 0;
+        Stopwatch request_watch{CLOCK_MONOTONIC};
+        bool metrics_observed = false;
+
+        auto observe_request_metrics = [&]()
+        {
+            if (metrics_observed)
+                return;
+            metrics_observed = true;
+            HistogramMetrics::S3ReadRequestDuration.observe(static_cast<double>(request_watch.elapsedMicroseconds()));
+            HistogramMetrics::S3ReadRequestBytes.observe(static_cast<double>(bytes_copied));
+        };
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
 
@@ -258,19 +279,26 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes_copied);
 
             if (cancelled)
+            {
+                observe_request_metrics();
                 return initial_n - n + bytes_copied;
+            }
 
             /// Read remaining bytes after the end of the payload
             istr.ignore(INT64_MAX);
         }
         catch (...)
         {
+            observe_request_metrics();
+
             if (!processException(range_begin, attempt) || last_attempt)
                 throw;
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
         }
+
+        observe_request_metrics();
 
         range_begin += bytes_copied;
         to += bytes_copied;
@@ -400,6 +428,11 @@ size_t ReadBufferFromS3::getObjectSizeFromS3() const
     return S3::getObjectSize(*client_ptr, bucket, key, version_id);
 }
 
+std::optional<size_t> ReadBufferFromS3::getRemoteFileSize() const
+{
+    return getObjectSizeFromS3();
+}
+
 off_t ReadBufferFromS3::getPosition()
 {
     return offset - available();
@@ -466,10 +499,12 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
 
     const auto right_offset = read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt;
+
+    Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
 
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
-    return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size);
+    return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));
 }
 
 Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const
@@ -506,12 +541,39 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
     CurrentThread::IOSchedulingScope io_scope(read_settings.io_scheduling);
     CurrentThread::ReadThrottlingScope read_throttling_scope(read_settings.remote_throttler);
+
+    /// Measures time-to-first-byte: just the GetObject API call, not data transfer.
+    /// Each sendRequest call is logged individually, unlike HDFS/Local which aggregate.
+    Stopwatch blob_log_watch;
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
     if (outcome.IsSuccess())
-        return outcome.GetResultWithOwnership();
+    {
+        auto result = outcome.GetResultWithOwnership();
+        if (blob_storage_log)
+        {
+            size_t data_size = static_cast<size_t>(result.GetContentLength());
+            blob_storage_log->addEvent(
+                BlobStorageLogElement::EventType::Read,
+                bucket, key, /* local_path */ {},
+                data_size,
+                blob_log_watch.elapsedMicroseconds(),
+                /* error_code */ 0, /* error_message */ {});
+        }
+        return result;
+    }
 
     const auto & error = outcome.GetError();
+    if (blob_storage_log)
+    {
+        size_t data_size = range_end_incl ? (*range_end_incl - range_begin + 1) : 0;
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Read,
+            bucket, key, /* local_path */ {},
+            data_size,
+            blob_log_watch.elapsedMicroseconds(),
+            static_cast<Int32>(error.GetErrorType()), error.GetMessage());
+    }
     throw S3Exception(error.GetMessage(), error.GetErrorType());
 }
 

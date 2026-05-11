@@ -24,7 +24,6 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
-        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
@@ -58,7 +57,7 @@ private:
 
     void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) override;
 
-    void initColumnsSubstreamsIfNeeded(const Block & sample);
+    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
 
     Block header;
 

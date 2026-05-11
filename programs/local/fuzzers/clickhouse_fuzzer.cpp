@@ -11,9 +11,6 @@
 
 #include <boost/algorithm/string/split.hpp>
 
-#if defined(SANITIZE_COVERAGE)
-#    include <Common/Coverage.h>
-#endif
 
 #include <unistd.h>
 
@@ -139,10 +136,6 @@ int clickhouseMain(int argc_, char ** argv_)
     std::set_new_handler(nullptr);
 
     int exit_code = mainEntryClickHouseLocal(argc_, argv_);
-
-#if defined(SANITIZE_COVERAGE)
-    dumpCoverage();
-#endif
 
     return exit_code;
 }

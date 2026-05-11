@@ -25,6 +25,7 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool escape_variant_subcolumn_filenames;
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace ErrorCodes
@@ -363,8 +364,10 @@ String getNameForSubstreamPath(
             stream_name += ".object_structure";
         else if (it->type == SubstreamType::ObjectSharedData)
             stream_name += ".object_shared_data";
-        else if (it->type == SubstreamType::ObjectSharedDataBucket)
-            stream_name +=   "." + std::to_string(it->object_shared_data_bucket);
+        else if (it->type == SubstreamType::Bucket)
+            stream_name += "." + std::to_string(it->bucket);
+        else if (it->type == SubstreamType::MapBucketsInfo)
+            stream_name += ".buckets_info";
         else if (it->type == SubstreamType::ObjectSharedDataStructure)
             stream_name += ".structure";
         else if (it->type == SubstreamType::ObjectSharedDataStructurePrefix)
@@ -428,11 +431,18 @@ static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path
 String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path, const StreamFileNameSettings & settings)
 {
     String stream_name;
-    auto nested_storage_name = Nested::extractTableName(name_in_storage);
-    if (name_in_storage != nested_storage_name && isPossibleOffsetsOfNested(path))
-        stream_name = escapeForFileName(nested_storage_name);
+    if (settings.share_nested_offsets)
+    {
+        auto nested_storage_name = Nested::extractTableName(name_in_storage);
+        if (name_in_storage != nested_storage_name && isPossibleOffsetsOfNested(path))
+            stream_name = escapeForFileName(nested_storage_name);
+        else
+            stream_name = escapeForFileName(name_in_storage);
+    }
     else
+    {
         stream_name = escapeForFileName(name_in_storage);
+    }
 
     return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
 }
@@ -441,11 +451,11 @@ String ISerialization::getFileNameForRenamedColumnStream(const String & name_fro
 {
     auto name_from_escaped = escapeForFileName(name_from);
     if (file_name.starts_with(name_from_escaped))
-        return escapeForFileName(name_to) + file_name.substr(0, name_from_escaped.size());
+        return escapeForFileName(name_to) + file_name.substr(name_from_escaped.size());
 
     auto nested_storage_name_escaped = escapeForFileName(Nested::extractTableName(name_from));
     if (file_name.starts_with(nested_storage_name_escaped))
-        return escapeForFileName(Nested::extractTableName(name_to)) + file_name.substr(0, nested_storage_name_escaped.size());
+        return escapeForFileName(Nested::extractTableName(name_to)) + file_name.substr(nested_storage_name_escaped.size());
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "File name {} doesn't correspond to column {}", file_name, name_from);
 }
@@ -686,12 +696,13 @@ bool ISerialization::isLowCardinalityDictionarySubcolumn(const DB::ISerializatio
     return path[path.size() - 1].type == SubstreamType::DictionaryKeys;
 }
 
-bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerialization::SubstreamPath & path)
+bool ISerialization::isMetadataStream(const DB::ISerialization::SubstreamPath & path)
 {
     if (path.empty())
         return false;
 
-    return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
+    return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure
+        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo;
 }
 
 bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams)
@@ -723,6 +734,14 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
 
     ssize_t last_elem = prefix_len - 1;
     auto res = path[last_elem].data;
+
+    /// Materialize the column on demand via a lazy creator if one is attached.
+    /// This supports deferred column creation for derived subcolumns like
+    /// String `.size`, whose data is computed from a parent column and should
+    /// only be materialized when actually requested.
+    if (!res.column && res.lazy_column_creator)
+        res.column = res.lazy_column_creator();
+
     for (ssize_t i = last_elem - 1; i >= 0; --i)
     {
         const auto & creator = path[i].creator;
@@ -754,6 +773,7 @@ void ISerialization::throwUnexpectedDataAfterParsedValue(IColumn & column, ReadB
 ISerialization::StreamFileNameSettings::StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings)
 {
     escape_variant_substreams = merge_tree_settings[MergeTreeSetting::escape_variant_subcolumn_filenames];
+    share_nested_offsets = merge_tree_settings[MergeTreeSetting::share_nested_offsets];
 }
 
 void ISerialization::addSubstreamAndCallCallback(ISerialization::SubstreamPath & path, const ISerialization::StreamCallback & callback, ISerialization::Substream substream) const

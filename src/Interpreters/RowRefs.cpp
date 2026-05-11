@@ -226,6 +226,11 @@ ColumnsInfo::ColumnsInfo(Columns && columns_) : ColumnsInfo(std::move(columns_),
 
 ColumnsInfo::ColumnsInfo(Columns && columns_, RowDataStorePtr && row_store_) : columns(std::move(columns_)), row_store(std::move(row_store_))
 {
+    rebuildReplicatedColumns();
+}
+
+void ColumnsInfo::rebuildReplicatedColumns()
+{
     replicated_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)
         replicated_columns[i] = typeid_cast<const ColumnReplicated *>(columns[i].get());

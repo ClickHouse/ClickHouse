@@ -1,6 +1,8 @@
 #pragma once
 #include "config.h"
 
+#include <chrono>
+#include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
@@ -65,6 +67,33 @@ public:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     ObjectStorageQueueSettings getSettings() const;
+
+    /// Block until `path` is marked as processed (or failed) in Keeper by this
+    /// queue, then return.
+    ///
+    /// Ordered-mode semantics: ordered queues track a monotonic "last processed"
+    /// pointer rather than per-file markers.  This command therefore returns as
+    /// soon as the queue pointer has advanced past `path`, not necessarily because
+    /// `path` was explicitly read.
+    ///
+    /// Known edge cases in ordered mode:
+    ///  - A path that sorts lexicographically before the current pointer returns
+    ///    immediately even if it was never uploaded.
+    ///  - A path uploaded after the pointer has already advanced past its sort
+    ///    position will be silently skipped by the queue and FLUSH will return
+    ///    immediately with a false success.
+    ///
+    /// Throws ABORTED if the path permanently failed, QUERY_WAS_CANCELLED if the
+    /// table is dropped or the query is killed, TIMEOUT_EXCEEDED if the query time
+    /// limit is reached, and BAD_ARGUMENTS if the background streaming thread is
+    /// not running or will never make progress.
+    ///
+    /// If `deadline` is set, throws TIMEOUT_EXCEEDED when the deadline is reached
+    /// (in addition to any process-list time limit on `local_context`).
+    void waitForPathToBeProcessed(
+        const std::string & path,
+        ContextPtr local_context,
+        std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) const;
 
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
@@ -144,7 +173,7 @@ private:
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     const ObjectStorageQueueTableMetadata & getTableMetadata() const;
 

@@ -12,6 +12,10 @@ class SerializationLowCardinality : public ISerialization
 {
 private:
     DataTypePtr dictionary_type;
+    /// Serialization of the nested column.
+    SerializationPtr nested_serialization;
+    /// Serialization of the dictionary type.
+    /// It can differ from the nested serialization for nullable types.
     SerializationPtr dict_inner_serialization;
 
     explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);

@@ -5,6 +5,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/ProjectionIndex/IProjectionIndex.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Common/PODArray_fwd.h>
 
 #include <memory>
@@ -72,6 +73,8 @@ struct ProjectionDescription
     std::vector<size_t> partition_value_indices;
 
     bool with_parent_part_offset = false;
+    bool with_block_number = false;
+    bool with_block_offset = false;
 
     ProjectionIndexPtr index;
 
@@ -79,21 +82,26 @@ struct ProjectionDescription
     std::optional<UInt64> index_granularity_bytes;
 
     /// Parse projection from definition AST
-    static ProjectionDescription
-    getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
+    static ProjectionDescription getProjectionFromAST(
+        const ASTPtr & definition_ast,
+        const ColumnsDescription & columns,
+        const KeyDescription * partition_key,
+        const ContextPtr & query_context);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,
         const ASTProjectionSelectQuery & query,
         const ColumnsDescription & columns,
-        ContextPtr query_context);
+        const KeyDescription * partition_key,
+        const ContextPtr & query_context);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
-        ASTPtr partition_columns,
+        const ASTPtr & partition_columns,
         const Names & minmax_columns,
         const KeyDescription & primary_key,
-        ContextPtr query_context);
+        const KeyDescription * partition_key,
+        const ContextPtr & query_context);
 
     ProjectionDescription() = default;
 
@@ -110,10 +118,6 @@ struct ProjectionDescription
 
     bool operator==(const ProjectionDescription & other) const;
     bool operator!=(const ProjectionDescription & other) const { return !(*this == other); }
-
-    /// Recalculate projection with new columns because projection expression may change
-    /// if something change in columns.
-    void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context);
 
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 
@@ -138,8 +142,7 @@ struct ProjectionDescription
 
     /// Same as but ignores additional index-specific metadata or structures.
     /// Only the query AST is used to compute the output block.
-    Block
-    calculateByQuery(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
+    Block calculateByQuery(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
 
     String getDirectoryName() const { return name + ".proj"; }
 };
@@ -158,7 +161,11 @@ struct ProjectionsDescription : public IHints<>
     /// Convert description to string
     String toString() const;
     /// Parse description from string
-    static ProjectionsDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr query_context);
+    static ProjectionsDescription parse(
+        const String & str,
+        const ColumnsDescription & columns,
+        const KeyDescription * parent_partition_key,
+        const ContextPtr & query_context);
 
     /// Return common expression for all stored projections
     ExpressionActionsPtr getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const;
