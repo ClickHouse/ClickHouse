@@ -243,7 +243,16 @@ private:
 
 /// Returns values for a specified subset of paths from a JSON column as an array of strings.
 /// Paths are supplied as a constant Array(String). Values are returned in the order the paths
-/// are specified. Absent, null, or default-valued typed paths are omitted.
+/// are specified.
+///
+/// Omission rules per storage class:
+///   - Dynamic paths:  omitted when null (path absent in that row).
+///   - Shared-data paths: omitted when the path is not present in the row's shared-data block.
+///   - Typed paths (schema-declared, non-nullable): the column always stores a value, using the
+///     type's default (0 for UInt32, "" for String, false for Bool, …) for rows where the path
+///     was absent.  Because an absent row and a row with the explicit default value (e.g.
+///     {"a":0} for JSON(a UInt32)) are stored identically, both are omitted.  Declare the path
+///     as Nullable (e.g. JSON(a Nullable(UInt32))) if you need to distinguish the two.
 class FunctionJSONValues : public IFunction
 {
 public:
@@ -363,9 +372,11 @@ private:
                 const auto & rp = resolved[pi];
                 if (rp.source == PathSource::Typed)
                 {
-                    /// Typed paths always have a column entry but the value may be the type
-                    /// default when the field was absent in the original JSON. Skip defaults
-                    /// so the behaviour is consistent with dynamic and shared-data paths.
+                    /// Typed paths store the type's default for absent rows; there is no
+                    /// separate null map.  Omitting the default avoids emitting spurious
+                    /// placeholder values for absent paths, at the cost of also omitting
+                    /// rows where the path was explicitly set to the default (e.g. {"a":0}
+                    /// for JSON(a UInt32)).  See the class-level comment for details.
                     if (!rp.column->isDefaultAt(i))
                         serializeValueIntoResult(*rp.serialization, *rp.column, i, format_settings, result_data);
                 }
@@ -433,6 +444,11 @@ SELECT json, JSONAllValues(json) FROM test;
         FunctionDocumentation::Description description = R"(
 Returns values for a specified subset of paths from each row in a JSON column as an array of strings.
 Values are returned in the order the paths are specified. Paths that are absent or null in a given row are omitted from that row's array.
+
+Note: for paths declared with non-nullable types in the JSON schema (typed paths), values equal to
+the type's default (0 for integer types, empty string for String, false for Bool, etc.) are also
+omitted because absent rows and rows present with the default value are stored identically.
+Declare the path as Nullable (e.g. JSON(a Nullable(UInt32))) to distinguish the two.
         )";
         FunctionDocumentation::Syntax syntax = "JSONValues(json, paths)";
         FunctionDocumentation::Arguments arguments = {

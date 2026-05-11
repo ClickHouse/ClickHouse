@@ -17,3 +17,7 @@ Description: text GRANULARITY 100000000
 Parts: 2/4
 Granules: 2/4
 -- non-constant path argument is rejected
+-- typed path default equals absent: both omitted
+1	[]
+2	['1']
+3	[]

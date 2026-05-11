@@ -42,3 +42,14 @@ SELECT '-- non-constant path argument is rejected';
 SELECT JSONValues(data, toString(id)) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE tab;
+
+-- Regression: typed paths with non-nullable types cannot distinguish absent from
+-- present-with-default (both store the type default, e.g. 0 for UInt32).
+-- Both cases are omitted to avoid emitting phantom defaults for absent paths.
+-- Declare the path as Nullable(T) to distinguish them if needed.
+SELECT '-- typed path default equals absent: both omitted';
+DROP TABLE IF EXISTS tab_typed;
+CREATE TABLE tab_typed (id UInt32, json JSON(a UInt32)) ENGINE = Memory;
+INSERT INTO tab_typed VALUES (1, '{"a": 0}'), (2, '{"a": 1}'), (3, '{}');
+SELECT id, JSONValues(json, ['a']) FROM tab_typed ORDER BY id;
+DROP TABLE tab_typed;
