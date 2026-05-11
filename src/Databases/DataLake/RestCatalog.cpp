@@ -939,6 +939,9 @@ bool RestCatalog::getTableMetadataImpl(
         }
     }
 
+    if (metadata_object->has("table-uuid"))
+        result.setTableUUID(metadata_object->get("table-uuid").extract<String>());
+
     return true;
 }
 
