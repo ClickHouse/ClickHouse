@@ -78,6 +78,9 @@ public:
     /// no refreshes will run.
     void start();
     void stop();
+    /// Like `stop`, but does not interrupt the currently running refresh; only prevents future
+    /// refreshes from starting. Resumed by `start`.
+    void pause();
     void startReplicated();
     void stopReplicated(const String & reason);
 
