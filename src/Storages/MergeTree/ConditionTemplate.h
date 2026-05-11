@@ -33,8 +33,6 @@ public:
         StorageMetadataPtr metadata_snapshot_,
         ContextPtr context_);
 
-    const ActionsDAG * getDAG() const { return &dag->dag.value(); }
-
     /// Substitutes nothing.
     const Cond & generateUnsubstituted() const;
 
