@@ -2,6 +2,7 @@
 
 #include <Common/SharedMutex.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/MergeTree/SparseGranuleAnalyzer.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
@@ -161,6 +162,7 @@ struct MergeTreeIndexReadResult
 {
     SkipIndexReadResultPtr skip_index_read_result;
     ProjectionIndexBitmapPtr projection_index_read_result;
+    SparsityReadResultPtr sparsity_read_result;
 };
 
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
@@ -180,7 +182,9 @@ class MergeTreeIndexReadResultPool
 {
 public:
     MergeTreeIndexReadResultPool(
-        MergeTreeSkipIndexReaderPtr skip_index_reader_, MergeTreeProjectionIndexReaderPtr projection_index_reader_);
+        MergeTreeSkipIndexReaderPtr skip_index_reader_,
+        MergeTreeProjectionIndexReaderPtr projection_index_reader_,
+        MergeTreeSparsityReaderPtr sparsity_reader_ = nullptr);
 
     /// Holds a shared future to a lazily built MergeTreeIndexReadResult.
     /// This enables concurrent consumers to wait on a single computation.
@@ -211,6 +215,7 @@ public:
 private:
     MergeTreeSkipIndexReaderPtr skip_index_reader;
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
+    MergeTreeSparsityReaderPtr sparsity_reader;
 
     /// Stores MergeTreeIndexReadResult instances per part to avoid redundant construction.
     std::unordered_map<const IMergeTreeDataPart *, IndexReadResultEntry> index_read_result_registry;

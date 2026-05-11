@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/logger_useful.h>
 
@@ -136,6 +137,52 @@ analyzeSparseColumnGranules(
     }
 
     return analysis;
+}
+
+
+MergeTreeSparsityReader::MergeTreeSparsityReader(
+    std::vector<RecognisedSparsityPredicate> predicates_,
+    const MergeTreeData & data_,
+    StorageSnapshotPtr storage_snapshot_,
+    LoggerPtr log_)
+    : predicates(std::move(predicates_))
+    , data(data_)
+    , storage_snapshot(std::move(storage_snapshot_))
+    , log(std::move(log_))
+{
+}
+
+SparsityReadResultPtr MergeTreeSparsityReader::read(const RangesInDataPart & part)
+{
+    auto result = std::make_shared<SparsityReadResult>();
+    const size_t total_marks = part.data_part->index_granularity->getMarksCountWithoutFinal();
+    result->granules_selected.assign(total_marks, true);
+
+    bool any_predicate_used = false;
+    for (const auto & predicate : predicates)
+    {
+        auto analysis = analyzeSparseColumnGranules(
+            part.data_part, predicate.column_name, part.ranges, data, storage_snapshot, log);
+        if (!analysis)
+            continue;
+        any_predicate_used = true;
+
+        for (const auto & range : part.ranges)
+        {
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                const bool drop = (predicate.predicate_class == SparsityPredicateClass::MatchesNonDefault)
+                    ? analysis->granule_has_only_defaults[mark]
+                    : analysis->granule_has_only_non_defaults[mark];
+                if (drop)
+                    result->granules_selected[mark] = false;
+            }
+        }
+    }
+
+    if (!any_predicate_used)
+        return nullptr;
+    return result;
 }
 
 }

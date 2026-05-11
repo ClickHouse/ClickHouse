@@ -176,6 +176,13 @@ bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_m
             return true;
     }
 
+    if (index_read_result && index_read_result->sparsity_read_result)
+    {
+        const auto & selected = index_read_result->sparsity_read_result->granules_selected;
+        if (mark < selected.size() && !selected[mark])
+            return true;
+    }
+
     return false;
 }
 

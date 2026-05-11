@@ -842,50 +842,52 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
     if (!query_node || !query_node->hasWhere())
         return parts;
 
-    auto classified = classifySparsityPredicate(query_node->getWhere(), query_info.table_expression);
-    if (!classified)
+    auto conjuncts = collectSparsityConjuncts(query_node->getWhere(), query_info.table_expression);
+    if (conjuncts.empty())
         return parts;
+
+    /// Drop a part when ANY classified conjunct proves it has no matching rows. AND
+    /// semantics: all conjuncts must hold, so a single-conjunct contradiction is enough.
+    auto conjunct_prunes_part = [](const RecognisedSparsityPredicate & pred,
+                                   const SerializationInfo::Data & info_data) -> bool
+    {
+        if (!info_data.exact_num_defaults)
+            return false;
+        if (pred.predicate_class == SparsityPredicateClass::MatchesNonDefault
+            && info_data.num_defaults == info_data.num_rows)
+            return true;
+        if (pred.predicate_class == SparsityPredicateClass::MatchesDefault
+            && info_data.num_defaults == 0)
+            return true;
+        return false;
+    };
 
     RangesInDataParts res_parts;
     res_parts.reserve(parts.size());
     size_t total_parts_before = parts.size();
+    Names used_columns;
 
     for (const auto & part : parts)
     {
         const auto & infos = part.data_part->getSerializationInfos();
-        auto it = infos.find(classified->column_name);
-        if (it == infos.end())
+        bool dropped = false;
+
+        for (const auto & pred : conjuncts)
         {
-            res_parts.push_back(part);
-            continue;
+            auto it = infos.find(pred.column_name);
+            if (it == infos.end())
+                continue;
+            if (conjunct_prunes_part(pred, it->second->getData()))
+            {
+                LOG_TRACE(log, "Part {} pruned by sparsity info on column {}", part.data_part->name, pred.column_name);
+                if (std::find(used_columns.begin(), used_columns.end(), pred.column_name) == used_columns.end())
+                    used_columns.push_back(pred.column_name);
+                dropped = true;
+                break;
+            }
         }
 
-        /// Without `exact_num_defaults` (legacy parts) we can't safely answer the
-        /// extremal questions below, so we keep the part.
-        const auto & info_data = it->second->getData();
-        if (!info_data.exact_num_defaults)
-        {
-            res_parts.push_back(part);
-            continue;
-        }
-
-        bool drop = false;
-        if (classified->predicate_class == SparsityPredicateClass::MatchesNonDefault
-            && info_data.num_defaults == info_data.num_rows)
-        {
-            /// e.g. `WHERE col != 0` on a part where every row of `col` is the default.
-            drop = true;
-        }
-        else if (classified->predicate_class == SparsityPredicateClass::MatchesDefault
-            && info_data.num_defaults == 0)
-        {
-            /// e.g. `WHERE col = 0` on a part where no row of `col` is the default.
-            drop = true;
-        }
-
-        if (drop)
-            LOG_TRACE(log, "Part {} pruned by sparsity info on column {}", part.data_part->name, classified->column_name);
-        else
+        if (!dropped)
             res_parts.push_back(part);
     }
 
@@ -897,12 +899,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
 
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Sparsity,
-            .used_keys = {classified->column_name},
+            .used_keys = used_columns,
             .num_parts_after = res_parts.size(),
             .num_granules_after = total_granules_after});
 
-        LOG_DEBUG(log, "Sparsity-info pruning on column {}: {} parts -> {} parts",
-            classified->column_name, total_parts_before, res_parts.size());
+        LOG_DEBUG(log, "Sparsity-info pruning: {} parts -> {} parts",
+            total_parts_before, res_parts.size());
     }
 
     return res_parts;
@@ -937,19 +939,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
     if (!query_node || !query_node->hasWhere())
         return parts;
 
-    auto classified = classifySparsityPredicate(query_node->getWhere(), query_info.table_expression);
-    if (!classified)
+    auto conjuncts = collectSparsityConjuncts(query_node->getWhere(), query_info.table_expression);
+    if (conjuncts.empty())
         return parts;
 
     auto storage_snapshot = std::make_shared<StorageSnapshot>(data, metadata_snapshot);
 
-    /// Per-class extremal granule check. For `MatchesNonDefault` we drop all-default
-    /// granules; for `MatchesDefault` we drop all-non-default granules. (The other
-    /// direction in each pair is "indefinite" -- the predicate may still match some
-    /// rows in the granule.)
-    auto granule_is_prunable = [&](const SparseGranuleAnalysis & analysis, size_t mark) -> bool
+    /// For each conjunct (column + predicate class), drop a granule when the analysis
+    /// proves no rows in it can match that conjunct. AND semantics across conjuncts:
+    /// a granule survives iff every conjunct allows it.
+    auto granule_is_prunable_by =
+        [](const RecognisedSparsityPredicate & pred, const SparseGranuleAnalysis & analysis, size_t mark) -> bool
     {
-        if (classified->predicate_class == SparsityPredicateClass::MatchesNonDefault)
+        if (pred.predicate_class == SparsityPredicateClass::MatchesNonDefault)
             return analysis.granule_has_only_defaults[mark];
         return analysis.granule_has_only_non_defaults[mark];
     };
@@ -960,16 +962,36 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
     size_t total_granules_before = 0;
     size_t total_granules_after = 0;
     size_t parts_changed = 0;
+    Names used_columns;
 
     for (const auto & part : parts)
     {
         for (const auto & range : part.ranges)
             total_granules_before += range.end - range.begin;
 
-        auto analysis = analyzeSparseColumnGranules(
-            part.data_part, classified->column_name, part.ranges, data, storage_snapshot, log);
+        /// Build a per-mark "drop this granule?" mask by OR-ing each conjunct's verdict.
+        const size_t total_marks = part.data_part->index_granularity->getMarksCountWithoutFinal();
+        std::vector<bool> dropped(total_marks, false);
+        bool any_conjunct_used = false;
 
-        if (!analysis)
+        for (const auto & pred : conjuncts)
+        {
+            auto analysis = analyzeSparseColumnGranules(
+                part.data_part, pred.column_name, part.ranges, data, storage_snapshot, log);
+            if (!analysis)
+                continue;
+
+            any_conjunct_used = true;
+            if (std::find(used_columns.begin(), used_columns.end(), pred.column_name) == used_columns.end())
+                used_columns.push_back(pred.column_name);
+
+            for (const auto & range : part.ranges)
+                for (size_t mark = range.begin; mark < range.end; ++mark)
+                    if (granule_is_prunable_by(pred, *analysis, mark))
+                        dropped[mark] = true;
+        }
+
+        if (!any_conjunct_used)
         {
             for (const auto & range : part.ranges)
                 total_granules_after += range.end - range.begin;
@@ -977,8 +999,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
             continue;
         }
 
-        /// Rebuild `MarkRanges` from the surviving granules. Consecutive surviving marks
-        /// collapse back into a single range; skipped granules split the range.
+        /// Rebuild `MarkRanges` from the surviving granules.
         MarkRanges new_ranges;
         bool changed = false;
         for (const auto & range : part.ranges)
@@ -986,7 +1007,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
             size_t cursor = range.begin;
             for (size_t mark = range.begin; mark < range.end; ++mark)
             {
-                if (granule_is_prunable(*analysis, mark))
+                if (dropped[mark])
                 {
                     if (cursor < mark)
                         new_ranges.emplace_back(cursor, mark);
@@ -1024,12 +1045,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
     {
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Sparsity,
-            .used_keys = {classified->column_name},
+            .used_keys = used_columns,
             .num_parts_after = res_parts.size(),
             .num_granules_after = total_granules_after});
 
-        LOG_DEBUG(log, "Sparsity granule pruning on column {}: {} parts touched, {} -> {} granules",
-            classified->column_name, parts_changed, total_granules_before, total_granules_after);
+        LOG_DEBUG(log, "Sparsity granule pruning: {} parts touched, {} -> {} granules",
+            parts_changed, total_granules_before, total_granules_after);
     }
 
     return res_parts;

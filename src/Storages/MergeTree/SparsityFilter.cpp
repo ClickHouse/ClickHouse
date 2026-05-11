@@ -240,4 +240,28 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
     return std::nullopt;
 }
 
+std::vector<RecognisedSparsityPredicate>
+collectSparsityConjuncts(const QueryTreeNodePtr & predicate, const QueryTreeNodePtr & table_expression_node)
+{
+    std::vector<RecognisedSparsityPredicate> out;
+    if (!predicate)
+        return out;
+
+    /// Recursive walk: top-level `AND(a, b, c)` flattens (and recurses for nested ANDs).
+    /// Non-AND nodes are classified directly via `classifySparsityPredicate`.
+    if (const auto * func = predicate->as<FunctionNode>(); func && func->getFunctionName() == "and")
+    {
+        for (const auto & arg : func->getArguments().getNodes())
+        {
+            auto child = collectSparsityConjuncts(arg, table_expression_node);
+            out.insert(out.end(), child.begin(), child.end());
+        }
+        return out;
+    }
+
+    if (auto classified = classifySparsityPredicate(predicate, table_expression_node))
+        out.push_back(*classified);
+    return out;
+}
+
 }

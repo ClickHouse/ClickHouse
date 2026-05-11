@@ -50,6 +50,9 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Storages/MergeTree/SparseGranuleAnalyzer.h>
+#include <Storages/MergeTree/SparsityFilter.h>
+#include <Analyzer/QueryNode.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
@@ -230,6 +233,7 @@ namespace Setting
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
+    extern const SettingsSparsityPruningMode use_sparsity_info_for_pruning;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
@@ -3672,10 +3676,40 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));
     }
 
-    if (skip_index_reader || projection_index_reader)
+    /// Phase B `data_read` mode: build a sparsity reader that lazily classifies granules
+    /// per part at scan time. Like skip-indexes-on-data-read, this is subject to the
+    /// invariants in `supportsSkipIndexesOnDataRead` -- no FINAL exact mode, no JOIN
+    /// dependency on plan-time row counts, no max_rows_to_read with throw, no pending
+    /// data mutations or patch parts.
+    MergeTreeSparsityReaderPtr sparsity_reader;
+    {
+        const auto & settings = context->getSettingsRef();
+        if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::DataRead
+            && !query_info.isFinal()
+            && !context->getCurrentTransaction()
+            && !(mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+            && query_info.query_tree)
+        {
+            if (auto * query_node = query_info.query_tree->as<QueryNode>(); query_node && query_node->hasWhere())
+            {
+                auto conjuncts = collectSparsityConjuncts(query_node->getWhere(), query_info.table_expression);
+                if (!conjuncts.empty())
+                {
+                    sparsity_reader = std::make_shared<MergeTreeSparsityReader>(
+                        std::move(conjuncts),
+                        data,
+                        storage_snapshot,
+                        getLogger("MergeTreeSparsityReader"));
+                }
+            }
+        }
+    }
+
+    if (skip_index_reader || projection_index_reader || sparsity_reader)
     {
         MergeTreeIndexReadResultPoolPtr index_read_result_pool
-            = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader), std::move(projection_index_reader));
+            = std::make_shared<MergeTreeIndexReadResultPool>(
+                std::move(skip_index_reader), std::move(projection_index_reader), std::move(sparsity_reader));
 
         RangesByIndex read_ranges;
         PartRemainingMarks part_remaining_marks;

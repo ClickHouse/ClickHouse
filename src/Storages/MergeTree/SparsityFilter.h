@@ -95,4 +95,19 @@ struct RecognisedSparsityPredicate
 std::optional<RecognisedSparsityPredicate>
 classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNodePtr & table_expression_node);
 
+/// Walk a top-level `AND(...)` tree and return every classifiable conjunct. For a
+/// non-`and` predicate this returns a single-element vector iff that predicate itself
+/// classifies; otherwise empty.
+///
+/// Use this for pruning consumers (Phase A part-level, Phase B granule-level): for
+/// `WHERE a AND b AND ...`, a part / granule can be dropped if ANY classifiable
+/// conjunct proves it can't match. The trivial-count rewrite (Layer C-1) intentionally
+/// does NOT use this -- count rewrites need exact row counts and other conjuncts may
+/// remove rows that the sparsity predicate alone says match.
+///
+/// `OR` is not yet supported (treated as unclassifiable) -- safe pruning under `OR`
+/// requires all branches to be classifiable, which we punt on for now.
+std::vector<RecognisedSparsityPredicate>
+collectSparsityConjuncts(const QueryTreeNodePtr & predicate, const QueryTreeNodePtr & table_expression_node);
+
 }
