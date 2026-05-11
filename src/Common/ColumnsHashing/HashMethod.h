@@ -268,7 +268,7 @@ struct HashMethodABString : public columns_hashing_impl::HashMethodBase<
         prefetching = std::make_unique<PrefetchingHelper>();
     }
 
-    ALWAYS_INLINE size_t getSize(size_t row) const { return offsets[row] - offsets[row - 1]; }
+    ALWAYS_INLINE size_t getSize(ssize_t row) const { return offsets[row] - offsets[row - 1]; }
 
     auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
     {
