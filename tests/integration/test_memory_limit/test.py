@@ -42,11 +42,6 @@ def test_multiple_queries():
         except Exception as ex:
             print("Exception", ex)
             raise ex
-        try:
-            node.query("SYSTEM FLUSH LOGS")
-        except Exception as ex:
-            print("Exception", ex)
-            raise ex
 
     tasks = []
     for i in range(30):

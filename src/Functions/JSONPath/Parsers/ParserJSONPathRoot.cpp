@@ -19,7 +19,7 @@ bool ParserJSONPathRoot::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         expected.add(pos, "dollar sign (start of jsonpath)");
         return false;
     }
-    node = make_intrusive<ASTJSONPathRoot>();
+    node = std::make_shared<ASTJSONPathRoot>();
     ++pos;
     return true;
 }
