@@ -2,11 +2,16 @@
 #include <IO/ISourceReader.h>
 #include <IO/ICacheProvider.h>
 #include <IO/PrefetchThreadPool.h>
+#include <IO/SourceBufferLimit.h>
+#include <IO/ReadSettings.h>
 #include <IO/Rope.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <unordered_map>
 
 using namespace DB;
@@ -367,4 +372,167 @@ TEST(ReaderExecutor, MergeRangesZeroMinGap)
     std::vector<Range> ranges = {{0, 100}, {100, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 0);
     ASSERT_EQ(merged.size(), 2);
+}
+
+namespace
+{
+
+/// Source reader that tracks open() and read() call counts.
+/// open() returns a ReadBufferFromMemory-like wrapper over the in-memory data.
+class CountingSourceReader : public ISourceReader
+{
+public:
+    explicit CountingSourceReader(std::unordered_map<String, String> data_)
+        : data(std::move(data_)) {}
+
+    size_t read(const StoredObject & object, size_t offset, size_t size, char * buffer) override
+    {
+        ++stateless_read_count;
+        auto it = data.find(object.remote_path);
+        if (it == data.end())
+            return 0;
+        const auto & content = it->second;
+        if (offset >= content.size())
+            return 0;
+        size_t to_read = std::min(size, content.size() - offset);
+        std::memcpy(buffer, content.data() + offset, to_read);
+        return to_read;
+    }
+
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override
+    {
+        ++open_count;
+        auto it = data.find(object.remote_path);
+        if (it == data.end())
+            return nullptr;
+        /// Return a ReadBufferFromFile-like object backed by a temp file.
+        /// For simplicity, we write content to a temp file and open it.
+        auto path = std::filesystem::temp_directory_path() / ("test_counting_source_" + std::to_string(open_count));
+        {
+            std::ofstream f(path, std::ios::binary);
+            f.write(it->second.data(), it->second.size());
+        }
+        temp_files.push_back(path);
+        return createReadBufferFromFileBase(path.string(), ReadSettings{});
+    }
+
+    String name() const override { return "CountingSourceReader"; }
+
+    std::atomic<size_t> stateless_read_count{0};
+    std::atomic<size_t> open_count{0};
+
+    ~CountingSourceReader() override
+    {
+        for (const auto & p : temp_files)
+            std::filesystem::remove(p);
+    }
+
+private:
+    std::unordered_map<String, String> data;
+    std::vector<std::filesystem::path> temp_files;
+};
+
+}
+
+TEST(ReaderExecutor, LiveBufferReusesConnection)
+{
+    /// 2000 bytes, window=500 → 4 sequential readNextWindow calls.
+    /// With live buffer: open() called once, then reused for all 4 reads.
+    /// Without: read() called 4 times, open() never called.
+    String content(2000, 'Q');
+    auto source = std::make_shared<CountingSourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("file", "", 2000);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    String result;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        for (const auto & node : rope.getNodes())
+            result.append(node.data(), node.size);
+    }
+
+    EXPECT_EQ(result.size(), 2000);
+    EXPECT_EQ(result, content);
+
+    /// open() called once (first read opens live buffer).
+    EXPECT_EQ(source->open_count.load(), 1);
+    /// stateless read() should NOT have been called — all reads went through live buffer.
+    EXPECT_EQ(source->stateless_read_count.load(), 0);
+}
+
+TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
+{
+    /// Semaphore with 0 capacity — live buffers disabled.
+    /// All reads go through stateless read().
+    String content(1000, 'R');
+    auto source = std::make_shared<CountingSourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("file", "", 1000);
+
+    auto limit = std::make_shared<SourceBufferLimit>(0);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    String result;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        for (const auto & node : rope.getNodes())
+            result.append(node.data(), node.size);
+    }
+
+    EXPECT_EQ(result.size(), 1000);
+    EXPECT_EQ(result, content);
+
+    /// open() never called — no slots available.
+    EXPECT_EQ(source->open_count.load(), 0);
+    /// All reads went through stateless read().
+    EXPECT_GE(source->stateless_read_count.load(), 2);
+}
+
+TEST(ReaderExecutor, LiveBufferClosedOnSeek)
+{
+    /// Sequential read opens live buffer, seek closes it and opens a new one.
+    String content(2000, 'S');
+    content[1000] = 'T';
+    auto source = std::make_shared<CountingSourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("file", "", 2000);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    /// Read first window (opens live buffer).
+    auto rope1 = executor.readNextWindow();
+    EXPECT_EQ(rope1.range().size, 500);
+    EXPECT_EQ(source->open_count.load(), 1);
+
+    /// Seek backwards (closes live buffer, opens new one on next read).
+    executor.seek(1000);
+    auto rope2 = executor.readNextWindow();
+    EXPECT_EQ(rope2.range().offset, 1000);
+    EXPECT_EQ(rope2.getNodes()[0].data()[0], 'T');
+
+    /// open() called twice: once for initial read, once after seek.
+    EXPECT_EQ(source->open_count.load(), 2);
+    EXPECT_EQ(source->stateless_read_count.load(), 0);
 }
