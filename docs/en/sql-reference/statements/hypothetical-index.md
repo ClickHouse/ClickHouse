@@ -35,6 +35,44 @@ The target table must be a `MergeTree` family table.
 CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
 ```
 
+## Evaluating a hypothetical index with EXPLAIN WHATIF {#evaluating-a-hypothetical-index-with-explain-whatif}
+
+Defining a hypothetical index by itself does nothing — to see how it would affect a query, run [`EXPLAIN WHATIF`](/sql-reference/statements/explain#explain-whatif) against a representative `SELECT`. The estimator reports each candidate index's applicability, the marks it would read, the resulting skip ratio, and how the estimate was produced (`empirical`, `statistical`, or `applicability_only`).
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+Result:
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       631
+```
+
+Use `EXPLAIN WHATIF empirical = 0 SELECT ...` to skip the in-memory empirical scan and estimate from column statistics instead. See the [`EXPLAIN WHATIF`](/sql-reference/statements/explain#explain-whatif) reference for the full output schema and settings.
+
 ## DROP HYPOTHETICAL INDEX {#drop-hypothetical-index}
 
 ```sql
