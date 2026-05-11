@@ -58,5 +58,14 @@ $CLICKHOUSE_CLIENT -n -q "
     EXPLAIN WHATIF SELECT * FROM t_hypo_stat WHERE b < 50;
 " | grep -E '^\s+source:|^\s+empirical_status:'
 
+# =========================================================
+# Settings validation — unknown setting and invalid value are rejected.
+# =========================================================
+echo "--- unknown setting is rejected ---"
+$CLICKHOUSE_CLIENT -q "EXPLAIN WHATIF empircal = 0 SELECT * FROM t_hypo_stat WHERE b < 50" 2>&1 | grep -m1 -o 'UNKNOWN_SETTING'
+
+echo "--- invalid value for empirical is rejected ---"
+$CLICKHOUSE_CLIENT -q "EXPLAIN WHATIF empirical = 2 SELECT * FROM t_hypo_stat WHERE b < 50" 2>&1 | grep -m1 -o 'INVALID_SETTING_VALUE'
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_stat"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_no_stat"
