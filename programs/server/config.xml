@@ -207,14 +207,18 @@
     -->
     <postgresql_port>9005</postgresql_port>
 
-    <!-- Compatibility with Redis protocol.
-         This skeleton currently supports only PING and QUIT.
+    <!-- Redis-compatible read-only endpoint for prepared key-value tables.
+         Currently supports PING, QUIT, SELECT, GET and MGET.
+         GET/MGET requests are resolved through IKeyValueEntity::getByKeys.
+         This is not a full Redis implementation or a Redis replacement.
     -->
     <!-- <redis_port>9006</redis_port> -->
 
-    <!-- Redis DB to ClickHouse table mapping.
-         This skeleton currently supports SELECT mapping only. GET/MGET will be added later.
-         The mapping is needed for future key-value lookup.
+    <!-- Redis DB to ClickHouse key-value table mapping.
+         SELECT <db> chooses redis.db._<db>.
+         GET/MGET use database, table and default_column for point lookups.
+         Currently supported scope: IKeyValueEntity-compatible tables with a single
+         String or UInt64 key and a String default_column value.
     -->
     <!--
     <redis>
