@@ -320,8 +320,6 @@ CREATE TABLE system.functions
     `examples` String,
     `introduced_in` String,
     `categories` String,
-    `min_arguments` Nullable(UInt64),
-    `max_arguments` Nullable(UInt64),
     `is_deterministic` Nullable(UInt8),
     `higher_order_function` Nullable(UInt8)
 )

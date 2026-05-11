@@ -10,9 +10,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
-#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -41,8 +39,6 @@ namespace
     /// `nullopt` means "unknown" and is reported as NULL in the result column.
     struct ExtraInfo
     {
-        std::optional<UInt64> min_arguments;
-        std::optional<UInt64> max_arguments;
         std::optional<UInt8> is_deterministic;
         std::optional<UInt8> higher_order_function;
     };
@@ -115,25 +111,15 @@ namespace
             res_columns[13]->insertDefault();
         }
 
-        if (extra.min_arguments)
-            res_columns[14]->insert(*extra.min_arguments);
+        if (extra.is_deterministic)
+            res_columns[14]->insert(*extra.is_deterministic);
         else
             res_columns[14]->insertDefault();
 
-        if (extra.max_arguments)
-            res_columns[15]->insert(*extra.max_arguments);
+        if (extra.higher_order_function)
+            res_columns[15]->insert(*extra.higher_order_function);
         else
             res_columns[15]->insertDefault();
-
-        if (extra.is_deterministic)
-            res_columns[16]->insert(*extra.is_deterministic);
-        else
-            res_columns[16]->insertDefault();
-
-        if (extra.higher_order_function)
-            res_columns[17]->insert(*extra.higher_order_function);
-        else
-            res_columns[17]->insertDefault();
     }
 
     /// Resolve an ordinary function and read static metadata from its overload resolver.
@@ -150,15 +136,6 @@ namespace
 
             info.is_deterministic = resolver->isDeterministic() ? UInt8{1} : UInt8{0};
             info.higher_order_function = resolver->isHigherOrder() ? UInt8{1} : UInt8{0};
-
-            if (!resolver->isVariadic())
-            {
-                const auto n = static_cast<UInt64>(resolver->getNumberOfArguments());
-                info.min_arguments = n;
-                info.max_arguments = n;
-            }
-            /// Variadic functions: the resolver does not expose a static [min, max] range,
-            /// so leave both as NULL rather than guessing.
         }
         catch (...)
         {
@@ -175,40 +152,6 @@ namespace
         return info;
     }
 
-    /// SQL UDFs: arity is the size of the lambda's parameter list. Determinism cannot be
-    /// inferred from the body in general, so leave it NULL.
-    ///
-    /// AST shape (mirrors UserDefinedSQLFunctionVisitor): function_core is the lambda
-    /// ASTFunction; its first child is an ASTExpressionList with two entries — a `tuple`
-    /// ASTFunction holding the parameter identifiers, and the body. The parameter count
-    /// lives one more level down inside the tuple's arguments.
-    ExtraInfo getSQLUserDefinedFunctionExtraInfo(const ASTPtr & ast)
-    {
-        ExtraInfo info;
-        if (!ast)
-            return info;
-
-        const auto * create = ast->as<ASTCreateSQLFunctionQuery>();
-        if (!create || !create->function_core || create->function_core->children.empty())
-            return info;
-
-        const auto & lambda_args = create->function_core->children.at(0);
-        if (!lambda_args || lambda_args->children.empty())
-            return info;
-
-        const auto & param_tuple = lambda_args->children.at(0);
-        if (!param_tuple || param_tuple->children.empty())
-            return info;
-
-        const auto * params = param_tuple->children.at(0)->as<ASTExpressionList>();
-        if (!params)
-            return info;
-
-        const auto n = static_cast<UInt64>(params->children.size());
-        info.min_arguments = n;
-        info.max_arguments = n;
-        return info;
-    }
 }
 
 
@@ -240,10 +183,6 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
         {"introduced_in", std::make_shared<DataTypeString>(), "ClickHouse version in which the function was first introduced."},
         {"categories", std::make_shared<DataTypeString>(), "The category of the function."},
-        {"min_arguments", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "The minimum number of arguments the function accepts. NULL when unknown (e.g. variadic functions, aggregate functions, executable user-defined functions)."},
-        {"max_arguments", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "The maximum number of arguments the function accepts. NULL when unbounded (variadic) or unknown."},
         {"is_deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
             "Whether the function returns the same result for the same arguments. NULL when unknown (e.g. aggregate or user-defined functions)."},
         {"higher_order_function", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
@@ -300,8 +239,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         String create_query;
         if (ast)
             create_query = format({context, *ast});
-        const ExtraInfo extra = getSQLUserDefinedFunctionExtraInfo(ast);
-        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory, extra);
+        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory, ExtraInfo{});
     }
 
     const auto & user_defined_executable_functions_factory = UserDefinedExecutableFunctionFactory::instance();
@@ -358,14 +296,10 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[12]->insertDefault(); // introduced_in
         res_columns[13]->insertDefault(); // categories
 
-        /// WASM functions have a fixed, declared arity from their CREATE FUNCTION signature.
         /// Determinism is unknown — the WASM module is opaque to ClickHouse — so report NULL.
         /// They cannot accept lambda parameters.
-        const auto arity = static_cast<UInt64>(arg_types.size());
-        res_columns[14]->insert(arity); // min_arguments
-        res_columns[15]->insert(arity); // max_arguments
-        res_columns[16]->insertDefault(); // is_deterministic
-        res_columns[17]->insert(UInt8{0}); // higher_order_function
+        res_columns[14]->insertDefault(); // is_deterministic
+        res_columns[15]->insert(UInt8{0}); // higher_order_function
     }
 }
 
