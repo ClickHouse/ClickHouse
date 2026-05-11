@@ -24,6 +24,19 @@ $CLICKHOUSE_CLIENT --send_table_structure_on_insert_with_inline_data 0 --query "
 $CLICKHOUSE_CLIENT --send_table_structure_on_insert_with_inline_data 0 --query "INSERT INTO test_inline_insert FORMAT CSV
 7,\"setting_csv\""
 
+# INSERT ... SELECT does not carry inline data (the rows come from the SELECT), so the
+# new inline path is bypassed regardless of the flag/setting (see `!insert->select` in
+# `is_inline_insert_data`). These cases verify that requesting inline insert data mode
+# does not break SELECT-driven INSERTs.
+$CLICKHOUSE_CLIENT --inline-insert-data --query "INSERT INTO test_inline_insert SELECT number + 8 AS x, concat('select_', toString(number)) AS y FROM numbers(2)"
+$CLICKHOUSE_CLIENT --send_table_structure_on_insert_with_inline_data 0 --query "INSERT INTO test_inline_insert SELECT number + 10 AS x, concat('select_setting_', toString(number)) AS y FROM numbers(2)"
+
+# `async_insert = 0` combined with inline insert data mode. The explicit user choice
+# (CLI flag or setting) takes precedence over `async_insert` on the client side, so the
+# data is parsed by the server inline regardless of the async insert toggle.
+$CLICKHOUSE_CLIENT --async_insert 0 --inline-insert-data --query "INSERT INTO test_inline_insert VALUES (12, 'no_async')"
+$CLICKHOUSE_CLIENT --async_insert 0 --send_table_structure_on_insert_with_inline_data 0 --query "INSERT INTO test_inline_insert FORMAT JSONEachRow {\"x\": 13, \"y\": \"no_async_setting\"}"
+
 $CLICKHOUSE_CLIENT --query "SELECT * FROM test_inline_insert ORDER BY x"
 
 # Negative test: combining inline insert data with external data from stdin must be rejected.
