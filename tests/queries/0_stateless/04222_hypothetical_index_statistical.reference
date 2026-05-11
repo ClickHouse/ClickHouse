@@ -9,3 +9,7 @@
 --- default: empirical preferred over statistical when both available ---
   source:           empirical
   empirical_status: ok
+--- unknown setting is rejected ---
+UNKNOWN_SETTING
+--- invalid value for empirical is rejected ---
+INVALID_SETTING_VALUE

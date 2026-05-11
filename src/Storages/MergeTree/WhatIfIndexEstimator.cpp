@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Core/Settings.h>
 
@@ -34,7 +35,9 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int INVALID_SETTING_VALUE;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_SETTING;
 }
 
 namespace
@@ -57,7 +60,31 @@ struct WhatIfSettings
         for (const auto & change : set_query->changes)
         {
             if (change.name == "empirical")
-                result.empirical = change.value.safeGet<UInt64>() != 0;
+            {
+                if (change.value.getType() != Field::Types::UInt64)
+                    throw Exception(
+                        ErrorCodes::INVALID_SETTING_VALUE,
+                        "Invalid type {} for setting '{}' in EXPLAIN WHATIF, expected an integer 0 or 1",
+                        change.value.getTypeName(),
+                        change.name);
+
+                auto value = change.value.safeGet<UInt64>();
+                if (value > 1)
+                    throw Exception(
+                        ErrorCodes::INVALID_SETTING_VALUE,
+                        "Invalid value {} for setting '{}' in EXPLAIN WHATIF, expected 0 or 1",
+                        value,
+                        change.name);
+
+                result.empirical = value != 0;
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::UNKNOWN_SETTING,
+                    "Unknown setting \"{}\" for EXPLAIN WHATIF query. Supported settings: empirical",
+                    change.name);
+            }
         }
         return result;
     }
@@ -108,8 +135,9 @@ bool tryEstimateWithStatistics(
                 has_any_stats = true;
             }
         }
-        catch (...)
+        catch (...) /// Ok — statistical estimation is best-effort
         {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
@@ -151,8 +179,8 @@ bool tryEstimateEmpirical(
     if (index_columns.empty())
         return false;
 
-    UInt64 total_index_granules = 0;
-    UInt64 skipped_index_granules = 0;
+    UInt64 total_data_granules = 0;
+    UInt64 skipped_data_granules = 0;
     Stopwatch watch;
 
     const size_t skip_index_granularity = index_helper->index.granularity;
@@ -165,7 +193,8 @@ bool tryEstimateEmpirical(
         if (mark_ranges.empty())
             continue;
 
-        RangesInDataPart part_for_read(part, nullptr, 0, 0, mark_ranges);
+        RangesInDataPart part_for_read(part);
+        part_for_read.ranges = mark_ranges;
 
         Pipe pipe = createMergeTreeSequentialSource(
             MergeTreeSequentialSourceType::Merge,
@@ -202,9 +231,9 @@ bool tryEstimateEmpirical(
             if (data_granules_in_current >= skip_index_granularity)
             {
                 auto granule = aggregator->getGranuleAndReset();
-                ++total_index_granules;
+                total_data_granules += data_granules_in_current;
                 if (!condition->mayBeTrueOnGranule(granule, {}))
-                    ++skipped_index_granules;
+                    skipped_data_granules += data_granules_in_current;
 
                 aggregator = index_helper->createIndexAggregator();
                 data_granules_in_current = 0;
@@ -214,17 +243,17 @@ bool tryEstimateEmpirical(
         if (!aggregator->empty())
         {
             auto granule = aggregator->getGranuleAndReset();
-            ++total_index_granules;
+            total_data_granules += data_granules_in_current;
             if (!condition->mayBeTrueOnGranule(granule, {}))
-                ++skipped_index_granules;
+                skipped_data_granules += data_granules_in_current;
         }
     }
 
-    if (total_index_granules == 0)
+    if (total_data_granules == 0)
         return false;
 
-    result.skip_ratio = static_cast<double>(skipped_index_granules) / static_cast<double>(total_index_granules);
-    result.estimated_marks = total_index_granules - skipped_index_granules;
+    result.skip_ratio = static_cast<double>(skipped_data_granules) / static_cast<double>(total_data_granules);
+    result.estimated_marks = total_data_granules - skipped_data_granules;
     result.estimated_parts = analysis.selected_parts;
     result.estimate_source = "empirical";
     result.empirical_status = WhatIfIndexEstimator::IndexResult::Ok;

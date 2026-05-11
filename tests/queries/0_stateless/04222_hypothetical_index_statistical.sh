@@ -9,10 +9,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -n -q "
     SET allow_experimental_statistics = 1;
     SET allow_statistics_optimize = 1;
+
     DROP TABLE IF EXISTS t_hypo_stat;
     CREATE TABLE t_hypo_stat (a UInt64, b UInt64 STATISTICS(tdigest, uniq))
     ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
     -- 10000 rows: 100 granules of 100 rows each
     -- b cycles through 0..99 — 100 distinct values
     INSERT INTO t_hypo_stat SELECT number, number % 100 FROM numbers(10000);
@@ -40,6 +42,7 @@ $CLICKHOUSE_CLIENT -n -q "
     ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
     INSERT INTO t_hypo_no_stat SELECT number, number % 100 FROM numbers(10000);
+
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_no_stat (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF empirical = 0 SELECT * FROM t_hypo_no_stat WHERE b < 50;
 " | grep -E '^\s+status:|^\s+source:|^\s+empirical_status:'
@@ -54,6 +57,15 @@ $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_stat (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_stat WHERE b < 50;
 " | grep -E '^\s+source:|^\s+empirical_status:'
+
+# =========================================================
+# Settings validation — unknown setting and invalid value are rejected
+# =========================================================
+echo "--- unknown setting is rejected ---"
+$CLICKHOUSE_CLIENT -q "EXPLAIN WHATIF empircal = 0 SELECT * FROM t_hypo_stat WHERE b < 50" 2>&1 | grep -m1 -o 'UNKNOWN_SETTING'
+
+echo "--- invalid value for empirical is rejected ---"
+$CLICKHOUSE_CLIENT -q "EXPLAIN WHATIF empirical = 2 SELECT * FROM t_hypo_stat WHERE b < 50" 2>&1 | grep -m1 -o 'INVALID_SETTING_VALUE'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_stat"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_no_stat"

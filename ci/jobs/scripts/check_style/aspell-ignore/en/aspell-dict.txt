@@ -4024,6 +4024,7 @@ weekyear
 welchTTest
 welchttest
 wget
+WHATIF
 which's
 whitespace
 whitespaces
