@@ -1036,7 +1036,7 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
         if (range.empty())
             break;
 
-        /// Reuse semiLeftJoin() for anyInnetJoin() using first left value from range
+        /// Reuse semiLeftJoin() for anyInnerJoin() using first left value from range
         if (is_any_join && is_inner)
             range.left_length = 1;
 
