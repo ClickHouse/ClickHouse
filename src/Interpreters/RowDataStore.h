@@ -47,6 +47,7 @@ public:
     /// Scatter `length` consecutive rows starting at `start` from the row-major buffer back into destination `columns`.
     /// Nullable fields split their stored `[null_byte | value]` into `NullMap` + nested column.
     void scatterRows(std::vector<IColumn *> & columns, size_t start, size_t length) const;
+    void scatterRows(std::vector<IColumn *> & columns, const PaddedPODArray<UInt64> & row_nums) const;
     void scatterRow(std::vector<IColumn *> & columns, size_t row_num) const;
 
     FieldLayout getFieldLayout(size_t input_col_index) const;
@@ -58,7 +59,6 @@ public:
     size_t allocatedBytes() const { return chars.allocated_bytes(); }
 
     MutableColumns buildEmptyColumns() const;
-    MutableColumns buildColumns() const;
 
 private:
     using Chars = PaddedPODArray<char>;

@@ -613,6 +613,7 @@ private:
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
+    bool isRightTableRerangeEnabled() const;
     bool rightTableCanBeReranged() const;
     void tryRerangeRightTableData();
 

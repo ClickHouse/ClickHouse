@@ -126,7 +126,8 @@ private:
     std::mutex totals_mutex;
     Block totals;
 
-    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
+    bool useZeroCopyApproach(const Block & from_block) const;
+    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block, bool use_zero_copy);
 };
 
 // The following two methods are deprecated and hopefully will be removed in the future.

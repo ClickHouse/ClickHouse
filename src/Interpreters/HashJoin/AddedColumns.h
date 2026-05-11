@@ -49,6 +49,7 @@ struct LazyOutput
     struct RowStoreOutput
     {
         size_t dst_idx;
+        size_t row_store_idx;
         size_t field_offset;
         size_t field_size;
         bool is_nullable;
@@ -220,7 +221,7 @@ public:
                 if (idx.type == AccessType::RowStore)
                 {
                     auto [_, offset, size, is_nullable] = sample_row_store->getFieldLayout(idx.index);
-                    lazy_output.row_store_outputs.push_back({i, offset, size, is_nullable});
+                    lazy_output.row_store_outputs.push_back({i, idx.index, offset, size, is_nullable});
                 }
                 else
                     lazy_output.column_outputs.push_back({i, idx.index});
@@ -358,9 +359,11 @@ private:
 
         if (to_check.hasRowStore())
         {
-            MutableColumns row_store_columns = to_check.row_store->buildEmptyColumns();
-            for (size_t i = 0; i < lazy_output.row_store_outputs.size(); ++i)
-                check(lazy_output.row_store_outputs[i].dst_idx, row_store_columns[i].get());
+            for (const auto & out : lazy_output.row_store_outputs)
+            {
+                auto sample_col = to_check.row_store->getFieldLayout(out.row_store_idx).sample_column;
+                check(out.dst_idx, sample_col.get());
+            }
         }
     }
 

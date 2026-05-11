@@ -83,7 +83,7 @@ void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColum
     if constexpr (from_row_store)
     {
         chassert(!join_data_sorted, "Row store should be disabled when join data rerange optimization is used.");
-        for (auto [dst_idx, offset, size, _] : row_store_outputs)
+        for (auto [dst_idx, _1, offset, size, _2] : row_store_outputs)
         {
             auto & col = columns[dst_idx];
             col->reserve(col->size() + size_to_reserve);
@@ -111,7 +111,7 @@ template<bool from_row_store, bool from_columns>
 void LazyOutput::doBuildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
     if constexpr (from_row_store)
-        for (auto [dst_idx, offset, size, is_nullable] : row_store_outputs)
+        for (auto [dst_idx, _, offset, size, is_nullable] : row_store_outputs)
         {
             auto & col = columns[dst_idx];
             col->reserve(col->size() + size_to_reserve);
@@ -128,7 +128,7 @@ void LazyOutput::doBuildJoinGetOutput(size_t size_to_reserve, MutableColumns & c
                 if (is_nullable)
                 {
                     auto & nullable_column = assert_cast<ColumnNullable &>(*col);
-                    nullable_column.insertDataNullable(row_data + offset , size);
+                    nullable_column.insertDataNullable(row_data + offset, size);
                 }
                 else
                     col->insertData(row_data + offset, size);
@@ -259,7 +259,7 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     }
 
     if constexpr (from_row_store)
-        for (auto [dst_idx, offset, size, _] : row_store_outputs)
+        for (auto [dst_idx, _1, offset, size, _2] : row_store_outputs)
             columns[dst_idx]->fillFromRowStorePtrs(type_name[dst_idx].type, row_store_ptrs, offset, size);
 
     if constexpr (from_columns)
@@ -332,7 +332,7 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
     }
 
     if constexpr (from_row_store)
-        for (auto [dst_idx, offset, size, _] : row_store_outputs)
+        for (auto [dst_idx, _1, offset, size, _2] : row_store_outputs)
             columns[dst_idx]->fillFromRowStorePtrs(type_name[dst_idx].type, row_store_ptrs, offset, size);
 
     if constexpr (from_columns)
@@ -366,12 +366,12 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
     if (!lazy_output.row_store_outputs.empty())
     {
         const char * row_data = row_ref->columns_info->row_store->getRowAt(row_ref->row_num);
-        for (auto & [dst_idx, offset, size, is_nullable] : lazy_output.row_store_outputs)
+        for (auto & [dst_idx, _, offset, size, is_nullable] : lazy_output.row_store_outputs)
         {
             if (is_nullable)
             {
                 auto & nullable_column = assert_cast<ColumnNullable &>(*columns[dst_idx]);
-                nullable_column.insertDataNullable(row_data + offset , size);
+                nullable_column.insertDataNullable(row_data + offset, size);
             }
             else
                 columns[dst_idx]->insertData(row_data + offset, size);

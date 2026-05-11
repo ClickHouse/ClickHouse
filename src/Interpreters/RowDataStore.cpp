@@ -36,7 +36,7 @@ RowDataStore::RowLayout RowDataStore::initLayout(const Columns & columns)
         }
 
         if (!check_col->isFixedAndContiguous())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "RowDataStore can only store fixed and contiguous columns, but got {}.", sample_col->getFamilyName());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "RowDataStore can only store fixed-size and contiguous columns, but got {}.", sample_col->getFamilyName());
 
         size_t field_size = sample_col->sizeOfValueIfFixed();
         layout.push_back(FieldLayout{sample_col, offset, field_size, is_nullable});
@@ -59,10 +59,19 @@ RowDataStore::RowDataStore(RowLayout && layout_)
 
 std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns)
 {
-    RowLayout layout = initLayout(columns);
+    /// For now replicated columns are materialized to make sure all blocks have
+    /// the same split of columnar and row store columns.
+    /// TODO: try to allow columns to be in row store in some blocks and remain columnar
+    /// in others (in case of replicated columns).
+    Columns materialized_columns;
+    materialized_columns.reserve(columns.size());
+    for (const auto & col : columns)
+        materialized_columns.push_back(col->convertToFullColumnIfReplicated());
+
+    RowLayout layout = initLayout(materialized_columns);
     auto row_store = std::shared_ptr<RowDataStore>(new RowDataStore(std::move(layout)));
-    if (!columns.empty() && columns[0]->size() > 0)
-        row_store->gatherRows(columns, 0, columns[0]->size());
+    if (!materialized_columns.empty() && materialized_columns[0]->size() > 0)
+        row_store->gatherRows(materialized_columns, 0, materialized_columns[0]->size());
     return row_store;
 }
 
@@ -79,7 +88,7 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
         return;
 
     size_t data_size = chars.size();
-    chars.resize_fill(data_size + length * row_length);
+    chars.resize(data_size + length * row_length);
     char * dst = chars.data() + data_size;
 
     for (size_t i = 0; i < layout.size(); ++i)
@@ -151,6 +160,47 @@ void RowDataStore::scatterRows(std::vector<IColumn *> & columns, size_t start, s
     }
 }
 
+void RowDataStore::scatterRows(std::vector<IColumn *> & columns, const PaddedPODArray<UInt64> & row_nums) const
+{
+    if (columns.size() != layout.size())
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Number of destination columns ({}) does not match the number of columns in the layout ({}).",
+            columns.size(),
+            layout.size());
+
+    size_t length = row_nums.size();
+    if (length == 0)
+        return;
+
+    for (size_t i = 0; i < layout.size(); ++i)
+    {
+        auto field_layout = layout[i];
+        if (field_layout.is_nullable)
+        {
+            auto * nullable_column = assert_cast<ColumnNullable *>(columns[i]);
+            auto & null_map = nullable_column->getNullMapData();
+            IColumn & nested_column = nullable_column->getNestedColumn();
+            const size_t value_size = field_layout.size - 1;
+
+            null_map.reserve(null_map.size() + length);
+            nested_column.reserve(nested_column.size() + length);
+            for (size_t j = 0; j < length; ++j)
+            {
+                const char * row_data = getRowAt(row_nums[j]) + field_layout.offset;
+                null_map.push_back(*reinterpret_cast<const UInt8 *>(row_data));
+                nested_column.insertData(row_data + 1, value_size);
+            }
+        }
+        else
+        {
+            columns[i]->reserve(columns[i]->size() + length);
+            for (size_t j = 0; j < length; ++j)
+                columns[i]->insertData(getRowAt(row_nums[j]) + field_layout.offset, field_layout.size);
+        }
+    }
+}
+
 void RowDataStore::scatterRow(std::vector<IColumn *> & columns, size_t row_num) const
 {
     scatterRows(columns, row_num, 1);
@@ -166,17 +216,6 @@ MutableColumns RowDataStore::buildEmptyColumns() const
     MutableColumns columns(layout.size());
     for (size_t i = 0; i < layout.size(); ++i)
         columns[i] = layout[i].sample_column->cloneEmpty();
-    return columns;
-}
-
-MutableColumns RowDataStore::buildColumns() const
-{
-    auto columns = buildEmptyColumns();
-    std::vector<IColumn *> ptrs;
-    ptrs.reserve(columns.size());
-    for (auto & col : columns)
-        ptrs.push_back(col.get());
-    scatterRows(ptrs, 0, size());
     return columns;
 }
 

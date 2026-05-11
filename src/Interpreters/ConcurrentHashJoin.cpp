@@ -278,12 +278,17 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
 {
-    /// We materialize columns and build the row store here to avoid materializing them multiple times on different threads
+    /// We materialize columns here to avoid materializing them multiple times on different threads
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
-    RowDataStorePtr block_row_store = hash_joins[0]->data->createRowStoreForBlock(right_block);
 
-    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block));
+    /// We also build the row store here to avoid building it multiple times on different threads.
+    bool use_zero_copy = useZeroCopyApproach(right_block);
+    RowDataStorePtr block_row_store = nullptr;
+    if (use_zero_copy)
+        block_row_store = hash_joins[0]->data->createRowStoreForBlock(right_block);
+
+    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block), use_zero_copy);
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
@@ -425,7 +430,10 @@ JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
     if (hash_joins[0]->data->twoLevelMapIsUsed())
         dispatched_blocks.emplace_back(std::move(block));
     else
-        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
+    {
+        bool use_zero_copy = useZeroCopyApproach(block);
+        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block), use_zero_copy);
+    }
 
     chassert(dispatched_blocks.size() == (hash_joins[0]->data->twoLevelMapIsUsed() ? 1 : slots));
 
@@ -661,7 +669,22 @@ ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Sele
     return result;
 }
 
-ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block)
+/// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
+/// This is not beneficial when the whole set of columns is e.g. a single small column.
+bool ConcurrentHashJoin::useZeroCopyApproach(const Block & from_block) const
+{
+    constexpr auto threshold = sizeof(IColumn::Selector::value_type);
+    const auto & data_types = from_block.getDataTypes();
+    return std::accumulate(
+              data_types.begin(),
+              data_types.end(),
+              0u,
+              [](size_t sum, const DataTypePtr & type)
+              { return sum + (type->haveMaximumSizeOfValue() ? type->getMaximumSizeOfValueInMemory() : threshold + 1); })
+        > threshold;
+}
+
+ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block, bool use_zero_copy)
 {
     const size_t num_shards = hash_joins.size();
     if (num_shards == 1)
@@ -672,21 +695,7 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
     }
 
     IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
-
-    /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
-    /// This is not beneficial when the whole set of columns is e.g. a single small column.
-    constexpr auto threshold = sizeof(IColumn::Selector::value_type);
-    const auto & data_types = from_block.getDataTypes();
-    const bool use_zero_copy_approach
-        = std::accumulate(
-              data_types.begin(),
-              data_types.end(),
-              0u,
-              [](size_t sum, const DataTypePtr & type)
-              { return sum + (type->haveMaximumSizeOfValue() ? type->getMaximumSizeOfValueInMemory() : threshold + 1); })
-        > threshold;
-
-    return use_zero_copy_approach ? scatterBlocksWithSelector(num_shards, selector, from_block)
+    return use_zero_copy ? scatterBlocksWithSelector(num_shards, selector, from_block)
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
 }
 
