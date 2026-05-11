@@ -114,6 +114,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
         const auto * collection_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         chassert(collection_const, "First argument must be a constant String (validated by getReturnTypeImpl)");
         String collection_name = collection_const->getValue<String>();
@@ -121,13 +124,13 @@ public:
         getContext()->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
         const auto & named_collection = NamedCollectionFactory::instance().get(collection_name);
 
-        String provider_name = named_collection->getOrDefault<String>("provider", "");
+        String provider = named_collection->getOrDefault<String>("provider", "");
         String endpoint = named_collection->getOrDefault<String>("endpoint", "");
         String model = named_collection->getOrDefault<String>("model", "");
         String api_key = named_collection->getOrDefault<String>("api_key", "");
         String api_version = named_collection->getOrDefault<String>("api_version", "");
 
-        if (provider_name.empty())
+        if (provider.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'provider'", collection_name);
         if (endpoint.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", collection_name);
@@ -161,7 +164,7 @@ public:
             settings[Setting::ai_function_max_api_calls_per_query].value,
             settings[Setting::ai_function_throw_on_quota_exceeded].value);
 
-        auto provider = createAIProvider(provider_name, endpoint, api_key, api_version);
+        auto provider = createAIProvider(provider, endpoint, api_key, api_version);
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
