@@ -72,6 +72,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
+            {"min_columns_for_hash_join_row_store", 0, 3, "New setting to control the minimum number of payload columns to trigger transforming hash join payload to row major."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -99,7 +100,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"s3_uri_style", "auto", "auto", "New setting."},
             {"use_strict_insert_block_limits", false, false, "New setting to use strict min and max insert bounds on inserts. When min < max, max limits take precedence."},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
-            {"min_columns_for_hash_join_row_store", 0, 3, "New setting to control the minimum number of payload columns to trigger transforming hash join payload to row major."}
             {"optimize_rewrite_array_exists_to_has", false, true, "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."},
             {"parallel_replicas_allow_view_over_mergetree", false, false, "New setting"},
             {"read_in_order_use_virtual_row_per_block", false, false, "Emit virtual row after each block during read-in-order to allow more frequent source reprioritization in MergingSortedTransform."},

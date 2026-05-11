@@ -326,7 +326,6 @@ UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_exter
     }
 
     return threshold.value_or(0);
->>>>>>> master
 }
 
 String toString(const JoinActionRef & node)
