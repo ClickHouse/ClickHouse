@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
@@ -27,6 +28,84 @@ namespace ErrorCodes
 
 namespace
 {
+
+void serializeValueIntoResult(
+    const ISerialization & serialization,
+    const IColumn & source_column,
+    size_t row,
+    const FormatSettings & format_settings,
+    ColumnString & result_data)
+{
+    auto & result_chars = result_data.getChars();
+    auto & result_offsets = result_data.getOffsets();
+
+    {
+        WriteBufferFromVector<ColumnString::Chars> out(result_chars, AppendModeTag());
+        serialization.serializeText(source_column, row, out, format_settings);
+    }
+
+    result_offsets.push_back(result_chars.size());
+}
+
+void emitSharedDataValue(
+    std::string_view value_data,
+    const FormatSettings & format_settings,
+    ColumnString & data,
+    std::unordered_map<String, SerializationPtr> & shared_serializations_cache,
+    std::unordered_map<String, MutableColumnPtr> & shared_columns_cache)
+{
+    ReadBufferFromMemory buf(value_data);
+
+    auto get_serialization_from_cache = [&](const String & type_name, const IDataType & type) -> const SerializationPtr &
+    {
+        auto [it, inserted] = shared_serializations_cache.try_emplace(type_name);
+        if (inserted)
+            it->second = type.getDefaultSerialization();
+        return it->second;
+    };
+
+    auto get_column_from_cache = [&](const String & type_name, const IDataType & type) -> const MutableColumnPtr &
+    {
+        auto [it, inserted] = shared_columns_cache.try_emplace(type_name);
+        if (inserted)
+            it->second = type.createColumn();
+        return it->second;
+    };
+
+    auto serialize = [&](const IDataType & type, const ISerialization & serialization, IColumn & temp_column)
+    {
+        if (isNothing(type))
+            return;
+
+        serialization.deserializeBinary(temp_column, buf, format_settings);
+        serializeValueIntoResult(serialization, temp_column, 0, format_settings, data);
+        temp_column.popBack(1);
+    };
+
+    char type_index;
+    if (!buf.peek(type_index))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse shared data value of JSON: no type index found");
+
+    const auto & cache = getSimpleDataTypesCache();
+    auto binary_type_index = static_cast<BinaryTypeIndex>(type_index);
+
+    if (cache.hasElement(binary_type_index))
+    {
+        ++buf.position();
+
+        const auto & element = cache.getElement(binary_type_index);
+        const auto & temp_column = get_column_from_cache(element.name, *element.type);
+        serialize(*element.type, *element.serialization, *temp_column);
+    }
+    else
+    {
+        auto type = decodeDataType(buf);
+        auto type_name = type->getName();
+        const auto & serialization = get_serialization_from_cache(type_name, *type);
+        const auto & temp_column = get_column_from_cache(type_name, *type);
+        serialize(*type, *serialization, *temp_column);
+    }
+}
 
 /// Returns all values from a JSON column as an array of strings, in sorted path order.
 class FunctionJSONAllValues : public IFunction
@@ -160,85 +239,149 @@ private:
 
         serializeValueIntoResult(*entry.serialization, *entry.column, row, format_settings, result_data);
     }
+};
 
-    static void emitSharedDataValue(
-        std::string_view value_data,
-        const FormatSettings & format_settings,
-        ColumnString & data,
-        std::unordered_map<String, SerializationPtr> & shared_serializations_cache,
-        std::unordered_map<String, MutableColumnPtr> & shared_columns_cache)
+/// Returns values for a specified subset of paths from a JSON column as an array of strings.
+/// Paths are returned in the order they are specified. Absent or null paths are omitted.
+class FunctionJSONValues : public IFunction
+{
+public:
+    static constexpr auto name = "JSONValues";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionJSONValues>(); }
+
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        ReadBufferFromMemory buf(value_data);
+        if (arguments.size() < 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at least 2 arguments: a JSON column and at least one path", getName());
 
-        auto get_serialization_from_cache = [&](const String & type_name, const IDataType & type) -> const SerializationPtr &
+        if (arguments[0].type->getTypeId() != TypeIndex::Object)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} requires first argument with type JSON, got: {}",
+                getName(), arguments[0].type->getName());
+
+        for (size_t i = 1; i < arguments.size(); ++i)
         {
-            auto [it, inserted] = shared_serializations_cache.try_emplace(type_name);
-            if (inserted)
-                it->second = type.getDefaultSerialization();
-
-            return it->second;
-        };
-
-        auto get_column_from_cache = [&](const String & type_name, const IDataType & type) -> const MutableColumnPtr &
-        {
-            auto [it, inserted] = shared_columns_cache.try_emplace(type_name);
-            if (inserted)
-                it->second = type.createColumn();
-
-            return it->second;
-        };
-
-        auto serialize = [&](const IDataType & type, const ISerialization & serialization, IColumn & temp_column)
-        {
-            if (isNothing(type))
-                return;
-
-            serialization.deserializeBinary(temp_column, buf, format_settings);
-            serializeValueIntoResult(serialization, temp_column, 0, format_settings, data);
-            temp_column.popBack(1);
-        };
-
-        char type_index;
-        if (!buf.peek(type_index))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse shared data value of JSON: no type index found");
-
-        const auto & cache = getSimpleDataTypesCache();
-        auto binary_type_index = static_cast<BinaryTypeIndex>(type_index);
-
-        if (cache.hasElement(binary_type_index))
-        {
-            ++buf.position();
-
-            const auto & element = cache.getElement(binary_type_index);
-            const auto & temp_column = get_column_from_cache(element.name, *element.type);
-            serialize(*element.type, *element.serialization, *temp_column);
+            if (!isString(arguments[i].type) || !arguments[i].column || !isColumnConst(*arguments[i].column))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} requires path arguments to be constant strings, argument {} is not",
+                    getName(), i);
         }
-        else
-        {
-            auto type = decodeDataType(buf);
-            auto type_name = type->getName();
-            const auto & serialization = get_serialization_from_cache(type_name, *type);
-            const auto & temp_column = get_column_from_cache(type_name, *type);
-            serialize(*type, *serialization, *temp_column);
-        }
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    static void serializeValueIntoResult(
-        const ISerialization & serialization,
-        const IColumn & source_column,
-        size_t row,
-        const FormatSettings & format_settings,
-        ColumnString & result_data)
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto & result_chars = result_data.getChars();
-        auto & result_offsets = result_data.getOffsets();
+        const auto & elem = arguments[0];
+        const auto * column_object = typeid_cast<const ColumnObject *>(elem.column.get());
 
+        if (!column_object)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected column type in function {}. Expected Object column, got {}",
+                getName(), elem.column->getName());
+
+        const auto & type_object = assert_cast<const DataTypeObject &>(*elem.type);
+
+        std::vector<String> paths;
+        paths.reserve(arguments.size() - 1);
+        for (size_t i = 1; i < arguments.size(); ++i)
+            paths.push_back(assert_cast<const ColumnConst &>(*arguments[i].column).getValue<String>());
+
+        return execute(*column_object, type_object, paths, input_rows_count);
+    }
+
+private:
+    enum class PathSource { Typed, Dynamic, SharedData };
+
+    struct ResolvedPath
+    {
+        PathSource source;
+        const IColumn * column = nullptr;
+        SerializationPtr serialization;
+    };
+
+    ColumnPtr execute(
+        const ColumnObject & column_object,
+        const DataTypeObject & type_object,
+        const std::vector<String> & paths,
+        size_t input_rows_count) const
+    {
+        auto res = ColumnArray::create(ColumnString::create());
+        auto & offsets = res->getOffsets();
+        auto & result_data = assert_cast<ColumnString &>(res->getData());
+
+        FormatSettings format_settings;
+
+        const auto & typed_path_types = type_object.getTypedPaths();
+        const auto & typed_path_columns = column_object.getTypedPaths();
+        const auto & dynamic_path_columns = column_object.getDynamicPaths();
+        auto dynamic_serialization = SerializationDynamic::create();
+
+        /// Pre-resolve each path to its store (typed, dynamic, or shared data).
+        std::vector<ResolvedPath> resolved;
+        resolved.reserve(paths.size());
+        for (const auto & path : paths)
         {
-            WriteBufferFromVector<ColumnString::Chars> out(result_chars, AppendModeTag());
-            serialization.serializeText(source_column, row, out, format_settings);
+            if (auto it = typed_path_columns.find(path); it != typed_path_columns.end())
+            {
+                const auto & type = typed_path_types.at(path);
+                resolved.push_back({PathSource::Typed, it->second.get(), type->getDefaultSerialization()});
+            }
+            else if (auto it2 = dynamic_path_columns.find(path); it2 != dynamic_path_columns.end())
+            {
+                resolved.push_back({PathSource::Dynamic, it2->second.get(), dynamic_serialization});
+            }
+            else
+            {
+                resolved.push_back({PathSource::SharedData, nullptr, nullptr});
+            }
         }
 
-        result_offsets.push_back(result_chars.size());
+        std::unordered_map<String, SerializationPtr> shared_serializations_cache;
+        std::unordered_map<String, MutableColumnPtr> shared_columns_cache;
+
+        const auto & shared_data_offsets = column_object.getSharedDataOffsets();
+        const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
+        const auto & shared_paths_col = assert_cast<const ColumnString &>(*shared_data_paths);
+
+        for (size_t i = 0; i != input_rows_count; ++i)
+        {
+            size_t start = shared_data_offsets[static_cast<ssize_t>(i) - 1];
+            size_t end = shared_data_offsets[static_cast<ssize_t>(i)];
+
+            for (size_t pi = 0; pi < paths.size(); ++pi)
+            {
+                const auto & rp = resolved[pi];
+                if (rp.source == PathSource::Typed)
+                {
+                    serializeValueIntoResult(*rp.serialization, *rp.column, i, format_settings, result_data);
+                }
+                else if (rp.source == PathSource::Dynamic)
+                {
+                    if (!rp.column->isNullAt(i))
+                        serializeValueIntoResult(*rp.serialization, *rp.column, i, format_settings, result_data);
+                }
+                else
+                {
+                    /// Binary search for this path in this row's shared data range.
+                    size_t idx = ColumnObject::findPathLowerBoundInSharedData(paths[pi], shared_paths_col, start, end);
+                    if (idx != end && shared_data_paths->getDataAt(idx) == std::string_view(paths[pi]))
+                        emitSharedDataValue(shared_data_values->getDataAt(idx), format_settings, result_data, shared_serializations_cache, shared_columns_cache);
+                }
+            }
+
+            offsets.push_back(result_data.size());
+        }
+
+        return res;
     }
 };
 
@@ -246,36 +389,73 @@ private:
 
 REGISTER_FUNCTION(JSONAllValues)
 {
-    FunctionDocumentation::Description description = R"(
+    /// JSONAllValues
+    {
+        FunctionDocumentation::Description description = R"(
 Returns all values from each row in a JSON column as an array of strings.
 Values are serialized in their text representation and ordered by their path names.
-    )";
-    FunctionDocumentation::Syntax syntax = "JSONAllValues(json)";
-    FunctionDocumentation::Arguments arguments = {
-        {"json", "JSON column.", {"JSON"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of all values as strings in the JSON column.", {"Array(String)"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONAllValues(json)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON column.", {"JSON"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of all values as strings in the JSON column.", {"Array(String)"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
 INSERT INTO test FORMAT JSONEachRow {"json": {"a": 42}}, {"json": {"b": "Hello"}}, {"json": {"a": [1, 2, 3], "c": "2020-01-01"}}
 SELECT json, JSONAllValues(json) FROM test;
-        )",
-        R"(
+            )",
+            R"(
 ┌─json─────────────────────────────────┬─JSONAllValues(json)──────┐
 │ {"a":42}                             │ ['42']                   │
 │ {"b":"Hello"}                        │ ['Hello']                │
 │ {"a":[1,2,3],"c":"2020-01-01"}       │ ['[1,2,3]','2020-01-01'] │
 └──────────────────────────────────────┴──────────────────────────┘
-        )"
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionJSONAllValues>(documentation);
     }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionJSONAllValues>(documentation);
+
+    /// JSONValues
+    {
+        FunctionDocumentation::Description description = R"(
+Returns values for a specified subset of paths from each row in a JSON column as an array of strings.
+Values are returned in the order the paths are specified. Paths that are absent or null in a given row are omitted from that row's array.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONValues(json, path1, path2, ...)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON column.", {"JSON"}},
+            {"path1, path2, ...", "Constant string path names to extract.", {"String"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of values for the specified paths as strings.", {"Array(String)"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+CREATE TABLE test (json JSON(max_dynamic_paths=2)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json": {"type": {"name": "goal"}, "player": {"name": "Salah"}}}, {"json": {"type": {"name": "assist"}, "player": {"name": "Mane"}}}
+SELECT json, JSONValues(json, 'type.name', 'player.name') FROM test;
+            )",
+            R"(
+┌─json──────────────────────────────────────────────────┬─JSONValues(json, 'type.name', 'player.name')─┐
+│ {"player":{"name":"Salah"},"type":{"name":"goal"}}    │ ['goal','Salah']                             │
+│ {"player":{"name":"Mane"},"type":{"name":"assist"}}   │ ['assist','Mane']                            │
+└───────────────────────────────────────────────────────┴──────────────────────────────────────────────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 5};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionJSONValues>(documentation);
+    }
 }
 
 }
