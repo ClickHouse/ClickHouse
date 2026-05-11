@@ -40,6 +40,7 @@ private:
 struct ActiveBufferInfo
 {
     String object_path;
+    String query_id;
     size_t position = 0;
     std::chrono::steady_clock::time_point acquired_time;
 };
@@ -52,7 +53,7 @@ public:
     explicit SourceBufferLimit(size_t max_slots);
 
     /// Try to acquire a slot. Returns nullopt if at capacity.
-    std::optional<SourceBufferSlot> tryAcquire(const String & object_path);
+    std::optional<SourceBufferSlot> tryAcquire(const String & object_path, const String & query_id = {});
 
     /// Update capacity at runtime (called from config reload in Server.cpp).
     /// Existing slots beyond the new limit are not forcibly closed.

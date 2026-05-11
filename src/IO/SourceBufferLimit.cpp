@@ -67,7 +67,7 @@ size_t SourceBufferLimit::getCapacity() const
     return max_slots;
 }
 
-std::optional<SourceBufferSlot> SourceBufferLimit::tryAcquire(const String & object_path)
+std::optional<SourceBufferSlot> SourceBufferLimit::tryAcquire(const String & object_path, const String & query_id)
 {
     std::lock_guard lock(mutex);
 
@@ -81,6 +81,7 @@ std::optional<SourceBufferSlot> SourceBufferLimit::tryAcquire(const String & obj
     size_t id = next_id++;
     registry[id] = ActiveBufferInfo{
         .object_path = object_path,
+        .query_id = query_id,
         .position = 0,
         .acquired_time = std::chrono::steady_clock::now()};
 

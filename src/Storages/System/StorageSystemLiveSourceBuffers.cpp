@@ -14,6 +14,7 @@ ColumnsDescription StorageSystemLiveSourceBuffers::getColumnsDescription()
     return ColumnsDescription
     {
         {"object_path", std::make_shared<DataTypeString>(), "Path of the remote object being read."},
+        {"query_id", std::make_shared<DataTypeString>(), "ID of the query holding this connection."},
         {"position", std::make_shared<DataTypeUInt64>(), "Current read position in the object (bytes)."},
         {"elapsed_seconds", std::make_shared<DataTypeFloat64>(), "Seconds since the live buffer was acquired."},
     };
@@ -28,10 +29,11 @@ void StorageSystemLiveSourceBuffers::fillData(MutableColumns & res_columns, Cont
     for (const auto & info : active)
     {
         res_columns[0]->insert(info.object_path);
-        res_columns[1]->insert(info.position);
+        res_columns[1]->insert(info.query_id);
+        res_columns[2]->insert(info.position);
 
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - info.acquired_time).count();
-        res_columns[2]->insert(static_cast<double>(elapsed) / 1000.0);
+        res_columns[3]->insert(static_cast<double>(elapsed) / 1000.0);
     }
 }
 

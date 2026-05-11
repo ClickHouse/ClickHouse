@@ -1,6 +1,7 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/PrefetchThreadPool.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 
 #include "config.h"
@@ -310,7 +311,7 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
     /// Try to acquire a slot for a new live buffer.
     if (buffer_limit)
     {
-        auto slot = buffer_limit->tryAcquire(object.remote_path);
+        auto slot = buffer_limit->tryAcquire(object.remote_path, String(CurrentThread::getQueryId()));
         if (slot)
         {
             auto opened = source->open(object);
