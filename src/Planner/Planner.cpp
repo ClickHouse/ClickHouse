@@ -37,6 +37,7 @@
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -481,19 +482,14 @@ public:
 
         if (query_node.hasLimitBy())
         {
-            bool is_limitby_limit_negative = false;
             Float64 fractional_limitby_limit = 0;
-            std::tie(std::ignore, fractional_limitby_limit, is_limitby_limit_negative)
+            std::tie(limit_by_length, fractional_limitby_limit, is_limit_by_length_negative)
                 = getLimitOffsetValue(query_node.getLimitByLimit()->as<ConstantNode &>().getValue());
 
-            bool is_limitby_offset_negative = false;
             Float64 fractional_limitby_offset = 0;
             if (query_node.hasLimitByOffset())
-                std::tie(std::ignore, fractional_limitby_offset, is_limitby_offset_negative)
+                std::tie(limit_by_offset, fractional_limitby_offset, is_limit_by_offset_negative)
                     = getLimitOffsetValue(query_node.getLimitByOffset()->as<ConstantNode &>().getValue());
-
-            if (is_limitby_limit_negative || is_limitby_offset_negative)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT/OFFSET with LIMIT BY is not supported yet");
 
             if (fractional_limitby_limit > 0 || fractional_limitby_offset > 0)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
@@ -521,6 +517,11 @@ public:
     UInt64 partial_sorting_limit = 0;
     bool is_limit_length_negative = false;
     bool is_limit_offset_negative = false;
+
+    UInt64 limit_by_length = 0;
+    UInt64 limit_by_offset = 0;
+    bool is_limit_by_length_negative = false;
+    bool is_limit_by_offset_negative = false;
 };
 
 template <size_t size>
@@ -1057,32 +1058,70 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 }
 
 void addLimitByStep(
-    QueryPlan & query_plan, const LimitByAnalysisResult & limit_by_analysis_result, const QueryNode & query_node, bool do_not_skip_offset)
+    QueryPlan & query_plan,
+    const LimitByAnalysisResult & limit_by_analysis_result,
+    const QueryAnalysisResult & query_analysis_result,
+    bool do_not_skip_offset)
 {
     /// Constness of LIMIT BY limit is validated during query analysis stage
-    UInt64 limit_by_limit = query_node.getLimitByLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
-    UInt64 limit_by_offset = 0;
-
-    if (query_node.hasLimitByOffset())
-    {
-        /// Constness of LIMIT BY offset is validated during query analysis stage
-        limit_by_offset = query_node.getLimitByOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
-    }
+    UInt64 limit_by_length = query_analysis_result.limit_by_length;
+    UInt64 limit_by_offset = query_analysis_result.limit_by_offset;
+    bool is_limit_negative = query_analysis_result.is_limit_by_length_negative;
+    bool is_offset_negative = query_analysis_result.is_limit_by_offset_negative;
 
     if (do_not_skip_offset)
     {
-        if (limit_by_limit > std::numeric_limits<UInt64>::max() - limit_by_offset)
-            return;
+        if (limit_by_offset > 0)
+        {
+            if (limit_by_length > std::numeric_limits<UInt64>::max() - limit_by_offset)
+                return;
 
-        limit_by_limit += limit_by_offset;
-        limit_by_offset = 0;
+            limit_by_length += limit_by_offset;
+            limit_by_offset = 0;
+            is_offset_negative = false;
+        }
     }
 
-    auto limit_by_step = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(),
-        limit_by_limit,
-        limit_by_offset,
-        limit_by_analysis_result.limit_by_column_names);
-    query_plan.addStep(std::move(limit_by_step));
+    const auto & column_names = limit_by_analysis_result.limit_by_column_names;
+
+    if (!is_limit_negative && !is_offset_negative) [[likely]]
+    {
+        /// LIMIT N [OFFSET M] BY cols - standard positive case
+        auto step = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names);
+        query_plan.addStep(std::move(step));
+    }
+    else if (is_limit_negative && is_offset_negative)
+    {
+        /// LIMIT -N OFFSET -M BY cols -> NegativeLimitByStep(limit=N, offset=M)
+        auto step = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names);
+        query_plan.addStep(std::move(step));
+    }
+    else if (is_limit_negative && !is_offset_negative)
+    {
+        /// LIMIT -N [OFFSET M] BY cols -> up to two steps:
+        ///   1. LimitByStep(limit=MAX, offset=M) - skip first M per group (only if M > 0)
+        ///   2. NegativeLimitByStep(limit=N, offset=0) - take last N from remainder
+        if (limit_by_offset > 0)
+        {
+            auto step1 = std::make_unique<LimitByStep>(
+                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names);
+            query_plan.addStep(std::move(step1));
+        }
+        auto step2 = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_by_length, 0, column_names);
+        query_plan.addStep(std::move(step2));
+    }
+    else // !is_limit_negative && is_offset_negative
+    {
+        /// LIMIT N OFFSET -M BY cols -> two steps:
+        ///   1. NegativeLimitByStep(limit=MAX, offset=M) - strip last M per group
+        ///   2. LimitByStep(limit=N, offset=0) - take first N from remainder
+        ///      (N==0 is not a no-op here: it means "keep 0 per group" -> empty result)
+        auto step1 = std::make_unique<NegativeLimitByStep>(
+            query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names);
+        query_plan.addStep(std::move(step1));
+        auto step2 = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_by_length, 0, column_names);
+        query_plan.addStep(std::move(step2));
+    }
 }
 
 void addPreliminaryLimitStep(
@@ -1250,7 +1289,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         /// We don't apply LIMIT BY on remote nodes at all in the old infrastructure.
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
-        addLimitByStep(query_plan, limit_by_analysis_result, query_node, true /*do_not_skip_offset*/);
+        addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, true /*do_not_skip_offset*/);
     }
 
     /// Do not apply PreLimit at first stage for LIMIT BY and `exact_rows_before_limit`,
@@ -2381,7 +2420,7 @@ void Planner::buildPlanForQueryNode()
                 select_query_options,
                 "Before LIMIT BY",
                 useful_sets);
-            addLimitByStep(query_plan, limit_by_analysis_result, query_node, false /*do_not_skip_offset*/);
+            addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, false /*do_not_skip_offset*/);
         }
 
         if (query_node.hasOrderBy())

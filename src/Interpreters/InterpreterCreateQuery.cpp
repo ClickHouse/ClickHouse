@@ -52,6 +52,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
@@ -2018,7 +2019,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
         /// and old storage instance still exists it will throw exception.
         if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-            database->waitDetachedTableNotInUse(create.uuid);
+        {
+            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+            database->waitDetachedTableNotInUse(create.uuid, [&]()
+            {
+                if (query_status)
+                    query_status->throwIfKilled();
+            });
+        }
         else
             database->checkDetachedTableNotInUse(create.uuid);
     }
@@ -2688,7 +2696,14 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     if (create.uuid != UUIDHelpers::Nil)
     {
         if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-            database->waitDetachedTableNotInUse(create.uuid);
+        {
+            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+            database->waitDetachedTableNotInUse(create.uuid, [&]()
+            {
+                if (query_status)
+                    query_status->throwIfKilled();
+            });
+        }
         else
             database->checkDetachedTableNotInUse(create.uuid);
     }

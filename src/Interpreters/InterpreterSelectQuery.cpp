@@ -66,6 +66,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -3406,14 +3407,47 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
         = (query.limitByOffset() ? getLimitOffsetValue(query.limitByOffset(), context, "OFFSET")
                                  : std::tuple<UInt64, Float64, bool>{0, 0, false});
 
-    if (is_limit_length_negative || is_limit_offset_negative)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT/OFFSET with LIMIT BY is not supported yet");
-
     if (fractional_limit > 0 || fractional_offset > 0)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
 
-    auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, columns);
-    query_plan.addStep(std::move(limit_by));
+    if (!is_limit_length_negative && !is_limit_offset_negative) [[likely]]
+    {
+        /// LIMIT N [OFFSET M] BY cols - standard positive case
+        auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, columns);
+        query_plan.addStep(std::move(limit_by));
+    }
+    else if (is_limit_length_negative && is_limit_offset_negative)
+    {
+        /// LIMIT -N OFFSET -M BY cols -> NegativeLimitByStep(limit=N, offset=M)
+        auto limit_by = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, columns);
+        query_plan.addStep(std::move(limit_by));
+    }
+    else if (is_limit_length_negative && !is_limit_offset_negative)
+    {
+        /// LIMIT -N [OFFSET M] BY cols -> up to two steps:
+        ///   1. LimitByStep(limit=MAX, offset=M) - skip first M per group (only if M > 0)
+        ///   2. NegativeLimitByStep(limit=N, offset=0) - take last N from remainder
+        if (limit_offset > 0)
+        {
+            auto step1 = std::make_unique<LimitByStep>(
+                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns);
+            query_plan.addStep(std::move(step1));
+        }
+        auto step2 = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_length, 0, columns);
+        query_plan.addStep(std::move(step2));
+    }
+    else // !is_limit_length_negative && is_limit_offset_negative
+    {
+        /// LIMIT N OFFSET -M BY cols -> two steps:
+        ///   1. NegativeLimitByStep(limit=MAX, offset=M) - strip last M per group
+        ///   2. LimitByStep(limit=N, offset=0) - take first N from remainder
+        ///      (N==0 is not a no-op here: it means "keep 0 per group" -> empty result)
+        auto step1 = std::make_unique<NegativeLimitByStep>(
+            query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns);
+        query_plan.addStep(std::move(step1));
+        auto step2 = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, 0, columns);
+        query_plan.addStep(std::move(step2));
+    }
 }
 
 void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
