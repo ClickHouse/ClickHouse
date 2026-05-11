@@ -3561,8 +3561,7 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
 
     WriteBufferFromOwnString out;
-    auto codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
-    TextIndexSerialization::serializeSparseIndex(sparse_index, out, codec.get());
+    TextIndexSerialization::serializeHeader(sparse_index, IPostingListCodec::Type::Bitpacking, out);
 
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);

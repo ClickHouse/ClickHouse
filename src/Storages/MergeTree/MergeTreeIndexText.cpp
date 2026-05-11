@@ -823,13 +823,13 @@ PostingListPtr MergeTreeIndexGranuleText::getPostingsForRareToken(std::string_vi
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     MergeTreeIndexTextParams params_,
-    const IPostingListCodec * posting_list_codec_,
+    IPostingListCodec::Type posting_list_codec_type_,
     SortedTokensAndPostings && tokens_and_postings_,
     TokenToPostingsBuilderMap && tokens_map_,
     std::list<PostingList> && posting_lists_,
     std::unique_ptr<Arena> && arena_)
     : params(std::move(params_))
-    , posting_list_codec(posting_list_codec_)
+    , posting_list_codec_type(posting_list_codec_type_)
     , tokens_and_postings(std::move(tokens_and_postings_))
     , tokens_map(std::move(tokens_map_))
     , posting_lists(std::move(posting_lists_))
@@ -1077,10 +1077,10 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-void TextIndexSerialization::serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr, const IPostingListCodec * posting_list_codec)
+void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr)
 {
     UInt64 version = static_cast<UInt64>(TextIndexHeader::Version::WithCodec);
-    UInt64 codec_type = static_cast<UInt64>(posting_list_codec->getType());
+    UInt64 codec_type = static_cast<UInt64>(posting_list_codec_type);
 
     writeVarUInt(version, ostr);
     writeVarUInt(codec_type, ostr);
@@ -1349,10 +1349,9 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
     if (!index_stream || !dictionary_stream || !postings_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
-    PostingsSerialization postings_serialization(
-        posting_list_codec
-            ? PostingListCodecFactory::createPostingListCodec(posting_list_codec->getType())
-            : PostingListCodecPtr{});
+    auto postings_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_type);
+    PostingsSerialization postings_serialization(std::move(postings_codec));
+
     auto sparse_index_block = serializeTokensAndPostings(
         tokens_and_postings,
         *dictionary_stream,
@@ -1360,7 +1359,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         params,
         postings_serialization);
 
-    TextIndexSerialization::serializeSparseIndex(sparse_index_block, index_stream->compressed_hashing, postings_serialization.getPostingListCodec());
+    TextIndexSerialization::serializeHeader(sparse_index_block, posting_list_codec_type, index_stream->compressed_hashing);
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
@@ -1471,7 +1470,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
         params,
-        posting_list_codec,
+        posting_list_codec ? posting_list_codec->getType() : IPostingListCodec::Type::None,
         std::move(sorted_values),
         std::move(tokens_map),
         std::move(posting_lists),

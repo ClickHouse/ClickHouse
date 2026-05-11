@@ -277,7 +277,7 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    static void serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr, const IPostingListCodec * posting_list_codec);
+    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// If postings_serialization is null, embedded postings are skipped.
@@ -383,7 +383,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleTextWritable(
         MergeTreeIndexTextParams params_,
-        const IPostingListCodec * posting_list_codec_,
+        IPostingListCodec::Type posting_list_codec_type_,
         SortedTokensAndPostings && tokens_and_postings_,
         TokenToPostingsBuilderMap && tokens_map_,
         std::list<PostingList> && posting_lists_,
@@ -400,7 +400,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
-    const IPostingListCodec * posting_list_codec = nullptr;
+    IPostingListCodec::Type posting_list_codec_type = IPostingListCodec::Type::None;
     /// Pointers to tokens and posting lists in the granule.
     SortedTokensAndPostings tokens_and_postings;
     /// tokens_and_postings has references to data held in the fields below.

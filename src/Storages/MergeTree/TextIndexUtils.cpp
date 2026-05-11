@@ -465,7 +465,7 @@ void MergeTextIndexesTask::finalize()
 
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
-    TextIndexSerialization::serializeSparseIndex(sparse_index, index_stream->compressed_hashing, postings_serialization.getPostingListCodec());
+    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();

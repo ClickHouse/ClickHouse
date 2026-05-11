@@ -101,21 +101,11 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 
 void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_granule)
 {
+    chassert(index_granule);
     granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType());
-    bool has_posting_list_codec = postings_codec->getType() != IPostingListCodec::Type::None;
+    use_lazy_mode = lazy_mode_requested && postings_codec->getType() != IPostingListCodec::Type::None;
     postings_serialization = PostingsSerialization(std::move(postings_codec));
-
-    if (lazy_mode_requested && !has_posting_list_codec)
-    {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Lazy posting list apply mode requires a posting list codec (e.g. posting_list_codec = 'bitpacking'). "
-            "The current text index was created without one, so `PostingListCursor` cannot decode non-compressed postings. "
-            "Either recreate the index with posting_list_codec = 'bitpacking', "
-            "or use text_index_posting_list_apply_mode = 'materialize'");
-    }
-
-    use_lazy_mode = lazy_mode_requested && has_posting_list_codec;
 }
 
 void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader * main_reader)
@@ -326,17 +316,9 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
 
 PostingListCursorHandlePtr MergeTreeReaderTextIndex::makeLazyCursorHandle(std::string_view token, const TokenPostingsInfo & token_info)
 {
-    if (token_info.header & PostingsSerialization::Flags::IsCompressed)
+    if (token_info.embedded_postings)
     {
-        auto stream_it = large_postings_streams.find(token);
-
-        if (stream_it != large_postings_streams.end())
-            return std::make_shared<PostingListCursorHandle>(*stream_it->second, token_info);
-
-        if (!small_postings_stream)
-            small_postings_stream = makeTextIndexStream(index.index->getSubstreams()[2]);
-
-        return std::make_shared<PostingListCursorHandle>(*small_postings_stream, token_info);
+        return std::make_shared<PostingListCursorHandle>(token_info);
     }
 
     if (auto rare_postings = granule->getPostingsForRareToken(token))
@@ -351,10 +333,19 @@ PostingListCursorHandlePtr MergeTreeReaderTextIndex::makeLazyCursorHandle(std::s
         return std::make_shared<PostingListCursorHandle>(materialized_info);
     }
 
-    if (token_info.embedded_postings)
-        return std::make_shared<PostingListCursorHandle>(token_info);
+    if (token_info.header & PostingsSerialization::Flags::IsCompressed)
+    {
+        auto stream_it = large_postings_streams.find(token);
+        if (stream_it != large_postings_streams.end())
+            return std::make_shared<PostingListCursorHandle>(*stream_it->second, token_info);
 
-    return {};
+        if (!small_postings_stream)
+            small_postings_stream = makeTextIndexStream(index.index->getSubstreams()[2]);
+
+        return std::make_shared<PostingListCursorHandle>(*small_postings_stream, token_info);
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected token for lazy mode: {}. Token postings should be embedded or compressed", token);
 }
 
 
@@ -800,18 +791,15 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
                     continue;
 
                 handle = makeLazyCursorHandle(token, *info_it->second);
-                if (handle)
-                    lazy_cursor_handles.emplace(token, handle);
+                lazy_cursor_handles.emplace(token, handle);
             }
 
-            if (handle)
-                cursor_map[token] = std::make_shared<PostingListCursor>(handle);
+            cursor_map[token] = std::make_shared<PostingListCursor>(handle);
         }
 
         /// ALL mode: if any query token is missing from the granule, the intersection
         /// is empty — return all zeros (already filled by resize_fill above).
-        if (search_query->search_mode == TextSearchMode::All
-            && cursor_map.size() < search_query->tokens.size())
+        if (search_query->search_mode == TextSearchMode::All && cursor_map.size() < search_query->tokens.size())
             return;
 
         /// Use lazy cursors for whatever tokens are available.
