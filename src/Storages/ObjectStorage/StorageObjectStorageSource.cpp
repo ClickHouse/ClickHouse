@@ -21,6 +21,7 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
@@ -52,6 +53,7 @@
 #endif
 
 #include <fmt/ranges.h>
+#include <base/sleep.h>
 #include <Common/ProfileEvents.h>
 #include <Core/SettingsEnums.h>
 
@@ -97,7 +99,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
-    extern const int SOCKET_TIMEOUT;
 }
 
 namespace FailPoints
@@ -1448,9 +1449,7 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 {
     fiu_do_on(FailPoints::iceberg_socket_fail,
     {
-        throw Exception(
-            ErrorCodes::SOCKET_TIMEOUT,
-            "Timeout exceeded while reading from socket");
+        sleepForSeconds(60);
     });
 
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
@@ -1459,6 +1458,10 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     if (current_index >= buffer.size())
     {
         auto task = callback();
+
+        if (auto query_status = getContext()->getProcessListElement())
+            query_status->checkTimeLimit();
+
         if (!task || task->isEmpty())
             return nullptr;
         object_info = task->getObjectInfo();

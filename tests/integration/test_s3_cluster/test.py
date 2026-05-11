@@ -741,13 +741,15 @@ def test_iceberg_s3_cluster_read_task_failpoint(started_cluster):
                 'cluster_simple',
                 '{iceberg_url}',
                 '{minio_access_key}', '{minio_secret_key}')
+            SETTINGS max_execution_time = 5
             """
         )
 
         assert error, (
             "Expected a timeout error but the query succeeded. "
-            "The `iceberg_socket_fail` failpoint should have thrown "
-            "SOCKET_TIMEOUT inside ReadTaskIterator::next() on every worker."
+            "The `iceberg_socket_fail` failpoint should have caused the query "
+            "to hang inside ReadTaskIterator::next() on every worker, "
+            "and `max_execution_time` should have aborted it."
         )
         assert "Timeout" in error or "timeout" in error.lower(), (
             f"Expected a timeout-related error, got: {error}"
