@@ -731,7 +731,7 @@ def test_iceberg_s3_cluster_read_task_failpoint(started_cluster):
     try:
         for name in all_node_names:
             started_cluster.instances[name].query(
-                "SYSTEM ENABLE FAILPOINT iceberg_socket_fail"
+                "SYSTEM ENABLE FAILPOINT storage_cluster_read_sleep"
             )
 
         _, error = node.query_and_get_answer_with_error(
