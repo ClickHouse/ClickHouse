@@ -508,11 +508,13 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (!projection_columns.empty())
     {
-        /// Avoid `AS <name>` collisions for distinct expressions sharing a projection
-        /// name (e.g. `SELECT *` over a JOIN), which would trigger MULTIPLE_EXPRESSIONS_FOR_ALIAS
-        /// when the AST is re-resolved on a remote replica. Suppress the alias only when an
-        /// earlier projection used the same name for a non-`isEqual` expression; same-expression
-        /// duplicates keep their alias (the analyzer accepts them).
+        /// Avoid `AS <name>` collisions for `SELECT *` over a JOIN, where both sides
+        /// expose columns with the same bare name (e.g. `a` from `__table1.a` and
+        /// `__table3.a`). Without this, re-resolving the dispatched AST on a remote
+        /// replica triggers MULTIPLE_EXPRESSIONS_FOR_ALIAS. Suppress only when the
+        /// current projection is a `ColumnNode` and an earlier projection used the
+        /// same name for a different (`!isEqual`) `ColumnNode` — other shapes
+        /// (functions, constants, alias-referring identifiers) keep their alias.
         const auto & projection_nodes = projection.getNodes();
         std::unordered_map<std::string_view, const IQueryTreeNode *> first_node_by_name;
         for (size_t i = 0; i < projection_expression_list_ast_children_size; ++i)
@@ -524,8 +526,13 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             const auto & column_name = projection_columns[i].name;
             const auto * current_node = projection_nodes[i].get();
             auto [it, inserted] = first_node_by_name.try_emplace(column_name, current_node);
-            if (!inserted && !it->second->isEqual(*current_node))
-                continue;
+            if (!inserted)
+            {
+                const auto * current_column = current_node->as<ColumnNode>();
+                const auto * first_column = it->second->as<ColumnNode>();
+                if (current_column && first_column && !it->second->isEqual(*current_node))
+                    continue;
+            }
 
             ast_with_alias->setAlias(column_name);
         }
