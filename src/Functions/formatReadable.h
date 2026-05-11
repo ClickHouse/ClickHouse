@@ -7,7 +7,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Interpreters/Context_fwd.h>
-#include "Columns/ColumnsNumber.h"
+#include <Columns/ColumnsNumber.h>
 
 
 namespace DB
@@ -76,7 +76,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        int precision = 2;
+        UInt8 precision = 2;
         if (arguments.size() == 2)
         {
             const auto * col_precision = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get());
