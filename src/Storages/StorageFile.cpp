@@ -2893,10 +2893,22 @@ SinkToStoragePtr StorageFile::write(
         bool got_file_size = false;
         if (write_disk)
         {
+            /// `existsFile` and `getFileSize` are not atomic; tolerate a concurrent removal
+            /// between them by catching `FILE_DOESNT_EXIST` and treating the file as absent,
+            /// matching the pattern in `StorageFileSink::initialize`. Rethrow everything else
+            /// so transient backend errors do not turn into spurious insert decisions.
             if (write_disk->existsFile(write_relative_path))
             {
-                existing_file_size = write_disk->getFileSize(write_relative_path);
-                got_file_size = true;
+                try
+                {
+                    existing_file_size = write_disk->getFileSize(write_relative_path);
+                    got_file_size = true;
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                        throw;
+                }
             }
         }
         else
