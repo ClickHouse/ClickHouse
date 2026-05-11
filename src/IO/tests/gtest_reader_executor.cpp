@@ -6,6 +6,9 @@
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
+#include <Common/setThreadName.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <gtest/gtest.h>
@@ -435,32 +438,18 @@ private:
     std::vector<std::filesystem::path> temp_files;
 };
 
-/// Snapshot ProfileEvents counters to compute deltas.
-struct ProfileEventsSnapshot
+/// RAII helper: creates a ThreadGroup with its own ProfileEvents counters,
+/// attaches the current thread to it, detaches in destructor.
+/// Lets us read per-test ProfileEvents without interference from other tests.
+struct TestThreadGroup
 {
-    ProfileEvents::Count created;
-    ProfileEvents::Count hits;
-    ProfileEvents::Count fallbacks;
-    ProfileEvents::Count bytes;
+    DB::ThreadStatus thread_status;
+    DB::ThreadGroupPtr thread_group = DB::ThreadGroup::createForQuery(getContext().context);
+    DB::ThreadGroupSwitcher switcher{thread_group, ThreadName::UNKNOWN};
 
-    static ProfileEventsSnapshot take()
+    ProfileEvents::Count get(ProfileEvents::Event event) const
     {
-        return {
-            ProfileEvents::global_counters[ProfileEvents::LiveSourceBufferCreated].load(std::memory_order_relaxed),
-            ProfileEvents::global_counters[ProfileEvents::LiveSourceBufferHits].load(std::memory_order_relaxed),
-            ProfileEvents::global_counters[ProfileEvents::LiveSourceBufferFallbacks].load(std::memory_order_relaxed),
-            ProfileEvents::global_counters[ProfileEvents::LiveSourceBufferBytes].load(std::memory_order_relaxed),
-        };
-    }
-
-    ProfileEventsSnapshot delta(const ProfileEventsSnapshot & after) const
-    {
-        return {
-            after.created - created,
-            after.hits - hits,
-            after.fallbacks - fallbacks,
-            after.bytes - bytes,
-        };
+        return thread_group->performance_counters[event].load(std::memory_order_relaxed);
     }
 };
 
@@ -468,8 +457,9 @@ struct ProfileEventsSnapshot
 
 TEST(ReaderExecutor, LiveBufferReusesConnection)
 {
+    TestThreadGroup tg;
+
     /// 2000 bytes, window=500 → 4 sequential readNextWindow calls.
-    /// With live buffer: created once, then reused (hits) for remaining reads.
     String content(2000, 'Q');
     auto source = std::make_shared<OpenableSourceReader>(
         std::unordered_map<String, String>{{"file", content}});
@@ -482,8 +472,6 @@ TEST(ReaderExecutor, LiveBufferReusesConnection)
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
-    auto before = ProfileEventsSnapshot::take();
-
     String result;
     while (true)
     {
@@ -494,18 +482,18 @@ TEST(ReaderExecutor, LiveBufferReusesConnection)
             result.append(node.data(), node.size);
     }
 
-    auto diff = before.delta(ProfileEventsSnapshot::take());
-
     EXPECT_EQ(result.size(), 2000);
     EXPECT_EQ(result, content);
-    EXPECT_EQ(diff.created, 1);       /// Opened once.
-    EXPECT_EQ(diff.hits, 3);          /// Reused for 3 subsequent reads.
-    EXPECT_EQ(diff.fallbacks, 0);     /// Never fell back.
-    EXPECT_EQ(diff.bytes, 2000);      /// All bytes through live buffer.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 1);   /// Opened once.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferHits), 3);      /// Reused for 3 subsequent reads.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferFallbacks), 0); /// Never fell back.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferBytes), 2000);  /// All bytes through live buffer.
 }
 
 TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
 {
+    TestThreadGroup tg;
+
     /// Semaphore with 0 capacity — all reads go through stateless path.
     String content(1000, 'R');
     auto source = std::make_shared<OpenableSourceReader>(
@@ -519,8 +507,6 @@ TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
-    auto before = ProfileEventsSnapshot::take();
-
     String result;
     while (true)
     {
@@ -531,18 +517,18 @@ TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
             result.append(node.data(), node.size);
     }
 
-    auto diff = before.delta(ProfileEventsSnapshot::take());
-
     EXPECT_EQ(result.size(), 1000);
     EXPECT_EQ(result, content);
-    EXPECT_EQ(diff.created, 0);       /// Never opened — no slots.
-    EXPECT_EQ(diff.hits, 0);          /// No live buffer to hit.
-    EXPECT_GE(diff.fallbacks, 2);     /// All reads fell back to stateless.
-    EXPECT_EQ(diff.bytes, 0);         /// No bytes through live buffer.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 0);   /// Never opened — no slots.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferHits), 0);      /// No live buffer to hit.
+    EXPECT_GE(tg.get(ProfileEvents::LiveSourceBufferFallbacks), 2); /// All reads fell back.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferBytes), 0);     /// No bytes through live buffer.
 }
 
 TEST(ReaderExecutor, LiveBufferClosedOnSeek)
 {
+    TestThreadGroup tg;
+
     /// Sequential read opens live buffer, seek closes it and opens a new one.
     String content(2000, 'S');
     content[1000] = 'T';
@@ -557,8 +543,6 @@ TEST(ReaderExecutor, LiveBufferClosedOnSeek)
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
-    auto before = ProfileEventsSnapshot::take();
-
     /// Read first window (opens live buffer).
     auto rope1 = executor.readNextWindow();
     EXPECT_EQ(rope1.range().size, 500);
@@ -569,9 +553,7 @@ TEST(ReaderExecutor, LiveBufferClosedOnSeek)
     EXPECT_EQ(rope2.range().offset, 1000);
     EXPECT_EQ(rope2.getNodes()[0].data()[0], 'T');
 
-    auto diff = before.delta(ProfileEventsSnapshot::take());
-
-    EXPECT_EQ(diff.created, 2);       /// Opened twice: initial + after seek.
-    EXPECT_EQ(diff.hits, 0);          /// No sequential reuse (seek broke the chain).
-    EXPECT_EQ(diff.fallbacks, 0);     /// Slots were available.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 2);   /// Opened twice: initial + after seek.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferHits), 0);      /// Seek broke the chain.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferFallbacks), 0); /// Slots were available.
 }
