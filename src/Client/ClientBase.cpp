@@ -3382,7 +3382,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 
         ("time,t", "Print query execution time to stderr in non-interactive mode (for benchmarks)")
         ("memory-usage", po::value<std::string>()->implicit_value("default")->default_value("none"), "Print memory usage to stderr in non-interactive mode (for benchmarks). Values: 'none', 'default', 'readable'")
-        ("chime", po::value<UInt64>()->implicit_value(10)->default_value(0), "If a query takes longer than this many seconds, write the ASCII `BEL` control character (`\\x07`) to stderr when the query finishes (on success and on error). Useful to alert when a long-running query completes. Use `--chime` alone for the default 10 seconds, `--chime N` for a custom threshold, or omit it (or `--chime 0`) to disable. Whether the terminal makes a sound or visual flash depends on the terminal's user preferences.")
+        ("chime", po::value<UInt64>()->implicit_value(5)->default_value(5), "Emit the ASCII `BEL` control character (`\\x07`) to stderr when a query finishes (on success and on error) after running for at least this many seconds. Useful to alert when a long-running query completes. Default: 5 seconds (also used when `--chime` is passed without a value). Pass `--chime 0` to disable. Whether the terminal makes a sound or visual flash depends on the terminal's user preferences.")
 
         ("echo", "In batch mode, print query before execution")
 
