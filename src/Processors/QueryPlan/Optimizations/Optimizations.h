@@ -42,7 +42,6 @@ struct Optimization
         VectorSearchFilterStrategy vector_search_filter_strategy;
 
         /// Other settings
-        size_t max_limit_to_push_down_topn_predicate;
         size_t use_index_for_in_with_subqueries_max_values;
         SizeLimits network_transfer_limits;
 

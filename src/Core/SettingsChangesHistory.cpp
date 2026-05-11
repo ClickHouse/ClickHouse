@@ -79,7 +79,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_rewrite_order_by_limit", false, true, "A new setting to rewrite `ORDER BY ... LIMIT` queries to use a more efficient plan."},
             {"query_plan_max_limit_for_rewrite_order_by_limit", 1000000, 1000000, "A new setting to control the maximum `LIMIT` value that allows to use the rewrite for `ORDER BY ... LIMIT`. Zero disables the limit."},
             {"query_plan_min_columns_to_use_rewrite_order_by_limit", 50, 50, "A new setting controlling the minimum number of columns required to use the `ORDER BY ... LIMIT` rewrite."},
-            {"max_limit_to_push_down_topn_predicate", 100, 100, "A new setting limiting the maximum value of `LIMIT` for which the TopN predicate is pushed down."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {

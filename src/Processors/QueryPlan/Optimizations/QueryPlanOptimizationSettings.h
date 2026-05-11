@@ -134,8 +134,6 @@ struct QueryPlanOptimizationSettings
     bool vector_search_with_rescoring;
     VectorSearchFilterStrategy vector_search_filter_strategy;
 
-    size_t max_limit_to_push_down_topn_predicate;
-
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
     bool enable_full_text_index;

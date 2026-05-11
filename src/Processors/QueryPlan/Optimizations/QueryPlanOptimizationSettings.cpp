@@ -93,7 +93,6 @@ namespace Setting
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
-    extern const SettingsUInt64 max_limit_to_push_down_topn_predicate;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsUInt64 max_bytes_for_lazy_final;
@@ -221,7 +220,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
     vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];
     vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
-    max_limit_to_push_down_topn_predicate = from[Setting::max_limit_to_push_down_topn_predicate].value;
 
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 
