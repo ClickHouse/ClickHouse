@@ -282,8 +282,8 @@ public:
         ConditionTemplate<KeyCondition>::Ptr key_condition;
         ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template; /// skeleton of the key condition without resolved columns
         ConditionTemplate<KeyCondition>::Ptr minmax_idx_condition;
-        std::optional<KeyCondition> part_offset_condition;
-        std::optional<KeyCondition> total_offset_condition;
+        ConditionTemplate<KeyCondition>::Ptr part_offset_condition;
+        ConditionTemplate<KeyCondition>::Ptr total_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;

@@ -8693,7 +8693,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     {
         if (metadata_snapshot->hasPartitionKey())
         {
-            auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG::Node * predicate)
+            auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
             {
                 const auto & partition_key = metadata_snapshot->getPartitionKey();
                 auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);

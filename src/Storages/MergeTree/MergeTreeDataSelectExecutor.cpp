@@ -142,7 +142,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, settings, log);
+        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, nullptr, nullptr, &exact_ranges, settings, log);
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
@@ -482,11 +482,13 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     return sampling;
 }
 
-void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
-    std::optional<KeyCondition> & part_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context)
+ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
+    const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context)
 {
-    if (!predicate)
-        return;
+    if (!filter_dag || !filter_dag->predicate)
+        return nullptr;
 
     auto part_offset_type = std::make_shared<DataTypeUInt64>();
     auto part_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -494,37 +496,45 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
            ColumnWithTypeAndName(part_type->createColumn(), part_type, "_part")};
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->predicate, &sample, context);
     if (!dag)
-        return;
+        return nullptr;
 
     /// The _part filter should only be effective in conjunction with the _part_offset filter.
     auto required_columns = dag->getRequiredColumnsNames();
     if (std::find(required_columns.begin(), required_columns.end(), "_part_offset") == required_columns.end())
-        return;
+        return nullptr;
 
-    part_offset_condition.emplace(KeyCondition{
-        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context),
-        context,
-        sample.getNames(),
-        std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
-        {}});
+    auto factory = [sample, context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> KeyCondition
+    {
+        return KeyCondition{
+            ActionsDAGWithInversionPushDown(predicate, context),
+            context,
+            sample.getNames(),
+            std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
+            {}};
+    };
+
+    auto sub_filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(dag->getOutputs().front(), context);
+    return std::make_shared<ConditionTemplate<KeyCondition>>(std::move(sub_filter_dag), std::move(factory), metadata_snapshot, context);
 }
 
-void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
-    std::optional<KeyCondition> & total_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context)
+ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
+    const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context)
 {
-    if (!predicate)
-        return;
+    if (!filter_dag || !filter_dag->predicate)
+        return nullptr;
 
     auto part_offset_type = std::make_shared<DataTypeUInt64>();
     Block sample
         = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
            ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_starting_offset")};
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->predicate, &sample, context);
     if (!dag)
-        return;
+        return nullptr;
 
     /// Try to recognize and fold expressions of the form:
     ///     _part_offset + _part_starting_offset
@@ -539,7 +549,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
     auto matches = matchTrees({node1, node2}, *dag, false /* check_monotonicity */);
     auto new_inputs = resolveMatchedInputs(matches, {node1, node2}, dag->getOutputs());
     if (!new_inputs)
-        return;
+        return nullptr;
     dag = ActionsDAG::foldActionsByProjection(*new_inputs, dag->getOutputs());
 
     /// total_offset_condition is only valid if _part_offset and _part_starting_offset are used *together*.
@@ -547,15 +557,22 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
     /// If more than one input remains, it means either of them is used independently,
     /// and we should skip adding total_offset_condition in that case.
     if (dag->getInputs().size() != 1)
-        return;
+        return nullptr;
 
-    auto required_columns = dag->getRequiredColumns();
-    total_offset_condition.emplace(KeyCondition{
-        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context),
-        context,
-        required_columns.getNames(),
-        std::make_shared<ExpressionActions>(ActionsDAG(required_columns), ExpressionActionsSettings{}),
-        {}});
+    auto factory = [context](const ActionsDAG * specialized_dag, const ActionsDAG::Node * predicate) -> KeyCondition
+    {
+        chassert(specialized_dag);
+        auto required_columns = specialized_dag->getRequiredColumns();
+        return KeyCondition{
+            ActionsDAGWithInversionPushDown(predicate, context),
+            context,
+            required_columns.getNames(),
+            std::make_shared<ExpressionActions>(ActionsDAG(required_columns), ExpressionActionsSettings{}),
+            {}};
+    };
+
+    auto sub_filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(dag->getOutputs().front(), context);
+    return std::make_shared<ConditionTemplate<KeyCondition>>(std::move(sub_filter_dag), std::move(factory), metadata_snapshot, context);
 }
 
 std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
@@ -949,8 +966,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     ranges,
                     metadata_snapshot,
                     key_condition->generateForPartition(ranges.data_part->partition),
-                    part_offset_condition,
-                    total_offset_condition,
+                    part_offset_condition ? &part_offset_condition->generateForPartition(ranges.data_part->partition) : nullptr,
+                    total_offset_condition ? &total_offset_condition->generateForPartition(ranges.data_part->partition) : nullptr,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     settings,
                     log);
@@ -1580,8 +1597,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const RangesInDataPart & part_with_ranges,
     const StorageMetadataPtr & metadata_snapshot,
     const KeyCondition & key_condition,
-    const std::optional<KeyCondition> & part_offset_condition,
-    const std::optional<KeyCondition> & total_offset_condition,
+    const KeyCondition * part_offset_condition,
+    const KeyCondition * total_offset_condition,
     MarkRanges * exact_ranges,
     const Settings & settings,
     LoggerPtr log)

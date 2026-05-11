@@ -2001,7 +2001,7 @@ void ReadFromMergeTree::buildIndexes(
     const auto & filter_dag = *filter_dag_ptr;
 
     {
-        auto key_condition_factory = [query_context, primary_key_column_names, primary_key](const ActionsDAG::Node * predicate)
+        auto key_condition_factory = [query_context, primary_key_column_names, primary_key](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context);
             return KeyCondition{wrapped, query_context, primary_key_column_names, primary_key.expression, /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
@@ -2011,7 +2011,7 @@ void ReadFromMergeTree::buildIndexes(
     }
 
     {
-        auto key_condition_factory = [query_context](const ActionsDAG::Node * predicate)
+        auto key_condition_factory = [query_context](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context);
             return KeyCondition{wrapped, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(NamesAndTypesList{}))};
@@ -2021,7 +2021,7 @@ void ReadFromMergeTree::buildIndexes(
 
     if (metadata_snapshot->hasPartitionKey())
     {
-        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_](const ActionsDAG::Node * predicate)
+        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             const auto & partition_key = metadata_snapshot->getPartitionKey();
             auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
@@ -2038,9 +2038,9 @@ void ReadFromMergeTree::buildIndexes(
     /// Perform virtual column key analysis only when no corresponding physical columns exist.
     const auto & columns = metadata_snapshot->getColumns();
     if (!columns.has("_part_offset") && !columns.has("_part"))
-        MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_dag.predicate, query_context);
+        indexes->part_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(filter_dag_ptr, metadata_snapshot, query_context);
     if (!columns.has("_part_offset") && !columns.has("_part_starting_offset"))
-        MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(indexes->total_offset_condition, filter_dag.predicate, query_context);
+        indexes->total_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(filter_dag_ptr, metadata_snapshot, query_context);
 
     indexes->use_skip_indexes = settings[Setting::use_skip_indexes];
     if (query_info_.isFinal() && !settings[Setting::use_skip_indexes_if_final])
@@ -2078,7 +2078,7 @@ void ReadFromMergeTree::buildIndexes(
             const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get());
             chassert(vector_similarity_index);
 
-            factory = [vector_similarity_index, query_context, vector_search_parameters](const ActionsDAG::Node * predicate)
+            factory = [vector_similarity_index, query_context, vector_search_parameters](const ActionsDAG *, const ActionsDAG::Node * predicate)
             {
                 return vector_similarity_index->createIndexCondition(predicate, query_context, vector_search_parameters);
             };
@@ -2086,7 +2086,7 @@ void ReadFromMergeTree::buildIndexes(
         }
         else
         {
-            factory = [index_helper, query_context](const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
+            factory = [index_helper, query_context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
             {
                 if (!predicate)
                     return nullptr;
@@ -2483,10 +2483,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     LOG_DEBUG(log, "Key condition: {}", indexes->key_condition->generateUnsubstituted().toString());
 
     if (indexes->part_offset_condition)
-        LOG_DEBUG(log, "Part offset condition: {}", indexes->part_offset_condition->toString());
+        LOG_DEBUG(log, "Part offset condition: {}", indexes->part_offset_condition->generateUnsubstituted().toString());
 
     if (indexes->total_offset_condition)
-        LOG_DEBUG(log, "Total offset condition: {}", indexes->total_offset_condition->toString());
+        LOG_DEBUG(log, "Total offset condition: {}", indexes->total_offset_condition->generateUnsubstituted().toString());
 
     if (indexes->key_condition->generateUnsubstituted().alwaysFalse())
         return std::make_shared<AnalysisResult>(std::move(result));

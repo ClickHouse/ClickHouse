@@ -20,10 +20,10 @@ class IMergeTreeDataPart;
 template <class Cond>
 class ConditionTemplate
 {
-    Cond generate(const ActionsDAG::Node * root) const;
+    Cond generate(const ActionsDAG * substituted_dag, const ActionsDAG::Node * root) const;
 
 public:
-    using Factory = std::function<Cond(const ActionsDAG::Node *)>;
+    using Factory = std::function<Cond(const ActionsDAG *, const ActionsDAG::Node *)>;
     using Transformer = std::function<void(Cond &)>;
     using Ptr = std::shared_ptr<ConditionTemplate<Cond>>;
 

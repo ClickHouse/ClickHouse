@@ -192,9 +192,9 @@ ActionsDAG substituteConstantInputs(
 }
 
 template <typename Cond>
-Cond ConditionTemplate<Cond>::generate(const ActionsDAG::Node * root) const
+Cond ConditionTemplate<Cond>::generate(const ActionsDAG * substituted_dag, const ActionsDAG::Node * root) const
 {
-    Cond condition = factory(root);
+    Cond condition = factory(substituted_dag, root);
 
     if (transformer)
         transformer(condition);
@@ -223,8 +223,9 @@ const Cond & ConditionTemplate<Cond>::generateUnsubstituted() const
     if (unsubstituted.has_value())
         return unsubstituted.value();
 
+    const ActionsDAG * unsubsituted = dag && dag->dag.has_value() ? &dag->dag.value() : nullptr;
     const ActionsDAG::Node * predicate = dag ? dag->predicate : nullptr;
-    Cond produced = generate(predicate);
+    Cond produced = generate(unsubsituted, predicate);
     unsubstituted.emplace(std::move(produced));
 
     return unsubstituted.value();
@@ -245,7 +246,7 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartit
     auto specialized = substituteConstantInputs(dag->predicate, partition_constant_names, partition, partition_id, metadata_snapshot);
     chassert(!specialized.getOutputs().empty());
 
-    Cond produced = generate(specialized.getOutputs().front());
+    Cond produced = generate(&specialized, specialized.getOutputs().front());
     const auto [it, inserted] = cache.emplace(partition_id, std::move(produced));
     chassert(inserted);
 

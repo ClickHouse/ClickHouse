@@ -79,8 +79,8 @@ public:
         const RangesInDataPart & part_with_ranges,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
-        const std::optional<KeyCondition> & part_offset_condition,
-        const std::optional<KeyCondition> & total_offset_condition,
+        const KeyCondition * part_offset_condition,
+        const KeyCondition * total_offset_condition,
         MarkRanges * exact_ranges,
         const Settings & settings,
         LoggerPtr log);
@@ -176,13 +176,17 @@ public:
     static size_t minMarksForConcurrentRead(
         size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks);
 
-    /// If possible, construct optional key condition from predicates containing _part_offset and _part column.
-    static void buildKeyConditionFromPartOffset(
-        std::optional<KeyCondition> & part_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context);
+    /// If possible, construct optional key condition template from predicates containing _part_offset and _part column.
+    static ConditionTemplate<KeyCondition>::Ptr buildKeyConditionFromPartOffset(
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context);
 
-    /// If possible, construct optional key condition from predicates containing _part_offset + _part_starting_offset expression.
-    static void buildKeyConditionFromTotalOffset(
-        std::optional<KeyCondition> & total_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context);
+    /// If possible, construct optional key condition template from predicates containing _part_offset + _part_starting_offset expression.
+    static ConditionTemplate<KeyCondition>::Ptr buildKeyConditionFromTotalOffset(
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context);
 
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
