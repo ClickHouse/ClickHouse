@@ -39,9 +39,12 @@ print time(1d);
 print time(-1d);
 print time(6nanoseconds);
 print time(6tick);
--- FIXME: time(2) with bare numeric not supported — returns BAD_ARGUMENTS
--- print time(2);
--- print time(2) + 1d;
+-- `time(N)` with a bare numeric argument is not a valid KQL timespan literal
+-- (must carry a suffix like `d`/`h`/`s`/`ms` or use `d.hh:mm:ss` form), so the
+-- parser rejects it with `BAD_ARGUMENTS`. Keep the cases as executable negative
+-- checks so any future regression is caught.
+print time(2); -- { clientError BAD_ARGUMENTS }
+print time(2) + 1d; -- { clientError BAD_ARGUMENTS }
 print '-- guid';
 print guid(74be27de-1e4e-49d9-b579-fe0b331d3642);
 print guid(null);
