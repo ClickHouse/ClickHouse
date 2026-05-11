@@ -1364,9 +1364,14 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 
     /// We do not want to reduce retry count on certain errors,
     /// because their incidence does not depend on the user.
+    /// `QUERY_WAS_CANCELLED` is included because cancellation (shutdown,
+    /// `KILL QUERY`) is never the file's fault — a file should not burn a
+    /// retry just because the server happened to be restarting, and the
+    /// processing node should be reset rather than transitioned to `Failed`.
     const bool reduce_retry_count = !(error_code == ErrorCodes::TOO_MANY_PARTS
                                       || error_code == ErrorCodes::TABLE_IS_BEING_RESTARTED
-                                      || error_code == ErrorCodes::TABLE_IS_READ_ONLY);
+                                      || error_code == ErrorCodes::TABLE_IS_READ_ONLY
+                                      || error_code == ErrorCodes::QUERY_WAS_CANCELLED);
 
     /// Count successfully processed files in a failed batch.
     /// If the batch had multiple files, don't reduce retry counts:
@@ -1548,6 +1553,14 @@ void ObjectStorageQueueSource::finalizeCommit(
                     break;
                 }
             }
+
+            /// Files that were reset for retry (processing node removed without creating
+            /// a Failed node) are not a real outcome — they will be picked up again on
+            /// the next iteration. Skip the log entry so they do not show up as Failed
+            /// in `system.s3queue_log`. They will be logged on their next attempt with
+            /// the actual outcome (Processed, or genuinely Failed).
+            if (!insert_succeeded && file_metadata->wasProcessingResetWithoutFailure())
+                continue;
 
             appendLogElement(
                 file_metadata,
