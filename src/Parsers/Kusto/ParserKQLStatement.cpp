@@ -93,6 +93,19 @@ bool ParserKQLStatement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
     }
 
+    /// We are about to parse a non-`let`, non-`SET` KQL statement. Any sub-parser
+    /// reads from `kqlLetBindings()` during this call, then the bindings should
+    /// no longer live on the thread-local store: the consuming statement ends
+    /// `let` scope. Clearing here (via RAII so we cover the exception path too)
+    /// bounds the cross-query leak window — stale bindings cannot persist past
+    /// the next non-`let` query on the same worker thread, while consecutive
+    /// `let` statements above continue to share state because they return early
+    /// before the guard is constructed.
+    struct KQLBindingsScopeGuard
+    {
+        ~KQLBindingsScopeGuard() { kqlLetBindingsClear(); }
+    } bindings_guard;
+
     bool res = query_with_output_p.parse(pos, node, expected);
 
     return res;

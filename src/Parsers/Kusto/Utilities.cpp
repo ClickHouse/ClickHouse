@@ -82,17 +82,23 @@ bool isValidKQLPos(IParser::Pos & pos)
 
 /// Thread-local storage for KQL `let` bindings.
 ///
-/// Cleared on dialect changes (`SET dialect = ...`) in `ParserKQLStatement::parseImpl`.
-/// Multi-statement scripts of the form `let x = 5; print x;` rely on the binding being
-/// observable across consecutive `parseImpl` calls within the same query, so we cannot
-/// clear at every statement boundary without breaking the conformance tests.
+/// Lifecycle (managed in `ParserKQLStatement::parseImpl`):
+///   - `let name = value;` records the binding and returns early without clearing,
+///     so consecutive `let` statements (e.g. `let x = 5; let y = x + 1; print y;`)
+///     can share state across separate `parseImpl` calls on the same thread.
+///   - `SET dialect = ...` clears bindings — the user is switching languages.
+///   - Any other KQL statement (the consuming `print`/pipe query) installs an
+///     RAII guard that calls `kqlLetBindingsClear()` on scope exit, including
+///     exception paths. This bounds the cross-query leak window: stale bindings
+///     cannot persist past the next non-`let` query on the same worker thread.
 ///
-/// Known limitation: because `thread_local` storage outlives a single query, bindings
-/// can leak across independent queries that happen to be served by the same worker
-/// thread when the user does not toggle dialect between them. A complete fix requires
-/// associating bindings with a query/session `Context` (issue tracked in PR #102159
-/// review thread "kqlLetBindings cleanup"); per-statement RAII clearing was rejected
-/// because it would break valid multi-statement `let` scripts.
+/// Residual gap: a sequence of `let` statements that is never followed by a
+/// consuming statement on the same thread will keep its bindings until the
+/// next non-`let` statement (or dialect switch). A complete fix requires
+/// associating bindings with a query/session `Context`; this is intentionally
+/// out of scope for the conformance-test PR (#102159 review thread
+/// "kqlLetBindings cleanup") because plumbing `Context` through the parser
+/// stack is a separate refactor.
 std::unordered_map<String, String> & kqlLetBindings()
 {
     static thread_local std::unordered_map<String, String> bindings;
