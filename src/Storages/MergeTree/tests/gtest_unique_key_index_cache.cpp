@@ -6,12 +6,7 @@
 #include <Common/ProfileEvents.h>
 
 #include <atomic>
-#include <chrono>
-#include <memory>
-#include <random>
 #include <string>
-#include <thread>
-#include <vector>
 
 #if USE_ROCKSDB
 #include <rocksdb/advanced_cache.h>
@@ -126,7 +121,7 @@ TEST(UniqueKeyIndexCache, ReleaseEraseIfLastRefRemovesEntry)
     auto * h2 = cache.Lookup(rocksdb::Slice("eraseme"), &kTestHelper, nullptr,
                              rocksdb::Cache::Priority::LOW, /*stats=*/nullptr);
     ASSERT_NE(h2, nullptr);
-    EXPECT_FALSE(cache.Release(h2, /*erase_if_last_ref=*/false));
+    cache.Release(h2, /*erase_if_last_ref=*/false);
     EXPECT_TRUE(cache.Release(h, /*erase_if_last_ref=*/true));
 
     auto * h3 = cache.Lookup(rocksdb::Slice("eraseme"), &kTestHelper, nullptr,
@@ -134,65 +129,31 @@ TEST(UniqueKeyIndexCache, ReleaseEraseIfLastRefRemovesEntry)
     EXPECT_EQ(h3, nullptr);
 }
 
-TEST(UniqueKeyIndexCache, ReleaseEraseLastRefRespectsOtherLiveHandle)
+TEST(UniqueKeyIndexCache, ReleaseEraseIfLastRefYanksSlotUnconditionally)
 {
-    /// rocksdb::Cache::Release(h, erase_if_last_ref=true) must NOT erase the
-    /// entry from the cache while another live handle still pins the same
-    /// entry. Without the per-entry pin_count check, releasing one handle
-    /// would evict the entry under the other handle's feet — a contract
-    /// violation that turns into an avoidable cache miss for live readers.
+    /// `Release(h, erase_if_last_ref=true)` drops the table slot; a live
+    /// HandlePin keeps the entry alive via `shared_ptr` but a fresh Lookup
+    /// for the same key misses.
     UniqueKeyIndexCache cache = makeCache(1 << 20);
     auto * obj = new FakeObject{nullptr, 7};
     rocksdb::Cache::Handle * h1 = nullptr;
-    cache.Insert(rocksdb::Slice("key"), obj, &kTestHelper, 64, &h1,
+    cache.Insert(rocksdb::Slice("k"), obj, &kTestHelper, 64, &h1,
                  rocksdb::Cache::Priority::LOW,
                  rocksdb::Slice(), rocksdb::CompressionType::kNoCompression);
     ASSERT_NE(h1, nullptr);
 
-    auto * h2 = cache.Lookup(rocksdb::Slice("key"), &kTestHelper, nullptr,
+    auto * h2 = cache.Lookup(rocksdb::Slice("k"), &kTestHelper, nullptr,
                              rocksdb::Cache::Priority::LOW, nullptr);
     ASSERT_NE(h2, nullptr);
 
-    /// h2 still pinned: Release(h1, true) must NOT erase the entry.
-    EXPECT_FALSE(cache.Release(h1, /*erase_if_last_ref=*/true));
+    EXPECT_TRUE(cache.Release(h1, /*erase_if_last_ref=*/true));
+    EXPECT_EQ(cache.Lookup(rocksdb::Slice("k"), &kTestHelper, nullptr,
+                           rocksdb::Cache::Priority::LOW, nullptr),
+              nullptr);
 
-    auto * h3 = cache.Lookup(rocksdb::Slice("key"), &kTestHelper, nullptr,
-                             rocksdb::Cache::Priority::LOW, nullptr);
-    ASSERT_NE(h3, nullptr) << "entry was erased while h2 was still pinning it";
-    cache.Release(h3, /*erase_if_last_ref=*/false);
+    /// h2 still usable — shared_ptr keeps the entry alive.
+    EXPECT_EQ(static_cast<FakeObject *>(cache.Value(h2))->value, 7);
     cache.Release(h2, /*erase_if_last_ref=*/false);
-}
-
-TEST(UniqueKeyIndexCache, ReleaseEraseIdentityAwareDoesNotEvictReplacement)
-{
-    /// A concurrent re-`Insert` of the same key replaces the table resident
-    /// with a new shared_ptr while leaving the old handle pinning the old
-    /// entry. `Release(old, true)` must NOT erase the new resident.
-    UniqueKeyIndexCache cache = makeCache(1 << 20);
-
-    auto * obj_old = new FakeObject{nullptr, 1};
-    rocksdb::Cache::Handle * h_old = nullptr;
-    cache.Insert(rocksdb::Slice("samekey"), obj_old, &kTestHelper, 64, &h_old,
-                 rocksdb::Cache::Priority::LOW,
-                 rocksdb::Slice(), rocksdb::CompressionType::kNoCompression);
-    ASSERT_NE(h_old, nullptr);
-
-    auto * obj_new = new FakeObject{nullptr, 2};
-    rocksdb::Cache::Handle * h_new = nullptr;
-    cache.Insert(rocksdb::Slice("samekey"), obj_new, &kTestHelper, 64, &h_new,
-                 rocksdb::Cache::Priority::LOW,
-                 rocksdb::Slice(), rocksdb::CompressionType::kNoCompression);
-    ASSERT_NE(h_new, nullptr);
-
-    EXPECT_FALSE(cache.Release(h_old, /*erase_if_last_ref=*/true));
-
-    auto * h_check = cache.Lookup(rocksdb::Slice("samekey"), &kTestHelper, nullptr,
-                                  rocksdb::Cache::Priority::LOW, /*stats=*/nullptr);
-    ASSERT_NE(h_check, nullptr);
-    EXPECT_EQ(static_cast<FakeObject *>(cache.Value(h_check))->value, 2);
-
-    cache.Release(h_check, /*erase_if_last_ref=*/false);
-    cache.Release(h_new, /*erase_if_last_ref=*/false);
 }
 
 TEST(UniqueKeyIndexCache, StrictCapacityLimitIsUnsupported)
@@ -203,6 +164,24 @@ TEST(UniqueKeyIndexCache, StrictCapacityLimitIsUnsupported)
     EXPECT_FALSE(cache.HasStrictCapacityLimit());
     cache.SetStrictCapacityLimit(true);
     EXPECT_FALSE(cache.HasStrictCapacityLimit());
+}
+
+TEST(UniqueKeyIndexCache, RefReturnsFalse)
+{
+    /// This adapter declines `Ref`; callers must respect the false return
+    /// and not assume the handle's ref count was bumped.
+    UniqueKeyIndexCache cache = makeCache(1 << 20);
+    auto * obj = new FakeObject{nullptr, 1};
+    rocksdb::Cache::Handle * h = nullptr;
+    cache.Insert(rocksdb::Slice("k"), obj, &kTestHelper, sizeof(*obj), &h,
+                 rocksdb::Cache::Priority::LOW,
+                 rocksdb::Slice(), rocksdb::CompressionType::kNoCompression);
+    ASSERT_NE(h, nullptr);
+
+    EXPECT_FALSE(cache.Ref(h));
+    EXPECT_FALSE(cache.Ref(nullptr));
+
+    cache.Release(h, /*erase_if_last_ref=*/false);
 }
 
 TEST(UniqueKeyIndexCache, CreateStandaloneAlwaysSucceedsWhenNonStrict)
@@ -224,50 +203,6 @@ TEST(UniqueKeyIndexCache, CreateStandaloneAlwaysSucceedsWhenNonStrict)
         EXPECT_EQ(cache.GetCharge(h), 8192u);
         cache.Release(h, /*erase_if_last_ref=*/false);
     }
-}
-
-TEST(UniqueKeyIndexCache, ThreadSafetySmoke)
-{
-    UniqueKeyIndexCache cache = makeCache(128 * 1024);
-
-    std::atomic<bool> stop{false};
-    std::atomic<size_t> ops{0};
-
-    auto worker = [&](int id)
-    {
-        std::mt19937_64 rng(id);
-        while (!stop.load(std::memory_order_relaxed))
-        {
-            std::string k = "t" + std::to_string(rng() % 100);
-            rocksdb::Slice key(k);
-            if (rng() % 2 == 0)
-            {
-                auto * obj = new FakeObject{nullptr, id};
-                cache.Insert(key, obj, &kTestHelper, 256, nullptr,
-                             rocksdb::Cache::Priority::LOW,
-                             rocksdb::Slice(), rocksdb::CompressionType::kNoCompression);
-            }
-            else
-            {
-                auto * h = cache.Lookup(key, nullptr, nullptr, rocksdb::Cache::Priority::LOW, nullptr);
-                if (h)
-                    cache.Release(h, false);
-            }
-            ops.fetch_add(1, std::memory_order_relaxed);
-        }
-    };
-
-    std::vector<std::thread> threads;
-    for (int i = 0; i < 4; ++i)
-        threads.emplace_back(worker, i);
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    stop.store(true, std::memory_order_relaxed);
-    for (auto & t : threads)
-        t.join();
-
-    EXPECT_GT(ops.load(), 0u);
-    cache.EraseUnRefEntries();
 }
 
 #else

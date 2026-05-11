@@ -2,9 +2,7 @@
 
 #include "config.h"
 
-#include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/HashTable/Hash.h>
 
 #include <atomic>
 #include <cstddef>
@@ -19,94 +17,44 @@
 namespace DB
 {
 
-/// Internal entry type stored in the backing `CacheBase`. One entry per cached
-/// object; the weight function returns `charge + overhead` to mirror the
-/// `ObjectPtr`'s footprint reported by RocksDB at Insert time.
-struct UniqueKeyIndexCacheEntry
-{
-    /// The object pointer handed to us by RocksDB. Ownership stays with RocksDB
-    /// semantically; we only hold a raw pointer + the RocksDB-supplied deleter.
-    void * obj = nullptr;
 #if USE_ROCKSDB
-    const ROCKSDB_NAMESPACE::Cache::CacheItemHelper * helper = nullptr;
-#endif
-    /// Charge reported at Insert time. Used for GetCharge() and weight function.
-    size_t charge = 0;
-    /// Memory allocator passed at Insert time (must outlive the cache; RocksDB
-    /// contract). Forwarded to helper->del_cb on eviction.
-    void * allocator = nullptr;
 
-    UniqueKeyIndexCacheEntry() = default;
-    ~UniqueKeyIndexCacheEntry();
-
-    UniqueKeyIndexCacheEntry(const UniqueKeyIndexCacheEntry &) = delete;
-    UniqueKeyIndexCacheEntry & operator=(const UniqueKeyIndexCacheEntry &) = delete;
-};
-
-struct UniqueKeyIndexCacheEntryWeight
-{
-    static constexpr size_t OVERHEAD = 64;
-    size_t operator()(const UniqueKeyIndexCacheEntry & e) const { return e.charge + OVERHEAD; }
-};
-
-/// Backing store: SipHash-keyed CacheBase<UInt128, UniqueKeyIndexCacheEntry>.
-/// Key is a 128-bit hash of the RocksDB-supplied Slice key (SipHash128).
-/// Collisions at 128 bits are irrelevant for an in-process cache; RocksDB's
-/// own block cache uses similar-strength hashing for sharding.
-class UniqueKeyIndexCacheBacking : public CacheBase<UInt128, UniqueKeyIndexCacheEntry, UInt128TrivialHash, UniqueKeyIndexCacheEntryWeight>
-{
-private:
-    using Base = CacheBase<UInt128, UniqueKeyIndexCacheEntry, UInt128TrivialHash, UniqueKeyIndexCacheEntryWeight>;
-
-public:
-    UniqueKeyIndexCacheBacking(
-        const String & cache_policy,
-        CurrentMetrics::Metric size_in_bytes_metric,
-        CurrentMetrics::Metric count_metric,
-        size_t max_size_in_bytes,
-        double size_ratio)
-        : Base(cache_policy, size_in_bytes_metric, count_metric, max_size_in_bytes, /*max_count=*/0, size_ratio)
-    {
-    }
-};
-
-using UniqueKeyIndexCacheBackingPtr = std::shared_ptr<UniqueKeyIndexCacheBacking>;
-
-/// Hash a byte range into a 128-bit cache key.
-UInt128 uniqueKeyIndexHashKey(const char * data, size_t size);
-
-#if USE_ROCKSDB
+class UniqueKeyIndexCacheBacking;
 
 /// Adapter that implements the minimal `rocksdb::Cache` surface required for
 /// use as `BlockBasedTableOptions::block_cache`, delegating storage to a
-/// ClickHouse `CacheBase<UInt128, UniqueKeyIndexCacheEntry>` so that all memory
-/// accounting flows through `system.caches` via `UniqueKeyIndexCacheBytes` /
+/// ClickHouse `CacheBase` so that all memory accounting flows through
+/// `system.caches` via `UniqueKeyIndexCacheBytes` /
 /// `UniqueKeyIndexCacheEntries` CurrentMetrics.
 ///
-/// Strict-capacity mode is unsupported:
-///   - `HasStrictCapacityLimit()` is hardcoded to false.
-///   - `SetStrictCapacityLimit(...)` is a no-op.
+/// The adapter narrows several `rocksdb::Cache` surfaces to avoid shadow
+/// bookkeeping on top of `CacheBase`:
+///   - `HasStrictCapacityLimit()` is hardcoded to false;
+///     `SetStrictCapacityLimit(...)` is a no-op.
 ///   - `CreateStandalone(...)` always returns a charged handle. Per the
 ///     `rocksdb::Cache::CreateStandalone` spec, "if `allow_uncharged==true`
 ///     or `strict_capacity_limit=false`, the operation always succeeds";
 ///     since strict mode is permanently off here, `allow_uncharged` is
 ///     unused.
+///   - `Ref(handle)` returns false; the spec allows it ("returns false if
+///     the entry could not be refed"). Per-handle refcounting is therefore
+///     not maintained and `Release` is unconditionally final.
+///   - `Release(handle, erase_if_last_ref=true)` drops the entry's table
+///     slot unconditionally. No `use_count` or identity check guards the
+///     removal; live HandlePins still pin the entry via `shared_ptr`, so
+///     correctness is preserved, but a fresh Lookup for the same key will
+///     miss until someone re-inserts. Spec says "true iff this call erased
+///     the shared-table entry"; our return value reflects the request, not
+///     a strict-truth check that something was actually present.
 ///   - `GetPinnedUsage()` returns 0 — pinned bytes are not tracked.
 ///
-/// Honoring the strict-capacity contract on top of `CacheBase` would require
-/// shadow bookkeeping (per-entry pin counts plus a joint get-and-mutate
-/// primitive that `CacheBase` does not expose). The adapter declines that
-/// complexity; the cache is configured by ClickHouse and strict mode is
-/// never enabled on it.
-///
-/// `Handle*` lifetime: Lookup / Insert(handle) allocate a `HandlePin` on the
-/// heap holding a `shared_ptr<UniqueKeyIndexCacheEntry>` (keeping the entry
-/// alive past backing eviction) and an atomic ref count. `Ref` increments,
-/// `Release` decrements and deletes the pin at zero.
-///
-/// Eviction callback: `UniqueKeyIndexCacheEntry::~UniqueKeyIndexCacheEntry`
-/// fires RocksDB's `helper->del_cb` when the entry's last `shared_ptr` drops.
-/// Secondary cache and async lookup surfaces are inherited no-ops.
+/// Honoring `Ref` / strict-cap / `CreateStandalone(allow_uncharged=false)`
+/// would require shadow bookkeeping on top of `CacheBase` (per-entry pin
+/// counts plus a joint get-and-mutate primitive `CacheBase` does not
+/// expose). Those surfaces are not exercised by rocksdb's `BlockBasedTable`
+/// against a user-provided `block_cache`. `Release(handle, true)` IS
+/// exercised by the table reader; the relaxed identity / `use_count` check
+/// trades small cache churn for a simpler hot path.
 class UniqueKeyIndexCache : public ROCKSDB_NAMESPACE::Cache
 {
 public:
@@ -184,10 +132,8 @@ public:
     /// Clear the cache (eviction-style). Does not drop pinned handles.
     void clear();
 
-    UniqueKeyIndexCacheBacking & getBacking() { return *backing; }
-
 private:
-    UniqueKeyIndexCacheBackingPtr backing;
+    std::shared_ptr<UniqueKeyIndexCacheBacking> backing;
     std::atomic<uint64_t> next_id{1};
 };
 

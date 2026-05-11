@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/UniqueKey/UniqueKeyIndexCache.h>
 
+#include <Common/CacheBase.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
@@ -10,7 +12,6 @@
 #include <rocksdb/status.h>
 #endif
 
-#include <atomic>
 #include <functional>
 
 namespace ProfileEvents
@@ -23,41 +24,56 @@ namespace ProfileEvents
 namespace DB
 {
 
-UInt128 uniqueKeyIndexHashKey(const char * data, size_t size)
-{
-    SipHash hash;
-    hash.update(size);
-    hash.update(data, size);
-    return hash.get128();
-}
-
-UniqueKeyIndexCacheEntry::~UniqueKeyIndexCacheEntry()
-{
-#if USE_ROCKSDB
-    /// RocksDB: each entry's deleter is responsible for destroying `obj` when
-    /// the cache evicts it. `helper->del_cb` may be nullptr for
-    /// `kNoopCacheItemHelper`-style entries; guard accordingly.
-    if (helper && helper->del_cb && obj)
-    {
-        helper->del_cb(obj, reinterpret_cast<ROCKSDB_NAMESPACE::MemoryAllocator *>(allocator));
-    }
-#endif
-}
-
 #if USE_ROCKSDB
 
 namespace
 {
 
-/// `Handle*` returned by Lookup / Insert(with non-null handle). Heap-allocated;
-/// freed when its ref count hits zero in `Release`. Holds a shared_ptr to the
-/// cached entry so the entry stays alive for as long as the caller pins it,
-/// even if the cache itself evicts the entry under capacity pressure.
+/// One entry per cached object. Weight contributed to the backing is
+/// `charge + OVERHEAD`. The destructor invokes the RocksDB-supplied
+/// `helper->del_cb` to destroy `obj` when the entry's last `shared_ptr`
+/// drops (either via backing eviction or via the last HandlePin going
+/// away).
+struct UniqueKeyIndexCacheEntry
+{
+    void * obj = nullptr;
+    const ROCKSDB_NAMESPACE::Cache::CacheItemHelper * helper = nullptr;
+    size_t charge = 0;
+    /// Memory allocator passed at Insert time (must outlive the cache;
+    /// RocksDB contract). Forwarded to `helper->del_cb` on destruction.
+    void * allocator = nullptr;
+
+    UniqueKeyIndexCacheEntry() = default;
+    ~UniqueKeyIndexCacheEntry()
+    {
+        /// `helper->del_cb` may be nullptr for `kNoopCacheItemHelper`-style
+        /// entries; guard accordingly.
+        if (helper && helper->del_cb && obj)
+            helper->del_cb(obj, reinterpret_cast<ROCKSDB_NAMESPACE::MemoryAllocator *>(allocator));
+    }
+
+    UniqueKeyIndexCacheEntry(const UniqueKeyIndexCacheEntry &) = delete;
+    UniqueKeyIndexCacheEntry & operator=(const UniqueKeyIndexCacheEntry &) = delete;
+};
+
+struct UniqueKeyIndexCacheEntryWeight
+{
+    static constexpr size_t OVERHEAD = 64;
+    size_t operator()(const UniqueKeyIndexCacheEntry & e) const { return e.charge + OVERHEAD; }
+};
+
+/// `Handle*` returned by Insert(handle) / Lookup / CreateStandalone.
+/// Heap-allocated; freed by `Release`. Holds a `shared_ptr` to the cached
+/// entry so the entry stays alive as long as the caller pins it, even if
+/// the backing evicts it under capacity pressure.
+///
+/// No per-handle refcount: `Ref` is declined (returns false), so each
+/// HandlePin has exactly one outstanding "reference" — the implicit one
+/// from its constructor. `Release` is therefore always final.
 struct HandlePin
 {
     std::shared_ptr<UniqueKeyIndexCacheEntry> entry;
     UInt128 key{};
-    std::atomic<int32_t> refs{1};
 };
 
 HandlePin * asPin(ROCKSDB_NAMESPACE::Cache::Handle * h)
@@ -70,12 +86,35 @@ ROCKSDB_NAMESPACE::Cache::Handle * fromPin(HandlePin * p)
     return reinterpret_cast<ROCKSDB_NAMESPACE::Cache::Handle *>(p);
 }
 
-UInt128 keyOf(const ROCKSDB_NAMESPACE::Slice & key)
+UInt128 hashKey(const ROCKSDB_NAMESPACE::Slice & key)
 {
-    return uniqueKeyIndexHashKey(key.data(), key.size());
+    SipHash hash;
+    hash.update(key.size());
+    hash.update(key.data(), key.size());
+    return hash.get128();
 }
 
 }
+
+/// Backing store: SipHash-keyed `CacheBase<UInt128, UniqueKeyIndexCacheEntry>`.
+/// Collisions at 128 bits are irrelevant for an in-process cache; RocksDB's
+/// own block cache uses similar-strength hashing for sharding. Defined here
+/// (not in an anonymous namespace) so that the header's forward declaration
+/// matches.
+class UniqueKeyIndexCacheBacking : public CacheBase<UInt128, UniqueKeyIndexCacheEntry, UInt128TrivialHash, UniqueKeyIndexCacheEntryWeight>
+{
+    using Base = CacheBase<UInt128, UniqueKeyIndexCacheEntry, UInt128TrivialHash, UniqueKeyIndexCacheEntryWeight>;
+public:
+    UniqueKeyIndexCacheBacking(
+        const String & cache_policy,
+        CurrentMetrics::Metric size_in_bytes_metric,
+        CurrentMetrics::Metric count_metric,
+        size_t max_size_in_bytes,
+        double size_ratio)
+        : Base(cache_policy, size_in_bytes_metric, count_metric, max_size_in_bytes, /*max_count=*/0, size_ratio)
+    {
+    }
+};
 
 UniqueKeyIndexCache::UniqueKeyIndexCache(
     const String & cache_policy,
@@ -106,14 +145,14 @@ ROCKSDB_NAMESPACE::Status UniqueKeyIndexCache::Insert(
     entry->charge = charge;
 
     Stopwatch insert_watch;
-    backing->set(keyOf(key), entry);
+    backing->set(hashKey(key), entry);
     ProfileEvents::increment(
         ProfileEvents::UniqueKeyIndexCacheLookupMicroseconds,
         insert_watch.elapsedMicroseconds());
 
     if (handle)
     {
-        auto * pin = new HandlePin{entry, keyOf(key), std::atomic<int32_t>{1}};
+        auto * pin = new HandlePin{entry, hashKey(key)};
         *handle = fromPin(pin);
     }
 
@@ -138,7 +177,7 @@ UniqueKeyIndexCache::CreateStandalone(
     /// Standalone handle: not in the backing. Its Release predicate is a
     /// guaranteed no-match (the backing never holds this entry's shared_ptr
     /// and the entry's use_count is 1, not 2), so no special handling needed.
-    auto * pin = new HandlePin{entry, UInt128{}, std::atomic<int32_t>{1}};
+    auto * pin = new HandlePin{entry, UInt128{}};
     return fromPin(pin);
 }
 
@@ -151,7 +190,7 @@ UniqueKeyIndexCache::Lookup(
     ROCKSDB_NAMESPACE::Statistics * /*stats*/)
 {
     Stopwatch lookup_watch;
-    auto entry = backing->get(keyOf(key));
+    auto entry = backing->get(hashKey(key));
     ProfileEvents::increment(
         ProfileEvents::UniqueKeyIndexCacheLookupMicroseconds,
         lookup_watch.elapsedMicroseconds());
@@ -161,17 +200,17 @@ UniqueKeyIndexCache::Lookup(
         return nullptr;
     }
 
-    auto * pin = new HandlePin{entry, keyOf(key), std::atomic<int32_t>{1}};
+    auto * pin = new HandlePin{entry, hashKey(key)};
     ProfileEvents::increment(ProfileEvents::UniqueKeyIndexCacheHits);
     return fromPin(pin);
 }
 
-bool UniqueKeyIndexCache::Ref(Handle * handle)
+bool UniqueKeyIndexCache::Ref(Handle * /*handle*/)
 {
-    if (!handle)
-        return false;
-    asPin(handle)->refs.fetch_add(1, std::memory_order_relaxed);
-    return true;
+    /// Decline additional refs (see header). The spec permits this via
+    /// "returns false if the entry could not be refed." Letting Ref always
+    /// fail removes per-handle refcounting.
+    return false;
 }
 
 bool UniqueKeyIndexCache::Release(Handle * handle, bool erase_if_last_ref)
@@ -179,32 +218,14 @@ bool UniqueKeyIndexCache::Release(Handle * handle, bool erase_if_last_ref)
     if (!handle)
         return false;
     auto * pin = asPin(handle);
-    if (pin->refs.fetch_sub(1, std::memory_order_acq_rel) != 1)
-        return false;
 
-    /// Identity-aware "last reference" erase, per rocksdb::Cache::Release.
-    /// Predicate runs under CacheBase's bucket lock; same lock taken by Lookup
-    /// (`backing->get`) and Insert (`backing->set`), so during this call no
-    /// other thread can copy the table's shared_ptr or insert a new HandlePin
-    /// for this entry. Inside the lock the contributors to `pinned.use_count()`
-    /// are stable: the table holds one strong ref, our HandlePin holds one,
-    /// and any additional Lookup-issued HandlePin contributes one more. So
-    /// use_count == 2 means we are the last external pin and it is safe to
-    /// erase; > 2 means another live HandlePin exists and we must keep the
-    /// entry resident so a fresh Lookup still hits.
+    /// Drop the entry's table slot; live HandlePins keep the entry alive
+    /// via `shared_ptr`.
     bool erased = false;
     if (erase_if_last_ref)
     {
-        const auto & pinned = pin->entry;
-        using RemovePred = std::function<bool(const UInt128 &, const std::shared_ptr<UniqueKeyIndexCacheEntry> &)>;
-        RemovePred pred = [&](const UInt128 & k, const std::shared_ptr<UniqueKeyIndexCacheEntry> & v)
-        {
-            const bool matches = (k == pin->key && v == pinned && pinned.use_count() == 2);
-            if (matches)
-                erased = true;
-            return matches;
-        };
-        backing->remove(pred);
+        backing->remove(pin->key);
+        erased = true;
     }
     delete pin;
     return erased;
@@ -217,7 +238,7 @@ ROCKSDB_NAMESPACE::Cache::ObjectPtr UniqueKeyIndexCache::Value(Handle * handle)
 
 void UniqueKeyIndexCache::Erase(const ROCKSDB_NAMESPACE::Slice & key)
 {
-    backing->remove(keyOf(key));
+    backing->remove(hashKey(key));
 }
 
 uint64_t UniqueKeyIndexCache::NewId()
@@ -294,11 +315,10 @@ void UniqueKeyIndexCache::ApplyToHandle(
         return;
     const auto * pin = asPin(handle);
     /// Key is unknown post-hashing; pass an empty Slice to keep the callback
-    /// signature satisfied. Callers of ApplyToHandle in BlockBasedTable use the
-    /// callback for reporting, not routing, so an empty key is tolerated.
+    /// signature satisfied. Callers of ApplyToHandle in BlockBasedTable use
+    /// the callback for reporting, not routing, so an empty key is tolerated.
     ROCKSDB_NAMESPACE::Slice empty_key;
-    callback(empty_key, pin->entry->obj, pin->entry->charge,
-             pin->entry->helper);
+    callback(empty_key, pin->entry->obj, pin->entry->charge, pin->entry->helper);
 }
 
 void UniqueKeyIndexCache::EraseUnRefEntries()
