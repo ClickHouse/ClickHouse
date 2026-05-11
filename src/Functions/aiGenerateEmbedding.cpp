@@ -151,7 +151,7 @@ public:
         UInt64 max_retries = settings[Setting::ai_function_max_retries].value;
         UInt64 retry_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
         bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
-        UInt64 max_batch_size = settings[Setting::ai_function_embedding_max_batch_size].value;
+        size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
         if (max_batch_size == 0)
             max_batch_size = 1;
 
