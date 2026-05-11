@@ -1,4 +1,10 @@
-# Redis-Compatible Endpoint Final 100k Benchmark Results
+# Redis-Compatible Endpoint Final Benchmark Results
+
+## Research Question Framing
+
+The benchmark evaluates whether a Redis-compatible read-only endpoint can reduce ClickHouse SQL/HTTP overhead for supported point lookups over prepared key-value tables.
+
+The Redis-compatible endpoint removes much of the SQL/HTTP overhead for supported point lookups over prepared key-value tables. The primary comparison is ClickHouse HTTP SQL path versus the ClickHouse Redis-compatible endpoint. Redis raw is included as an external reference baseline, not as a target to outperform.
 
 ## Run Metadata
 
@@ -15,15 +21,17 @@
 - Redis version: 7.0.15, jemalloc 5.3.0
 - ClickHouse binary path: `./build-new/programs/clickhouse`
 
-## Dataset
+## 100k String-Key Benchmark Dataset
 
 - Keys: 100000
+- Key type: `String`
 - Key format: `key_000000000`
+- Value type: `String`
 - Value size: 64 bytes
 - ClickHouse table engine: `EmbeddedRocksDB`
 - The same generated dataset was used for all systems.
 
-## Interfaces Compared
+## 100k String-Key Interfaces Compared
 
 - ClickHouse HTTP SQL
 - ClickHouse Redis-compatible endpoint measured with a raw socket RESP client
@@ -55,7 +63,7 @@ Redis remains an external reference for orientation. It is not a required perfor
 | Redis | RESP raw | 10 | 8 | 40095.66 | 0.152 | 0.482 | 0.713 |
 | Redis | RESP raw | 100 | 32 | 8774.18 | 2.838 | 8.836 | 12.480 |
 
-## Key Results
+## 100k String-Key Key Results
 
 - Best QPS:
   - HTTP SQL: 2827.14
@@ -69,6 +77,40 @@ Redis remains an external reference for orientation. It is not a required perfor
   - HTTP SQL: 50.651 ms
   - ClickHouse Redis endpoint: 14.222 ms
   - Redis raw reference: 12.480 ms
+
+## Additional Existing-Table Benchmark: `bench.kv_test`
+
+This benchmark verifies the Redis-compatible endpoint on a larger existing ClickHouse table with `UInt64` keys, not only on the generated 100k `String` key benchmark table.
+
+Dataset and schema:
+
+- Table: `bench.kv_test`
+- Rows: 10M
+- Key: `UInt64`
+- Value: `String`
+- Extra columns: `extra1 UInt32`, `extra2 Float64`
+- Engine: `EmbeddedRocksDB`
+- Primary key: `key`
+
+Results:
+
+| Metric | ClickHouse HTTP SQL | ClickHouse Redis endpoint |
+|---|---:|---:|
+| Best QPS | 2763.65 | 80652.74 |
+| p99, batch-size 1, concurrency 1 | 1.059 ms | 0.028 ms |
+| p99, batch-size 100, concurrency 32 | 52.755 ms | 19.824 ms |
+
+The `bench.kv_test` result supports the same interpretation as the 100k benchmark: the Redis-compatible endpoint substantially reduces overhead relative to the tested ClickHouse HTTP SQL path for prepared key-value point lookups. It also verifies the `UInt64` key path used by `IKeyValueEntity::getByKeys`.
+
+## QPS And `MGET` Interpretation
+
+QPS is measured per command/request:
+
+- `GET` is one command.
+- `MGET` is one command containing multiple keys.
+- HTTP SQL batch lookup is one HTTP SQL request.
+
+For `MGET`, approximate key throughput is request QPS multiplied by batch size. Latency percentiles remain per request/command, not per key.
 
 ## Interpretation
 
@@ -86,10 +128,23 @@ The Redis-compatible endpoint does reduce overhead compared with SQL/HTTP. The s
 
 The effect is clearest when the workload is dominated by point lookup protocol overhead. Under batch-size 1, the endpoint avoids SQL parsing and HTTP request overhead for each lookup. Under higher concurrency, the Redis-compatible endpoint continues to scale to much higher command QPS than HTTP SQL, while keeping much lower p50, p95, and p99 latency in the representative rows.
 
-Limitations remain. These are preliminary 100k-key results on one machine and one value size. The benchmark reports command QPS rather than per-key QPS, which matters for `MGET` rows. Redis is an external reference, not a required target, and the current comparison does not yet cover larger datasets, longer runs, persistence effects, mixed workloads, misses, updates, or multi-client deployment conditions.
+The experiments support the claim that a specialized Redis-compatible read-only endpoint can substantially reduce SQL/HTTP overhead for supported point lookups over prepared ClickHouse key-value tables. This is shown both on the 100k `String` key benchmark and on the 10M-row `UInt64` `bench.kv_test` table. The result does not prove production-wide performance and does not imply that ClickHouse is generally faster than Redis.
+
+## Limitations And Caveats
+
+- These results are hot-cache local-loopback microbenchmarks.
+- The results do not prove production-wide performance.
+- QPS is command/request QPS, not per-key QPS.
+- For `MGET`, approximate key throughput is request QPS multiplied by batch size, while latency remains per request/command.
+- The Redis-compatible endpoint is not a full Redis implementation.
+- The Redis-compatible endpoint is not a Redis replacement.
+- Redis raw is an external reference baseline, not something the ClickHouse endpoint is claimed to outperform generally.
+- Do not claim that ClickHouse is faster than Redis.
+- The endpoint supports prepared `IKeyValueEntity`-compatible key-value tables, not arbitrary ClickHouse tables.
+- Current scope is read-only `GET`/`MGET`, `String` or `UInt64` key, and `String` `default_column` value.
+- The comparison does not cover cold cache, remote clients, write workloads, mixed workloads, persistence effects, failures, or multi-node deployment conditions.
 
 ## Notes
 
 - The raw CSV `benchmark/kv_baseline/results/final_100k_raw.csv` should not be committed.
-- These results are preliminary 100k benchmark results.
-- A 1M dataset benchmark can be added later if time allows.
+- The raw CSV files under `benchmark/kv_baseline/results/` should not be committed unless explicitly intended as small curated artifacts.
