@@ -10,7 +10,6 @@
 
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
 
 
@@ -37,6 +36,30 @@ constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
 constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
 constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
+
+void writeJSONKey(std::string_view key, WriteBuffer & out)
+{
+    writeJSONString(key, out, {});
+    writeChar(':', out);
+}
+
+void writeJSONKeyValue(std::string_view key, std::string_view value, WriteBuffer & out)
+{
+    writeJSONKey(key, out);
+    writeJSONString(value, out, {});
+}
+
+void writeJSONKeyValue(std::string_view key, size_t value, WriteBuffer & out)
+{
+    writeJSONKey(key, out);
+    writeIntText(value, out);
+}
+
+void writeJSONKeyValue(std::string_view key, bool value, WriteBuffer & out)
+{
+    writeJSONKey(key, out);
+    writeString(value ? "true" : "false", out);
+}
 
 }
 
@@ -249,6 +272,30 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     }
 }
 
+void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name) const
+{
+    writeJSONKeyValue(KEY_KIND, ISerialization::kindStackToString(kind_stack), out);
+
+    if (name)
+    {
+        writeChar(',', out);
+        writeJSONKeyValue(KEY_NAME, *name, out);
+    }
+
+    writeChar(',', out);
+    writeJSONKeyValue(KEY_NUM_DEFAULTS, data.num_defaults, out);
+
+    writeChar(',', out);
+    writeJSONKeyValue(KEY_NUM_ROWS, data.num_rows, out);
+}
+
+void SerializationInfo::writeJSON(WriteBuffer & out, const String * name) const
+{
+    writeChar('{', out);
+    writeJSONFields(out, name);
+    writeChar('}', out);
+}
+
 void SerializationInfo::toJSON(Poco::JSON::Object & object) const
 {
     object.set(KEY_KIND, ISerialization::kindStackToString(kind_stack));
@@ -377,42 +424,57 @@ bool SerializationInfoByName::needsPersistence() const
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
-    Poco::JSON::Object object;
-    Poco::JSON::Array column_infos;
+    auto version = getVersion();
 
+    writeChar('{', out);
+    writeJSONKey(KEY_COLUMNS, out);
+    writeChar('[', out);
+
+    bool first = true;
     for (const auto & [name, info] : *this)
     {
-        Poco::JSON::Object info_json;
-        info->toJSON(info_json);
-        info_json.set(KEY_NAME, name);
-        column_infos.add(std::move(info_json)); /// NOLINT
-    }
+        if (!first)
+            writeChar(',', out);
+        first = false;
 
-    auto version = getVersion();
-    object.set(KEY_VERSION, static_cast<uint8_t>(version));
-    object.set(KEY_COLUMNS, std::move(column_infos)); /// NOLINT
+        info->writeJSON(out, &name);
+    }
+    writeChar(']', out);
+
+    if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES && settings.propagate_types_serialization_versions_to_nested_types)
+    {
+        writeChar(',', out);
+        writeJSONKeyValue(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types, out);
+    }
 
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
-        Poco::JSON::Object type_versions_obj;
-        type_versions_obj.set(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(settings.string_serialization_version));
-        if (settings.nullable_serialization_version != MergeTreeNullableSerializationVersion::BASIC)
-            type_versions_obj.set(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(settings.nullable_serialization_version));
-        if (settings.map_serialization_version != MergeTreeMapSerializationVersion::BASIC)
-            type_versions_obj.set(KEY_MAP_SERIALIZATION_VERSION, static_cast<size_t>(settings.map_serialization_version));
-        object.set(KEY_TYPES_SERIALIZATION_VERSIONS, type_versions_obj);
+        writeChar(',', out);
+        writeJSONKey(KEY_TYPES_SERIALIZATION_VERSIONS, out);
+        writeChar('{', out);
 
-        /// Write flag propagate_types_serialization_versions_to_nested_types only if it's set,
-        /// so old versions can read this info if the flag is disabled.
-        if (settings.propagate_types_serialization_versions_to_nested_types)
-            object.set(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types);
+        bool first_type_version = true;
+        auto write_type_version = [&](std::string_view key, size_t value)
+        {
+            if (!first_type_version)
+                writeChar(',', out);
+            first_type_version = false;
+
+            writeJSONKeyValue(key, value, out);
+        };
+
+        if (settings.map_serialization_version != MergeTreeMapSerializationVersion::BASIC)
+            write_type_version(KEY_MAP_SERIALIZATION_VERSION, static_cast<size_t>(settings.map_serialization_version));
+        if (settings.nullable_serialization_version != MergeTreeNullableSerializationVersion::BASIC)
+            write_type_version(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(settings.nullable_serialization_version));
+        write_type_version(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(settings.string_serialization_version));
+
+        writeChar('}', out);
     }
 
-    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    oss.exceptions(std::ios::failbit);
-    Poco::JSON::Stringifier::stringify(object, oss);
-
-    writeString(oss.str(), out);
+    writeChar(',', out);
+    writeJSONKeyValue(KEY_VERSION, static_cast<size_t>(version), out);
+    writeChar('}', out);
 }
 
 SerializationInfoByName SerializationInfoByName::clone() const
