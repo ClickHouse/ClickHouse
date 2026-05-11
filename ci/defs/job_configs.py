@@ -152,6 +152,8 @@ common_integration_test_job_config = Job.Config(
             "./ci/jobs/scripts/integration_tests_configs.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
+            "./ci/jobs/promql_compliance_job.py",
+            "./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
             "./tests/integration/",
             "./ci/docker/integration",
             "./ci/jobs/scripts/docker_in_docker.sh",
@@ -1534,4 +1536,30 @@ class JobConfigs:
         ),
         timeout=3600,
         enable_gh_auth=True,
+    )
+    promql_compliance_job = Job.Config(
+        name=JobNames.PROMQL_COMPLIANCE,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        run_in_docker="clickhouse/test-base",
+        requires=[
+            j.name
+            for j in (
+                JobConfigs.integration_test_jobs_required
+                + JobConfigs.integration_test_jobs_non_required
+            )
+        ],
+        command="python3 ./ci/jobs/promql_compliance_job.py",
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
+        ],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/promql_compliance_job.py",
+                "./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
+                "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
+            ],
+        ),
+        timeout=600,
+        enable_gh_auth=True,
+        allow_failure=True,
     )
