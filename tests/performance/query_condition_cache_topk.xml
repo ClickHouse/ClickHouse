@@ -1,0 +1,24 @@
+<test>
+    <!-- Demonstrates the speedup of enabling the Query Condition Cache (QCC) for
+         queries that go through the `ORDER BY ... LIMIT n` (TopK) plan. Before
+         this PR, `updateQueryConditionCache` bailed out for TopK reads and the
+         QCC never cached anything, so every run paid the full WHERE-filter cost.
+         With the QCC entry now salted by the TopK plan parameters, the second
+         and subsequent runs of the same query reuse the cached granule
+         decisions and skip the marks dropped by the WHERE filter. -->
+
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+    <settings>
+        <use_top_k_dynamic_filtering>1</use_top_k_dynamic_filtering>
+        <use_skip_indexes_for_top_k>1</use_skip_indexes_for_top_k>
+    </settings>
+
+    <!-- QCC enabled: this PR makes the cache effective for TopK reads. -->
+    <query>SELECT URL, EventTime FROM hits_100m_single WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 SETTINGS use_query_condition_cache = 1</query>
+
+    <!-- QCC disabled: baseline, unaffected by this PR. -->
+    <query>SELECT URL, EventTime FROM hits_100m_single WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 SETTINGS use_query_condition_cache = 0</query>
+</test>
