@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Core/Settings.h>
 
@@ -108,8 +109,9 @@ bool tryEstimateWithStatistics(
                 has_any_stats = true;
             }
         }
-        catch (...)
+        catch (...) /// Ok — statistical estimation is best-effort: skip parts whose statistics fail to load
         {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
