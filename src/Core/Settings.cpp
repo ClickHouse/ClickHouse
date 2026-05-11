@@ -4714,6 +4714,9 @@ Maximum parser backtracking (how many times it tries different alternatives in t
     DECLARE(UInt64, max_recursive_cte_evaluation_depth, DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, R"(
 Maximum limit on recursive CTE evaluation depth
 )", 0) \
+    DECLARE(UInt64, recursive_cte_max_steps_in_type_inference, 10, R"(
+Maximum number of iterations for inferring column types in recursive CTEs. Column types are determined by iteratively applying `getLeastSupertype` across the non-recursive and recursive sides of the UNION ALL until convergence. Set to 0 to disable type widening and use the types from the non-recursive part only.
+)", 0) \
     DECLARE(Bool, allow_settings_after_format_in_insert, false, R"(
 Control whether `SETTINGS` after `FORMAT` in `INSERT` queries is allowed or not. It is not recommended to use this, since this may interpret part of `SETTINGS` as values.
 
@@ -7233,10 +7236,6 @@ Possible values:
 
 This options will produce different results depending on the settings used.
 
-:::note
-This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](/operations/settings/settings#max_parallel_replicas) for more details.
-:::
-
 ### Parallel processing using `SAMPLE` key
 
 A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
@@ -7704,6 +7703,15 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
+    DECLARE(UInt64, shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms, 50, R"(
+Initial backoff in milliseconds for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
+)", 0) \
+    DECLARE(UInt64, shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms, 1000, R"(
+Max backoff in milliseconds for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
+)", 0) \
+    DECLARE(UInt64, shared_merge_tree_sequential_consistency_parts_update_max_retries, 10, R"(
+Max retries for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
+)", 0) \
     DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
 If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
 )", 0) \
