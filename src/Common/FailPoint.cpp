@@ -163,6 +163,7 @@ static struct InitFiu
     REGULAR(rmt_delay_commit_part) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
+    REGULAR(smt_part_update_duplicated_part) \
     REGULAR(check_database_datalake_negative) \
     REGULAR(restart_replica_fail_after_detach) \
     REGULAR(database_replicated_force_metadata_digest_check) \
@@ -172,8 +173,7 @@ static struct InitFiu
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
-    REGULAR(compact_part_writer_fail_in_add_streams) \
-    REGULAR(query_metric_log_delay_collect)
+    REGULAR(compact_part_writer_fail_in_add_streams)
 
 namespace FailPoints
 {
@@ -339,12 +339,12 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 {
     std::vector<FailPointInfo> result;
 
-#define SUB_M(NAME, TP)                                 \
-    result.push_back(                                   \
-        FailPointInfo{                                  \
-            .name = FailPoints::NAME,                   \
-            .type = FailPointType::TP,                  \
-            .enabled = fiu_fail(FailPoints::NAME) != 0, \
+#define SUB_M(NAME, TP)                                   \
+    result.push_back(                                     \
+        FailPointInfo{                                    \
+            .name = FailPoints::NAME,                     \
+            .type = FailPointType::TP,                    \
+            .enabled = fiu_status(FailPoints::NAME) != 0, \
         });
 #define ADD_ONCE(NAME) SUB_M(NAME, Once)
 #define ADD_REGULAR(NAME) SUB_M(NAME, Regular)
