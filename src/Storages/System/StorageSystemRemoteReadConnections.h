@@ -5,11 +5,11 @@
 namespace DB
 {
 
-/// system.live_source_buffers — shows all active live source connections held by ReaderExecutor.
-class StorageSystemLiveSourceBuffers final : public IStorageSystemOneBlock
+/// system.remote_read_connections — shows active remote read connections held by ReaderExecutor.
+class StorageSystemRemoteReadConnections final : public IStorageSystemOneBlock
 {
 public:
-    std::string getName() const override { return "SystemLiveSourceBuffers"; }
+    std::string getName() const override { return "SystemRemoteReadConnections"; }
 
     static ColumnsDescription getColumnsDescription();
 

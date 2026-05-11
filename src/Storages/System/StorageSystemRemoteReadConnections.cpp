@@ -1,4 +1,4 @@
-#include <Storages/System/StorageSystemLiveSourceBuffers.h>
+#include <Storages/System/StorageSystemRemoteReadConnections.h>
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -9,18 +9,18 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemLiveSourceBuffers::getColumnsDescription()
+ColumnsDescription StorageSystemRemoteReadConnections::getColumnsDescription()
 {
     return ColumnsDescription
     {
         {"object_path", std::make_shared<DataTypeString>(), "Path of the remote object being read."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query holding this connection."},
         {"position", std::make_shared<DataTypeUInt64>(), "Current read position in the object (bytes)."},
-        {"elapsed_seconds", std::make_shared<DataTypeFloat64>(), "Seconds since the live buffer was acquired."},
+        {"elapsed_seconds", std::make_shared<DataTypeFloat64>(), "Seconds since the connection was opened."},
     };
 }
 
-void StorageSystemLiveSourceBuffers::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemRemoteReadConnections::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto buffer_limit = context->getSourceBufferLimit();
     auto active = buffer_limit->getActive();
