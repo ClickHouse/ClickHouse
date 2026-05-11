@@ -138,6 +138,8 @@ private:
         size_t num_initial_selected_granules = 0;
         size_t num_parts_after_minmax = 0;
         size_t num_granules_after_minmax = 0;
+        size_t num_parts_after_partition_pruner = 0;
+        size_t num_granules_after_partition_pruner = 0;
     };
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
@@ -147,6 +149,7 @@ private:
         const std::optional<std::unordered_set<String>> & part_values,
         const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
+        const std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         PartFilterCounters & counters,
         QueryStatusPtr query_status);
@@ -158,6 +161,7 @@ private:
         MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
         const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
+        const std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context,
         PartFilterCounters & counters,
@@ -180,12 +184,14 @@ public:
     static ConditionTemplate<KeyCondition>::Ptr buildKeyConditionFromPartOffset(
         const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
         const StorageMetadataPtr & metadata_snapshot,
+        bool skip_folding,
         ContextPtr context);
 
     /// If possible, construct optional key condition template from predicates containing _part_offset + _part_starting_offset expression.
     static ConditionTemplate<KeyCondition>::Ptr buildKeyConditionFromTotalOffset(
         const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
         const StorageMetadataPtr & metadata_snapshot,
+        bool skip_folding,
         ContextPtr context);
 
     /// If possible, filter using expression on virtual columns.
@@ -201,6 +207,7 @@ public:
     /// Filter parts using minmax index and partition key.
     static RangesInDataParts filterPartsByPartition(
         const RangesInDataParts & parts,
+        const std::optional<PartitionPruner> & partition_pruner,
         const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
         const std::optional<std::unordered_set<String>> & part_values,
         const StorageMetadataPtr & metadata_snapshot,

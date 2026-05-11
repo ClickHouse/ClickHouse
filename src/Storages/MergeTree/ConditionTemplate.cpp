@@ -149,6 +149,24 @@ ActionsDAG substituteConstantInputs(
                 }
                 break;
             }
+            case ActionsDAG::ActionType::FUNCTION:
+            {
+                if (inputs_to_substitute.contains(old_node->result_name))
+                {
+                    auto column = makeConstantColumnForSubstitution(old_node->result_name, partition, partition_id, metadata_snapshot);
+                    new_node = &new_dag.addColumn(ColumnWithTypeAndName{column, old_node->result_type, old_node->result_name});
+                }
+                else
+                {
+                    ActionsDAG::NodeRawConstPtrs children;
+                    children.reserve(old_node->children.size());
+                    for (const auto * child : old_node->children)
+                        children.push_back(mapping.at(child));
+
+                    new_node = &new_dag.addFunction(old_node->function_base, std::move(children), old_node->result_name);
+                }
+                break;
+            }
             case ActionsDAG::ActionType::COLUMN:
             {
                 new_node = &new_dag.addColumn(ColumnWithTypeAndName{old_node->column, old_node->result_type, old_node->result_name}, old_node->is_deterministic_constant);
@@ -157,16 +175,6 @@ ActionsDAG substituteConstantInputs(
             case ActionsDAG::ActionType::ALIAS:
             {
                 new_node = &new_dag.addAlias(*mapping.at(old_node->children[0]), old_node->result_name);
-                break;
-            }
-            case ActionsDAG::ActionType::FUNCTION:
-            {
-                ActionsDAG::NodeRawConstPtrs children;
-                children.reserve(old_node->children.size());
-                for (const auto * child : old_node->children)
-                    children.push_back(mapping.at(child));
-
-                new_node = &new_dag.addFunction(old_node->function_base, std::move(children), old_node->result_name);
                 break;
             }
             case ActionsDAG::ActionType::ARRAY_JOIN:
@@ -207,13 +215,16 @@ ConditionTemplate<Cond>::ConditionTemplate(
     std::shared_ptr<ActionsDAGWithInversionPushDown> dag_,
     Factory factory_,
     StorageMetadataPtr metadata_snapshot_,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool skip_folding_)
     : dag(std::move(dag_))
     , factory(std::move(factory_))
     , metadata_snapshot(std::move(metadata_snapshot_))
     , context(std::move(context_))
+    , skip_folding(skip_folding_)
 {
     partition_constant_names = collectPartitionConstantColumnNames(metadata_snapshot);
+    generateUnsubstituted();
 }
 
 template <typename Cond>
@@ -234,7 +245,7 @@ const Cond & ConditionTemplate<Cond>::generateUnsubstituted() const
 template <typename Cond>
 const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartition & partition) const
 {
-    if (!dag || !dag->predicate)
+    if (skip_folding || !dag || !dag->predicate)
         return generateUnsubstituted();
 
     std::unique_lock lock(mutex);
@@ -270,6 +281,9 @@ void ConditionTemplate<Cond>::addTransformation(Transformer transformer_)
         next_transform(condition);
         return condition;
     };
+
+    unsubstituted.reset();
+    cache.clear();
 }
 
 template class ConditionTemplate<KeyCondition>;

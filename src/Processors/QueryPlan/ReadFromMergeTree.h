@@ -284,6 +284,7 @@ public:
         ConditionTemplate<KeyCondition>::Ptr minmax_idx_condition;
         ConditionTemplate<KeyCondition>::Ptr part_offset_condition;
         ConditionTemplate<KeyCondition>::Ptr total_offset_condition;
+        std::optional<PartitionPruner> partition_pruner;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;

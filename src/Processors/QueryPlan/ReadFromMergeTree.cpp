@@ -220,6 +220,7 @@ namespace Setting
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
     extern const SettingsBool split_parts_ranges_into_intersecting_and_non_intersecting_final;
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
+    extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_primary_key;
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool use_skip_indexes;
@@ -1996,6 +1997,7 @@ void ReadFromMergeTree::buildIndexes(
     const Names & primary_key_column_names = primary_key.column_names;
 
     const auto & settings = query_context->getSettingsRef();
+    const bool skip_constant_folding = skip_partition_pruning_ || !settings[Setting::use_constant_folding_in_index_analysis];
 
     auto filter_dag_ptr = std::make_shared<ActionsDAGWithInversionPushDown>(filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr, query_context);
     const auto & filter_dag = *filter_dag_ptr;
@@ -2006,7 +2008,7 @@ void ReadFromMergeTree::buildIndexes(
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context);
             return KeyCondition{wrapped, query_context, primary_key_column_names, primary_key.expression, /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
         };
-        auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, key_condition_factory, metadata_snapshot, query_context);
+        auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, key_condition_factory, metadata_snapshot, query_context, skip_constant_folding);
         indexes.emplace(std::move(key_condition_template));
     }
 
@@ -2016,20 +2018,29 @@ void ReadFromMergeTree::buildIndexes(
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context);
             return KeyCondition{wrapped, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(NamesAndTypesList{}))};
         };
-        indexes->key_condition_rpn_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, key_condition_factory, metadata_snapshot, query_context);
+        indexes->key_condition_rpn_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, key_condition_factory, metadata_snapshot, query_context, skip_constant_folding);
     }
 
     if (metadata_snapshot->hasPartitionKey())
     {
-        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_](const ActionsDAG *, const ActionsDAG::Node * predicate)
+        bool skip_partition_analysis = skip_partition_pruning_ || !settings[Setting::use_partition_pruning];
+
+        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_analysis](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             const auto & partition_key = metadata_snapshot->getPartitionKey();
             auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
             auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context);
-            return KeyCondition{wrapped, query_context, minmax_columns_names, minmax_expression_actions, /*single_point=*/false, /*skip_analysis=*/skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning]};
+            return KeyCondition{wrapped, query_context, minmax_columns_names, minmax_expression_actions, /*single_point=*/false, /*skip_analysis=*/skip_partition_analysis};
         };
-        indexes->minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, key_condition_factory, metadata_snapshot, query_context);
+        indexes->minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, key_condition_factory, metadata_snapshot, query_context, skip_constant_folding);
+
+        indexes->partition_pruner.emplace(
+            metadata_snapshot,
+            filter_dag,
+            query_context,
+            false /* strict */,
+            skip_partition_analysis);
     }
 
     indexes->part_values
@@ -2038,9 +2049,9 @@ void ReadFromMergeTree::buildIndexes(
     /// Perform virtual column key analysis only when no corresponding physical columns exist.
     const auto & columns = metadata_snapshot->getColumns();
     if (!columns.has("_part_offset") && !columns.has("_part"))
-        indexes->part_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(filter_dag_ptr, metadata_snapshot, query_context);
+        indexes->part_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(filter_dag_ptr, metadata_snapshot, skip_constant_folding, query_context);
     if (!columns.has("_part_offset") && !columns.has("_part_starting_offset"))
-        indexes->total_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(filter_dag_ptr, metadata_snapshot, query_context);
+        indexes->total_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(filter_dag_ptr, metadata_snapshot, skip_constant_folding, query_context);
 
     indexes->use_skip_indexes = settings[Setting::use_skip_indexes];
     if (query_info_.isFinal() && !settings[Setting::use_skip_indexes_if_final])
@@ -2094,7 +2105,7 @@ void ReadFromMergeTree::buildIndexes(
             };
         }
 
-        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(filter_dag_ptr, std::move(factory), metadata_snapshot, query_context);
+        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(filter_dag_ptr, std::move(factory), metadata_snapshot, query_context, skip_constant_folding);
 
         const auto & unsubstituted = condition_template->generateUnsubstituted();
         if (unsubstituted && !unsubstituted->alwaysUnknownOrTrue())
@@ -2497,6 +2508,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     res_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
         parts,
+        indexes->partition_pruner,
         indexes->minmax_idx_condition,
         indexes->part_values,
         metadata_snapshot,

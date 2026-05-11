@@ -228,6 +228,7 @@ namespace Setting
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool use_constant_folding_in_index_analysis;
 }
 
 namespace MergeTreeSetting
@@ -8688,6 +8689,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     size_t rows = parts.size();
     ColumnPtr part_name_column;
     ConditionTemplate<KeyCondition>::Ptr minmax_idx_condition;
+    std::optional<PartitionPruner> partition_pruner;
     DataTypes minmax_columns_types;
     if (filter_dag)
     {
@@ -8703,7 +8705,13 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 return KeyCondition{wrapped, query_context, minmax_columns_names, minmax_expression_actions, /*single_point=*/false, /*skip_analysis=*/!query_context->getSettingsRef()[Setting::use_partition_pruning]};
             };
             auto inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(filter_dag->getOutputs().front(), query_context);
-            minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(inverted_dag, key_condition_factory, metadata_snapshot, query_context);
+            minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(inverted_dag, key_condition_factory, metadata_snapshot, query_context, /*skip_folding_=*/!query_context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis]);
+            partition_pruner.emplace(
+                metadata_snapshot,
+                *inverted_dag,
+                query_context,
+                false /* strict */,
+                /*skip_analysis_=*/!query_context->getSettingsRef()[Setting::use_partition_pruning]);
         }
 
         const auto * predicate = filter_dag->getOutputs().at(0);
@@ -8748,6 +8756,12 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
         if (minmax_idx_condition && !minmax_idx_condition->generateForPartition(part->partition).checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
+
+        if (partition_pruner)
+        {
+            if (partition_pruner->canBePruned(*part))
+                continue;
+        }
 
         /// It's extremely rare that some parts have final marks while others don't. To make it
         /// straightforward, disable minmax_count projection when `max(pk)' encounters any part with

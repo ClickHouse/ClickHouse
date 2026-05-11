@@ -31,7 +31,8 @@ public:
         std::shared_ptr<ActionsDAGWithInversionPushDown> dag_,
         Factory factory_,
         StorageMetadataPtr metadata_snapshot_,
-        ContextPtr context_);
+        ContextPtr context_,
+        bool skip_folding_);
 
     /// Substitutes nothing.
     const Cond & generateUnsubstituted() const;
@@ -49,6 +50,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     ContextPtr context;
     NameSet partition_constant_names;
+    bool skip_folding;
 
     mutable std::mutex mutex;
     mutable std::optional<Cond> unsubstituted;
