@@ -151,10 +151,16 @@ def main():
                 continue
             os.environ[key] = value.strip()
 
-    java_path = Shell.get_output(
-        "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
-        verbose=True,
-    )
+    # Resolve the Java binary non-interactively. `update-alternatives --config java` is
+    # interactive and unreliable in CI — it can return empty output or just the menu text,
+    # leaving JAVA_PATH invalid and silently failing the Spark-dependent branch. Fail fast
+    # if Java cannot be located rather than carrying on with an empty path.
+    java_path = Shell.get_output("readlink -f /usr/bin/java", verbose=True).strip()
+    if not java_path or not Path(java_path).exists():
+        raise RuntimeError(
+            f"Cannot resolve Java binary: readlink -f /usr/bin/java returned {java_path!r}. "
+            "Ensure java is installed in the integration-tests-runner image."
+        )
 
     for to in job_params:
         if to == "old analyzer":
@@ -307,7 +313,7 @@ def main():
     ctree.write(config_xml, encoding="utf-8", xml_declaration=True)
 
     # Set parallel replicas cluster
-    utree = ET.parse(f"{repo_dir}/ci/jobs/scripts/server_fuzzer/users.xml")
+    utree = ET.parse(f"{repo_dir}/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml")
     if has_all_cluster:
         uroot = utree.getroot()
         if uroot.tag != "clickhouse":
