@@ -294,19 +294,37 @@ void StorageMergeTree::startup()
                 {
                     LOG_INFO(log, "Became leader, syncing shared storage and starting background operations");
 
-                    /// Before accepting any writes, refresh our view of parts on shared storage —
-                    /// the previous leader may have committed parts that this node has never
-                    /// loaded — and advance the local block-number counter past everything we
-                    /// just discovered. Without this, two consecutive leaders would allocate
-                    /// overlapping block numbers, producing intersecting parts on shared storage.
+                    /// Before accepting any writes, advance the local block-number counter
+                    /// past anything the previous leader committed on shared storage. Two
+                    /// mechanisms feed into this:
+                    ///
+                    /// 1. `loadNewlyAppearedParts` — populates the local in-memory part set
+                    ///    from the disk's metadata cache, after a `disk->refresh(0)`. Works for
+                    ///    storage policies with shared metadata (`s3_plain_rewritable`,
+                    ///    object-storage `with_keeper`); on plain `s3` it is essentially a
+                    ///    no-op because the metadata is per-replica.
+                    ///
+                    /// 2. `getMaxBlockNumberFromObjectStorage` — probes the object storage
+                    ///    directly via `IObjectStorage::listObjects`, parses every top-level
+                    ///    directory that looks like a part name, and returns the highest
+                    ///    `max_block`/`mutation` across them. This works regardless of how
+                    ///    the disk's metadata is configured and is the only way to detect
+                    ///    block numbers committed by another node on plain-`s3` setups.
+                    ///
+                    /// We use the max of (current `increment`, local-metadata max, object-
+                    /// storage max). If either probe fails, refuse to enable writes — running
+                    /// without a fresh view is precisely the split-brain case we are
+                    /// guarding against. The election task will retry on the next heartbeat.
                     try
                     {
                         size_t newly_loaded = loadNewlyAppearedParts();
-                        Int64 max_block_number = getMaxBlockNumber();
+                        Int64 local_max = getMaxBlockNumber();
+                        Int64 remote_max = getMaxBlockNumberFromObjectStorage();
+                        Int64 max_block_number = std::max(local_max, remote_max);
                         UInt64 next_block = std::max<UInt64>(increment.value.load(), static_cast<UInt64>(std::max<Int64>(0, max_block_number)));
                         increment.set(next_block);
-                        LOG_INFO(log, "Synced from shared storage: loaded {} new parts, advanced block-number counter to {}",
-                            newly_loaded, increment.value.load());
+                        LOG_INFO(log, "Synced from shared storage: loaded {} new parts, max block on disk {} (local view) / {} (object-storage probe), advanced counter to {}",
+                            newly_loaded, local_max, remote_max, increment.value.load());
                     }
                     catch (...)
                     {
@@ -552,6 +570,34 @@ void StorageMergeTree::drop()
     shutdown(true);
     if (!skip_data_cleanup)
         dropAllData();
+}
+
+void StorageMergeTree::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+{
+    if (leader_election_ptr)
+    {
+        /// Under `leader_election`, table metadata is local to each replica and never
+        /// replicated. Applying any metadata-mutating ALTER would leave followers with a
+        /// stale schema, so after failover the new leader would interpret shared parts
+        /// using the wrong schema. Only pure-text comment changes are safe.
+        ///
+        /// This check runs from `InterpreterAlterQuery::executeToTable` BEFORE
+        /// `MergeTreeData::checkAlterIsPossible` and before `StorageMergeTree::alter`,
+        /// so it produces a deterministic `SUPPORT_IS_DISABLED` error regardless of
+        /// what type-safety or settings checks would otherwise fire first.
+        bool only_comment_changes = std::all_of(commands.begin(), commands.end(), [](const auto & c)
+        {
+            return c.type == AlterCommand::COMMENT_TABLE || c.type == AlterCommand::COMMENT_COLUMN;
+        });
+        if (!only_comment_changes)
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "ALTER is not supported under `leader_election` because table metadata "
+                "is not replicated across nodes. Recreate the table on every node to "
+                "change schema or settings. Only COMMENT TABLE / COMMENT COLUMN are allowed.");
+        }
+    }
+    MergeTreeData::checkAlterIsPossible(commands, local_context);
 }
 
 void StorageMergeTree::rename(const String & new_table_path, const StorageID & new_table_id)

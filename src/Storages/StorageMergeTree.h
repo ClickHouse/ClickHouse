@@ -116,6 +116,12 @@ public:
 
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
+    /// Reject metadata-mutating ALTERs under `leader_election` before the generic
+    /// `MergeTreeData` checks (which can fail with confusing errors like
+    /// "cannot modify primary key type" on a follower that has no business
+    /// running the ALTER in the first place).
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+
     Pipe alterPartition(
         const StorageMetadataPtr & metadata_snapshot,
         const PartitionCommands & commands,

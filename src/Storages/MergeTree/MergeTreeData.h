@@ -648,6 +648,13 @@ public:
     /// Returns the number of newly loaded parts.
     size_t loadNewlyAppearedParts();
 
+    /// Probe object storage directly for the maximum block number across all part-shaped
+    /// directories under `relative_data_path`. Used by `leader_election` to advance the
+    /// local block-number counter past anything the previous leader committed, even when
+    /// the per-replica metadata cache is local-only and does not yet see those parts.
+    /// Returns 0 if no part directories are found or all disks are non-object-storage.
+    Int64 getMaxBlockNumberFromObjectStorage() const;
+
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
 
