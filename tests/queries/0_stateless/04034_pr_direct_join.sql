@@ -1,3 +1,4 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
 -- Test for direct join with parallel replicas and plan serialization
 -- Derived from 03742_nested_loop_join_long to reproduce specific failures
 
