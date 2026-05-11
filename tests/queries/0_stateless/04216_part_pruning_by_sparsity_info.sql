@@ -1,4 +1,4 @@
--- Regression test for `use_serialization_info_for_part_pruning`. The optimisation
+-- Regression test for `use_sparsity_info_for_pruning`. The optimisation
 -- drops whole parts when the per-part `num_defaults` / `num_rows` recorded in
 -- `serialization.json` prove the WHERE predicate is identically false on every row.
 -- Two extremal shapes:
@@ -35,22 +35,22 @@ WHERE table = 't_sparsity_prune' AND database = currentDatabase()
 ORDER BY name, column;
 
 -- Aggregate counts must equal baseline regardless of which parts get pruned.
-SELECT 'all_default != 0',          count() FROM t_sparsity_prune WHERE all_default != 0  SETTINGS use_serialization_info_for_part_pruning = 1;
-SELECT 'all_default != 0 baseline', count() FROM t_sparsity_prune WHERE all_default != 0  SETTINGS use_serialization_info_for_part_pruning = 0;
-SELECT 'all_default  = 0',          count() FROM t_sparsity_prune WHERE all_default  = 0  SETTINGS use_serialization_info_for_part_pruning = 1;
-SELECT 'all_default  = 0 baseline', count() FROM t_sparsity_prune WHERE all_default  = 0  SETTINGS use_serialization_info_for_part_pruning = 0;
-SELECT 'no_default  = 0',           count() FROM t_sparsity_prune WHERE no_default  = 0   SETTINGS use_serialization_info_for_part_pruning = 1;
-SELECT 'no_default  = 0 baseline',  count() FROM t_sparsity_prune WHERE no_default  = 0   SETTINGS use_serialization_info_for_part_pruning = 0;
-SELECT 'no_default != 0',           count() FROM t_sparsity_prune WHERE no_default != 0   SETTINGS use_serialization_info_for_part_pruning = 1;
-SELECT 'no_default != 0 baseline',  count() FROM t_sparsity_prune WHERE no_default != 0   SETTINGS use_serialization_info_for_part_pruning = 0;
-SELECT 'mixed != 0',                count() FROM t_sparsity_prune WHERE mixed != 0        SETTINGS use_serialization_info_for_part_pruning = 1;
-SELECT 'mixed != 0 baseline',       count() FROM t_sparsity_prune WHERE mixed != 0        SETTINGS use_serialization_info_for_part_pruning = 0;
-SELECT 'mixed  = 0',                count() FROM t_sparsity_prune WHERE mixed  = 0        SETTINGS use_serialization_info_for_part_pruning = 1;
-SELECT 'mixed  = 0 baseline',       count() FROM t_sparsity_prune WHERE mixed  = 0        SETTINGS use_serialization_info_for_part_pruning = 0;
+SELECT 'all_default != 0',          count() FROM t_sparsity_prune WHERE all_default != 0  SETTINGS use_sparsity_info_for_pruning = 'planning';
+SELECT 'all_default != 0 baseline', count() FROM t_sparsity_prune WHERE all_default != 0  SETTINGS use_sparsity_info_for_pruning = 'off';
+SELECT 'all_default  = 0',          count() FROM t_sparsity_prune WHERE all_default  = 0  SETTINGS use_sparsity_info_for_pruning = 'planning';
+SELECT 'all_default  = 0 baseline', count() FROM t_sparsity_prune WHERE all_default  = 0  SETTINGS use_sparsity_info_for_pruning = 'off';
+SELECT 'no_default  = 0',           count() FROM t_sparsity_prune WHERE no_default  = 0   SETTINGS use_sparsity_info_for_pruning = 'planning';
+SELECT 'no_default  = 0 baseline',  count() FROM t_sparsity_prune WHERE no_default  = 0   SETTINGS use_sparsity_info_for_pruning = 'off';
+SELECT 'no_default != 0',           count() FROM t_sparsity_prune WHERE no_default != 0   SETTINGS use_sparsity_info_for_pruning = 'planning';
+SELECT 'no_default != 0 baseline',  count() FROM t_sparsity_prune WHERE no_default != 0   SETTINGS use_sparsity_info_for_pruning = 'off';
+SELECT 'mixed != 0',                count() FROM t_sparsity_prune WHERE mixed != 0        SETTINGS use_sparsity_info_for_pruning = 'planning';
+SELECT 'mixed != 0 baseline',       count() FROM t_sparsity_prune WHERE mixed != 0        SETTINGS use_sparsity_info_for_pruning = 'off';
+SELECT 'mixed  = 0',                count() FROM t_sparsity_prune WHERE mixed  = 0        SETTINGS use_sparsity_info_for_pruning = 'planning';
+SELECT 'mixed  = 0 baseline',       count() FROM t_sparsity_prune WHERE mixed  = 0        SETTINGS use_sparsity_info_for_pruning = 'off';
 
 -- Non-count projection benefits too (Layer C-1 trivial-count wouldn't apply here).
-SELECT 'projection drop-extremal',          count() FROM (SELECT id FROM t_sparsity_prune WHERE all_default != 0 SETTINGS use_serialization_info_for_part_pruning = 1);
-SELECT 'projection drop-extremal baseline', count() FROM (SELECT id FROM t_sparsity_prune WHERE all_default != 0 SETTINGS use_serialization_info_for_part_pruning = 0);
+SELECT 'projection drop-extremal',          count() FROM (SELECT id FROM t_sparsity_prune WHERE all_default != 0 SETTINGS use_sparsity_info_for_pruning = 'planning');
+SELECT 'projection drop-extremal baseline', count() FROM (SELECT id FROM t_sparsity_prune WHERE all_default != 0 SETTINGS use_sparsity_info_for_pruning = 'off');
 
 -- EXPLAIN: Sparsity step prunes only the parts that satisfy the extremal condition.
 -- We strip out the surrounding plan lines so the assertion is robust to plan-shape
@@ -59,19 +59,19 @@ SELECT 'projection drop-extremal baseline', count() FROM (SELECT id FROM t_spars
 -- `all_default != 0` -- p1 and p2 are all-default, dropped; p3 and p4 are kept.
 SELECT explain FROM (
   EXPLAIN indexes = 1 SELECT id FROM t_sparsity_prune WHERE all_default != 0
-  SETTINGS use_serialization_info_for_part_pruning = 1
+  SETTINGS use_sparsity_info_for_pruning = 'planning'
 ) WHERE trimLeft(explain) LIKE 'Sparsity%' OR trimLeft(explain) LIKE 'Parts: %' OR trimLeft(explain) LIKE 'Granules: %' OR trimLeft(explain) LIKE 'all_default';
 
 -- `no_default = 0` -- only p3 has any defaults in no_default, the other three parts are dropped.
 SELECT explain FROM (
   EXPLAIN indexes = 1 SELECT id FROM t_sparsity_prune WHERE no_default = 0
-  SETTINGS use_serialization_info_for_part_pruning = 1
+  SETTINGS use_sparsity_info_for_pruning = 'planning'
 ) WHERE trimLeft(explain) LIKE 'Sparsity%' OR trimLeft(explain) LIKE 'Parts: %' OR trimLeft(explain) LIKE 'Granules: %' OR trimLeft(explain) LIKE 'no_default';
 
 -- `mixed != 0` -- p2 and p4 are all-default in `mixed`, dropped; p1 and p3 kept.
 SELECT explain FROM (
   EXPLAIN indexes = 1 SELECT id FROM t_sparsity_prune WHERE mixed != 0
-  SETTINGS use_serialization_info_for_part_pruning = 1
+  SETTINGS use_sparsity_info_for_pruning = 'planning'
 ) WHERE trimLeft(explain) LIKE 'Sparsity%' OR trimLeft(explain) LIKE 'Parts: %' OR trimLeft(explain) LIKE 'Granules: %' OR trimLeft(explain) LIKE 'mixed';
 
 DROP TABLE t_sparsity_prune;

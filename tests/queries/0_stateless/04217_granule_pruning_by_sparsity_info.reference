@@ -1,0 +1,15 @@
+Sparse
+sumIf	5
+countIf	5
+planning count	5
+planning sum	5
+off count	5
+off sum	5
+unprunable planning	995
+unprunable off	995
+        Parts: 1/1
+        Granules: 10/10
+      Sparsity
+          x
+        Parts: 1/1
+        Granules: 5/10

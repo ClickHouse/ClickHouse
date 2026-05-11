@@ -2609,6 +2609,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         {
             result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, res_parts, result.index_stats);
 
+            result.parts_with_ranges = MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
+                result.parts_with_ranges, query_info_, mutations_snapshot, data, metadata_snapshot, context_, log, result.index_stats);
+
             if (final_second_pass)
             {
                 result.parts_with_ranges

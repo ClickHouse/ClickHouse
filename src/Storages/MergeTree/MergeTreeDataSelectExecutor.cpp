@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/SparseGranuleAnalyzer.h>
 #include <Storages/MergeTree/SparsityFilter.h>
 #include <Analyzer/QueryNode.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -102,7 +103,7 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_statistics_for_part_pruning;
-    extern const SettingsBool use_serialization_info_for_part_pruning;
+    extern const SettingsSparsityPruningMode use_sparsity_info_for_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
@@ -825,7 +826,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
 
     /// Reliability rules mirror `MergeTreeData::getColumnDefaultnessStats` (see
     /// `Storages/MergeTree/SparsityFilter.h`).
-    if (!settings[Setting::use_serialization_info_for_part_pruning]
+    /// Part-level pruning runs whenever the mode isn't `Off`; granule-level
+    /// pruning (Phase B) is layered on top in `Planning` / `DataRead` mode.
+    if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::Off
         || query_info.isFinal()
         || context->getCurrentTransaction()
         || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
@@ -900,6 +903,133 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
 
         LOG_DEBUG(log, "Sparsity-info pruning on column {}: {} parts -> {} parts",
             classified->column_name, total_parts_before, res_parts.size());
+    }
+
+    return res_parts;
+}
+
+
+RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
+    const RangesInDataParts & parts,
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const MergeTreeData & data,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context,
+    LoggerPtr log,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// Only the eager (`Planning`) mode trims `MarkRanges` here. `DataRead` mode defers
+    /// the granule analysis to scan time, when the column is being read anyway.
+    if (settings[Setting::use_sparsity_info_for_pruning] != SparsityPruningMode::Planning
+        || query_info.isFinal()
+        || context->getCurrentTransaction()
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
+    {
+        return parts;
+    }
+
+    if (!query_info.query_tree)
+        return parts;
+    auto * query_node = query_info.query_tree->as<QueryNode>();
+    if (!query_node || !query_node->hasWhere())
+        return parts;
+
+    auto classified = classifySparsityPredicate(query_node->getWhere(), query_info.table_expression);
+    if (!classified)
+        return parts;
+
+    auto storage_snapshot = std::make_shared<StorageSnapshot>(data, metadata_snapshot);
+
+    /// Per-class extremal granule check. For `MatchesNonDefault` we drop all-default
+    /// granules; for `MatchesDefault` we drop all-non-default granules. (The other
+    /// direction in each pair is "indefinite" -- the predicate may still match some
+    /// rows in the granule.)
+    auto granule_is_prunable = [&](const SparseGranuleAnalysis & analysis, size_t mark) -> bool
+    {
+        if (classified->predicate_class == SparsityPredicateClass::MatchesNonDefault)
+            return analysis.granule_has_only_defaults[mark];
+        return analysis.granule_has_only_non_defaults[mark];
+    };
+
+    RangesInDataParts res_parts;
+    res_parts.reserve(parts.size());
+
+    size_t total_granules_before = 0;
+    size_t total_granules_after = 0;
+    size_t parts_changed = 0;
+
+    for (const auto & part : parts)
+    {
+        for (const auto & range : part.ranges)
+            total_granules_before += range.end - range.begin;
+
+        auto analysis = analyzeSparseColumnGranules(
+            part.data_part, classified->column_name, part.ranges, data, storage_snapshot, log);
+
+        if (!analysis)
+        {
+            for (const auto & range : part.ranges)
+                total_granules_after += range.end - range.begin;
+            res_parts.push_back(part);
+            continue;
+        }
+
+        /// Rebuild `MarkRanges` from the surviving granules. Consecutive surviving marks
+        /// collapse back into a single range; skipped granules split the range.
+        MarkRanges new_ranges;
+        bool changed = false;
+        for (const auto & range : part.ranges)
+        {
+            size_t cursor = range.begin;
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                if (granule_is_prunable(*analysis, mark))
+                {
+                    if (cursor < mark)
+                        new_ranges.emplace_back(cursor, mark);
+                    cursor = mark + 1;
+                    changed = true;
+                }
+            }
+            if (cursor < range.end)
+                new_ranges.emplace_back(cursor, range.end);
+        }
+
+        if (changed)
+        {
+            ++parts_changed;
+            for (const auto & range : new_ranges)
+                total_granules_after += range.end - range.begin;
+
+            if (!new_ranges.empty())
+            {
+                RangesInDataPart trimmed = part;
+                trimmed.ranges = std::move(new_ranges);
+                res_parts.push_back(std::move(trimmed));
+            }
+            /// else: every granule pruned -> drop the part entirely.
+        }
+        else
+        {
+            for (const auto & range : part.ranges)
+                total_granules_after += range.end - range.begin;
+            res_parts.push_back(part);
+        }
+    }
+
+    if (parts_changed > 0)
+    {
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Sparsity,
+            .used_keys = {classified->column_name},
+            .num_parts_after = res_parts.size(),
+            .num_granules_after = total_granules_after});
+
+        LOG_DEBUG(log, "Sparsity granule pruning on column {}: {} parts touched, {} -> {} granules",
+            classified->column_name, parts_changed, total_granules_before, total_granules_after);
     }
 
     return res_parts;

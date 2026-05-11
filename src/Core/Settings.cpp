@@ -4496,25 +4496,40 @@ Possible values:
 See also:
 
 - [optimize_trivial_count_query](#optimize_trivial_count_query)
-- [use_serialization_info_for_part_pruning](#use_serialization_info_for_part_pruning)
+- [use_sparsity_info_for_pruning](#use_sparsity_info_for_pruning)
 )", 0) \
-    DECLARE(Bool, use_serialization_info_for_part_pruning, true, R"(
-At part scan time, drop parts whose `WHERE` predicate is provably false on every row,
-based on the per-column `num_defaults` / `num_rows` counters in `serialization.json`.
+    DECLARE(SparsityPruningMode, use_sparsity_info_for_pruning, SparsityPruningMode::DataRead, R"(
+When and how to prune parts and granules whose `WHERE` predicate is provably false
+on every row, based on the per-column `num_defaults` / `num_rows` counters in
+`serialization.json` (part level) and on the offsets-stream marks of sparse-encoded
+columns (granule level).
 
-Drops a part when one of:
+Possible values:
+
+   - `off`       — No sparsity-based pruning.
+   - `planning`  — Part-level and granule-level pruning at plan time. The pruned
+                   mark count is visible in `EXPLAIN indexes = 1` and downstream
+                   stages (parallel replicas, FINAL exact mode, `max_rows_to_read`
+                   with `throw`) see the correct mark count. May load offsets-stream
+                   marks for the predicate column upfront, which can be costly on
+                   very wide / TB-size columns.
+   - `data_read` — Part-level pruning at plan time; granule-level pruning deferred
+                   to scan time. Scales to TB-size columns because offsets-stream
+                   marks are only paged in for parts actually being scanned. Not
+                   visible in `EXPLAIN`. Subject to the same restrictions as
+                   [use_skip_indexes_on_data_read](#use_skip_indexes_on_data_read).
+
+A part is dropped when one of:
 
 - `col != default(col)` and the part records `num_defaults == num_rows` (every row is the default);
 - `col = default(col)` and the part records `num_defaults == 0` (no row is the default).
 
+A granule is dropped under the same condition, applied per-granule from the offsets-stream
+marks (sparse-encoded columns only).
+
 Recognised predicate shapes match those of [optimize_trivial_count_with_sparsity_filter](#optimize_trivial_count_with_sparsity_filter).
-The check is skipped for parts that don't carry the `exact_num_defaults` flag (typically
-parts written by older servers), so it never produces wrong answers.
-
-Possible values:
-
-   - 0 — Optimization disabled.
-   - 1 — Optimization enabled.
+Skipped for parts that don't carry the `exact_num_defaults` flag (typically parts written
+by older servers), so it never produces wrong answers.
 
 See also:
 

@@ -137,6 +137,11 @@ IMPLEMENT_SETTING_AUTO_ENUM(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_AUTO_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS)
 
+IMPLEMENT_SETTING_ENUM(SparsityPruningMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"off",       SparsityPruningMode::Off},
+     {"planning",  SparsityPruningMode::Planning},
+     {"data_read", SparsityPruningMode::DataRead}})
+
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
      {"datetime64", MySQLDataTypesSupport::DATETIME64},

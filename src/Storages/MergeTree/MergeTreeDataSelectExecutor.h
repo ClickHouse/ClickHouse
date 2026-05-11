@@ -232,6 +232,21 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
+    /// Phase B (eager, `Planning` mode): for sparse-encoded columns hit by a sparsity
+    /// predicate, read the offsets stream and drop individual granules from each part's
+    /// `MarkRanges` when the granule is provably empty of matches.
+    /// Works on any part that has the column sparse-encoded; does not require the
+    /// `exact_num_defaults` flag in `serialization.json` (unlike Phase A).
+    static RangesInDataParts filterMarkRangesBySparsityInfo(
+        const RangesInDataParts & parts,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const MergeTreeData & data,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & context,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
     struct IndexAnalysisContext
     {
         StorageMetadataPtr metadata_snapshot;
