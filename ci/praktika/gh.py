@@ -140,45 +140,6 @@ class GH:
         return res
 
     @classmethod
-    def get_output_with_retries(cls, command, verbose=False):
-        """Run a read-style ``gh`` command and return its stdout.
-
-        Mirrors :meth:`do_command_with_retries` but returns the captured
-        stdout instead of a boolean. Use this for any GitHub API read
-        (``gh api ...``, ``gh pr view ...``, ``gh pr diff ...``) that
-        previously used :meth:`Shell.get_output` without retries — those
-        calls would silently return an empty string on a transient 5xx
-        and propagate as ``json.loads('')`` errors or empty-result bugs.
-
-        Returns the trimmed stdout on success; an empty string if the
-        command keeps failing after ``MAX_RETRIES_GH`` attempts.
-        """
-        retry_count = 0
-        out, err, ret_code = "", "", -1
-        while retry_count < Settings.MAX_RETRIES_GH:
-            ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=verbose)
-            if ret_code == 0:
-                return out
-            # Same non-retryable error classes as do_command_with_retries.
-            if "Validation Failed" in err:
-                print(f"ERROR: GH command validation error {[err]}")
-                break
-            if "Bad credentials" in err:
-                print("ERROR: GH credentials/auth failure")
-                break
-            if "Resource not accessible" in err:
-                print("ERROR: GH permissions failure")
-                break
-            retry_count += 1
-            delay = min(2 ** (retry_count + 1), 60)
-            time.sleep(delay)
-
-        print(
-            f"ERROR: Failed to execute gh command [{command}] out:[{out}] err:[{err}] after [{retry_count}] attempts"
-        )
-        return ""
-
-    @classmethod
     def post_pr_comment(
         cls, comment_body, or_update_comment_with_substring="", pr=None, repo=None
     ):
@@ -197,7 +158,7 @@ class GH:
                     f'"/repos/{repo}/issues/{pr}/comments" '
                     f"--jq '.[] | {{id: .id, body: .body}}' | grep -F {safe_substr}"
                 )
-                output = cls.get_output_with_retries(cmd_check_created)
+                output = Shell.get_output(cmd_check_created)
                 if output:
                     comment_ids = []
                     try:
@@ -272,7 +233,7 @@ class GH:
             f'"/repos/{repo}/issues/{pr}/comments" '
             f"--jq '[.[] | {{id: .id, body: .body}}]' --paginate"
         )
-        output = cls.get_output_with_retries(cmd_list, verbose=verbose)
+        output = Shell.get_output(cmd_list, verbose=verbose)
         if output:
             try:
                 for comment in json.loads(output):
@@ -326,15 +287,9 @@ class GH:
         cmd_check_created = f'gh api -H "Accept: application/vnd.github.v3+json" \
             "/repos/{repo}/issues/{pr}/comments" \
             --jq \'[.[] | {{id: .id, body: .body}}]\' --paginate'
-        output = cls.get_output_with_retries(cmd_check_created, verbose=verbose)
+        output = Shell.get_output(cmd_check_created, verbose=verbose)
 
-        try:
-            comments = json.loads(output) if output else []
-        except json.JSONDecodeError as e:
-            print(
-                f"ERROR: Failed to parse gh comments JSON: {e}. Treating as no existing comments."
-            )
-            comments = []
+        comments = json.loads(output)
 
         comment_to_update = None
         id_to_update = None
@@ -422,7 +377,7 @@ class GH:
             pr = _Environment.get().PR_NUMBER
 
         cmd = f"gh pr view {pr} --repo {repo} --json commits --jq '[.commits[].authors[].login]'"
-        contributors_str = cls.get_output_with_retries(cmd, verbose=True)
+        contributors_str = Shell.get_output(cmd, verbose=True)
         res = []
         if contributors_str:
             try:
@@ -442,7 +397,7 @@ class GH:
             pr = _Environment.get().PR_NUMBER
 
         cmd = f"gh pr view {pr} --repo {repo} --json labels --jq '.labels[].name'"
-        output = cls.get_output_with_retries(cmd, verbose=True)
+        output = Shell.get_output(cmd, verbose=True)
         res = []
         if output:
             res = output.splitlines()
@@ -456,7 +411,7 @@ class GH:
             pr = _Environment.get().PR_NUMBER
 
         cmd = f"gh pr view {pr} --json title,body,labels --repo {repo}"
-        output = cls.get_output_with_retries(cmd, verbose=True)
+        output = Shell.get_output(cmd, verbose=True)
         try:
             pr_data = json.loads(output)
             title = pr_data["title"]
@@ -477,7 +432,7 @@ class GH:
             pr = _Environment.get().PR_NUMBER
 
         cmd = f'gh api repos/{repo}/issues/{pr}/events --jq \'.[] | select(.event=="labeled" and .label.name=="{label}") | .actor.login\''
-        return cls.get_output_with_retries(cmd, verbose=True)
+        return Shell.get_output(cmd, verbose=True)
 
     @classmethod
     def get_pr_diff(cls, pr=None, repo=None):
@@ -487,7 +442,7 @@ class GH:
             pr = _Environment.get().PR_NUMBER
 
         cmd = f"gh pr diff {pr} --repo {repo}"
-        return cls.get_output_with_retries(cmd, verbose=True)
+        return Shell.get_output(cmd, verbose=True)
 
     @classmethod
     def update_pr_body(cls, new_body=None, body_file=None, pr=None, repo=None):
@@ -597,15 +552,15 @@ class GH:
         cmd = f"gh pr merge {pr} --repo {repo} {extra_args}"
         return cls.do_command_with_retries(cmd)
 
-    @classmethod
-    def pr_has_conflicts(cls, pr=None, repo=None, verbose=False):
+    @staticmethod
+    def pr_has_conflicts(pr=None, repo=None, verbose=False):
         if not repo:
             repo = _Environment.get().REPOSITORY
         if not pr:
             pr = _Environment.get().PR_NUMBER
 
         cmd = f"gh pr view {pr} --repo {repo} --json mergeable --jq .mergeable"
-        output = cls.get_output_with_retries(cmd, verbose=verbose)
+        output = Shell.get_output(cmd, verbose=verbose)
         return output == "CONFLICTING"
 
     @classmethod
@@ -832,8 +787,8 @@ class GH:
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
             def escape_pipes(text):
-                """Escape special markdown characters for table cells"""
-                return str(text).replace("|", "\\|").replace("#", "\\#")
+                """Escape pipe characters for markdown tables"""
+                return str(text).replace("|", "\\|")
 
             if self.status == Result.Status.OK:
                 symbol = "✅"  # Green check mark
@@ -880,10 +835,11 @@ class GH:
                         for sub_failed_result in failed_result.failed_results:
                             body += "|{}|{}|{}|{}|{}|\n".format(
                                 "",
+                                # Logical erros might have | that break comment formatting
                                 escape_pipes(sub_failed_result.name),
                                 sub_failed_result.status,
-                                escape_pipes(sub_failed_result.info or ""),
-                                escape_pipes(sub_failed_result.comment or ""),
+                                sub_failed_result.info or "",
+                                sub_failed_result.comment or "",
                             )
             return body
 
