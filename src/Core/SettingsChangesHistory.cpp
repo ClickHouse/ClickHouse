@@ -62,6 +62,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_columns_cache", false, false, "New setting to enable columns cache for MergeTree tables"},
             {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
             {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
+            {"recursive_cte_max_steps_in_type_inference", 0, 10, "Maximum iterations for inferring column types in recursive CTEs via iterative getLeastSupertype"},
             {"use_skip_indexes_for_top_k", false, true, "Enable using data skipping indexes for TopK filtering by default"},
             {"use_top_k_dynamic_filtering", false, true, "Enable dynamic filtering optimization for TopK queries by default"},
             {"url_base", "", "", "New setting to specify the base URL for resolving relative URLs in the url table function and URL table engine."},
