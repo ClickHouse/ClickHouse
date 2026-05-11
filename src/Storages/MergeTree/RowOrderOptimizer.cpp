@@ -5,6 +5,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/sortBlock.h>
 #include <base/sort.h>
+#include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
 #include <Common/logger_useful.h>
@@ -13,6 +14,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 namespace
 {
@@ -114,7 +120,20 @@ std::vector<size_t> getCardinalitiesInPermutedRange(
     {
         const size_t column_id = other_column_indexes[i];
         const ColumnPtr & column = block.getByPosition(column_id).column;
-        cardinalities[i] = column->estimateCardinalityInPermutedRange(permutation, equal_range);
+        try
+        {
+            cardinalities[i] = column->estimateCardinalityInPermutedRange(permutation, equal_range);
+        }
+        catch (const Exception & e)
+        {
+            /// Some column types (e.g. Nullable(Tuple), Nullable(Object), Nullable(Array of non-fixed))
+            /// do not support cardinality estimation because their underlying getDataAt is not implemented.
+            /// Fall back to the upper bound, so the column is treated as having all-distinct values
+            /// (i.e. sorted last during the column-order selection).
+            if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                throw;
+            cardinalities[i] = equal_range.size();
+        }
     }
     return cardinalities;
 }
