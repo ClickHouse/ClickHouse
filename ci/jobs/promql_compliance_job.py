@@ -18,6 +18,7 @@ from ci.jobs.scripts.job_hooks.promql_compliance_s3 import (
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
+from ci.praktika.result import Result
 
 COMMENT_OUT = Path("./ci/tmp/promql_compliance_comment.json")
 
@@ -29,6 +30,12 @@ _ZERO_BASELINE = {
     "failed": 0,
     "unsupported": 0,
 }
+
+
+def _finish(info: str = "") -> int:
+    """Finalize Praktika job Result (pre-run leaves status RUNNING until we dump)."""
+    Result.create_from(status=Result.Status.OK, info=info).dump()
+    return 0
 
 
 def _http_get_json(url: str):
@@ -73,16 +80,16 @@ def main() -> int:
             "PromQL compliance job: not a PR run; "
             "master baseline upload is handled by integration-test upload hook."
         )
-        return 0
+        return _finish("Not a PR run.")
 
     if not _pr_has_comp_promql(info):
         print(f"PromQL compliance job: PR not labeled '{Labels.COMP_PROMQL}', skip.")
-        return 0
+        return _finish(f"PR not labeled '{Labels.COMP_PROMQL}'.")
 
     sha = (info.sha or "").strip()
     if len(sha) != 40:
         print(f"PromQL compliance job: unexpected SHA [{sha!r}], skip.")
-        return 0
+        return _finish("Unexpected commit SHA.")
 
     url = result_url_for_pr_commit(info.pr_number, sha)
     new = _http_get_json(url)
@@ -91,12 +98,12 @@ def main() -> int:
             "PromQL compliance job: no PR-scoped JSON in S3 "
             "(integration batch likely did not run test_compliance), skip."
         )
-        return 0
+        return _finish("No PR compliance JSON in S3 yet.")
 
     for _k in ("pct", "passed", "failed", "unsupported"):
         if _k not in new:
             print(f"PromQL compliance job: result JSON missing key {_k!r}")
-            return 0
+            return _finish(f"Result JSON missing key {_k!r}.")
 
     commits = master_track_commits(info)
     base, s3_sha = fetch_baseline_from_s3(commits)
@@ -123,18 +130,18 @@ def main() -> int:
             "PromQL compliance job: invalid result or baseline "
             f"(missing keys or non-numeric pct/counts): {e}"
         )
-        return 0
+        return _finish(f"Invalid numeric fields in result/baseline: {e}")
 
     if not math.isfinite(new_pct) or not math.isfinite(base_pct):
         print(
             "PromQL compliance job: result or baseline has non-finite 'pct'; skip."
         )
-        return 0
+        return _finish("Non-finite pct in result or baseline.")
 
     delta = new_pct - base_pct
     if abs(delta) < _EPS:
         print("PromQL compliance job: delta vs baseline is ~0, skip comment payload.")
-        return 0
+        return _finish("Delta vs baseline ~0; no PR comment.")
 
     payload = {
         "baseline_source": baseline_source,
@@ -158,7 +165,7 @@ def main() -> int:
         f.write("\n")
 
     print(f"PromQL compliance job: wrote comment payload to {COMMENT_OUT}")
-    return 0
+    return _finish("Wrote comment payload for post-hook.")
 
 
 if __name__ == "__main__":
