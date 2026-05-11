@@ -13,7 +13,7 @@
 -- No JOIN, LIMIT 3
 3
 -- Plain expression: optimization still applies
-Expression ((Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)) [lifted up part]))
+1
 -- Old analyzer, LIMIT 3
 3
 -- ORDER BY arrayJoin output, LIMIT 3

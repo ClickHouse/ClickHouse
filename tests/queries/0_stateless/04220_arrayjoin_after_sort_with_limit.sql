@@ -44,9 +44,11 @@ SELECT count() FROM (SELECT id, arrayJoin(a) FROM t ORDER BY id LIMIT 3);
 DROP TABLE t;
 
 -- Verify the optimization is still applied for non-`arrayJoin` expressions.
--- The expression `id + 1` must still be lifted above `SortingStep`.
+-- The expression `id + 1` must still be lifted above `SortingStep`. The
+-- description of the lifted step differs between the new and the old
+-- analyzer, so check only for presence of the `[lifted up part]` marker.
 SELECT '-- Plain expression: optimization still applies';
-SELECT trim(explain) FROM (EXPLAIN actions = 0 SELECT id, id + 1 AS s FROM m ORDER BY id LIMIT 3) WHERE explain LIKE '%lifted up part%' FORMAT TSV;
+SELECT count() > 0 FROM (EXPLAIN actions = 0 SELECT id, id + 1 AS s FROM m ORDER BY id LIMIT 3) WHERE explain LIKE '%lifted up part%';
 
 -- Same bug on the old analyzer path.
 SELECT '-- Old analyzer, LIMIT 3';
