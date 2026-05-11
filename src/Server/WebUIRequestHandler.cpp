@@ -42,6 +42,10 @@ constexpr unsigned char resource_jemalloc_html[] =
 {
 #embed "../../programs/server/jemalloc.html"
 };
+constexpr unsigned char resource_processors_profile_html[] =
+{
+#embed "../../programs/server/processors_profile.html"
+};
 
 
 namespace DB
@@ -116,6 +120,11 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
 void JemallocWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     handle(request, response, {reinterpret_cast<const char *>(resource_jemalloc_html), std::size(resource_jemalloc_html)}, http_response_headers_override);
+}
+
+void ProcessorsProfileWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    handle(request, response, {reinterpret_cast<const char *>(resource_processors_profile_html), std::size(resource_processors_profile_html)}, http_response_headers_override);
 }
 
 std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri) const
