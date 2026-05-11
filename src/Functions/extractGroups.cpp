@@ -87,7 +87,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view current_row = column_haystack->getDataAt(i);
+            std::string_view current_row = column_haystack->getDataAt(i).toView();
 
             if (re2->Match({current_row.data(), current_row.size()},
                 0, current_row.size(), re2::RE2::UNANCHORED, matched_groups.data(),
@@ -112,14 +112,14 @@ public:
 REGISTER_FUNCTION(ExtractGroups)
 {
     FunctionDocumentation::Description description = R"(
-Extracts the capturing groups from the first substring matched by a regular expression. To extract groups from all matches, use [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) or [`extractAllGroupsVertical`](#extractAllGroupsVertical).
+Extracts all groups from non-overlapping substrings matched by a regular expression.
     )";
-    FunctionDocumentation::Syntax syntax = "extractGroups(s, regexp)";
+    FunctionDocumentation::Syntax syntax = "extractAllGroups(s, regexp)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "Input string to extract from.", {"String", "FixedString"}},
-        {"regexp", "Regular expression. Must contain at least one capturing group. Constant.", {"const String", "const FixedString"}}
+        {"regexp", "Regular expression. Constant.", {"const String", "const FixedString"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"If the regular expression matches, returns an array containing the captured groups (`1` to `N`, where `N` is the number of capturing groups in `regexp`) of the first match. If there is no match, returns an empty array.", {"Array(String)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"If the function finds at least one matching group, it returns Array(Array(String)) column, clustered by group_id (`1` to `N`, where `N` is number of capturing groups in regexp). If there is no matching group, it returns an empty array.", {"Array(Array(String))"}};
     FunctionDocumentation::Examples examples = {
         {
             "Usage example",
@@ -129,16 +129,16 @@ WITH '< Server: nginx
 < Content-Type: text/html; charset=UTF-8
 < Connection: keep-alive
 ' AS s
-SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
+SELECT extractAllGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 )",
             R"(
-['Server','nginx']
+[['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]
     )"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionExtractGroups>(documentation);
 }
 

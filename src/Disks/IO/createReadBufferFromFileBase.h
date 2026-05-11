@@ -8,8 +8,6 @@
 namespace DB
 {
 struct ReadSettings;
-class PageCache;
-using PageCachePtr = std::shared_ptr<PageCache>;
 
 /** Create an object to read data from a file.
   *
@@ -23,5 +21,5 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     std::optional<size_t> file_size = {},
     int flags_ = -1,
     char * existing_memory = nullptr,
-    bool allow_userspace_page_cache = false);
+    size_t alignment = 0);
 }

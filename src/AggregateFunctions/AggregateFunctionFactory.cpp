@@ -87,8 +87,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     NullsAction action,
     const DataTypes & argument_types,
     const Array & parameters,
-    AggregateFunctionProperties & out_properties,
-    AggregateFunctionStateVariant state_variant) const
+    AggregateFunctionProperties & out_properties) const
 {
     /// This to prevent costly string manipulation in parsing the aggregate function combinators.
     /// Example: avgArrayArrayArrayArray...(1000 times)...Array
@@ -117,7 +116,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
-        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
+        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments);
 
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
@@ -128,7 +127,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
-    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant);
+    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false);
 
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
@@ -170,8 +169,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const DataTypes & argument_types,
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
-    bool has_null_arguments,
-    AggregateFunctionStateVariant state_variant) const
+    bool has_null_arguments) const
 {
     String name = getAliasToOrName(name_param);
     String case_insensitive_name;
@@ -196,7 +194,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
     ContextPtr query_context;
     if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().tryGetQueryContext();
+        query_context = CurrentThread::get().getQueryContext();
 
     if (found.creator)
     {
@@ -214,8 +212,6 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             return nullptr;
 
         const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
-        if (state_variant == AggregateFunctionStateVariant::Window && found.window_creator)
-            return found.window_creator(name, argument_types, parameters, settings);
         return found.creator(name, argument_types, parameters, settings);
     }
 
@@ -254,12 +250,12 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
-        /// Aggregate function Nothing does not use parameters but preserves them for consistency.
+        AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties);
+        /// Aggregate function nothing does not support parameters
         if (std::dynamic_pointer_cast<const AggregateFunctionNothing>(nested_function) ||
             std::dynamic_pointer_cast<const AggregateFunctionNothingNull>(nested_function) ||
             std::dynamic_pointer_cast<const AggregateFunctionNothingUInt64>(nested_function))
-                return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+                return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, Array());
 
         return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
     }
@@ -361,20 +357,6 @@ AggregateFunctionFactory & AggregateFunctionFactory::instance()
     return ret;
 }
 
-
-FunctionDocumentation AggregateFunctionFactory::getDocumentation(const String & name) const
-{
-    String canonical_name = getAliasToOrName(name);
-
-    if (auto it = aggregate_functions.find(canonical_name); it != aggregate_functions.end())
-        return it->second.documentation;
-
-    String name_lowercase = Poco::toLower(canonical_name);
-    if (auto it = case_insensitive_aggregate_functions.find(name_lowercase); it != case_insensitive_aggregate_functions.end())
-        return it->second.documentation;
-
-    return {};
-}
 
 bool AggregateUtils::isAggregateFunction(const ASTFunction & node)
 {
