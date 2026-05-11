@@ -79,6 +79,14 @@ ${CLICKHOUSE_LOCAL} \
     --query "SELECT id, value FROM table ORDER BY id" < "$DB" 2>&1 \
     | grep -o "CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN" | head -1
 
+echo "NULL as LowCardinality Nullable"
+${CLICKHOUSE_LOCAL} \
+    --structure "id UInt64, value LowCardinality(Nullable(String))" \
+    --input-format SQLite \
+    --output-format TSV \
+    --input_format_null_as_default 0 \
+    --query "SELECT id, value FROM table ORDER BY id" < "$DB"
+
 ${CLICKHOUSE_LOCAL} --query "
     SELECT 7 AS id, 'first' AS name
     FORMAT SQLite

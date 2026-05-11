@@ -27,6 +27,9 @@ NULL as default
 9223372036854775808	0	1
 NULL as default disabled
 CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+NULL as LowCardinality Nullable
+42	text
+9223372036854775808	\N
 Read first table by default
 7	first
 Custom table name
