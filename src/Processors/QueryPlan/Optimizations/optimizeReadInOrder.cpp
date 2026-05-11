@@ -1071,10 +1071,11 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
     const auto & description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
-    /// Capture whether the SQL query has a LIMIT before `buildSortingDAG` zeroes it out
-    /// for queries with filter/join/array-join (the limit can't be pushed past a filter,
-    /// but the read step still benefits from knowing a LIMIT exists at the query level).
-    const bool query_has_limit = limit != 0;
+    /// Capture the SQL query's LIMIT value before `buildSortingDAG` zeroes it out for queries with
+    /// filter/join/array-join (the limit can't be pushed past a filter, but the read step still
+    /// benefits from knowing a LIMIT exists at the query level — both for sizing the first read
+    /// task and for the PK-selectivity guard).
+    const size_t query_limit = limit;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -1130,7 +1131,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
                 order_info.input_order->limit,
-                query_has_limit,
+                query_limit,
                 /* apply_pk_selectivity_check */ true);
 
             if (!can_read)
@@ -1152,7 +1153,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         if (order_info.input_order)
         {
-            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_has_limit, /* apply_pk_selectivity_check */ true);
+            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_limit, /* apply_pk_selectivity_check */ true);
             if (!can_read)
                 return nullptr;
 
@@ -1210,9 +1211,10 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     /// in `requestReadingInOrder` therefore must not fire here — disabling read-in-order
     /// would silently change the algorithm to batched aggregation and can cause
     /// `MEMORY_LIMIT_EXCEEDED` for queries that explicitly enabled the streaming path
-    /// (e.g. `optimize_aggregation_in_order = 1`). `query_has_limit` is irrelevant for
-    /// this path since the check is skipped; pass the conservative default.
-    constexpr bool query_has_limit = false;
+    /// (e.g. `optimize_aggregation_in_order = 1`). `query_limit` is irrelevant for
+    /// this path since the PK guard is skipped and there is no SQL `LIMIT` on aggregation;
+    /// pass the conservative default.
+    constexpr size_t query_limit = 0;
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
@@ -1232,7 +1234,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
                 order_info.input_order->limit,
-                query_has_limit);
+                query_limit);
             if (!can_read)
                 return {};
         }
@@ -1250,7 +1252,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
         if (order_info.input_order)
         {
-            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_has_limit);
+            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_limit);
             if (!can_read)
                 return {};
         }
@@ -1331,9 +1333,9 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     /// `DistinctStep` requests read-in-order to enable streaming `DISTINCT` (memory bound),
     /// not to skip a separate sort. Like `optimizeAggregationInOrder`, the PK-selectivity
-    /// guard in `requestReadingInOrder` must not fire here. `query_has_limit` is therefore
+    /// guard in `requestReadingInOrder` must not fire here. `query_limit` is therefore
     /// irrelevant; pass the conservative default.
-    constexpr bool query_has_limit = false;
+    constexpr size_t query_limit = 0;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -1361,7 +1363,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
             order_info.input_order->used_prefix_of_sorting_key_size,
             order_info.input_order->direction,
             order_info.input_order->limit,
-            query_has_limit))
+            query_limit))
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1378,7 +1380,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
             return {};
 
-        if (!merge->requestReadingInOrder(order_info.input_order, query_has_limit))
+        if (!merge->requestReadingInOrder(order_info.input_order, query_limit))
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1691,7 +1693,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     if (order_info)
     {
         bool can_read = read_from_merge_tree->requestReadingInOrder(
-            order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit, sort_limit != 0,
+            order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit, sort_limit,
             /* apply_pk_selectivity_check */ true);
         if (!can_read)
             return 0;

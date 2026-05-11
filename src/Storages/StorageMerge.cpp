@@ -1679,7 +1679,7 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
-bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, bool query_has_limit, bool apply_pk_selectivity_check)
+bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit, bool apply_pk_selectivity_check)
 {
     filterTablesAndCreateChildrenPlans();
 
@@ -1688,10 +1688,10 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, bool qu
     if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
         return false;
 
-    auto request_read_in_order = [order_info_, query_has_limit, apply_pk_selectivity_check](ReadFromMergeTree & read_from_merge_tree)
+    auto request_read_in_order = [order_info_, query_limit, apply_pk_selectivity_check](ReadFromMergeTree & read_from_merge_tree)
     {
         return read_from_merge_tree.requestReadingInOrder(
-            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, query_has_limit, apply_pk_selectivity_check);
+            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, query_limit, apply_pk_selectivity_check);
     };
 
     bool ok = true;

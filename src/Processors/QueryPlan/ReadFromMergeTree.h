@@ -319,15 +319,15 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.
-    /// `query_has_limit` indicates that the SQL query has a LIMIT (regardless of whether it can be
-    /// pushed down past filters into `limit`); used to decide whether to disable read-in-order on
-    /// poor primary key selectivity.
+    /// `query_limit` is the SQL `LIMIT` value (0 if the query has no `LIMIT`). It is used both for
+    /// sizing the first read task (smaller first task when there is a `LIMIT` combined with a
+    /// filter) and to decide whether to disable read-in-order on poor primary key selectivity.
     /// `apply_pk_selectivity_check` enables the runtime PK-selectivity guard that disables
     /// read-in-order when it is used purely to avoid a separate sort and the index does not reduce
     /// the granule count enough. It must stay `false` for `optimizeAggregationInOrder` and
     /// `optimizeDistinctInOrder` — those paths request read-in-order for streaming algorithm
     /// reasons (memory bound), and disabling it can cause `MEMORY_LIMIT_EXCEEDED`.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, bool query_has_limit = false, bool apply_pk_selectivity_check = false);
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0, bool apply_pk_selectivity_check = false);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
@@ -456,6 +456,12 @@ private:
     UInt64 selected_parts = 0;
     UInt64 selected_rows = 0;
     UInt64 selected_marks = 0;
+
+    /// When query has WHERE and LIMIT we cannot stop reading after reaching the limit,
+    /// because we can read many rows that do not satisfy the condition.
+    /// But we still use this estimation to get smaller task size for reading in order
+    /// in case filter is not selective and to avoid reading too many rows in first task.
+    UInt64 query_task_size_limit = 0;
 
     std::optional<VectorSearchParameters> vector_search_parameters;
 

@@ -667,7 +667,9 @@ Pipe ReadFromMergeTree::readInOrder(
 {
     /// For reading in order it makes sense to read only
     /// one range per task to reduce number of read rows.
-    bool has_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
+    const bool has_hard_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
+    const bool has_soft_limit_below_one_block = read_type != ReadType::Default && query_task_size_limit && query_task_size_limit < block_size.max_block_size_rows;
+
     MergeTreeReadPoolPtr pool;
 
     if (is_parallel_reading_from_replicas)
@@ -691,7 +693,8 @@ Pipe ReadFromMergeTree::readInOrder(
             mutations_snapshot,
             shared_virtual_fields,
             index_read_tasks,
-            has_limit_below_one_block,
+            has_hard_limit_below_one_block,
+            has_soft_limit_below_one_block,
             storage_snapshot,
             query_info.row_level_filter,
             query_info.prewhere_info,
@@ -705,7 +708,8 @@ Pipe ReadFromMergeTree::readInOrder(
     else
     {
         pool = std::make_shared<MergeTreeReadPoolInOrder>(
-            has_limit_below_one_block,
+            has_hard_limit_below_one_block,
+            has_soft_limit_below_one_block,
             read_type,
             parts_with_ranges,
             mutations_snapshot,
@@ -2855,7 +2859,7 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
         && context->canUseParallelReplicasOnInitiator();
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, bool query_has_limit, bool apply_pk_selectivity_check)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit, bool apply_pk_selectivity_check)
 {
     /// if direction is not set, use current one
     if (!direction)
@@ -2865,6 +2869,8 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
     if (direction != 1 && query_info.isFinal())
         return false;
+
+    const bool query_has_limit = query_limit != 0;
 
     /// When the primary key index doesn't significantly reduce the number of granules to read
     /// (e.g., because the WHERE clause uses a pattern like LIKE '%...' that can't use the index),
@@ -2900,9 +2906,10 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     }
 
     query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
+    query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;
 
-    /// In case or read-in-order, don't create too many reading streams.
+    /// In case of read-in-order, don't create too many reading streams.
     /// Almost always we are reading from a single stream at a time because of merge sort.
     if (output_streams_limit)
         requested_num_streams = output_streams_limit;
