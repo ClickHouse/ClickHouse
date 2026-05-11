@@ -1603,7 +1603,8 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
             return createReadBufferFromFileBase(file, read_settings, std::nullopt, std::nullopt);
         };
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-            file, key, cache, user, read_buffer_creator, read_settings,
+            file, key, cache, user, read_buffer_creator, read_settings.getFilesystemCacheSettings(),
+            read_settings.remote_fs_buffer_size, read_settings.local_fs_buffer_size,
             "test", expect_result.size(), false, false, std::nullopt, nullptr);
         WriteBufferFromOwnString result;
         copyData(*cached_buffer, result);
