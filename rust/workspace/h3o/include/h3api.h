@@ -82,6 +82,13 @@ static inline int getBaseCellNumber(H3Index h) { return static_cast<int>((h >> 4
 static inline int isResClassIII(H3Index h) { return static_cast<int>(((h >> 52) & 0xF) % 2); }
 static inline int res0CellCount(void) { return 122; }
 static inline int pentagonCount(void) { return 12; }
+static inline H3Error maxGridDiskSize(int k, int64_t *out)
+{
+    if (k < 0) return E_FAILED;
+    int64_t k64 = static_cast<int64_t>(k);
+    *out = 3 * k64 * (k64 + 1) + 1;
+    return E_SUCCESS;
+}
 #else
 static inline double degsToRads(double degrees) { return degrees * 0.017453292519943295; }
 static inline double radsToDegs(double radians) { return radians * 57.29577951308232; }
@@ -90,6 +97,13 @@ static inline int getBaseCellNumber(H3Index h) { return (int)((h >> 45) & 0x7F);
 static inline int isResClassIII(H3Index h) { return (int)(((h >> 52) & 0xF) % 2); }
 static inline int res0CellCount(void) { return 122; }
 static inline int pentagonCount(void) { return 12; }
+static inline H3Error maxGridDiskSize(int k, int64_t *out)
+{
+    if (k < 0) return E_FAILED;
+    int64_t k64 = (int64_t)k;
+    *out = 3 * k64 * (k64 + 1) + 1;
+    return E_SUCCESS;
+}
 #endif
 
 #ifdef __cplusplus
@@ -102,7 +116,6 @@ H3Error cellToLatLng(H3Index h3, LatLng *g);
 H3Error cellToBoundary(H3Index h3, CellBoundary *gp);
 
 /* Grid disk / ring */
-H3Error maxGridDiskSize(int k, int64_t *out);
 H3Error gridDisk(H3Index origin, int k, H3Index *out);
 H3Error gridDiskUnsafe(H3Index origin, int k, H3Index *out);
 H3Error gridRingUnsafe(H3Index origin, int k, H3Index *out);

@@ -162,17 +162,17 @@ pub unsafe extern "C" fn cellToBoundary(h3: H3Index, gp: *mut CellBoundary) -> H
 
 // ---------------------------------------------------------------------------
 // Grid disk / ring
+//
+// `maxGridDiskSize` is inlined in `h3api.h` (trivial arithmetic), so it has
+// no Rust counterpart here.
 // ---------------------------------------------------------------------------
 
-/// H3Error maxGridDiskSize(int k, int64_t *out)
-#[no_mangle]
-pub unsafe extern "C" fn maxGridDiskSize(k: i32, out: *mut i64) -> H3Error {
-    if k < 0 {
-        return E_FAILED;
-    }
+/// Inline equivalent of `maxGridDiskSize` for use inside this crate.
+#[inline]
+fn max_grid_disk_size(k: i32) -> usize
+{
     let k = k as i64;
-    *out = 3 * k * (k + 1) + 1;
-    E_SUCCESS
+    (3 * k * (k + 1) + 1) as usize
 }
 
 /// H3Error gridDisk(H3Index origin, int k, H3Index *out)
@@ -184,9 +184,7 @@ pub unsafe extern "C" fn gridDisk(origin: H3Index, k: i32, out: *mut H3Index) ->
     if k < 0 {
         return E_FAILED;
     }
-    let mut max_size: i64 = 0;
-    maxGridDiskSize(k, &mut max_size);
-    let max_size = max_size as usize;
+    let max_size = max_grid_disk_size(k);
     for (i, c) in cell.grid_disk_safe(k as u32).enumerate() {
         if i >= max_size {
             break;
@@ -205,9 +203,7 @@ pub unsafe extern "C" fn gridDiskUnsafe(origin: H3Index, k: i32, out: *mut H3Ind
     if k < 0 {
         return E_FAILED;
     }
-    let mut max_size: i64 = 0;
-    maxGridDiskSize(k, &mut max_size);
-    let max_size = max_size as usize;
+    let max_size = max_grid_disk_size(k);
     for (i, maybe_c) in cell.grid_disk_fast(k as u32).enumerate() {
         if i >= max_size {
             break;
@@ -1067,13 +1063,9 @@ mod tests {
 
     #[test]
     fn test_max_grid_disk_size() {
-        let mut out: i64 = 0;
-        assert_eq!(unsafe { maxGridDiskSize(0, &mut out) }, E_SUCCESS);
-        assert_eq!(out, 1);
-        assert_eq!(unsafe { maxGridDiskSize(1, &mut out) }, E_SUCCESS);
-        assert_eq!(out, 7);
-        assert_eq!(unsafe { maxGridDiskSize(2, &mut out) }, E_SUCCESS);
-        assert_eq!(out, 19);
+        assert_eq!(max_grid_disk_size(0), 1);
+        assert_eq!(max_grid_disk_size(1), 7);
+        assert_eq!(max_grid_disk_size(2), 19);
     }
 
     #[test]
