@@ -8,7 +8,7 @@ CREATE TABLE tab
 (
     id UInt32,
     data JSON(max_dynamic_paths=2),
-    INDEX idx JSONValues(data, 'type.name', 'player.name') TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 100000000
+    INDEX idx JSONValues(data, ['type.name', 'player.name']) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 100000000
 )
 ENGINE = MergeTree
 ORDER BY id SETTINGS index_granularity = 1;
@@ -19,16 +19,16 @@ INSERT INTO tab VALUES (2, '{"type": {"name": "goal"}, "player": {"name": "Firmi
 INSERT INTO tab VALUES (3, '{"player": {"name": "Henderson"}}');
 
 SELECT '-- returns values in path argument order';
-SELECT id, JSONValues(data, 'type.name', 'player.name') FROM tab ORDER BY id;
+SELECT id, JSONValues(data, ['type.name', 'player.name']) FROM tab ORDER BY id;
 
 SELECT '-- absent path omitted from row';
-SELECT id, JSONValues(data, 'type.name', 'player.name') FROM tab WHERE id = 3;
+SELECT id, JSONValues(data, ['type.name', 'player.name']) FROM tab WHERE id = 3;
 
 SELECT '-- single path';
-SELECT id, JSONValues(data, 'player.name') FROM tab ORDER BY id;
+SELECT id, JSONValues(data, ['player.name']) FROM tab ORDER BY id;
 
 SELECT '-- path order is preserved (reversed args)';
-SELECT id, JSONValues(data, 'player.name', 'type.name') FROM tab WHERE id = 0;
+SELECT id, JSONValues(data, ['player.name', 'type.name']) FROM tab WHERE id = 0;
 
 SELECT '-- text index is used for subcolumn equality';
 SELECT trimLeft(explain) FROM (

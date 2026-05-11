@@ -242,7 +242,8 @@ private:
 };
 
 /// Returns values for a specified subset of paths from a JSON column as an array of strings.
-/// Paths are returned in the order they are specified. Absent or null paths are omitted.
+/// Paths are supplied as a constant Array(String). Values are returned in the order the paths
+/// are specified. Absent, null, or default-valued typed paths are omitted.
 class FunctionJSONValues : public IFunction
 {
 public:
@@ -251,29 +252,28 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionJSONValues>(); }
 
     String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 2)
+        if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at least 2 arguments: a JSON column and at least one path", getName());
+                "Function {} requires exactly 2 arguments: a JSON column and a constant Array(String) of paths", getName());
 
         if (arguments[0].type->getTypeId() != TypeIndex::Object)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Function {} requires first argument with type JSON, got: {}",
                 getName(), arguments[0].type->getName());
 
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            if (!isString(arguments[i].type) || !arguments[i].column || !isColumnConst(*arguments[i].column))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function {} requires path arguments to be constant strings, argument {} is not",
-                    getName(), i);
-        }
+        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[1].type.get());
+        if (!array_type || !isString(array_type->getNestedType())
+            || !arguments[1].column || !isColumnConst(*arguments[1].column))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} requires second argument to be a constant Array(String) of paths, got: {}",
+                getName(), arguments[1].type->getName());
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
@@ -290,10 +290,11 @@ public:
 
         const auto & type_object = assert_cast<const DataTypeObject &>(*elem.type);
 
+        const auto & paths_array = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<Array>();
         std::vector<String> paths;
-        paths.reserve(arguments.size() - 1);
-        for (size_t i = 1; i < arguments.size(); ++i)
-            paths.push_back(assert_cast<const ColumnConst &>(*arguments[i].column).getValue<String>());
+        paths.reserve(paths_array.size());
+        for (const auto & path_field : paths_array)
+            paths.push_back(path_field.safeGet<String>());
 
         return execute(*column_object, type_object, paths, input_rows_count);
     }
@@ -362,7 +363,11 @@ private:
                 const auto & rp = resolved[pi];
                 if (rp.source == PathSource::Typed)
                 {
-                    serializeValueIntoResult(*rp.serialization, *rp.column, i, format_settings, result_data);
+                    /// Typed paths always have a column entry but the value may be the type
+                    /// default when the field was absent in the original JSON. Skip defaults
+                    /// so the behaviour is consistent with dynamic and shared-data paths.
+                    if (!rp.column->isDefaultAt(i))
+                        serializeValueIntoResult(*rp.serialization, *rp.column, i, format_settings, result_data);
                 }
                 else if (rp.source == PathSource::Dynamic)
                 {
@@ -429,10 +434,10 @@ SELECT json, JSONAllValues(json) FROM test;
 Returns values for a specified subset of paths from each row in a JSON column as an array of strings.
 Values are returned in the order the paths are specified. Paths that are absent or null in a given row are omitted from that row's array.
         )";
-        FunctionDocumentation::Syntax syntax = "JSONValues(json, path1, path2, ...)";
+        FunctionDocumentation::Syntax syntax = "JSONValues(json, paths)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON column.", {"JSON"}},
-            {"path1, path2, ...", "Constant string path names to extract.", {"String"}}
+            {"paths", "Constant array of dot-separated path names to extract.", {"Array(String)"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of values for the specified paths as strings.", {"Array(String)"}};
         FunctionDocumentation::Examples examples = {
@@ -441,13 +446,13 @@ Values are returned in the order the paths are specified. Paths that are absent 
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=2)) ENGINE = Memory;
 INSERT INTO test FORMAT JSONEachRow {"json": {"type": {"name": "goal"}, "player": {"name": "Salah"}}}, {"json": {"type": {"name": "assist"}, "player": {"name": "Trent"}}}
-SELECT json, JSONValues(json, 'type.name', 'player.name') FROM test;
+SELECT json, JSONValues(json, ['type.name', 'player.name']) FROM test;
             )",
             R"(
-┌─json──────────────────────────────────────────────────┬─JSONValues(json, 'type.name', 'player.name')─┐
-│ {"player":{"name":"Salah"},"type":{"name":"goal"}}    │ ['goal','Salah']                             │
-│ {"player":{"name":"Trent"},"type":{"name":"assist"}}  │ ['assist','Trent']                           │
-└───────────────────────────────────────────────────────┴──────────────────────────────────────────────┘
+┌─json──────────────────────────────────────────────────┬─JSONValues(json, ['type.name', 'player.name'])─┐
+│ {"player":{"name":"Salah"},"type":{"name":"goal"}}    │ ['goal','Salah']                               │
+│ {"player":{"name":"Trent"},"type":{"name":"assist"}}  │ ['assist','Trent']                             │
+└───────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
             )"
         }
         };

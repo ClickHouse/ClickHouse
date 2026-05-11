@@ -99,7 +99,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 }
 
 /// Parse a JSONValues index column name of the form:
-///   JSONValues(col, 'path1', 'path2', ...)
+///   JSONValues(col, ['path1', 'path2', ...])
 /// Returns {col, [path1, path2, ...]} or nullopt if the name doesn't match.
 static std::optional<std::pair<String, std::vector<String>>>
 parseJSONValuesColumnName(const String & col_name)
@@ -115,13 +115,22 @@ parseJSONValuesColumnName(const String & col_name)
     rest.remove_prefix(prefix.size());
     rest.remove_suffix(1); // remove trailing ')'
 
-    /// First token is the unquoted JSON column name, followed by ", 'pathN'" args.
-    auto comma = rest.find(", '");
-    if (comma == std::string_view::npos)
+    /// Find the ", [" separator between the column name and the array argument.
+    auto bracket = rest.find(", [");
+    if (bracket == std::string_view::npos)
         return std::nullopt;
 
-    String json_col(rest.substr(0, comma));
-    rest.remove_prefix(comma + 2); // skip ", "
+    String json_col(rest.substr(0, bracket));
+    rest.remove_prefix(bracket + 2); // skip ", "
+
+    /// Parse the array literal ['path1', 'path2', ...].
+    if (rest.empty() || rest[0] != '[')
+        return std::nullopt;
+    rest.remove_prefix(1);
+
+    if (rest.empty() || rest.back() != ']')
+        return std::nullopt;
+    rest.remove_suffix(1);
 
     std::vector<String> paths;
     while (!rest.empty())
