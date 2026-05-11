@@ -440,13 +440,13 @@ Values are returned in the order the paths are specified. Paths that are absent 
             "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=2)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json": {"type": {"name": "goal"}, "player": {"name": "Salah"}}}, {"json": {"type": {"name": "assist"}, "player": {"name": "Mane"}}}
+INSERT INTO test FORMAT JSONEachRow {"json": {"type": {"name": "goal"}, "player": {"name": "Salah"}}}, {"json": {"type": {"name": "assist"}, "player": {"name": "Trent"}}}
 SELECT json, JSONValues(json, 'type.name', 'player.name') FROM test;
             )",
             R"(
 ┌─json──────────────────────────────────────────────────┬─JSONValues(json, 'type.name', 'player.name')─┐
 │ {"player":{"name":"Salah"},"type":{"name":"goal"}}    │ ['goal','Salah']                             │
-│ {"player":{"name":"Mane"},"type":{"name":"assist"}}   │ ['assist','Mane']                            │
+│ {"player":{"name":"Trent"},"type":{"name":"assist"}}  │ ['assist','Trent']                           │
 └───────────────────────────────────────────────────────┴──────────────────────────────────────────────┘
             )"
         }

@@ -14,7 +14,7 @@ ENGINE = MergeTree
 ORDER BY id SETTINGS index_granularity = 1;
 
 INSERT INTO tab VALUES (0, '{"type": {"name": "goal"}, "player": {"name": "Salah"}, "score": 1}');
-INSERT INTO tab VALUES (1, '{"type": {"name": "assist"}, "player": {"name": "Mane"}, "score": 0}');
+INSERT INTO tab VALUES (1, '{"type": {"name": "assist"}, "player": {"name": "Trent"}, "score": 0}');
 INSERT INTO tab VALUES (2, '{"type": {"name": "goal"}, "player": {"name": "Firmino"}, "score": 2}');
 INSERT INTO tab VALUES (3, '{"player": {"name": "Henderson"}}');
 

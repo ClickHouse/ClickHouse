@@ -1,13 +1,13 @@
 -- returns values in path argument order
 0	['goal','Salah']
-1	['assist','Mane']
+1	['assist','Trent']
 2	['goal','Firmino']
 3	['Henderson']
 -- absent path omitted from row
 3	['Henderson']
 -- single path
 0	['Salah']
-1	['Mane']
+1	['Trent']
 2	['Firmino']
 3	['Henderson']
 -- path order is preserved (reversed args)
