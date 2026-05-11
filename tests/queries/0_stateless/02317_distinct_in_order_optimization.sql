@@ -102,7 +102,7 @@ drop table if exists sorting_key_contain_function;
 
 select '-- bug 42185, distinct in order and empty sort description';
 select '-- distinct in order, sorting key tuple()';
-create table sorting_key_empty_tuple (a int, b int) engine=MergeTree() order by tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+create table sorting_key_empty_tuple (a int, b int) engine=MergeTree() order by tuple() SETTINGS optimize_row_order_if_no_order_by = 0, index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into sorting_key_empty_tuple select number % 2, number % 5 from numbers(1,10);
 select distinct a from sorting_key_empty_tuple;
 

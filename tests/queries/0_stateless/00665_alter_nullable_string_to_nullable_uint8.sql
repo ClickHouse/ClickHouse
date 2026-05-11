@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS alter_00665;
-CREATE TABLE alter_00665 (`boolean_false` Nullable(String)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE alter_00665 (`boolean_false` Nullable(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
 INSERT INTO alter_00665 (`boolean_false`) VALUES (NULL), (''), ('123');
 SELECT * FROM alter_00665;

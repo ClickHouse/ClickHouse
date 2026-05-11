@@ -17,7 +17,7 @@ insert into source format JSONAsObject
 {"a" : {"a1" : 6, "a2" : 7}};
 
 drop table if exists test_compact_map;
-create table test_compact_map (json JSON(max_dynamic_paths=8)) engine=MergeTree order by tuple() settings index_granularity=2, min_bytes_for_wide_part='200G', min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map';
+create table test_compact_map (json JSON(max_dynamic_paths=8)) engine=MergeTree order by tuple() SETTINGS optimize_row_order_if_no_order_by = 0, index_granularity=2, min_bytes_for_wide_part='200G', min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map';
 insert into test_compact_map select * from source;
 
 select 'select json';
@@ -41,7 +41,7 @@ select json.a.a1, json.^a from test_compact_map;
 drop table test_compact_map;
 
 drop table if exists test_compact_map_tuple;
-create table test_compact_map_tuple (json Tuple(data JSON(max_dynamic_paths=8))) engine=MergeTree order by tuple() settings index_granularity=2, min_bytes_for_wide_part='200G', min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map';
+create table test_compact_map_tuple (json Tuple(data JSON(max_dynamic_paths=8))) engine=MergeTree order by tuple() SETTINGS optimize_row_order_if_no_order_by = 0, index_granularity=2, min_bytes_for_wide_part='200G', min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map';
 insert into test_compact_map_tuple select tuple(json) from source;
 
 select 'select json.data';
@@ -68,7 +68,7 @@ select json.data.b, json.data.^a, json.data from test_compact_map_tuple;
 drop table test_compact_map_tuple;
 
 drop table if exists test_wide_map;
-create table test_wide_map (json JSON(max_dynamic_paths=8)) engine=MergeTree order by tuple() settings index_granularity=2, min_bytes_for_wide_part=1, min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map';
+create table test_wide_map (json JSON(max_dynamic_paths=8)) engine=MergeTree order by tuple() SETTINGS optimize_row_order_if_no_order_by = 0, index_granularity=2, min_bytes_for_wide_part=1, min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map';
 insert into test_wide_map select * from source;
 
 select 'select json';
@@ -132,7 +132,7 @@ select json.a.a1, json.^a from test_wide_map settings max_block_size=3;
 drop table test_wide_map;
 
 drop table if exists test_wide_map_tuple;
-create table test_wide_map_tuple (json Tuple(data JSON(max_dynamic_paths=8))) engine=MergeTree order by tuple() settings index_granularity=2, min_bytes_for_wide_part=1, min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map';
+create table test_wide_map_tuple (json Tuple(data JSON(max_dynamic_paths=8))) engine=MergeTree order by tuple() SETTINGS optimize_row_order_if_no_order_by = 0, index_granularity=2, min_bytes_for_wide_part=1, min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map';
 insert into test_wide_map_tuple select tuple(json) from source;
 
 select 'select json.data';
