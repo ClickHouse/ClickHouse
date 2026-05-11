@@ -1,0 +1,68 @@
+---
+description: 'Documentation for hypothetical (what-if) indexes'
+sidebar_label: 'HYPOTHETICAL INDEX'
+sidebar_position: 47
+slug: /sql-reference/statements/hypothetical-index
+title: 'Hypothetical Indexes'
+doc_type: 'reference'
+---
+
+# Hypothetical Indexes {#hypothetical-indexes}
+
+Hypothetical indexes are virtual, session-scoped skip indexes that you can attach to a `MergeTree` family table without actually building or storing them. They exist only inside the current session and are used by [`EXPLAIN WHATIF`](/sql-reference/statements/explain#explain-whatif) to estimate how a real skip index would affect a query — typically the skip ratio (fraction of marks that could be skipped) and a rough cost in marks and bytes.
+
+Use hypothetical indexes to evaluate candidate indexes before paying the cost of materializing them on disk.
+
+## CREATE HYPOTHETICAL INDEX {#create-hypothetical-index}
+
+```sql
+CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name
+    ON [db.]table_name (expression) TYPE type[(args)] [GRANULARITY value]
+```
+
+The syntax mirrors `ALTER TABLE ... ADD INDEX`, but no data is read or written — the index description is stored only in the current session.
+
+- `name` — index name; must be unique within `(database, table)` for this session.
+- `expression` — the column or expression to index.
+- `TYPE type` — any skip index type (`minmax`, `set(N)`, `bloom_filter(p)`, `ngrambf_v1(...)`, etc.).
+- `GRANULARITY value` — number of data granules per index granule. Defaults to 1.
+
+The target table must be a `MergeTree` family table.
+
+**Example**
+
+```sql
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+```
+
+## DROP HYPOTHETICAL INDEX {#drop-hypothetical-index}
+
+```sql
+DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table_name
+```
+
+Removes a hypothetical index from the current session.
+
+## DROP ALL HYPOTHETICAL INDEXES {#drop-all-hypothetical-indexes}
+
+```sql
+DROP ALL HYPOTHETICAL INDEXES
+```
+
+Clears every hypothetical index defined in the current session, regardless of table.
+
+## Scope and lifetime {#scope-and-lifetime}
+
+- Hypothetical indexes live only in the **current session** — they are invisible to other sessions and discarded when the session ends.
+- They never read or write data; real queries against the table are unaffected.
+- Inspect the current session's hypothetical indexes via [`system.hypothetical_indexes`](/operations/system-tables/hypothetical_indexes).
+
+## Required privileges {#required-privileges}
+
+`SELECT` on the target table.
+
+## See also {#see-also}
+
+- [`EXPLAIN WHATIF`](/sql-reference/statements/explain#explain-whatif)
+- [`system.hypothetical_indexes`](/operations/system-tables/hypothetical_indexes)
+- [Data skipping indexes](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)
