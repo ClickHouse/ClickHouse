@@ -87,6 +87,14 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     if (unneeded_for_sorting.trivial())
         return 0;
 
+    /// `arrayJoin` can change the number of rows produced by an expression.
+    /// Lifting it above the `SortingStep` is unsound when the sort has a
+    /// `LIMIT` pushed down to it (or any other downstream LIMIT): the
+    /// `LIMIT` would truncate input rows before `arrayJoin` expansion,
+    /// silently dropping rows that should have been produced. See #82279.
+    if (unneeded_for_sorting.hasArrayJoin())
+        return 0;
+
     if (!areNodesConvertableToBlock(needed_for_sorting.getOutputs()) || !areNodesConvertableToBlock(unneeded_for_sorting.getInputs()))
         return 0;
 
