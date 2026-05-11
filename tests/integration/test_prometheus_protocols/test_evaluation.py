@@ -279,7 +279,10 @@ def do_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert execute_query_in_prometheus(query, timestamp) == result
+    actual_prometheus_result = execute_query_in_prometheus(query, timestamp)
+    assert http_api_response_close_to(
+        actual_prometheus_result, result, eps=eps
+    ), f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
 
     actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
     assert tsv_close_to(
