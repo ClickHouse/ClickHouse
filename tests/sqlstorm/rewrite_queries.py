@@ -479,7 +479,13 @@ def rewrite_any_comparison(sql):
         # `ANY(SELECT ...)` / `ANY(WITH ...)` is a subquery, not an array. `has`
         # only accepts an array argument, so rewriting `a = ANY(SELECT b FROM u)`
         # to `has(SELECT b FROM u, a)` would produce invalid SQL. Skip those.
-        if re.match(r'\s*(?:SELECT|WITH)\b', array_expr, re.IGNORECASE):
+        # Parenthesized subqueries like `ANY((SELECT ...))` are also valid in
+        # PostgreSQL, so strip leading whitespace and any number of opening
+        # parens before checking for `SELECT`/`WITH`.
+        stripped = array_expr.lstrip()
+        while stripped.startswith('('):
+            stripped = stripped[1:].lstrip()
+        if re.match(r'(?:SELECT|WITH)\b', stripped, re.IGNORECASE):
             result.append(sql[m.start():paren_end + 1])
             i = paren_end + 1
             continue
