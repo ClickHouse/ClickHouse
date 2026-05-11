@@ -75,7 +75,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnPtr column_haystack = arguments[0].column->convertToFullColumnIfConst();
+        const ColumnPtr & column_haystack = arguments[0].column;
 
         const ColumnConst * col_pattern = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
         if (!col_pattern)
@@ -96,10 +96,24 @@ public:
         const OptimizedRegularExpression regexp(prepared_pattern);
         const unsigned num_captures = regexp.getNumberOfSubpatterns();
 
-        const auto * col_haystack_vector = checkAndGetColumn<ColumnString>(column_haystack.get());
-        if (!col_haystack_vector)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", column_haystack->getName(), getName());
+        /// Detect a const haystack once and reuse its (data, size) across rows instead of materializing to a full column.
+        const ColumnString * col_haystack_vector = nullptr;
+        const char * const_row_data = nullptr;
+        size_t const_row_size = 0;
+
+        if (const auto * col_const_haystack = checkAndGetColumnConst<ColumnString>(column_haystack.get()))
+        {
+            const auto & inner = assert_cast<const ColumnString &>(col_const_haystack->getDataColumn());
+            const_row_data = reinterpret_cast<const char *>(inner.getChars().data());
+            const_row_size = inner.getOffsets()[0];
+        }
+        else
+        {
+            col_haystack_vector = checkAndGetColumn<ColumnString>(column_haystack.get());
+            if (!col_haystack_vector)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", column_haystack->getName(), getName());
+        }
 
         auto col_res = ColumnUInt64::create(input_rows_count);
         ColumnUInt64::Container & res_data = col_res->getData();
@@ -108,9 +122,6 @@ public:
         const ColumnPtr col_occurrence = arguments.size() >= 4 ? arguments[3].column : nullptr;
         const ColumnPtr col_return_option = arguments.size() >= 5 ? arguments[4].column : nullptr;
         const ColumnPtr col_subexpression = arguments.size() >= 7 ? arguments[6].column : nullptr;
-
-        const auto & offsets = col_haystack_vector->getOffsets();
-        const auto & chars = col_haystack_vector->getChars();
 
         OptimizedRegularExpression::MatchVec matches;
         matches.reserve(num_captures + 1);
@@ -137,9 +148,20 @@ public:
                     getName(),
                     num_captures);
 
-            const size_t row_data_offset = i == 0 ? 0 : offsets[i - 1];
-            const size_t row_size = offsets[i] - row_data_offset;
-            const char * row_data = reinterpret_cast<const char *>(&chars[row_data_offset]);
+            const char * row_data;
+            size_t row_size;
+            if (col_haystack_vector)
+            {
+                const auto & offsets = col_haystack_vector->getOffsets();
+                const size_t row_data_offset = i == 0 ? 0 : offsets[i - 1];
+                row_size = offsets[i] - row_data_offset;
+                row_data = reinterpret_cast<const char *>(&col_haystack_vector->getChars()[row_data_offset]);
+            }
+            else
+            {
+                row_data = const_row_data;
+                row_size = const_row_size;
+            }
 
             const size_t start_offset = static_cast<size_t>(position) - 1;
             if (start_offset > row_size)
