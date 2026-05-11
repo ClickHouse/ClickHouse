@@ -153,8 +153,11 @@ bool tryEstimateEmpirical(
     if (index_columns.empty())
         return false;
 
-    UInt64 total_index_granules = 0;
-    UInt64 skipped_index_granules = 0;
+    /// Counted in data granules (= data marks) so the result is in the same unit as
+    /// baseline_marks / sampled_marks. Each index granule covers `skip_index_granularity`
+    /// data granules; an index granule that's kept means all its data granules are kept.
+    UInt64 total_data_granules = 0;
+    UInt64 skipped_data_granules = 0;
     Stopwatch watch;
 
     const size_t skip_index_granularity = index_helper->index.granularity;
@@ -205,9 +208,9 @@ bool tryEstimateEmpirical(
             if (data_granules_in_current >= skip_index_granularity)
             {
                 auto granule = aggregator->getGranuleAndReset();
-                ++total_index_granules;
+                total_data_granules += data_granules_in_current;
                 if (!condition->mayBeTrueOnGranule(granule, {}))
-                    ++skipped_index_granules;
+                    skipped_data_granules += data_granules_in_current;
 
                 aggregator = index_helper->createIndexAggregator();
                 data_granules_in_current = 0;
@@ -217,17 +220,17 @@ bool tryEstimateEmpirical(
         if (!aggregator->empty())
         {
             auto granule = aggregator->getGranuleAndReset();
-            ++total_index_granules;
+            total_data_granules += data_granules_in_current;
             if (!condition->mayBeTrueOnGranule(granule, {}))
-                ++skipped_index_granules;
+                skipped_data_granules += data_granules_in_current;
         }
     }
 
-    if (total_index_granules == 0)
+    if (total_data_granules == 0)
         return false;
 
-    result.skip_ratio = static_cast<double>(skipped_index_granules) / static_cast<double>(total_index_granules);
-    result.estimated_marks = total_index_granules - skipped_index_granules;
+    result.skip_ratio = static_cast<double>(skipped_data_granules) / static_cast<double>(total_data_granules);
+    result.estimated_marks = total_data_granules - skipped_data_granules;
     result.estimated_parts = analysis.selected_parts;
     result.estimate_source = "empirical";
     result.empirical_status = WhatIfIndexEstimator::IndexResult::Ok;
