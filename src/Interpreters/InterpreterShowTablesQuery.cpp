@@ -235,7 +235,7 @@ BlockIO InterpreterShowTablesQuery::execute()
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
-    if (DatabaseCatalog::instance().isExternalDatabase(database))
+    if (DatabaseCatalog::instance().isRemoteDatabase(database))
     {
         /// HACK: force the setting so that system.tables includes tables from the requested external database.
         /// system.databases already shows all databases unconditionally, so no override is needed for SHOW DATABASES.

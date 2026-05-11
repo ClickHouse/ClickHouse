@@ -40,6 +40,8 @@ public:
 
     String getEngineName() const override { return "MaterializedPostgreSQL"; }
 
+    bool isRemoteDatabase() const override { return true; }
+
     String getMetadataPath() const override { return metadata_path; }
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;

@@ -195,7 +195,7 @@ public:
     /// unless `show_external_databases_in_system_tables` is enabled.
     /// This is distinct from `isExternal()` (which classifies whether the engine supports
     /// ClickHouse internal table types) and from `isDatalakeCatalog()` (which is narrower).
-    virtual bool isExternalDatabase() const { return false; }
+    virtual bool isRemoteDatabase() const { return false; }
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.

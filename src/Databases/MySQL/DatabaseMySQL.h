@@ -51,7 +51,7 @@ public:
     String getEngineName() const override { return "MySQL"; }
     UUID getUUID() const override { return db_uuid; }
 
-    bool isExternalDatabase() const override { return true; }
+    bool isRemoteDatabase() const override { return true; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
 

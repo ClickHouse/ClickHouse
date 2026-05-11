@@ -597,7 +597,7 @@ bool DatabaseCatalog::hasExternalDatabases() const
     return databases.size() != databases_without_external.size();
 }
 
-bool DatabaseCatalog::isExternalDatabase(const String & database_name) const
+bool DatabaseCatalog::isRemoteDatabase(const String & database_name) const
 {
     std::lock_guard lock{databases_mutex};
     return databases.contains(database_name) && !databases_without_external.contains(database_name);
@@ -621,7 +621,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
-    if (!database->isExternalDatabase())
+    if (!database->isRemoteDatabase())
         databases_without_external.emplace(database_name, database);
 
     NOEXCEPT_SCOPE({
@@ -2252,7 +2252,7 @@ Names TableNameHints::getAllRegisteredNames() const
         return {};
     /// External databases (data lake catalogs, MySQL, PostgreSQL) typically list tables via a remote
     /// service, which is expensive. Skip when user opted out of seeing them in system tables.
-    if (database->isExternalDatabase() && context && !context->getSettingsRef()[Setting::show_external_databases_in_system_tables])
+    if (database->isRemoteDatabase() && context && !context->getSettingsRef()[Setting::show_external_databases_in_system_tables])
         return {};
     return database->getAllTableNames(context);
 }

@@ -38,7 +38,7 @@ public:
     String getEngineName() const override { return "PostgreSQL"; }
     UUID getUUID() const override { return db_uuid; }
 
-    bool isExternalDatabase() const override { return true; }
+    bool isRemoteDatabase() const override { return true; }
 
     String getMetadataPath() const override { return metadata_path; }
 

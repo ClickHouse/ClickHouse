@@ -159,8 +159,8 @@ public:
     bool isDatabaseExist(std::string_view database_name) const;
     /// External databases (data lake catalogs, MySQL, PostgreSQL) are implemented at IDatabase level in ClickHouse.
     /// Listing their tables typically requires calls to a remote service (sometimes paid).
-    /// With this flag we explicitly protect ourselves from accidentally querying the external service for
-    /// trivial things like autocompletion hints or system.tables / system.columns queries.
+    /// GetDatabasesOptions::with_external_databases explicitly protects us from accidentally querying the external service for trivial
+    /// things like autocompletion hints or system.tables / system.columns queries.
     /// The `show_external_databases_in_system_tables` setting allows the user to opt in.
     /// Note: system.databases always passes with_external_databases = true because listing a database
     /// name is purely local metadata and never requires calls to an external service.
@@ -272,7 +272,7 @@ public:
 
     void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
     bool hasExternalDatabases() const;
-    bool isExternalDatabase(const String & database_name) const;
+    bool isRemoteDatabase(const String & database_name) const;
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
