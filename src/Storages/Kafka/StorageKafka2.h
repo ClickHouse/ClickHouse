@@ -175,7 +175,7 @@ private:
     /// Uses a counter instead of a boolean because with thread_per_consumer=1,
     /// multiple threads may stream simultaneously and each must be tracked independently.
     std::atomic<size_t> active_mv_streamers{0};
-    /// Number of active direct SELECT readers. Prevents MV streaming from starting
+    /// Number of consumers used by direct SELECTs. Prevents MV streaming from starting
     /// while direct reads are in progress, avoiding concurrent consumer access.
     std::atomic<size_t> active_direct_readers{0};
 

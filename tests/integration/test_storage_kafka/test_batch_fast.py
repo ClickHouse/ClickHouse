@@ -82,13 +82,13 @@ def kafka_setup_teardown():
 
 # Tests
 @pytest.mark.parametrize(
-    "create_query_generator, do_direct_read",
+    "create_query_generator",
     [
-        (k.generate_old_create_table_query, True),
-        (k.generate_new_create_table_query, True),
+        k.generate_old_create_table_query,
+        k.generate_new_create_table_query,
     ],
 )
-def test_kafka_column_types(kafka_cluster, create_query_generator, do_direct_read):
+def test_kafka_column_types(kafka_cluster, create_query_generator):
     def assert_returned_exception(e):
         assert e.value.returncode == 36
         assert (
@@ -117,40 +117,39 @@ def test_kafka_column_types(kafka_cluster, create_query_generator, do_direct_rea
         """)
     assert_returned_exception(exception)
 
-    if do_direct_read:
-        # check ALIAS
-        instance.query(
-            create_query_generator(
-                kafka_table,
-                "a Int, b String Alias toString(a)",
-                settings={"kafka_commit_on_select": True},
-            )
+    # check ALIAS
+    instance.query(
+        create_query_generator(
+            kafka_table,
+            "a Int, b String Alias toString(a)",
+            settings={"kafka_commit_on_select": True},
         )
-        messages = []
-        for i in range(5):
-            messages.append(json.dumps({"a": i}))
-        k.kafka_produce(kafka_cluster, k.KAFKA_TOPIC_NEW, messages)
-        result = ""
-        expected = TSV(
-            """
-    0\t0
-    1\t1
-    2\t2
-    3\t3
-    4\t4
-                                """
-        )
-        retries = 50
-        while retries > 0:
-            result += instance.query(f"SELECT a, b FROM test.{kafka_table}", ignore_error=True)
-            if TSV(result) == expected:
-                break
-            retries -= 1
-            time.sleep(0.5)
+    )
+    messages = []
+    for i in range(5):
+        messages.append(json.dumps({"a": i}))
+    k.kafka_produce(kafka_cluster, k.KAFKA_TOPIC_NEW, messages)
+    result = ""
+    expected = TSV(
+        """
+0\t0
+1\t1
+2\t2
+3\t3
+4\t4
+                            """
+    )
+    retries = 50
+    while retries > 0:
+        result += instance.query(f"SELECT a, b FROM test.{kafka_table}", ignore_error=True)
+        if TSV(result) == expected:
+            break
+        retries -= 1
+        time.sleep(0.5)
 
-        assert TSV(result) == expected
+    assert TSV(result) == expected
 
-        instance.query(f"DROP TABLE test.{kafka_table} SYNC")
+    instance.query(f"DROP TABLE test.{kafka_table} SYNC")
 
 
 def test_kafka_settings_old_syntax(kafka_cluster):
@@ -1771,14 +1770,14 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
 
 
 @pytest.mark.parametrize(
-    "create_query_generator, do_direct_read",
+    "create_query_generator",
     [
-        (k.generate_old_create_table_query, True),
-        (k.generate_new_create_table_query, True),
+        k.generate_old_create_table_query,
+        k.generate_new_create_table_query,
     ],
 )
 def test_kafka_producer_consumer_separate_settings(
-    kafka_cluster, create_query_generator, do_direct_read
+    kafka_cluster, create_query_generator
 ):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"

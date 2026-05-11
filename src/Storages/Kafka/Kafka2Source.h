@@ -30,7 +30,6 @@ public:
     Chunk generate() override;
 
     void commit();
-    bool isStalled() const { return stalled; }
 
 private:
     StorageKafka2 & storage;
@@ -43,8 +42,6 @@ private:
     bool commit_in_suffix;
 
     bool is_finished = false;
-    bool broken = true;
-    bool stalled = false;
 
     Stopwatch total_stopwatch{CLOCK_MONOTONIC_COARSE};
 

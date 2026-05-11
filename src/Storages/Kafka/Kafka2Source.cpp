@@ -36,7 +36,7 @@ Kafka2Source::~Kafka2Source()
     {
         auto component_guard = Coordination::setCurrentComponent("Kafka2Source::~Kafka2Source");
 
-        // If broken (not committed), the OffsetGuard destructor will rollback
+        /// If `commit` was not called, the `OffsetGuard` destructor rolls back.
         offset_guard.reset();
         storage.releaseConsumer(std::move(consumer));
     }
@@ -67,11 +67,8 @@ Chunk Kafka2Source::generateImpl()
         if (const auto cannot_poll_reason = consumer->prepareToPoll(); cannot_poll_reason.has_value())
         {
             LOG_DEBUG(log, "Cannot poll consumer for direct read");
-            stalled = true;
             return {};
         }
-
-        broken = true;
     }
 
     if (is_finished)
@@ -82,10 +79,7 @@ Chunk Kafka2Source::generateImpl()
     auto maybe_blocks_and_guard = storage.pollConsumer(*consumer, total_stopwatch, context, max_block_size);
 
     if (!maybe_blocks_and_guard.has_value())
-    {
-        stalled = true;
         return {};
-    }
 
     offset_guard.emplace(std::move(maybe_blocks_and_guard->guard));
 
@@ -93,7 +87,6 @@ Chunk Kafka2Source::generateImpl()
     {
         /// Messages were consumed but produced no rows (e.g. all went to dead-letter queue).
         /// We still keep the offset guard so that commit can advance offsets.
-        stalled = true;
         return {};
     }
 
@@ -123,8 +116,6 @@ void Kafka2Source::commit()
         offset_guard->commit();
         offset_guard.reset();
     }
-
-    broken = false;
 }
 
 }
