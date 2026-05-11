@@ -1223,8 +1223,14 @@ Requirements and constraints:
 
 Behavior on the leader vs. on followers:
 
-- Leader: inserts, `INSERT`-driven merges, mutations, `DROP`/`DETACH`/`ATTACH`/`MOVE`/`REPLACE PARTITION`, `OPTIMIZE`, and `ALTER` all run normally. Background merges, mutations, moves, and cleanup are active.
-- Follower: writes and DDL fail with `TABLE_IS_READ_ONLY`. `SELECT` is allowed. Background write tasks are stopped. `DROP TABLE` is allowed and removes only local metadata, leaving the shared data intact for the leader.
+- Leader: inserts, `INSERT`-driven merges, mutations, `DROP`/`DETACH`/`ATTACH`/`MOVE`/`REPLACE PARTITION`, `OPTIMIZE` all run normally. Background merges, mutations, moves, and cleanup are active. When leadership is acquired, the leader first refreshes its in-memory view of parts from shared storage and advances the local block-number counter, so block numbers allocated by the new leader never overlap with what the previous leader wrote.
+- Follower: writes and DDL fail with `TABLE_IS_READ_ONLY`. `SELECT` is allowed. Background write tasks are stopped, and any in-flight merges or moves on a node that just lost leadership are actively cancelled to bound the dual-writer window. `DROP TABLE` is allowed and removes only local metadata, leaving the shared data intact for the leader.
+
+Unsupported operations under `leader_election`:
+
+- `ALTER TABLE` — schema, indices, projections, statistics, TTLs, and settings live in each replica's local metadata and are not replicated across nodes. Applying an `ALTER` on the leader would leave followers with stale metadata, so after failover the new leader would interpret shared parts with the wrong schema. `ALTER` is rejected on all nodes. To change schema or settings, recreate the table on every node. The exceptions are `COMMENT TABLE` and `COMMENT COLUMN`, which are pure-text and have no effect on data interpretation.
+- `RENAME TABLE` — the shared data path and the leader-election lease path are fixed at startup and are not broadcast to followers, so renaming on the leader would orphan the followers' lease path. `RENAME TABLE` is rejected.
+- `ReplicatedMergeTree` — the `leader_election` setting is only honoured by `MergeTree`. Setting it on `ReplicatedMergeTree` is rejected at create/attach because that engine already uses ZooKeeper for active/standby coordination.
 
 Example: enabling leader election on an S3-backed table.
 

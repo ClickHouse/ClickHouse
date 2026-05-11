@@ -553,3 +553,199 @@ def test_concurrent_inserts_with_restarts(started_cluster):
             n.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+# UUIDs for the regression tests below — each test uses a unique S3 prefix so it
+# can run independently of the others.
+SHARED_UUID_BLOCKNUM = "12345678-abcd-abcd-abcd-12345678ab01"
+SHARED_UUID_ALTER = "12345678-abcd-abcd-abcd-12345678ab02"
+SHARED_UUID_RENAME = "12345678-abcd-abcd-abcd-12345678ab03"
+SHARED_UUID_VISIBILITY = "12345678-abcd-abcd-abcd-12345678ab04"
+
+
+def test_failover_no_block_number_overlap(started_cluster):
+    """
+    Regression: after the old leader writes parts on shared storage, the new leader
+    must refresh its in-memory part set and advance `increment` past the highest
+    block number on disk before issuing new block numbers. Without that, two
+    consecutive leaders would allocate overlapping `min_block`/`max_block` and
+    produce intersecting parts.
+
+    The test checks (a) the new leader sees the old leader's parts after failover
+    and (b) the new leader's first own inserts have strictly higher block numbers
+    than every part the old leader wrote.
+    """
+    table = "test_blocknum"
+    create_table_on_first_node(node1, table, SHARED_UUID_BLOCKNUM)
+    attach_table_on_second_node(node2, table, SHARED_UUID_BLOCKNUM)
+
+    leader, followers = wait_for_leader([node1, node2], table_name=table)
+    follower = followers[0]
+    logging.info(f"Leader: {leader.name}, Follower: {follower.name}")
+
+    # Old leader produces several parts. With one row per insert, each insert
+    # creates its own part with a distinct block number.
+    for i in range(1, 6):
+        leader.query(f"INSERT INTO {table} VALUES ({i})")
+
+    old_leader_max_block = int(
+        leader.query(
+            f"SELECT max(max_block_number) FROM system.parts "
+            f"WHERE table = '{table}' AND active"
+        ).strip()
+    )
+    assert old_leader_max_block >= 5, (
+        f"Old leader did not produce parts as expected: max_block={old_leader_max_block}"
+    )
+
+    # Kill the leader and wait for the follower to take over.
+    leader.stop_clickhouse()
+    deadline = time.monotonic() + 60
+    became_leader = False
+    while time.monotonic() < deadline:
+        try:
+            follower.query(f"INSERT INTO {table} VALUES (100)")
+            became_leader = True
+            break
+        except Exception as e:
+            if "TABLE_IS_READ_ONLY" in str(e):
+                time.sleep(2)
+                continue
+            raise
+    assert became_leader, "Follower did not become leader"
+
+    # The new leader's parts must have block numbers strictly higher than what the
+    # old leader produced — proving the sync-on-leadership-acquire happened.
+    follower_min_block_of_own_parts = int(
+        follower.query(
+            f"SELECT min(min_block_number) FROM system.parts "
+            f"WHERE table = '{table}' AND active AND min_block_number > {old_leader_max_block}"
+        ).strip()
+    )
+    assert follower_min_block_of_own_parts > old_leader_max_block, (
+        f"New leader allocated overlapping block number "
+        f"{follower_min_block_of_own_parts} <= old max {old_leader_max_block}"
+    )
+
+    # All five rows written by the old leader must be visible on the new leader.
+    visible = int(
+        follower.query(f"SELECT countIf(x BETWEEN 1 AND 5) FROM {table}").strip()
+    )
+    assert visible == 5, (
+        f"New leader does not see all old-leader rows: visible={visible}/5"
+    )
+
+    leader.start_clickhouse()
+    for n in (node1, node2):
+        try:
+            n.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
+def test_alter_rejected_under_leader_election(started_cluster):
+    """
+    Regression: any ALTER that mutates table structure or settings would leave
+    followers with stale metadata. Reject all such ALTERs; allow only comment
+    changes. Verified on both the leader and the follower.
+    """
+    table = "test_alter"
+    create_table_on_first_node(node1, table, SHARED_UUID_ALTER)
+    attach_table_on_second_node(node2, table, SHARED_UUID_ALTER)
+    leader, followers = wait_for_leader([node1, node2], table_name=table)
+    follower = followers[0]
+
+    cases = [
+        ("ADD COLUMN", f"ALTER TABLE {table} ADD COLUMN y UInt32"),
+        ("DROP COLUMN", f"ALTER TABLE {table} DROP COLUMN x"),
+        ("MODIFY COLUMN", f"ALTER TABLE {table} MODIFY COLUMN x Int64"),
+        ("MODIFY TTL", f"ALTER TABLE {table} MODIFY TTL toStartOfDay(toDateTime(0)) + INTERVAL 1 DAY"),
+        ("ADD INDEX", f"ALTER TABLE {table} ADD INDEX idx_x x TYPE minmax GRANULARITY 1"),
+        ("MODIFY SETTING", f"ALTER TABLE {table} MODIFY SETTING merge_max_block_size = 1024"),
+    ]
+    for label, sql in cases:
+        for node, role in [(leader, "leader"), (follower, "follower")]:
+            try:
+                node.query(sql)
+            except Exception as e:
+                msg = str(e)
+                assert "SUPPORT_IS_DISABLED" in msg or "leader_election" in msg, (
+                    f"{label} on {role}: expected rejection due to leader_election, got: {msg}"
+                )
+                continue
+            raise AssertionError(
+                f"{label} on {role}: expected rejection, query succeeded"
+            )
+
+    # COMMENT TABLE must still work on the leader (and only the leader).
+    leader.query(f"ALTER TABLE {table} MODIFY COMMENT 'leader-only comment'")
+    try:
+        follower.query(f"ALTER TABLE {table} MODIFY COMMENT 'follower comment'")
+    except Exception as e:
+        assert "TABLE_IS_READ_ONLY" in str(e), (
+            f"Follower COMMENT TABLE: expected TABLE_IS_READ_ONLY, got: {e}"
+        )
+    else:
+        raise AssertionError("Follower COMMENT TABLE should have been rejected")
+
+    for n in (node1, node2):
+        try:
+            n.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
+def test_rename_rejected_under_leader_election(started_cluster):
+    """
+    Regression: RENAME TABLE moves the shared data path on every disk and does not
+    update the followers' lease path. Reject it.
+    """
+    table = "test_rename_src"
+    create_table_on_first_node(node1, table, SHARED_UUID_RENAME)
+    attach_table_on_second_node(node2, table, SHARED_UUID_RENAME)
+    leader, followers = wait_for_leader([node1, node2], table_name=table)
+    follower = followers[0]
+
+    for node, role in [(leader, "leader"), (follower, "follower")]:
+        try:
+            node.query(f"RENAME TABLE {table} TO {table}_renamed")
+        except Exception as e:
+            msg = str(e)
+            assert "SUPPORT_IS_DISABLED" in msg or "leader_election" in msg or "TABLE_IS_READ_ONLY" in msg, (
+                f"RENAME on {role}: expected rejection, got: {msg}"
+            )
+            continue
+        raise AssertionError(f"RENAME on {role}: expected rejection, query succeeded")
+
+    for n in (node1, node2):
+        try:
+            n.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
+def test_replicated_mergetree_rejects_leader_election(started_cluster):
+    """
+    Regression: `leader_election` is implemented only for `MergeTree`. Setting it
+    on `ReplicatedMergeTree` would be a confusing no-op. Reject at CREATE.
+    """
+    table = "test_repl_rejected"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} (x UInt64)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table}/{{shard}}', '{{replica}}')
+            ORDER BY x
+            SETTINGS leader_election = 1
+            """
+        )
+    except Exception as e:
+        msg = str(e)
+        assert "leader_election" in msg and "MergeTree" in msg, (
+            f"Expected rejection mentioning `leader_election` and engine, got: {msg}"
+        )
+    else:
+        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        raise AssertionError(
+            "ReplicatedMergeTree with leader_election=1 should have been rejected at CREATE"
+        )
