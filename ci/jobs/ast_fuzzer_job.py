@@ -282,6 +282,21 @@ def run_fuzz_job(check_name: str):
             or "BuzzHouse fuzzer exception not found, fuzzer issue?"
         )
         info.append(f"ERROR: {error_info}")
+    elif fuzzer_exit_code == 49 and not buzzhouse:
+        # AST fuzzer client called _exit(49) after the server-side oracle
+        # reported a wrong-result mismatch. The fuzzer log contains a clearly
+        # delimited "AST FUZZER ORACLE MISMATCH (fatal)" block with the
+        # reproducer query and the server-side oracle output.
+        status = Result.Status.ERROR
+        error_info = Shell.get_output(
+            f"rg --text -A 30 'AST FUZZER ORACLE MISMATCH' {fuzzer_log}"
+        )
+        if not error_info:
+            error_info = (
+                "AST fuzzer oracle mismatch detected, but the marker block was "
+                "not found in the fuzzer log (see attached fuzzer.log)."
+            )
+        info.append(f"ERROR: AST fuzzer oracle mismatch\n{error_info}")
     else:
         status = Result.Status.ERROR
         # The server was alive, but the fuzzer returned some error. This might
@@ -349,6 +364,13 @@ def run_fuzz_job(check_name: str):
         # generate fatal log
         Shell.check(f"rg --text '\\s<Fatal>\\s' {server_log} > {fatal_log}")
         result.set_files(ClickHouseService.collect_cores(WORKSPACE_PATH))
+
+    # Attach logs whenever the fuzzer did not finish cleanly. A clean finish is
+    # exit code 0; any non-zero exit (real failure, oracle mismatch, SIGTERM /
+    # SIGKILL from the FUZZ_TIME_LIMIT timeout wrapper) is informative enough
+    # that we want the artifacts uploaded — otherwise timeouts look like silent
+    # passes with no logs to diagnose them from.
+    if is_failed or fuzzer_exit_code != 0:
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)
