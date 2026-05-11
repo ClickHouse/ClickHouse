@@ -22,6 +22,7 @@
 
 #include <expected>
 #include <optional>
+#include <list>
 
 
 namespace DB
@@ -41,7 +42,7 @@ using PartitionCommands = std::vector<PartitionCommand>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
 
 class Pipe;
 class QueryPlan;
@@ -449,6 +450,10 @@ public:
     virtual void drop() {}
 
     virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
+
+    /// Return true if the storage supports TRUNCATE operation.
+    /// Storages without their own data (e.g. View) return false.
+    virtual bool supportsTruncate() const { return true; }
 
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).

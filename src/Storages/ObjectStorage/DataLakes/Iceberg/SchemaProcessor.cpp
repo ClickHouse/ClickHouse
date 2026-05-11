@@ -112,16 +112,74 @@ bool equals(const T & first, const T & second)
     return first_string_stream.str() == second_string_stream.str();
 }
 
-bool operator==(const Poco::JSON::Array & first, const Poco::JSON::Array & second)
+
+bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping);
+
+bool schemaFieldsAreStructurallyIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping)
 {
-    return equals(first, second);
+    static constexpr const char * structural_keys[] = {f_id, f_name, f_required, f_type};
+    for (const char * key : structural_keys)
+    {
+        const bool first_has = first.has(key);
+        const bool second_has = second.has(key);
+        if (first_has != second_has)
+            return false;
+        if (!first_has)
+            continue;
+
+        if (key == f_type && first.isObject(key) && second.isObject(key))
+        {
+            const auto first_type = first.getObject(key);
+            const auto second_type = second.getObject(key);
+            if (first_type->isArray(f_fields) || second_type->isArray(f_fields))
+            {
+                if (!schemasAreIdentical(*first_type, *second_type, type_mapping))
+                    return false;
+                continue;
+            }
+        }
+
+        auto key_first = first.get(key);
+        auto key_second = second.get(key);
+        if (key == f_type && key_first.isString())
+        {
+            for (const auto & [prefix, mapped] : type_mapping)
+                if (key_first.toString().starts_with(prefix))
+                    key_first = mapped;
+        }
+        if (key == f_type && key_second.isString())
+        {
+            for (const auto & [prefix, mapped] : type_mapping)
+                if (key_second.toString().starts_with(prefix))
+                    key_second = mapped;
+        }
+
+        Poco::JSON::Object wrapper_first;
+        wrapper_first.set(key, key_first);
+        Poco::JSON::Object wrapper_second;
+        wrapper_second.set(key, key_second);
+        if (!equals(wrapper_first, wrapper_second))
+            return false;
+    }
+    return true;
 }
 
-bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
+bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping)
 {
     if (!first.isArray(f_fields) || !second.isArray(f_fields))
         return false;
-    return *(first.getArray(f_fields)) == *(second.getArray(f_fields));
+    const auto first_fields = first.getArray(f_fields);
+    const auto second_fields = second.getArray(f_fields);
+    if (first_fields->size() != second_fields->size())
+        return false;
+    for (UInt32 i = 0; i != first_fields->size(); ++i)
+    {
+        const auto first_field = first_fields->getObject(i);
+        const auto second_field = second_fields->getObject(i);
+        if (!first_field || !second_field || !schemaFieldsAreStructurallyIdentical(*first_field, *second_field, type_mapping))
+            return false;
+    }
+    return true;
 }
 
 std::pair<size_t, size_t> parseDecimal(const String & type_name)
@@ -153,7 +211,13 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
-        chassert(schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr));
+        std::unordered_map<String, String> type_mapping;
+        if (allow_geo_parser)
+        {
+            type_mapping[f_geography] = f_binary;
+            type_mapping[f_geometry] = f_binary;
+        }
+        chassert(schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping));
     }
     else
     {
@@ -221,7 +285,7 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
     return fields;
 }
 
-DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
+DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name, bool allow_geo_parser)
 {
     if (type_name == f_boolean)
         return DataTypeFactory::instance().get("Bool");
@@ -247,6 +311,15 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
         return std::make_shared<DataTypeDateTime64>(9, "UTC");
     if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
+
+    if (type_name.starts_with(f_geometry) || type_name.starts_with(f_geography))
+    {
+        if (allow_geo_parser)
+        {
+            return DataTypeFactory::instance().get("Geometry");
+        }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using geometry/geography types is not allowed without enabled allow_experimental_geo_types_in_iceberg flag");
+    }
     if (type_name == f_uuid)
         return std::make_shared<DataTypeUUID>();
 
@@ -336,8 +409,8 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
     if (type.isString())
     {
         const String & type_name = type.extract<String>();
-        auto data_type = getSimpleType(type_name);
-        return required ? data_type : makeNullable(data_type);
+        auto data_type = getSimpleType(type_name, allow_geo_parser);
+        return required || !data_type->canBeInsideNullable() ? data_type : makeNullable(data_type);
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'type' field: {}", type.toString());
