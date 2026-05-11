@@ -3,7 +3,6 @@
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/StorageID.h>
 
-#include <map>
 #include <mutex>
 #include <vector>
 
@@ -14,8 +13,9 @@ namespace DB
 class HypotheticalIndexStore
 {
 public:
-    void add(const StorageID & table_id, const IndexDescription & index);
-    void remove(const StorageID & table_id, const String & index_name);
+    bool add(const StorageID & table_id, const IndexDescription & index, bool if_not_exists);
+    bool remove(const StorageID & table_id, const String & index_name, bool if_exists);
+
     void clear();
 
     std::vector<IndexDescription> getForTable(const StorageID & table_id) const;
@@ -30,12 +30,10 @@ public:
     bool empty() const;
 
 private:
-    /// (database, table) pair
-    using Key = std::pair<String, String>;
-    static Key makeKey(const StorageID & table_id);
+    static bool sameTable(const StorageID & a, const StorageID & b);
 
     mutable std::mutex mutex;
-    std::map<Key, std::vector<IndexDescription>> indexes;
+    std::vector<Entry> entries;
 };
 
 }

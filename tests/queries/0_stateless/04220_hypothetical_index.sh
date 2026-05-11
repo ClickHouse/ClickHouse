@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT -n -q "
 echo "--- CREATE / system table ---"
 $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo (b) TYPE set(100) GRANULARITY 1;
-    SELECT name, table, type, granularity, scope FROM system.hypothetical_indexes;
+    SELECT name, table, type, granularity FROM system.hypothetical_indexes;
 "
 
 echo "--- Duplicate errors ---"

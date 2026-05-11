@@ -17,7 +17,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -48,28 +47,12 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     if (query.kind == ASTHypotheticalIndexQuery::Drop)
     {
         auto index_name = query.index_name->as<ASTIdentifier &>().name();
-        if (query.if_exists)
-        {
-            try
-            {
-                store.remove(table_id, index_name);
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() != ErrorCodes::BAD_ARGUMENTS)
-                    throw;
-                /// IF EXISTS — ignore
-            }
-        }
-        else
-        {
-            store.remove(table_id, index_name);
-        }
+        store.remove(table_id, index_name, query.if_exists);
         return {};
     }
 
     /// CREATE HYPOTHETICAL INDEX
-    auto metadata = table->getInMemoryMetadataPtr();
+    auto metadata = table->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
     auto index_desc = IndexDescription::getIndexFromAST(
         query.index_decl,
         metadata->getColumns(),
@@ -77,17 +60,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
         /* escape_filenames = */ true,
         context);
 
-    if (query.if_not_exists)
-    {
-        auto existing = store.getForTable(table_id);
-        for (const auto & idx : existing)
-        {
-            if (idx.name == index_desc.name)
-                return {};
-        }
-    }
-
-    store.add(table_id, index_desc);
+    store.add(table_id, index_desc, query.if_not_exists);
     return {};
 }
 
