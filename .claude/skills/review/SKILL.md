@@ -18,7 +18,8 @@ allowed-tools: Task, Bash, Read, Glob, Grep, WebFetch, AskUserQuestion
 - Fetch PR metadata (title, description, base/head refs, changed files).
 - Fetch the full PR diff.
 - Note the PR title, description, and linked issues
-- Validate PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`:
+- **Detect revert PRs** before validating template metadata. A PR is a revert when the title starts with `Revert "..."` (the GitHub default), or the body matches `Reverts ClickHouse/ClickHouse#<N>` / `This reverts commit <sha>`. Revert PRs are **exempt** from PR template validation: skip all `Changelog category`, `Changelog entry`, and documentation checkbox checks for them, and do not flag missing template fields. Only verify that the body identifies the reverted PR or commit.
+- For non-revert PRs, validate PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`:
   - `Changelog category` is present, valid, and semantically correct for the actual code change.
   - `Changelog entry` is present and user-readable when required by the selected category.
   - `Changelog entry` quality follows ClickHouse expectations: specific user-facing impact, no vague wording, and migration guidance for backward-incompatible changes.
@@ -97,8 +98,16 @@ WHAT TO REVIEW VS WHAT TO IGNORE
 - Scan all changed lines for typos in comments, variable names, string literals, log messages, error messages, and documentation.
 - Report all typos found with suggested corrections.
 - Check that error messages are clear, informative, and help the user understand what went wrong and how to fix it.
-- Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present, specific, and user-readable.
+- Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present, specific, and user-readable. **Skip this entirely for revert PRs** (see "Obtaining the Diff" for detection).
 - Read the changelog-entry standards from `clickhouse-pr-description` and apply them: avoid vague text (e.g. "fix bug"), describe the exact affected feature/behavior, and for backward-incompatible changes explain old behavior, new behavior, and how to preserve old behavior when possible.
+
+**Documentation is auto-generated from source for structured parts of the system — do NOT request separate `docs/` files for these:**
+- ClickHouse auto-generates user-facing documentation for the structured surface of the system directly from the source code. This includes (non-exhaustive): SQL functions and aggregate functions (via `FunctionDocumentation` registered at function factory time), settings (via the doc-string argument of the `DECLARE(...)` macro in `src/Core/Settings.cpp`, `MergeTreeSettings.cpp`, format settings, server settings, etc.), table functions, table engines, formats, system tables, and similar registered components.
+- When a PR adds or changes a function, setting, table function, table engine, format, or system table, the correct place for documentation is **the source code registration** (e.g. `FunctionDocumentation` fields like `description`, `syntax`, `arguments`, `returned_value`, `examples`, `introduced_in`, `category`; or the doc-string in `DECLARE(...)` for settings). A separate hand-written page under `docs/` is **not required** and asking for one is a false positive.
+- Only flag missing documentation when:
+  - The structured doc fields are themselves missing, empty, or clearly inadequate (e.g. no `description`, no `examples`, no `syntax` for a new function; empty doc-string in `DECLARE` for a new setting).
+  - The change is to a **non-structured** area that has no auto-generation (e.g. high-level guides, tutorials, architecture docs, operational/admin docs, integration guides) — those do live under `docs/` and may legitimately need updates.
+- Do **not** ask the contributor to add `docs/` files for new functions, settings, dialects, or other registered components when the source-level documentation is present. If the source-level docs are weak, comment on the source-level fields directly instead.
 
 **Explicitly ignore (do not comment on these unless they indicate a bug):**
 - Commented debugging code (completely ignore for draft PR, no more than one message in total)
@@ -205,6 +214,10 @@ Workflow:
 
 5. **Verify test coverage.** The PR's tests must include adversarial edge cases that the original caller would never produce: empty inputs, minimal-length inputs, malformed inputs, NULLs, maximum-length inputs.
 
+**12) Shell-command safety in Python / shell scripts**
+- Destructive or privileged commands (`rm -rf`, `mv`, `cp -r`, `find … -delete`, `chmod`, `chown`, `dd`, `kill`, `sudo …`) with substituted arguments passed to `shell=True` (`subprocess.run`/`Popen`, `os.system`) or to in-tree wrappers that use `shell=True` under the hood (ClickHouse's `Shell.check` / `Shell.run` / `Shell.get_output`).
+- Unquoted variables in destructive commands inside `.sh` scripts.
+- Prefer `shutil.rmtree` or argv-list `subprocess.run`; if a shell wrapper is unavoidable, use `shlex.quote` and `--`.
 
 CLICKHOUSE RULES (MANDATORY)
 - **Deletion logging**
@@ -229,7 +242,7 @@ CLICKHOUSE RULES (MANDATORY)
 - **No large / binary files in git**
   Binary blobs (JARs, archives, compiled artifacts, datasets >1 MB, fat dependency bundles) must never be committed. They permanently bloat the repository for every clone and cannot be removed without history rewriting. Test dependencies should be downloaded at test time, built from source inside the test container, or pulled from Docker images. Follow checklist **9) Repository bloat**. Any violation is a blocker.
 - **PR metadata quality**
-  For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes).
+  For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes). **Revert PRs are exempt** from this rule — mark the row as ➖ and do not produce findings about missing template fields.
 
 SEVERITY MODEL – WHAT DESERVES A COMMENT
 
@@ -244,6 +257,7 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 - Security or privilege issues, or license incompatibility.
 - Server-side file access with user-controlled paths that bypass `user_files_path` or equivalent restrictions.
 - Large binary files (JARs, archives, datasets, compiled artifacts) committed to git — permanent, irreversible repo bloat.
+- Destructive shell commands (`rm -rf`, `mv`, `chmod`, `dd`, `sudo`, …) with unquoted substitution under `shell=True` or in shell scripts.
 
 **Majors** – serious but not catastrophic
 - Under-tested important edge cases or error paths.
@@ -265,7 +279,7 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 **Summary**
 - One paragraph explaining what the PR does and your high-level verdict.
 
-**PR Metadata** (omit if no issues found)
+**PR Metadata** (omit if no issues found; **always omit for revert PRs**)
 - State whether `Changelog category` is correct for the actual change.
 - State whether `Changelog entry` is required by the chosen category, and whether the provided entry satisfies that requirement.
 - Evaluate `Changelog entry` quality using `clickhouse-pr-description` criteria (specific change, user impact, and migration guidance for backward-incompatible changes).
