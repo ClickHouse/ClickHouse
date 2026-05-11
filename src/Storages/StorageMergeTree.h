@@ -118,12 +118,25 @@ public:
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
+    /// Garbage-collect retired ANN index groups whose grace window has elapsed and which are
+    /// no longer referenced by any in-flight search. Also sweeps orphan `tmp_ann_*` and
+    /// `deleting_ann_*` directories (leftovers from a crashed build or from a code path that
+    /// dropped the retired entry early). Called by `MergeTreeCleanupThread`. Returns the
+    /// number of directories actually removed from disk.
+    size_t clearRetiredANNIndexGroups();
+
+    /// Fire-and-forget: dispatch one ANN index build round to the dedicated background executor
+    /// and return immediately. DiskANN builds take minutes to tens of minutes, so we don't hold
+    /// the client's TCP connection. Used by `SYSTEM BUILD ANN INDEX [db.]table`. If another
+    /// build is already in flight or nothing is unindexed, this is a no-op. Callers that need to
+    /// wait for full coverage should poll `system.ann_index_coverage`.
+    void triggerANNIndexBuildAsync();
+
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
 private:
-
     /// Mutex and condvar for synchronous mutations wait
     std::mutex mutation_wait_mutex;
     std::condition_variable mutation_wait_event;

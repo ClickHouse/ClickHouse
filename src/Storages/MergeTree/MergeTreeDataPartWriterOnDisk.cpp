@@ -130,9 +130,21 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
     for (const auto & skip_index : skip_indices)
     {
-        auto index_name = skip_index->getFileName();
         auto index_substreams = skip_index->getSubstreams();
         auto & index_streams = skip_indices_streams.emplace_back();
+
+        /// Indices that advertise no substreams (e.g. table-level `ann`) opt out of the
+        /// per-granule write pipeline. We still push placeholder entries so the parallel
+        /// arrays (skip_indices / skip_indices_streams / skip_indices_aggregators /
+        /// skip_index_accumulated_marks) stay index-aligned.
+        if (index_substreams.empty())
+        {
+            skip_indices_aggregators.push_back(nullptr);
+            skip_index_accumulated_marks.push_back(0);
+            continue;
+        }
+
+        auto index_name = skip_index->getFileName();
 
         for (const auto & index_substream : index_substreams)
         {
@@ -216,6 +228,11 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
     /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
+        /// Skip indices that opted out of the per-granule write pipeline by advertising no
+        /// substreams (their aggregator is a nullptr placeholder from initSkipIndices).
+        if (!skip_indices_aggregators[i])
+            continue;
+
         const auto index_helper = skip_indices[i];
         auto & index_streams = skip_indices_streams[i];
 
@@ -328,6 +345,9 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
 {
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
+        if (!skip_indices_aggregators[i])
+            continue;
+
         if (!skip_indices_aggregators[i]->empty())
         {
             auto & index_streams = skip_indices_streams[i];

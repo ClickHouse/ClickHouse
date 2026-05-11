@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/StorageMergeTree.h>
 
 namespace DB::QueryPlanOptimizations
 {

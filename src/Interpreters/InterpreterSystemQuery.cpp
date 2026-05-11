@@ -58,6 +58,7 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageMergeTree.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
@@ -156,6 +157,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int DELTA_KERNEL_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -927,6 +929,15 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
             break;
+#if USE_DISKANN
+        case Type::BUILD_ANN_INDEX:
+            buildANNIndexSync(query);
+            break;
+#else
+        case Type::BUILD_ANN_INDEX:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "SYSTEM BUILD ANN INDEX is not available in this build (DiskANN not compiled in)");
+#endif
         case Type::WAIT_BLOBS_CLEANUP:
         {
             getContext()->checkAccess(AccessType::SYSTEM_WAIT_BLOBS_CLEANUP);
@@ -2027,6 +2038,28 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
+#if USE_DISKANN
+void InterpreterSystemQuery::buildANNIndexSync(ASTSystemQuery & /*query*/)
+{
+    getContext()->checkAccess(AccessType::SYSTEM_BUILD_ANN_INDEX, table_id.database_name, table_id.table_name);
+
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto * merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
+    if (!merge_tree)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "SYSTEM BUILD ANN INDEX is supported only for non-replicated MergeTree tables, got: {}",
+            table->getName());
+
+    if (!merge_tree->getANNIndexManager())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table `{}` has no ANN index", table_id.getNameForLogs());
+
+    /// Fire-and-forget: dispatch one build round to the dedicated BG executor and return.
+    /// Callers that need to wait for coverage should poll `system.ann_index_coverage`.
+    merge_tree->triggerANNIndexBuildAsync();
+}
+#endif
+
 void InterpreterSystemQuery::loadPrimaryKeys()
 {
     loadOrUnloadPrimaryKeysImpl(true);
@@ -2527,6 +2560,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_LOADING_PARTS:
         {
             required_access.emplace_back(AccessType::SYSTEM_WAIT_LOADING_PARTS, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::BUILD_ANN_INDEX:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_BUILD_ANN_INDEX, query.getDatabase(), query.getTable());
             break;
         }
         case Type::PREWARM_MARK_CACHE:

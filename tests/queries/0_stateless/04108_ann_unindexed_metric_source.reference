@@ -1,0 +1,5 @@
+default (source=sql): OK
+mixed table, source=index: OK
+force_brute_force=1, source=sql: OK
+force_brute_force=1, source=index: OK
+zero-group, force=1 source=index falls back: OK

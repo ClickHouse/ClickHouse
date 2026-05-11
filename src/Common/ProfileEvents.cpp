@@ -498,6 +498,19 @@
     M(CommonBackgroundExecutorTaskResetMicroseconds, "Time spent resetting task for Common executor.", ValueType::Microseconds) \
     M(CommonBackgroundExecutorWaitMicroseconds, "Time spent waiting for completion in Common executor.", ValueType::Microseconds) \
     \
+    M(ANNBuildBackgroundExecutorTaskExecuteStepMicroseconds, "Time spent in executeStep() for ANN (DiskANN) index build executor tasks.", ValueType::Microseconds) \
+    M(ANNBuildBackgroundExecutorTaskCancelMicroseconds, "Time spent in cancel() for ANN index build executor tasks.", ValueType::Microseconds) \
+    M(ANNBuildBackgroundExecutorTaskResetMicroseconds, "Time spent resetting task for the ANN index build executor.", ValueType::Microseconds) \
+    M(ANNBuildBackgroundExecutorWaitMicroseconds, "Time spent waiting for completion in the ANN index build executor.", ValueType::Microseconds) \
+    M(DiskANNSearchCount, "Number of DiskANN per-group searches issued via IANNIndexSearcher.", ValueType::Number) \
+    M(DiskANNSearchMicroseconds, "Wall-clock time spent inside DiskANN per-group searches.", ValueType::Microseconds) \
+    M(DiskANNSearchResultsReturned, "Total number of hits returned by DiskANN per-group searches (k may overshoot actual results).", ValueType::Number) \
+    M(DiskANNBuildCount, "Number of DiskANN per-group on-disk index builds completed.", ValueType::Number) \
+    M(DiskANNBuildMicroseconds, "Wall-clock time spent inside DiskANN per-group on-disk index builds.", ValueType::Microseconds) \
+    M(DiskANNDistanceComputeCount, "Number of DiskANN stateless batched-distance kernel calls (used by the unindexed-parts fair-kernel mode).", ValueType::Number) \
+    M(DiskANNDistanceComputeRows, "Total number of (query, candidate) pairs evaluated by the DiskANN stateless distance kernel.", ValueType::Number) \
+    M(DiskANNDistanceComputeMicroseconds, "Wall-clock time spent inside DiskANN stateless batched-distance kernel calls.", ValueType::Microseconds) \
+    \
     M(MergeTreeDataWriterSkipIndicesCalculationMicroseconds, "Time spent calculating skip indices", ValueType::Microseconds) \
     M(MergeTreeDataWriterStatisticsCalculationMicroseconds, "Time spent calculating statistics", ValueType::Microseconds) \
     M(MergeTreeDataWriterSortingBlocksMicroseconds, "Time spent sorting blocks", ValueType::Microseconds) \

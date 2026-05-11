@@ -6083,6 +6083,65 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, try_use_ann_search, true, R"(
+Toggles a query-plan-level optimization which tries to use the table-level ANN (DiskANN) index.
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, vector_search_force_brute_force, false, R"(
+If enabled, queries that would otherwise be routed through the table-level ANN (DiskANN) index
+fall back to a full brute-force scan over all parts. Useful as a baseline in benchmarks that
+want to compare the ANN index against an exhaustive scan on the same data.
+
+:::note
+This is an expert-level setting and is intended for benchmarking and debugging.
+:::
+)", 0) \
+    DECLARE(UInt64, ann_search_list_size, 0, R"(
+Per-query override for the ANN graph-search candidate list size (`L_search` in DiskANN). Larger
+values explore more of the graph and improve recall at the cost of latency. Zero (the default)
+keeps the value baked into the index at DDL time, so existing tables behave unchanged.
+
+:::note
+This is an expert-level setting for tuning recall vs. throughput; useful for sweeping the
+recall/QPS Pareto curve without rebuilding the index.
+:::
+)", 0) \
+    DECLARE(UInt64, ann_beam_width, 0, R"(
+Per-query override for the ANN graph-search beam width (`B` in DiskANN). Controls how many
+candidates are expanded in parallel each iteration. Zero (the default) keeps the value baked
+into the index at DDL time.
+
+:::note
+This is an expert-level setting for tuning ANN search throughput.
+:::
+)", 0) \
+    DECLARE(String, vector_search_unindexed_metric_source, "sql", R"(
+Selects the distance kernel used by the unindexed-parts code path of a vector search query
+(parts not yet covered by the ANN index, or the entire table when
+`vector_search_force_brute_force` is enabled).
+
+Possible values:
+
+- `'sql'`   — use ClickHouse's SQL distance function (e.g. `L2Distance`, `cosineDistance`).
+              This is the default and matches the function written in `ORDER BY`.
+- `'index'` — use the same SIMD distance kernel that the underlying ANN index uses internally.
+              Lets benchmarks isolate the algorithmic speed-up of the index from kernel-level
+              SIMD differences. Requires that the table has at least one ANN index group built
+              for the queried column; otherwise the path silently falls back to `'sql'`.
+
+Note that index kernels follow the metric's mathematical definition as used internally by the
+index (for DiskANN: `L2` returns squared L2; `Cosine` returns `1 - cosine_similarity`), so
+absolute distance values may differ from the SQL function — top-K ordering is preserved.
+)", 0) \
     DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \

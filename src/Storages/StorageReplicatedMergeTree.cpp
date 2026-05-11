@@ -445,6 +445,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReplicatedMergeTree doesn't work with 's3_with_keeper' disk type");
     }
 
+    /// The table-level DiskANN index relies on local-disk FFI and on mutation hooks that are only
+    /// implemented for the non-replicated engine in the current release. Reject early so the user
+    /// does not end up with a table that cannot be queried.
+    if (AlterCommands::hasANNIndex(metadata_))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "ANN index is not supported on Replicated tables in the current release");
+
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
     /// We create and deactivate all tasks for consistency.

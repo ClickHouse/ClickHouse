@@ -23,6 +23,7 @@ private:
 
     AtomicStopwatch time_after_previous_cleanup_parts;
     AtomicStopwatch time_after_previous_cleanup_temporary_directories;
+    AtomicStopwatch time_after_previous_cleanup_ann_retired;
 
     /// Returns a number that is directly proportional to the number of cleaned up objects
     Float32 iterate() override;

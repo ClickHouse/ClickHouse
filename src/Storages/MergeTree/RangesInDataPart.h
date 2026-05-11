@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/ANNSearchUtils.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <deque>
@@ -93,6 +94,9 @@ struct RangesInDataPartReadHints
 {
     /// Currently only information related to vector search
     std::optional<NearestNeighbours> vector_search_results;
+    /// Per-part ANN index search results (table-level ANN index).
+    /// See ANNSearchResults tri-state semantics in ANNSearchUtils.h.
+    std::optional<ANNSearchResults> ann_search_results;
     /// Pre-computed index granules for indexes that are
     /// created for the whole part. For example, text indexes.
     IndexGranulesMap index_granules;

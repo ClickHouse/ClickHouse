@@ -58,6 +58,8 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
+    bool try_use_ann_search;
+    bool ann_search_force_brute_force;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
     bool use_join_disjunctions_push_down;
@@ -132,6 +134,8 @@ struct QueryPlanOptimizationSettings
     size_t max_limit_for_vector_search_queries;
     bool vector_search_with_rescoring;
     VectorSearchFilterStrategy vector_search_filter_strategy;
+    size_t ann_search_list_size;
+    size_t ann_beam_width;
 
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;

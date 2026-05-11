@@ -204,6 +204,11 @@ namespace ProfileEvents
     extern const Event CommonBackgroundExecutorTaskCancelMicroseconds;
     extern const Event CommonBackgroundExecutorTaskResetMicroseconds;
     extern const Event CommonBackgroundExecutorWaitMicroseconds;
+
+    extern const Event ANNBuildBackgroundExecutorTaskExecuteStepMicroseconds;
+    extern const Event ANNBuildBackgroundExecutorTaskCancelMicroseconds;
+    extern const Event ANNBuildBackgroundExecutorTaskResetMicroseconds;
+    extern const Event ANNBuildBackgroundExecutorWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -225,6 +230,8 @@ namespace CurrentMetrics
     extern const Metric BackgroundFetchesPoolSize;
     extern const Metric BackgroundCommonPoolTask;
     extern const Metric BackgroundCommonPoolSize;
+    extern const Metric BackgroundANNBuildPoolTask;
+    extern const Metric BackgroundANNBuildPoolSize;
     extern const Metric IcebergSchedulePoolTask;
     extern const Metric IcebergSchedulePoolSize;
     extern const Metric MarksLoaderThreads;
@@ -357,6 +364,7 @@ namespace MergeTreeSetting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsUInt64 background_ann_build_pool_size;
     extern const ServerSettingsUInt64 background_buffer_flush_schedule_pool_size;
     extern const ServerSettingsUInt64 background_common_pool_size;
     extern const ServerSettingsUInt64 background_distributed_schedule_pool_size;
@@ -684,6 +692,7 @@ struct ContextSharedPart : boost::noncopyable
     OrdinaryBackgroundExecutorPtr moves_executor TSA_GUARDED_BY(background_executors_mutex);
     OrdinaryBackgroundExecutorPtr fetch_executor TSA_GUARDED_BY(background_executors_mutex);
     OrdinaryBackgroundExecutorPtr common_executor TSA_GUARDED_BY(background_executors_mutex);
+    OrdinaryBackgroundExecutorPtr ann_build_executor TSA_GUARDED_BY(background_executors_mutex);
 
     /// Set to true when the low-memory auto-tuning heuristic lowered background_pool_size
     /// at server startup. Used by MergeTreeSettings::sanityCheck to allow default thresholds
@@ -936,6 +945,7 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "fetches executor", fetch_executor, wait());
         SHUTDOWN(log, "moves executor", moves_executor, wait());
         SHUTDOWN(log, "common executor", common_executor, wait());
+        SHUTDOWN(log, "ANN build executor", ann_build_executor, wait());
 
         /// Deactivate FileCache background threads before shutting down the database catalog.
         /// DatabaseCatalog::shutdown() can throw (e.g. ZooKeeper timeout in replicated DDL worker).
@@ -7448,6 +7458,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     size_t background_move_pool_size = server_settings[ServerSetting::background_move_pool_size];
     size_t background_fetches_pool_size = server_settings[ServerSetting::background_fetches_pool_size];
     size_t background_common_pool_size = server_settings[ServerSetting::background_common_pool_size];
+    size_t background_ann_build_pool_size = server_settings[ServerSetting::background_ann_build_pool_size];
 
     /// With this executor we can execute more tasks than threads we have
     shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
@@ -7508,6 +7519,20 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     );
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}", background_common_pool_size, background_common_pool_size);
 
+    shared->ann_build_executor = std::make_shared<OrdinaryBackgroundExecutor>
+    (
+        ThreadName::MERGETREE_ANN_BUILD,
+        background_ann_build_pool_size,
+        background_ann_build_pool_size,
+        CurrentMetrics::BackgroundANNBuildPoolTask,
+        CurrentMetrics::BackgroundANNBuildPoolSize,
+        ProfileEvents::ANNBuildBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::ANNBuildBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::ANNBuildBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::ANNBuildBackgroundExecutorWaitMicroseconds
+    );
+    LOG_INFO(shared->log, "Initialized background executor for ANN (DiskANN) index builds with num_threads={}, num_tasks={}", background_ann_build_pool_size, background_ann_build_pool_size);
+
     shared->are_background_executors_initialized = true;
 }
 
@@ -7545,6 +7570,12 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 {
     SharedLockGuard lock(shared->background_executors_mutex);
     return shared->common_executor;
+}
+
+OrdinaryBackgroundExecutorPtr Context::getANNBuildExecutor() const
+{
+    SharedLockGuard lock(shared->background_executors_mutex);
+    return shared->ann_build_executor;
 }
 
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const

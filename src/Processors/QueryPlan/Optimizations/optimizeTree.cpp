@@ -76,6 +76,9 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.max_limit_for_vector_search_queries,
         optimization_settings.vector_search_with_rescoring,
         optimization_settings.vector_search_filter_strategy,
+        optimization_settings.ann_search_force_brute_force,
+        optimization_settings.ann_search_list_size,
+        optimization_settings.ann_beam_width,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
         optimization_settings.use_skip_indexes_for_top_k,
@@ -187,6 +190,9 @@ void optimizeTreeSecondPass(
         optimization_settings.max_limit_for_vector_search_queries,
         optimization_settings.vector_search_with_rescoring,
         optimization_settings.vector_search_filter_strategy,
+        optimization_settings.ann_search_force_brute_force,
+        optimization_settings.ann_search_list_size,
+        optimization_settings.ann_beam_width,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
         optimization_settings.use_skip_indexes_for_top_k,
@@ -438,6 +444,37 @@ void optimizeTreeSecondPass(
             stack.pop_back();
         }
         while (!stack.empty()) /// Vector search only for 1 substree with ORDER BY..LIMIT
+            stack.pop_back();
+    }
+
+    /// ANN (DiskANN) search second pass: unconditional DAG rewrite that substitutes `_distance`
+    /// for the distance function so that the downstream Sorting step consumes the pre-computed
+    /// column (for indexed parts) or the runtime-computed column (for unindexed parts).
+    if (optimization_settings.try_use_ann_search)
+    {
+        chassert(stack.empty());
+        stack.push_back({.node = &root});
+        while (!stack.empty())
+        {
+            auto & frame = stack.back();
+
+            if (frame.next_child == 0)
+            {
+                if (optimizeANNSearchSecondPass(root, stack, nodes, extra_settings))
+                    break;
+            }
+
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(next_frame);
+                continue;
+            }
+
+            stack.pop_back();
+        }
+        while (!stack.empty())
             stack.pop_back();
     }
 

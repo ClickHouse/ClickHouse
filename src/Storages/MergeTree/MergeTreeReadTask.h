@@ -127,6 +127,8 @@ struct MergeTreeReadTaskInfo
     DeserializationPrefixesCachePtr deserialization_prefixes_cache;
     /// Extra info for optimizations - exact row processing, calculated virtual columns.
     RangesInDataPartReadHints read_hints;
+    /// ANN search parameters for runtime distance computation (unindexed parts).
+    std::optional<ANNSearchParameters> ann_search_parameters;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;

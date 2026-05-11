@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMergeTree.h>
 
+#include "config.h"
+
 namespace DB
 {
 
@@ -13,6 +15,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
+#if USE_DISKANN
+    extern const MergeTreeSettingsUInt64 merge_tree_clear_retired_ann_groups_interval_seconds;
+#endif
 }
 
 MergeTreeCleanupThread::MergeTreeCleanupThread(StorageMergeTree & storage_)
@@ -25,6 +30,7 @@ void MergeTreeCleanupThread::start()
 {
     time_after_previous_cleanup_parts.restart();
     time_after_previous_cleanup_temporary_directories.restart();
+    time_after_previous_cleanup_ann_retired.restart();
     IMergeTreeCleanupThread::start();
 }
 
@@ -56,6 +62,14 @@ Float32 MergeTreeCleanupThread::iterate()
         cleaned_part_like += storage.clearUnusedPatchParts();
         cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
     }
+
+#if USE_DISKANN
+    if (auto lock = time_after_previous_cleanup_ann_retired.compareAndRestartDeferred(
+            static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_retired_ann_groups_interval_seconds])))
+    {
+        cleaned_other += storage.clearRetiredANNIndexGroups();
+    }
+#endif
 
     constexpr Float32 parts_number_amplification = 1.3f; /// Assuming we merge 4-5 parts each time
     Float32 cleaned_inserted_parts = static_cast<Float32>(cleaned_parts) / parts_number_amplification;

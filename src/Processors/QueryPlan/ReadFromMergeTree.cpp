@@ -75,6 +75,11 @@
 
 #include "config.h"
 
+#if USE_DISKANN
+#include <Storages/MergeTree/ANNIndex/ANNHitRouting.h>
+#include <Storages/MergeTree/ANNIndex/ANNIndexManager.h>
+#endif
+
 using namespace DB;
 
 namespace
@@ -515,6 +520,9 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         block_size,
         context);
 
+    if (ann_search_parameters.has_value())
+        pool->setANNSearchParameters(ann_search_parameters);
+
     Pipes pipes;
 
     for (size_t i = 0; i < pool_settings.threads; ++i)
@@ -623,6 +631,9 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
     }
+
+    if (ann_search_parameters.has_value())
+        std::static_pointer_cast<MergeTreeReadPoolBase>(pool)->setANNSearchParameters(ann_search_parameters);
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
 
@@ -1949,6 +1960,80 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         allow_query_condition_cache,
         supportsSkipIndexesOnDataRead());
 
+#if USE_DISKANN
+    /// Once the plain range analysis has produced `parts_with_ranges`, run the ANN search
+    /// against the table-level manager (if any) and dispatch the hits to the per-part hints.
+    /// This happens at the tail of analysis (not via `createIndexCondition`) because the ANN
+    /// index is table-level: one search call covers every indexed part at once.
+    if (ann_search_parameters.has_value() && analyzed_result_ptr)
+    {
+        if (ann_search_parameters->force_brute_force)
+        {
+            LOG_INFO(
+                log,
+                "ANN search: force_brute_force=1, skipping index lookup, all {} parts will compute distances at runtime",
+                analyzed_result_ptr->parts_with_ranges.size());
+        }
+        else
+        {
+            auto mgr = data.getANNIndexManager();
+            if (!mgr)
+            {
+                LOG_INFO(
+                    log,
+                    "ANN search: index manager not available, all {} parts will compute distances at runtime (brute-force)",
+                    analyzed_result_ptr->parts_with_ranges.size());
+            }
+            else
+            {
+                const auto & params = ann_search_parameters.value();
+                std::vector<Float32> query;
+                query.reserve(params.reference_vector.size());
+                for (Float64 v : params.reference_vector)
+                    query.push_back(static_cast<Float32>(v));
+
+                const size_t k = params.limit * std::max<size_t>(params.rescoring_factor, 1);
+                ANNSearchOverrides overrides;
+                overrides.search_list_size = params.search_list_size;
+                overrides.beam_width = params.beam_width;
+                auto hits = mgr->search(query.data(), query.size(), k, /*rescoring_factor=*/1, overrides);
+
+                routeANNHitsToParts(
+                    analyzed_result_ptr->parts_with_ranges,
+                    hits,
+                    [&mgr](const String & pid) { return mgr->hashPartitionId(pid); },
+                    [&mgr](const DataPartPtr & part) { return mgr->isPartCovered(part); });
+
+                /// Summarise per-part dispatch: how many parts will go through the indexed path
+                /// vs the brute-force fallback. This is the definitive evidence that the ANN
+                /// index was queried for this SELECT.
+                size_t parts_indexed_with_hits = 0;
+                size_t parts_indexed_no_hits = 0;
+                size_t parts_unindexed = 0;
+                for (const auto & part : analyzed_result_ptr->parts_with_ranges)
+                {
+                    const auto & ann = part.read_hints.ann_search_results;
+                    if (!ann.has_value())
+                        ++parts_unindexed;
+                    else if (ann->block_coords.empty())
+                        ++parts_indexed_no_hits;
+                    else
+                        ++parts_indexed_with_hits;
+                }
+                LOG_INFO(
+                    log,
+                    "ANN search: index queried with k={}, returned {} hits; "
+                    "parts: indexed_with_hits={}, indexed_no_hits={}, unindexed_brute_force={}",
+                    k,
+                    hits.size(),
+                    parts_indexed_with_hits,
+                    parts_indexed_no_hits,
+                    parts_unindexed);
+            }
+        }
+    }
+#endif
+
     return analyzed_result_ptr;
 }
 
@@ -2955,6 +3040,29 @@ void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vec
 bool ReadFromMergeTree::isVectorColumnReplaced() const
 {
     return std::ranges::find(all_column_names, "_distance") != all_column_names.end();
+}
+
+void ReadFromMergeTree::ensureBlockNumberAndOffsetColumns()
+{
+    bool changed = false;
+    for (const auto * column_name : {"_block_number", "_block_offset"})
+    {
+        if (std::ranges::find(all_column_names, column_name) == all_column_names.end())
+        {
+            all_column_names.emplace_back(column_name);
+            changed = true;
+        }
+    }
+    if (!changed)
+        return;
+
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        query_info.row_level_filter,
+        query_info.prewhere_info));
+
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
