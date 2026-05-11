@@ -1509,6 +1509,7 @@ TSan
 TTLDeleteMerge
 TTLDropMerge
 TTLRecompressMerge
+TTLs
 TThe
 TabItem
 TabSeparated

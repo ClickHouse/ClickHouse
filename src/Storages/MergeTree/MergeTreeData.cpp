@@ -2728,9 +2728,8 @@ Int64 MergeTreeData::getMaxBlockNumberFromObjectStorage() const
         {
             object_storage = disk->getObjectStorage();
         }
-        catch (...)
+        catch (...) /// Ok: not all disks expose an object storage handle (e.g. local-disk policies).
         {
-            /// Not all disks expose an object storage handle (e.g. local-disk policies).
             continue;
         }
         if (!object_storage)
