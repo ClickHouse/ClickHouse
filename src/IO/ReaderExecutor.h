@@ -75,6 +75,11 @@ private:
     /// Read from source, trying live buffer first, falling back to stateless read.
     size_t readFromSource(const StoredObject & object, size_t offset, size_t size, char * buffer);
 
+    /// Read from the live buffer into caller-provided memory.
+    /// Uses external buffer to avoid copying — data goes directly from the
+    /// network/disk into the target memory.
+    size_t readFromLiveBuffer(char * buffer, size_t size);
+
     void maybeTriggerPrefetch();
     void discardPrefetch();
 

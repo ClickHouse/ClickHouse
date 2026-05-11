@@ -64,9 +64,10 @@ size_t LocalSourceReader::read(
     return total_read;
 }
 
-std::unique_ptr<ReadBufferFromFileBase> LocalSourceReader::open(const StoredObject & object)
+std::unique_ptr<ReadBufferFromFileBase> LocalSourceReader::open(const StoredObject & object, bool /* use_external_buffer */)
 {
     LOG_TRACE(log, "open: file={}", object.remote_path);
+    /// Local files use pread — external buffer is not applicable.
     return createReadBufferFromFileBase(object.remote_path, ReadSettings{});
 }
 

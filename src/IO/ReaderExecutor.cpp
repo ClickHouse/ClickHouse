@@ -273,6 +273,30 @@ void ReaderExecutor::seek(size_t new_position)
     position = new_position;
 }
 
+size_t ReaderExecutor::readFromLiveBuffer(char * buffer, size_t size)
+{
+    chassert(live_buffer);
+    auto & buf = *live_buffer->buffer;
+
+    /// Point the buffer's internal memory at our target.
+    /// On next(), the underlying reader (S3, HTTP, etc.) writes directly
+    /// into our Rope buffer — no intermediate copy.
+    size_t total_read = 0;
+    while (total_read < size)
+    {
+        size_t remaining = size - total_read;
+        buf.set(buffer + total_read, remaining);
+
+        if (!buf.next())
+            break;
+
+        total_read += buf.available();
+        buf.position() = buf.buffer().end();
+    }
+
+    return total_read;
+}
+
 size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset, size_t size, char * buffer)
 {
     /// Try live buffer: reuse open connection for sequential reads.
@@ -282,17 +306,8 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
     {
         LOG_TRACE(log, "readFromSource: live buffer hit for {}, position={}", object.remote_path, offset);
         ProfileEvents::increment(ProfileEvents::LiveSourceBufferHits);
-        auto & buf = *live_buffer->buffer;
 
-        size_t total_read = 0;
-        while (total_read < size)
-        {
-            size_t remaining = size - total_read;
-            size_t bytes = buf.read(buffer + total_read, remaining);
-            if (bytes == 0)
-                break;
-            total_read += bytes;
-        }
+        size_t total_read = readFromLiveBuffer(buffer, size);
 
         ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
         live_buffer->current_position += total_read;
@@ -314,29 +329,23 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
         auto slot = buffer_limit->tryAcquire(object.remote_path, String(CurrentThread::getQueryId()));
         if (slot)
         {
-            auto opened = source->open(object);
+            auto opened = source->open(object, /*use_external_buffer=*/true);
 
             if (opened)
             {
                 if (offset > 0)
                     opened->seek(offset, SEEK_SET);
 
-                size_t total_read = 0;
-                while (total_read < size)
-                {
-                    size_t remaining = size - total_read;
-                    size_t bytes = opened->read(buffer + total_read, remaining);
-                    if (bytes == 0)
-                        break;
-                    total_read += bytes;
-                }
-
                 live_buffer.emplace(LiveBuffer{
                     .object_path = object.remote_path,
-                    .current_position = offset + total_read,
+                    .current_position = offset,
                     .buffer = std::move(opened),
                     .slot = std::move(*slot),
                 });
+
+                size_t total_read = readFromLiveBuffer(buffer, size);
+
+                live_buffer->current_position += total_read;
                 live_buffer->slot.updatePosition(live_buffer->current_position);
 
                 ProfileEvents::increment(ProfileEvents::LiveSourceBufferCreated);

@@ -25,8 +25,12 @@ public:
 
     /// Open a seekable buffer for streaming reads from the object.
     /// Used by ReaderExecutor for live buffer optimization (keep connection open).
+    /// When use_external_buffer=true, the caller provides buffer memory via set()
+    /// before each next() call — enables zero-copy reads into Rope buffers.
     /// Returns nullptr if not supported.
-    virtual std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & /* object */)
+    virtual std::unique_ptr<ReadBufferFromFileBase> open(
+        const StoredObject & /* object */,
+        bool /* use_external_buffer */ = false)
     {
         return nullptr;
     }

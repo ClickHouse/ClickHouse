@@ -55,7 +55,7 @@ public:
         return total_read;
     }
 
-    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object, bool /* use_external_buffer */ = false) override
     {
         return factory(object);
     }

@@ -410,7 +410,7 @@ public:
         return to_read;
     }
 
-    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object, bool /* use_external_buffer */ = false) override
     {
         auto it = data.find(object.remote_path);
         if (it == data.end())
