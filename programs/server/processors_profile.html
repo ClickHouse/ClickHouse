@@ -246,6 +246,25 @@
             border-radius: 4px;
             line-height: 1;
         }
+        .btn-toggle {
+            background: var(--card-background);
+            color: var(--color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 0.4rem 0.7rem;
+            font-size: 0.85rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+        .btn-toggle.active {
+            background: var(--btn-primary-bg);
+            color: var(--btn-primary-color);
+            border-color: var(--btn-primary-bg);
+        }
+        .btn-toggle:hover {
+            opacity: 0.85;
+        }
         .selected-info {
             font-family: Monaco, Consolas, monospace;
             font-size: 0.8rem;
@@ -324,6 +343,10 @@
                 <input spellcheck="false" id="password" type="password" placeholder="password" />
             </div>
             <button class="btn btn-primary" onclick="event.preventDefault(); loadQueries(); return false;">Refresh</button>
+            <button class="btn-toggle" id="cluster-toggle" onclick="toggleCluster()"
+                    title="When on, wrap log tables in clusterAllReplicas('default', merge('system', '^...')) so the page sees every replica and any rotated *_log_N tables">
+                Cluster: <span id="cluster-state">off</span>
+            </button>
             <button class="theme-toggle" onclick="toggleTheme()"><span id="theme-icon">🌙</span></button>
         </div>
     </div>
@@ -441,11 +464,36 @@
 
         const DEFAULT_WHERE = "type = 'QueryFinish' AND query_kind = 'Select' AND event_time > now() - INTERVAL 24 HOUR";
 
-        /// All `system.*_log` tables are wrapped in `clusterAllReplicas` over `merge(...)` so that
-        /// queries on a Cloud / sharded deployment see every replica's local log table and any
-        /// rotated tables like `query_log_0`, `query_log_1`, …
-        const QUERY_LOG_TABLE = "clusterAllReplicas('default', merge('system', '^query_log'))";
-        const PROCESSORS_PROFILE_LOG_TABLE = "clusterAllReplicas('default', merge('system', '^processors_profile_log'))";
+        /// In cluster mode each `system.*_log` reference is wrapped in `clusterAllReplicas` over
+        /// `merge(...)` so the page sees every replica's local log table and any rotated tables
+        /// like `query_log_0`, `query_log_1`, … In local mode we hit `system.*_log` directly,
+        /// which is the right default for a single-node server with no `default` cluster.
+        const QUERY_LOG_CLUSTER          = "clusterAllReplicas('default', merge('system', '^query_log'))";
+        const PROCESSORS_PROFILE_CLUSTER = "clusterAllReplicas('default', merge('system', '^processors_profile_log'))";
+        const QUERY_LOG_LOCAL            = "system.query_log";
+        const PROCESSORS_PROFILE_LOCAL   = "system.processors_profile_log";
+
+        let clusterMode = localStorage.getItem('processors-profile.cluster-mode') === '1';
+        function queryLogTable()          { return clusterMode ? QUERY_LOG_CLUSTER          : QUERY_LOG_LOCAL; }
+        function processorsProfileTable() { return clusterMode ? PROCESSORS_PROFILE_CLUSTER : PROCESSORS_PROFILE_LOCAL; }
+
+        function applyClusterButtonState() {
+            const btn = document.getElementById('cluster-toggle');
+            const lab = document.getElementById('cluster-state');
+            if (clusterMode) {
+                btn.classList.add('active');
+                lab.textContent = 'on';
+            } else {
+                btn.classList.remove('active');
+                lab.textContent = 'off';
+            }
+        }
+        function toggleCluster() {
+            clusterMode = !clusterMode;
+            localStorage.setItem('processors-profile.cluster-mode', clusterMode ? '1' : '0');
+            applyClusterButtonState();
+            loadQueries();
+        }
 
         function resetFilter() {
             document.getElementById('where-filter').value = DEFAULT_WHERE;
@@ -523,7 +571,7 @@
                     event_time,
                     query_duration_ms,
                     substring(replaceRegexpAll(query, '[\\\\s]+', ' '), 1, 120) AS query
-                FROM ${QUERY_LOG_TABLE}
+                FROM ${queryLogTable()}
                 WHERE ${where}
                 ORDER BY event_time DESC
                 LIMIT 50
@@ -569,7 +617,7 @@
         async function fetchQueryText(queryId) {
             const q = `
                 SELECT query
-                FROM ${QUERY_LOG_TABLE}
+                FROM ${queryLogTable()}
                 WHERE query_id = '${queryId.replace(/'/g, "\\'")}'
                   AND type = 'QueryFinish'
                 ORDER BY event_time DESC
@@ -615,7 +663,7 @@
                     sum(input_bytes)                  AS input_bytes,
                     sum(output_rows)                  AS output_rows,
                     sum(output_bytes)                 AS output_bytes
-                FROM ${PROCESSORS_PROFILE_LOG_TABLE}
+                FROM ${processorsProfileTable()}
                 WHERE query_id = '${queryId.replace(/'/g, "\\'")}'
                 GROUP BY step_uniq_id, processor_uniq_id
                 FORMAT TabSeparatedWithNames`;
@@ -882,6 +930,7 @@
 
         /// Initial state.
         document.getElementById('where-filter').value = DEFAULT_WHERE;
+        applyClusterButtonState();
         loadQueries();
     </script>
 </body>
