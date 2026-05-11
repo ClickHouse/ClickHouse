@@ -311,7 +311,7 @@ CREATE TABLE system.functions
     `case_insensitive` UInt8,
     `alias_to` String,
     `create_query` String,
-    `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2),
+    `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2, 'WasmUserDefined' = 3),
     `description` String,
     `syntax` String,
     `arguments` String,
