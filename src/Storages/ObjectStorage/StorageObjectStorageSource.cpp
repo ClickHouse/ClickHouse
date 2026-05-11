@@ -101,11 +101,6 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-namespace FailPoints
-{
-    extern const char iceberg_socket_fail[];
-}
-
 void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
 {
 #if USE_AVRO
@@ -1447,11 +1442,6 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
 
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 {
-    fiu_do_on(FailPoints::iceberg_socket_fail,
-    {
-        sleepForSeconds(60);
-    });
-
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
 
     ObjectInfoPtr object_info;
