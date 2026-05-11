@@ -1,0 +1,4 @@
+object_path	String
+position	UInt64
+elapsed_seconds	Float64
+1
