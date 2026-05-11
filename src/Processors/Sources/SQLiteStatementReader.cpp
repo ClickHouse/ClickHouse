@@ -65,7 +65,7 @@ SQLiteStatementReader::ColumnReadInfo SQLiteStatementReader::createColumnReadInf
     ColumnReadInfo info;
     info.name = column.name;
     info.serialization = column.type->getDefaultSerialization();
-    info.is_nullable = column.type->isNullable() || column.type->isLowCardinalityNullable();
+    info.is_nullable = canContainNull(*column.type);
     info.data_type = removeNullable(column.type);
 
     return info;

@@ -87,6 +87,22 @@ ${CLICKHOUSE_LOCAL} \
     --input_format_null_as_default 0 \
     --query "SELECT id, value FROM table ORDER BY id" < "$DB"
 
+echo "NULL as Dynamic"
+${CLICKHOUSE_LOCAL} \
+    --structure "id UInt64, value Dynamic" \
+    --input-format SQLite \
+    --output-format TSV \
+    --input_format_null_as_default 0 \
+    --query "SELECT id, value FROM table ORDER BY id" < "$DB"
+
+echo "NULL as Variant"
+${CLICKHOUSE_LOCAL} \
+    --structure "id UInt64, value Variant(String, UInt64)" \
+    --input-format SQLite \
+    --output-format TSV \
+    --input_format_null_as_default 0 \
+    --query "SELECT id, value FROM table ORDER BY id" < "$DB"
+
 ${CLICKHOUSE_LOCAL} --query "
     SELECT 7 AS id, 'first' AS name
     FORMAT SQLite
