@@ -6,6 +6,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.log_parser import FuzzerLogParser
@@ -217,6 +218,11 @@ def analyze_job_logs(
         for server_log, fatal_log in zip(primary_server_logs, fatal_logs):
             if not Shell.check(f"rg --text '\\s<Fatal>\\s' {server_log} > {fatal_log}"):
                 Path(fatal_log).unlink(missing_ok=True)
+
+        # Encrypt and attach any core dumps found under WORKSPACE_PATH. Without this
+        # step the report carries only the logs and the e2e test (ci/tests/test_e2e.py)
+        # fails because no `.zst.enc` / `.rsa` artifact is produced for cores.
+        result.set_files(ClickHouseService.collect_cores(WORKSPACE_PATH))
 
         for file in paths:
             if file.exists() and file.stat().st_size > 0:

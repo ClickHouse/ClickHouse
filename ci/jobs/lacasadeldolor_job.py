@@ -131,6 +131,30 @@ def get_node_workspace_logs(workspace_path: Path, node_index: int):
     ]
 
 
+def _copy_node_cores_to_workspace(workspace_path: Path) -> list[Path]:
+    """Find core dumps under the per-node Dolor instance directories and copy them to
+    `workspace_path` with unique names. `ClickHouseService.collect_cores` only inspects
+    `workspace_path/core.*` non-recursively, so cores produced inside per-node subdirs
+    would otherwise be lost. Names start with `core.` so the glob in `collect_cores`
+    matches them. Returns the list of copied destinations."""
+    instances_dir = Path(_dolor_instances_dir())
+    if not instances_dir.exists():
+        return []
+    copied: list[Path] = []
+    for src in instances_dir.rglob("core.*"):
+        if not src.is_file():
+            continue
+        # Build a unique name that includes the relative path so multiple nodes don't collide.
+        relative = src.relative_to(instances_dir).as_posix().replace("/", "_")
+        dst = workspace_path / f"core.dolor.{relative}"
+        try:
+            shutil.copy2(src, dst)
+            copied.append(dst)
+        except OSError as e:
+            print(f"WARNING: failed to copy core dump {src} -> {dst}: {e}")
+    return copied
+
+
 def main():
     sw = Utils.Stopwatch()
     info = Info()
@@ -376,7 +400,10 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         outfile.write(base_command)
         outfile.write("\n")
 
-    cmd_ok = Shell.check(command=base_command, verbose=True)
+    # 4-hour wall-clock ceiling so a wedged dolor.py doesn't block the runner until the
+    # job-level timeout. Comfortably above the internal --timeout=30 (minutes) plus
+    # restarts/setup/shutdown overhead.
+    cmd_ok = Shell.check(command=base_command, verbose=True, timeout=4 * 3600)
 
     # Copy generated configuration files from container to host for further analysis
     for pattern in [
@@ -404,7 +431,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             tb_start = tail.rfind("Traceback (most recent call last):")
             tb_snippet = tail[tb_start:].strip()
             Result.create_from(
-                status=Result.Status.FAILED,
+                status=Result.Status.FAIL,
                 info=f"Python exception in dolor.py:\n{tb_snippet}",
                 files=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
                 stopwatch=sw,
@@ -415,7 +442,16 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
     fuzzer_exit_code = 0
     try:
         pattern1 = re.compile(r"Load generator exited with code:\s*(-?\d+)")
-        pattern2 = re.compile(r"(Logical error|Crash|Sanitizer error) in instance")
+        # Broadened: previously matched only "(Logical error|Crash|Sanitizer error) in instance",
+        # which missed OOM kills, raw signals (SEGV/ABRT), and explicit "Server died" messages.
+        pattern2 = re.compile(
+            r"(?:Logical error|Crash|Sanitizer error) in instance"
+            r"|Aborted \(core dumped\)"
+            r"|Child process was terminated by signal"
+            r"|Out of memory: Killed process"
+            r"|Server died"
+            r"|Received signal (?:SIGSEGV|SIGABRT|SIGKILL|6|9|11)"
+        )
 
         with open(dolor_log, "r", encoding="utf-8") as logf:
             for line in logf:
@@ -433,6 +469,13 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             stopwatch=sw,
         ).complete_job()
         return
+
+    # Pull any core dumps out of per-node Dolor instance dirs into workspace_path so
+    # ClickHouseService.collect_cores (called by analyze_job_logs) can find and encrypt
+    # them — its glob is non-recursive and only sees workspace_path/core.* directly.
+    copied_cores = _copy_node_cores_to_workspace(workspace_path)
+    if copied_cores:
+        print(f"Copied {len(copied_cores)} core dump(s) into workspace for encryption")
 
     # Gather logs to analyze
     server_logs = []
@@ -470,7 +513,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
     )
     if not cmd_ok and result.is_ok():
         Result.create_from(
-            status=Result.Status.FAILED,
+            status=Result.Status.FAIL,
             info="dolor.py exited with non-zero code but no specific error was identified. Check fuzzer.log.",
             files=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
             stopwatch=sw,
