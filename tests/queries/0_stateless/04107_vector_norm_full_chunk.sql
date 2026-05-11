@@ -7,3 +7,8 @@ SELECT L2Distance(materialize(range(17))::Array(Float32), materialize(range(17))
 WITH range(8)::Array(Float32) AS v SELECT L2Distance(v, materialize(range(8))::Array(Float32));
 WITH range(9)::Array(Float32) AS v SELECT L2Distance(v, materialize(range(9))::Array(Float32));
 WITH range(16)::Array(Float64) AS v SELECT L2Distance(v, materialize(range(16))::Array(Float64));
+SELECT cosineDistance(materialize(arrayConcat([1.0], arrayResize([], 15, 0.0))::Array(Float32)), materialize(arrayConcat([0.0, 1.0], arrayResize([], 14, 0.0))::Array(Float32)));
+SELECT cosineDistance(materialize(arrayConcat([1.0], arrayResize([], 16, 0.0))::Array(Float32)), materialize(arrayConcat([0.0, 1.0], arrayResize([], 15, 0.0))::Array(Float32)));
+WITH arrayConcat([1.0], arrayResize([], 15, 0.0))::Array(Float32) AS v SELECT cosineDistance(v, materialize(arrayConcat([0.0, 1.0], arrayResize([], 14, 0.0))::Array(Float32)));
+WITH arrayConcat([1.0], arrayResize([], 16, 0.0))::Array(Float32) AS v SELECT cosineDistance(v, materialize(arrayConcat([0.0, 1.0], arrayResize([], 15, 0.0))::Array(Float32)));
+WITH arrayConcat([1.0], arrayResize([], 15, 0.0))::Array(Float64) AS v SELECT cosineDistance(v, materialize(arrayConcat([0.0, 1.0], arrayResize([], 14, 0.0))::Array(Float64)));
