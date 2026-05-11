@@ -82,23 +82,23 @@ aiTranslate
 result	String
 -- aiTranslate: with instructions and temperature
 0
--- aiGenerateEmbedding: registered
-aiGenerateEmbedding
--- aiGenerateEmbedding: too few arguments
--- aiGenerateEmbedding: too many arguments
--- aiGenerateEmbedding: non-constant dimensions
--- aiGenerateEmbedding: wrong type for dimensions (signed integer)
--- aiGenerateEmbedding: wrong type for dimensions (string)
--- aiGenerateEmbedding: non-constant collection
--- aiGenerateEmbedding: return type
+-- aiEmbed: registered
+aiEmbed
+-- aiEmbed: too few arguments
+-- aiEmbed: too many arguments
+-- aiEmbed: non-constant dimensions
+-- aiEmbed: wrong type for dimensions (signed integer)
+-- aiEmbed: wrong type for dimensions (string)
+-- aiEmbed: non-constant collection
+-- aiEmbed: return type
 result	Array(Float32)
--- aiGenerateEmbedding: return type with dimensions
+-- aiEmbed: return type with dimensions
 result	Array(Float32)
--- aiGenerateEmbedding: empty input executes
+-- aiEmbed: empty input executes
 0
--- aiGenerateEmbedding: empty input with dimensions
+-- aiEmbed: empty input with dimensions
 0
--- aiGenerateEmbedding: nonexistent named collection
--- aiGenerateEmbedding: batch size setting default
+-- aiEmbed: nonexistent named collection
+-- aiEmbed: batch size setting default
 100
 -- Re-disabled blocks function

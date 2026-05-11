@@ -65,14 +65,14 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionAiGenerateEmbedding final : public IFunction
+class FunctionAiEmbed final : public IFunction
 {
 public:
-    static constexpr auto name = "aiGenerateEmbedding";
+    static constexpr auto name = "aiEmbed";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiGenerateEmbedding>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiEmbed>(context); }
 
-    explicit FunctionAiGenerateEmbedding(ContextPtr context_) : context_weak(context_)
+    explicit FunctionAiEmbed(ContextPtr context_) : context_weak(context_)
     {
         if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -318,9 +318,9 @@ private:
 
 }
 
-REGISTER_FUNCTION(AiGenerateEmbedding)
+REGISTER_FUNCTION(AiEmbed)
 {
-    factory.registerFunction<FunctionAiGenerateEmbedding>(FunctionDocumentation{
+    factory.registerFunction<FunctionAiEmbed>(FunctionDocumentation{
         .description = R"(
 Generates an embedding vector for the given text using the configured AI provider.
 
@@ -333,16 +333,16 @@ The first argument is a named collection that specifies the provider, model, end
 The optional `dimensions` argument, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
 requests a vector of the given size; otherwise the model's native size is returned.
 )",
-        .syntax = "aiGenerateEmbedding(collection, text[, dimensions])",
+        .syntax = "aiEmbed(collection, text[, dimensions])",
         .arguments
         = {{"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
            {"text", "Text to embed.", {"String"}},
            {"dimensions", "Optional target dimensionality for the output vector. `0` or omitted means the model's native size.", {"UInt64"}}},
         .returned_value = {"The embedding vector, or an empty array if the input is empty, the request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Array(Float32)"}},
         .examples
-        = {{"Embed a single string", "SELECT aiGenerateEmbedding('ai_credentials', 'Hello world')", ""},
-           {"With explicit dimensions", "SELECT aiGenerateEmbedding('ai_credentials', 'Hello world', 256)", ""},
-           {"Embed a column of texts", "SELECT aiGenerateEmbedding('ai_credentials', title, 256) FROM articles LIMIT 10", ""}},
+        = {{"Embed a single string", "SELECT aiEmbed('ai_credentials', 'Hello world')", ""},
+           {"With explicit dimensions", "SELECT aiEmbed('ai_credentials', 'Hello world', 256)", ""},
+           {"Embed a column of texts", "SELECT aiEmbed('ai_credentials', title, 256) FROM articles LIMIT 10", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
 }

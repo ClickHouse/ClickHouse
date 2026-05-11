@@ -36,15 +36,15 @@ function check_access()
 
 # Without NAMED COLLECTION grant: must fail with ACCESS_DENIED before any network call.
 check_access "SET allow_experimental_ai_functions = 1; SELECT aiGenerate('$collection_name', 'hi')"
-# `aiGenerateEmbedding` does not go through `FunctionBaseAI` and has its own access check, so verify it separately.
-check_access "SET allow_experimental_ai_functions = 1; SELECT aiGenerateEmbedding('$collection_name', 'hi')"
+# `aiEmbed` does not go through `FunctionBaseAI` and has its own access check, so verify it separately.
+check_access "SET allow_experimental_ai_functions = 1; SELECT aiEmbed('$collection_name', 'hi')"
 
 $CLICKHOUSE_CLIENT -q "GRANT NAMED COLLECTION ON $collection_name TO $user_name"
 
 # With the grant: access check passes. The call still fails (unreachable host),
 # but the failure must not be ACCESS_DENIED.
 check_access "SET allow_experimental_ai_functions = 1; SELECT aiGenerate('$collection_name', 'hi')"
-check_access "SET allow_experimental_ai_functions = 1; SELECT aiGenerateEmbedding('$collection_name', 'hi')"
+check_access "SET allow_experimental_ai_functions = 1; SELECT aiEmbed('$collection_name', 'hi')"
 
 $CLICKHOUSE_CLIENT -q "
 DROP USER IF EXISTS $user_name;

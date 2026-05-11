@@ -350,56 +350,56 @@ SELECT '-- aiTranslate: with instructions and temperature';
 SELECT count() FROM (SELECT aiTranslate('ai_credentials', x, 'French', 'keep proper nouns', 0.3) AS result FROM tab);
 
 -- =============================================================================
--- 17. aiGenerateEmbedding
+-- 17. aiEmbed
 -- =============================================================================
 
-SELECT '-- aiGenerateEmbedding: registered';
-SELECT name FROM system.functions WHERE name = 'aiGenerateEmbedding';
+SELECT '-- aiEmbed: registered';
+SELECT name FROM system.functions WHERE name = 'aiEmbed';
 
-SELECT '-- aiGenerateEmbedding: too few arguments';
-SELECT aiGenerateEmbedding('ai_credentials'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT '-- aiEmbed: too few arguments';
+SELECT aiEmbed('ai_credentials'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT '-- aiGenerateEmbedding: too many arguments';
-SELECT aiGenerateEmbedding('ai_credentials', 'x', 256, 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT '-- aiEmbed: too many arguments';
+SELECT aiEmbed('ai_credentials', 'x', 256, 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT '-- aiGenerateEmbedding: non-constant dimensions';
-SELECT aiGenerateEmbedding('ai_credentials', x, toUInt64(number)) FROM (SELECT x, 0 AS number FROM tab); -- { serverError ILLEGAL_COLUMN }
+SELECT '-- aiEmbed: non-constant dimensions';
+SELECT aiEmbed('ai_credentials', x, toUInt64(number)) FROM (SELECT x, 0 AS number FROM tab); -- { serverError ILLEGAL_COLUMN }
 
-SELECT '-- aiGenerateEmbedding: wrong type for dimensions (signed integer)';
-SELECT aiGenerateEmbedding('ai_credentials', x, -1) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT '-- aiEmbed: wrong type for dimensions (signed integer)';
+SELECT aiEmbed('ai_credentials', x, -1) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT '-- aiGenerateEmbedding: wrong type for dimensions (string)';
-SELECT aiGenerateEmbedding('ai_credentials', x, '256') FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT '-- aiEmbed: wrong type for dimensions (string)';
+SELECT aiEmbed('ai_credentials', x, '256') FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT '-- aiGenerateEmbedding: non-constant collection';
-SELECT aiGenerateEmbedding(x, x) FROM tab; -- { serverError ILLEGAL_COLUMN }
+SELECT '-- aiEmbed: non-constant collection';
+SELECT aiEmbed(x, x) FROM tab; -- { serverError ILLEGAL_COLUMN }
 
-SELECT '-- aiGenerateEmbedding: return type';
+SELECT '-- aiEmbed: return type';
 DROP TABLE IF EXISTS _03300_ret_embed;
 CREATE TABLE _03300_ret_embed ENGINE = Memory AS
-    SELECT aiGenerateEmbedding('ai_credentials', x) AS result FROM tab;
+    SELECT aiEmbed('ai_credentials', x) AS result FROM tab;
 SELECT name, type FROM system.columns
     WHERE database = currentDatabase() AND table = '_03300_ret_embed';
 DROP TABLE IF EXISTS _03300_ret_embed;
 
-SELECT '-- aiGenerateEmbedding: return type with dimensions';
+SELECT '-- aiEmbed: return type with dimensions';
 DROP TABLE IF EXISTS _03300_ret_embed_dim;
 CREATE TABLE _03300_ret_embed_dim ENGINE = Memory AS
-    SELECT aiGenerateEmbedding('ai_credentials', x, 256) AS result FROM tab;
+    SELECT aiEmbed('ai_credentials', x, 256) AS result FROM tab;
 SELECT name, type FROM system.columns
     WHERE database = currentDatabase() AND table = '_03300_ret_embed_dim';
 DROP TABLE IF EXISTS _03300_ret_embed_dim;
 
-SELECT '-- aiGenerateEmbedding: empty input executes';
-SELECT count() FROM (SELECT aiGenerateEmbedding('ai_credentials', x) AS result FROM tab);
+SELECT '-- aiEmbed: empty input executes';
+SELECT count() FROM (SELECT aiEmbed('ai_credentials', x) AS result FROM tab);
 
-SELECT '-- aiGenerateEmbedding: empty input with dimensions';
-SELECT count() FROM (SELECT aiGenerateEmbedding('ai_credentials', x, 128) AS result FROM tab);
+SELECT '-- aiEmbed: empty input with dimensions';
+SELECT count() FROM (SELECT aiEmbed('ai_credentials', x, 128) AS result FROM tab);
 
-SELECT '-- aiGenerateEmbedding: nonexistent named collection';
-SELECT aiGenerateEmbedding('nonexistent_collection_xyz', 'hello'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+SELECT '-- aiEmbed: nonexistent named collection';
+SELECT aiEmbed('nonexistent_collection_xyz', 'hello'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 
-SELECT '-- aiGenerateEmbedding: batch size setting default';
+SELECT '-- aiEmbed: batch size setting default';
 SELECT default FROM system.settings WHERE name = 'ai_function_embedding_max_batch_size';
 
 -- =============================================================================
