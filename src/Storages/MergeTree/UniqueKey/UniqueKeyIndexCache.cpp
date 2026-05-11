@@ -57,10 +57,6 @@ struct HandlePin
 {
     std::shared_ptr<UniqueKeyIndexCacheEntry> entry;
     UInt128 key{};
-    /// Distinguishes standalone (no backing slot) from regular pinned entries.
-    /// Cannot infer from `key == UInt128{}` because a real key whose hash is
-    /// all-zero would otherwise be misclassified.
-    bool is_standalone = false;
     std::atomic<int32_t> refs{1};
 };
 
@@ -117,7 +113,7 @@ ROCKSDB_NAMESPACE::Status UniqueKeyIndexCache::Insert(
 
     if (handle)
     {
-        auto * pin = new HandlePin{entry, keyOf(key), /*is_standalone=*/false, std::atomic<int32_t>{1}};
+        auto * pin = new HandlePin{entry, keyOf(key), std::atomic<int32_t>{1}};
         *handle = fromPin(pin);
     }
 
@@ -139,7 +135,10 @@ UniqueKeyIndexCache::CreateStandalone(
     entry->obj = obj;
     entry->helper = helper;
     entry->charge = charge;
-    auto * pin = new HandlePin{entry, UInt128{}, /*is_standalone=*/true, std::atomic<int32_t>{1}};
+    /// Standalone handle: not in the backing. Its Release predicate is a
+    /// guaranteed no-match (the backing never holds this entry's shared_ptr
+    /// and the entry's use_count is 1, not 2), so no special handling needed.
+    auto * pin = new HandlePin{entry, UInt128{}, std::atomic<int32_t>{1}};
     return fromPin(pin);
 }
 
@@ -162,7 +161,7 @@ UniqueKeyIndexCache::Lookup(
         return nullptr;
     }
 
-    auto * pin = new HandlePin{entry, keyOf(key), /*is_standalone=*/false, std::atomic<int32_t>{1}};
+    auto * pin = new HandlePin{entry, keyOf(key), std::atomic<int32_t>{1}};
     ProfileEvents::increment(ProfileEvents::UniqueKeyIndexCacheHits);
     return fromPin(pin);
 }
@@ -194,17 +193,17 @@ bool UniqueKeyIndexCache::Release(Handle * handle, bool erase_if_last_ref)
     /// erase; > 2 means another live HandlePin exists and we must keep the
     /// entry resident so a fresh Lookup still hits.
     bool erased = false;
-    if (erase_if_last_ref && !pin->is_standalone)
+    if (erase_if_last_ref)
     {
         const auto & pinned = pin->entry;
-        std::function<bool(const UInt128 &, const std::shared_ptr<UniqueKeyIndexCacheEntry> &)>
-            pred = [&](const UInt128 & k, const std::shared_ptr<UniqueKeyIndexCacheEntry> & v)
-            {
-                const bool matches = (k == pin->key && v == pinned && pinned.use_count() == 2);
-                if (matches)
-                    erased = true;
-                return matches;
-            };
+        using RemovePred = std::function<bool(const UInt128 &, const std::shared_ptr<UniqueKeyIndexCacheEntry> &)>;
+        RemovePred pred = [&](const UInt128 & k, const std::shared_ptr<UniqueKeyIndexCacheEntry> & v)
+        {
+            const bool matches = (k == pin->key && v == pinned && pinned.use_count() == 2);
+            if (matches)
+                erased = true;
+            return matches;
+        };
         backing->remove(pred);
     }
     delete pin;
@@ -251,11 +250,7 @@ size_t UniqueKeyIndexCache::GetUsage(Handle * handle) const
 {
     if (!handle)
         return 0;
-    const auto * pin = asPin(handle);
-    /// Standalone entries don't occupy a backing slot, so OVERHEAD doesn't apply.
-    if (pin->is_standalone)
-        return pin->entry->charge;
-    return pin->entry->charge + UniqueKeyIndexCacheEntryWeight::OVERHEAD;
+    return asPin(handle)->entry->charge + UniqueKeyIndexCacheEntryWeight::OVERHEAD;
 }
 
 size_t UniqueKeyIndexCache::GetPinnedUsage() const
