@@ -317,6 +317,9 @@ void optimizeTreeSecondPass(
                     if (auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings))
                         applied_projection_names.insert(*applied_projection);
 
+                if (optimization_settings.trivial_group_by_count)
+                    optimizeCountByGranularity(*frame.node, nodes, optimization_settings);
+
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
             }

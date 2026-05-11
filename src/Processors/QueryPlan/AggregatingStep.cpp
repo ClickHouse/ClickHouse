@@ -621,6 +621,18 @@ void AggregatingStep::requestOnlyMergeForAggregateProjection(const SharedHeader 
     assertBlocksHaveEqualStructure(*output_header, *getOutputHeader(), "AggregatingStep");
 }
 
+void AggregatingStep::requestOnlyMergeForCountByGranularity(const SharedHeader & input_header)
+{
+    auto output_header = getOutputHeader();
+    input_headers.front() = input_header;
+    params.only_merge = true;
+    sort_description_for_merging.clear();
+    group_by_sort_description.clear();
+    explicit_sorting_required_for_aggregation_in_order = false;
+    updateOutputHeader();
+    assertBlocksHaveEqualStructure(*output_header, *getOutputHeader(), "AggregatingStep");
+}
+
 std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregatingProjection(const SharedHeader & input_header) const
 {
     if (!canUseProjection())

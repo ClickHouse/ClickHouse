@@ -66,6 +66,11 @@ public:
     /// Argument input_stream replaces current single input.
     /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)
     void requestOnlyMergeForAggregateProjection(const SharedHeader & input_header);
+
+    /// Switch to merge-only mode, clearing any aggregation-in-order state.
+    /// Used when the optimization replaces the entire reading subtree,
+    /// making aggregation-in-order inapplicable.
+    void requestOnlyMergeForCountByGranularity(const SharedHeader & input_header);
     /// When we apply aggregate projection (which is partial), this step should be replaced to AggregatingProjection.
     /// Argument input_stream would be the second input (from projection).
     std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const SharedHeader & input_header) const;
