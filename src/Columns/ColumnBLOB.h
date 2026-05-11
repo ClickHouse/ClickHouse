@@ -60,15 +60,17 @@ private:
         chassert(wrapped_column);
     }
 
-    // Only needed to make compiler happy.
-    [[noreturn]] ColumnBLOB(const ColumnBLOB & other)
+    /// Needed so that `IColumn::mutate` can clone a shared `ColumnBLOB` (e.g. in
+    /// `RemoteQueryExecutor::adaptBlockStructure` when applying a deferred cast).
+    /// `from_blob_task` must operate on its `BLOB` argument rather than capturing
+    /// `this->blob`, otherwise the clone would re-read the original's data.
+    ColumnBLOB(const ColumnBLOB & other)
         : COWHelper(other)
         , blob(other.blob.begin(), other.blob.end())
         , rows(other.rows)
         , wrapped_column(other.wrapped_column)
         , from_blob_task(other.from_blob_task)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBLOB copy constructor should not be called");
     }
 
 public:
@@ -133,10 +135,10 @@ public:
     void addCast(DataTypePtr from, DataTypePtr to)
     {
         chassert(from_blob_task);
-        from_blob_task = [from_task = std::move(from_blob_task), from, to, this](const BLOB &)
+        from_blob_task = [from_task = std::move(from_blob_task), from, to](const BLOB & blob_arg)
         {
             ColumnWithTypeAndName col;
-            col.column = from_task(blob);
+            col.column = from_task(blob_arg);
             col.type = from;
             return castColumn(col, to);
         };
