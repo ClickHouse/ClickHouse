@@ -1,23 +1,17 @@
 #pragma once
 
+#include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Interpreters/Context_fwd.h>
-#include <Columns/ColumnsNumber.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-}
-
 
 /** formatReadableSize - prints the transferred size in bytes in form `123.45 GiB`.
   * formatReadableQuantity - prints the quantity in form of 123 million.
@@ -79,16 +73,8 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         UInt8 precision = DEFAULT_PRECISION;
-        /// Optional precision argument is present
         if (arguments.size() == 2)
-        {
-            const auto * col_precision = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get());
-            if (!col_precision)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of second argument of function {}",
-                    arguments[1].column->getName(), getName());
-            precision = col_precision->getValue<UInt8>();
-        }
+            precision = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<UInt8>();
 
         auto col_to = ColumnString::create();
 

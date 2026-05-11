@@ -23,6 +23,11 @@ sibling functions accept precision
 1 million
 1.2346 million
 --
+Decimal input
+183.9179 MiB
+192.8519 MB
+1.2346 million
+--
 formatReadableSize: full value range, mixed input types, precision = 3
 1.000 B	1.000 B	1.000 B
 2.718 B	2.000 B	2.000 B

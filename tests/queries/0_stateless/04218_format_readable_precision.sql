@@ -28,6 +28,12 @@ SELECT formatReadableQuantity(1234567, 0);
 SELECT formatReadableQuantity(1234567, 4);
 
 SELECT '--';
+SELECT 'Decimal input';
+SELECT formatReadableSize(toDecimal64(192851925, 0), 4);
+SELECT formatReadableDecimalSize(toDecimal64(192851925, 0), 4);
+SELECT formatReadableQuantity(toDecimal64(1234567, 0), 4);
+
+SELECT '--';
 SELECT 'formatReadableSize: full value range, mixed input types, precision = 3';
 WITH round(exp(number), 6) AS x,
      x > 0xFFFFFFFFFFFFFFFF ? 0xFFFFFFFFFFFFFFFF : toUInt64(x) AS y,
