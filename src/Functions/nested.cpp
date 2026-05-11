@@ -61,6 +61,13 @@ public:
         return {0};
     }
 
+    /// The default LowCardinality unwrap would feed `getReturnTypeImpl` with the inner type and try
+    /// to re-wrap the result as LowCardinality. The result is Array(Tuple(...)), which cannot be
+    /// wrapped in LowCardinality, so the wrap step drops it silently and the inner element types
+    /// lose their LowCardinality. Disable the default and let the inner-type computation preserve
+    /// LowCardinality directly. See #95582.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
