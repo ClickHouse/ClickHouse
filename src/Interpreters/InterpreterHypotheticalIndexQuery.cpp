@@ -53,7 +53,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     }
 
     /// CREATE HYPOTHETICAL INDEX
-    auto metadata = table->getInMemoryMetadataPtr();
+    auto metadata = table->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
     auto index_desc = IndexDescription::getIndexFromAST(
         query.index_decl,
         metadata->getColumns(),
