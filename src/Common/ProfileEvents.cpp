@@ -1410,6 +1410,11 @@ The server successfully detected this situation and will download merged part fr
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
+    M(LiveSourceBufferCreated, "Number of live source buffers opened by ReaderExecutor for sequential read optimization.", ValueType::Number) \
+    M(LiveSourceBufferHits, "Number of times ReaderExecutor reused an existing live source buffer for a sequential read.", ValueType::Number) \
+    M(LiveSourceBufferFallbacks, "Number of times ReaderExecutor fell back to stateless read because no live buffer slot was available.", ValueType::Number) \
+    M(LiveSourceBufferBytes, "Total bytes read through live source buffers.", ValueType::Bytes) \
+    \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)

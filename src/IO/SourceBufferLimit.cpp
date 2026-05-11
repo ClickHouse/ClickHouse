@@ -1,5 +1,11 @@
 #include <IO/SourceBufferLimit.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric LiveSourceBuffers;
+}
 
 namespace DB
 {
@@ -74,6 +80,7 @@ std::optional<SourceBufferSlot> SourceBufferLimit::tryAcquire(const String & obj
             .acquired_time = std::chrono::steady_clock::now()};
     }
 
+    CurrentMetrics::add(CurrentMetrics::LiveSourceBuffers);
     LOG_TRACE(log, "tryAcquire: got slot {} for {} ({}/{})", id, object_path, used_slots.load(), max_slots);
     return SourceBufferSlot(this, id);
 }
@@ -85,6 +92,7 @@ void SourceBufferLimit::release(size_t slot_id)
         active_registry.erase(slot_id);
     }
     used_slots.fetch_sub(1, std::memory_order_acq_rel);
+    CurrentMetrics::sub(CurrentMetrics::LiveSourceBuffers);
     LOG_TRACE(log, "release: slot {} freed ({}/{})", slot_id, used_slots.load(), max_slots);
 }
 

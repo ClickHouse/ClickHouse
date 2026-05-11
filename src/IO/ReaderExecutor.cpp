@@ -1,8 +1,17 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/PrefetchThreadPool.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Common/ProfileEvents.h>
 
 #include "config.h"
+
+namespace ProfileEvents
+{
+    extern const Event LiveSourceBufferCreated;
+    extern const Event LiveSourceBufferHits;
+    extern const Event LiveSourceBufferFallbacks;
+    extern const Event LiveSourceBufferBytes;
+}
 
 #if USE_SSL
 #include <IO/FileEncryptionCommon.h>
@@ -271,6 +280,7 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
         && live_buffer->current_position == offset)
     {
         LOG_TRACE(log, "readFromSource: live buffer hit for {}, position={}", object.remote_path, offset);
+        ProfileEvents::increment(ProfileEvents::LiveSourceBufferHits);
         auto & buf = *live_buffer->buffer;
 
         size_t total_read = 0;
@@ -283,6 +293,7 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
             total_read += bytes;
         }
 
+        ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
         live_buffer->current_position += total_read;
         live_buffer->slot.updatePosition(live_buffer->current_position);
         return total_read;
@@ -325,6 +336,8 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
                 });
                 live_buffer->slot.updatePosition(live_buffer->current_position);
 
+                ProfileEvents::increment(ProfileEvents::LiveSourceBufferCreated);
+                ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
                 LOG_TRACE(log, "readFromSource: opened live buffer for {}, read {} bytes, position={}",
                     object.remote_path, total_read, live_buffer->current_position);
                 return total_read;
@@ -333,6 +346,7 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
     }
 
     /// Fallback: stateless read (open, range-read, close).
+    ProfileEvents::increment(ProfileEvents::LiveSourceBufferFallbacks);
     return source->read(object, offset, size, buffer);
 }
 

@@ -507,6 +507,8 @@
     M(MergeTreeSnapshotCommitThreads, "Number of threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsActive, "Number of active threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsScheduled, "Number of scheduled threads used to commit snapshot") \
+    \
+    M(LiveSourceBuffers, "Number of open source connections kept alive by ReaderExecutor for sequential read optimization.") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
