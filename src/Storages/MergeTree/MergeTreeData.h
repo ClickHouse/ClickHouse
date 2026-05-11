@@ -1317,6 +1317,20 @@ public:
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
+    /// Safety net for the destruction race described in STID 3631-4165.
+    /// `scheduleDataProcessingJob` is pure virtual on `IBackgroundOperation`;
+    /// the real implementations live in `StorageMergeTree` and
+    /// `StorageReplicatedMergeTree`. During normal operation, those derived
+    /// overrides are always used. However, during destruction the dynamic
+    /// type of `*this` demotes to `MergeTreeData` once the derived destructor
+    /// body returns. If a `BackgroundJobsAssignee::threadFunc` happens to be
+    /// in-flight on a pool thread at that exact moment, its virtual dispatch
+    /// would land on `__cxa_pure_virtual` and abort the server. Returning
+    /// `false` here keeps the call well-defined and lets `threadFunc` exit
+    /// via its normal `postpone()` path, which is a no-op once `finish()`
+    /// has moved out the holder. See the .cpp for the full rationale.
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
+
     /// Schedules job to move parts between disks/volumes and so on.
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
     bool areBackgroundMovesNeeded() const;
