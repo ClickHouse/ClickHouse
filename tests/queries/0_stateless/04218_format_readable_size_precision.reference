@@ -1,0 +1,22 @@
+precision = 0
+1 KiB
+1 KiB
+184 MiB
+precision = 3
+1.000 KiB
+1.465 KiB
+183.918 MiB
+precision = 7
+1.0000000 KiB
+1.4648438 KiB
+183.9179277 MiB
+default precision (unchanged)
+1.00 KiB
+183.92 MiB
+sibling functions accept precision
+2 KB
+1.5000 KB
+1 million
+1.2346 million
+errors: precision argument shape
+errors: argument count
