@@ -1919,6 +1919,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// Sections used in private builds (shared catalog, distributed cache, stateless workers, cloud readiness)
         "shared_database_catalog",
         "shared_merge_tree",
+        "shared_log_pipeline",
         "distributed_cache_client",
         "distributed_cache_server",
         "distributed_query",
@@ -1927,6 +1928,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "_functional_tests_helper_shared_catalog",
         "server_uuid_from_replica_name",
         "cloud",
+        "default_user_for_system_dictionaries",
 
         /// Miscellaneous
         "core_dump",
