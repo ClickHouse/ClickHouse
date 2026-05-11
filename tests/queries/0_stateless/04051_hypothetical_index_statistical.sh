@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-random-merge-tree-settings
+# Tags: no-fasttest, no-replicated-database, no-random-merge-tree-settings
+# no-fasttest: column statistics (tdigest/uniq) require the full build; fast_build can't materialize them, so the statistical path falls through to applicability_only
 # no-random-merge-tree-settings: test requires deterministic index_granularity
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
