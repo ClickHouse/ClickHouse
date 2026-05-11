@@ -1,0 +1,18 @@
+--- empty system table ---
+0
+--- drop/recreate: old index applies before drop ---
+With idx_b (minmax, hypothetical):
+--- drop/recreate: new table does NOT see old index ---
+(none):
+--- IF NOT EXISTS is silent on duplicate ---
+1
+--- DROP IF EXISTS is silent on missing ---
+1
+--- applicability: predicate doesn't reference index column ---
+With idx_b_set (set, hypothetical):
+  status:       not_applicable
+  reason:       Index cannot filter this predicate (always unknown or true)
+--- applicability: query has no filter ---
+With idx_a_minmax (minmax, hypothetical):
+  status:       not_applicable
+  reason:       Query has no filter predicate
