@@ -153,6 +153,7 @@ class BlobStorageLog;
 class DeadLetterQueue;
 class IAsynchronousReader;
 class IOUringReader;
+class PrefetchThreadPool;
 struct MergeTreeSettings;
 struct DatabaseReplicatedSettings;
 struct DistributedSettings;
@@ -1748,6 +1749,7 @@ public:
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
+    std::shared_ptr<PrefetchThreadPool> getPrefetchThreadPool() const;
 #if USE_LIBURING
     IOUringReader & getIOUringReader() const;
 #endif

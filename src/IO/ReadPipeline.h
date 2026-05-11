@@ -19,6 +19,7 @@ class FileCache;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class PageCache;
+class PrefetchThreadPool;
 class IAsynchronousReader;
 class IBackup;
 struct AsyncReadCounters;
@@ -154,6 +155,9 @@ public:
         AsyncReadCountersPtr async_read_counters = nullptr,
         FilesystemReadPrefetchesLogPtr prefetches_log = nullptr);
 
+    /// -- Prefetch pool (for ReaderExecutor path) --
+    void needPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
+
     /// -- Decryption stage --
     /// The key_finder callback is called at build time with the key fingerprint
     /// read from the encryption header. It must return the decryption key.
@@ -226,6 +230,7 @@ private:
     std::optional<MemoryCacheStage> memory_cache;
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
+    std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     std::vector<DecryptionStage> decryption_stages;
 };
 

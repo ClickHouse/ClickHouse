@@ -140,6 +140,11 @@ void ReadPipeline::needAsyncPrefetch(
         .prefetches_log = std::move(prefetches_log)};
 }
 
+void ReadPipeline::needPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool)
+{
+    prefetch_pool = std::move(pool);
+}
+
 void ReadPipeline::needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder)
 {
     decryption_stages.push_back(DecryptionStage{.path = std::move(path), .buffer_size = buffer_size, .key_finder = std::move(key_finder)});
@@ -235,6 +240,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 ReaderExecutor::DEFAULT_WINDOW_SIZE,
                 min_bytes_for_seek,
                 std::move(executor_cache_key));
+            if (prefetch_pool)
+                executor->setPrefetchPool(prefetch_pool);
 #if USE_SSL
             for (const auto & dec : decryption_stages)
                 executor->addDecryptionLayer(dec.path, dec.buffer_size, dec.key_finder);

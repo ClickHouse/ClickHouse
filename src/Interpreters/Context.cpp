@@ -111,6 +111,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
+#include <IO/PrefetchThreadPool.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/WriteSettings.h>
@@ -602,6 +603,9 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag threadpool_writer_initialized;
     mutable std::unique_ptr<ThreadPool> threadpool_writer;
+
+    mutable OnceFlag prefetch_thread_pool_initialized;
+    mutable std::shared_ptr<PrefetchThreadPool> prefetch_thread_pool;
 
 #if USE_LIBURING
     mutable OnceFlag io_uring_reader_initialized;
@@ -7572,6 +7576,17 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
         case FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
             return *shared->synchronous_local_fs_reader;
     }
+}
+
+std::shared_ptr<PrefetchThreadPool> Context::getPrefetchThreadPool() const
+{
+    callOnce(shared->prefetch_thread_pool_initialized, [&]
+    {
+        /// TODO: make configurable via server settings.
+        constexpr size_t pool_size = 16;
+        shared->prefetch_thread_pool = std::make_shared<PrefetchThreadPool>(pool_size);
+    });
+    return shared->prefetch_thread_pool;
 }
 
 #if USE_LIBURING

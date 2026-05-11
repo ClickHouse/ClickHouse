@@ -839,6 +839,9 @@ void DiskObjectStorage::prepareRead(
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
     }
+
+    if (read_settings.use_reader_executor)
+        pipeline.needPrefetchPool(global_context->getPrefetchThreadPool());
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(
