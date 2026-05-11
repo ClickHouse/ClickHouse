@@ -1,0 +1,4 @@
+cosine zero query keeps function NaN semantics under fused rescoring
+4
+-- Expect fused "_distance" rewrite.
+_distance Float32

@@ -12,10 +12,139 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB::QueryPlanOptimizations
 {
+namespace
+{
+
+std::optional<VectorSearchKernel> parseFusedRescoreKernel(const String & distance_function)
+{
+    if (distance_function == "L2Distance")
+        return VectorSearchKernel::L2;
+    if (distance_function == "cosineDistance")
+        return VectorSearchKernel::Cosine;
+
+    return std::nullopt;
+}
+
+bool doesSelectOutputContainVectorColumn(const ActionsDAG & expression, const String & search_column)
+{
+    for (const auto * output : expression.getOutputs())
+    {
+        if (output->result_name == search_column
+            || (output->type == ActionsDAG::ActionType::ALIAS && !output->children.empty() && output->children.front()->result_name == search_column)
+            || (output->result_name.contains('.') && output->result_name.ends_with("." + search_column)))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool hasVectorSearchDistByPart(const ReadFromMergeTree::AnalysisResultPtr & analyzed_result)
+{
+    bool saw_nonempty_part = false;
+    for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
+    {
+        if (part_with_ranges.ranges.empty())
+            continue;
+
+        saw_nonempty_part = true;
+        if (!part_with_ranges.read_hints.vector_search_results.has_value()
+            || !part_with_ranges.read_hints.vector_search_results.value().distances.has_value())
+            return false;
+    }
+
+    return saw_nonempty_part;
+}
+
+bool isArrayFloat32Vector(ReadFromMergeTree * read_from_mergetree_step, const String & search_column)
+{
+    const auto storage_metadata = read_from_mergetree_step->getStorageMetadata();
+    auto column_opt = storage_metadata->getColumns().tryGetColumn(
+        GetColumnsOptions(GetColumnsOptions::AllPhysical), search_column);
+    if (!column_opt)
+        return false;
+
+    const auto * array_type = typeid_cast<const DataTypeArray *>(column_opt->type.get());
+    if (!array_type)
+        return false;
+
+    return typeid_cast<const DataTypeFloat32 *>(array_type->getNestedType().get()) != nullptr;
+}
+
+void addFusedRescoreHint(
+    ReadFromMergeTree * read_from_mergetree_step,
+    const ReadFromMergeTree::AnalysisResultPtr & analyzed_result,
+    const String & search_column,
+    const VectorSearchParameters & vector_search_parameters,
+    VectorSearchKernel kernel_for_fusion)
+{
+    std::vector<Float32> query_vec_f32;
+    query_vec_f32.reserve(vector_search_parameters.reference_vector.size());
+    for (Float64 value : vector_search_parameters.reference_vector)
+        query_vec_f32.push_back(static_cast<Float32>(value));
+    auto query_vec_f32_ptr = std::make_shared<const std::vector<Float32>>(std::move(query_vec_f32));
+
+    for (auto & part_with_ranges : analyzed_result->parts_with_ranges)
+    {
+        if (part_with_ranges.ranges.empty())
+            continue;
+
+        part_with_ranges.read_hints.fused_rescore = FusedRescoreHint{
+            search_column,
+            query_vec_f32_ptr,
+            kernel_for_fusion};
+    }
+
+    read_from_mergetree_step->addDistanceColumnKeepingVector(search_column);
+}
+
+void updateFilterOrPrewhereStep(
+    QueryPlan::Node * filter_or_prewhere_node,
+    FilterStep * filter_step,
+    ExpressionStep * prewhere_expression_step,
+    const String & search_column,
+    const SharedHeader & input_header)
+{
+    if (!filter_or_prewhere_node)
+        return;
+
+    ActionsDAG & filter_expression = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
+    String output_result_to_delete;
+    for (const auto * output_node : filter_expression.getOutputs())
+    {
+        if (output_node->type == ActionsDAG::ActionType::ALIAS
+            && !output_node->children.empty()
+            && output_node->children.front()->result_name == search_column)
+        {
+            output_result_to_delete = output_node->result_name;
+            break;
+        }
+    }
+    if (output_result_to_delete.empty())
+        output_result_to_delete = search_column;
+
+    filter_expression.removeUnusedResult(output_result_to_delete);
+    filter_expression.removeUnusedActions();
+
+    QueryPlanStepPtr new_step;
+    if (prewhere_expression_step)
+        new_step = std::make_unique<ExpressionStep>(input_header, std::move(filter_expression));
+    else
+        new_step = std::make_unique<FilterStep>(
+            input_header,
+            std::move(filter_expression),
+            filter_step->getFilterColumnName(),
+            filter_step->removesFilterColumn());
+    new_step->setStepDescription(*filter_or_prewhere_node->step);
+    filter_or_prewhere_node->step = std::move(new_step);
+}
+}
 
 /// Vector search queries have this form:
 ///     SELECT [...]
@@ -117,7 +246,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     /// Read ORDER BY clause
     const auto & sort_description = sorting_step->getSortDescription();
-    if (sort_description.size() > 1)
+    if (sort_description.size() != 1)
         return no_layers_updated;
     const String & sort_column = sort_description.front().column_name;
 
@@ -338,7 +467,7 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
 
     /// Read ORDER BY clause
     const auto & sort_description = sorting_step->getSortDescription();
-    if (sort_description.size() > 1)
+    if (sort_description.size() != 1)
         return false;
     const String & sort_column = sort_description.front().column_name;
 
@@ -361,61 +490,109 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
 
     ActionsDAG & expression = expression_step->getExpression();
 
+    /// Two mutually exclusive rewrite modes sharing the same DAG rewrite:
+    ///   - rescoring = 0: drop the vector column entirely from the read list and wire
+    ///     `_distance` (populated from USearch's quantized distances) into the sort.
+    ///   - rescoring = 1 (Phase 2 fused rerank): keep the vector column in the read list
+    ///     so the range reader can compute full-precision kernel values from vector bytes
+    ///     and overwrite `_distance`; the downstream DAG is rewritten identically, which
+    ///     eliminates the redundant `cosineDistance(vec, [...])` compute in ExpressionStep.
     bool optimize_plan = !settings.vector_search_with_rescoring;
-    if (optimize_plan)
+    bool fuse_rescore = settings.vector_search_with_rescoring;
+    const bool rewriting = optimize_plan || fuse_rescore;
+    bool rewrite_applied = false;
+
+    if (rewriting)
     {
-        auto search_column = vector_search_parameters.value().column;
-        for (const auto & output : expression.getOutputs())
+        const auto & search_column = vector_search_parameters.value().column;
+        if (doesSelectOutputContainVectorColumn(expression, search_column))
         {
-            /// If the SELECT clause contains the vector column (rare situation), skip the optimization.
-            /// Multiple forms of analyzer nodes to handle.
-            if (output->result_name == search_column ||
-                (output->type == ActionsDAG::ActionType::ALIAS && output->children.at(0)->result_name == search_column) ||
-                (output->result_name.contains('.') && output->result_name.ends_with("." + search_column)))
+            /// For fused rescoring this is a hard stop - the range reader would drop the
+            /// vector column from the output header and the SELECT would return nothing for that slot.
+            optimize_plan = false;
+            fuse_rescore = false;
+        }
+
+        auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
+        analyzed_result = analyzed_result ? analyzed_result : read_from_mergetree_step->selectRangesToRead();
+
+        /// Only if full parts were candidates and vector index was used to fetch
+        /// distances, we can proceed with either rewrite.
+        if (!analyzed_result || !hasVectorSearchDistByPart(analyzed_result))
+        {
+            optimize_plan = false;
+            fuse_rescore = false;
+        }
+
+        /// Parse the distance function name into the kernel enum. Unsupported functions
+        /// (including `dotProduct` until parity coverage exists) use ExpressionStep rerank.
+        std::optional<VectorSearchKernel> kernel_for_fusion;
+        if (fuse_rescore)
+        {
+            /// `dotProduct` ordering semantics (raw inner product vs USearch's `ip_k`
+            /// internal representation) interact with `ORDER BY ... DESC` in ways
+            /// that need a dedicated parity check against the ExpressionStep rescore
+            /// path before we can fuse safely. Fall back for now.
+            kernel_for_fusion = parseFusedRescoreKernel(vector_search_parameters.value().distance_function);
+            if (!kernel_for_fusion)
+                fuse_rescore = false;
+        }
+
+        /// The fused range-reader path currently only supports `Array(Float32)` vector
+        /// columns. Other element types supported by `vector_similarity` (`Float64`,
+        /// `BFloat16`) must fall back to the existing ExpressionStep rescoring path so we
+        /// do not regress valid queries.
+        if (fuse_rescore)
+            fuse_rescore = isArrayFloat32Vector(read_from_mergetree_step, search_column);
+
+        const ActionsDAG::Node * sort_column_node = nullptr;
+        if (optimize_plan || fuse_rescore)
+        {
+            sort_column_node = expression.tryFindInOutputs(sort_column);
+            if (!sort_column_node)
             {
                 optimize_plan = false;
-                break;
+                fuse_rescore = false;
             }
         }
 
-        if (optimize_plan)
+        /// The fused path materializes `_distance` as `Float32`. If the original
+        /// distance function returns `Float64` (for example `Array(Float32)` column
+        /// with an uncast `Array(Float64)` reference literal), fusing would silently
+        /// round the reference vector and result before casting back to `Float64`.
+        if (fuse_rescore)
         {
-            auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
-            analyzed_result = analyzed_result ? analyzed_result : read_from_mergetree_step->selectRangesToRead();
-
-            /// Only if full parts were candidates and vector index was used to fetch
-            /// distances, we can proceed with the optimization.
-            for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
-            {
-                if (!part_with_ranges.ranges.empty())
-                {
-                    if (!part_with_ranges.read_hints.vector_search_results.has_value() ||
-                        !part_with_ranges.read_hints.vector_search_results.value().distances.has_value())
-                    {
-                        optimize_plan = false;
-                        break;
-                    }
-                }
-            }
+            if (!WhichDataType(sort_column_node->result_type).isFloat32())
+                fuse_rescore = false;
         }
+
+        if (fuse_rescore)
+            addFusedRescoreHint(
+                read_from_mergetree_step,
+                analyzed_result,
+                search_column,
+                vector_search_parameters.value(),
+                kernel_for_fusion.value());
 
         if (optimize_plan)
         {
             /// Remove the physical vector column from ReadFromMergeTreeStep, add virtual "_distance" column
             read_from_mergetree_step->replaceVectorColumnWithDistanceColumn(search_column);
+        }
 
+        if (optimize_plan || fuse_rescore)
+        {
             /// Bug #85514: cosineDistance/L2Distance can have return types Float64 or Float32, depending on the
             /// input types but the "_distance" column is always of type Float32. Add a CAST if needed.
             ///
             /// The sort column node will be removed first from the DAG, hence remember if a CAST is needed.
-            const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column); /// "cosine/L2Distance(..., ...)"
             const bool need_cast = !WhichDataType(sort_column_node->result_type).isFloat32();
             const auto result_type = sort_column_node->result_type;
 
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
             expression.removeUnusedResult(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
-            const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
+            const auto * distance_node = &expression.addInput("_distance", std::make_shared<DataTypeFloat32>());
 
             if (need_cast)
                 distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance", nullptr);
@@ -425,45 +602,30 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
 
             /// Need to do same removal of the vector column from the Filter step
             if (filter_or_prewhere_node)
-            {
-                ActionsDAG & filter_expression = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
-                String output_result_to_delete;
-                for (const auto * output_node : filter_expression.getOutputs())
-                {
-                    if (output_node->type == ActionsDAG::ActionType::ALIAS && output_node->children.at(0)->result_name == search_column)
-                    {
-                        output_result_to_delete = output_node->result_name;
-                        break;
-                    }
-                }
-                if (output_result_to_delete.empty())
-                    output_result_to_delete = search_column; /// old analyzer
-                filter_expression.removeUnusedResult(output_result_to_delete);
-                filter_expression.removeUnusedActions();
+                updateFilterOrPrewhereStep(
+                    filter_or_prewhere_node,
+                    filter_step,
+                    prewhere_expression_step,
+                    search_column,
+                    read_from_mergetree_step->getOutputHeader());
 
-                /// Update the node with new Step
-                QueryPlanStepPtr new_step;
-                if (prewhere_expression_step)
-                    new_step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression));
-                else
-                    new_step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
-                new_step->setStepDescription(*filter_or_prewhere_node->step);
-               filter_or_prewhere_node->step = std::move(new_step);
-            }
+            /// Update the node with new Step
+            auto new_step = std::make_unique<ExpressionStep>(
+                filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
+            new_step->setStepDescription(*expression_node->step);
+            expression_node->step = std::move(new_step);
+
+            /// The SortingStep's input header must reflect the new ExpressionStep output header
+            /// (which now has _distance consumed and L2Distance(...) produced via ALIAS).
+            sorting_step->updateInputHeader(expression_node->step->getOutputHeader());
+            rewrite_applied = true;
         }
-
-        /// Update the node with new Step
-        auto new_step = std::make_unique<ExpressionStep>(
-            filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
-        new_step->setStepDescription(*expression_node->step);
-        expression_node->step = std::move(new_step);
-
-        /// The SortingStep's input header must reflect the new ExpressionStep output header
-        /// (which now has _distance consumed and L2Distance(...) produced via ALIAS).
-        sorting_step->updateInputHeader(expression_node->step->getOutputHeader());
     }
 
-    return true;
+    /// Stop the second-pass walk only after an actual DAG rewrite. A matched
+    /// vector-search shape can still fall back to the regular ExpressionStep
+    /// path, and that should not prevent the DFS from checking later nodes.
+    return rewrite_applied;
 }
 
 }

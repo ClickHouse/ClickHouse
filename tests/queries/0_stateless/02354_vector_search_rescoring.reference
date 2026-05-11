@@ -7,16 +7,17 @@ _distance Float32
 5
 6
 7
--- Dont expect column "_distance" in EXPLAIN.
+-- Expect column "_distance" in EXPLAIN (fused rescoring inserts it).
+_distance Float32
 Test "SELECT id, vec" without and with rescoring
 5	[0,2]
 6	[0,2.1]
 7	[0,2.2]
--- Dont expect column "_distance" in EXPLAIN.
+-- Do not expect column "_distance" in EXPLAIN.
 5	[0,2]
 6	[0,2.1]
 7	[0,2.2]
--- Dont expect column "_distance" in EXPLAIN.
+-- Do not expect column "_distance" in EXPLAIN.
 Test optimization in the presence of other predicates
 0
 1
@@ -26,7 +27,6 @@ Test optimization in the presence of other predicates
 6	50
 Test for filter that selects full part, optimization will take effect
 -- Expect column "_distance" in EXPLAIN. Column "vec" is not expected for ReadFromMergeTree.
-_distance Float32
 _distance Float32
 5
 6

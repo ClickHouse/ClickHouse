@@ -117,6 +117,35 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
 }
 
+static void sortNearestNeighboursByRow(NearestNeighbours & neighbours)
+{
+    auto & rows = neighbours.rows;
+    if (!neighbours.distances.has_value())
+    {
+        std::sort(rows.begin(), rows.end());
+        return;
+    }
+
+    auto & distances = neighbours.distances.value();
+    chassert(rows.size() == distances.size());
+
+    std::vector<std::pair<UInt64, Float32>> sorted;
+    sorted.reserve(rows.size());
+    for (size_t i = 0; i < rows.size(); ++i)
+        sorted.emplace_back(rows[i], distances[i]);
+
+    std::sort(
+        sorted.begin(),
+        sorted.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+    for (size_t i = 0; i < sorted.size(); ++i)
+    {
+        rows[i] = sorted[i].first;
+        distances[i] = sorted[i].second;
+    }
+}
+
 
 MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_, ProjectionDescriptionRawPtr projection)
     : data(data_)
@@ -2136,9 +2165,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 {
                     read_hints.vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
 
-                    /// We need to sort the result ranges ascendingly
-                    auto rows = read_hints.vector_search_results.value().rows;
-                    std::sort(rows.begin(), rows.end());
+                    /// We need to sort the result ranges ascendingly while preserving row/distance pairs.
+                    sortNearestNeighboursByRow(read_hints.vector_search_results.value());
+                    const auto & rows = read_hints.vector_search_results.value().rows;
 #ifndef NDEBUG
                     /// Duplicates should in theory not be possible but better be safe than sorry ...
                     const bool has_duplicates = std::adjacent_find(rows.begin(), rows.end()) != rows.end();

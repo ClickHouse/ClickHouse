@@ -1,3 +1,4 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -1240,6 +1241,50 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     }
 }
 
+namespace
+{
+
+/// Scalar kernels for fused full-precision rescoring.
+/// Dimensions here are small (typically 128..1536) and invoked only for the
+/// M filtered rows per granule batch, so scalar code is fine for a first cut.
+/// A simsimd-backed path can be layered on once this is measured.
+Float32 computeFusedDistance(
+    VectorSearchKernel kernel,
+    const Float32 * vec,
+    const Float32 * query,
+    size_t dim)
+{
+    switch (kernel)
+    {
+        case VectorSearchKernel::L2:
+        {
+            Float32 sum = 0;
+            for (size_t k = 0; k < dim; ++k)
+            {
+                Float32 d = vec[k] - query[k];
+                sum += d * d;
+            }
+            return std::sqrt(sum);
+        }
+        case VectorSearchKernel::Cosine:
+        {
+            Float32 dot = 0;
+            Float32 norm_a = 0;
+            Float32 norm_b = 0;
+            for (size_t k = 0; k < dim; ++k)
+            {
+                dot += vec[k] * query[k];
+                norm_a += vec[k] * vec[k];
+                norm_b += query[k] * query[k];
+            }
+            return Float32(1) - dot / std::sqrt(norm_a * norm_b);
+        }
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected vector search kernel for fused rescoring");
+}
+
+}
+
 void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & columns, ReadResult & /*result*/, ColumnPtr & part_offsets_auto_column)
 {
     /// Populate the "_distance" virtual column from the distances we got from vector index
@@ -1253,17 +1298,11 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
 
     const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
     const auto & offsets_and_distances = read_hints.vector_search_results.value();
-    auto row_offsets_from_index = offsets_and_distances.rows;
+    const auto & row_offsets_from_index = offsets_and_distances.rows;
     chassert(offsets_and_distances.distances.has_value());
-    const auto distances_from_index = offsets_and_distances.distances.value();
+    const auto & distances_from_index = offsets_and_distances.distances.value();
     chassert(row_offsets_from_index.size() == distances_from_index.size());
-
-    /// Stash the distance for an offset before sorting the offsets
-    std::unordered_map<UInt64, Float32> offset_to_distance;
-    for (size_t i = 0; i < distances_from_index.size(); ++i)
-        offset_to_distance[row_offsets_from_index[i]] = distances_from_index[i];
-
-    std::sort(row_offsets_from_index.begin(), row_offsets_from_index.end());
+    chassert(std::is_sorted(row_offsets_from_index.begin(), row_offsets_from_index.end()));
 
     const auto & offsets  = typeid_cast<const ColumnUInt64&>(*part_offsets_auto_column).getData();
     size_t j = 0;
@@ -1278,8 +1317,55 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
         if (offsets[i] == row_offsets_from_index[j])
         {
             filter[i] = true;
-            distances[i] = offset_to_distance[offsets[i]];
+            distances[i] = distances_from_index[j];
             j++;
+        }
+    }
+
+    /// Fused full-precision rescoring path: overwrite the quantized USearch distances
+    /// with full-precision kernel values computed from the actual vector column bytes.
+    /// Handles only Array(Float32) element type on the first cut - other element types
+    /// (BFloat16, Float64) should have been rejected by the optimizer before setting the hint.
+    if (read_hints.fused_rescore.has_value())
+    {
+        const auto & hint = read_hints.fused_rescore.value();
+        if (!hint.query_vector)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Fused rescoring expected query vector to be set");
+        const size_t dim = hint.query_vector->size();
+        const Float32 * query = hint.query_vector->data();
+
+        if (!read_sample_block.has(hint.vector_column))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Fused rescoring expected vector column '{}' to be in the read list", hint.vector_column);
+
+        auto vec_col_pos = read_sample_block.getPositionByName(hint.vector_column);
+        const auto * vec_array_col = typeid_cast<const ColumnArray *>(columns[vec_col_pos].get());
+        if (!vec_array_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Fused rescoring: vector column '{}' is not a ColumnArray", hint.vector_column);
+
+        const auto * vec_data_f32 = typeid_cast<const ColumnFloat32 *>(&vec_array_col->getData());
+        if (!vec_data_f32)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Fused rescoring: only Array(Float32) element type is supported (got '{}')",
+                vec_array_col->getData().getName());
+
+        const Float32 * all_elems = vec_data_f32->getData().data();
+        const auto & arr_offsets = vec_array_col->getOffsets();
+
+        for (size_t i = 0; i < part_offsets_auto_column->size(); ++i)
+        {
+            if (!filter[i])
+                continue;
+
+            const size_t start = (i == 0) ? 0 : arr_offsets[i - 1];
+            const size_t end = arr_offsets[i];
+            if (end - start != dim)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Fused rescoring: row {} has vector of length {} but query vector has length {}",
+                    i, end - start, dim);
+
+            distances[i] = computeFusedDistance(hint.kernel, all_elems + start, query, dim);
         }
     }
 

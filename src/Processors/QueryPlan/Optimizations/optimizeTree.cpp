@@ -415,8 +415,11 @@ void optimizeTreeSecondPass(
         optimizeExchanges(root);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
-    /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".
-    if (optimization_settings.try_use_vector_search && !extra_settings.vector_search_with_rescoring)
+    /// In the 2nd pass, we optimize further. Two modes, both handled by optimizeVectorSearchSecondPass:
+    ///   - rescoring = 0: index-only scan (drops the vector column).
+    ///   - rescoring = 1: fused rerank (keeps the vector column but recomputes full-precision
+    ///     distances inside the range reader and short-circuits the downstream ExpressionStep).
+    if (optimization_settings.try_use_vector_search)
     {
         chassert(stack.empty());
         stack.push_back({.node = &root});

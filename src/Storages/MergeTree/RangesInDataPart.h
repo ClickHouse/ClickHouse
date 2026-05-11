@@ -96,6 +96,11 @@ struct RangesInDataPartReadHints
     /// Pre-computed index granules for indexes that are
     /// created for the whole part. For example, text indexes.
     IndexGranulesMap index_granules;
+    /// When present, the range reader will overwrite the quantized distances with
+    /// full-precision kernel values computed from the vector column for the exact rows
+    /// matched by `vector_search_results`. Used by the `useVectorSearch` optimizer to
+    /// fuse the rerank pass into reading on the `vector_search_with_rescoring = 1` path.
+    std::optional<FusedRescoreHint> fused_rescore;
 };
 
 struct RangesInDataPart
