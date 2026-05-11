@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_streams_for_union_step", 0, 0, "New setting to limit the number of simultaneously active data streams in a UNION step to reduce peak memory usage."},
             {"max_streams_for_union_step_to_max_threads_ratio", 0, 8, "New setting: the limit on simultaneously active streams in a UNION step is computed as min(max_streams_for_union_step, max_threads * max_streams_for_union_step_to_max_threads_ratio), either being 0 disables that input."},
             {"send_table_structure_on_insert_with_inline_data", true, true, "New setting to control whether server sends table structure for INSERT queries with inline data."},
+            {"allow_experimental_unique_key", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables"},
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
