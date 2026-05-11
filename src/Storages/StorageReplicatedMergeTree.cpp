@@ -206,6 +206,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_mixed_granularity_parts;
     extern const MergeTreeSettingsBool enable_replacing_merge_with_cleanup_for_min_age_to_force_merge;
     extern const MergeTreeSettingsBool enable_the_endpoint_id_with_zookeeper_name_prefix;
+    extern const MergeTreeSettingsBool leader_election;
     extern const MergeTreeSettingsFloat fault_probability_after_part_commit;
     extern const MergeTreeSettingsFloat fault_probability_before_part_commit;
     extern const MergeTreeSettingsBool fsync_after_insert;
@@ -443,6 +444,17 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         if (disk->getDataSourceDescription().metadata_type == MetadataStorageType::Keeper)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReplicatedMergeTree doesn't work with 's3_with_keeper' disk type");
+    }
+
+    if ((*getSettings())[MergeTreeSetting::leader_election])
+    {
+        /// `leader_election` is implemented only for `StorageMergeTree`. On `ReplicatedMergeTree`
+        /// the active/standby semantics are already provided by ZooKeeper coordination, so a
+        /// stray `leader_election = true` here would be a no-op with a misleading name. Reject
+        /// it at attach/create so a misconfiguration cannot reach production.
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The `leader_election` setting is only supported on the `MergeTree` engine. "
+            "`ReplicatedMergeTree` already uses ZooKeeper for active/standby coordination.");
     }
 
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
