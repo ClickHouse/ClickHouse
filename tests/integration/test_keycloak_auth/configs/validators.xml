@@ -1,0 +1,20 @@
+<clickhouse>
+    <token_processors>
+        <!-- Validate JWT via an explicit JWKS URI -->
+        <keycloak_jwks>
+            <type>jwt_dynamic_jwks</type>
+            <jwks_uri>http://keycloak:8080/realms/clickhouse-test/protocol/openid-connect/certs</jwks_uri>
+            <expected_issuer>http://keycloak:8080/realms/clickhouse-test</expected_issuer>
+            <username_claim>preferred_username</username_claim>
+            <verifier_leeway>60</verifier_leeway>
+        </keycloak_jwks>
+
+        <!-- Validate JWT via OIDC discovery document -->
+        <keycloak_discovery>
+            <type>openid</type>
+            <configuration_endpoint>http://keycloak:8080/realms/clickhouse-test/.well-known/openid-configuration</configuration_endpoint>
+            <username_claim>preferred_username</username_claim>
+            <verifier_leeway>60</verifier_leeway>
+        </keycloak_discovery>
+    </token_processors>
+</clickhouse>

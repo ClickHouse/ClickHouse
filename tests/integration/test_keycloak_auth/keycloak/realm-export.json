@@ -1,0 +1,48 @@
+{
+  "realm": "clickhouse-test",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "clients": [
+    {
+      "clientId": "clickhouse",
+      "enabled": true,
+      "secret": "test-secret",
+      "publicClient": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true,
+      "attributes": {
+        "oauth2.device.authorization.grant.enabled": "true"
+      },
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "protocol": "openid-connect"
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "alice@example.com",
+      "firstName": "Alice",
+      "lastName": "Tester",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "secret",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["offline_access", "uma_authorization", "default-roles-clickhouse-test"],
+      "groups": ["analysts"]
+    }
+  ],
+  "groups": [
+    {
+      "name": "analysts"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    volumes:
+      - ${KEYCLOAK_REALM_FILE}:/opt/keycloak/data/import/realm.json:ro
+    ports:
+      - "${KEYCLOAK_EXTERNAL_PORT:-18080}:8080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          curl -sf
+          http://localhost:8080/realms/clickhouse-test/.well-known/openid-configuration
+          || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 15
