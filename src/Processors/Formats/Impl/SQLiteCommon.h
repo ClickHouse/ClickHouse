@@ -61,10 +61,17 @@ inline SQLitePtr openSQLiteDatabase(const String & path)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot open SQLite database {}. Status: {}. Message: {}", path, status, message);
     }
 
-    checkSQLiteStatus(db, sqlite3_db_config(db, SQLITE_DBCONFIG_DQS_DDL, 0, nullptr), "Cannot disable SQLite DQS in DDL statements");
-    checkSQLiteStatus(db, sqlite3_db_config(db, SQLITE_DBCONFIG_DQS_DML, 0, nullptr), "Cannot disable SQLite DQS in DML statements");
+    SQLitePtr result(db, sqlite3_close);
+    checkSQLiteStatus(
+        result.get(),
+        sqlite3_db_config(result.get(), SQLITE_DBCONFIG_DQS_DDL, 0, nullptr),
+        "Cannot disable SQLite DQS in DDL statements");
+    checkSQLiteStatus(
+        result.get(),
+        sqlite3_db_config(result.get(), SQLITE_DBCONFIG_DQS_DML, 0, nullptr),
+        "Cannot disable SQLite DQS in DML statements");
 
-    return SQLitePtr(db, sqlite3_close);
+    return result;
 }
 
 inline SQLiteDatabase openSQLiteDatabaseFromMemory(ReadBuffer & in)
