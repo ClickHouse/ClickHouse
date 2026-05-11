@@ -8,11 +8,13 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
+#include <Storages/Statistics/StatisticsNullCount.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
 #include <Storages/StatisticsDescription.h>
@@ -170,7 +172,7 @@ std::optional<Float64> ColumnStatistics::estimateGreater(const Field & val) cons
         return 0;
 
     if (auto less = estimateLess(val))
-        return static_cast<Float64>(rows) - *less;
+        return static_cast<Float64>(getNonNullRowCount()) - *less;
     return std::nullopt;
 }
 
@@ -197,9 +199,10 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
     if (stats.contains(StatisticsType::Uniq))
     {
         UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
-        if (cardinality == 0 || rows == 0)
+        UInt64 non_null_rows = getNonNullRowCount();
+        if (cardinality == 0 || non_null_rows == 0)
             return 0;
-        return static_cast<Float64>(rows) / static_cast<Float64>(cardinality); /// assume uniform distribution
+        return static_cast<Float64>(non_null_rows) / static_cast<Float64>(cardinality); /// assume uniform distribution
     }
 
     return std::nullopt;
@@ -211,7 +214,10 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
         return 0;
 
     if (range.isInfinite())
-        return static_cast<Float64>(rows);
+    {
+        bool with_null = range.left_included && range.right_included;
+        return static_cast<Float64>(with_null ? rows : getNonNullRowCount());
+    }
 
     if (range.left == range.right)
         return estimateEqual(range.left);
@@ -250,21 +256,72 @@ Estimate ColumnStatistics::getEstimate() const
     if (stats.contains(StatisticsType::Uniq))
         info.estimated_cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
 
-    if (stats.contains(StatisticsType::MinMax))
+    if (auto it = stats.find(StatisticsType::MinMax); it != stats.end())
     {
-        const auto & minmax_stats = assert_cast<const StatisticsMinMax &>(*stats.at(StatisticsType::MinMax));
+        const auto & minmax_stats = assert_cast<const StatisticsMinMax &>(*it->second);
         if (!minmax_stats.getMin().isNull())
             info.estimated_min = minmax_stats.getMin();
         if (!minmax_stats.getMax().isNull())
             info.estimated_max = minmax_stats.getMax();
     }
 
+    if (auto it = stats.find(StatisticsType::NullCount); it != stats.end())
+        info.estimated_null_count = assert_cast<const StatisticsNullCount &>(*it->second).getNullCount();
+
     return info;
+}
+
+UInt64 ColumnStatistics::getNullCount() const
+{
+    if (auto it = stats.find(StatisticsType::NullCount); it != stats.end())
+        return assert_cast<const StatisticsNullCount &>(*it->second).getNullCount();
+    /// MinMax::row_count tracks only non-NULL rows, so the null count can be derived
+    /// as total rows minus MinMax row count when NullCount statistics are absent.
+    if (auto it = stats.find(StatisticsType::MinMax); it != stats.end())
+    {
+        UInt64 non_null = assert_cast<const StatisticsMinMax &>(*it->second).getRowCount();
+        return non_null <= rows ? rows - non_null : 0;
+    }
+    return 0;
+}
+
+UInt64 ColumnStatistics::getNonNullRowCount() const
+{
+    if (auto it = stats.find(StatisticsType::NullCount); it != stats.end())
+    {
+        UInt64 null_count = assert_cast<const StatisticsNullCount &>(*it->second).getNullCount();
+        return null_count <= rows ? rows - null_count : 0;
+    }
+    /// MinMax::row_count counts only non-NULL rows (it skips NULLs in build()), so it is
+    /// a safe fallback when NullCount is absent. Without this fallback, callers like
+    /// estimateGreater would mix non-NULL `estimateLess` with the total `rows` (which
+    /// includes NULLs) and over-estimate `> val` selectivity by counting NULL rows.
+    if (auto it = stats.find(StatisticsType::MinMax); it != stats.end())
+        return assert_cast<const StatisticsMinMax &>(*it->second).getRowCount();
+    return rows;
+}
+
+Float64 ColumnStatistics::estimateIsNull() const
+{
+    if (rows == 0)
+        return 0.0;
+    if (stats.contains(StatisticsType::NullCount) || stats.contains(StatisticsType::MinMax))
+        return static_cast<Float64>(getNullCount()) / static_cast<Float64>(rows);
+    return ConditionSelectivityEstimator::default_cond_equal_factor;
+}
+
+Float64 ColumnStatistics::estimateIsNotNull() const
+{
+    if (rows == 0)
+        return 0.0;
+    if (stats.contains(StatisticsType::NullCount) || stats.contains(StatisticsType::MinMax))
+        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(rows);
+    return 1.0 - ConditionSelectivityEstimator::default_cond_equal_factor;
 }
 
 void ColumnStatistics::serialize(WriteBuffer & buf) const
 {
-    writeIntBinary(StatisticsFileVersion::V2, buf);
+    writeIntBinary(StatisticsFileVersion::V3, buf);
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _]: stats)
@@ -277,7 +334,15 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
 
     /// Write the actual statistics object
     for (const auto & [type, stat_ptr] : stats)
-        stat_ptr->serialize(buf);
+    {
+        String temp_data;
+        WriteBufferFromString temp_buf(temp_data);
+        stat_ptr->serialize(temp_buf);
+        temp_buf.finalize();
+
+        writeIntBinary(static_cast<UInt64>(temp_data.size()), buf);
+        buf.write(temp_data.data(), temp_data.size());
+    }
 }
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type)
@@ -286,7 +351,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     readIntBinary(version_raw, buf);
     auto version = static_cast<StatisticsFileVersion>(version_raw);
 
-    if (version != StatisticsFileVersion::V1 && version != StatisticsFileVersion::V2)
+    if (version != StatisticsFileVersion::V1 && version != StatisticsFileVersion::V2 && version != StatisticsFileVersion::V3)
         throw Exception(
             ErrorCodes::ILLEGAL_STATISTICS,
             "Tried to read statistics file with unsupported format version {}. "
@@ -296,37 +361,84 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     UInt64 stat_types_mask = 0;
     readIntBinary(stat_types_mask, buf);
 
-    std::vector<StatisticsType> stat_types;
-    for (size_t i = 0; i < static_cast<UInt8>(StatisticsType::Max); ++i)
-    {
-        if (stat_types_mask & (1ULL << i))
-            stat_types.push_back(static_cast<StatisticsType>(i));
-    }
-
     const auto & factory = MergeTreeStatisticsFactory::instance();
     ColumnStatisticsDescription stats_desc;
     stats_desc.data_type = data_type;
-    stats_desc.types_to_desc = factory.get(stat_types, data_type);
 
-    auto result = factory.get(stats_desc);
-    readIntBinary(result->rows, buf);
+    if (version >= StatisticsFileVersion::V3)
+    {
+        UInt64 rows_value;
+        readIntBinary(rows_value, buf);
 
-    for (const auto & [_, desc] : result->stats)
-        desc->deserialize(buf, version);
+        auto result = std::make_shared<ColumnStatistics>(stats_desc);
+        result->rows = rows_value;
 
-    return result;
+        for (size_t i = 0; i < static_cast<size_t>(StatisticsType::Max); ++i)
+        {
+            if (!(stat_types_mask & (1ULL << i)))
+                continue;
+
+            UInt64 stat_size;
+            readIntBinary(stat_size, buf);
+
+            auto type = static_cast<StatisticsType>(i);
+            if (auto stat_ptr = factory.tryCreateSingle(type, data_type))
+            {
+                const auto count_before = buf.count();
+                stat_ptr->deserialize(buf, version);
+                const auto consumed = static_cast<UInt64>(buf.count() - count_before);
+                if (consumed < stat_size)
+                    buf.ignore(stat_size - consumed);
+                else if (consumed > stat_size)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_STATISTICS,
+                        "Statistics deserialization for type {} consumed {} bytes but stat_size was {}. "
+                        "The statistics file may be corrupted.",
+                        statisticsTypeToString(type), consumed, stat_size);
+
+                auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
+                result->stats_desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, ast, false));
+                result->stats[type] = std::move(stat_ptr);
+            }
+            else
+            {
+                buf.ignore(stat_size);
+            }
+        }
+
+        return result;
+    }
+    else
+    {
+        std::vector<StatisticsType> stat_types;
+        for (size_t i = 0; i < static_cast<size_t>(StatisticsType::Max); ++i)
+        {
+            if (stat_types_mask & (1ULL << i))
+                stat_types.push_back(static_cast<StatisticsType>(i));
+        }
+
+        stats_desc.types_to_desc = factory.get(stat_types, data_type);
+
+        auto result = factory.get(stats_desc);
+        readIntBinary(result->rows, buf);
+
+        for (const auto & [type, desc] : result->stats)
+            desc->deserialize(buf, version);
+
+        return result;
+    }
 }
 
 String ColumnStatistics::getNameForLogs() const
 {
-    String ret;
-    for (const auto & [type, single_stats] : stats)
+    String result;
+    for (const auto & [type, single_stat] : stats)
     {
-        ret += single_stats->getNameForLogs();
-        ret += " | ";
+        result += single_stat->getNameForLogs();
+        result += " | ";
     }
-    ret += "rows: " + std::to_string(rows);
-    return ret;
+    result += "rows: " + std::to_string(rows);
+    return result;
 }
 
 ColumnsStatistics::ColumnsStatistics(const ColumnsDescription & columns)
@@ -400,6 +512,9 @@ MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
     registerValidator(StatisticsType::MinMax, minMaxStatisticsValidator);
     registerCreator(StatisticsType::MinMax, minMaxStatisticsCreator);
 
+    registerValidator(StatisticsType::NullCount, nullCountStatisticsValidator);
+    registerCreator(StatisticsType::NullCount, nullCountStatisticsCreator);
+
     registerValidator(StatisticsType::TDigest, tdigestStatisticsValidator);
     registerCreator(StatisticsType::TDigest, tdigestStatisticsCreator);
 
@@ -462,13 +577,32 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     {
         auto it = creators.find(type);
         if (it == creators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'", type);
 
         auto stat_ptr = (it->second)(desc, stats_desc.data_type);
         column_stat->stats[type] = stat_ptr;
     }
 
     return column_stat;
+}
+
+StatisticsPtr MergeTreeStatisticsFactory::tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const
+{
+    auto vit = validators.find(type);
+    if (vit == validators.end())
+        return nullptr;
+
+    auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
+    SingleStatisticsDescription desc(type, ast, false);
+
+    if (!vit->second(desc, data_type))
+        return nullptr;
+
+    auto cit = creators.find(type);
+    if (cit == creators.end())
+        return nullptr;
+
+    return cit->second(desc, data_type);
 }
 
 ColumnStatisticsDescription::StatisticsTypeDescMap MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const
@@ -478,7 +612,7 @@ ColumnStatisticsDescription::StatisticsTypeDescMap MergeTreeStatisticsFactory::g
     {
         auto it = validators.find(type);
         if (it == validators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'", type);
 
         auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
         SingleStatisticsDescription desc(type, ast, false);
