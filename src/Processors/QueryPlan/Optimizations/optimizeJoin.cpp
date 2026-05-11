@@ -279,6 +279,40 @@ bool convertLogicalJoinToPhysical(
     if (join_step->areInputsSwapped() && new_right_node)
         std::swap(new_left_node, new_right_node);
 
+        if (isRightOrFull(join_kind))
+        {
+            query_graph.pinned[edge] = 0;
+        }
+        else if (isLeftOrFull(join_kind))
+        {
+            query_graph.pinned[edge] = total_inputs - 1;
+        }
+        else
+        {
+            auto sources = edge.getSourceRelations();
+            bool should_pin = false;
+
+            for (auto rel_id : sources)
+            {
+                auto it = query_graph.join_kinds.find(rel_id);
+                if (it != query_graph.join_kinds.end())
+                {
+                    should_pin = true;
+                    break;
+                }
+            }
+
+            /// If a condition references only the preserved side of an outer join,
+            /// it must not be placed in that outer join's ON clause, because
+            /// ON-clause conditions on the preserved side only affect matching,
+            /// not filtering — rows from the preserved side are kept regardless.
+            should_pin = should_pin || std::ranges::any_of(query_graph.join_kinds | std::views::values,
+                [&sources](const auto & partner_info) { return isSubsetOf(sources, partner_info.first); });
+
+            if (should_pin)
+                query_graph.pinned[edge] = total_inputs - 1;
+        }
+    }
     const auto & settings = join_step->getSettings();
 
     auto & new_join_node = nodes.emplace_back();
