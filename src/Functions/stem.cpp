@@ -240,7 +240,8 @@ The list of supported language identifiers is available in [system.stemmers](/op
          "Array(Nullable(String)), or Array(Nullable(FixedString)).",
          {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
         {"language",
-         "Language whose stemming rules will be applied. Use the two-letter ISO 639-1 code (e.g. 'en', 'de', 'fr'), see https://en.wikipedia.org/wiki/List_of_ISO_639_language_codes.",
+         "Language whose stemming rules will be applied. The canonical identifiers are listed in [system.stemmers](/operations/system-tables/stemmers) (e.g. 'english', 'german', 'porter'). "
+         "Snowball also accepts 2- or 3-letter ISO 639 codes (e.g. 'en', 'eng') as aliases where defined, but coverage varies by language — prefer the names from `system.stemmers` for portability.",
          {"String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {
