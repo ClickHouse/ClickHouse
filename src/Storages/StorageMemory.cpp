@@ -241,13 +241,15 @@ static inline void updateBlockData(Block & old_block, const Block & new_block)
 
 static bool pullMutationBlock(PullingPipelineExecutor & executor, Block & block, const QueryStatusPtr & process_list_element)
 {
-    if (process_list_element)
-        process_list_element->checkTimeLimit();
+    /// `checkTimeLimit` throws on `timeout_overflow_mode = 'throw'` and returns `false` on `'break'`.
+    /// In both cases we must abort the mutation: a partial result must not be applied to `Memory` table.
+    if (process_list_element && !process_list_element->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
 
     if (executor.pull(block))
         return true;
 
-    /// `PullingPipelineExecutor` returns `false` on cancellation and soft timeout.
+    /// `PullingPipelineExecutor` returns `false` on cancellation and soft timeout too.
     if (process_list_element && !process_list_element->checkTimeLimit())
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
 
