@@ -10,87 +10,89 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-HypotheticalIndexStore::Key HypotheticalIndexStore::makeKey(const StorageID & table_id)
+/// Matches by UUID when both sides have one (stable across rename, distinguishes
+/// drop-and-recreate). Falls back to (database, table) names for legacy
+/// Ordinary databases where the table has no UUID.
+bool HypotheticalIndexStore::sameTable(const StorageID & a, const StorageID & b)
 {
-    return {table_id.getDatabaseName(), table_id.getTableName()};
+    if (a.uuid != UUIDHelpers::Nil && b.uuid != UUIDHelpers::Nil)
+        return a.uuid == b.uuid;
+    return a.getDatabaseName() == b.getDatabaseName() && a.getTableName() == b.getTableName();
 }
 
-void HypotheticalIndexStore::add(const StorageID & table_id, const IndexDescription & index)
+bool HypotheticalIndexStore::add(const StorageID & table_id, const IndexDescription & index, bool if_not_exists)
 {
     std::lock_guard lock(mutex);
-    auto & vec = indexes[makeKey(table_id)];
-    for (const auto & existing : vec)
+    for (const auto & entry : entries)
     {
-        if (existing.name == index.name)
+        if (sameTable(entry.table_id, table_id) && entry.index.name == index.name)
+        {
+            if (if_not_exists)
+                return false;
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Hypothetical index '{}' already exists on {}.{}",
                 index.name,
                 table_id.getDatabaseName(),
                 table_id.getTableName());
+        }
     }
-    vec.push_back(index);
+    entries.push_back({table_id, index});
+    return true;
 }
 
-void HypotheticalIndexStore::remove(const StorageID & table_id, const String & index_name)
+bool HypotheticalIndexStore::remove(const StorageID & table_id, const String & index_name, bool if_exists)
 {
     std::lock_guard lock(mutex);
-    auto key = makeKey(table_id);
-    auto it = indexes.find(key);
-    if (it == indexes.end())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "No hypothetical indexes on {}.{}",
-            table_id.getDatabaseName(),
-            table_id.getTableName());
+    auto pos = std::find_if(entries.begin(), entries.end(), [&](const Entry & e)
+    {
+        return sameTable(e.table_id, table_id) && e.index.name == index_name;
+    });
 
-    auto & vec = it->second;
-    auto pos = std::find_if(vec.begin(), vec.end(), [&](const IndexDescription & idx) { return idx.name == index_name; });
-    if (pos == vec.end())
+    if (pos == entries.end())
+    {
+        if (if_exists)
+            return false;
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Hypothetical index '{}' does not exist on {}.{}",
             index_name,
             table_id.getDatabaseName(),
             table_id.getTableName());
+    }
 
-    vec.erase(pos);
-    if (vec.empty())
-        indexes.erase(it);
+    entries.erase(pos);
+    return true;
 }
 
 void HypotheticalIndexStore::clear()
 {
     std::lock_guard lock(mutex);
-    indexes.clear();
+    entries.clear();
 }
 
 std::vector<IndexDescription> HypotheticalIndexStore::getForTable(const StorageID & table_id) const
 {
     std::lock_guard lock(mutex);
-    auto it = indexes.find(makeKey(table_id));
-    if (it == indexes.end())
-        return {};
-    return it->second;
+    std::vector<IndexDescription> result;
+    for (const auto & entry : entries)
+    {
+        if (sameTable(entry.table_id, table_id))
+            result.push_back(entry.index);
+    }
+    return result;
 }
 
 std::vector<HypotheticalIndexStore::Entry> HypotheticalIndexStore::getAll() const
 {
     std::lock_guard lock(mutex);
-    std::vector<Entry> result;
-    for (const auto & [key, vec] : indexes)
-    {
-        StorageID table_id(key.first, key.second);
-        for (const auto & idx : vec)
-            result.push_back({table_id, idx});
-    }
-    return result;
+    return entries;
 }
 
 bool HypotheticalIndexStore::empty() const
 {
     std::lock_guard lock(mutex);
-    return indexes.empty();
+    return entries.empty();
 }
 
 }
