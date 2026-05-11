@@ -13,4 +13,7 @@
 -- path order is preserved (reversed args)
 0	['Salah','goal']
 -- text index is used for subcolumn equality
+Description: text GRANULARITY 100000000
+Parts: 2/4
+Granules: 2/4
 -- non-constant path argument is rejected

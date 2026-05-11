@@ -55,6 +55,18 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const Names & index_columns,
     const String & json_function_name);
 
+/// Try to match a node against a JSONValues(col, 'path1', 'path2', ...) index.
+/// Returns a match only if the queried subcolumn path is one of the explicitly
+/// listed paths in the index expression.
+std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONValuesIndex(
+    const RPNBuilderTreeNode & node,
+    const Block & header);
+
+/// Overload that works with a list of index column names instead of a Block.
+std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONValuesIndex(
+    const RPNBuilderTreeNode & node,
+    const Names & index_columns);
+
 /// Check if a JSON path filter is safe to use for index skipping.
 /// When a JSON path is absent in a granule, the expression evaluates to:
 ///   - NULL if the type is Dynamic or Nullable (always safe — comparisons with NULL are false)

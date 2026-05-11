@@ -636,7 +636,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// because we have to match the specific key to the value and therefore execute a real filter.
         direct_read_mode = getHintOrNoneMode();
     }
-    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
+    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues")
+          || tryMatchNodeToJSONValuesIndex(index_column_node, header))
     {
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
@@ -1202,7 +1203,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     {
         return header.has(node.getColumnName())
             || hasIndexForMapElementValue(node)
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues")
+            || tryMatchNodeToJSONValuesIndex(node, header);
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
