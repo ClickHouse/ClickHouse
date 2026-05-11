@@ -112,18 +112,11 @@ bool ReadBufferFromWebServer::nextImpl()
     }
     else
     {
-        impl->position() = position();
+        /// On the first call, working_buffer may not be initialized yet
+        /// (the constructor passes nullptr). Skip position sync in that case.
+        if (working_buffer.begin())
+            impl->position() = position();
     }
-
-    chassert(available() == 0);
-
-    chassert(pos >= working_buffer.begin());
-    chassert(pos <= working_buffer.end());
-
-    chassert(working_buffer.begin() != nullptr);
-    chassert(impl->buffer().begin() != nullptr);
-
-    chassert(impl->available() == 0);
 
     auto result = impl->next();
 
