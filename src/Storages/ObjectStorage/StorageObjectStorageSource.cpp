@@ -6,7 +6,6 @@
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
@@ -47,8 +46,7 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
-#include <Disks/IO/ReadBufferFromDistributedCache.h>
-#include <IO/DistributedCacheSettings.h>
+#include <DistributedCache/DistributedCacheCommon.h>
 #endif
 
 #include <fmt/ranges.h>
@@ -930,14 +928,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     bool use_distributed_cache = false;
 #if ENABLE_DISTRIBUTED_CACHE
-    ObjectStorageConnectionInfoPtr connection_info;
     if (settings[Setting::table_engine_read_through_distributed_cache]
         && DistributedCache::Registry::instance().isReady(
-            effective_read_settings.distributed_cache_settings.read_only_from_current_az))
+            effective_read_settings.distributed_cache_settings.read_only_from_current_az)
+        && DistributedCache::getConnectionInfo(*object_storage))
     {
-        connection_info = DistributedCache::getConnectionInfo(*object_storage);
-        if (connection_info)
-            use_distributed_cache = true;
+        use_distributed_cache = true;
     }
 #endif
 
@@ -1002,109 +998,85 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
     bool use_async_buffer = use_prefetch || use_distributed_cache;
 
-    std::unique_ptr<ReadBufferFromFileBase> impl;
-#if ENABLE_DISTRIBUTED_CACHE
+    /// Prefer bigger buffer size when filesystem cache is active
+    if (modified_read_settings.filesystem_cache_prefer_bigger_buffer_size && use_filesystem_cache)
+        modified_read_settings.remote_fs_buffer_size = std::max<size_t>(
+            modified_read_settings.remote_fs_buffer_size,
+            modified_read_settings.prefetch_buffer_size);
+
+    ReadPipeline pipeline;
+
+    StoredObject stored_object(object_info.getPath(), "", object_size);
+    pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
+
+    /// Filesystem cache
+    if (use_filesystem_cache)
+    {
+        chassert(object_info.metadata.has_value());
+        if (object_info.metadata->etag.empty())
+        {
+            LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
+        }
+        else
+        {
+            SipHash hash;
+            hash.update(object_info.getPath());
+            hash.update(object_info.metadata->etag);
+
+            auto cache_key = FileCacheKey::fromKey(hash.get128());
+            auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
+
+            pipeline.needDiskCache(
+                cache,
+                cache_key,
+                FileCache::getCommonOrigin(),
+                modified_read_settings.getFilesystemCacheSettings(),
+                context_->getFilesystemCacheLog());
+
+            LOG_TRACE(
+                log,
+                "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
+                filesystem_cache_name,
+                object_info.getPath(),
+                object_info.metadata->etag,
+                toString(hash.get128()));
+        }
+    }
+
+    /// No needGather() — StorageObjectStorageSource reads single objects directly
+    /// (one logical file = one S3/Azure blob). Gather is only needed for DiskObjectStorage
+    /// where metadata maps a logical path to multiple blobs.
+
+    /// Distributed cache
     if (use_distributed_cache)
+        pipeline.needDistributedCache(/* include_credentials_in_cache_key */ true);
+
+    /// Page cache
+    if (use_page_cache)
     {
-        const std::string path = object_info.getPath();
-        StoredObject object(path, "", object_size);
-        auto read_buffer_creator = [path, object_size, modified_read_settings, object_storage]()
-        {
-            return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings, {}, /* use_external_buffer */ true, /* restrict_seek */ true);
-        };
-
-        impl = std::make_unique<ReadBufferFromDistributedCache>(
-            path,
-            StoredObjects({object}),
-            effective_read_settings,
-            connection_info,
-            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context_->getSettingsRef()),
-            read_buffer_creator,
-            /*use_external_buffer*/use_async_buffer,
-            context_->getDistributedCacheLog(),
-            /* include_credentials_in_cache_key */true);
+        pipeline.needMemoryCache(
+            effective_read_settings.page_cache,
+            "s3:" + object_info.getPath(),
+            "etag:" + object_info.metadata->etag,
+            modified_read_settings.getPageCacheSettings());
     }
-#endif
 
-    /// When NOT using distributed cache, build the read buffer chain via ReadPipeline.
-    if (!impl)
+    /// Async prefetch
+    if (use_async_buffer)
     {
-        /// Prefer bigger buffer size when filesystem cache is active
-        if (modified_read_settings.filesystem_cache_prefer_bigger_buffer_size && use_filesystem_cache)
-            modified_read_settings.remote_fs_buffer_size = std::max<size_t>(
-                modified_read_settings.remote_fs_buffer_size,
-                modified_read_settings.prefetch_buffer_size);
-
-        ReadPipeline pipeline;
-
-        StoredObject stored_object(object_info.getPath(), "", object_size);
-        pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
-
-        /// Filesystem cache
-        if (use_filesystem_cache)
-        {
-            chassert(object_info.metadata.has_value());
-            if (object_info.metadata->etag.empty())
-            {
-                LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
-            }
-            else
-            {
-                SipHash hash;
-                hash.update(object_info.getPath());
-                hash.update(object_info.metadata->etag);
-
-                auto cache_key = FileCacheKey::fromKey(hash.get128());
-                auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
-
-                pipeline.needDiskCache(
-                    cache,
-                    cache_key,
-                    FileCache::getCommonOrigin(),
-                    modified_read_settings.getFilesystemCacheSettings(),
-                    context_->getFilesystemCacheLog());
-
-                LOG_TRACE(
-                    log,
-                    "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
-                    filesystem_cache_name,
-                    object_info.getPath(),
-                    object_info.metadata->etag,
-                    toString(hash.get128()));
-            }
-        }
-
-        /// No needGather() — StorageObjectStorageSource reads single objects directly
-        /// (one logical file = one S3/Azure blob). Gather is only needed for DiskObjectStorage
-        /// where metadata maps a logical path to multiple blobs.
-
-        /// Page cache
-        if (use_page_cache)
-        {
-            pipeline.needMemoryCache(
-                effective_read_settings.page_cache,
-                "s3:" + object_info.getPath(),
-                "etag:" + object_info.metadata->etag,
-                modified_read_settings.getPageCacheSettings());
-        }
-
-        /// Async prefetch
-        if (use_async_buffer)
-        {
-            auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-            pipeline.needAsyncPrefetch(
-                reader,
-                context_->getAsyncReadCounters(),
-                context_->getFilesystemReadPrefetchesLog());
-        }
-
-        LOG_TRACE(
-            log, "Downloading object {} of size {} {} initial prefetch (pipeline: {})",
-            object_info.getPath(), object_size, use_prefetch ? "with" : "without",
-            pipeline.describe());
-
-        impl = pipeline.build();
+        auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+        pipeline.needAsyncPrefetch(
+            reader,
+            context_->getAsyncReadCounters(),
+            context_->getFilesystemReadPrefetchesLog());
     }
+
+    LOG_TRACE(
+        log, "Downloading object {} of size {} {} initial prefetch (pipeline: {})",
+        object_info.getPath(), object_size, use_prefetch ? "with" : "without",
+        pipeline.describe());
+
+    auto impl = pipeline.build();
 
     if (use_prefetch && impl && !impl->supportsReadAt())
     {
