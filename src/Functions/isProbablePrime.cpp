@@ -6,6 +6,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Common/Primality.h>
 
 
@@ -23,12 +25,22 @@ namespace
 
 constexpr unsigned default_rounds = 25;
 
+/// `4^-max_rounds` is below `10^-150` — well past the point of diminishing returns. The cap also
+/// keeps the worst case bounded under the AST fuzzer (which can rewrite the `rounds` literal to
+/// `std::numeric_limits<unsigned>::max()` and hang the stress test for half an hour, see #101354).
+constexpr unsigned max_rounds = 256;
+
 class FunctionIsProbablePrime : public IFunction
 {
 public:
     static constexpr auto name = "isProbablePrime";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsProbablePrime>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIsProbablePrime>(context); }
+
+    explicit FunctionIsProbablePrime(ContextPtr context)
+        : process_list_element(context ? context->getProcessListElement() : nullptr)
+    {
+    }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -62,8 +74,23 @@ public:
             const UInt64 r = arguments[1].column->getUInt(0);
             if (r == 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must be a positive integer constant", getName());
-            rounds = static_cast<unsigned>(std::min<UInt64>(r, std::numeric_limits<unsigned>::max()));
+            if (r > max_rounds)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Second argument of function {} must not exceed {} (got {}); larger values offer no meaningful "
+                    "improvement in confidence and can take too long to compute",
+                    getName(), max_rounds, r);
+            rounds = static_cast<unsigned>(r);
         }
+
+        const QueryStatusPtr query_status = process_list_element;
+        auto check_cancelled = [&query_status]
+        {
+            /// `checkTimeLimit` covers both `KILL QUERY` (via `is_killed`) and `max_execution_time`,
+            /// throwing the appropriate exception when either fires.
+            if (query_status)
+                query_status->checkTimeLimit();
+        };
 
         const IColumn * column = arguments[0].column.get();
         auto result = ColumnUInt8::create(input_rows_count);
@@ -74,8 +101,14 @@ public:
                 [&](const auto & col)
                 {
                     const auto & data = col.getData();
+                    using ValueT = std::decay_t<decltype(data[0])>;
                     for (size_t i = 0; i < input_rows_count; ++i)
-                        result_data[i] = Primality::isProbablePrime(data[i], rounds);
+                    {
+                        if constexpr (Primality::is_big_uint<ValueT>)
+                            result_data[i] = Primality::isProbablePrime(data[i], rounds, check_cancelled);
+                        else
+                            result_data[i] = Primality::isProbablePrime(data[i], rounds);
+                    }
                     return true;
                 }))
             throw Exception(
@@ -86,6 +119,9 @@ public:
 
         return result;
     }
+
+private:
+    QueryStatusPtr process_list_element;
 };
 
 }
@@ -101,7 +137,9 @@ For `UInt8`, `UInt16`, `UInt32`, and `UInt64`, the result is exact and matches
 For `UInt128` and `UInt256`, a return value of `1` is probabilistic. The optional `rounds` argument controls
 how many [Miller-Rabin](https://en.wikipedia.org/wiki/Miller-Rabin_primality_test) rounds are used:
 more rounds reduce the chance of a false positive and increase the running time. For any composite,
-the false-positive rate is bounded by `4^(-rounds)`; the default of `25` keeps it below `10^-15`.
+the false-positive rate is bounded by `4^(-rounds)`; the default of `25` keeps it below `10^-15`. Values above
+`256` are rejected as `BAD_ARGUMENTS`, since the false-positive rate at `256` is already below `10^-150` and
+larger values only waste time.
 
 The function is deterministic: the same input and `rounds` value always produce the same result.
     )";
@@ -109,8 +147,8 @@ The function is deterministic: the same input and `rounds` value always produce 
     FunctionDocumentation::Arguments arguments
         = {{"n", "Unsigned integer to test for primality.", {"UInt8", "UInt16", "UInt32", "UInt64", "UInt128", "UInt256"}},
            {"rounds",
-            "Optional positive integer constant. Number of Miller-Rabin rounds for `UInt128`/`UInt256` (ignored for narrower types). "
-            "Default `25`.",
+            "Optional positive integer constant in `[1, 256]`. Number of Miller-Rabin rounds for `UInt128`/`UInt256` "
+            "(ignored for narrower types). Default `25`.",
             {"UInt8", "UInt16", "UInt32", "UInt64"}}};
     FunctionDocumentation::ReturnedValue returned_value
         = {"Returns `1` if `n` is probably prime, `0` if it is definitely composite.", {"UInt8"}};

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <concepts>
 #include <limits>
 #include <numeric>
 
@@ -11,6 +12,7 @@
 #include <Common/HashTable/Hash.h>
 
 #include <boost/multiprecision/cpp_int.hpp>
+#include <boost/multiprecision/detail/uniform_int_distribution.hpp>
 #include <boost/multiprecision/integer.hpp>
 #include <boost/multiprecision/miller_rabin.hpp>
 
@@ -209,8 +211,66 @@ inline UInt8 isProbablePrime(T num, unsigned /*rounds*/)
     return isPrime(num);
 }
 
-template <is_big_uint T>
-UInt8 isProbablePrime(const T & num, unsigned rounds)
+namespace detail
+{
+
+/// Miller-Rabin primality test for wide integers, adapted from
+/// `boost::multiprecision::miller_rabin_test`, but invokes `check_cancelled` between rounds so
+/// long-running calls can be interrupted by `KILL QUERY` or `max_execution_time`.
+template <typename BoostUInt, typename Engine, std::invocable CheckCancelled>
+bool millerRabinTestBig(const BoostUInt & n, unsigned rounds, Engine & gen, CheckCancelled check_cancelled)
+{
+    using boost::multiprecision::bit_test;
+    using boost::multiprecision::lsb;
+    using boost::multiprecision::powm;
+
+    /// Callers must have rejected even numbers and small composites already.
+    chassert(n > 227);
+    chassert(bit_test(n, 0) != 0);
+
+    const BoostUInt nm1 = n - 1;
+
+    /// Quick Fermat test with a fixed base.
+    BoostUInt q = 228;
+    BoostUInt y = powm(q, nm1, n);
+    if (y != 1u)
+        return false;
+
+    q = nm1;
+    const std::size_t k = lsb(q);
+    q >>= k;
+
+    boost::multiprecision::uniform_int_distribution<BoostUInt> dist(2, n - 2);
+
+    for (unsigned i = 0; i < rounds; ++i)
+    {
+        check_cancelled();
+
+        BoostUInt x = dist(gen);
+        y = powm(x, q, n);
+        std::size_t j = 0;
+        while (true)
+        {
+            if (y == nm1)
+                break;
+            if (y == 1)
+            {
+                if (j == 0)
+                    break;
+                return false;
+            }
+            if (++j == k)
+                return false;
+            y = powm(y, 2, n);
+        }
+    }
+    return true;
+}
+
+}
+
+template <is_big_uint T, std::invocable CheckCancelled>
+UInt8 isProbablePrime(const T & num, unsigned rounds, CheckCancelled check_cancelled)
 {
     /// If the wide value fits in UInt64, use the deterministic UInt64 path.
     if (num <= std::numeric_limits<UInt64>::max())
@@ -229,7 +289,13 @@ UInt8 isProbablePrime(const T & num, unsigned rounds)
     /// Seed deterministically so the same (num, rounds) pair always produces the same result.
     pcg64 rng(DefaultHash<T>{}(num));
 
-    return boost::multiprecision::miller_rabin_test(boost_num, rounds, rng);
+    return detail::millerRabinTestBig(boost_num, rounds, rng, check_cancelled);
+}
+
+template <is_big_uint T>
+UInt8 isProbablePrime(const T & num, unsigned rounds)
+{
+    return isProbablePrime(num, rounds, [] {});
 }
 
 }
