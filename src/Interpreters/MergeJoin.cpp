@@ -1036,6 +1036,10 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
         if (range.empty())
             break;
 
+        /// Reuse semiLeftJoin() for anyInnetJoin() using first left value from range
+        if (is_any_join && is_inner)
+            range.left_length = 1;
+
         joinEquals<false>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, 0);
 
         right_cursor.nextN(range.right_length);
