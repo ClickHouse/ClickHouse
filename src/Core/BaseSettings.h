@@ -9,6 +9,7 @@
 #include <Common/SettingsChanges.h>
 
 #include <string_view>
+#include <type_traits>
 #include <unordered_map>
 
 #include <boost/blank.hpp>
@@ -59,6 +60,18 @@ private:
     inline static thread_local Strings unknown_settings;
     inline static thread_local bool unknown_settings_warning_logged = false;
 };
+
+/// Maps a Traits type to its owning settings class (e.g. `SettingsTraits` -> `Settings`,
+/// `MergeTreeSettingsTraits` -> `MergeTreeSettings`). The specialization is emitted by
+/// `IMPLEMENT_SETTINGS_EXTERN_` next to the per-setting `SettingIndex` extern variables,
+/// so it is visible exactly where `(*impl)[Setting::name]` is used.
+///
+/// `BaseSettings::operator[]` uses this to constrain the SettingIndex parameter to the
+/// owning class, so a `SettingIndex<MergeTreeSettings, ...>` cannot be applied to a
+/// `BaseSettings<SettingsTraits>` instance (which would otherwise reinterpret bytes at
+/// the wrong layout offset).
+template <typename Traits>
+struct SettingsOwner;
 
 /** Template class to define collections of settings with compile-time metadata.
   *
@@ -144,15 +157,24 @@ public:
 
     /// Direct field access via SettingIndex offset. Allows (*impl)[Setting::name] syntax
     /// inside settings .cpp files where Impl methods need to read/write individual fields.
-    /// The Owner parameter is not used at runtime — it only provides compile-time safety.
+    /// The Owner template parameter is checked against the owning class of TTraits at
+    /// function-instantiation time, so a SettingIndex from a different settings class is a
+    /// hard compile error rather than silently reinterpreting bytes at the wrong layout offset.
+    /// (The check lives in the body, not the signature, so the SettingsOwner specialization
+    /// only needs to be visible at the call site, not at every BaseSettings<TTraits> class
+    /// instantiation point.)
     template <typename Owner, typename FieldType>
     const FieldType & operator[](SettingIndex<Owner, FieldType> index) const
     {
+        static_assert(std::is_same_v<Owner, typename SettingsOwner<TTraits>::type>,
+                      "SettingIndex belongs to a different settings class than this BaseSettings");
         return *reinterpret_cast<const FieldType *>(reinterpret_cast<const char *>(this) + index.offset);
     }
     template <typename Owner, typename FieldType>
     FieldType & operator[](SettingIndex<Owner, FieldType> index)
     {
+        static_assert(std::is_same_v<Owner, typename SettingsOwner<TTraits>::type>,
+                      "SettingIndex belongs to a different settings class than this BaseSettings");
         return *reinterpret_cast<FieldType *>(reinterpret_cast<char *>(this) + index.offset);
     }
     BaseSettings & operator=(const BaseSettings &) = default;
@@ -1388,6 +1410,9 @@ size_t settingsDataBaseOffset()
     _Pragma("clang diagnostic ignored \"-Winvalid-offsetof\"") \
     /* NOLINTNEXTLINE(misc-use-internal-linkage) */ \
     struct CLASS_NAME; /* forward declaration for SettingIndex owner tag */ \
+    /* Bind the traits to its owning class so `BaseSettings<Traits>::operator[]` rejects */ \
+    /* SettingIndex values from a different settings class at compile time. */ \
+    template <> struct SettingsOwner<SETTINGS_TRAITS_NAME> { using type = CLASS_NAME; }; \
     namespace SETTING_NAMESPACE \
     { \
         using Owner_ = CLASS_NAME; \
@@ -1403,6 +1428,9 @@ size_t settingsDataBaseOffset()
     _Pragma("clang diagnostic push") \
     _Pragma("clang diagnostic ignored \"-Winvalid-offsetof\"") \
     struct CLASS_NAME; /* forward declaration for SettingIndex owner tag */ \
+    /* Bind the traits to its owning class so `BaseSettings<Traits>::operator[]` rejects */ \
+    /* SettingIndex values from a different settings class at compile time. */ \
+    template <> struct SettingsOwner<SETTINGS_TRAITS_NAME> { using type = CLASS_NAME; }; \
     /* NOLINTNEXTLINE(misc-use-internal-linkage) */ \
     namespace SETTING_NAMESPACE \
     { \
