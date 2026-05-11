@@ -68,18 +68,8 @@ CREATE OR REPLACE MATERIALIZED VIEW test_mv ENGINE = MergeTree ORDER BY x AS SEL
 INSERT INTO src VALUES (2);
 SELECT x FROM test_mv ORDER BY x;
 
--- 10. REFRESH clause: OR REPLACE parses and executes correctly with REFRESH
-DROP TABLE IF EXISTS test_mv SYNC;
-CREATE OR REPLACE MATERIALIZED VIEW test_mv
-    REFRESH EVERY 1 HOUR
-    ENGINE = MergeTree ORDER BY x
-    AS SELECT x FROM src;
-SELECT name FROM system.tables WHERE database = currentDatabase() AND name = 'test_mv';
-CREATE OR REPLACE MATERIALIZED VIEW test_mv
-    REFRESH EVERY 2 HOUR
-    ENGINE = MergeTree ORDER BY x
-    AS SELECT x FROM src;
-SELECT name FROM system.tables WHERE database = currentDatabase() AND name = 'test_mv';
+-- 10. The REFRESH clause is covered by a dedicated test (`04227_create_or_replace_refresh_mv.sql`),
+-- because refreshable MVs with non-replicated inner tables are refused on a Replicated database.
 
 -- 11. OR REPLACE combined with IF NOT EXISTS is a syntax error (blocked at parser level)
 CREATE OR REPLACE MATERIALIZED VIEW IF NOT EXISTS test_mv ENGINE = MergeTree ORDER BY x AS SELECT x FROM src; -- { clientError SYNTAX_ERROR }

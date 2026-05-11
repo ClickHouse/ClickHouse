@@ -14,5 +14,3 @@ CREATE MATERIALIZED VIEW default.test_mv\n(\n    `x` UInt32,\n    `y` UInt64\n)\
 5000
 2
 test_mv
-test_mv
-test_mv

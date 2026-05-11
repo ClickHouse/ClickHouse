@@ -62,12 +62,22 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 ## Materialized View {#materialized-view}
 
 ```sql
-CREATE [OR REPLACE] MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
 [REFRESH ...]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
 ```
+
+```sql
+CREATE OR REPLACE MATERIALIZED VIEW [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
+[REFRESH ...]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
+AS SELECT ...
+[COMMENT 'comment']
+```
+
+`OR REPLACE` and `IF NOT EXISTS` are mutually exclusive: combining them is a syntax error.
 
 ### CREATE OR REPLACE MATERIALIZED VIEW {#create-or-replace-materialized-view}
 
@@ -86,8 +96,8 @@ Key behaviors:
 
 - **Without `TO` clause**: the old inner table is dropped and a new one is created. Existing data in the inner table is lost unless `POPULATE` is specified.
 - **With `TO` clause**: only the view definition is replaced; the target table and its data are unaffected.
-- Compatible with `REFRESH`, `POPULATE`, `ON CLUSTER`, and all engine options.
-- Requires `CREATE MATERIALIZED VIEW` and `DROP VIEW` privileges.
+- Compatible with `REFRESH`, `ON CLUSTER`, and all engine options. `POPULATE` is supported on `Atomic` databases only — it is rejected on `Replicated` databases (see the `POPULATE` note below).
+- Requires `CREATE VIEW` and `DROP VIEW` privileges.
 
 :::note
 `CREATE OR REPLACE MATERIALIZED VIEW` is only supported with `Atomic` or `Replicated` database engines. It is not supported with the `Ordinary` database engine.
