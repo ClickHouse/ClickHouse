@@ -59,6 +59,7 @@ static constexpr auto TEST_LOG_LEVEL = "debug";
 namespace DB::ErrorCodes
 {
     extern const int FILECACHE_ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
 }
 namespace DB::FileCacheSetting
 {
@@ -1911,5 +1912,162 @@ TEST_F(FileCacheTest, LoadMetadataParallelism)
 
         ASSERT_EQ(total_loaded, num_keys * segments_per_key)
             << "load_metadata_threads=" << thread_count;
+    }
+}
+
+/// ----- ReaderExecutor + DiskCacheProvider tests -----
+
+#include <IO/BufferSourceReader.h>
+#include <IO/DiskCacheProvider.h>
+#include <IO/LocalSourceReader.h>
+#include <IO/ReaderExecutor.h>
+#include <IO/PipelineReadBuffer.h>
+
+TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_provider_1", settings);
+    cache->initialize();
+
+    /// Write a 30-byte test file.
+    std::string file_path = fs::current_path() / "test_dc_provider";
+    std::string data(30, 'A');
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, data.size(), cache_settings);
+    auto source_reader = std::make_shared<LocalSourceReader>();
+
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    /// First read: cache miss, populates cache.
+    {
+        auto executor = std::make_unique<ReaderExecutor>(
+            source_reader, objects,
+            std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+            /*window_size=*/30,
+            /*min_bytes_for_seek=*/0,
+            CacheKey{file_path, ""});
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        ASSERT_EQ(result.str(), data);
+    }
+
+    /// Verify cache segments are populated (30 bytes / 10 segment size = 3 segments).
+    assertEqual(cache->dumpQueue(), {FileSegment::Range(0, 9), FileSegment::Range(10, 19), FileSegment::Range(20, 29)});
+
+    /// Second read: should hit cache. Use a broken source to prove data comes from cache.
+    auto broken_source = std::make_shared<BufferSourceReader>(
+        [](const StoredObject &) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source should not be called on cache hit");
+        },
+        "BrokenSource");
+
+    {
+        auto executor = std::make_unique<ReaderExecutor>(
+            broken_source, objects,
+            std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+            /*window_size=*/30,
+            /*min_bytes_for_seek=*/0,
+            CacheKey{file_path, ""});
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        ASSERT_EQ(result.str(), data);
+    }
+}
+
+TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path2;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_provider_2", settings);
+    cache->initialize();
+
+    /// Write a 30-byte test file with distinct content per segment.
+    std::string file_path = fs::current_path() / "test_dc_provider_partial";
+    std::string data = "AAAAAAAAAA" "BBBBBBBBBB" "CCCCCCCCCC";
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, data.size(), cache_settings);
+    auto source_reader = std::make_shared<LocalSourceReader>();
+
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    /// Read with small window to exercise multiple readNextWindow calls.
+    {
+        auto executor = std::make_unique<ReaderExecutor>(
+            source_reader, objects,
+            std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+            /*window_size=*/10,
+            /*min_bytes_for_seek=*/0,
+            CacheKey{file_path, ""});
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        ASSERT_EQ(result.str(), data);
+    }
+
+    assertEqual(cache->dumpQueue(), {FileSegment::Range(0, 9), FileSegment::Range(10, 19), FileSegment::Range(20, 29)});
+
+    /// Seek read: read only the middle segment.
+    {
+        auto executor = std::make_unique<ReaderExecutor>(
+            source_reader, objects,
+            std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+            /*window_size=*/10,
+            /*min_bytes_for_seek=*/0,
+            CacheKey{file_path, ""});
+
+        PipelineReadBuffer buf(std::move(executor));
+        buf.seek(10, SEEK_SET);
+
+        char tmp[10];
+        size_t n = buf.read(tmp, 10);
+        ASSERT_EQ(n, 10u);
+        ASSERT_EQ(std::string(tmp, 10), "BBBBBBBBBB");
     }
 }
