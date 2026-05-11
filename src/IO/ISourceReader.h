@@ -30,7 +30,7 @@ public:
     /// Returns nullptr if not supported.
     virtual std::unique_ptr<ReadBufferFromFileBase> open(
         const StoredObject & /* object */,
-        bool /* use_external_buffer */ = false)
+        bool /* use_external_buffer */)
     {
         return nullptr;
     }

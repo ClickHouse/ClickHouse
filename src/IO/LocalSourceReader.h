@@ -15,7 +15,7 @@ public:
         size_t offset, size_t size,
         char * buffer) override;
 
-    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object, bool use_external_buffer = false) override;
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object, bool use_external_buffer) override;
 
     String name() const override { return "LocalSourceReader"; }
 
