@@ -501,11 +501,23 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         return;
     }
 
-    /// Authenticate the user. Authentication failures propagate as exceptions
-    /// and are logged by the upper HTTP framework.
+    /// Authenticate the user. After the 101 handshake we are in WebSocket
+    /// framing mode, so an unhandled exception here would unwind without a
+    /// close frame and the browser would see an abnormal close (1006). Send
+    /// an explicit policy-violation close (1008) instead so clients can
+    /// distinguish login failure from network errors deterministically.
     /// Note: do not call makeSessionContext() here - it will be called by ClientEmbedded's constructor.
     auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
-    session->authenticate(BasicCredentials(auth_user, auth_password), request.clientAddress());
+    try
+    {
+        session->authenticate(BasicCredentials(auth_user, auth_password), request.clientAddress());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "WebSocket authentication failed");
+        sendWebSocketClose(socket, 1008, "Authentication failed");
+        return;
+    }
 
     LOG_DEBUG(log, "WebSocket connection established for user {}", auth_user);
 
