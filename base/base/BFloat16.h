@@ -4,9 +4,6 @@
 #include <base/types.h>
 #include <base/defines.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-
 /** BFloat16 is a 16-bit floating point type, which has the same number (8) of exponent bits as Float32.
   * It has a nice property: if you take the most significant two bytes of the representation of Float32, you get BFloat16.
   * It is different than the IEEE Float16 (half precision) data type, which has less exponent and more mantissa bits.
@@ -279,56 +276,56 @@ template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator+(T a, BFloat16 b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) + Float32(b);
+    return static_cast<BFloat16CommonType<T>>(a) + static_cast<BFloat16CommonType<T>>(Float32(b));
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator+(BFloat16 a, T b)
 {
-    return Float32(a) + static_cast<BFloat16CommonType<T>>(b);
+    return static_cast<BFloat16CommonType<T>>(Float32(a)) + static_cast<BFloat16CommonType<T>>(b);
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator-(T a, BFloat16 b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) - Float32(b);
+    return static_cast<BFloat16CommonType<T>>(a) - static_cast<BFloat16CommonType<T>>(Float32(b));
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator-(BFloat16 a, T b)
 {
-    return Float32(a) - static_cast<BFloat16CommonType<T>>(b);
+    return static_cast<BFloat16CommonType<T>>(Float32(a)) - static_cast<BFloat16CommonType<T>>(b);
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator*(T a, BFloat16 b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) * Float32(b);
+    return static_cast<BFloat16CommonType<T>>(a) * static_cast<BFloat16CommonType<T>>(Float32(b));
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator*(BFloat16 a, T b)
 {
-    return Float32(a) * static_cast<BFloat16CommonType<T>>(b);
+    return static_cast<BFloat16CommonType<T>>(Float32(a)) * static_cast<BFloat16CommonType<T>>(b);
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator/(T a, BFloat16 b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) / Float32(b);
+    return static_cast<BFloat16CommonType<T>>(a) / static_cast<BFloat16CommonType<T>>(Float32(b));
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator/(BFloat16 a, T b)
 {
-    return Float32(a) / static_cast<BFloat16CommonType<T>>(b);
+    return static_cast<BFloat16CommonType<T>>(Float32(a)) / static_cast<BFloat16CommonType<T>>(b);
 }
 
 namespace std
@@ -343,5 +340,3 @@ public:
     static constexpr BFloat16 infinity() noexcept { return BFloat16::fromBits(0b0111111110000000); }
 };
 }
-
-#pragma clang diagnostic pop
