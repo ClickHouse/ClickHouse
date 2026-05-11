@@ -315,9 +315,11 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
         if (slot)
         {
             auto opened = source->open(object);
+
             if (opened)
             {
-                opened->seek(offset, SEEK_SET);
+                if (offset > 0)
+                    opened->seek(offset, SEEK_SET);
 
                 size_t total_read = 0;
                 while (total_read < size)

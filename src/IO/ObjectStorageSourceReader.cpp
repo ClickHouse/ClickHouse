@@ -51,7 +51,12 @@ size_t ObjectStorageSourceReader::read(
 std::unique_ptr<ReadBufferFromFileBase> ObjectStorageSourceReader::open(const StoredObject & object)
 {
     LOG_TRACE(log, "open: object={}", object.remote_path);
-    return storage->readObject(object, read_settings);
+    auto buf = storage->readObject(object, read_settings);
+    /// Only return buffers that support stateless range reads (S3, Azure).
+    /// Streaming-only readers (e.g. web disk) are not suitable for live buffer reuse.
+    if (!buf || !buf->supportsReadAt())
+        return nullptr;
+    return buf;
 }
 
 }
