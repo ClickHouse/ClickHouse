@@ -6,3 +6,4 @@
 6. clickhouse-client --chime 0, slow query: no BEL
 7. clickhouse-client --chime 1, slow query, pty stderr: BEL
 8. clickhouse-client --chime 0, slow query, pty stderr: no BEL
+9. clickhouse-client --chime 10, fast query (0.1s < 10s threshold), pty stderr: no BEL

@@ -29,6 +29,7 @@ err5="${CLICKHOUSE_TMP}/04219_err5_${CLICKHOUSE_DATABASE}.txt"
 err6="${CLICKHOUSE_TMP}/04219_err6_${CLICKHOUSE_DATABASE}.txt"
 tty7="${CLICKHOUSE_TMP}/04219_tty7_${CLICKHOUSE_DATABASE}.txt"
 tty8="${CLICKHOUSE_TMP}/04219_tty8_${CLICKHOUSE_DATABASE}.txt"
+tty9="${CLICKHOUSE_TMP}/04219_tty9_${CLICKHOUSE_DATABASE}.txt"
 
 # -----------------------------------------------------------------------------
 # Non-TTY cases (stderr redirected to a regular file). With the TTY guard, the
@@ -90,4 +91,12 @@ echo "7. clickhouse-client --chime 1, slow query, pty stderr: $(bel_count "$tty7
 /usr/bin/script -qc "${CLICKHOUSE_CLIENT} --chime 0 -q 'SELECT sleep(1.5) FORMAT Null'" /dev/null > "$tty8" 2>&1
 echo "8. clickhouse-client --chime 0, slow query, pty stderr: $(bel_count "$tty8")"
 
-rm -f "$err1" "$err2" "$err3" "$err4" "$err5" "$err6" "$tty7" "$tty8"
+# Case 9: `--chime 10`, fast query, stderr attached to a pty — expect no `BEL`.
+# This is the only path where `BEL` is emitted, so it is the one place where a
+# regression of the threshold gate (`elapsedSeconds() >= chime_threshold_seconds`)
+# would actually surface. Cases 1-6 cannot catch such a regression because the
+# TTY guard suppresses `BEL` regardless of the threshold.
+/usr/bin/script -qc "${CLICKHOUSE_CLIENT} --chime 10 -q 'SELECT sleep(0.1) FORMAT Null'" /dev/null > "$tty9" 2>&1
+echo "9. clickhouse-client --chime 10, fast query (0.1s < 10s threshold), pty stderr: $(bel_count "$tty9")"
+
+rm -f "$err1" "$err2" "$err3" "$err4" "$err5" "$err6" "$tty7" "$tty8" "$tty9"
