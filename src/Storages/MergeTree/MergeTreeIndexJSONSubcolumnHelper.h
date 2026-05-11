@@ -55,7 +55,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const Names & index_columns,
     const String & json_function_name);
 
-/// Try to match a node against a JSONValues(col, 'path1', 'path2', ...) index.
+/// Try to match a node against a JSONValues(col, ['path1', 'path2', ...]) index.
 /// Returns a match only if the queried subcolumn path is one of the explicitly
 /// listed paths in the index expression.
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONValuesIndex(
