@@ -376,6 +376,7 @@ namespace ServerSetting
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
+    extern const ServerSettingsUInt64 max_live_source_buffers;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_merges_bandwidth_for_server;
@@ -389,6 +390,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
     extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
+    extern const ServerSettingsNonZeroUInt64 reader_executor_prefetch_pool_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
     extern const ServerSettingsNonZeroUInt64 threadpool_writer_pool_size;
@@ -7586,8 +7588,8 @@ std::shared_ptr<PrefetchThreadPool> Context::getPrefetchThreadPool() const
 {
     callOnce(shared->prefetch_thread_pool_initialized, [&]
     {
-        /// TODO: make configurable via server settings.
-        constexpr size_t pool_size = 16;
+        const auto & server_settings = getServerSettings();
+        size_t pool_size = server_settings[ServerSetting::reader_executor_prefetch_pool_size];
         shared->prefetch_thread_pool = std::make_shared<PrefetchThreadPool>(pool_size);
     });
     return shared->prefetch_thread_pool;
@@ -7597,9 +7599,9 @@ std::shared_ptr<SourceBufferLimit> Context::getSourceBufferLimit() const
 {
     callOnce(shared->source_buffer_limit_initialized, [&]
     {
-        /// TODO: make configurable via server settings.
-        constexpr size_t max_live_source_buffers = 128;
-        shared->source_buffer_limit = std::make_shared<SourceBufferLimit>(max_live_source_buffers);
+        const auto & server_settings = getServerSettings();
+        size_t max_live = server_settings[ServerSetting::max_live_source_buffers];
+        shared->source_buffer_limit = std::make_shared<SourceBufferLimit>(max_live);
     });
     return shared->source_buffer_limit;
 }
