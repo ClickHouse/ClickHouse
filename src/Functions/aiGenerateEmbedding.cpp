@@ -155,8 +155,6 @@ public:
         UInt64 retry_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
         bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
-        if (max_batch_size == 0)
-            max_batch_size = 1;
 
         AIQuotaTracker quota(
             settings[Setting::ai_function_max_input_tokens_per_query].value,
