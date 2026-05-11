@@ -13,7 +13,7 @@ A plan:
             set pr-backported label and finish
             - If not, create either cherrypick PRs or merge cherrypick (in the same
             stage, if mergable) and create backport-PRs
-            - If successful, set pr-backported label on the PR
+            - If successfull, set pr-backported label on the PR
 
         - for version-specific labels:
             - the same, check, cherry-pick, backport, pr-backported
@@ -50,58 +50,6 @@ from report import GITHUB_JOB_URL
 from s3_helper import S3Helper
 from ssh import SSHKey
 from synchronizer_utils import SYNC_PR_PREFIX
-
-
-# Login prefixes (lowercased) of automated accounts. They are typed as regular
-# users by GitHub, not "Bot", so we have to match them by login. `robot-` is
-# broad on purpose — it covers `robot-clickhouse`, `robot-clickhouse-ci-1`,
-# and any other `robot-…` machine account.
-_AUTOMATED_LOGIN_PREFIXES = ("robot-", "clickhouse-gh")
-
-# Explicit allowlist of automated AI agent accounts that register as regular
-# GitHub users (no `[bot]` suffix and `type` != "Bot"). Add new accounts here
-# as they appear; do not match by suffix because that would treat human
-# usernames such as `kai` as bots and silently skip required backports.
-_AUTOMATED_LOGINS = frozenset({"groeneai", "clickgapai"})
-
-
-def _is_bot_actor(actor) -> bool:
-    """Return True if `actor` is a GitHub App, a known automated account, or
-    has unknown identity. Fail closed: if we cannot attribute the action to a
-    human, do not let the label drive a backport — treat it as non-human.
-    """
-    if actor is None:
-        return True
-    if getattr(actor, "type", None) == "Bot":
-        return True
-    login = (getattr(actor, "login", "") or "").lower()
-    if not login:
-        return True
-    if login.endswith("[bot]"):
-        return True
-    if login in _AUTOMATED_LOGINS:
-        return True
-    return any(login.startswith(prefix) for prefix in _AUTOMATED_LOGIN_PREFIXES)
-
-
-def _bot_added_labels(pr: PullRequest, labels_of_interest: Iterable[str]) -> set:
-    """Return the subset of `labels_of_interest` whose most recent `labeled`
-    event on `pr` was performed by a bot. Errors fetching events are not
-    swallowed: the caller must fail closed (skip backporting this PR) rather
-    than silently treat labels as human-added.
-    """
-    labels_of_interest = set(labels_of_interest)
-    if not labels_of_interest:
-        return set()
-    last_actor = {}
-    for event in pr.as_issue().get_events():
-        if event.event != "labeled":
-            continue
-        label = getattr(event, "label", None)
-        if label is None or label.name not in labels_of_interest:
-            continue
-        last_actor[label.name] = event.actor
-    return {name for name, actor in last_actor.items() if _is_bot_actor(actor)}
 
 
 class BackportException(Exception):
@@ -667,7 +615,7 @@ class BackportPRs:
 
         since_date = since_date or self.oldest_commit_date()
         labels_to_backport = labels_to_backport or (
-            self.labels_to_backport + [Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_FORCE]
+            self.labels_to_backport + [Labels.MUST_BACKPORT]
         )
         repo_name = repo_name or self.repo.full_name
         # To not have a possible TZ issues
@@ -766,93 +714,47 @@ class BackportPRs:
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        # Drop `must-backport*` labels that were applied by a bot. We only want
-        # to act on explicit human intent; automated label propagation (for
-        # example, `pr-must-backport` auto-added based on the changelog
-        # category) should not trigger backports on its own.
-        backport_trigger_labels = (
-            {Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_FORCE}
-            | set(self.labels_to_backport)
-        )
-        bot_added = _bot_added_labels(
-            pr, backport_trigger_labels.intersection(pr_labels)
-        )
-        if bot_added:
-            logging.info(
-                "PR #%s: ignoring bot-added must-backport labels: %s",
-                pr.number,
-                ", ".join(sorted(bot_added)),
-            )
-            pr_labels = [l for l in pr_labels if l not in bot_added]
-
-        has_backport_trigger = (
-            Labels.MUST_BACKPORT in pr_labels
-            or Labels.MUST_BACKPORT_FORCE in pr_labels
-            or any(l in self.labels_to_backport for l in pr_labels)
-            or bool(Labels.AUTO_BACKPORT & set(pr_labels))
-        )
-        if not has_backport_trigger:
-            logging.info(
-                "PR #%s: all must-backport* labels were bot-added, skipping",
-                pr.number,
-            )
-            return
-
-        is_force_backport = Labels.MUST_BACKPORT_FORCE in pr_labels
-        is_general_backport = is_force_backport or Labels.MUST_BACKPORT in pr_labels or bool(
+        is_general_backport = Labels.MUST_BACKPORT in pr_labels or bool(
             Labels.AUTO_BACKPORT & set(pr_labels)
         )
         if is_general_backport:
-            if is_force_backport:
-                # pr-must-backport-force: backport to all release branches,
-                # ignoring the rolling-out restriction entirely.
+            # For general backports (pr-must-backport / critical bugfix), skip
+            # release branches that are currently rolling out, unless the PR
+            # carries an explicit version-specific label for that branch.
+            rolling_out = set(self._rolling_out_branches())
+            # Build a per-branch version-specific label so we can honour explicit
+            # overrides (e.g. the PR has both pr-must-backport AND
+            # v25.10-must-backport: the 25.10 branch must be included even if it
+            # is marked rolling-out).
+            branch_specific_label = {
+                branch: f"v{branch.replace('release/', '')}-must-backport"
+                for branch in self.release_branches
+            }
+            skipped = [
+                br
+                for br in self.release_branches
+                if br in rolling_out and branch_specific_label[br] not in pr_labels
+            ]
+            if skipped:
                 logging.info(
-                    "PR #%s: label %r present, ignoring rolling-out branches",
+                    "PR #%s: skipping rolling-out release branches for general "
+                    "backport: %s",
                     pr.number,
-                    Labels.MUST_BACKPORT_FORCE,
+                    ", ".join(skipped),
                 )
-                branches = [
-                    ReleaseBranch(br, pr, self.repo)
-                    for br in self.release_branches
-                ]  # type: List[ReleaseBranch]
-            else:
-                # For general backports (pr-must-backport / critical bugfix), skip
-                # release branches that are currently rolling out, unless the PR
-                # carries an explicit version-specific label for that branch.
-                rolling_out = set(self._rolling_out_branches())
-                # Build a per-branch version-specific label so we can honour explicit
-                # overrides (e.g. the PR has both pr-must-backport AND
-                # v25.10-must-backport: the 25.10 branch must be included even if it
-                # is marked rolling-out).
-                branch_specific_label = {
-                    branch: f"v{branch.replace('release/', '')}-must-backport"
-                    for branch in self.release_branches
-                }
-                skipped = [
-                    br
-                    for br in self.release_branches
-                    if br in rolling_out and branch_specific_label[br] not in pr_labels
-                ]
-                if skipped:
-                    logging.info(
-                        "PR #%s: skipping rolling-out release branches for general "
-                        "backport: %s",
-                        pr.number,
-                        ", ".join(skipped),
-                    )
-                    for br in skipped:
-                        self._close_prs_for_rolling_out_branch(pr, br)
-                branches = [
-                    ReleaseBranch(br, pr, self.repo)
-                    for br in self.release_branches
-                    if br not in rolling_out or branch_specific_label[br] in pr_labels
-                ]
-                if not branches:
-                    logging.info(
-                        "PR #%s: all release branches are rolling-out, skipping backport",
-                        pr.number,
-                    )
-                    return
+                for br in skipped:
+                    self._close_prs_for_rolling_out_branch(pr, br)
+            branches = [
+                ReleaseBranch(br, pr, self.repo)
+                for br in self.release_branches
+                if br not in rolling_out or branch_specific_label[br] in pr_labels
+            ]  # type: List[ReleaseBranch]
+            if not branches:
+                logging.info(
+                    "PR #%s: all release branches are rolling-out, skipping backport",
+                    pr.number,
+                )
+                return
         else:
             branches = [
                 ReleaseBranch(
