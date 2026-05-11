@@ -64,7 +64,11 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
                 _size, offsets_concrete->getData().back());
 
 #ifndef NDEBUG
-    const auto & offsets_data = getOffsetsData();
+    /// Use the `const` overload of `getOffsetsData` (via `std::as_const(*this)`) so the
+    /// internal `*offsets` deref goes through `WrappedPtr::operator*` const, avoiding
+    /// `assumeMutableRef` and its `chassert(use_count() == 1)`. This constructor is
+    /// reached from `ColumnSparse::create(const ColumnPtr &, ...)` with shared inputs.
+    const auto & offsets_data = std::as_const(*this).getOffsetsData();
     const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<>());
     if (it != offsets_data.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Offsets of ColumnSparse must be strictly sorted");

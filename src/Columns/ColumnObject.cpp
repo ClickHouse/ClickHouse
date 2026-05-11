@@ -2211,16 +2211,23 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
         return;
 
     /// First, check if all dynamic paths have correct sizes, just in case.
-    size_t expected_size = shared_data->size();
-    for (const auto & [path, column] : dynamic_paths)
+    /// `shared_data->size()` and `column->size()` go through `WrappedPtr::operator->` —
+    /// access through the `const` view so the non-const path's `assumeMutableRef`
+    /// `chassert(use_count() == 1)` does not fire for entries referenced from a substream cache.
+    size_t expected_size = std::as_const(shared_data)->size();
+    for (const auto & [path, column] : std::as_const(dynamic_paths))
     {
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
     }
 
     /// Second, iterate over paths in shared data and check if we have any path that is also present in dynamic paths.
-    const auto & shared_data_offsets = getSharedDataOffsets();
-    const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
+    /// Use the `const` overloads (via `std::as_const`) so that the read-only inspection below does not go through
+    /// `WrappedPtr::operator*`/`operator->` of the non-const path, which calls `assumeMutableRef` and
+    /// `chassert(use_count() == 1)`. `shared_data` may be referenced from a substream cache after
+    /// `deserializeBinaryBulkWithMultipleStreams` and have `use_count() > 1` at this point.
+    const auto & shared_data_offsets = std::as_const(*this).getSharedDataOffsets();
+    const auto [shared_data_paths, shared_data_values] = std::as_const(*this).getSharedDataPathsAndValues();
     /// Remember the first row with duplicates if any. We will start repair from this row.
     std::optional<size_t> first_row_with_duplicates = std::nullopt;
     size_t size = shared_data_offsets.size();
@@ -2249,10 +2256,17 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
 
     /// During repair we create new shared data without duplicated dynamic paths
     /// update corresponding dynamic paths with values from shared data.
-    auto new_shared_data = shared_data->cloneResized(*first_row_with_duplicates);
+    /// Use the `const` view of `shared_data` for `cloneResized` so the call does not go through
+    /// `WrappedPtr::operator->` -> `assumeMutableRef` when `shared_data` is referenced from a substream cache.
+    auto new_shared_data = std::as_const(shared_data)->cloneResized(*first_row_with_duplicates);
     const auto [new_shared_data_paths, new_shared_data_values, new_shared_data_offsets] = getSharedDataPathsValuesAndOffsets(*new_shared_data);
     new_shared_data_offsets->reserve(size);
     PathToColumnMap new_dynamic_paths;
+    /// `dynamic_paths` entries may be referenced from a substream cache (`use_count() > 1`)
+    /// after `deserializeBinaryBulkWithMultipleStreams`. Read them through the `const` view
+    /// so that `WrappedPtr::operator->` does not go through `assumeMutableRef` with
+    /// `chassert(use_count() == 1)`.
+    const auto & const_dynamic_paths = std::as_const(dynamic_paths);
     for (size_t i = *first_row_with_duplicates; i < size; ++i)
     {
         size_t shared_data_start = shared_data_offsets[i - 1];
@@ -2260,8 +2274,8 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
         for (size_t j = shared_data_start; j < shared_data_end; ++j)
         {
             auto path = shared_data_paths->getDataAt(j);
-            auto it = dynamic_paths.find(path);
-            if (it == dynamic_paths.end())
+            auto it = const_dynamic_paths.find(path);
+            if (it == const_dynamic_paths.end())
             {
                 new_shared_data_paths->insertFrom(*shared_data_paths, j);
                 new_shared_data_values->insertFrom(*shared_data_values, j);
@@ -2305,7 +2319,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
         for (auto & [path, column] : new_dynamic_paths)
         {
             if (column->size() == i)
-                column->insertFrom(*dynamic_paths.at(path), i);
+                column->insertFrom(*const_dynamic_paths.at(path), i);
         }
     }
 

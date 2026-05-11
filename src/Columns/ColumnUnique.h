@@ -125,7 +125,15 @@ public:
 
     void forEachSubcolumn(IColumn::ColumnCallback callback) const override
     {
-        callback(column_holder);
+        /// When `is_nullable`, `column_holder` is intentionally shared with
+        /// `nested_column_nullable` (see `createNullMask`), so its `use_count` is
+        /// normally `>= 2`. Exposing it here would make `IColumn::mutate`'s deep
+        /// `chassert(sub->use_count() == 1)` fire on an invariant that `ColumnUnique`
+        /// maintains by design. `ColumnUnique` is the sole writer of `column_holder`;
+        /// the shared reference held by `nested_column_nullable` is read-only and
+        /// managed through `updateNullMask`.
+        if (!is_nullable)
+            callback(column_holder);
     }
 
     void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override
@@ -404,7 +412,11 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         }
     }
 
-    auto single_value_column = column_holder->cloneEmpty();
+    /// `column_holder` is shared with `nested_column_nullable` after `createNullMask`
+    /// (for nullable dictionaries), so the non-const `WrappedPtr::operator->` would
+    /// trip `assumeMutableRef`'s `chassert(use_count() == 1)`. `cloneEmpty` is a
+    /// `const` method, so use the const overload via `std::as_const`.
+    auto single_value_column = std::as_const(column_holder)->cloneEmpty();
     single_value_column->insert(x);
     auto single_value_data = single_value_column->getDataAt(0);
 
@@ -422,7 +434,8 @@ bool ColumnUnique<ColumnType>::tryUniqueInsert(const Field & x, size_t & index)
         return true;
     }
 
-    auto single_value_column = column_holder->cloneEmpty();
+    /// See `uniqueInsert` for why `column_holder` is read via the `const` overload.
+    auto single_value_column = std::as_const(column_holder)->cloneEmpty();
     if (!single_value_column->tryInsert(x))
         return false;
 
@@ -838,7 +851,8 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     size_t length,
     size_t max_dictionary_size)
 {
-    auto overflowed_keys = column_holder->cloneEmpty();
+    /// See `uniqueInsert` for why `column_holder` is read via the `const` overload.
+    auto overflowed_keys = std::as_const(column_holder)->cloneEmpty();
     auto * overflowed_keys_ptr = typeid_cast<ColumnType *>(overflowed_keys.get());
     if (!overflowed_keys_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid keys type for ColumnUnique.");
