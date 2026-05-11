@@ -9,13 +9,10 @@
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
-<<<<<<< system-functions
-#include <Parsers/ASTCreateSQLFunctionQuery.h>
-#include <Parsers/ASTExpressionList.h>
-=======
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
->>>>>>> master
+#include <Parsers/ASTExpressionList.h>
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
