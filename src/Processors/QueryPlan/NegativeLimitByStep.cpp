@@ -122,6 +122,7 @@ void NegativeLimitByStep::applyOrder(SortDescription sort_description)
     in_order = sort_description.hasPrefix(columns);
 }
 
+void registerNegativeLimitByStep(QueryPlanStepRegistry & registry);
 void registerNegativeLimitByStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("NegativeLimitBy", NegativeLimitByStep::deserialize);
