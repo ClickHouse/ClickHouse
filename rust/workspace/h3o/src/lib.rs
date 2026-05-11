@@ -838,33 +838,36 @@ pub unsafe extern "C" fn edgeLengthM(edge: H3Index, length: *mut f64) -> H3Error
 
 // ---------------------------------------------------------------------------
 // Distance functions (great circle / haversine)
+//
+// Computed directly from raw radians without routing through `h3o::LatLng`,
+// so out-of-range coordinates still produce a mathematically valid haversine
+// distance instead of collapsing to a misleading 0.0. Matches the formula
+// used by `h3o::LatLng::distance_rads` and the original H3 C library.
 // ---------------------------------------------------------------------------
+
+fn haversine_rads(a: &LatLng, b: &LatLng) -> f64 {
+    let sin_lat = ((b.lat - a.lat) * 0.5).sin();
+    let sin_lng = ((b.lng - a.lng) * 0.5).sin();
+    let h = sin_lat * sin_lat + a.lat.cos() * b.lat.cos() * sin_lng * sin_lng;
+    2.0 * h.sqrt().atan2((1.0 - h).sqrt())
+}
 
 /// double greatCircleDistanceRads(const LatLng *a, const LatLng *b)
 #[no_mangle]
 pub unsafe extern "C" fn greatCircleDistanceRads(a: *const LatLng, b: *const LatLng) -> f64 {
-    let (Some(la), Some(lb)) = (h3o_latlng(&*a), h3o_latlng(&*b)) else {
-        return 0.0;
-    };
-    la.distance_rads(lb)
+    haversine_rads(&*a, &*b)
 }
 
 /// double greatCircleDistanceKm(const LatLng *a, const LatLng *b)
 #[no_mangle]
 pub unsafe extern "C" fn greatCircleDistanceKm(a: *const LatLng, b: *const LatLng) -> f64 {
-    let (Some(la), Some(lb)) = (h3o_latlng(&*a), h3o_latlng(&*b)) else {
-        return 0.0;
-    };
-    la.distance_km(lb)
+    haversine_rads(&*a, &*b) * h3o::EARTH_RADIUS_KM
 }
 
 /// double greatCircleDistanceM(const LatLng *a, const LatLng *b)
 #[no_mangle]
 pub unsafe extern "C" fn greatCircleDistanceM(a: *const LatLng, b: *const LatLng) -> f64 {
-    let (Some(la), Some(lb)) = (h3o_latlng(&*a), h3o_latlng(&*b)) else {
-        return 0.0;
-    };
-    la.distance_m(lb)
+    haversine_rads(&*a, &*b) * h3o::EARTH_RADIUS_KM * 1000.0
 }
 
 // ---------------------------------------------------------------------------
