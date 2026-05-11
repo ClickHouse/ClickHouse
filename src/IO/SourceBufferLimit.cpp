@@ -54,61 +54,62 @@ SourceBufferLimit::SourceBufferLimit(size_t max_slots_)
 {
 }
 
+void SourceBufferLimit::setCapacity(size_t new_max_slots)
+{
+    std::lock_guard lock(mutex);
+    LOG_DEBUG(log, "setCapacity: {} -> {}", max_slots, new_max_slots);
+    max_slots = new_max_slots;
+}
+
+size_t SourceBufferLimit::getCapacity() const
+{
+    std::lock_guard lock(mutex);
+    return max_slots;
+}
+
 std::optional<SourceBufferSlot> SourceBufferLimit::tryAcquire(const String & object_path)
 {
-    /// Optimistic try-increment.
-    size_t current = used_slots.load(std::memory_order_relaxed);
-    while (true)
+    std::lock_guard lock(mutex);
+
+    if (registry.size() >= max_slots)
     {
-        if (current >= max_slots)
-        {
-            LOG_TRACE(log, "tryAcquire: at capacity ({}/{}), falling back to stateless read for {}",
-                current, max_slots, object_path);
-            return std::nullopt;
-        }
-        if (used_slots.compare_exchange_weak(current, current + 1, std::memory_order_acq_rel))
-            break;
+        LOG_TRACE(log, "tryAcquire: at capacity ({}/{}), falling back to stateless read for {}",
+            registry.size(), max_slots, object_path);
+        return std::nullopt;
     }
 
-    size_t id;
-    {
-        std::lock_guard lock(registry_mutex);
-        id = next_slot_id++;
-        active_registry[id] = ActiveBufferInfo{
-            .object_path = object_path,
-            .position = 0,
-            .acquired_time = std::chrono::steady_clock::now()};
-    }
+    size_t id = next_id++;
+    registry[id] = ActiveBufferInfo{
+        .object_path = object_path,
+        .position = 0,
+        .acquired_time = std::chrono::steady_clock::now()};
 
     CurrentMetrics::add(CurrentMetrics::LiveSourceBuffers);
-    LOG_TRACE(log, "tryAcquire: got slot {} for {} ({}/{})", id, object_path, used_slots.load(), max_slots);
+    LOG_TRACE(log, "tryAcquire: got slot {} for {} ({}/{})", id, object_path, registry.size(), max_slots);
     return SourceBufferSlot(this, id);
 }
 
 void SourceBufferLimit::release(size_t slot_id)
 {
-    {
-        std::lock_guard lock(registry_mutex);
-        active_registry.erase(slot_id);
-    }
-    used_slots.fetch_sub(1, std::memory_order_acq_rel);
+    std::lock_guard lock(mutex);
+    registry.erase(slot_id);
     CurrentMetrics::sub(CurrentMetrics::LiveSourceBuffers);
-    LOG_TRACE(log, "release: slot {} freed ({}/{})", slot_id, used_slots.load(), max_slots);
+    LOG_TRACE(log, "release: slot {} freed ({}/{})", slot_id, registry.size(), max_slots);
 }
 
 void SourceBufferLimit::updatePosition(size_t slot_id, size_t new_position)
 {
-    std::lock_guard lock(registry_mutex);
-    if (auto it = active_registry.find(slot_id); it != active_registry.end())
+    std::lock_guard lock(mutex);
+    if (auto it = registry.find(slot_id); it != registry.end())
         it->second.position = new_position;
 }
 
 std::vector<ActiveBufferInfo> SourceBufferLimit::getActive() const
 {
-    std::lock_guard lock(registry_mutex);
+    std::lock_guard lock(mutex);
     std::vector<ActiveBufferInfo> result;
-    result.reserve(active_registry.size());
-    for (const auto & [_, info] : active_registry)
+    result.reserve(registry.size());
+    for (const auto & [_, info] : registry)
         result.push_back(info);
     return result;
 }

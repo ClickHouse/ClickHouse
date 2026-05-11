@@ -3,9 +3,9 @@
 #include <base/types.h>
 #include <Common/Logger.h>
 
-#include <atomic>
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -54,11 +54,14 @@ public:
     /// Try to acquire a slot. Returns nullopt if at capacity.
     std::optional<SourceBufferSlot> tryAcquire(const String & object_path);
 
+    /// Update the limit at runtime (e.g. on config reload).
+    /// Existing slots beyond the new limit are not forcibly closed.
+    void setCapacity(size_t new_max_slots);
+
     /// Observability: snapshot of all active slots.
     std::vector<ActiveBufferInfo> getActive() const;
 
-    size_t available() const { return max_slots - used_slots.load(std::memory_order_relaxed); }
-    size_t capacity() const { return max_slots; }
+    size_t getCapacity() const;
 
 private:
     friend class SourceBufferSlot;
@@ -66,11 +69,10 @@ private:
     void updatePosition(size_t slot_id, size_t new_position);
 
     size_t max_slots;
-    std::atomic<size_t> used_slots{0};
 
-    mutable std::mutex registry_mutex;
-    size_t next_slot_id = 0;
-    std::unordered_map<size_t, ActiveBufferInfo> active_registry;
+    mutable std::mutex mutex;
+    size_t next_id = 0;
+    std::unordered_map<size_t, ActiveBufferInfo> registry;
 
     LoggerPtr log = getLogger("SourceBufferLimit");
 };
