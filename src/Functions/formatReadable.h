@@ -26,6 +26,8 @@ namespace ErrorCodes
 class FunctionFormatReadable : public IFunction
 {
 public:
+    static constexpr UInt8 DEFAULT_PRECISION = 2;
+
     using FormatFunc = void (*)(double, WriteBuffer &, int);
 
     FunctionFormatReadable(const char * name_, FormatFunc format_func_)
@@ -76,7 +78,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        UInt8 precision = 2;
+        UInt8 precision = DEFAULT_PRECISION;
+        /// Optional precision argument is present
         if (arguments.size() == 2)
         {
             const auto * col_precision = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get());
