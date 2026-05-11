@@ -9,6 +9,8 @@
 
 #include <functional>
 
+#include <list>
+
 namespace DB
 {
 
@@ -17,7 +19,7 @@ class OutputPort;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
 
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;

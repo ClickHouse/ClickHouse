@@ -508,3 +508,14 @@ SELECT sum(number) FROM (SELECT number FROM test_table LIMIT 100);
 │        5050 │
 └─────────────┘
 ```
+
+## Trailing Comma {#trailing-comma}
+
+A comma is allowed after the last element in the `WITH` clause:
+
+```sql
+WITH
+    (SELECT sum(number) FROM numbers(10)) AS total,
+    total * 2 AS doubled,
+SELECT total, doubled;
+```

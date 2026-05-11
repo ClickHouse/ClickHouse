@@ -1,9 +1,11 @@
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -28,8 +30,9 @@ class FunctionInitializeAggregation : public IFunction, private WithContext
 {
 public:
     static constexpr auto name = "initializeAggregation";
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionInitializeAggregation>(context_); }
-    explicit FunctionInitializeAggregation(ContextPtr context_) : WithContext(context_) {}
+
+    FunctionInitializeAggregation(ContextPtr context_, AggregateFunctionPtr aggregate_function_)
+        : WithContext(context_), aggregate_function(std::move(aggregate_function_)) {}
 
     String getName() const override { return name; }
 
@@ -42,38 +45,140 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    {
+        return aggregate_function->getResultType();
+    }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        const IAggregateFunction & agg_func = *aggregate_function;
+        std::unique_ptr<Arena> arena = std::make_unique<Arena>();
+
+        const size_t num_arguments_columns = arguments.size() - 1;
+
+        std::vector<ColumnPtr> materialized_columns(num_arguments_columns);
+        std::vector<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
+
+        for (size_t i = 0; i < num_arguments_columns; ++i)
+        {
+            const IColumn * col = arguments[i + 1].column.get();
+            materialized_columns.emplace_back(col->convertToFullColumnIfConst());
+            aggregate_arguments_vec[i] = &(*materialized_columns.back());
+        }
+
+        const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();
+
+        MutableColumnPtr result_holder = result_type->createColumn();
+        IColumn & res_col = *result_holder;
+
+        PODArray<AggregateDataPtr> places(input_rows_count);
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            places[i] = arena->alignedAlloc(agg_func.sizeOfData(), agg_func.alignOfData());
+            try
+            {
+                agg_func.create(places[i]);
+            }
+            catch (...)
+            {
+                for (size_t j = 0; j < i; ++j)
+                    agg_func.destroy(places[j]);
+                throw;
+            }
+        }
+
+        SCOPE_EXIT_MEMORY_SAFE({
+            for (size_t i = 0; i < input_rows_count; ++i)
+                agg_func.destroy(places[i]);
+        });
+
+        {
+            const auto * that = &agg_func;
+            /// Unnest consecutive trailing -State combinators
+            while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
+                that = func->getNestedFunction().get();
+            that->addBatch(0, input_rows_count, places.data(), 0, aggregate_arguments, arena.get());
+        }
+
+        if (agg_func.isState())
+        {
+            /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
+            /// correctly if result contains AggregateFunction's states
+            for (size_t i = 0; i < input_rows_count; ++i)
+                agg_func.insertMergeResultInto(places[i], res_col, arena.get());
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+                agg_func.insertResultInto(places[i], res_col, arena.get());
+        }
+
+        return result_holder;
+    }
 
 private:
-    /// TODO Rewrite with FunctionBuilder.
-    mutable AggregateFunctionPtr aggregate_function;
+    AggregateFunctionPtr aggregate_function;
 };
 
 
-DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+class FunctionInitializeAggregationOverloadResolver : public IFunctionOverloadResolver, private WithContext
 {
-    FunctionArgumentDescriptors mandatory_args{
-        {"aggregate_function_name", &isString, &isColumnConst, "const String"},
-        {"argument", nullptr, nullptr, "Any"}
-    };
-    FunctionArgumentDescriptor variadic_args{"argument", nullptr, nullptr, "Any"};
-    validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
+public:
+    static constexpr auto name = "initializeAggregation";
+    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<FunctionInitializeAggregationOverloadResolver>(context_); }
+    explicit FunctionInitializeAggregationOverloadResolver(ContextPtr context_) : WithContext(context_) {}
 
-    const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
-    if (!aggregate_function_name_column)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be constant string: "
-            "name of aggregate function.", getName());
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypes argument_types(arguments.size() - 1);
-    for (size_t i = 1, size = arguments.size(); i < size; ++i)
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        argument_types[i - 1] = arguments[i].type;
+        if (arguments.size() < 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires at least 2 arguments", getName());
+
+        auto aggregate_function = resolveAggregateFunction(arguments);
+        return aggregate_function->getResultType();
     }
 
-    if (!aggregate_function)
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
+        /// buildImpl receives original arguments which may still have LowCardinality wrappers.
+        /// Strip them so that the aggregate function is resolved with the same types that
+        /// executeImpl will see (the framework strips LC before calling executeImpl).
+        /// useDefaultImplementationForNulls() is false, so Nullable stays as-is — matching
+        /// what both getReturnTypeImpl and executeImpl see.
+        ColumnsWithTypeAndName args = arguments;
+        for (auto & arg : args)
+        {
+            arg.type = recursiveRemoveLowCardinality(arg.type);
+            arg.column = recursiveRemoveLowCardinality(arg.column);
+        }
+        auto aggregate_function = resolveAggregateFunction(args);
+        auto function = std::make_shared<FunctionInitializeAggregation>(getContext(), std::move(aggregate_function));
+
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+
+        return std::make_unique<FunctionToFunctionBaseAdaptor>(function, data_types, return_type);
+    }
+
+private:
+    AggregateFunctionPtr resolveAggregateFunction(const ColumnsWithTypeAndName & arguments) const
+    {
+        const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+        if (!aggregate_function_name_column)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be constant string: "
+                "name of aggregate function.", getName());
+
+        DataTypes argument_types(arguments.size() - 1);
+        for (size_t i = 1, size = arguments.size(); i < size; ++i)
+            argument_types[i - 1] = arguments[i].type;
+
         String aggregate_function_name_with_params = aggregate_function_name_column->getValue<String>();
 
         if (aggregate_function_name_with_params.empty())
@@ -86,80 +191,9 @@ DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTy
 
         auto action = NullsAction::EMPTY; /// It is already embedded in the function name itself
         AggregateFunctionProperties properties;
-        aggregate_function
-            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, params_row, properties);
+        return AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, params_row, properties);
     }
-
-    return aggregate_function->getResultType();
-}
-
-
-ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-{
-    const IAggregateFunction & agg_func = *aggregate_function;
-    std::unique_ptr<Arena> arena = std::make_unique<Arena>();
-
-    const size_t num_arguments_columns = arguments.size() - 1;
-
-    std::vector<ColumnPtr> materialized_columns(num_arguments_columns);
-    std::vector<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
-
-    for (size_t i = 0; i < num_arguments_columns; ++i)
-    {
-        const IColumn * col = arguments[i + 1].column.get();
-        materialized_columns.emplace_back(col->convertToFullColumnIfConst());
-        aggregate_arguments_vec[i] = &(*materialized_columns.back());
-    }
-
-    const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();
-
-    MutableColumnPtr result_holder = result_type->createColumn();
-    IColumn & res_col = *result_holder;
-
-    PODArray<AggregateDataPtr> places(input_rows_count);
-    for (size_t i = 0; i < input_rows_count; ++i)
-    {
-        places[i] = arena->alignedAlloc(agg_func.sizeOfData(), agg_func.alignOfData());
-        try
-        {
-            agg_func.create(places[i]);
-        }
-        catch (...)
-        {
-            for (size_t j = 0; j < i; ++j)
-                agg_func.destroy(places[j]);
-            throw;
-        }
-    }
-
-    SCOPE_EXIT_MEMORY_SAFE({
-        for (size_t i = 0; i < input_rows_count; ++i)
-            agg_func.destroy(places[i]);
-    });
-
-    {
-        const auto * that = &agg_func;
-        /// Unnest consecutive trailing -State combinators
-        while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
-            that = func->getNestedFunction().get();
-        that->addBatch(0, input_rows_count, places.data(), 0, aggregate_arguments, arena.get());
-    }
-
-    if (agg_func.isState())
-    {
-        /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
-        /// correctly if result contains AggregateFunction's states
-        for (size_t i = 0; i < input_rows_count; ++i)
-            agg_func.insertMergeResultInto(places[i], res_col, arena.get());
-    }
-    else
-    {
-        for (size_t i = 0; i < input_rows_count; ++i)
-            agg_func.insertResultInto(places[i], res_col, arena.get());
-    }
-
-    return result_holder;
-}
+};
 
 }
 
@@ -208,7 +242,7 @@ SELECT finalizeAggregation(state), toTypeName(state) FROM (SELECT initializeAggr
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionInitializeAggregation>(documentation);
+    factory.registerFunction<FunctionInitializeAggregationOverloadResolver>(documentation);
 }
 
 }

@@ -22,6 +22,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/SystemLog.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Access/AccessControl.h>
@@ -39,7 +40,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
@@ -1175,6 +1176,18 @@ void LocalServer::processConfig()
         DatabaseCatalog::instance().startupBackgroundTasks();
     }
 
+    /// Initialize system logs only when explicitly configured (e.g. `query_log`, `processors_profile_log`).
+    /// Default `clickhouse-local` invocations have no system log sections in the config, and skipping
+    /// initialization avoids a TSan-visible race between background pool task logging and `Context`
+    /// teardown that would otherwise be triggered for short-lived processes.
+    /// Also skip in `--only-system-tables` mode, which is intended for reading existing persisted
+    /// system tables; spinning up the loggers there is unnecessary and can race with shutdown.
+    /// This must happen after the system database is attached.
+    if (!getClientConfiguration().has("no-system-tables")
+        && !getClientConfiguration().has("only-system-tables")
+        && hasAnySystemLogConfigured(config()))
+        global_context->initializeSystemLogs();
+
     std::string default_database = getClientConfiguration().getString("database", server_default_database);
     if (default_database.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
@@ -1190,30 +1203,32 @@ void LocalServer::processConfig()
 }
 
 
-[[ maybe_unused ]] static std::string getHelpHeader()
+String LocalServer::getHelpHeader() const
 {
-    return
-        "usage: clickhouse-local [initial table definition] [--query <query>]\n"
-
-        "clickhouse-local allows to execute SQL queries on your data files via single command line call."
-        " To do so, initially you need to define your data source and its format."
-        " After you can execute your SQL queries in usual manner.\n"
-
-        "There are two ways to define initial table keeping your data."
-        " Either just in first query like this:\n"
+    return fmt::format(
+        "Usage: {0} [initial table definition] [--query <query>]\n\n"
+        "{0} allows to execute SQL queries on your data files\n"
+        "via single command line call.\n"
+        "To do so, initially you need to define your data source and its format.\n"
+        "After that, you can execute your SQL queries as usual.\n\n"
+        "There are two ways to define initial table keeping your data.\n"
+        "Either just in the first query like this:\n"
         "    CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);\n"
-        "Either through corresponding command line parameters --table --structure --input-format and --file.";
+        "Either through corresponding command line parameters\n"
+        "--table --structure --input-format and --file.",
+        app_name);
 }
 
 
-[[ maybe_unused ]] static std::string getHelpFooter()
+String LocalServer::getHelpFooter() const
 {
-    return
+    return fmt::format(
         "Example printing memory used by each Unix user:\n"
-        "ps aux | tail -n +2 | awk '{ printf(\"%s\\t%s\\n\", $1, $4) }' | "
-        "clickhouse-local -S \"user String, mem Float64\" -q"
-            " \"SELECT user, round(sum(mem), 2) as mem_total FROM table GROUP BY user ORDER"
-            " BY mem_total DESC FORMAT PrettyCompact\"";
+        "    ps aux | tail -n +2 | awk '{{ printf(\"%s\\t%s\\n\", $1, $4) }}' | \\\n"
+        "        {} -S \"user String, mem Float64\" -q \\\n"
+        "        \"SELECT user, round(sum(mem), 2) as mem_total FROM table \\\n"
+        "         GROUP BY user ORDER BY mem_total DESC FORMAT PrettyCompact\"",
+        app_name);
 }
 
 
