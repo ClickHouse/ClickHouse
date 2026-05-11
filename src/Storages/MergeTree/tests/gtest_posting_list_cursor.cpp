@@ -311,6 +311,44 @@ TEST(PostingListCursorTest, LargeEmbeddedCursor)
     EXPECT_EQ(drained, docs);
 }
 
+/// Embedded posting lists used to be capped at MAX_EMBEDDED_POSTING_LIST_ROWS (6).
+/// Rare-token roaring bitmaps materialized through `makeLazyCursorHandle` can hold
+/// arbitrary cardinalities; the cursor must handle lists larger than the legacy
+/// inline buffer (and larger than BLOCK_SIZE) without truncation.
+TEST(PostingListCursorTest, OversizedEmbeddedCursorExceedsBlockSize)
+{
+    constexpr uint32_t count = 500; // > MAX_EMBEDDED_POSTING_LIST_ROWS and > BLOCK_SIZE
+    auto docs = generateRange(1, count, 3);
+    auto info = makeEmbeddedInfo(docs);
+    auto cursor = makeEmbeddedCursor(info);
+
+    EXPECT_EQ(cursor->cardinality(), count);
+    auto drained = drainCursor(cursor);
+    EXPECT_EQ(drained, docs);
+}
+
+TEST(PostingListCursorTest, OversizedEmbeddedCursorAdvance)
+{
+    auto docs = generateRange(0, 300, 2); // 0, 2, 4, ..., 598
+    auto info = makeEmbeddedInfo(docs);
+    auto cursor = makeEmbeddedCursor(info);
+
+    /// Advance into the middle of an oversized embedded list and drain.
+    cursor->advance(200);
+    ASSERT_TRUE(cursor->valid());
+    EXPECT_EQ(cursor->value(), 200U);
+
+    std::vector<uint32_t> remaining;
+    while (cursor->valid())
+    {
+        remaining.push_back(cursor->value());
+        cursor->next();
+    }
+
+    std::vector<uint32_t> expected(docs.begin() + 100, docs.end());
+    EXPECT_EQ(remaining, expected);
+}
+
 TEST(PostingListCursorTest, SparseEmbeddedCursor)
 {
     auto docs = generateRange(100, 5, 100); // 100,200,300,400,500

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/inlined_vector.h>
 
 #include <base/defines.h>
 #include <base/types.h>
@@ -17,6 +18,7 @@ struct TokenPostingsInfo;
 class IColumn;
 class MergeTreeReaderStream;
 
+/// Inline capacity for the embedded posting list buffer.
 constexpr size_t MAX_EMBEDDED_POSTING_LIST_ROWS = 6;
 
 /// Immutable description of a posting list.
@@ -41,8 +43,9 @@ private:
     bool is_embedded = false;
 
     /// Pre-decoded embedded postings reused by ephemeral cursors.
-    alignas(16) uint32_t embedded_values[MAX_EMBEDDED_POSTING_LIST_ROWS]{};
-    size_t embedded_count = 0;
+    /// Inline buffer for small embedded posting lists; spills to the heap when the
+    /// materialized list (e.g. a rare-token roaring bitmap) exceeds the inline capacity.
+    absl::InlinedVector<uint32_t, MAX_EMBEDDED_POSTING_LIST_ROWS> embedded_values;
 
     double density_val = 0;
 };
@@ -95,7 +98,7 @@ public:
     bool valid() const { return is_valid; }
 
     /// Current doc_id. Undefined when `valid` returns false.
-    uint32_t value() const { return decoded_values[index]; }
+    uint32_t value() const { return decoded_values_ptr[index]; }
 
     /// Advance to the first doc_id >= target.
     void advance(uint32_t target);
@@ -128,10 +131,15 @@ private:
     PostingListCursorHandlePtr owned_handle;
     const PostingListCursorHandle * handle = nullptr;
 
-    /// Decoded doc_ids of the current packed block (compressed postings) or all doc_ids (embedded postings).
+    /// Decoded doc_ids of the current packed block. Used as a scratch buffer when
+    /// iterating compressed posting lists; `decoded_values_ptr` is then redirected to
+    /// point at this buffer. For embedded posting lists, `decoded_values_ptr` instead
+    /// points directly at the handle's pre-decoded storage, avoiding a copy and
+    /// supporting embedded lists larger than BLOCK_SIZE.
     alignas(16) uint32_t decoded_values[BLOCK_SIZE]{};
-    size_t decoded_count = 0;    /// Number of valid entries in decoded_values.
-    size_t index = 0;            /// Read position within decoded_values.
+    const uint32_t * decoded_values_ptr = decoded_values;
+    size_t decoded_count = 0;    /// Number of valid entries reachable via `decoded_values_ptr`.
+    size_t index = 0;            /// Read position within `decoded_values_ptr`.
 
     /// Per-segment packed block layout (recomputed in `prepareSegment`).
     size_t block_count = 0;              /// Total packed blocks, including the tail block.
