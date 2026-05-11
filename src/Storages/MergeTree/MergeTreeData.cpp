@@ -2593,17 +2593,10 @@ void MergeTreeData::startStatisticsCache()
     }
 }
 
-void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
-try
+size_t MergeTreeData::loadNewlyAppearedParts()
 {
-    for (auto & disk : getStoragePolicy()->getDisks())
-        disk->refresh(interval_milliseconds);
-
     Stopwatch watch;
     LOG_DEBUG(log, "Refreshing data parts");
-
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    const auto settings = getSettings();
 
     auto disks = getStoragePolicy()->getDisks();
     PartLoadingTree::PartLoadingInfos parts_to_load;
@@ -2612,8 +2605,6 @@ try
     {
         if (disk_ptr->isBroken())
             continue;
-        if (!disk_ptr->isReadOnly())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::refreshDataParts should only be called if all disks are readonly");
 
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
@@ -2687,6 +2678,27 @@ try
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, parts_to_add.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
 
+    return parts_to_add.size();
+}
+
+void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
+try
+{
+    for (auto & disk : getStoragePolicy()->getDisks())
+        disk->refresh(interval_milliseconds);
+
+    /// The periodic refresh task is only scheduled when every disk is read-only.
+    /// Verify that invariant — the synchronous `loadNewlyAppearedParts` is the
+    /// entry point for writable shared-storage scenarios such as `leader_election`.
+    for (const auto & disk_ptr : getStoragePolicy()->getDisks())
+    {
+        if (disk_ptr->isBroken())
+            continue;
+        if (!disk_ptr->isReadOnly())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::refreshDataParts should only be called if all disks are readonly");
+    }
+
+    loadNewlyAppearedParts();
     refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 catch (...)

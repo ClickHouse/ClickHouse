@@ -108,6 +108,12 @@ public:
     void drop() override;
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
+    /// `MergeTreeData::rename` moves the data directory on every disk in the storage policy.
+    /// Under `leader_election`, the data directory is shared between nodes and the lease
+    /// path is captured at startup — neither the followers' lease path nor their in-memory
+    /// `relative_data_path` would be updated, so we refuse the rename rather than diverge.
+    void rename(const String & new_table_path, const StorageID & new_table_id) override;
+
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     Pipe alterPartition(
@@ -189,6 +195,13 @@ private:
     const bool support_transaction;
 
     std::unique_ptr<MergeTreeLeaderElection> leader_election_ptr;
+
+    /// Held while this instance is NOT the leader under `leader_election`. The cancellations
+    /// cause `MergeTreeDataMergerMutator::merges_blocker` and `MergeTreePartsMover::moves_blocker`
+    /// to report active — any in-flight merge or move task aborts at the next check, and no
+    /// new tasks can be scheduled. Released when leadership is acquired.
+    ActionLock follower_merges_cancellation;
+    ActionLock follower_moves_cancellation;
 
     void assertCanCommitTransaction() const override;
 

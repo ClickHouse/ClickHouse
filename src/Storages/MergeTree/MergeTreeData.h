@@ -641,6 +641,13 @@ public:
     /// This method allows read-only replicas of tables on a shared storage.
     void refreshDataParts(UInt64 interval_milliseconds);
 
+    /// Scan shared storage for new parts and add them to the in-memory set.
+    /// Unlike `refreshDataParts`, does not reschedule a periodic task and does not require
+    /// all disks to be read-only. Used by `leader_election` to sync a new leader's view
+    /// of parts written by the previous leader before resuming writes.
+    /// Returns the number of newly loaded parts.
+    size_t loadNewlyAppearedParts();
+
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
 

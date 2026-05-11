@@ -292,7 +292,37 @@ void StorageMergeTree::startup()
             {
                 if (became_leader)
                 {
-                    LOG_INFO(log, "Became leader, starting background operations");
+                    LOG_INFO(log, "Became leader, syncing shared storage and starting background operations");
+
+                    /// Before accepting any writes, refresh our view of parts on shared storage —
+                    /// the previous leader may have committed parts that this node has never
+                    /// loaded — and advance the local block-number counter past everything we
+                    /// just discovered. Without this, two consecutive leaders would allocate
+                    /// overlapping block numbers, producing intersecting parts on shared storage.
+                    try
+                    {
+                        size_t newly_loaded = loadNewlyAppearedParts();
+                        Int64 max_block_number = getMaxBlockNumber();
+                        UInt64 next_block = std::max<UInt64>(increment.value.load(), static_cast<UInt64>(std::max<Int64>(0, max_block_number)));
+                        increment.set(next_block);
+                        LOG_INFO(log, "Synced from shared storage: loaded {} new parts, advanced block-number counter to {}",
+                            newly_loaded, increment.value.load());
+                    }
+                    catch (...)
+                    {
+                        /// If we cannot read shared storage, do not enable writes — leadership
+                        /// without a fresh view of parts is exactly the split-brain case we are
+                        /// guarding against. The election task will retry on the next tick.
+                        tryLogCurrentException(log, "Failed to sync parts from shared storage on leadership acquisition, refusing to enable writes");
+                        throw;
+                    }
+
+                    /// Cancel pre-existing follower-state cancellations on merges and moves so the
+                    /// background assignees can run. The cancellations are re-acquired below on
+                    /// leadership loss.
+                    follower_merges_cancellation = {};
+                    follower_moves_cancellation = {};
+
                     clearEmptyParts();
                     clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
                     cleanup_thread.start();
@@ -306,6 +336,15 @@ void StorageMergeTree::startup()
                     /// outdated-parts loader keep running on followers because the data
                     /// lives on shared object storage and must remain readable.
                     LOG_INFO(log, "Lost leadership, stopping background write operations");
+
+                    /// Actively cancel in-flight merges and moves rather than only waiting for
+                    /// them to finish. `BackgroundJobsAssignee::finish` drains active tasks,
+                    /// but a long-running merge can extend the dual-writer window beyond the
+                    /// session timeout — the action blockers cause active tasks to bail out
+                    /// at the next cancellation check (e.g. `swapClonedPart`, merge-task loop).
+                    follower_merges_cancellation = merger_mutator.merges_blocker.cancel();
+                    follower_moves_cancellation = parts_mover.moves_blocker.cancel();
+
                     background_operations_assignee.finish();
                     background_moves_assignee.finish();
                     cleanup_thread.stop();
@@ -515,6 +554,22 @@ void StorageMergeTree::drop()
         dropAllData();
 }
 
+void StorageMergeTree::rename(const String & new_table_path, const StorageID & new_table_id)
+{
+    if (leader_election_ptr)
+    {
+        /// The data directory lives on shared object storage and the lease path is fixed
+        /// at startup. Renaming it on the leader would orphan the followers' lease path
+        /// and their cached `relative_data_path` — there is no protocol to broadcast the
+        /// new path. Reject rather than silently diverge. Recreate the table to rename.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "RENAME TABLE is not supported under `leader_election` because the data path "
+            "is shared between nodes and the lease path is fixed at startup. Followers "
+            "would continue to track the old path. Drop and recreate the table instead.");
+    }
+    MergeTreeData::rename(new_table_path, new_table_id);
+}
+
 void StorageMergeTree::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
@@ -528,13 +583,28 @@ void StorageMergeTree::alter(
     });
     if (!only_setting_changes)
         assertNotReadonly();
-    else if (leader_election_ptr)
+
+    if (leader_election_ptr)
     {
-        /// Under `leader_election`, settings live in each replica's local metadata, so
-        /// allowing setting-only ALTERs on followers would let the two replicas drift —
-        /// after failover the new leader could run with different settings than the old one.
-        /// `table_readonly` toggling is moot here because leadership already enforces read-only
-        /// mode on followers, so we require leader status for all setting changes too.
+        /// Under `leader_election`, table metadata (columns, indices, projections, TTLs,
+        /// settings) is local to each replica and never replicated across the cluster.
+        /// Allowing a metadata-mutating ALTER on the leader would silently desync the
+        /// followers' on-disk schemas, so after failover the new leader would interpret
+        /// shared parts using a stale schema. The only operations safe to apply locally
+        /// are pure-text comment changes; everything else is rejected.
+        bool only_comment_changes = std::all_of(commands.begin(), commands.end(), [](const auto & c)
+        {
+            return c.type == AlterCommand::COMMENT_TABLE || c.type == AlterCommand::COMMENT_COLUMN;
+        });
+        if (!only_comment_changes)
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "ALTER is not supported under `leader_election` because table metadata "
+                "is not replicated across nodes — applying it on the leader would leave "
+                "followers with a stale schema, so after failover the new leader would "
+                "interpret shared parts incorrectly. Recreate the table on all nodes to "
+                "change schema or settings. Only COMMENT TABLE / COMMENT COLUMN are allowed.");
+        }
         leader_election_ptr->assertIsLeader();
     }
 
