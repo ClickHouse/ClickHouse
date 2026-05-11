@@ -1,15 +1,15 @@
 import dataclasses
 import re
 import traceback
-from typing import List
+from typing import List, Optional
 
 from praktika.result import Result
 
 OK_SIGN = "[ OK "
 FAIL_SIGN = "[ FAIL "
-TIMEOUT_SIGN = "[ Timeout! "
 UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
+NOT_FAILED_SIGN = "[ NOT_FAILED "
 HUNG_SIGN = "Found hung queries in processlist"
 SERVER_DIED_SIGN = "Server died, terminating all processes"
 SERVER_DIED_SIGN2 = "Server does not respond to health check"
@@ -19,12 +19,15 @@ SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
 RETRIES_SIGN = "Some tests were restarted"
 
-# Regex pattern to match test result lines
-# Format: "2025-10-21 04:08:13 test_name: [ STATUS ] time sec."
-# This ensures we only match actual test result lines, not patterns embedded in error messages
-# Note: Test names can contain letters, digits, underscores, hyphens, and dots
+# Regex pattern to match test result lines.
+# The shape `name: [ STATUS ] N.NN sec.` is specific enough that we don't pin
+# the leading timestamp - the bounded `^.{0,32}?` lets through any expected
+# framing (raw=0, `ts`=20, `[YYYY-MM-DD HH:MM:SS] `=22) but rules out matches
+# embedded deeper in an error/exception message (see PR #88825). Test names
+# can contain letters, digits, underscores, hyphens, and dots.
 TEST_RESULT_PATTERN = re.compile(
-    r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|UNKNOWN|Timeout!) \])\s+([\d.]+) sec\."
+    r"^.{0,32}?"
+    r"([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|UNKNOWN|NOT_FAILED) \])\s+([\d.]+) sec\."
 )
 
 
@@ -94,15 +97,17 @@ class FTResultsProcessor:
                         continue
 
                     total += 1
-                    if TIMEOUT_SIGN in status_marker:
-                        failed += 1
-                        test_results.append((test_name, "Timeout", test_time, []))
-                    elif FAIL_SIGN in status_marker:
+                    if FAIL_SIGN in status_marker:
                         failed += 1
                         test_results.append((test_name, "FAIL", test_time, []))
                     elif UNKNOWN_SIGN in status_marker:
                         unknown += 1
                         test_results.append((test_name, "FAIL", test_time, []))
+                    elif NOT_FAILED_SIGN in status_marker:
+                        # Test was on a blacklist (expected to fail) but passed -
+                        # the blacklist needs updating. Surface as a failure.
+                        failed += 1
+                        test_results.append((test_name, "NOT_FAILED", test_time, []))
                     elif SKIPPED_SIGN in status_marker:
                         skipped += 1
                         test_results.append((test_name, "SKIPPED", test_time, []))
@@ -112,7 +117,7 @@ class FTResultsProcessor:
                     test_end = False
                 elif (
                     len(test_results) > 0
-                    and test_results[-1][1] in ("FAIL", "SKIPPED")
+                    and test_results[-1][1] in ("FAIL", "SKIPPED", "NOT_FAILED")
                     and not test_end
                 ):
                     test_results[-1][3].append(original_line)
@@ -169,7 +174,7 @@ class FTResultsProcessor:
 
         return s
 
-    def run(self, task_name="Tests"):
+    def run(self, task_name="Tests", runner_exit_code: Optional[int] = None):
         state = Result.Status.OK
         s = self._process_test_output()
         test_results = s.test_results
@@ -207,6 +212,22 @@ class FTResultsProcessor:
             )
         else:
             pass
+
+        # The runner's exit code is the authoritative signal: if `clickhouse-test`
+        # exited non-zero, the job must not report OK even when log parsing finds
+        # nothing to blame. The synthetic leaf is added only when the parser
+        # found nothing - otherwise the real failure already explains the result
+        # and a duplicate entry is just noise.
+        if runner_exit_code is not None and runner_exit_code != 0:
+            if state == Result.Status.OK:
+                state = Result.Status.FAIL
+                test_results.append(
+                    Result(
+                        name="clickhouse-test",
+                        status=Result.Status.FAIL,
+                        info=f"clickhouse-test exited with code {runner_exit_code}",
+                    )
+                )
 
         if not info:
             info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
