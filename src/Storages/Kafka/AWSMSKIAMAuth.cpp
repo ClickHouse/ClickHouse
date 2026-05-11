@@ -40,18 +40,18 @@ namespace ErrorCodes
 namespace AWSMSKIAMAuth
 {
 
+bool isValidAWSRegion(const String & region)
+{
+    if (region.empty())
+        return false;
+    static const RE2 region_format_pattern(R"(^[a-z]{2,3}-[a-z-]+-\d+$)");
+    return RE2::FullMatch(region, region_format_pattern);
+}
+
 namespace
 {
     constexpr std::chrono::seconds TOKEN_LIFETIME{300};
     constexpr std::chrono::seconds PRESIGNED_URL_EXPIRY{900};
-
-    bool isValidAWSRegion(const String & region)
-    {
-        if (region.empty())
-            return false;
-        static const RE2 region_format_pattern(R"(^[a-z]{2,3}-[a-z-]+-\d+$)");
-        return RE2::FullMatch(region, region_format_pattern);
-    }
 
     String generateAWSMSKToken(
         const String & region,

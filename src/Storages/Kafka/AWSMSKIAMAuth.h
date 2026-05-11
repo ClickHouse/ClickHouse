@@ -21,9 +21,12 @@ struct OAuthBearerTokenRefreshContext
     String region;
 };
 
-/// Extract AWS region from MSK broker hostname
+/// Extract AWS region from MSK broker hostname.
 /// Matches patterns: *.kafka[-serverless].<region>[.vpce].amazonaws.com
 String extractRegionFromBroker(const String & broker_address);
+
+/// Returns true if region looks like a valid AWS region (e.g. us-east-1, us-gov-west-1).
+bool isValidAWSRegion(const String & region);
 
 /// Setup AWS MSK IAM authentication for Kafka
 /// This configures librdkafka to use OAUTHBEARER with a callback
