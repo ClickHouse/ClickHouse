@@ -61,7 +61,7 @@ public:
     /// Ok to call even if startup() wasn't called or failed.
     void shutdown();
     /// Call when dropping the table, after shutdown(). Removes coordination znodes if needed.
-    void drop(ContextPtr context);
+    void drop(ContextPtr context, bool is_shared_db);
     /// Call when renaming the materialized view.
     void rename(StorageID new_id, StorageID new_inner_table_id);
     /// Call when changing refresh params (ALTER MODIFY REFRESH).
@@ -158,13 +158,18 @@ public:
         /// on average, on the replica that generated the shortest delay. We could use nonuniform distribution to complensate, but this is easier.)
         Int64 randomness = 0;
 
+        /// Whether any replica is executing a refresh right now.
+        /// May be inaccurate if the replica that's executing refresh lost zookeeper connection for
+        /// a long time (long enough for its ephemeral znode to expire + grace period).
+        bool refresh_running = false;
+
         /// Znode version. Not serialized.
         int32_t version = -1;
 
         void randomize(); // assigns `randomness`
 
         String toString() const;
-        void parse(const String & data);
+        void parse(const String & data, bool running_znode_exists, const LoggerPtr & log_);
     };
 
     /// Just for observability.
@@ -205,6 +210,11 @@ private:
         bool paused_znode_exists = false;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
+        /// Time when we first saw that `root_znode.refresh_running && !running_znode_exists`.
+        /// If far enough in the past, the replica that started the refresh has probably crashed,
+        /// and we should update the znode to say refresh_running = false.
+        std::optional<std::chrono::system_clock::time_point> running_znode_missing_since {};
+
         /// Whether we use Keeper to coordinate refresh across replicas. If false, we don't write to Keeper,
         /// but we still use the same in-memory structs (CoordinationZnode etc), as if it's coordinated (with one replica).
         bool coordinated = false;
@@ -213,19 +223,38 @@ private:
         String replica_name;
     };
 
+    /// Information about the currently running refresh.
     struct ExecutionState
     {
+        enum class State
+        {
+            None,
+            /// doScheduling() decided to run a refresh, executeRefresh() didn't start yet.
+            Requested,
+            /// executeRefresh() is in progress.
+            Running,
+            /// executeRefresh() completed, doScheduling() didn't propagate the result to zookeeper yet.
+            Finished,
+        };
+
         /// Protects interrupt_execution and executor.
         /// Can be locked while holding `mutex`.
         std::mutex executor_mutex;
         /// If there's a refresh in progress, it can be aborted by setting this flag and cancel()ling
         /// this executor. Refresh task will then reconsider what to do, re-checking `stop_requested`,
-        /// `cancel_requested`, etc.
+        /// `out_of_schedule_refresh_requested`, etc.
         std::atomic_bool interrupt_execution {false};
         PipelineExecutor * executor = nullptr;
         /// Interrupts internal CREATE/EXCHANGE/DROP queries that refresh does. Only used during shutdown.
         StopSource cancel_ddl_queries;
         Progress progress;
+
+        State state = State::None;
+        /// Contains information about the completed refresh, and znode version number at the start
+        /// of refresh.
+        CoordinationZnode znode;
+        std::chrono::system_clock::time_point start_time;
+        bool out_of_schedule = false;
     };
 
     struct SchedulingState
@@ -251,7 +280,9 @@ private:
         std::atomic<Int64> fake_clock {INT64_MIN};
     };
 
-    LoggerPtr log = nullptr;
+    std::mutex logger_mutex;
+    LoggerPtr current_logger = nullptr;
+
     StorageMaterializedView * view;
 
     /// Protects all fields below.
@@ -262,13 +293,16 @@ private:
     RefreshSchedule refresh_schedule;
     RefreshSettings refresh_settings;
     std::vector<StorageID> initial_dependencies;
-    bool refresh_append;
+    const bool refresh_append;
 
     RefreshSet::Handle set_handle;
 
-    /// Calls refreshTask() from background thread.
-    BackgroundSchedulePoolTaskHolder refresh_task;
-    Coordination::WatchCallbackPtr refresh_task_watch_callback;
+    /// Calls doScheduling() from background thread.
+    BackgroundSchedulePoolTaskHolder scheduling_task;
+    /// Calls executeRefresh() from background thread.
+    BackgroundSchedulePoolTaskHolder execution_task;
+
+    Coordination::WatchCallbackPtr watch_callback;
 
     CoordinationState coordination;
     ExecutionState execution;
@@ -284,17 +318,24 @@ private:
     std::mutex replica_sync_mutex;
     UUID last_synced_inner_uuid = UUIDHelpers::Nil;
 
-    /// The main loop of the refresh task. It examines the state, sees what needs to be
-    /// done and does it. If there's nothing to do at the moment, returns; it's then scheduled again,
-    /// when needed, by public methods or by timer.
+    /// We have two "threads": one for managing scheduling and zookeeper state, one for executing
+    /// refresh. Two are needed because we may need to update zookeeper state during refresh.
     ///
-    /// Public methods just provide inputs for the refreshTask()'s decisions
-    /// (e.g. stop_requested, cancel_requested), they don't do anything significant themselves.
-    void refreshTask();
+    /// doScheduling(), started through scheduling_task, is the scheduling / zookeeper management.
+    /// It runs whenever anything changes (e.g. znodes change, or refresh completes, or retry timer fires).
+    /// It looks at the state of everything and decides what needs to be done.
+    /// Public methods just provide inputs for the doScheduling()'s decisions
+    /// (e.g. stop_requested, out_of_schedule_refresh_requested), they don't do anything significant themselves.
+    /// If is_shutdown, both background tasks were stopped, and we only need to write to zookeeper
+    /// to reflect that this replica is not running a refresh anymore.
+    ///
+    /// executeRefresh(), started through execution_task, is where actual refresh SQL query runs.
+    void doScheduling(bool is_shutdown);
+    void executeRefresh();
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
-    /// Mutex must be unlocked. Called only from refresh_task. Doesn't throw.
-    std::optional<UUID> executeRefreshUnlocked(bool append, int32_t root_znode_version, std::chrono::system_clock::time_point start_time, const Stopwatch & stopwatch, const String & log_comment, String & out_error_message);
+    /// Mutex must be unlocked.
+    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, const String & log_comment, String & out_error_message);
 
     /// Assigns dependencies_satisfied_until.
     void updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock);
@@ -303,13 +344,21 @@ private:
     determineNextRefreshTime(std::chrono::sys_seconds now);
 
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
-    bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
-    void removeRunningZnodeIfMine(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
+    /// Update the root znode and create/remove-if-exists the 'running' znode,
+    /// atomically, conditionally on the root znode version number.
+    /// If `only_running_znode`, the root znode is not updated, but its version is still checked.
+    /// If version number doesn't match, schedules a doScheduling() call
+    /// with should_reread_znodes = true, and returns false.
+    /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
+    bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false);
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);
     void interruptExecution();
     std::chrono::system_clock::time_point currentTime() const;
+
+    void createLogger(const StorageID & storage_id);
+    LoggerPtr getLogger();
 };
 
 using RefreshTaskPtr = std::shared_ptr<RefreshTask>;

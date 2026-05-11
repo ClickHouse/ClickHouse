@@ -41,16 +41,27 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.5",
         {
+            {"paimon_target_snapshot_id", -1, -1, "New setting."},
+            {"max_consume_snapshots", 0, 0, "New setting."},
+            {"allow_experimental_paimon_storage_engine", false, false, "New setting."},
+
             {"optimize_dictget_tuple_element", false, true, "Rewrite tupleElement(dictGet(..., tuple_of_attrs, ...), N) into a single-attribute dictGet call."},
             {"parallel_replicas_prefer_local_replica", true, true, "New setting. When disabled, replicas for parallel reading are selected purely by the load balancing algorithm without forcing the local replica into the set."},
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
+            {"shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms", 50, 50, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."},
+            {"shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms", 1000, 1000, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."},
+            {"shared_merge_tree_sequential_consistency_parts_update_max_retries", 10, 10, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."},
             {"allow_experimental_geo_types_in_iceberg", false, false, "New setting to allow parsing Iceberg geometry/geography fields as Geometry type."},
             {"output_format_parquet_use_custom_encoder", true, true, "Obsolete setting, the custom encoder is now always used."},
             {"output_format_parquet_version", "2.latest", "2.latest", "Obsolete setting, the custom encoder always writes Parquet V2.6+."},
             {"output_format_parquet_compliant_nested_types", true, true, "Obsolete setting, the custom encoder always uses compliant nested types."},
             {"output_format_parquet_unsupported_types_as_binary", false, false, "Obsolete setting, the native writer always throws UNKNOWN_TYPE for unsupported types."},
             {"input_format_parquet_use_native_reader_v3", true, true, "Obsolete setting, the native reader v3 is now always used."},
+            {"max_bytes_ratio_before_external_join", 0., 0.5, "New setting: ratio of available memory used as the spill threshold for hash joins. Enabled by default at `0.5`, mirroring `max_bytes_ratio_before_external_group_by` and `max_bytes_ratio_before_external_sort`. Combined with the absolute `max_bytes_before_external_join` (the smaller of the two applies)."},
             {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
+            {"recursive_cte_max_steps_in_type_inference", 0, 10, "Maximum iterations for inferring column types in recursive CTEs via iterative getLeastSupertype"},
+            {"use_skip_indexes_for_top_k", false, true, "Enable using data skipping indexes for TopK filtering by default"},
+            {"use_top_k_dynamic_filtering", false, true, "Enable dynamic filtering optimization for TopK queries by default"},
             {"url_base", "", "", "New setting to specify the base URL for resolving relative URLs in the url table function and URL table engine."},
             {"max_threads_min_free_memory_per_thread", 0, 1073741824, "New setting to limit the number of threads based on available free memory"},
             {"max_insert_threads_min_free_memory_per_thread", 0, 4294967296, "New setting to limit the number of insert threads based on available free memory"},
@@ -58,7 +69,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_streams_for_union_step", 0, 0, "New setting to limit the number of simultaneously active data streams in a UNION step to reduce peak memory usage."},
             {"max_streams_for_union_step_to_max_threads_ratio", 0, 8, "New setting: the limit on simultaneously active streams in a UNION step is computed as min(max_streams_for_union_step, max_threads * max_streams_for_union_step_to_max_threads_ratio), either being 0 disables that input."},
             {"send_table_structure_on_insert_with_inline_data", true, true, "New setting to control whether server sends table structure for INSERT queries with inline data."},
+            {"allow_experimental_unique_key", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables"},
+            {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
+            {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {

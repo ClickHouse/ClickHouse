@@ -1254,6 +1254,8 @@ ContextData::ContextData(const ContextData &o) :
     buffer_context(o.buffer_context),
     is_internal_query(o.is_internal_query),
     is_background_operation(o.is_background_operation),
+    is_view_inner_query(o.is_view_inner_query),
+    positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
@@ -4465,6 +4467,12 @@ std::shared_ptr<ParquetMetadataCache> Context::getParquetMetadataCache() const
 
     if (!shared->parquet_metadata_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache was not created yet.");
+    return shared->parquet_metadata_cache;
+}
+
+std::shared_ptr<ParquetMetadataCache> Context::tryGetParquetMetadataCache() const
+{
+    SharedLockGuard lock(shared->mutex);
     return shared->parquet_metadata_cache;
 }
 
