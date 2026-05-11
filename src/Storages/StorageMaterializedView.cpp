@@ -208,7 +208,7 @@ StorageMaterializedView::StorageMaterializedView(
             }
         }
 
-        if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !fixed_uuid)
+        if (mode < LoadingStrictnessLevel::ATTACH && !fixed_uuid)
         {
             /// Sanity-check the table engine.
             String inner_engine;
