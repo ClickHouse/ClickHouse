@@ -53,6 +53,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , primary_key(other.primary_key)
     , sorting_key(other.sorting_key)
     , sampling_key(other.sampling_key)
+    , unique_key(other.unique_key)
     , column_ttls_by_name(other.column_ttls_by_name)
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
@@ -88,6 +89,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     primary_key = other.primary_key;
     sorting_key = other.sorting_key;
     sampling_key = other.sampling_key;
+    unique_key = other.unique_key;
     column_ttls_by_name = other.column_ttls_by_name;
     table_ttl = other.table_ttl;
     if (other.settings_changes)
@@ -163,6 +165,14 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (context->getZooKeeperMetadataTransaction())
         new_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
 
+    // parallel replicas related
+    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
+    {
+        new_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
+        new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
+        new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
+    }
+
     if (sql_security_type == SQLSecurityType::NONE)
     {
         new_context->applySettingsChanges(context->getSettingsRef().changes());
@@ -175,14 +185,6 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
     new_context->setSetting("allow_ddl", 1);
-
-    // parallel replicas related
-    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
-    {
-        new_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
-        new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
-        new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
-    }
 
     return new_context;
 }
@@ -630,6 +632,26 @@ Names StorageInMemoryMetadata::getPrimaryKeyColumns() const
     if (!primary_key.column_names.empty())
         return primary_key.column_names;
     return {};
+}
+
+const KeyDescription & StorageInMemoryMetadata::getUniqueKey() const
+{
+    return unique_key;
+}
+
+bool StorageInMemoryMetadata::isUniqueKeyDefined() const
+{
+    return unique_key.definition_ast != nullptr;
+}
+
+bool StorageInMemoryMetadata::hasUniqueKey() const
+{
+    return !unique_key.column_names.empty();
+}
+
+Names StorageInMemoryMetadata::getUniqueKeyColumns() const
+{
+    return unique_key.column_names;
 }
 
 ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
