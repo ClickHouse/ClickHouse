@@ -416,9 +416,17 @@
             return url;
         }
 
-        async function runQuery(query, format = 'TabSeparatedWithNames') {
+        /// Run a query against the server. `params` is an object of named query parameters that bind
+        /// to ClickHouse `{name:Type}` placeholders. Always prefer this over string interpolation for
+        /// any user-controlled value — it eliminates SQL injection risk because the server treats the
+        /// parameter as a literal of the declared type, never as SQL syntax.
+        async function runQuery(query, format = 'TabSeparatedWithNames', params = {}) {
             readConnectionParams();
-            const response = await fetch(buildBaseUrl(format), {
+            let url = buildBaseUrl(format);
+            for (const name of Object.keys(params)) {
+                url += `&param_${encodeURIComponent(name)}=${encodeURIComponent(params[name])}`;
+            }
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Authorization': 'never', 'Content-Type': 'text/plain; charset=UTF-8' },
                 body: query,
@@ -614,16 +622,18 @@
         }
 
         /// Look up the original query text for a query_id from system.query_log.
+        /// `query_id` is bound as a `{qid:String}` parameter so adversarial values (containing
+        /// quotes, backslashes, newlines, …) cannot break out of the SQL literal.
         async function fetchQueryText(queryId) {
             const q = `
                 SELECT query
                 FROM ${queryLogTable()}
-                WHERE query_id = '${queryId.replace(/'/g, "\\'")}'
+                WHERE query_id = {qid:String}
                   AND type = 'QueryFinish'
                 ORDER BY event_time DESC
                 LIMIT 1
                 FORMAT TabSeparatedRaw`;
-            const text = await runQuery(q, 'TabSeparatedRaw');
+            const text = await runQuery(q, 'TabSeparatedRaw', { qid: queryId });
             return text.replace(/\n$/, '');
         }
 
@@ -664,10 +674,10 @@
                     sum(output_rows)                  AS output_rows,
                     sum(output_bytes)                 AS output_bytes
                 FROM ${processorsProfileTable()}
-                WHERE query_id = '${queryId.replace(/'/g, "\\'")}'
+                WHERE query_id = {qid:String}
                 GROUP BY step_uniq_id, processor_uniq_id
                 FORMAT TabSeparatedWithNames`;
-            const text = await runQuery(q);
+            const text = await runQuery(q, 'TabSeparatedWithNames', { qid: queryId });
             const parsed = parseTSVWithNames(text);
             const map = {};
             let minUs = Infinity, maxUs = 0;
