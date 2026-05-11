@@ -273,7 +273,6 @@ namespace
 
             try
             {
-                multipart_tags.resize(num_parts);
                 for (size_t part_number = 1; position < end_position; ++part_number)
                 {
                     if (has_failed)
@@ -286,7 +285,9 @@ namespace
 
                     assert(part_size);
 
-                    auto & part_tag = multipart_tags[part_number - 1];
+                    multipart_tags.push_back({});
+                    chassert(part_number == multipart_tags.size());
+                    auto & part_tag = multipart_tags.back();
 
                     task_tracker.add([this, part_number, position, part_size, &part_tag]()
                     {

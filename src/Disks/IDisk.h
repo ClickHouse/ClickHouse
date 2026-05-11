@@ -249,7 +249,7 @@ public:
     /// This method can save a request. The default implementation will do a separate `exists` call.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists( /// NOLINT
         const String & path,
-        const ReadSettings & settings,
+        const ReadSettings & settings = ReadSettings{},
         std::optional<size_t> read_hint = {}) const;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
