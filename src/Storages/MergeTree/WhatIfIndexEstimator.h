@@ -37,14 +37,9 @@ public:
         UInt64 total_parts = 0;
         UInt64 sampled_marks = 0;
         UInt64 total_marks = 0;
-        UInt64 elapsed_ms = 0;
-        UInt64 budget_ms = 0;
+        UInt64 elapsed_us = 0;
 
         UInt64 storage_estimate_bytes = 0;
-        String cpu_check_cost_score;
-        String maintenance_cost_score;
-
-        std::vector<String> warnings;
     };
 
     struct Result

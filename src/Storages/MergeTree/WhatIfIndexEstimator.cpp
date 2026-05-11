@@ -43,12 +43,6 @@ namespace
 struct WhatIfSettings
 {
     bool empirical = true;
-    UInt64 max_sample_parts = 10;
-    UInt64 max_marks_sampled = 10000;
-    UInt64 max_time_ms = 200;
-    UInt64 sampling_seed = 0;
-    String sample_strategy = "random";
-    bool json = false;
 
     static WhatIfSettings fromAST(const ASTPtr & settings_ast)
     {
@@ -64,18 +58,6 @@ struct WhatIfSettings
         {
             if (change.name == "empirical")
                 result.empirical = change.value.safeGet<UInt64>() != 0;
-            else if (change.name == "max_sample_parts")
-                result.max_sample_parts = change.value.safeGet<UInt64>();
-            else if (change.name == "max_marks_sampled")
-                result.max_marks_sampled = change.value.safeGet<UInt64>();
-            else if (change.name == "max_time_ms")
-                result.max_time_ms = change.value.safeGet<UInt64>();
-            else if (change.name == "sampling_seed")
-                result.sampling_seed = change.value.safeGet<UInt64>();
-            else if (change.name == "sample_strategy")
-                result.sample_strategy = change.value.safeGet<String>();
-            else if (change.name == "json")
-                result.json = change.value.safeGet<UInt64>() != 0;
         }
         return result;
     }
@@ -152,7 +134,7 @@ bool tryEstimateWithStatistics(
     return true;
 }
 
-/// Build the index in memory for baseline marks only and check each granule — 100% accurate
+/// Build the index in memory for baseline marks only and check each granule — accurate
 bool tryEstimateEmpirical(
     WhatIfIndexEstimator::IndexResult & result,
     const MergeTreeIndexPtr & index_helper,
@@ -246,9 +228,9 @@ bool tryEstimateEmpirical(
     result.estimated_parts = analysis.selected_parts;
     result.estimate_source = "empirical";
     result.empirical_status = WhatIfIndexEstimator::IndexResult::Ok;
-    result.sampled_parts = saved_parts.size();
+    result.sampled_parts = analysis.selected_parts;
     result.sampled_marks = analysis.selected_marks;
-    result.elapsed_ms = watch.elapsedMilliseconds();
+    result.elapsed_us = watch.elapsedMicroseconds();
 
     return true;
 }
@@ -259,14 +241,16 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
-    const WhatIfSettings & /* settings */,
+    const WhatIfSettings & settings,
     ContextPtr context)
 {
+    const auto & data = read_step->getMergeTreeData();
+
     WhatIfIndexEstimator::IndexResult result;
     result.index_name = index_desc.name;
     result.index_type = index_desc.type;
-    result.total_parts = analysis.selected_parts;
-    result.total_marks = analysis.selected_marks;
+    result.total_parts = data.getActivePartsCount();
+    result.total_marks = data.getTotalMarksCount();
 
     MergeTreeIndexPtr index_helper;
     try
@@ -310,11 +294,18 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     result.status = WhatIfIndexEstimator::IndexResult::Applicable;
 
     /// Empirical first — build index in memory, check each granule
-    if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, context))
-        return result;
+    if (settings.empirical)
+    {
+        if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, context))
+            return result;
+        result.empirical_status = WhatIfIndexEstimator::IndexResult::Unsupported;
+    }
+    else
+    {
+        result.empirical_status = WhatIfIndexEstimator::IndexResult::Disabled;
+    }
 
     /// Fall back to column statistics
-    result.empirical_status = WhatIfIndexEstimator::IndexResult::Unsupported;
     if (tryEstimateWithStatistics(result, read_step, analysis, saved_parts, filter_dag->getOutputs().front(), context))
         return result;
 
@@ -327,7 +318,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     return result;
 }
 
-} // anonymous namespace
+}
 
 
 WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
@@ -486,28 +477,18 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
         }
         writeString(fmt::format("  empirical_status: {}\n", empirical_status_str), out);
 
-        if (idx.empirical_status != IndexResult::Disabled)
+        if (idx.empirical_status == IndexResult::Ok)
         {
             writeString(fmt::format("  sampled_parts:    {} / {}\n", idx.sampled_parts, idx.total_parts), out);
             writeString(fmt::format("  sampled_marks:    {} / {}\n", idx.sampled_marks, idx.total_marks), out);
-            writeString(fmt::format("  elapsed_ms:       {} / {}\n", idx.elapsed_ms, idx.budget_ms), out);
+            writeString(fmt::format("  elapsed_us:       {}\n", idx.elapsed_us), out);
         }
         writeCString("\n", out);
 
-        if (idx.storage_estimate_bytes > 0 || !idx.cpu_check_cost_score.empty() || !idx.maintenance_cost_score.empty())
+        if (idx.storage_estimate_bytes > 0)
         {
             writeCString("Cost:\n", out);
             writeString(fmt::format("  storage_estimate_bytes:   {}\n", idx.storage_estimate_bytes), out);
-            writeString(fmt::format("  cpu_check_cost_score:     {}\n", idx.cpu_check_cost_score), out);
-            writeString(fmt::format("  maintenance_cost_score:   {}\n", idx.maintenance_cost_score), out);
-            writeCString("\n", out);
-        }
-
-        if (!idx.warnings.empty())
-        {
-            writeCString("Warnings:\n", out);
-            for (const auto & warning : idx.warnings)
-                writeString(fmt::format("  {}\n", warning), out);
             writeCString("\n", out);
         }
     }
