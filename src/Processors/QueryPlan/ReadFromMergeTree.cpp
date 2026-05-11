@@ -125,7 +125,13 @@ bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting
 bool isNodeDeterministic(const ActionsDAG::Node * node)
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION
-        && node->function_base && !node->function_base->isDeterministic())
+        && node->function_base && !node->function_base->isDeterministic()
+        /// `__topKFilter` is non-deterministic at runtime, but the QCC cache key is salted with
+        /// the TopK plan parameters, and the threshold trajectory only tightens during execution,
+        /// so a granule that the outer filter zeroes out under `__topKFilter` is one whose rows
+        /// could not have reached the final result under any threshold trajectory. See the
+        /// comment on `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache.cpp`.
+        && node->function_base->getName() != "__topKFilter")
         return false;
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
@@ -2688,7 +2694,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal())
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
-            if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
+            /// `isNodeDeterministic` allows `__topKFilter`'s non-determinism (it's gated by the
+            /// TopK plan salt below, mirroring `updateQueryConditionCache`'s write path).
+            if (outputs.size() == 1 && isNodeDeterministic(outputs.front()))
             {
                 size_t hash = outputs.front()->getHash();
                 /// Match the salting done on the read side in `filterPartsByQueryConditionCache` and
@@ -4366,7 +4374,6 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
 void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
 {
     top_k_filter_info = top_k_filter_info_;
-    reader_settings.use_query_condition_cache = false;
 }
 
 bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) const
