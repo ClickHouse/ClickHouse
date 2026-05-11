@@ -39,6 +39,7 @@ private:
 
     struct ColumnReadInfo
     {
+        String name;
         DataTypePtr data_type;
         SerializationPtr serialization;
         std::optional<ValueType> native_value_type;

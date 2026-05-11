@@ -22,6 +22,11 @@ name	String
 amount	String
 created	String
 value	Nullable(String)
+NULL as default
+42	4	0
+9223372036854775808	0	1
+NULL as default disabled
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
 Read first table by default
 7	first
 Custom table name

@@ -25,6 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int SQLITE_ENGINE_ERROR;
 }
 
@@ -49,6 +50,7 @@ SQLiteStatementReader::ColumnReadInfo SQLiteStatementReader::createColumnReadInf
     bool is_nullable) const
 {
     ColumnReadInfo info;
+    info.name = column.name;
     auto type_not_nullable = removeNullable(column.type);
     info.serialization = type_not_nullable->getDefaultSerialization();
     info.is_nullable = is_nullable;
@@ -61,6 +63,7 @@ SQLiteStatementReader::ColumnReadInfo SQLiteStatementReader::createColumnReadInf
 SQLiteStatementReader::ColumnReadInfo SQLiteStatementReader::createColumnReadInfoForText(const ColumnWithTypeAndName & column) const
 {
     ColumnReadInfo info;
+    info.name = column.name;
     info.serialization = column.type->getDefaultSerialization();
     info.is_nullable = column.type->isNullable();
     info.data_type = removeNullable(column.type);
@@ -117,7 +120,11 @@ Chunk SQLiteStatementReader::readChunk(sqlite3 * db, sqlite3_stmt * statement, U
         }
 
         if (status == SQLITE_BUSY)
-            continue;
+            throw Exception(
+                ErrorCodes::SQLITE_ENGINE_ERROR,
+                "SQLite database is busy. Error: {}, Message: {}",
+                sqlite3_errstr(status),
+                sqlite3_errmsg(db));
 
         if (status != SQLITE_ROW)
         {
@@ -139,13 +146,20 @@ Chunk SQLiteStatementReader::readChunk(sqlite3 * db, sqlite3_stmt * statement, U
 
         for (int column_index = 0; column_index != column_count; ++column_index)
         {
+            const auto & info = columns_info[column_index];
+
             if (sqlite3_column_type(statement, column_index) == SQLITE_NULL)
             {
+                if (!info.is_nullable && !format_settings.null_as_default)
+                    throw Exception(
+                        ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                        "Cannot insert NULL value into non-Nullable column {}",
+                        info.name);
+
                 columns[column_index]->insertDefault();
                 continue;
             }
 
-            const auto & info = columns_info[column_index];
             if (info.is_nullable && info.native_value_type)
             {
                 auto & column_nullable = assert_cast<ColumnNullable &>(*columns[column_index]);

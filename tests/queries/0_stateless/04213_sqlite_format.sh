@@ -63,6 +63,21 @@ ${CLICKHOUSE_LOCAL} \
     --output-format TSV \
     --query "DESCRIBE TABLE table" < "$DB" | cut -f1,2
 
+echo "NULL as default"
+${CLICKHOUSE_LOCAL} \
+    --structure "id UInt64, value String" \
+    --input-format SQLite \
+    --output-format TSV \
+    --query "SELECT id, length(value), value = '' FROM table ORDER BY id" < "$DB"
+
+echo "NULL as default disabled"
+${CLICKHOUSE_LOCAL} \
+    --structure "id UInt64, value String" \
+    --input-format SQLite \
+    --output-format TSV \
+    --query "SELECT id, value FROM table ORDER BY id SETTINGS input_format_null_as_default = 0" < "$DB" 2>&1 \
+    | grep -o "CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN" | head -1
+
 ${CLICKHOUSE_LOCAL} --query "
     SELECT 7 AS id, 'first' AS name
     FORMAT SQLite
