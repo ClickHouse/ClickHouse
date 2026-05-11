@@ -167,7 +167,8 @@ bool tryEstimateEmpirical(
         if (mark_ranges.empty())
             continue;
 
-        RangesInDataPart part_for_read(part, nullptr, 0, 0, mark_ranges);
+        RangesInDataPart part_for_read(part);
+        part_for_read.ranges = mark_ranges;
 
         Pipe pipe = createMergeTreeSequentialSource(
             MergeTreeSequentialSourceType::Merge,
