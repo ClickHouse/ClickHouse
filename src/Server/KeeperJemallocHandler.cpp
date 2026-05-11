@@ -186,7 +186,11 @@ try
     auto read_mallctl = [&]<typename T>(const char * name, std::type_identity<T>) -> std::optional<T>
     {
         T value{};
-        (void)Jemalloc::tryGetValue(name, value);
+        if (!Jemalloc::tryGetValue(name, value))
+        {
+            errors.add(name);
+            return std::nullopt;
+        }
         return value;
     };
 
