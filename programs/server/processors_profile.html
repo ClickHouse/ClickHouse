@@ -441,6 +441,12 @@
 
         const DEFAULT_WHERE = "type = 'QueryFinish' AND query_kind = 'Select' AND event_time > now() - INTERVAL 24 HOUR";
 
+        /// All `system.*_log` tables are wrapped in `clusterAllReplicas` over `merge(...)` so that
+        /// queries on a Cloud / sharded deployment see every replica's local log table and any
+        /// rotated tables like `query_log_0`, `query_log_1`, …
+        const QUERY_LOG_TABLE = "clusterAllReplicas('default', merge('system', '^query_log'))";
+        const PROCESSORS_PROFILE_LOG_TABLE = "clusterAllReplicas('default', merge('system', '^processors_profile_log'))";
+
         function resetFilter() {
             document.getElementById('where-filter').value = DEFAULT_WHERE;
             loadQueries();
@@ -517,7 +523,7 @@
                     event_time,
                     query_duration_ms,
                     substring(replaceRegexpAll(query, '[\\\\s]+', ' '), 1, 120) AS query
-                FROM system.query_log
+                FROM ${QUERY_LOG_TABLE}
                 WHERE ${where}
                 ORDER BY event_time DESC
                 LIMIT 50
@@ -563,7 +569,7 @@
         async function fetchQueryText(queryId) {
             const q = `
                 SELECT query
-                FROM system.query_log
+                FROM ${QUERY_LOG_TABLE}
                 WHERE query_id = '${queryId.replace(/'/g, "\\'")}'
                   AND type = 'QueryFinish'
                 ORDER BY event_time DESC
@@ -609,7 +615,7 @@
                     sum(input_bytes)                  AS input_bytes,
                     sum(output_rows)                  AS output_rows,
                     sum(output_bytes)                 AS output_bytes
-                FROM system.processors_profile_log
+                FROM ${PROCESSORS_PROFILE_LOG_TABLE}
                 WHERE query_id = '${queryId.replace(/'/g, "\\'")}'
                 GROUP BY step_uniq_id, processor_uniq_id
                 FORMAT TabSeparatedWithNames`;
