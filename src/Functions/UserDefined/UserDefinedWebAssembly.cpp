@@ -413,7 +413,7 @@ public:
 
         ProfileEventTimeIncrement<Microseconds> timer_deserialize(ProfileEvents::WasmDeserializationMicroseconds);
 
-        Block result_header({ColumnWithTypeAndName(nullptr, result_type, "result")});
+        Block result_header({ColumnWithTypeAndName(result_type, "result")});
 
         auto pipeline = QueryPipeline(
             Pipe(context->getInputFormat(format_name, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE)));
@@ -789,7 +789,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 
     const std::unordered_map<String, SettingDefinition> settings_def = {
         /// Serialization format for input/output data for ABI what uses serialization
-        {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary"}}.withDefault("MsgPack")},
+        {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary", "Buffers"}}.withDefault("MsgPack")},
     };
 
     std::vector<String> getAllRegisteredNames() const override
