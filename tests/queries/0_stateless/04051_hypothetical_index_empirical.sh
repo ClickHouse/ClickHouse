@@ -26,7 +26,7 @@ echo "--- minmax on sorted column ---"
 $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_emp (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_emp WHERE b = 42;
-" | grep -E '^\s+status:|^\s+skip_ratio:|^\s+source:'
+" | grep -E '^\s+status:|^\s+skip_ratio:|^\s+source:|^\s+sampled_marks:'
 
 # =========================================================
 # Empirical: bloom_filter on uniform column - 0% skip
@@ -36,7 +36,7 @@ echo "--- bloom_filter on uniform column ---"
 $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX idx_c ON t_hypo_emp (c) TYPE bloom_filter(0.01) GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_emp WHERE c = '42';
-" | grep -E '^\s+status:|^\s+skip_ratio:|^\s+source:'
+" | grep -E '^\s+status:|^\s+skip_ratio:|^\s+source:|^\s+sampled_marks:'
 
 # =========================================================
 # Empirical: minmax range query - matches 10 of 100 granules
@@ -46,7 +46,7 @@ echo "--- minmax range query ---"
 $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_emp (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_emp WHERE b >= 500 AND b < 1500;
-" | grep -E '^\s+skip_ratio:'
+" | grep -E '^\s+skip_ratio:|^\s+sampled_marks:'
 
 # =========================================================
 # Empirical: set index on sorted column
@@ -57,7 +57,7 @@ echo "--- set index on sorted column ---"
 $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX idx_b_set ON t_hypo_emp (b) TYPE set(200) GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_emp WHERE b = 5000;
-" | grep -E '^\s+skip_ratio:|^\s+source:'
+" | grep -E '^\s+skip_ratio:|^\s+source:|^\s+sampled_marks:'
 
 # =========================================================
 # Empirical: index granularity > 1 (each index granule covers multiple data granules)
@@ -68,14 +68,14 @@ echo "--- index granularity 5 ---"
 $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX idx_b5 ON t_hypo_emp (b) TYPE minmax GRANULARITY 5;
     EXPLAIN WHATIF SELECT * FROM t_hypo_emp WHERE b = 42;
-" | grep -E '^\s+skip_ratio:'
+" | grep -E '^\s+skip_ratio:|^\s+sampled_marks:'
 
 # =========================================================
 # Empirical respects PK pruning: only baseline marks are processed
 # ORDER BY a, so WHERE a > 5000 prunes first ~50 granules via PK.
 # Among remaining granules (a>5000), b is in [5001..9999], so b < 100 is never true.
 # → hypothetical minmax should skip 100% of baseline marks.
-# sampled_marks should equal baseline marks (50), not total marks (100).
+# sampled_marks should be 50 / 100: 50 baseline marks scanned out of 100 in the table.
 # =========================================================
 echo "--- empirical respects PK pruning ---"
 $CLICKHOUSE_CLIENT -n -q "
@@ -98,7 +98,7 @@ $CLICKHOUSE_CLIENT -n -q "
 
 # With real minmax on a and PK on a, WHERE a > 5000 is handled by PK.
 # WHERE b = 7777 is tested by hypothetical minmax on b.
-# sampled_marks = baseline marks ≈ 50
+# sampled_marks ≈ 50 / 100 (only ~50 baseline marks scanned out of 100 in the table)
 $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX idx_b_hypo ON t_hypo_real (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_real WHERE a > 5000 AND b = 7777;
@@ -133,7 +133,7 @@ $CLICKHOUSE_CLIENT -n -q "
 
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_proof (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_proof WHERE p = 1 AND b = 0;
-" | grep -E '^\s+skip_ratio:|^\s+source:'
+" | grep -E '^\s+skip_ratio:|^\s+source:|^\s+sampled_marks:'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proof"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_emp"
