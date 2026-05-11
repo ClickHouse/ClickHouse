@@ -65,6 +65,7 @@ namespace Paimon
             partition_key = DB::KeyDescription::getKeyFromAST(
                 partition_key_ast,
                 partition_columns_description,
+                {},
                 context_);
 
             DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag_.getOutputs().front(), context_);
@@ -73,7 +74,7 @@ namespace Paimon
         }
     }
 
-    bool PartitionPruner::canBePruned(const DB::PaimonManifestEntry & manifest_entry)
+    bool PartitionPruner::canBePruned(const DB::PaimonManifestEntry & manifest_entry) const
     {
         if (!key_condition.has_value())
             return false;
