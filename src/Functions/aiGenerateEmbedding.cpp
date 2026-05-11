@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionBaseAI.h>
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
 
@@ -14,8 +15,10 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 
@@ -90,24 +93,26 @@ public:
 
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return true; }
+
+    /// Handle Nullable cols explicitly, since setting this to true may call functions with arbitrary input values
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"collection", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
-            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
         };
         FunctionArgumentDescriptors optional_args{
             {"dimensions", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), &isColumnConst, "const UInt"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
+        return FunctionBaseAI::wrapReturnTypeForNullablePrompt(arguments, text_arg_index, std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>()));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto * collection_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         chassert(collection_const, "First argument must be a constant String (validated by getReturnTypeImpl)");
@@ -161,11 +166,26 @@ public:
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
 
+        /// A Nullable text column can arrive as `ColumnNullable` or as `ColumnConst(ColumnNullable)` (e.g. `NULL::Nullable(String)`).
+        /// `convertToFullColumnIfConst` unwraps the latter into the former, so a single null-map path handles both.
+        ColumnPtr text_column;
+        const ColumnNullable * text_nullable = nullptr;
+        if (arguments[text_arg_index].type->isNullable())
+        {
+            text_column = arguments[text_arg_index].column->convertToFullColumnIfConst();
+            text_nullable = typeid_cast<const ColumnNullable *>(text_column.get());
+        }
+        const IColumn & text_data_column = text_nullable
+            ? text_nullable->getNestedColumn()
+            : *arguments[text_arg_index].column;
+
         /// Deduplicate identical texts within the batch: each unique text is sent once and the result is reused for every row that had it.
         std::unordered_map<String, std::vector<size_t>> dedup_map;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            String text(arguments[1].column->getDataAt(i));
+            if (text_nullable && text_nullable->getNullMapData()[i])
+                continue;
+            String text(text_data_column.getDataAt(i));
             if (!text.empty())
                 dedup_map[std::move(text)].push_back(i);
         }
@@ -276,10 +296,25 @@ public:
         ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
         ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
 
-        return ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        ColumnPtr array_col = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        if (result_type->isNullable())
+        {
+            auto null_map_col = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+            if (text_nullable)
+            {
+                auto & null_map_data = null_map_col->getData();
+                const auto & src_null_map = text_nullable->getNullMapData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    null_map_data[i] = src_null_map[i];
+            }
+            return ColumnNullable::create(std::move(array_col), std::move(null_map_col));
+        }
+        return array_col;
     }
 
 private:
+    static constexpr size_t text_arg_index = 1;
+
     ContextWeakPtr context_weak;
     ContextPtr getContext() const { return context_weak.lock(); }
 };
