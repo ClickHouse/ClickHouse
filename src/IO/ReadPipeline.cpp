@@ -2,6 +2,8 @@
 
 #include <IO/LocalSourceReader.h>
 #include <IO/ObjectStorageSourceReader.h>
+#include <IO/PageCacheProvider.h>
+#include <IO/DiskCacheProvider.h>
 #include <IO/PipelineReadBuffer.h>
 #include <IO/ReaderExecutor.h>
 
@@ -161,12 +163,27 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for local file, {} objects, path={}",
             source->objects.size(), local_src.path);
         auto local_source = std::make_shared<LocalSourceReader>();
+
+        std::vector<std::shared_ptr<ICacheProvider>> executor_caches;
+        CacheKey executor_cache_key;
+
+        if (memory_cache && memory_cache->cache)
+        {
+            auto pcs = memory_cache->page_cache_settings.value_or(PageCacheSettings{});
+            executor_caches.push_back(std::make_shared<PageCacheProvider>(
+                memory_cache->cache, pcs.page_cache_block_size, pcs.page_cache_inject_eviction));
+            executor_cache_key.path = memory_cache->custom_cache_path.value_or(
+                memory_cache->cache_path_prefix + source->objects.front().remote_path);
+            executor_cache_key.version = memory_cache->custom_file_version.value_or("");
+        }
+
         auto executor = std::make_unique<ReaderExecutor>(
             local_source,
             source->objects,
-            std::vector<std::shared_ptr<ICacheProvider>>{},
+            std::move(executor_caches),
             ReaderExecutor::DEFAULT_WINDOW_SIZE,
-            /*min_bytes_for_seek=*/0);
+            /*min_bytes_for_seek=*/0,
+            std::move(executor_cache_key));
 #if USE_SSL
         for (const auto & dec : decryption_stages)
             executor->addDecryptionLayer(dec.path, dec.buffer_size, dec.key_finder);
@@ -183,10 +200,44 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for object storage, {} objects, gather={}",
             source->objects.size(), gather);
         auto obj_source = std::make_shared<ObjectStorageSourceReader>(obj_src.storage, settings);
+
+        size_t total_file_size = 0;
+        for (const auto & obj : source->objects)
+            total_file_size += obj.bytes_size;
+
+        std::vector<std::shared_ptr<ICacheProvider>> executor_caches;
+        CacheKey executor_cache_key;
+
+        /// PageCache (memory) — goes first in chain (fastest).
+        if (memory_cache && memory_cache->cache)
+        {
+            auto pcs = memory_cache->page_cache_settings.value_or(PageCacheSettings{});
+            executor_caches.push_back(std::make_shared<PageCacheProvider>(
+                memory_cache->cache, pcs.page_cache_block_size, pcs.page_cache_inject_eviction));
+            executor_cache_key.path = memory_cache->custom_cache_path.value_or(
+                memory_cache->cache_path_prefix + source->objects.front().remote_path);
+            executor_cache_key.version = memory_cache->custom_file_version.value_or("");
+        }
+
+        /// FileCache (disk) — goes second in chain.
+        if (disk_cache && disk_cache->cache)
+        {
+            auto fcs = disk_cache->cache_settings.value_or(FilesystemCacheSettings{});
+            executor_caches.push_back(std::make_shared<DiskCacheProvider>(
+                disk_cache->cache, total_file_size, fcs));
+
+            /// If no memory cache set the cache key, derive from disk cache settings.
+            if (executor_cache_key.path.empty())
+                executor_cache_key.path = source->objects.front().remote_path;
+        }
+
         auto executor = std::make_unique<ReaderExecutor>(
             obj_source,
             source->objects,
-            std::vector<std::shared_ptr<ICacheProvider>>{});
+            std::move(executor_caches),
+            ReaderExecutor::DEFAULT_WINDOW_SIZE,
+            ReaderExecutor::DEFAULT_MIN_BYTES_FOR_SEEK,
+            std::move(executor_cache_key));
 #if USE_SSL
         for (const auto & dec : decryption_stages)
             executor->addDecryptionLayer(dec.path, dec.buffer_size, dec.key_finder);

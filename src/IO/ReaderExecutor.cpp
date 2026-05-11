@@ -20,9 +20,11 @@ ReaderExecutor::ReaderExecutor(
     const StoredObjects & objects,
     std::vector<std::shared_ptr<ICacheProvider>> caches_,
     size_t window_size_,
-    size_t min_bytes_for_seek_)
+    size_t min_bytes_for_seek_,
+    CacheKey cache_key_)
     : source(std::move(source_))
     , caches(std::move(caches_))
+    , cache_key(std::move(cache_key_))
     , window_size(window_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
 {
@@ -267,7 +269,7 @@ Rope ReaderExecutor::readPhysicalWindow(Range physical_window)
 
         for (const auto & r : remaining)
         {
-            auto handle = cache->lookup(CacheKey{}, r);
+            auto handle = cache->lookup(cache_key, r);
             auto status = handle->status();
 
             for (const auto & hit : status.hit_ranges)

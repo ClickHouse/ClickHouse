@@ -33,7 +33,8 @@ public:
         const StoredObjects & objects,
         std::vector<std::shared_ptr<ICacheProvider>> caches,
         size_t window_size = DEFAULT_WINDOW_SIZE,
-        size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK);
+        size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK,
+        CacheKey cache_key = {});
 
     /// Read the next window starting at the current position.
     /// Returns an empty Rope at EOF.
@@ -79,6 +80,7 @@ private:
     std::shared_ptr<ISourceReader> source;
     OffsetMap offset_map;
     std::vector<std::shared_ptr<ICacheProvider>> caches;
+    CacheKey cache_key;
     size_t window_size;
     size_t min_bytes_for_seek;
     size_t position = 0;
