@@ -135,9 +135,9 @@ TEST(AWSMSKIAMAuth, SetupAutoDetectsRegionFromBrokerList)
         EXPECT_NE(e.code(), DB::ErrorCodes::BAD_ARGUMENTS)
             << "Region detection should not throw BAD_ARGUMENTS; got: " << e.message();
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
-        // Non-BAD_ARGUMENTS exceptions (e.g. missing AWS credentials) are acceptable here.
+        // Ok: non-BAD_ARGUMENTS exceptions (e.g. missing AWS credentials) are acceptable here.
     }
 }
 

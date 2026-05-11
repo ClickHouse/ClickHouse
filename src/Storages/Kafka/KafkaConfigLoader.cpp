@@ -18,6 +18,7 @@
 #include <Common/setThreadName.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <csignal>
+#include <unordered_set>
 
 namespace CurrentMetrics
 {
@@ -189,6 +190,14 @@ void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & 
 {
     /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
     /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+
+    /// ClickHouse-specific keys that live under <kafka> in server config but are not librdkafka properties.
+    /// Exclude them here so they are not forwarded to cppkafka.
+    static const std::unordered_set<String> clickhouse_only_kafka_config_keys
+        = {"use_environment_credentials"}; /// AWS MSK IAM: controls AWS credentials provider selection
+    if (clickhouse_only_kafka_config_keys.contains(key))
+        return;
+
     const String setting_name_in_kafka_config = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
     kafka_config.set(setting_name_in_kafka_config, value);
 }
