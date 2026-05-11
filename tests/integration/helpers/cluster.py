@@ -4239,11 +4239,84 @@ class ClickHouseCluster:
     def _unpause_container_using_signal(self, instance_name):
         subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGCONT", instance_name])
 
+    def _wait_for_pause_effective(self, instance_name, timeout):
+        """Block until pausing `instance_name` is observably effective for
+        fresh client connections.
+
+        Docker's cgroup freezer (and `SIGSTOP`) suspends user-space tasks
+        asynchronously with respect to in-flight TCP traffic. After
+        `docker compose pause` returns, the kernel can still complete the
+        TCP three-way handshake for new connections — and a short
+        application-level greeting that is already buffered in the socket
+        can still flow back to the client — for a brief window before the
+        freeze fully blocks the server's accept/read/write loop. Tests
+        that assert on connection failure under `pause_container` can
+        therefore see the very first probe succeed, producing chronic
+        flakes (see issues `#103819`, `#103820`).
+
+        For ClickHouse instances, poll a sibling ClickHouse node with a
+        tight `remote(<paused>:9000, system.one)` probe until it raises a
+        `QueryRuntimeException`. That event deterministically establishes
+        that fresh connections to the paused container can no longer
+        complete the ClickHouse handshake, which is the property every
+        existing caller actually depends on.
+
+        For non-ClickHouse containers (Kafka, MongoDB, etc.) we cannot
+        speak the application protocol from a sibling node, so we skip
+        the wait. The current Kafka callers do not assert on the timing
+        of the freeze — they wait for log lines that the paused side
+        emits well after the freeze is effective — so the absence of a
+        global probe is benign for them.
+        """
+        if instance_name not in self.instances:
+            return
+        probers = [
+            inst
+            for name, inst in self.instances.items()
+            if name != instance_name and inst.is_up
+        ]
+        if not probers:
+            return
+        prober = probers[0]
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                prober.query(
+                    f"SELECT 1 FROM remote('{instance_name}:9000', system.one) "
+                    "SETTINGS connect_timeout_with_failover_ms=200, "
+                    "handshake_timeout_ms=200, "
+                    "connections_with_failover_max_tries=1",
+                    timeout=2,
+                )
+            except QueryRuntimeException:
+                return
+            time.sleep(0.1)
+        raise Exception(
+            f"pause_container({instance_name!r}) did not become observably "
+            f"effective within {timeout}s — connections to {instance_name} "
+            f"from {prober.name!r} still succeed"
+        )
+
     @contextmanager
-    def pause_container(self, instance_name):
+    def pause_container(self, instance_name, wait_for_paused=True, wait_timeout=30.0):
         """Use it as following:
         with cluster.pause_container(name):
             useful_stuff()
+
+        When `instance_name` refers to a ClickHouse instance and another
+        ClickHouse instance is available to probe with, this helper blocks
+        until the pause is observably effective for fresh TCP-plus-
+        ClickHouse-handshake connections, removing a chronic race where
+        Docker's cgroup freezer takes effect asynchronously with respect
+        to in-flight traffic. Set `wait_for_paused=False` to opt out and
+        keep the older non-blocking behavior.
+
+        Cleanup: once the container has been paused (whether via
+        `docker compose pause` or the `SIGSTOP` fallback), unpausing must
+        always run on context exit — even if `_wait_for_pause_effective`
+        times out. Otherwise a probe failure would leave the container
+        permanently paused and cascade into unrelated test failures in
+        the same suite.
         """
         used_signal = False
         try:
@@ -4256,7 +4329,10 @@ class ClickHouseCluster:
             )
             self._pause_container_using_signal(instance_name)
             used_signal = True
+
         try:
+            if wait_for_paused:
+                self._wait_for_pause_effective(instance_name, wait_timeout)
             yield
         finally:
             if used_signal:
@@ -4265,9 +4341,11 @@ class ClickHouseCluster:
                 self._unpause_container(instance_name)
 
     @contextmanager
-    def pause_container_using_signal(self, instance_name):
+    def pause_container_using_signal(self, instance_name, wait_for_paused=True, wait_timeout=30.0):
         self._pause_container_using_signal(instance_name)
         try:
+            if wait_for_paused:
+                self._wait_for_pause_effective(instance_name, wait_timeout)
             yield
         finally:
             self._unpause_container_using_signal(instance_name)

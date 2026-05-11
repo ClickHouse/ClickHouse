@@ -864,10 +864,12 @@ protected:
 private:
     void assertTypeEquality(const IColumn & rhs) const
     {
-        /// For Sparse and Const columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
-        /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const column.
+        /// For Sparse, Const, and Replicated columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
+        /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const and Replicated columns.
         /// For the rest of column types we can compare the types directly.
-        chassert((isConst() || isSparse() || isReplicated()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
+        chassert((isConst() || isSparse() || isReplicated() || rhs.isConst() || rhs.isSparse() || rhs.isReplicated())
+            ? getDataType() == rhs.getDataType()
+            : typeid(*this) == typeid(rhs));
     }
 #endif
 };

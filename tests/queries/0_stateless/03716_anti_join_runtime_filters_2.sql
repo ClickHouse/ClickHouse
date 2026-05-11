@@ -2,7 +2,7 @@
 
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
-SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 SET execute_exists_as_scalar_subquery = 0; -- scalar rewrite changes EXISTS column flow, producing different plan actions/positions
 SET query_plan_remove_unused_columns = 1; -- CI may inject False; exists(__table2) column is then not pruned/replaced by __join_result_dummy, changing actions/positions throughout the plan
 
