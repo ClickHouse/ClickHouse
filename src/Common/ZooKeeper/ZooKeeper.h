@@ -711,7 +711,7 @@ private:
     /// Wait for a future with progress-based timeout using session_timeout_ms.
     /// On each iteration, waits up to session_timeout_ms for the future. If it
     /// becomes ready, returns true. Otherwise, checks if the server made progress
-    /// (any received data via getLastReceivedAt). If yes, waits another full
+    /// (any received data via `getLastReceivedTimestamp`). If yes, waits another full
     /// session_timeout_ms. If no progress for a full session_timeout_ms — gives up.
     /// Worst-case latency: session_timeout_ms after no progress before returning false.
     /// Defense-in-depth: only fires if the receive thread is stuck.

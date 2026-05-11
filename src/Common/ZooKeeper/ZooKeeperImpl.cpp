@@ -474,7 +474,7 @@ ZooKeeper::ZooKeeper(
 
     /// Initialize progress tracker to "now" so the receive loop does not
     /// immediately trigger a timeout before any responses arrive.
-    last_received_at.store(
+    last_received_timestamp_us.store(
         std::chrono::duration_cast<std::chrono::microseconds>(
             clock::now().time_since_epoch()).count(),
         std::memory_order_relaxed);
@@ -927,8 +927,8 @@ void ZooKeeper::receiveThread()
 
             auto now = clock::now();
 
-            Int64 last_ts = last_received_at.load(std::memory_order_relaxed);
-            auto last_received_time = clock::time_point(std::chrono::microseconds(last_ts));
+            Int64 last_received_timestamp_us_snapshot = last_received_timestamp_us.load(std::memory_order_relaxed);
+            auto last_received_time = clock::time_point(std::chrono::microseconds(last_received_timestamp_us_snapshot));
             auto idle_deadline = last_received_time + session_timeout_us;
 
             /// If any operation is in flight, also bound how long it can wait. When the
@@ -955,6 +955,7 @@ void ZooKeeper::receiveThread()
                         "Nothing is received in session timeout of {} ms",
                         args.session_timeout_ms);
 
+                chassert(now >= stuck_deadline && stuck_request);
                 throw Exception(Error::ZOPERATIONTIMEOUT,
                     "Request {} for path {} stuck for over {} ms despite global progress — finalizing session",
                     stuck_request->getOpNum(),
@@ -977,7 +978,7 @@ void ZooKeeper::receiveThread()
                 /// proves the server is alive. Update the progress timestamp.
                 /// Unlike the old per-type updates inside receiveEvent(), this single
                 /// update point covers all data types including watch events.
-                last_received_at.store(
+                last_received_timestamp_us.store(
                     std::chrono::duration_cast<std::chrono::microseconds>(
                         clock::now().time_since_epoch()).count(),
                     std::memory_order_relaxed);
@@ -1494,7 +1495,6 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
 void ZooKeeper::pushRequest(RequestInfo && info)
 {
-    bool queue_full_timeout = false;
     try
     {
         info.request->create_ts = clock::now();
@@ -1556,7 +1556,6 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             if (requests_queue.isFinished())
                 throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired");
 
-            queue_full_timeout = true;
             throw Exception(Error::ZOPERATIONTIMEOUT,
                 "Cannot push request to queue within operation timeout of {} ms",
                 args.operation_timeout_ms);
@@ -1564,11 +1563,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     }
     catch (...)
     {
-        /// Queue-full timeout is transient backpressure, not a session failure.
-        /// The request was never sent (probably_sent=false), so it's safe to
-        /// fail just this one request without killing the session.
-        if (!queue_full_timeout)
-            finalize(false, false, getCurrentExceptionMessage(false, false, false));
+        finalize(false, false, getCurrentExceptionMessage(false, false, false));
         throw;
     }
 

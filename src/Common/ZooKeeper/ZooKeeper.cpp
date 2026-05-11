@@ -126,7 +126,7 @@ bool ZooKeeper::waitForFutureWithProgress(std::future<T> & future) const
 
     for (;;)
     {
-        Int64 last_seen_ts = impl->getLastReceivedAt();
+        Int64 last_seen_timestamp_us = impl->getLastReceivedTimestamp();
 
         if (future.wait_for(timeout) == std::future_status::ready)
             return true;
@@ -140,7 +140,7 @@ bool ZooKeeper::waitForFutureWithProgress(std::future<T> & future) const
         }
 
         /// Did the server make progress (any received data) during our wait?
-        if (impl->getLastReceivedAt() > last_seen_ts)
+        if (impl->getLastReceivedTimestamp() > last_seen_timestamp_us)
             continue;  /// yes — wait another full session_timeout
 
         return false;  /// no progress for full session_timeout — give up

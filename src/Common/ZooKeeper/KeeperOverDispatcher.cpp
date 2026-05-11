@@ -42,7 +42,7 @@ KeeperOverDispatcher::KeeperOverDispatcher(
         }
 
         /// Update progress tracker for normal operation responses.
-        state->last_received_at.store(
+        state->last_received_timestamp_us.store(
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count(),
             std::memory_order_relaxed);
@@ -64,7 +64,7 @@ KeeperOverDispatcher::KeeperOverDispatcher(
 
     keeper_dispatcher->registerSession(session_id, response_callback);
 
-    callback_state->last_received_at.store(
+    callback_state->last_received_timestamp_us.store(
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count(),
         std::memory_order_relaxed);
