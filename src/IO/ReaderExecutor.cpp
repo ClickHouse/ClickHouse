@@ -1,5 +1,6 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/PrefetchThreadPool.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 #include "config.h"
 
@@ -31,6 +32,11 @@ ReaderExecutor::ReaderExecutor(
     offset_map.build(objects);
     LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, {} caches",
         objects.size(), offset_map.totalSize(), window_size, min_bytes_for_seek, caches.size());
+}
+
+ReaderExecutor::~ReaderExecutor()
+{
+    discardPrefetch();
 }
 
 std::vector<Range> ReaderExecutor::mergeRanges(const std::vector<Range> & ranges, size_t min_gap)
@@ -67,6 +73,11 @@ std::vector<Range> ReaderExecutor::mergeRanges(const std::vector<Range> & ranges
 void ReaderExecutor::setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool)
 {
     prefetch_pool = std::move(pool);
+}
+
+void ReaderExecutor::setBufferLimit(std::shared_ptr<SourceBufferLimit> limit)
+{
+    buffer_limit = std::move(limit);
 }
 
 void ReaderExecutor::maybeTriggerPrefetch()
@@ -252,6 +263,79 @@ void ReaderExecutor::seek(size_t new_position)
     position = new_position;
 }
 
+size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset, size_t size, char * buffer)
+{
+    /// Try live buffer: reuse open connection for sequential reads.
+    if (live_buffer
+        && live_buffer->object_path == object.remote_path
+        && live_buffer->current_position == offset)
+    {
+        LOG_TRACE(log, "readFromSource: live buffer hit for {}, position={}", object.remote_path, offset);
+        auto & buf = *live_buffer->buffer;
+
+        size_t total_read = 0;
+        while (total_read < size)
+        {
+            size_t remaining = size - total_read;
+            size_t bytes = buf.read(buffer + total_read, remaining);
+            if (bytes == 0)
+                break;
+            total_read += bytes;
+        }
+
+        live_buffer->current_position += total_read;
+        live_buffer->slot.updatePosition(live_buffer->current_position);
+        return total_read;
+    }
+
+    /// Live buffer doesn't match — close it if present.
+    if (live_buffer)
+    {
+        LOG_TRACE(log, "readFromSource: closing live buffer for {} (was at {}), need {}:{}",
+            live_buffer->object_path, live_buffer->current_position, object.remote_path, offset);
+        live_buffer.reset();
+    }
+
+    /// Try to acquire a slot for a new live buffer.
+    if (buffer_limit)
+    {
+        auto slot = buffer_limit->tryAcquire(object.remote_path);
+        if (slot)
+        {
+            auto opened = source->open(object);
+            if (opened)
+            {
+                opened->seek(offset, SEEK_SET);
+
+                size_t total_read = 0;
+                while (total_read < size)
+                {
+                    size_t remaining = size - total_read;
+                    size_t bytes = opened->read(buffer + total_read, remaining);
+                    if (bytes == 0)
+                        break;
+                    total_read += bytes;
+                }
+
+                live_buffer.emplace(LiveBuffer{
+                    .object_path = object.remote_path,
+                    .current_position = offset + total_read,
+                    .buffer = std::move(opened),
+                    .slot = std::move(*slot),
+                });
+                live_buffer->slot.updatePosition(live_buffer->current_position);
+
+                LOG_TRACE(log, "readFromSource: opened live buffer for {}, read {} bytes, position={}",
+                    object.remote_path, total_read, live_buffer->current_position);
+                return total_read;
+            }
+        }
+    }
+
+    /// Fallback: stateless read (open, range-read, close).
+    return source->read(object, offset, size, buffer);
+}
+
 Rope ReaderExecutor::readPhysicalWindow(Range physical_window)
 {
     LOG_TRACE(log, "readPhysicalWindow [{}, {})", physical_window.offset, physical_window.end());
@@ -302,7 +386,7 @@ Rope ReaderExecutor::readPhysicalWindow(Range physical_window)
         LOG_TRACE(log, "readPhysicalWindow: merged {} miss ranges into {} fetch ranges (min_gap={})",
             remaining.size(), fetch_ranges.size(), min_bytes_for_seek);
 
-    /// Fetch from source
+    /// Fetch from source — try live buffer for sequential reads, fall back to stateless.
     for (const auto & miss_range : fetch_ranges)
     {
         auto physical_ranges = offset_map.map(miss_range);
@@ -312,10 +396,10 @@ Rope ReaderExecutor::readPhysicalWindow(Range physical_window)
         {
             LOG_TRACE(log, "readPhysicalWindow: source read object={}, offset={}, size={}",
                 pr.object.remote_path, pr.object_offset, pr.size);
-            auto buf = std::make_shared<OwnedRopeBuffer>(pr.size);
-            size_t bytes_read = source->read(pr.object, pr.object_offset, pr.size, buf->data());
+            auto rope_buf = std::make_shared<OwnedRopeBuffer>(pr.size);
+            size_t bytes_read = readFromSource(pr.object, pr.object_offset, pr.size, rope_buf->data());
 
-            result.append(RopeNode{std::move(buf), 0, bytes_read, logical_pos});
+            result.append(RopeNode{std::move(rope_buf), 0, bytes_read, logical_pos});
             logical_pos += bytes_read;
         }
     }

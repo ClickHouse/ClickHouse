@@ -112,6 +112,7 @@
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/PrefetchThreadPool.h>
+#include <IO/SourceBufferLimit.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/WriteSettings.h>
@@ -606,6 +607,9 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag prefetch_thread_pool_initialized;
     mutable std::shared_ptr<PrefetchThreadPool> prefetch_thread_pool;
+
+    mutable OnceFlag source_buffer_limit_initialized;
+    mutable std::shared_ptr<SourceBufferLimit> source_buffer_limit;
 
 #if USE_LIBURING
     mutable OnceFlag io_uring_reader_initialized;
@@ -7587,6 +7591,17 @@ std::shared_ptr<PrefetchThreadPool> Context::getPrefetchThreadPool() const
         shared->prefetch_thread_pool = std::make_shared<PrefetchThreadPool>(pool_size);
     });
     return shared->prefetch_thread_pool;
+}
+
+std::shared_ptr<SourceBufferLimit> Context::getSourceBufferLimit() const
+{
+    callOnce(shared->source_buffer_limit_initialized, [&]
+    {
+        /// TODO: make configurable via server settings.
+        constexpr size_t max_live_source_buffers = 128;
+        shared->source_buffer_limit = std::make_shared<SourceBufferLimit>(max_live_source_buffers);
+    });
+    return shared->source_buffer_limit;
 }
 
 #if USE_LIBURING

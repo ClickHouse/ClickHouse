@@ -55,6 +55,11 @@ public:
         return total_read;
     }
 
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override
+    {
+        return factory(object);
+    }
+
     String name() const override { return source_name; }
 
 private:

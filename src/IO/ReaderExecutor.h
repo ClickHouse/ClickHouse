@@ -4,12 +4,14 @@
 #include <IO/OffsetMap.h>
 #include <IO/ICacheProvider.h>
 #include <IO/ISourceReader.h>
+#include <IO/SourceBufferLimit.h>
 
 #include <Common/Logger.h>
 #include <base/types.h>
 #include <functional>
 #include <future>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "config.h"
@@ -36,6 +38,9 @@ public:
         size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK,
         CacheKey cache_key = {});
 
+    /// Destructor must be out-of-line because LiveBuffer holds unique_ptr<ReadBufferFromFileBase>.
+    ~ReaderExecutor();
+
     /// Read the next window starting at the current position.
     /// Returns an empty Rope at EOF.
     Rope readNextWindow();
@@ -44,6 +49,7 @@ public:
     void seek(size_t new_position);
 
     void setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
+    void setBufferLimit(std::shared_ptr<SourceBufferLimit> limit);
 
 #if USE_SSL
     using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
@@ -65,6 +71,9 @@ public:
 private:
     /// Read a specific physical range through the cache chain and source.
     Rope readPhysicalWindow(Range physical_window);
+
+    /// Read from source, trying live buffer first, falling back to stateless read.
+    size_t readFromSource(const StoredObject & object, size_t offset, size_t size, char * buffer);
 
     void maybeTriggerPrefetch();
     void discardPrefetch();
@@ -89,6 +98,18 @@ private:
     std::future<Rope> prefetch_future;
     Range prefetch_range;      /// range the in-flight prefetch covers
     bool prefetch_valid = false;
+
+    /// Live buffer: keeps a connection open for sequential reads.
+    struct LiveBuffer
+    {
+        String object_path;
+        size_t current_position = 0;
+        std::unique_ptr<ReadBufferFromFileBase> buffer;
+        SourceBufferSlot slot;
+    };
+
+    std::optional<LiveBuffer> live_buffer;
+    std::shared_ptr<SourceBufferLimit> buffer_limit;
 
 #if USE_SSL
     /// Decryption

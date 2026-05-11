@@ -48,4 +48,10 @@ size_t ObjectStorageSourceReader::read(
     return total_read;
 }
 
+std::unique_ptr<ReadBufferFromFileBase> ObjectStorageSourceReader::open(const StoredObject & object)
+{
+    LOG_TRACE(log, "open: object={}", object.remote_path);
+    return storage->readObject(object, read_settings);
+}
+
 }

@@ -20,6 +20,7 @@ class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class PageCache;
 class PrefetchThreadPool;
+class SourceBufferLimit;
 class IAsynchronousReader;
 class IBackup;
 struct AsyncReadCounters;
@@ -158,6 +159,9 @@ public:
     /// -- Prefetch pool (for ReaderExecutor path) --
     void needPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
 
+    /// -- Source buffer limit (for ReaderExecutor live buffer optimization) --
+    void needBufferLimit(std::shared_ptr<SourceBufferLimit> limit);
+
     /// -- Decryption stage --
     /// The key_finder callback is called at build time with the key fingerprint
     /// read from the encryption header. It must return the decryption key.
@@ -231,6 +235,7 @@ private:
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
+    std::shared_ptr<SourceBufferLimit> buffer_limit;
     std::vector<DecryptionStage> decryption_stages;
 };
 

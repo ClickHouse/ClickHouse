@@ -1099,7 +1099,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         }
 
         if (effective_read_settings.use_reader_executor)
+        {
             pipeline.needPrefetchPool(context_->getPrefetchThreadPool());
+            pipeline.needBufferLimit(context_->getSourceBufferLimit());
+        }
 
         LOG_TRACE(
             log, "Downloading object {} of size {} {} initial prefetch (pipeline: {})",

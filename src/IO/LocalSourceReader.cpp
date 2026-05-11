@@ -1,4 +1,6 @@
 #include <IO/LocalSourceReader.h>
+#include <IO/ReadSettings.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -60,6 +62,12 @@ size_t LocalSourceReader::read(
 
     LOG_TRACE(log, "read: file={}, got {} bytes", object.remote_path, total_read);
     return total_read;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> LocalSourceReader::open(const StoredObject & object)
+{
+    LOG_TRACE(log, "open: file={}", object.remote_path);
+    return createReadBufferFromFileBase(object.remote_path, ReadSettings{});
 }
 
 }
