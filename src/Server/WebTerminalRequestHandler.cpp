@@ -482,9 +482,26 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         return;
     }
 
+    /// Parse the auth message. `parseAuthMessage` (via `Poco::JSON::Parser` and
+    /// `getStringField`) can throw on malformed JSON or type mismatch. After the
+    /// 101 handshake we are in WebSocket framing mode, so an unhandled exception
+    /// here would unwind without a close frame and the browser would see an
+    /// abnormal close (1006) indistinguishable from a network drop. Catch
+    /// parse errors and send a deterministic policy close (1008) instead.
     String auth_user;
     String auth_password;
-    if (!parseAuthMessage(auth_frame.payload, auth_user, auth_password))
+    bool auth_parsed = false;
+    try
+    {
+        auth_parsed = parseAuthMessage(auth_frame.payload, auth_user, auth_password);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to parse WebSocket auth message");
+        sendWebSocketClose(socket, 1008, "Invalid auth message");
+        return;
+    }
+    if (!auth_parsed)
     {
         sendWebSocketClose(socket, 1008, "Invalid auth message");
         return;
