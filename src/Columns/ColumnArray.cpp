@@ -1149,7 +1149,13 @@ void ColumnArray::filterTuple(const Filter & filt)
     if (getOffsets().empty())
         return;
 
-    const ColumnTuple & tuple = assert_cast<const ColumnTuple &>(*data);
+    /// Read the inner tuple via the const path: a non-const `WrappedPtr::operator*`
+    /// goes through `assumeMutableRef`, which `chassert(use_count() == 1)`.
+    /// The previous implementation built a temporary `ColumnArray` whose `data`
+    /// shared ownership with `tuple_columns[i]` (and whose `offsets` shared with
+    /// `this->offsets` on the last iteration), and then called non-const methods
+    /// on it — every such access tripped the new `assumeMutableRef` assertion.
+    const ColumnTuple & tuple = assert_cast<const ColumnTuple &>(*std::as_const(data));
 
     size_t tuple_size = tuple.tupleSize();
 
@@ -1160,20 +1166,45 @@ void ColumnArray::filterTuple(const Filter & filt)
     }
 
     const auto & tuple_columns = tuple.getColumns();
+    const Offsets & cur_offsets = getOffsets();
+    size_t size = cur_offsets.size();
 
-    auto offsets_column = getOffsetsPtr();
+    if (size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
-    for (size_t i = 0; i < tuple_size; ++i)
+    /// Build the nested filter once from the array offsets.
+    Filter nested_filt(cur_offsets.back());
+    for (size_t i = 0; i < size; ++i)
     {
-        MutableColumnPtr offsets_to_use;
-        if (i == tuple_size - 1)
-            offsets_to_use = offsets_column->assumeMutable();
+        if (filt[i])
+            memset(&nested_filt[offsetAt(i)], 1, sizeAt(i));
         else
-            offsets_to_use = IColumn::mutate(offsets_column);
-
-        ColumnArray array_column(tuple_columns[i]->assumeMutable(), std::move(offsets_to_use));
-        array_column.filter(filt);
+            memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
     }
+
+    /// Filter each tuple element in place. `tuple` is owned uniquely by `this->data`
+    /// (per the contract of non-const `filter`), and each `tuple.columns[i]` is owned
+    /// only by the tuple — bypass the assertion in `chameleon_ptr::operator->` via
+    /// const_cast to invoke the in-place filter on the element.
+    for (size_t i = 0; i < tuple_size; ++i)
+        const_cast<IColumn *>(tuple_columns[i].get())->filter(nested_filt);
+
+    /// Update the outer array offsets in place.
+    Offsets & res_offsets = getOffsets();
+    size_t current_offset = 0;
+    size_t prev_offset = 0;
+    size_t offset_size = 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (filt[i])
+        {
+            current_offset += res_offsets[i] - prev_offset;
+            res_offsets[offset_size++] = current_offset;
+        }
+        prev_offset = res_offsets[i];
+    }
+    res_offsets.resize_assume_reserved(offset_size);
 }
 
 void ColumnArray::filterNullable(const Filter & filt)
@@ -1181,15 +1212,38 @@ void ColumnArray::filterNullable(const Filter & filt)
     if (getOffsets().empty())
         return;
 
-    ColumnNullable & nullable_elems = assert_cast<ColumnNullable &>(*data);
+    /// Read the inner `ColumnNullable` via the const path; see the rationale in
+    /// `filterTuple` above. The previous implementation built a temporary
+    /// `ColumnArray` whose `data` shared ownership with the nullable's nested
+    /// column, tripping the new `assumeMutableRef` assertion.
+    const ColumnNullable & nullable_elems = assert_cast<const ColumnNullable &>(*std::as_const(data));
 
-    auto offsets_column = getOffsetsPtr();
+    const Offsets & cur_offsets = getOffsets();
+    size_t size = cur_offsets.size();
 
-    ColumnArray array_of_nested(nullable_elems.getNestedColumnPtr()->assumeMutable(), IColumn::mutate(offsets_column));
-    array_of_nested.filter(filt);
+    if (size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
+    /// Build the nested filter once from the array offsets.
+    Filter nested_filt(cur_offsets.back());
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (filt[i])
+            memset(&nested_filt[offsetAt(i)], 1, sizeAt(i));
+        else
+            memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
+    }
+
+    /// Filter the inner nested column in place — it is owned only by the
+    /// `ColumnNullable`. Const-cast bypasses the `chameleon_ptr::operator->`
+    /// assertion; the underlying use_count is 1.
+    const_cast<IColumn *>(nullable_elems.getNestedColumnPtr().get())->filter(nested_filt);
+
+    /// Filter the null map and update outer offsets in place.
     Offsets & res_offsets = getOffsets();
-    filterArraysImplInPlace<UInt8>(nullable_elems.getNullMapData(), res_offsets, filt);
+    filterArraysImplInPlace<UInt8>(
+        const_cast<ColumnNullable &>(nullable_elems).getNullMapData(), res_offsets, filt);
 }
 
 void ColumnArray::filterGeneric(const Filter & filt)
