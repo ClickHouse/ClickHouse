@@ -36,11 +36,7 @@ public:
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageEngineName() const override
-    {
-        /// Technically it's Input but it doesn't register itself
-        return "";
-    }
+    const char * getStorageEngineName() const override { return "Input"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -97,10 +93,7 @@ StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionInput(TableFunctionFactory & factory)
 {
-    /// `input` only reads the data stream that the client is sending alongside the INSERT query;
-    /// it does not access arbitrary hosts or storages, so it does not need the `CREATE TEMPORARY TABLE` grant
-    /// and is allowed in readonly mode.
-    factory.registerFunction<TableFunctionInput>({}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionInput>();
 }
 
 }

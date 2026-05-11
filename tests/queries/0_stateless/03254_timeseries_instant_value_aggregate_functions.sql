@@ -1,7 +1,6 @@
 SET allow_experimental_ts_to_grid_aggregate_function=1;
 
 SET cluster_for_parallel_replicas = 'test_shard_localhost';
-SET enable_parallel_replicas = 0; -- Prevent randomized parallel replicas from interfering; queries that need it set it explicitly via SETTINGS
 
 
 CREATE TABLE t_resampled_timeseries
@@ -20,7 +19,6 @@ INSERT INTO t_resampled_timeseries(step, metric_id, grid_timestamp, samples) VAL
 (10, 42, '2024-12-12 12:00:30', (['2024-12-12 12:00:29', '2024-12-12 12:00:23'], [100, 100])),
 (10, 42, '2024-12-12 12:00:40', (['2024-12-12 12:00:39', '2024-12-12 12:00:38'], [90, 100]));
 
-SET automatic_parallel_replicas_mode = 0;
 WITH
     toDateTime('2024-12-12 12:00:10', 'UTC') AS start_ts,
     toDateTime('2024-12-12 12:01:00', 'UTC') AS end_ts,
@@ -41,7 +39,7 @@ FROM (
     GROUP BY metric_id
 )
 ORDER BY metric_id
-SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1, prefer_localhost_replica=1;
+SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1;
 
 -- Test with DateTime64
 
@@ -79,7 +77,7 @@ FROM (
     GROUP BY metric_id
 )
 ORDER BY metric_id
-SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1, prefer_localhost_replica=1;
+SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1;
 
 -- Another test with a reset
 WITH [
@@ -100,8 +98,8 @@ SELECT * FROM (
 ) ORDER BY name;
 
 
--- Tests to validate block header compatibility for serialized query plans
-SET serialize_query_plan=1, prefer_localhost_replica = false, enable_parallel_replicas = 0;
+-- Tests to validate block header compatibility in queries with parallel replicas
+SET serialize_query_plan=1, prefer_localhost_replica = false;
 
 SELECT
     metric_id,

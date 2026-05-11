@@ -29,7 +29,7 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     }
     ++pos;
 
-    auto range = make_intrusive<ASTJSONPathRange>();
+    auto range = std::make_shared<ASTJSONPathRange>();
     node = range;
 
     ParserNumber number_p;

@@ -65,9 +65,9 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
-        if (tid.isNonTransactional())
+        if (tid.isPrehistoric())
         {
-            csn = Tx::NonTransactionalCSN;
+            csn = Tx::PrehistoricCSN;
         }
         else
         {
@@ -134,13 +134,13 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
 
     *buf >> "commands: ";
-    commands->readText(*buf, false);
+    commands->readText(*buf);
     *buf >> "\n";
 
     if (buf->eof())
     {
-        tid = Tx::NonTransactionalTID;
-        csn = Tx::NonTransactionalCSN;
+        tid = Tx::PrehistoricTID;
+        csn = Tx::PrehistoricCSN;
     }
     else
     {

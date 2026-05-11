@@ -25,7 +25,6 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageValues.h>
-#include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
 {
@@ -49,18 +48,18 @@ namespace
 {
 
 template <typename T, typename ... Args>
-boost::intrusive_ptr<T> addASTChildrenTo(IAST & node, ASTPtr & children, Args && ... args)
+std::shared_ptr<T> addASTChildrenTo(IAST & node, ASTPtr & children, Args && ... args)
 {
-    auto new_children = make_intrusive<T>(std::forward<Args>(args)...);
+    auto new_children = std::make_shared<T>(std::forward<Args>(args)...);
     children = new_children;
     node.children.push_back(children);
     return new_children;
 }
 
 template <typename T>
-boost::intrusive_ptr<T> addASTChildren(IAST & node)
+std::shared_ptr<T> addASTChildren(IAST & node)
 {
-    auto children = make_intrusive<T>();
+    auto children = std::make_shared<T>();
     node.children.push_back(children);
     return children;
 }
@@ -106,9 +105,9 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
             auto list_of_selects = addASTChildrenTo<ASTExpressionList>(*sub_select_with_union, sub_select_with_union->list_of_selects);
 
             auto new_select = addASTChildren<ASTSelectQuery>(*list_of_selects);
-            new_select->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
+            new_select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
             addASTChildren<ASTAsterisk>(*new_select->select());
-            new_select->setExpression(ASTSelectQuery::Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
+            new_select->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
 
             auto tables_elem = addASTChildren<ASTTablesInSelectQueryElement>(*new_select->tables());
             auto sub_table_expr = addASTChildrenTo<ASTTableExpression>(*tables_elem, tables_elem->table_expression);
@@ -219,19 +218,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
         return {};
 
     if (isLeftTableFunction())
-    {
-        /// For parameterized views in refreshable materialized views, use the current context's database
-        /// instead of the query context's database. This ensures unqualified parameterized view
-        /// references resolve in the correct database (MV's database, not session's database).
-        auto table_function_context = context->getQueryContext();
-        if (is_create_parameterized_view)
-        {
-            /// Temporarily set the current database to match the context we're analyzing in
-            table_function_context = Context::createCopy(table_function_context);
-            table_function_context->setCurrentDatabase(context->getCurrentDatabase());
-        }
-        return table_function_context->executeTableFunction(left_table_expression, &select_query);
-    }
+        return context->getQueryContext()->executeTableFunction(left_table_expression, &select_query);
 
     StorageID table_id = StorageID::createEmpty();
     if (left_db_and_table)
@@ -289,14 +276,13 @@ void JoinedTables::makeFakeTable(StoragePtr storage, const StorageMetadataPtr & 
 {
     if (storage)
     {
-        const ColumnsDescription & storage_columns = metadata_snapshot->columns;
-        const VirtualColumnsDescription & virtual_columns = metadata_snapshot->virtuals;
+        const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary());
 
         auto & table = tables_with_columns.back();
         table.addHiddenColumns(storage_columns.getMaterialized());
         table.addHiddenColumns(storage_columns.getAliases());
-        table.addHiddenColumns(virtual_columns.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList());
+        table.addHiddenColumns(storage->getVirtualsList());
     }
     else
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, source_header.getNamesAndTypesList());

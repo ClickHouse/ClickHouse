@@ -1,5 +1,6 @@
 #include <Parsers/ASTShowIndexesQuery.h>
 
+#include <iomanip>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -8,7 +9,7 @@ namespace DB
 
 ASTPtr ASTShowIndexesQuery::clone() const
 {
-    auto res = make_intrusive<ASTShowIndexesQuery>(*this);
+    auto res = std::make_shared<ASTShowIndexesQuery>(*this);
     res->children.clear();
     cloneOutputOptions(*res);
     return res;

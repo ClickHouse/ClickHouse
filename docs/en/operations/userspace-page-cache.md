@@ -5,7 +5,6 @@ sidebar_label: 'Userspace page cache'
 sidebar_position: 65
 slug: /operations/userspace-page-cache
 title: 'Userspace page cache'
-doc_type: 'reference'
 ---
 
 # Userspace page cache

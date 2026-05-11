@@ -5,16 +5,18 @@
 #include <memory>
 #include <type_traits>
 
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
@@ -56,21 +58,27 @@ public:
     struct State
     {
         /// Maps bucket index to the set of all timestamps and values
-        UnorderedMapWithMemoryTracking<size_t, Bucket> buckets;
+        std::unordered_map<size_t, Bucket> buckets;
     };
 
-    explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_, const Array & parameters_,
+    explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_,
         TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_)
         : Base(
             argument_types_,
-            parameters_,
+            {
+                /// Normalize all parameters to decimals with the same scale as the scale of timestamp argument
+                DecimalField<Decimal64>(start_timestamp_, timestamp_scale_),
+                DecimalField<Decimal64>(end_timestamp_, timestamp_scale_),
+                DecimalField<Decimal64>(step_, timestamp_scale_),
+                DecimalField<Decimal64>(window_, timestamp_scale_)
+            },
             createResultType())
         , bucket_count(bucketCount(start_timestamp_, end_timestamp_, step_))
         , start_timestamp(start_timestamp_)
         , end_timestamp(static_cast<TimestampType>(start_timestamp_ + (bucket_count - 1) * step_))  /// Align end timestamp down by step
         , step(step_)
         , window(window_)
-        , timestamp_scale_multiplier(static_cast<TimestampType>(DecimalUtils::scaleMultiplier<Int64>(timestamp_scale_)))
+        , timestamp_scale_multiplier(DecimalUtils::scaleMultiplier<Int64>(timestamp_scale_))
     {
         if (window < 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window should be non-negative");
@@ -326,6 +334,25 @@ public:
         size_t /*length*/,
         Arena * /*arena*/) const override
     {
+    }
+
+    void addBatchSparse(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = typeid_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+        const auto & offsets = column_sparse.getOffsetsData();
+
+        size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
+        size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
+
+        for (size_t i = from; i < to; ++i)
+            add(places[offsets[i]] + place_offset, &values, i + 1, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
