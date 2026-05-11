@@ -1,4 +1,6 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.h>
+#include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
 #include <ranges>
 #include <base/hex.h>
@@ -96,73 +98,6 @@ UserDefinedWebAssemblyFunction::UserDefinedWebAssemblyFunction(
     , is_deterministic(is_deterministic_)
 {
 }
-
-/// Maps ClickHouse numeric types to their WASM storage type.
-/// Small integer types (Int8, UInt8, Int16, UInt16) are widened to uint32_t (i32).
-/// All other supported types map 1:1 via NativeToWasmType.
-template <typename T>
-struct WasmStorageType
-{
-    using Type = typename NativeToWasmType<T>::Type;
-};
-
-template <> struct WasmStorageType<Int8>   { using Type = uint32_t; };
-template <> struct WasmStorageType<UInt8>  { using Type = uint32_t; };
-template <> struct WasmStorageType<Int16>  { using Type = uint32_t; };
-template <> struct WasmStorageType<UInt16> { using Type = uint32_t; };
-
-template <typename T>
-constexpr WasmValKind wasmKindFor()
-{
-    return WasmValTypeToKind<typename WasmStorageType<T>::Type>::value;
-}
-
-template <typename Callable, typename... Args>
-static bool tryExecuteForNumericTypes(Callable && callable, Args &&... args)
-{
-    return (
-        callable.template operator()<Int8>(args...)
-        || callable.template operator()<UInt8>(args...)
-        || callable.template operator()<Int16>(args...)
-        || callable.template operator()<UInt16>(args...)
-        || callable.template operator()<Int32>(args...)
-        || callable.template operator()<UInt32>(args...)
-        || callable.template operator()<Int64>(args...)
-        || callable.template operator()<UInt64>(args...)
-        || callable.template operator()<Float32>(args...)
-        || callable.template operator()<Float64>(args...)
-        || callable.template operator()<Int128>(args...)
-        || callable.template operator()<UInt128>(args...)
-    );
-}
-
-static std::optional<WasmValKind> wasmKindForDataType(const IDataType * type)
-{
-    std::optional<WasmValKind> kind;
-    tryExecuteForNumericTypes([type, &kind]<typename T>()
-    {
-        if (typeid_cast<const DataTypeNumber<T> *>(type))
-        {
-            kind = wasmKindFor<T>();
-            return true;
-        }
-        return false;
-    });
-    return kind;
-}
-
-/// Returns true when `from` can be implicitly coerced to `to`.
-/// Allowed: same kind; i32→i64; any int→any float; f32→f64.
-static bool canCoerce(WasmValKind from, WasmValKind to)
-{
-    if (from == to) return true;
-    if (from == WasmValKind::I32 && to == WasmValKind::I64) return true;
-    if (from == WasmValKind::F32 && to == WasmValKind::F64) return true;
-    const bool from_int = from == WasmValKind::I32 || from == WasmValKind::I64;
-    if (from_int && (to == WasmValKind::F32 || to == WasmValKind::F64)) return true;
-    return false;
-}
-
 
 class UserDefinedWebAssemblyFunctionSimple : public UserDefinedWebAssemblyFunction
 {
@@ -449,6 +384,9 @@ std::unique_ptr<UserDefinedWebAssemblyFunction> UserDefinedWebAssemblyFunction::
         case WasmAbiVersion::BufferedV1:
             return std::make_unique<UserDefinedWebAssemblyFunctionBufferedV1>(
                 wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
+        case WasmAbiVersion::AssemblyScript:
+            return createUserDefinedWebAssemblyFunctionAssemblyScript(
+                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -462,6 +400,8 @@ String toString(WasmAbiVersion abi_type)
             return "ROW_DIRECT";
         case WasmAbiVersion::BufferedV1:
             return "BUFFERED_V1";
+        case WasmAbiVersion::AssemblyScript:
+            return "ASSEMBLYSCRIPT";
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -469,7 +409,7 @@ String toString(WasmAbiVersion abi_type)
 
 WasmAbiVersion getWasmAbiFromString(const String & str)
 {
-    for (auto abi_type : {WasmAbiVersion::RowDirect, WasmAbiVersion::BufferedV1})
+    for (auto abi_type : {WasmAbiVersion::RowDirect, WasmAbiVersion::BufferedV1, WasmAbiVersion::AssemblyScript})
         if (Poco::toUpper(str) == toString(abi_type))
             return abi_type;
 

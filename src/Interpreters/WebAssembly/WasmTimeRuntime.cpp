@@ -396,6 +396,13 @@ public:
                 throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel for wasm module instantiation: {}", result.err().message());
         }
 
+        /// `Engine::Config::epoch_interruption(true)` makes wasmtime trap on every entry to wasm
+        /// code if no epoch deadline has been set yet. The start function (e.g. AssemblyScript's
+        /// runtime init) runs as part of `Linker::instantiate` below — set a very large relative
+        /// deadline now so module instantiation can complete. Per-call cancellation is still
+        /// handled through the `epoch_deadline_callback` configured in `WasmTimeCompartment`.
+        store.context().set_epoch_deadline(std::numeric_limits<uint64_t>::max());
+
         wasmtime::Linker linker(engine);
         for (const auto & host_function : host_functions)
         {

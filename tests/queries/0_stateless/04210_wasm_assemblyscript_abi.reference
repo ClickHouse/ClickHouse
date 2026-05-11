@@ -1,0 +1,17 @@
+== numeric ==
+3
+135
+7
+== strings ==
+Hello, world!
+Hello, Alice!
+Hello, Bob!
+Hello, Привет!
+ababab
+4
+2
+== nested ==
+9
+10
+== block ==
+1000	10890
