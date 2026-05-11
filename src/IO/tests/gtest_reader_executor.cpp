@@ -5,6 +5,7 @@
 #include <IO/SourceBufferLimit.h>
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
+#include <Common/ProfileEvents.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <gtest/gtest.h>
@@ -374,20 +375,27 @@ TEST(ReaderExecutor, MergeRangesZeroMinGap)
     ASSERT_EQ(merged.size(), 2);
 }
 
+namespace ProfileEvents
+{
+    extern const Event LiveSourceBufferCreated;
+    extern const Event LiveSourceBufferHits;
+    extern const Event LiveSourceBufferFallbacks;
+    extern const Event LiveSourceBufferBytes;
+}
+
 namespace
 {
 
-/// Source reader that tracks open() and read() call counts.
-/// open() returns a ReadBufferFromMemory-like wrapper over the in-memory data.
-class CountingSourceReader : public ISourceReader
+/// Source reader that supports open() for live buffer testing.
+/// open() returns a ReadBufferFromFileBase backed by a temp file.
+class OpenableSourceReader : public ISourceReader
 {
 public:
-    explicit CountingSourceReader(std::unordered_map<String, String> data_)
+    explicit OpenableSourceReader(std::unordered_map<String, String> data_)
         : data(std::move(data_)) {}
 
     size_t read(const StoredObject & object, size_t offset, size_t size, char * buffer) override
     {
-        ++stateless_read_count;
         auto it = data.find(object.remote_path);
         if (it == data.end())
             return 0;
@@ -401,13 +409,10 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override
     {
-        ++open_count;
         auto it = data.find(object.remote_path);
         if (it == data.end())
             return nullptr;
-        /// Return a ReadBufferFromFile-like object backed by a temp file.
-        /// For simplicity, we write content to a temp file and open it.
-        auto path = std::filesystem::temp_directory_path() / ("test_counting_source_" + std::to_string(open_count));
+        auto path = std::filesystem::temp_directory_path() / ("test_openable_source_" + std::to_string(file_counter++));
         {
             std::ofstream f(path, std::ios::binary);
             f.write(it->second.data(), it->second.size());
@@ -416,12 +421,9 @@ public:
         return createReadBufferFromFileBase(path.string(), ReadSettings{});
     }
 
-    String name() const override { return "CountingSourceReader"; }
+    String name() const override { return "OpenableSourceReader"; }
 
-    std::atomic<size_t> stateless_read_count{0};
-    std::atomic<size_t> open_count{0};
-
-    ~CountingSourceReader() override
+    ~OpenableSourceReader() override
     {
         for (const auto & p : temp_files)
             std::filesystem::remove(p);
@@ -429,7 +431,37 @@ public:
 
 private:
     std::unordered_map<String, String> data;
+    size_t file_counter = 0;
     std::vector<std::filesystem::path> temp_files;
+};
+
+/// Snapshot ProfileEvents counters to compute deltas.
+struct ProfileEventsSnapshot
+{
+    ProfileEvents::Count created;
+    ProfileEvents::Count hits;
+    ProfileEvents::Count fallbacks;
+    ProfileEvents::Count bytes;
+
+    static ProfileEventsSnapshot take()
+    {
+        return {
+            ProfileEvents::global_counters[ProfileEvents::LiveSourceBufferCreated].load(std::memory_order_relaxed),
+            ProfileEvents::global_counters[ProfileEvents::LiveSourceBufferHits].load(std::memory_order_relaxed),
+            ProfileEvents::global_counters[ProfileEvents::LiveSourceBufferFallbacks].load(std::memory_order_relaxed),
+            ProfileEvents::global_counters[ProfileEvents::LiveSourceBufferBytes].load(std::memory_order_relaxed),
+        };
+    }
+
+    ProfileEventsSnapshot delta(const ProfileEventsSnapshot & after) const
+    {
+        return {
+            after.created - created,
+            after.hits - hits,
+            after.fallbacks - fallbacks,
+            after.bytes - bytes,
+        };
+    }
 };
 
 }
@@ -437,10 +469,9 @@ private:
 TEST(ReaderExecutor, LiveBufferReusesConnection)
 {
     /// 2000 bytes, window=500 → 4 sequential readNextWindow calls.
-    /// With live buffer: open() called once, then reused for all 4 reads.
-    /// Without: read() called 4 times, open() never called.
+    /// With live buffer: created once, then reused (hits) for remaining reads.
     String content(2000, 'Q');
-    auto source = std::make_shared<CountingSourceReader>(
+    auto source = std::make_shared<OpenableSourceReader>(
         std::unordered_map<String, String>{{"file", content}});
 
     StoredObjects objects;
@@ -450,6 +481,8 @@ TEST(ReaderExecutor, LiveBufferReusesConnection)
 
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
+
+    auto before = ProfileEventsSnapshot::take();
 
     String result;
     while (true)
@@ -461,21 +494,21 @@ TEST(ReaderExecutor, LiveBufferReusesConnection)
             result.append(node.data(), node.size);
     }
 
+    auto diff = before.delta(ProfileEventsSnapshot::take());
+
     EXPECT_EQ(result.size(), 2000);
     EXPECT_EQ(result, content);
-
-    /// open() called once (first read opens live buffer).
-    EXPECT_EQ(source->open_count.load(), 1);
-    /// stateless read() should NOT have been called — all reads went through live buffer.
-    EXPECT_EQ(source->stateless_read_count.load(), 0);
+    EXPECT_EQ(diff.created, 1);       /// Opened once.
+    EXPECT_EQ(diff.hits, 3);          /// Reused for 3 subsequent reads.
+    EXPECT_EQ(diff.fallbacks, 0);     /// Never fell back.
+    EXPECT_EQ(diff.bytes, 2000);      /// All bytes through live buffer.
 }
 
 TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
 {
-    /// Semaphore with 0 capacity — live buffers disabled.
-    /// All reads go through stateless read().
+    /// Semaphore with 0 capacity — all reads go through stateless path.
     String content(1000, 'R');
-    auto source = std::make_shared<CountingSourceReader>(
+    auto source = std::make_shared<OpenableSourceReader>(
         std::unordered_map<String, String>{{"file", content}});
 
     StoredObjects objects;
@@ -486,6 +519,8 @@ TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
+    auto before = ProfileEventsSnapshot::take();
+
     String result;
     while (true)
     {
@@ -496,13 +531,14 @@ TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
             result.append(node.data(), node.size);
     }
 
+    auto diff = before.delta(ProfileEventsSnapshot::take());
+
     EXPECT_EQ(result.size(), 1000);
     EXPECT_EQ(result, content);
-
-    /// open() never called — no slots available.
-    EXPECT_EQ(source->open_count.load(), 0);
-    /// All reads went through stateless read().
-    EXPECT_GE(source->stateless_read_count.load(), 2);
+    EXPECT_EQ(diff.created, 0);       /// Never opened — no slots.
+    EXPECT_EQ(diff.hits, 0);          /// No live buffer to hit.
+    EXPECT_GE(diff.fallbacks, 2);     /// All reads fell back to stateless.
+    EXPECT_EQ(diff.bytes, 0);         /// No bytes through live buffer.
 }
 
 TEST(ReaderExecutor, LiveBufferClosedOnSeek)
@@ -510,7 +546,7 @@ TEST(ReaderExecutor, LiveBufferClosedOnSeek)
     /// Sequential read opens live buffer, seek closes it and opens a new one.
     String content(2000, 'S');
     content[1000] = 'T';
-    auto source = std::make_shared<CountingSourceReader>(
+    auto source = std::make_shared<OpenableSourceReader>(
         std::unordered_map<String, String>{{"file", content}});
 
     StoredObjects objects;
@@ -521,18 +557,21 @@ TEST(ReaderExecutor, LiveBufferClosedOnSeek)
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
+    auto before = ProfileEventsSnapshot::take();
+
     /// Read first window (opens live buffer).
     auto rope1 = executor.readNextWindow();
     EXPECT_EQ(rope1.range().size, 500);
-    EXPECT_EQ(source->open_count.load(), 1);
 
-    /// Seek backwards (closes live buffer, opens new one on next read).
+    /// Seek (closes live buffer, next read opens a new one).
     executor.seek(1000);
     auto rope2 = executor.readNextWindow();
     EXPECT_EQ(rope2.range().offset, 1000);
     EXPECT_EQ(rope2.getNodes()[0].data()[0], 'T');
 
-    /// open() called twice: once for initial read, once after seek.
-    EXPECT_EQ(source->open_count.load(), 2);
-    EXPECT_EQ(source->stateless_read_count.load(), 0);
+    auto diff = before.delta(ProfileEventsSnapshot::take());
+
+    EXPECT_EQ(diff.created, 2);       /// Opened twice: initial + after seek.
+    EXPECT_EQ(diff.hits, 0);          /// No sequential reuse (seek broke the chain).
+    EXPECT_EQ(diff.fallbacks, 0);     /// Slots were available.
 }
