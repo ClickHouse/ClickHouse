@@ -15,6 +15,7 @@ null_value_counts	Map(Int32, Int64)
 column_sizes	Map(Int32, Int64)
 value_counts	Map(Int32, Int64)
 equality_ids	Array(Int32)
+--- per-file columns (empty table) ---
 --- per-file columns ---
 Row 1:
 ──────

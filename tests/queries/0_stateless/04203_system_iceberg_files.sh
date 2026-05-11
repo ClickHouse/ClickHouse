@@ -15,7 +15,6 @@ ${CLICKHOUSE_CLIENT} --query "
     ENGINE = IcebergLocal('${ICEBERG_TABLE_PATH}', 'Parquet')
     PARTITION BY (region, icebergBucket(2, id))
     ORDER BY (score);
-    INSERT INTO t0 VALUES (1, 'a', 10, 'us'), (2, 'b', NULL, 'us'), (3, 'c', 30, 'eu');
 "
 
 echo '--- system.iceberg_files schema ---'
@@ -25,6 +24,36 @@ ${CLICKHOUSE_CLIENT} --query "
     WHERE database = 'system' AND table = 'iceberg_files'
     ORDER BY position
     FORMAT TSV;
+"
+
+echo '--- per-file columns (empty table) ---'
+${CLICKHOUSE_CLIENT} --query "
+    SELECT
+        table,
+        snapshot_id != 0                              AS snapshot_id_nonzero,
+        content,
+        endsWith(file_path, '.parquet')               AS file_path_ends_with_parquet,
+        file_format,
+        record_count,
+        file_size_in_bytes > 0                        AS file_size_positive,
+        partition,
+        schema_id,
+        sequence_number,
+        sort_order_id,
+        null_value_counts,
+        value_counts,
+        arraySort(mapKeys(column_sizes))              AS column_sizes_keys,
+        arrayAll(x -> x > 0, mapValues(column_sizes)) AS column_sizes_all_positive,
+        equality_ids
+    FROM system.iceberg_files
+    WHERE database = currentDatabase() AND table = 't0'
+    ORDER BY partition
+    FORMAT Vertical;
+"
+
+${CLICKHOUSE_CLIENT} --query "
+    SET allow_experimental_insert_into_iceberg = 1;
+    INSERT INTO t0 VALUES (1, 'a', 10, 'us'), (2, 'b', NULL, 'us'), (3, 'c', 30, 'eu');
 "
 
 echo '--- per-file columns ---'
