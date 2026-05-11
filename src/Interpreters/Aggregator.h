@@ -362,6 +362,9 @@ private:
       */
     void compileAggregateFunctionsIfNeeded();
 
+    /** Select the aggregation method based on the number and types of keys. */
+    AggregatedDataVariants::Type chooseAggregationMethod(const Block & header);
+
     /** Create states of aggregate functions for one key.
       */
     template <bool skip_compiled_aggregate_functions = false>
