@@ -14,4 +14,10 @@ Test 7: Connection string with user:password@ should not trigger OAuth
 OK
 Test 8: Multiple host/port format variations
 OK
+Test 9: --login=device with missing credentials file gives clear error
+OK
+Test 10: --login=invalid should give BAD_ARGUMENTS
+OK
+Test 11: --jwt and --login together should give BAD_ARGUMENTS
+OK
 All tests completed

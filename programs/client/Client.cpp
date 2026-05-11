@@ -27,6 +27,7 @@
 
 #include <Client/JWTProvider.h>
 #include <Client/ClientBaseHelpers.h>
+#include <Client/OAuthLogin.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
@@ -67,6 +68,7 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
     extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int USER_EXPIRED;
 }
 
@@ -282,7 +284,7 @@ void Client::initialize(Poco::Util::Application & self)
             (loaded_config.configuration->has("user") || loaded_config.configuration->has("password")))
         {
             /// Config file has auth credentials, so disable the auto-added login flag
-            config().setBool("login", false);
+            config().setBool("cloud_oauth_pending", false);
         }
 #endif
     }
@@ -372,7 +374,7 @@ try
     }
 
 #if USE_JWT_CPP && USE_SSL
-    if (config().getBool("login", false))
+    if (config().getBool("cloud_oauth_pending", false) && !config().has("jwt"))
     {
         login();
     }
@@ -755,8 +757,15 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
         ("one-time-password", po::value<std::string>(), "Time-based one-time password (TOTP) for two-factor authentication")
+        ("login", po::value<std::string>()->implicit_value(""),
+            "Authenticate via OAuth2. Optional mode: 'browser' (auth-code + PKCE, opens browser) "
+            "or 'device' (device flow, prints URL + code). "
+            "Example: --login=browser or --login=device. "
+            "Bare --login uses the ClickHouse Cloud auto-login path.")
+        ("oauth-credentials", po::value<std::string>(),
+            "Path to OAuth credentials JSON file "
+            "(default: ~/.clickhouse-client/oauth_client.json)")
 #if USE_JWT_CPP && USE_SSL
-        ("login", po::bool_switch(), "Use OAuth 2.0 to login")
         ("oauth-url", po::value<std::string>(), "The base URL for the OAuth 2.0 authorization server")
         ("oauth-client-id", po::value<std::string>(), "The client ID for the OAuth 2.0 application")
         ("oauth-audience", po::value<std::string>(), "The audience for the OAuth 2.0 token")
@@ -922,16 +931,77 @@ void Client::processOptions(
         config().setString("jwt", options["jwt"].as<std::string>());
         config().setString("user", "");
     }
-#if USE_JWT_CPP && USE_SSL
-    if (options["login"].as<bool>())
+    if (options.count("oauth-credentials") && !options.count("login"))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "--oauth-credentials requires --login=browser or --login=device");
+
+    if (options.count("login"))
     {
-        if (!options["user"].defaulted())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and login flags can't be specified together");
+        /// Reject mixed JWT + --login from any source. The --login branch below
+        /// ends up calling config().setString("jwt", jwt_provider->getJWT()),
+        /// which would silently overwrite a JWT supplied via --jwt or via the
+        /// XML config file. config().has("jwt") covers both: CLI --jwt was
+        /// already copied into config() above, and a <jwt> element in
+        /// ~/.clickhouse-client/config.xml is loaded into config() at startup.
         if (config().has("jwt"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "JWT and login flags can't be specified together");
-        config().setBool("login", true);
-        config().setString("user", "");
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "--login cannot be combined with a JWT (provided via --jwt or in the config file)");
+
+        const std::string login_mode = options["login"].as<std::string>();
+        if (!login_mode.empty() && login_mode != "browser" && login_mode != "device")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "--login value must be 'browser' or 'device', got '{}'",
+                login_mode);
+
+#if USE_JWT_CPP && USE_SSL
+        if (!options["user"].defaulted())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "--user and --login cannot both be specified");
+
+        // Bare --login (empty mode, including auto-added for *.clickhouse.cloud) → cloud path.
+        // Explicit --login=browser or --login=device (or --oauth-credentials) → credentials-file
+        // OIDC path. This prevents the credentials file from hijacking the cloud auto-login.
+        const bool use_credentials_file
+            = !login_mode.empty()
+            || options.count("oauth-credentials");
+
+        if (use_credentials_file)
+        {
+            const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+            const std::string default_creds_path = home_path_cstr
+                ? std::string(home_path_cstr) + "/.clickhouse-client/oauth_client.json"
+                : "";
+
+            const std::string creds_path = options.count("oauth-credentials")
+                ? options["oauth-credentials"].as<std::string>()
+                : default_creds_path;
+
+            auto creds = loadOAuthCredentials(creds_path);
+            const auto mode = (login_mode == "device") ? OAuthFlowMode::Device : OAuthFlowMode::AuthCode;
+
+            // createOAuthJWTProvider runs the initial flow (trying the cached
+            // refresh token first) and returns a provider that Connection can
+            // call to refresh the id_token transparently during long sessions.
+            jwt_provider = createOAuthJWTProvider(creds, mode);
+            config().setString("jwt", jwt_provider->getJWT());
+            config().setString("user", "");
+        }
+        else
+        {
+            // Cloud-specific login path — bare --login, including auto-added for
+            // *.clickhouse.cloud endpoints. Use a separate config key so that
+            // argsToConfig() overwriting config["login"] with the raw string value
+            // cannot cause getBool("login") to throw in main().
+            config().setBool("cloud_oauth_pending", true);
+            config().setString("user", "");
+        }
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "OAuth login requires a build with JWT and SSL support");
+#endif
     }
+#if USE_JWT_CPP && USE_SSL
     if (options.contains("oauth-url"))
         config().setString("oauth-url", options["oauth-url"].as<std::string>());
     if (options.contains("oauth-client-id"))
@@ -1105,6 +1175,7 @@ void Client::readArguments(
                     std::string_view arg(argv[i]);
                     if (arg.starts_with("--user") || arg.starts_with("--password") ||
                         arg.starts_with("--jwt") || arg.starts_with("--ssh-key-file") ||
+                        arg == "--login" || arg.starts_with("--login=") ||
                         arg == "-u")
                     {
                         has_auth_in_cmdline = true;
