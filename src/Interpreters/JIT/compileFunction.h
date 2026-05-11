@@ -40,9 +40,9 @@ using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *);
   * the read accesses unmapped memory, causing a SIGSEGV.
   */
 template <typename F, typename... Args>
-NO_SANITIZE_UNDEFINED inline void callJITFunction(F && f, Args &&... args)
+NO_SANITIZE_UNDEFINED inline decltype(auto) callJITFunction(F && f, Args &&... args)
 {
-    f(std::forward<Args>(args)...);
+    return f(std::forward<Args>(args)...);
 }
 
 struct CompiledFunction
