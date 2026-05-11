@@ -53,7 +53,7 @@ def _build_body(d: dict) -> str:
     base_failed = int(d["base_failed"])
     base_unsup = int(d["base_unsup"])
     delta = float(d["delta"])
-    report_url = d.get("report_url") or ""
+    result_json_url = d.get("result_json_url") or ""
 
     dp = new_pct - base_pct
     d_passed = cur_passed - base_passed
@@ -71,8 +71,10 @@ def _build_body(d: dict) -> str:
         f"| Unsupported | {base_unsup} | {cur_unsup} | {d_unsup:+d} |\n"
     )
 
-    if report_url:
-        body += f"\n[CI report for this job]({report_url})\n"
+    if result_json_url:
+        body += (
+            f"\n[Uploaded compliance JSON for this PR commit]({result_json_url})\n"
+        )
 
     if from_zero:
         body += _no_s3_baseline_block()

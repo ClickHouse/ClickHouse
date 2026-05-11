@@ -136,12 +136,6 @@ def main() -> int:
         print("PromQL compliance job: delta vs baseline is ~0, skip comment payload.")
         return 0
 
-    report_url = ""
-    try:
-        report_url = info.get_job_report_url(latest=False)
-    except Exception:
-        pass
-
     payload = {
         "baseline_source": baseline_source,
         "from_zero": from_zero,
@@ -155,7 +149,7 @@ def main() -> int:
         "base_failed": base_failed,
         "base_unsup": base_unsup,
         "delta": delta,
-        "report_url": report_url,
+        "result_json_url": url,
     }
 
     COMMENT_OUT.parent.mkdir(parents=True, exist_ok=True)

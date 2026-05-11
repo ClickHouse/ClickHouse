@@ -1544,8 +1544,7 @@ class JobConfigs:
         requires=[
             j.name
             for j in (
-                JobConfigs.integration_test_jobs_required
-                + JobConfigs.integration_test_jobs_non_required
+                integration_test_jobs_required + integration_test_jobs_non_required
             )
         ],
         command="python3 ./ci/jobs/promql_compliance_job.py",
