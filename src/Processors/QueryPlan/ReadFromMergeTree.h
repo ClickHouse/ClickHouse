@@ -319,7 +319,7 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
 
     /// Set when the query has a LIMIT but it could not be propagated
     /// to `input_order_info->limit` (e.g. because of a JOIN).
@@ -466,6 +466,12 @@ private:
     UInt64 selected_parts = 0;
     UInt64 selected_rows = 0;
     UInt64 selected_marks = 0;
+
+    /// When query has WHERE and LIMIT we cannot stop reading after reaching the limit,
+    /// because we can read many rows that do not satisfy the condition.
+    /// But we still use this estimation to get smaller task size for reading in order
+    /// in case filter is not selective and to avoid reading too many rows in first task.
+    UInt64 query_task_size_limit = 0;
 
     std::optional<VectorSearchParameters> vector_search_parameters;
 
