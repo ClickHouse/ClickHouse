@@ -13,6 +13,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool.h>
+#include <Common/filesystemHelpers.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -185,7 +186,7 @@ public:
         Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
 
         /// Returns keys and aggregated for EXPLAIN query
-        void explain(ExplainFormatSettings & settings) const;
+        void explain(WriteBuffer & out, const std::string & prefix) const;
         void explain(JSONBuilder::JSONMap & map) const;
     };
 
@@ -361,6 +362,9 @@ private:
     /** Try to compile aggregate functions.
       */
     void compileAggregateFunctionsIfNeeded();
+
+    /** Select the aggregation method based on the number and types of keys. */
+    AggregatedDataVariants::Type chooseAggregationMethod(const Block & header);
 
     /** Create states of aggregate functions for one key.
       */

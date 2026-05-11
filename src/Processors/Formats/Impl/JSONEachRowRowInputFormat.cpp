@@ -1,18 +1,14 @@
-#include <algorithm>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
-#include <Core/CaseAwareBlockNameMap.h>
-
+#include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
+#include <Formats/JSONUtils.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
+#include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/JSONUtils.h>
-#include <Formats/SchemaInferenceUtils.h>
-#include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -31,8 +27,7 @@ namespace
 enum
 {
     UNKNOWN_FIELD = size_t(-1),
-    NESTED_FIELD = size_t(-2),
-    NOT_INITIALIZED = size_t(-3)
+    NESTED_FIELD = size_t(-2)
 };
 
 }
@@ -45,13 +40,12 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     const FormatSettings & format_settings_,
     bool yield_strings_)
     : IRowInputFormat(header_, in_, std::move(params_))
-    , name_map(format_settings_.input_format_column_matching_case_sensitivity)
-    , prev_positions(header_->columns(), {std::string_view{}, NOT_INITIALIZED})
+    , prev_positions(header_->columns())
     , yield_strings(yield_strings_)
     , format_settings(format_settings_)
 {
-    name_map.initFromBlock(getPort().getHeader());
     const auto & header = getPort().getHeader();
+    name_map = getNamesToIndexesMap(header);
     if (format_settings_.import_nested_json)
     {
         for (size_t i = 0; i != header.columns(); ++i)
@@ -61,7 +55,7 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
             if (!split.second.empty())
             {
                 const std::string_view table_name = column_name.substr(0, split.first.size());
-                name_map.add(table_name, NESTED_FIELD);
+                name_map[table_name] = NESTED_FIELD;
             }
         }
     }
@@ -76,19 +70,21 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(std::string_view name, size
 {
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
-    if (prev_positions.size() > key_index && prev_positions[key_index].second != NOT_INITIALIZED
-        && name_map.equal(name, prev_positions[key_index].first))
+
+    if (prev_positions.size() > key_index
+        && prev_positions[key_index] != BlockNameMap::const_iterator{}
+        && name == prev_positions[key_index]->first)
     {
-        return prev_positions[key_index].second;
+        return prev_positions[key_index]->second;
     }
 
-    auto position = name_map.get(name);
-    if (position != CaseAwareBlockNameMap::NOT_FOUND)
+    const auto it = name_map.find(name);
+    if (it != name_map.end())
     {
-        if (key_index < prev_positions.size() && position < getPort().getHeader().columns())
-            prev_positions[key_index] = {getPort().getHeader().getByPosition(position).name, position};
+        if (key_index < prev_positions.size())
+            prev_positions[key_index] = it;
 
-        return position;
+        return it->second;
     }
     return UNKNOWN_FIELD;
 }
