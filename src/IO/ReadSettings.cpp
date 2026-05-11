@@ -68,6 +68,7 @@ PageCacheSettings ReadSettings::getPageCacheSettings() const
         .page_cache_inject_eviction = page_cache_inject_eviction,
         .page_cache_block_size = page_cache_block_size,
         .page_cache_lookahead_blocks = page_cache_lookahead_blocks,
+        .page_cache_max_coalesced_bytes = page_cache_max_coalesced_bytes,
     };
 }
 

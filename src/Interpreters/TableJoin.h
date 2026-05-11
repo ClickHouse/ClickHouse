@@ -165,6 +165,7 @@ private:
     const bool allow_join_sorting = false;
     const bool allow_dynamic_type_in_join_keys = false;
     const bool enable_lazy_columns_replication = false;
+    const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
@@ -327,6 +328,7 @@ public:
     UInt64 temporaryFilesBufferSize() const { return temporary_files_buffer_size; }
     bool needStreamWithNonJoinedRows() const;
     bool enableColumnsLazyReplication() const { return enable_lazy_columns_replication; }
+    size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
 
     bool oneDisjunct() const;

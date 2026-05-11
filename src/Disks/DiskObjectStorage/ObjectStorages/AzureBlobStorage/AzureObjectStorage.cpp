@@ -229,6 +229,14 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
 {
     auto settings_ptr = settings.get();
 
+    BlobStorageLogWriterPtr blob_storage_log;
+    if (read_settings.enable_blob_storage_log_for_read_operations)
+    {
+        blob_storage_log = BlobStorageLogWriter::create(name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object.local_path;
+    }
+
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
@@ -237,7 +245,9 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         settings_ptr->max_single_download_retries,
         use_external_buffer,
         restrict_seek,
-        /* read_until_position */0);
+        /* read_until_position */0,
+        std::move(blob_storage_log),
+        connection_params.getContainer());
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT

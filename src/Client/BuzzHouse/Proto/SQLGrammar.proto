@@ -1942,6 +1942,7 @@ message JSONColumn {
     oneof jcol_oneof {
         bool jcol = 2;
         uint32 jarray = 3;
+        bool jcombined = 4;
     }
 }
 
@@ -3889,6 +3890,9 @@ message DictionarySourceDetails {
         POSTGRESQL = 3;
         MONGODB = 4;
         REDIS = 5;
+        HTTP = 6;
+        FILE = 7;
+        YAMLRegExpTree = 8;
     }
     enum RedisStorageType {
         simple = 1;
@@ -3904,6 +3908,9 @@ message DictionarySourceDetails {
     optional string invalidate_query = 8;
     optional ColumnPath update_field = 9;
     optional uint32 update_lag = 10;
+    optional string url = 11;
+    optional string path = 12;
+    optional string format = 13;
 }
 
 message DictionarySource {
@@ -3930,6 +3937,7 @@ enum DictionaryLayouts {
     RANGE_HASHED = 14;
     SPARSE_HASHED = 15;
     SSD_CACHE = 16;
+    REGEXP_TREE = 17;
 }
 
 message DictionaryLayout {
@@ -4002,9 +4010,16 @@ message ExpireSnapshots {
     optional bool dry_run = 6;
 }
 
+message RemoveOrphanFiles {
+    optional string older_than = 1;
+    optional string location = 2;
+    optional bool dry_run = 3;
+}
+
 message ExecuteCommand {
     oneof command {
         ExpireSnapshots expire_snapshots = 1;
+        RemoveOrphanFiles remove_orphan_files = 2;
     }
 }
 
@@ -4264,7 +4279,18 @@ message SystemCommand {
         bool stop_thread_fuzzer = 97;
         bool drop_distributed_cache = 98;
         UnlockSnapshot unlock_snapshot = 99;
+        FlushObjectStorageQueue flush_object_storage_queue = 100;
+        ExprSchemaTable stop_virtual_parts_update = 101;
+        ExprSchemaTable start_virtual_parts_update = 102;
+        ExprSchemaTable stop_reduce_blocking_parts = 103;
+        ExprSchemaTable start_reduce_blocking_parts = 104;
+        string wait_blobs_cleanup = 105;
     }
+}
+
+message FlushObjectStorageQueue {
+    required ExprSchemaTable table = 1;
+    required string path = 2;
 }
 
 message BackupRestoreObject {
