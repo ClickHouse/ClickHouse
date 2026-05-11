@@ -149,8 +149,8 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
             "==========================================\n",
             parsed_query->formatForErrorMessage(),
             exception->message());
-        std::fflush(stderr);
-        std::fflush(stdout);
+        (void)std::fflush(stderr);
+        (void)std::fflush(stdout);
         _exit(49);
     }
     if (have_error)
