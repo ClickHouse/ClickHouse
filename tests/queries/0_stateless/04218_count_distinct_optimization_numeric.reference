@@ -1,0 +1,18 @@
+numeric: UInt64	1
+numeric: DateTime	1
+numeric: Decimal	1
+numeric: Enum	1
+numeric: IPv4	1
+numeric: LC(UInt32)	1
+non-numeric: String	1
+non-numeric: UUID	1
+non-numeric: LC(String)	1
+UInt64	2
+String	2
+DateTime	2
+Decimal	2
+UUID	2
+Enum	2
+IPv4	2
+LC(String)	2
+LC(UInt32)	2

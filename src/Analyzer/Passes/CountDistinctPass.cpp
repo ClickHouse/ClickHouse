@@ -90,6 +90,16 @@ public:
             return;
         auto & count_distinct_argument_column_typed = count_distinct_argument_column->as<ColumnNode &>();
 
+        /// Skip numeric-like columns: the `uniqExact` aggregator has highly tuned
+        /// open-addressing hash tables for fixed-size numeric values, and the
+        /// extra block materialization between the inner `GROUP BY` and the outer
+        /// `count()` makes the rewrite slower in multi-threaded execution.
+        /// `String`, `FixedString`, `Array`, etc. still benefit because the
+        /// specialized `GROUP BY` hash tables outperform the generic ones used
+        /// inside `uniqExact` for those types.
+        if (count_distinct_argument_column_typed.getColumnType()->isValueRepresentedByNumber())
+            return;
+
         /// Build subquery SELECT count_distinct_argument_column FROM table_expression GROUP BY count_distinct_argument_column
         auto subquery = std::make_shared<QueryNode>(Context::createCopy(query_node->getContext()));
         subquery->getJoinTree() = query_node->getJoinTree();
