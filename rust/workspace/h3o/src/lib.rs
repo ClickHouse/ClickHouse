@@ -949,11 +949,11 @@ pub unsafe extern "C" fn getIcosahedronFaces(h3: H3Index, out: *mut i32) -> H3Er
 /// H3Error maxPolygonToCellsSize(const GeoPolygon *geoPolygon, int res,
 ///                               uint32_t flags, int64_t *out)
 ///
-/// The polygon code paths in `h3o` (and its `geo` dependency) can panic on
-/// degenerate inputs — e.g. coordinates produced by the AST fuzzer that hit
-/// numerical edge cases in the line-sweep intersection algorithm. Such panics
-/// must not propagate across the FFI boundary, so we wrap the body in
-/// `catch_unwind` and translate panics into `E_FAILED`.
+/// `h3o` validates polygon coordinates inside `TilerBuilder::add` and surfaces
+/// invalid geometries as an `Err`, so the previously-needed `catch_unwind`
+/// guard against panics from the `geo` line-sweep code is no longer required
+/// (see https://github.com/HydroniumLabs/h3o/issues/44). If a future version
+/// of `h3o` regresses and starts panicking again, the fix belongs upstream.
 #[no_mangle]
 pub unsafe extern "C" fn maxPolygonToCellsSize(
     geo_polygon: *const GeoPolygon,
@@ -970,27 +970,20 @@ pub unsafe extern "C" fn maxPolygonToCellsSize(
     let Some(resolution) = try_resolution(res) else {
         return E_FAILED;
     };
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let geo_poly = c_polygon_to_geo(&*geo_polygon);
-        let mut tiler = h3o::geom::TilerBuilder::new(resolution)
-            .disable_radians_conversion()
-            .build();
-        tiler.add(geo_poly).ok()?;
-        Some(tiler.coverage_size_hint())
-    }));
-    let Ok(Some(count)) = result else {
+    let geo_poly = c_polygon_to_geo(&*geo_polygon);
+    let mut tiler = h3o::geom::TilerBuilder::new(resolution)
+        .disable_radians_conversion()
+        .build();
+    if tiler.add(geo_poly).is_err() {
         return E_FAILED;
-    };
+    }
+    let count = tiler.coverage_size_hint();
     *out = if count > i64::MAX as usize { i64::MAX } else { count as i64 };
     E_SUCCESS
 }
 
 /// H3Error polygonToCells(const GeoPolygon *geoPolygon, int res,
 ///                        uint32_t flags, H3Index *out)
-///
-/// Wrapped in `catch_unwind` for the same reason as `maxPolygonToCellsSize` —
-/// the polygon-to-cells iteration in `h3o`/`geo` is not panic-free on all
-/// inputs and we must not unwind across the C ABI.
 #[no_mangle]
 pub unsafe extern "C" fn polygonToCells(
     geo_polygon: *const GeoPolygon,
@@ -1006,29 +999,25 @@ pub unsafe extern "C" fn polygonToCells(
     let Some(resolution) = try_resolution(res) else {
         return E_FAILED;
     };
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let geo_poly = c_polygon_to_geo(&*geo_polygon);
-        let mut tiler = h3o::geom::TilerBuilder::new(resolution)
-            .disable_radians_conversion()
-            .build();
-        tiler.add(geo_poly).ok()?;
-        // The caller allocates exactly `coverage_size_hint` slots via
-        // `maxPolygonToCellsSize`, so producing more cells here means the two
-        // backend calls disagree. Surface that as an error rather than
-        // silently truncating the result set.
-        let max_size = tiler.coverage_size_hint();
-        let mut count = 0usize;
-        for cell in tiler.into_coverage() {
-            if count >= max_size {
-                return None;
-            }
-            *out.add(count) = u64::from(cell);
-            count += 1;
-        }
-        Some(())
-    }));
-    if !matches!(result, Ok(Some(()))) {
+    let geo_poly = c_polygon_to_geo(&*geo_polygon);
+    let mut tiler = h3o::geom::TilerBuilder::new(resolution)
+        .disable_radians_conversion()
+        .build();
+    if tiler.add(geo_poly).is_err() {
         return E_FAILED;
+    }
+    // The caller allocates exactly `coverage_size_hint` slots via
+    // `maxPolygonToCellsSize`, so producing more cells here means the two
+    // backend calls disagree. Surface that as an error rather than
+    // silently truncating the result set.
+    let max_size = tiler.coverage_size_hint();
+    let mut count = 0usize;
+    for cell in tiler.into_coverage() {
+        if count >= max_size {
+            return E_FAILED;
+        }
+        *out.add(count) = u64::from(cell);
+        count += 1;
     }
     E_SUCCESS
 }

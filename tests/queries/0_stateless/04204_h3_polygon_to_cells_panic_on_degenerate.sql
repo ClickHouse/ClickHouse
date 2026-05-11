@@ -1,11 +1,9 @@
--- Regression test for `h3PolygonToCells` panic on degenerate polygons.
--- The AST fuzzer produced a polygon whose coordinates triggered a panic
--- in the line-sweep intersection algorithm of `geo` (a transitive dep of
--- `h3o`). Because the FFI wrapper used `extern "C"`, the panic could not
--- unwind across the C ABI boundary and the server aborted with signal 6.
--- The fix wraps polygon operations in `catch_unwind` and converts panics
--- into `E_FAILED`; the C++ caller then surfaces that as a controlled
--- `BAD_ARGUMENTS` exception instead of an abort or a silent empty result.
+-- Regression test for `h3PolygonToCells` on degenerate polygons.
+-- The AST fuzzer produced a polygon whose coordinates triggered a panic in
+-- the line-sweep intersection algorithm of `geo` (a transitive dep of `h3o`)
+-- in `h3o` 0.6 / `geo` 0.28. `h3o` 0.9.5 now validates exterior coordinates
+-- and returns `Err` for inputs like this, which we translate to `E_FAILED`
+-- and the C++ caller surfaces as a controlled `BAD_ARGUMENTS` exception.
 -- See: https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=100272&sha=e96a06161537e78ab2d2bb73bae82a79aa845c49&name_0=PR&name_1=AST%20fuzzer%20%28amd_debug%2C%20targeted%2C%20old_compatibility%29
 -- Upstream report: https://github.com/HydroniumLabs/h3o/issues/44
 
