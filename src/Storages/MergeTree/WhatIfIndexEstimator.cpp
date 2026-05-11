@@ -173,7 +173,7 @@ bool tryEstimateEmpirical(
     ContextPtr /* context */)
 {
     const auto & data = read_step->getMergeTreeData();
-    auto storage_snapshot = read_step->getStorageSnapshot();
+    const auto & storage_snapshot = read_step->getStorageSnapshot();
 
     Names index_columns = index_helper->getColumnsRequiredForIndexCalc();
     if (index_columns.empty())
