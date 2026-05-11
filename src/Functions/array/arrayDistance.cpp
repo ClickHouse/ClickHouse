@@ -101,7 +101,7 @@ struct L2Distance
 
         constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
 
-        for (; i_x + n < i_max; i_x += n, i_y += n)
+        for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
             if constexpr (is_float32)
             {
@@ -137,7 +137,7 @@ struct L2Distance
 
         constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
 
-        for (; i_x + n < i_max; i_x += n, i_y += n)
+        for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
             __m512 x1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x)));
             __m512 x2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x + n / 2)));
@@ -299,7 +299,7 @@ struct CosineDistance
 
         constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
 
-        for (; i_x + n < i_max; i_x += n, i_y += n)
+        for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
             if constexpr (is_float32)
             {
@@ -347,7 +347,7 @@ struct CosineDistance
 
         constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
 
-        for (; i_x + n < i_max; i_x += n, i_y += n)
+        for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
             __m512 x = _mm512_loadu_ps(data_x + i_x);
             __m512 y = _mm512_loadu_ps(data_y + i_y);
@@ -538,7 +538,7 @@ private:
             /// Process chunks in vectorized manner
             static constexpr size_t VEC_SIZE = 16; /// the choice of the constant has no huge performance impact. 16 seems the best.
             typename Kernel::template State<ResultType> states[VEC_SIZE];
-            for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
+            for (; prev + VEC_SIZE <= off; prev += VEC_SIZE)
             {
                 for (size_t s = 0; s < VEC_SIZE; ++s)
                     Kernel::template accumulate<ResultType>(
@@ -634,7 +634,7 @@ private:
                 /// Process chunks in a vectorized manner.
                 static constexpr size_t VEC_SIZE = 8; /// the choice of the constant has no huge performance impact. 16 breaks interleaving with clang-21. 8 is ok.
                 typename Kernel::template State<ResultType> states[VEC_SIZE];
-                for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
+                for (; prev + VEC_SIZE <= off; i += VEC_SIZE, prev += VEC_SIZE)
                 {
                     for (size_t s = 0; s < VEC_SIZE; ++s)
                         Kernel::template accumulate<ResultType>(

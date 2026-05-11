@@ -251,7 +251,7 @@ private:
             /// Process chunks in vectorized manner
             static constexpr size_t VEC_SIZE = 4;
             ResultType results[VEC_SIZE] = {0};
-            for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
+            for (; prev + VEC_SIZE <= off; prev += VEC_SIZE)
             {
                 for (size_t s = 0; s < VEC_SIZE; ++s)
                     results[s] = Kernel::template accumulate<ResultType>(results[s], static_cast<ResultType>(data[prev + s]), kernel_params);
