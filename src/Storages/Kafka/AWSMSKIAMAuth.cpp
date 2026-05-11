@@ -27,7 +27,6 @@
 #include <aws/core/http/URI.h>
 #include <aws/core/utils/memory/stl/AWSStreamFwd.h>
 #include <chrono>
-#include <sstream>
 
 namespace DB
 {
@@ -131,10 +130,11 @@ void setupAuthentication(
 
     if (effective_region.empty() && !broker_list.empty())
     {
-        std::istringstream stream(broker_list);
-        String broker;
-        while (std::getline(stream, broker, ','))
+        size_t start = 0;
+        while (start <= broker_list.size())
         {
+            size_t comma = broker_list.find(',', start);
+            String broker = broker_list.substr(start, comma == String::npos ? String::npos : comma - start);
             boost::trim(broker);
             effective_region = extractRegionFromBroker(broker);
             if (!effective_region.empty())
@@ -142,6 +142,9 @@ void setupAuthentication(
                 LOG_DEBUG(log, "Auto-detected AWS region '{}' from broker address '{}'", effective_region, broker);
                 break;
             }
+            if (comma == String::npos)
+                break;
+            start = comma + 1;
         }
     }
 
