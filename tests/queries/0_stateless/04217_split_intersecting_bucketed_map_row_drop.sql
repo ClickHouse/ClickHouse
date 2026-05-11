@@ -13,7 +13,9 @@
 -- fall inside a layer's PK range.
 --
 -- The fix treats `Map` as not "safe" for the splitter, so `Map`-keyed reads always take
--- the single in-order merging-pipe path in `splitPartsWithRangesByPrimaryKey`.
+-- the single in-order merging-pipe path in `splitPartsWithRangesByPrimaryKey`. The check is
+-- recursive — see `isSafePrimaryDataKeyType` — so the same fix also covers composite primary
+-- keys with `Map` columns and primary keys whose type is a `Tuple` containing a `Map`.
 
 DROP TABLE IF EXISTS tm_split_repro;
 
@@ -68,3 +70,98 @@ SELECT 'final-split-0 groupArray', length(groupArray(a)) FROM tm_split_repro_fin
     SETTINGS max_threads = 4, split_parts_ranges_into_intersecting_and_non_intersecting_final = 0;
 
 DROP TABLE tm_split_repro_final;
+
+-- Composite primary key `(id, m)` where `m` is a `Map`. This exercises the loop in
+-- `isSafePrimaryKey` that scans every PK column individually, so the splitter must mark
+-- the whole PK as unsafe as soon as any column is a `Map`. All rows use the same `id`
+-- to make every part intersect on `id`, which forces the splitter's boundary calculation
+-- to compare `m` values across parts.
+
+DROP TABLE IF EXISTS tm_split_repro_composite;
+
+CREATE TABLE tm_split_repro_composite(id UInt32, m Map(String, Array(UInt8))) ENGINE = MergeTree() ORDER BY (id, m) SETTINGS
+    min_bytes_for_wide_part = 0,
+    map_serialization_version_for_zero_level_parts = 'with_buckets',
+    max_buckets_in_map = 11,
+    map_buckets_strategy = 'constant',
+    map_buckets_min_avg_size = 2;
+
+INSERT INTO tm_split_repro_composite VALUES (1, map('k1', [1,2,3], 'k2', [4,5,6])), (1, map('k0', [], 'k1', [100,20,90]));
+INSERT INTO tm_split_repro_composite SELECT 1, map('k1', [number, number + 2, number * 2]) FROM numbers(6);
+INSERT INTO tm_split_repro_composite SELECT 1, map('k2', [number, number + 2, number * 2]) FROM numbers(6);
+
+SELECT 'composite-inj count', count() FROM tm_split_repro_composite
+    SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1, max_threads = 4;
+SELECT 'composite-inj groupArray', length(groupArray(m)) FROM tm_split_repro_composite
+    SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1, max_threads = 4;
+
+DROP TABLE tm_split_repro_composite;
+
+-- Same composite PK shape on `ReplacingMergeTree`, exercising the FINAL split path.
+-- Without the fix this previously returned 13 rows for both `count` and `groupArray`.
+
+DROP TABLE IF EXISTS tm_split_repro_composite_final;
+
+CREATE TABLE tm_split_repro_composite_final(id UInt32, m Map(String, Array(UInt8))) ENGINE = ReplacingMergeTree() ORDER BY (id, m) SETTINGS
+    min_bytes_for_wide_part = 0,
+    map_serialization_version_for_zero_level_parts = 'with_buckets',
+    max_buckets_in_map = 11,
+    map_buckets_strategy = 'constant',
+    map_buckets_min_avg_size = 2;
+
+INSERT INTO tm_split_repro_composite_final VALUES (1, map('k1', [1,2,3], 'k2', [4,5,6])), (1, map('k0', [], 'k1', [100,20,90]));
+INSERT INTO tm_split_repro_composite_final SELECT 1, map('k1', [number, number + 2, number * 2]) FROM numbers(6);
+INSERT INTO tm_split_repro_composite_final SELECT 1, map('k2', [number, number + 2, number * 2]) FROM numbers(6);
+
+SELECT 'composite-final-split-0 count', count() FROM tm_split_repro_composite_final FINAL
+    SETTINGS max_threads = 4, split_parts_ranges_into_intersecting_and_non_intersecting_final = 0;
+SELECT 'composite-final-split-0 groupArray', length(groupArray(m)) FROM tm_split_repro_composite_final FINAL
+    SETTINGS max_threads = 4, split_parts_ranges_into_intersecting_and_non_intersecting_final = 0;
+
+DROP TABLE tm_split_repro_composite_final;
+
+-- Primary key whose type is itself a `Tuple` containing a `Map`. This exercises the
+-- recursive `Tuple` branch of `isSafePrimaryDataKeyType`, which must descend into the
+-- tuple's elements and mark the whole tuple as unsafe when any element is a `Map`.
+
+DROP TABLE IF EXISTS tm_split_repro_tuple;
+
+CREATE TABLE tm_split_repro_tuple(c Tuple(Map(String, Array(UInt8)), UInt32)) ENGINE = MergeTree() ORDER BY c SETTINGS
+    min_bytes_for_wide_part = 0,
+    map_serialization_version_for_zero_level_parts = 'with_buckets',
+    max_buckets_in_map = 11,
+    map_buckets_strategy = 'constant',
+    map_buckets_min_avg_size = 2;
+
+INSERT INTO tm_split_repro_tuple VALUES (tuple(map('k1', [1,2,3], 'k2', [4,5,6]), 1)), (tuple(map('k0', [], 'k1', [100,20,90]), 1));
+INSERT INTO tm_split_repro_tuple SELECT tuple(map('k1', [number, number + 2, number * 2]), 1) FROM numbers(6);
+INSERT INTO tm_split_repro_tuple SELECT tuple(map('k2', [number, number + 2, number * 2]), 1) FROM numbers(6);
+
+SELECT 'tuple-inj count', count() FROM tm_split_repro_tuple
+    SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1, max_threads = 4;
+SELECT 'tuple-inj groupArray', length(groupArray(c)) FROM tm_split_repro_tuple
+    SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1, max_threads = 4;
+
+DROP TABLE tm_split_repro_tuple;
+
+-- Same `Tuple(Map, ...)` PK shape on `ReplacingMergeTree`, exercising the FINAL split path.
+
+DROP TABLE IF EXISTS tm_split_repro_tuple_final;
+
+CREATE TABLE tm_split_repro_tuple_final(c Tuple(Map(String, Array(UInt8)), UInt32)) ENGINE = ReplacingMergeTree() ORDER BY c SETTINGS
+    min_bytes_for_wide_part = 0,
+    map_serialization_version_for_zero_level_parts = 'with_buckets',
+    max_buckets_in_map = 11,
+    map_buckets_strategy = 'constant',
+    map_buckets_min_avg_size = 2;
+
+INSERT INTO tm_split_repro_tuple_final VALUES (tuple(map('k1', [1,2,3], 'k2', [4,5,6]), 1)), (tuple(map('k0', [], 'k1', [100,20,90]), 1));
+INSERT INTO tm_split_repro_tuple_final SELECT tuple(map('k1', [number, number + 2, number * 2]), 1) FROM numbers(6);
+INSERT INTO tm_split_repro_tuple_final SELECT tuple(map('k2', [number, number + 2, number * 2]), 1) FROM numbers(6);
+
+SELECT 'tuple-final-split-0 count', count() FROM tm_split_repro_tuple_final FINAL
+    SETTINGS max_threads = 4, split_parts_ranges_into_intersecting_and_non_intersecting_final = 0;
+SELECT 'tuple-final-split-0 groupArray', length(groupArray(c)) FROM tm_split_repro_tuple_final FINAL
+    SETTINGS max_threads = 4, split_parts_ranges_into_intersecting_and_non_intersecting_final = 0;
+
+DROP TABLE tm_split_repro_tuple_final;

@@ -4,3 +4,11 @@ inj count	14
 inj groupArray	14
 final-split-0 count	14
 final-split-0 groupArray	14
+composite-inj count	14
+composite-inj groupArray	14
+composite-final-split-0 count	14
+composite-final-split-0 groupArray	14
+tuple-inj count	14
+tuple-inj groupArray	14
+tuple-final-split-0 count	14
+tuple-final-split-0 groupArray	14
