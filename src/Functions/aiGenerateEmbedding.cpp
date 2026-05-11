@@ -212,7 +212,6 @@ public:
             ai_embedding_request.dimensions = dimensions;
             ai_embedding_request.inputs.assign(unique_texts.begin() + batch_start, unique_texts.begin() + batch_end);
 
-            bool success = false;
             for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
             {
                 try
@@ -227,7 +226,6 @@ public:
                         if (i < ai_embedding_response.embeddings.size())
                             results[ai_embedding_request.inputs[i]] = std::move(ai_embedding_response.embeddings[i]);
                     }
-                    success = true;
                     break;
                 }
                 catch (const Exception & e)
@@ -238,21 +236,19 @@ public:
                         continue;
                     }
 
-                    if (!throw_on_error)
+                    if (!throw_on_error) /// just skip to next batch, this batch's results will be filled with default vals
                         break;
 
                     throw;
                 }
                 catch (...) /// Handle non-DB exceptions (e.g. Poco network/JSON errors) for throw_on_error semantics
                 {
-                    if (!throw_on_error)
+                    if (!throw_on_error) /// just skip to next batch, this batch's results will be filled with default vals
                         break;
 
                     throw;
                 }
             }
-            if (!success)
-                break;
         }
 
         auto data_col = ColumnVector<Float32>::create();
