@@ -1,0 +1,308 @@
+-- AdditionalFunctionTests::SqrtFunction_Scalar --
+4
+-- AdditionalFunctionTests::PowFunction_Scalar --
+256
+-- AdditionalFunctionTests::Log10Function_Scalar --
+3
+-- AdditionalFunctionTests::ToBoolFunction_Scalar --
+true
+-- AdditionalFunctionTests::IsNanFunction_Scalar --
+true
+-- AdditionalFunctionTests::IsInfFunction_Scalar --
+true
+-- AdditionalFunctionTests::ToLowerFunction_Scalar --
+hello
+-- AdditionalFunctionTests::ToUpperFunction_Scalar --
+HELLO
+-- AdditionalFunctionTests::StrLenFunction_Scalar --
+5
+-- AdditionalFunctionTests::Bin_ZeroInterval_ReturnsNull --
+\N
+-- AdditionalFunctionTests::ReplaceStringFunction_Scalar --
+hello Kusto
+-- AdditionalFunctionTests::StrcatFunction_Scalar --
+abc
+-- AdditionalFunctionTests::StrcatDelimFunction_Scalar --
+a,b,c
+-- AdditionalFunctionTests::ReverseFunction_Scalar --
+cba
+-- AdditionalFunctionTests::IsEmptyFunction_Scalar --
+true
+-- AdditionalFunctionTests::IsNotEmptyFunction_Scalar --
+true
+-- AdditionalFunctionTests::IndexOfFunction_Scalar --
+6
+-- AdditionalFunctionTests::AbsFunction_Scalar --
+42
+-- AdditionalFunctionTests::RoundFunction_Scalar --
+3.14
+-- AdditionalFunctionTests::ToIntFunction_Scalar --
+42
+-- AdditionalFunctionTests::ToLongFunction_Scalar --
+42
+-- AdditionalFunctionTests::ToRealFunction_Scalar --
+3.14
+-- AdditionalFunctionTests::ToDecimalFunction_Scalar --
+3.14
+-- AdditionalFunctionTests::ToStringFunction_Scalar --
+42
+-- AdditionalFunctionTests::ArrayLengthFunction_Scalar --
+3
+-- AdditionalFunctionTests::ArrayReverseFunction_Scalar --
+[3,2,1]
+-- AdditionalFunctionTests::IsNullFunction_Scalar --
+true
+-- AdditionalFunctionTests::IsNotNullFunction_Scalar --
+true
+-- AdditionalFunctionTests::CoalesceFunction_Scalar --
+42
+-- AdditionalFunctionTests::IffFunction_Scalar --
+yes
+-- AdditionalFunctionTests::NotFunction_Scalar --
+true
+-- AdditionalFunctionTests::StrRepFunction_Scalar --
+ababab
+-- AdditionalFunctionTests::StrcatArrayFunction_Scalar --
+1->2->3
+-- AggregationFunctionTests::MakeList_BasicExample --
+[1,3,2,1]
+-- AggregationFunctionTests::MakeList_WithMaxSize --
+[1,3]
+-- AggregationFunctionTests::MakeListIf_BasicExample --
+[3,2]
+-- AggregationFunctionTests::MakeListIf_WithMaxSize --
+[1,3,2]
+-- AggregationFunctionTests::MakeSet_BasicExample --
+[1,2,3]
+-- AggregationFunctionTests::MakeSet_WithMaxSize --
+[1,2]
+-- AggregationFunctionTests::MakeSet_FromMicrosoftDocs --
+[100,150,200]
+-- AggregationFunctionTests::MakeSetIf_BasicExample --
+[2,3]
+-- AggregationFunctionTests::MakeSetIf_WithMaxSize --
+[1,2]
+-- AggregationFunctionTests::MakeSetIf_FromMicrosoftDocs --
+[150,200]
+-- ArgMinMaxTests::Arg_max --
+-- BinTests::Long --
+11
+-- BinTests::Double --
+4.5
+-- BinTests::Durations --
+-12:00:00
+-- DateTimeTests::MakeDateTime_InvalidMonth_ReturnsDefaultDateTime --
+1900-01-01T00:00:00.0000000
+-- DateTimeTests::DateTimeBin --
+1970-05-11T00:00:00.0000000
+-- DateTimeTests::DateTimeToLocal --
+2015-12-31 18:59:59.900000000
+-- DateTimeTests::ToDateTime --
+2024-01-15T12:35:35.0000000
+-- DateTimeTests::ToDateTime3 --
+true
+-- DateTimeTests::ToDateTime2 --
+2024-01-15T12:35:35.0000000
+-- DateTimeTests::ToDateTimeFmt --
+2024-01-15T12:35:35.0000000
+-- DateTimeTests::MakeDateTime --
+2000-04-15T01:01:00.0000000
+-- DateTimeTests::MakeDateTime2 --
+2000-04-15T00:00:00.0000000
+-- DynamicTests::MemberAccess --
+123
+-- DynamicTests::NestedMemberAccess --
+456
+-- DynamicTests::ArrayAccess --
+1
+-- DynamicTests::NegativeNumber --
+-5
+-- DynamicTests::NegativeExpression --
+-6
+-- DynamicTests::ArrayAccessWithNegativeIndex --
+2
+-- SimpleFunctionTests::TrimStart --
+innerbbba
+-- SimpleFunctionTests::TrimEnd --
+baaainner
+-- SimpleFunctionTests::Trim --
+inner
+-- SimpleFunctionTests::Case --
+7	Medium
+-- SimpleFunctionTests::GeoPointToGeoHashScalarWithDefault --
+xn76m
+-- SimpleFunctionTests::SplitScalar --
+part
+-- SimpleFunctionTests::ToLower --
+abcdef
+-- SimpleFunctionTests::ToUpper --
+ABCDEF
+-- SimpleFunctionTests::Strlen --
+6
+-- SimpleFunctionTests::SubString --
+Cde
+-- SimpleFunctionTests::SubStringSingleParameter --
+Cdef
+-- SimpleFunctionTests::Substring_OutOfRange_ShouldReturnEmpty --
+
+-- SimpleFunctionTests::Trimws --
+abc
+-- SimpleFunctionTests::PadLeft --
+   abc
+-- SimpleFunctionTests::PadLeftWithChar --
+AAAabc
+-- SimpleFunctionTests::PadLeftWithBlankChar --
+   abc
+-- SimpleFunctionTests::PadRight --
+abc   
+-- SimpleFunctionTests::PadRightWithChar --
+abcAAA
+-- SimpleFunctionTests::PadRightWithBlankChar --
+abc   
+-- SimpleFunctionTests::TimespanFormatting --
+1.00:00:00
+-- SimpleFunctionTests::Range --
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+-- SimpleFunctionTests::RowNumberNoParam --
+1	1
+2	2
+3	3
+4	4
+5	5
+6	6
+7	7
+8	8
+9	9
+10	10
+-- SimpleFunctionTests::RowNumberStartingAt7 --
+1	7
+2	8
+3	9
+4	10
+5	11
+-- SimpleFunctionTests::RowNumberWithRanking --
+-- SimpleFunctionTests::BetweenLong --
+50
+51
+52
+53
+54
+55
+-- SimpleFunctionTests::BetweenInt --
+-- SimpleFunctionTests::RangeTimeSpan --
+-- FIXME: timespan-typed range bounds not yet supported --
+-- SimpleFunctionTests::RangeTimeSpanFiltered --
+-- FIXME: timespan-typed range bounds not yet supported --
+-- SimpleFunctionTests::NotBetweenLong --
+1
+2
+3
+4
+5
+6
+7
+8
+-- SimpleFunctionTests::StrLen --
+3
+-- SimpleFunctionTests::StrLen0 --
+0
+-- SimpleFunctionTests::MultiplyTimespan --
+864000
+-- SimpleFunctionTests::MultiplyTimespanR --
+864000
+-- SimpleFunctionTests::AbsInt --
+99
+-- SimpleFunctionTests::TimeSpanBin --
+1.00:00:00
+-- SimpleFunctionTests::TimespanDiv --
+432000
+-- SimpleFunctionTests::TimespanDiv2 --
+345600
+-- SimpleFunctionTests::AvgNumber --
+2
+-- SimpleFunctionTests::RoundDouble --
+3.1
+-- SimpleFunctionTests::SignInt --
+-1
+-- SimpleFunctionTests::ToLongHex --
+160
+-- SimpleFunctionTests::ToLongHexWithPrefix --
+160
+-- SimpleFunctionTests::ToHex --
+a0
+-- SimpleFunctionTests::ToLong2 --
+160
+-- SimpleFunctionTests::MultiStringCat --
+123456789012345
+-- SimpleFunctionTests::IsEmpty --
+true
+-- SimpleFunctionTests::IsEmpty2 --
+false
+-- SimpleFunctionTests::IsNotEmpty --
+false
+-- SimpleFunctionTests::IsNotEmpty2 --
+true
+-- SimpleFunctionTests::IsAscii --
+true
+-- SimpleFunctionTests::IsUtf8 --
+true
+-- SimpleFunctionTests::Reverse --
+fedca
+-- SimpleFunctionTests::IsFinite --
+true
+-- SimpleFunctionTests::IsFinite2 --
+false
+-- SimpleFunctionTests::MakeTimespan --
+01:15:00
+-- SimpleFunctionTests::MakeTimespan2 --
+01:15:10
+-- SimpleFunctionTests::MaxLongTest --
+851673153924341805
+-- SimpleFunctionTests::MinLongTest --
+851673153924341808
+851673153924341805
+-- SimpleFunctionTests::CountOfTest --
+2
+-- SimpleFunctionTests::CountOfNormalTest --
+2
+-- SimpleFunctionTests::CountOfRegexTest --
+3
+-- SimpleFunctionTests::ReplaceString --
+A magic trick can turn a hamster into a dog
+-- SimpleFunctionTests::StrRep --
+ABCABC
+-- SimpleFunctionTests::DecimalLiteral --
+1.23
+-- SimpleFunctionTests::RealLiteral --
+1.23
+-- SimpleFunctionTests::LongLiteral --
+123
+-- SimpleFunctionTests::DecimalAddition --
+3.3
+-- SimpleFunctionTests::DecimalSubtraction --
+3.3
+-- SimpleFunctionTests::DecimalMultiplication --
+-- SimpleFunctionTests::DecimalDivision --
+-- SimpleFunctionTests::DecimalComparison --
+true
+-- SimpleFunctionTests::DecimalEquality --
+true
+-- SimpleFunctionTests::DecimalInTableSummarize --
+6.6
+-- SimpleFunctionTests::DecimalRound --
+3.14
+-- SimpleFunctionTests::Format --
+4d2
+-- SimpleFunctionTests::Format1 --
+4D2
+-- SimpleFunctionTests::FormatInterp --
+hi there 100

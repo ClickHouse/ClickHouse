@@ -139,11 +139,32 @@ bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step
     ++step_pos;
     from_to_step.step_str = String(step_pos->begin, end_pos->end);
 
-    if (String(step_pos->begin, step_pos->end) == "time" || String(step_pos->begin, step_pos->end) == "timespan"
-        || ParserKQLDateTypeTimespan().parseConstKQLTimespan(from_to_step.step_str))
+    ParserKQLDateTypeTimespan timespan;
+    /// `step_str` is either a bare timespan literal like `1h`, a `time(...)`/`timespan(...)`
+    /// wrapper, or a numeric value. For wrappers, extract the inner literal so that
+    /// `parseConstKQLTimespan` can recognize it. We must never call `toSeconds` without
+    /// a successful `parseConstKQLTimespan` first, otherwise it reads uninitialized state.
+    const String step_token(step_pos->begin, step_pos->end);
+    String timespan_literal = from_to_step.step_str;
+    if (step_token == "time" || step_token == "timespan")
+    {
+        const auto open = timespan_literal.find('(');
+        const auto close = timespan_literal.rfind(')');
+        if (open == String::npos || close == String::npos || close <= open + 1)
+            return false;
+        timespan_literal = timespan_literal.substr(open + 1, close - open - 1);
+        if (!timespan.parseConstKQLTimespan(timespan_literal))
+            return false;
+        from_to_step.is_timespan = true;
+        from_to_step.step = timespan.toSeconds();
+    }
+    else if (timespan.parseConstKQLTimespan(from_to_step.step_str))
     {
         from_to_step.is_timespan = true;
-        from_to_step.step = std::stod(getExprFromToken(from_to_step.step_str, pos.max_depth, pos.max_backtracks));
+        /// `getExprFromToken` would wrap timespan literals like `1h` in a KQL display-format
+        /// expression (`concat(...)`), which `std::stod` cannot parse. Use the timespan parser's
+        /// `toSeconds` directly instead.
+        from_to_step.step = timespan.toSeconds();
     }
     else
         from_to_step.step = std::stod(from_to_step.step_str);
@@ -193,6 +214,17 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
 
     start_str = date_type_cast(start_str);
     end_str = date_type_cast(end_str);
+
+    /// `datetime(...)` literals are wrapped in `substring(replaceOne(toString(...), ' ', 'T'), 1, 27)` for
+    /// KQL ISO display formatting, which produces a String. The arithmetic below (toUInt64, toFloat64)
+    /// would silently coerce that String to 0, so for the time-axis case we re-parse it as DateTime64.
+    if (from_to_step.is_timespan)
+    {
+        if (!start_str.empty())
+            start_str = fmt::format("parseDateTime64BestEffortOrNull(toString({}), 9, 'UTC')", start_str);
+        if (!end_str.empty())
+            end_str = fmt::format("parseDateTime64BestEffortOrNull(toString({}), 9, 'UTC')", end_str);
+    }
 
     String bin_str;
     String start;

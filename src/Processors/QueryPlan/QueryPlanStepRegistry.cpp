@@ -50,6 +50,7 @@ void registerFractionalLimitStep(QueryPlanStepRegistry & registry);
 void registerOffsetStep(QueryPlanStepRegistry & registry);
 void registerFractionalOffsetStep(QueryPlanStepRegistry & registry);
 void registerNegativeLimitStep(QueryPlanStepRegistry & registry);
+void registerNegativeLimitByStep(QueryPlanStepRegistry & registry);
 void registerNegativeOffsetStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
@@ -77,6 +78,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerFractionalLimitStep(registry);
     registerFractionalOffsetStep(registry);
     registerNegativeLimitStep(registry);
+    registerNegativeLimitByStep(registry);
     registerOffsetStep(registry);
     registerNegativeOffsetStep(registry);
     registerFilterStep(registry);

@@ -225,16 +225,129 @@ public:
 
 bool accurateEquals(const Field & left, const Field & right)
 {
+    /// Fast path for the common case: both Fields have the same type.
+    /// Avoids the expensive double visitor dispatch (24x24 type matrix)
+    /// which is the main bottleneck in hot loops like minmax skip index evaluation.
+    const auto lt = left.getType();
+    const auto rt = right.getType();
+
+    if (lt == rt)
+    {
+        switch (lt)
+        {
+            case Field::Types::UInt64:
+                return left.safeGet<UInt64>() == right.safeGet<UInt64>();
+            case Field::Types::Int64:
+                return left.safeGet<Int64>() == right.safeGet<Int64>();
+            case Field::Types::Float64:
+                /// IEEE 754 semantics: NaN != NaN, matching the visitor's `accurate::equalsOp`.
+                return left.safeGet<Float64>() == right.safeGet<Float64>();
+            case Field::Types::Null:
+                /// Null encodes three distinct sentinels: NULL, -Inf, +Inf.
+                /// Must compare their infinity flags to keep them distinct.
+                return left.isNegativeInfinity() == right.isNegativeInfinity()
+                    && left.isPositiveInfinity() == right.isPositiveInfinity();
+            default:
+                break;
+        }
+    }
+
     return applyVisitor(FieldVisitorAccurateEquals(), left, right);
 }
 
 bool accurateLess(const Field & left, const Field & right)
 {
+    /// Fast path: same type, avoid double visitor dispatch.
+    const auto lt = left.getType();
+    const auto rt = right.getType();
+
+    if (lt == rt)
+    {
+        switch (lt)
+        {
+            case Field::Types::UInt64:
+                return left.safeGet<UInt64>() < right.safeGet<UInt64>();
+            case Field::Types::Int64:
+                return left.safeGet<Int64>() < right.safeGet<Int64>();
+            case Field::Types::Float64:
+            {
+                auto l = left.safeGet<Float64>();
+                auto r = right.safeGet<Float64>();
+                /// NaN is greater than all normal values (nan_direction_hint = 1).
+                bool isnan_l = std::isnan(l);
+                bool isnan_r = std::isnan(r);
+                if (isnan_l && isnan_r)
+                    return false;
+                if (isnan_l)
+                    return false; /// NaN is not less than anything
+                if (isnan_r)
+                    return true; /// everything is less than NaN
+                return l < r;
+            }
+            case Field::Types::Null:
+                return left.isNegativeInfinity() && right.isPositiveInfinity();
+            default:
+                break;
+        }
+    }
+    else
+    {
+        /// Handle Null (infinity) quickly without full visitor dispatch.
+        if (lt == Field::Types::Null)
+            return left.isNegativeInfinity();
+        if (rt == Field::Types::Null)
+            return right.isPositiveInfinity();
+    }
+
     return applyVisitor(FieldVisitorAccurateLess(), left, right);
 }
 
 bool accurateLessOrEqual(const Field & left, const Field & right)
 {
+    /// Fast path: same type, avoid double visitor dispatch.
+    const auto lt = left.getType();
+    const auto rt = right.getType();
+
+    if (lt == rt)
+    {
+        switch (lt)
+        {
+            case Field::Types::UInt64:
+                return left.safeGet<UInt64>() <= right.safeGet<UInt64>();
+            case Field::Types::Int64:
+                return left.safeGet<Int64>() <= right.safeGet<Int64>();
+            case Field::Types::Float64:
+            {
+                auto l = left.safeGet<Float64>();
+                auto r = right.safeGet<Float64>();
+                /// NaN is greater than all normal values, NaN <= NaN is true.
+                bool isnan_l = std::isnan(l);
+                bool isnan_r = std::isnan(r);
+                if (isnan_r)
+                    return true; /// everything <= NaN
+                if (isnan_l)
+                    return false; /// NaN is not <= anything except NaN
+                return l <= r;
+            }
+            case Field::Types::Null:
+                /// Null encodes -Inf, +Inf, and NULL. Only +Inf <= -Inf is false.
+                return !(right.isNegativeInfinity() && left.isPositiveInfinity());
+            default:
+                break;
+        }
+    }
+    else
+    {
+        /// lessOrEqual(left, right) = !less(right, left).
+        /// For Null (infinity) sentinels:
+        ///   left is Null, right is non-Null: !less(right, left) = !left.isPositiveInfinity()
+        ///   right is Null, left is non-Null: !less(right, left) = !right.isNegativeInfinity()
+        if (lt == Field::Types::Null)
+            return !left.isPositiveInfinity();
+        if (rt == Field::Types::Null)
+            return !right.isNegativeInfinity();
+    }
+
     return applyVisitor(FieldVisitorAccurateLessOrEqual(), left, right);
 }
 

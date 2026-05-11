@@ -160,44 +160,46 @@ bool Extract::convertImpl(String & out, IParser::Pos & pos)
 
     if (capture_group == 0)
     {
-        String tmp_regex;
-        for (auto c : regex)
+        /// Group 0 = entire match. Use extract with non-capturing groups.
+        /// Track character class depth so `(` inside `[...]` is not rewritten.
+        String no_groups_regex;
+        bool in_char_class = false;
+        for (size_t i = 0; i < regex.length(); ++i)
         {
-            if (c != '(' && c != ')')
-                tmp_regex += c;
+            auto c = regex[i];
+            if (c == '\\' && i + 1 < regex.length())
+            {
+                /// Skip escaped characters
+                no_groups_regex += c;
+                no_groups_regex += regex[i + 1];
+                ++i;
+                continue;
+            }
+            if (c == '[')
+                in_char_class = true;
+            else if (c == ']')
+                in_char_class = false;
+            /// Replace ( with (?: to make all groups non-capturing, but only outside character classes
+            if (!in_char_class && c == '(' && i + 1 < regex.length() && regex[i + 1] != '?')
+                no_groups_regex += "(?:";
+            else
+                no_groups_regex += c;
         }
-        regex = std::move(tmp_regex);
+        out = "extract(" + source + ", " + no_groups_regex + ")";
     }
     else
     {
-        size_t group_idx = 0;
-        size_t str_idx = -1;
-        for (size_t i = 0; i < regex.length(); ++i)
-        {
-            if (regex[i] == '(')
-            {
-                ++group_idx;
-                if (group_idx == capture_group)
-                {
-                    str_idx = i + 1;
-                    break;
-                }
-            }
-        }
-        String tmp_regex;
-        if (str_idx > 0)
-        {
-            for (size_t i = str_idx; i < regex.length(); ++i)
-            {
-                if (regex[i] == ')')
-                    break;
-                tmp_regex += regex[i];
-            }
-        }
-        regex = "'" + tmp_regex + "'";
+        /// Use extractAllGroupsHorizontal to get specific capture group.
+        /// `extractAllGroupsHorizontal` returns Array(Array(String)) shaped as [group][match],
+        /// so the outer length is the number of groups and the inner length is the number of
+        /// matches for that group. Both must be checked: a regex may contain group `n` yet the
+        /// input may produce zero matches for it, in which case `g[n][1]` would index an empty array.
+        out = fmt::format(
+            "if(length(extractAllGroupsHorizontal(ifNull(toString({0}), ''), {1})) >= {2} "
+            "AND length(extractAllGroupsHorizontal(ifNull(toString({0}), ''), {1})[{2}]) >= 1, "
+            "extractAllGroupsHorizontal(ifNull(toString({0}), ''), {1})[{2}][1], '')",
+            source, regex, capture_group);
     }
-
-    out = "extract(" + source + ", " + regex + ")";
 
     if (type_literal == "Decimal")
     {
@@ -388,17 +390,32 @@ bool IndexOf::convertImpl(String & out, IParser::Pos & pos)
 
 bool IsEmpty::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "empty");
+    const auto fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+    const auto arg = getArgument(fn_name, pos);
+    out = fmt::format("toBool(empty({}))", arg);
+    return true;
 }
 
 bool IsNotEmpty::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "notEmpty");
+    const auto fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+    const auto arg = getArgument(fn_name, pos);
+    out = fmt::format("toBool(notEmpty({}))", arg);
+    return true;
 }
 
 bool IsNotNull::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "isNotNull");
+    const auto fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+    const auto arg = getArgument(fn_name, pos);
+    out = fmt::format("toBool(isNotNull({}))", arg);
+    return true;
 }
 
 bool ParseCommandLine::convertImpl(String & out, IParser::Pos & pos)
@@ -424,7 +441,12 @@ bool ParseCommandLine::convertImpl(String & out, IParser::Pos & pos)
 
 bool IsNull::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "isNull");
+    const auto fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+    const auto arg = getArgument(fn_name, pos);
+    out = fmt::format("toBool(isNull({}))", arg);
+    return true;
 }
 
 bool ParseCSV::convertImpl(String & out, IParser::Pos & pos)
@@ -452,15 +474,17 @@ bool ParseJSON::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     if (String(pos->begin, pos->end) == "dynamic")
     {
-        --pos;
-        auto arg = getArgument(fn_name, pos);
-        auto result = kqlCallToExpression("dynamic", {arg}, pos.max_depth, pos.max_backtracks);
-        out = fmt::format("{}", result);
+        /// `parse_json(dynamic(...))` is equivalent to the `dynamic` value itself —
+        /// parse the inner `dynamic(...)` call directly instead of re-wrapping
+        /// it in another `dynamic(...)` (which would nest the SQL output inside a
+        /// fresh dynamic parser and fail on `CAST` tokens produced by the inner call).
+        out = getConvertedArgument(fn_name, pos);
     }
     else
     {
         auto arg = getConvertedArgument(fn_name, pos);
-        out = fmt::format("if (isValidJSON({0}) , JSON_QUERY({0}, '$') , toJSONString({0}))", arg);
+        /// Cast to JSON type for native member access (o.field)
+        out = fmt::format("CAST({0} AS JSON)", arg);
     }
     return true;
 }
@@ -683,16 +707,25 @@ bool SubString::convertImpl(String & out, IParser::Pos & pos)
     if (pos->type == TokenType::Comma)
     {
         ++pos;
-        auto length = getConvertedArgument(fn_name, pos);
+        auto len = getConvertedArgument(fn_name, pos);
 
         if (starting_index.empty())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "number of arguments do not match in function: {}", fn_name);
-        out = "if(toInt64(length(" + source + ")) <= 0, '', substr(" + source + ", " + "((" + starting_index + "% toInt64(length(" + source
-            + "))  + toInt64(length(" + source + "))) % toInt64(length(" + source + ")))  + 1, " + length + ") )";
+
+        /// KQL substring(source, startingIndex, length):
+        /// - If startingIndex < 0, clamp to 0
+        /// - If startingIndex >= length(source), return empty
+        /// - length is clamped to available characters
+        out = fmt::format(
+            "if(toInt64(length({0})) <= 0 OR greatest({1}, 0) >= toInt64(length({0})), '', "
+            "substr({0}, greatest({1}, 0) + 1, {2}))",
+            source, starting_index, len);
     }
     else
-        out = "if(toInt64(length(" + source + ")) <= 0, '', substr(" + source + "," + "((" + starting_index + "% toInt64(length(" + source
-            + ")) + toInt64(length(" + source + "))) % toInt64(length(" + source + "))) + 1))";
+        out = fmt::format(
+            "if(toInt64(length({0})) <= 0 OR greatest({1}, 0) >= toInt64(length({0})), '', "
+            "substr({0}, greatest({1}, 0) + 1))",
+            source, starting_index);
 
     return true;
 }

@@ -209,6 +209,44 @@ std::unordered_map<String, KQLFunctionValue> KQLFunctionFactory::kql_functions
        {"bin", KQLFunctionValue::bin},
        {"bin_at", KQLFunctionValue::bin_at},
        {"iif", KQLFunctionValue::iif},
+       {"iff", KQLFunctionValue::iff},
+       {"not", KQLFunctionValue::kql_not},
+       {"min_of", KQLFunctionValue::min_of},
+       {"max_of", KQLFunctionValue::max_of},
+       {"coalesce", KQLFunctionValue::coalesce},
+       {"case", KQLFunctionValue::kql_case},
+       {"geo_distance_2points", KQLFunctionValue::geo_distance_2points},
+       {"geo_point_to_geohash", KQLFunctionValue::geo_point_to_geohash},
+       {"replace_string", KQLFunctionValue::replace_string},
+       {"url_encode_component", KQLFunctionValue::url_encode_component},
+       {"padleft", KQLFunctionValue::padleft},
+       {"padright", KQLFunctionValue::padright},
+       {"trimws", KQLFunctionValue::trimws},
+       {"parsehex", KQLFunctionValue::parsehex},
+       {"tohex", KQLFunctionValue::tohex},
+       {"abs", KQLFunctionValue::kql_abs},
+       {"sqrt", KQLFunctionValue::kql_sqrt},
+       {"pow", KQLFunctionValue::kql_pow},
+       {"power", KQLFunctionValue::kql_pow},
+       {"log", KQLFunctionValue::kql_log},
+       {"log10", KQLFunctionValue::kql_log10},
+       {"log2", KQLFunctionValue::kql_log2},
+       {"sign", KQLFunctionValue::kql_sign},
+       {"isfinite", KQLFunctionValue::kql_isfinite},
+       {"isinf", KQLFunctionValue::kql_isinf},
+       {"exp", KQLFunctionValue::kql_exp},
+       {"isascii", KQLFunctionValue::kql_isascii},
+       {"isutf8", KQLFunctionValue::kql_isutf8},
+       {"strcat_array", KQLFunctionValue::strcat_array},
+       {"datetime_utc_to_local", KQLFunctionValue::datetime_utc_to_local},
+       {"todatetimefmt", KQLFunctionValue::todatetimefmt},
+       {"endswith", KQLFunctionValue::kql_endswith},
+       {"endsWith", KQLFunctionValue::kql_endswith},
+       {"any", KQLFunctionValue::kql_any},
+       {"floor", KQLFunctionValue::kql_floor},
+       {"format", KQLFunctionValue::kql_format},
+       {"format_interp", KQLFunctionValue::kql_format_interp},
+       {"row_number", KQLFunctionValue::kql_row_number},
 
        {"bool", KQLFunctionValue::datatype_bool},
        {"boolean", KQLFunctionValue::datatype_bool},
@@ -778,6 +816,114 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_functio
 
         case KQLFunctionValue::iif:
             return std::make_unique<Iif>();
+
+        case KQLFunctionValue::iff:
+            return std::make_unique<Iff>();
+
+        case KQLFunctionValue::kql_not:
+            return std::make_unique<Not>();
+
+        case KQLFunctionValue::min_of:
+            return std::make_unique<MinOf>();
+
+        case KQLFunctionValue::max_of:
+            return std::make_unique<MaxOf>();
+
+        case KQLFunctionValue::coalesce:
+            return std::make_unique<Coalesce>();
+
+        case KQLFunctionValue::kql_case:
+            return std::make_unique<Case>();
+
+        case KQLFunctionValue::geo_distance_2points:
+            return std::make_unique<GeoDistance2Points>();
+
+        case KQLFunctionValue::geo_point_to_geohash:
+            return std::make_unique<GeoPointToGeohash>();
+
+        case KQLFunctionValue::replace_string:
+            return std::make_unique<ReplaceString>();
+
+        case KQLFunctionValue::url_encode_component:
+            return std::make_unique<URLEncodeComponent>();
+
+        case KQLFunctionValue::padleft:
+            return std::make_unique<PadLeft>();
+
+        case KQLFunctionValue::padright:
+            return std::make_unique<PadRight>();
+
+        case KQLFunctionValue::trimws:
+            return std::make_unique<TrimWs>();
+
+        case KQLFunctionValue::parsehex:
+            return std::make_unique<ParseHex>();
+
+        case KQLFunctionValue::tohex:
+            return std::make_unique<ToHex>();
+
+        case KQLFunctionValue::kql_abs:
+            return std::make_unique<Abs>();
+
+        case KQLFunctionValue::kql_sqrt:
+            return std::make_unique<Sqrt>();
+
+        case KQLFunctionValue::kql_pow:
+            return std::make_unique<Pow>();
+
+        case KQLFunctionValue::kql_log:
+            return std::make_unique<Log>();
+
+        case KQLFunctionValue::kql_log10:
+            return std::make_unique<Log10>();
+
+        case KQLFunctionValue::kql_log2:
+            return std::make_unique<Log2>();
+
+        case KQLFunctionValue::kql_sign:
+            return std::make_unique<Sign>();
+
+        case KQLFunctionValue::kql_isfinite:
+            return std::make_unique<IsFinite>();
+
+        case KQLFunctionValue::kql_isinf:
+            return std::make_unique<IsInf>();
+
+        case KQLFunctionValue::kql_exp:
+            return std::make_unique<Exp>();
+
+        case KQLFunctionValue::kql_isascii:
+            return std::make_unique<IsAscii>();
+
+        case KQLFunctionValue::kql_isutf8:
+            return std::make_unique<IsUtf8>();
+
+        case KQLFunctionValue::strcat_array:
+            return std::make_unique<StrcatArray>();
+
+        case KQLFunctionValue::datetime_utc_to_local:
+            return std::make_unique<DatetimeUtcToLocal>();
+
+        case KQLFunctionValue::todatetimefmt:
+            return std::make_unique<ToDateTimeFmt>();
+
+        case KQLFunctionValue::kql_endswith:
+            return std::make_unique<EndsWith>();
+
+        case KQLFunctionValue::kql_any:
+            return std::make_unique<Any>();
+
+        case KQLFunctionValue::kql_floor:
+            return std::make_unique<Floor>();
+
+        case KQLFunctionValue::kql_format:
+            return std::make_unique<Format>();
+
+        case KQLFunctionValue::kql_format_interp:
+            return std::make_unique<FormatInterp>();
+
+        case KQLFunctionValue::kql_row_number:
+            return std::make_unique<RowNumber>();
 
         case KQLFunctionValue::datatype_bool:
             return std::make_unique<DatatypeBool>();
