@@ -1,6 +1,8 @@
-1. clickhouse-client --chime 1, slow query: BEL
+1. clickhouse-client --chime 1, slow query, redirected stderr: no BEL
 2. clickhouse-client --chime 10, fast query: no BEL
 3. clickhouse-client (no --chime), 1.5s < default 5s threshold: no BEL
-4. clickhouse-client --chime 1, slow query then error: BEL
-5. clickhouse-local --chime 1, slow query: BEL
+4. clickhouse-client --chime 1, slow query then error, redirected stderr: no BEL
+5. clickhouse-local --chime 1, slow query, redirected stderr: no BEL
 6. clickhouse-client --chime 0, slow query: no BEL
+7. clickhouse-client --chime 1, slow query, pty stderr: BEL
+8. clickhouse-client --chime 0, slow query, pty stderr: no BEL
