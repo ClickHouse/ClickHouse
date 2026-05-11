@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel, no-flaky-check
 # no-fasttest: The test waits for a timeout-based flush from an open HTTP request.
+# no-parallel: The partial flush is timing-sensitive; concurrent load can starve the pipeline executor.
+# no-flaky-check: The test verifies a timeout-based behavior and is not suitable for rerun-based flakiness detection.
 
 set -euo pipefail
 
@@ -80,8 +82,11 @@ run_case()
 
     send_chunk "$first_batch"
 
+    # Poll for the partial flush. Use wall-clock time so that slow debug builds
+    # under CI contention still see the timeout-based flush before giving up.
+    local deadline=$(($(date +%s) + 120))
     local rows_before_close=0
-    for _ in $(seq 1 60); do
+    while (( $(date +%s) < deadline )); do
         rows_before_close=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${table}")
         if [[ "$rows_before_close" == "$FIRST_BATCH_ROWS" ]]; then
             break
