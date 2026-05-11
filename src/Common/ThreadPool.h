@@ -93,9 +93,10 @@ public:
         /// LIFO idle thread scheduling flag.
         /// When a new job is scheduled, the most recently idle thread is popped
         /// from the LIFO stack, this flag is set to true, and only that thread's
-        /// CV is notified. The worker wait predicate checks only this flag, so
-        /// spurious CV wake-ups simply put the thread back to sleep until the
-        /// scheduler (or shutdown / limit-change path) explicitly wakes it.
+        /// CV is notified. The worker wait predicate also re-checks the real
+        /// pool state (queued jobs, shutdown, excess threads) as a safety net
+        /// against missed wake-ups, so a worker that wakes either directly or
+        /// through a spurious CV signal will still pick up pending work.
         bool idle_wakeup_flag = false;
 
         /// Intrusive links in the parent pool idle stack. They avoid allocations
