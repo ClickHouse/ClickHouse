@@ -132,8 +132,9 @@ UniqueKeyIndexCache::CreateStandalone(
     size_t charge,
     bool /*allow_uncharged*/)
 {
-    /// Best-effort cap (see header): no strict-cap admission. The standalone
-    /// handle is always returned with the requested charge.
+    /// Strict mode is permanently off (see header), so per the
+    /// `rocksdb::Cache::CreateStandalone` spec the operation always succeeds
+    /// with a charged handle; `allow_uncharged` is unused.
     auto entry = std::make_shared<UniqueKeyIndexCacheEntry>();
     entry->obj = obj;
     entry->helper = helper;
@@ -230,9 +231,10 @@ void UniqueKeyIndexCache::SetCapacity(size_t capacity)
     backing->setMaxSizeInBytes(capacity);
 }
 
-void UniqueKeyIndexCache::SetStrictCapacityLimit(bool value)
+void UniqueKeyIndexCache::SetStrictCapacityLimit(bool /*value*/)
 {
-    strict_capacity_limit.store(value, std::memory_order_relaxed);
+    /// No-op: strict-capacity mode is unsupported (see header).
+    /// `HasStrictCapacityLimit()` is hardcoded to return false.
 }
 
 size_t UniqueKeyIndexCache::GetCapacity() const
@@ -258,8 +260,10 @@ size_t UniqueKeyIndexCache::GetUsage(Handle * handle) const
 
 size_t UniqueKeyIndexCache::GetPinnedUsage() const
 {
-    /// Best-effort cap: not tracked. RocksDB's BlockBasedTable hot paths read
-    /// this only as a metric, and our consumers don't read it.
+    /// Strict-cap unsupported (see header). Pinned bytes are not tracked
+    /// because admission is not gated on them; the only consumer of this
+    /// surface in rocksdb is stats reporting (`db/internal_stats.cc`), which
+    /// degrades gracefully to 0.
     return 0;
 }
 

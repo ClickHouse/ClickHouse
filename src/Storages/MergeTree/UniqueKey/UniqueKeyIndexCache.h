@@ -83,11 +83,21 @@ UInt128 uniqueKeyIndexHashKey(const char * data, size_t size);
 /// accounting flows through `system.caches` via `UniqueKeyIndexCacheBytes` /
 /// `UniqueKeyIndexCacheEntries` CurrentMetrics.
 ///
-/// Best-effort capacity, matching `MarkCache` / `UncompressedCache`.
-/// `SetStrictCapacityLimit(true)` is accepted and reported by
-/// `HasStrictCapacityLimit()` but admission is not gated on the flag.
-/// `GetPinnedUsage()` returns 0; RocksDB callers use it as a metric, not for
-/// correctness, and our consumers don't read it.
+/// Strict-capacity mode is unsupported:
+///   - `HasStrictCapacityLimit()` is hardcoded to false.
+///   - `SetStrictCapacityLimit(...)` is a no-op.
+///   - `CreateStandalone(...)` always returns a charged handle. Per the
+///     `rocksdb::Cache::CreateStandalone` spec, "if `allow_uncharged==true`
+///     or `strict_capacity_limit=false`, the operation always succeeds";
+///     since strict mode is permanently off here, `allow_uncharged` is
+///     unused.
+///   - `GetPinnedUsage()` returns 0 — pinned bytes are not tracked.
+///
+/// Honoring the strict-capacity contract on top of `CacheBase` would require
+/// shadow bookkeeping (per-entry pin counts plus a joint get-and-mutate
+/// primitive that `CacheBase` does not expose). The adapter declines that
+/// complexity; the cache is configured by ClickHouse and strict mode is
+/// never enabled on it.
 ///
 /// `Handle*` lifetime: Lookup / Insert(handle) allocate a `HandlePin` on the
 /// heap holding a `shared_ptr<UniqueKeyIndexCacheEntry>` (keeping the entry
@@ -146,7 +156,7 @@ public:
 
     void SetCapacity(size_t capacity) override;
     void SetStrictCapacityLimit(bool value) override;
-    bool HasStrictCapacityLimit() const override { return strict_capacity_limit; }
+    bool HasStrictCapacityLimit() const override { return false; }
 
     size_t GetCapacity() const override;
     size_t GetUsage() const override;
@@ -178,7 +188,6 @@ public:
 
 private:
     UniqueKeyIndexCacheBackingPtr backing;
-    std::atomic<bool> strict_capacity_limit{false};
     std::atomic<uint64_t> next_id{1};
 };
 

@@ -195,22 +195,35 @@ TEST(UniqueKeyIndexCache, ReleaseEraseIdentityAwareDoesNotEvictReplacement)
     cache.Release(h_new, /*erase_if_last_ref=*/false);
 }
 
-TEST(UniqueKeyIndexCache, CreateStandaloneAlwaysReturnsHandle)
+TEST(UniqueKeyIndexCache, StrictCapacityLimitIsUnsupported)
 {
-    /// `SetStrictCapacityLimit` is best-effort here: the flag is reported by
-    /// `HasStrictCapacityLimit` but admission is unconditional. CreateStandalone
-    /// returns a handle for any charge.
+    /// `HasStrictCapacityLimit()` is hardcoded false; `SetStrictCapacityLimit`
+    /// is a no-op.
     UniqueKeyIndexCache cache = makeCache(/*bytes=*/64);
+    EXPECT_FALSE(cache.HasStrictCapacityLimit());
     cache.SetStrictCapacityLimit(true);
-    EXPECT_TRUE(cache.HasStrictCapacityLimit());
+    EXPECT_FALSE(cache.HasStrictCapacityLimit());
+}
 
-    auto * obj = new FakeObject{nullptr, 1};
-    auto * h = cache.CreateStandalone(rocksdb::Slice("k"), obj, &kTestHelper,
-                                      /*charge=*/8192, /*allow_uncharged=*/false);
-    ASSERT_NE(h, nullptr);
-    EXPECT_EQ(static_cast<FakeObject *>(cache.Value(h))->value, 1);
-    EXPECT_EQ(cache.GetCharge(h), 8192u);
-    cache.Release(h, /*erase_if_last_ref=*/false);
+TEST(UniqueKeyIndexCache, CreateStandaloneAlwaysSucceedsWhenNonStrict)
+{
+    /// Per `rocksdb::Cache::CreateStandalone`: "if `allow_uncharged==true` or
+    /// `strict_capacity_limit=false`, the operation always succeeds and
+    /// returns a valid Handle." Strict mode is permanently off, so both
+    /// `allow_uncharged` branches must produce a charged handle.
+    UniqueKeyIndexCache cache = makeCache(/*bytes=*/64);
+    ASSERT_FALSE(cache.HasStrictCapacityLimit());
+
+    for (bool allow_uncharged : {false, true})
+    {
+        auto * obj = new FakeObject{nullptr, 1};
+        auto * h = cache.CreateStandalone(rocksdb::Slice("k"), obj, &kTestHelper,
+                                          /*charge=*/8192, allow_uncharged);
+        ASSERT_NE(h, nullptr) << "allow_uncharged=" << allow_uncharged;
+        EXPECT_EQ(static_cast<FakeObject *>(cache.Value(h))->value, 1);
+        EXPECT_EQ(cache.GetCharge(h), 8192u);
+        cache.Release(h, /*erase_if_last_ref=*/false);
+    }
 }
 
 TEST(UniqueKeyIndexCache, ThreadSafetySmoke)
