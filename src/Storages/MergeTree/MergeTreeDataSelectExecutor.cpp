@@ -9,6 +9,9 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/SparsityFilter.h>
+#include <Analyzer/QueryNode.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
@@ -99,6 +102,7 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_statistics_for_part_pruning;
+    extern const SettingsBool use_serialization_info_for_part_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
@@ -803,6 +807,99 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
             .num_granules_after = total_granules_after});
 
         LOG_DEBUG(log, "Statistics pruning: {} parts -> {} parts", total_parts_before, res_parts.size());
+    }
+
+    return res_parts;
+}
+
+
+RangesInDataParts MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
+    const RangesInDataParts & parts,
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context,
+    LoggerPtr log,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// Reliability rules mirror `MergeTreeData::getColumnDefaultnessStats` (see
+    /// `Storages/MergeTree/SparsityFilter.h`).
+    if (!settings[Setting::use_serialization_info_for_part_pruning]
+        || query_info.isFinal()
+        || context->getCurrentTransaction()
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
+    {
+        return parts;
+    }
+
+    if (!query_info.query_tree)
+        return parts;
+    auto * query_node = query_info.query_tree->as<QueryNode>();
+    if (!query_node || !query_node->hasWhere())
+        return parts;
+
+    auto classified = classifySparsityPredicate(query_node->getWhere(), query_info.table_expression);
+    if (!classified)
+        return parts;
+
+    RangesInDataParts res_parts;
+    res_parts.reserve(parts.size());
+    size_t total_parts_before = parts.size();
+
+    for (const auto & part : parts)
+    {
+        const auto & infos = part.data_part->getSerializationInfos();
+        auto it = infos.find(classified->column_name);
+        if (it == infos.end())
+        {
+            res_parts.push_back(part);
+            continue;
+        }
+
+        /// Without `exact_num_defaults` (legacy parts) we can't safely answer the
+        /// extremal questions below, so we keep the part.
+        const auto & info_data = it->second->getData();
+        if (!info_data.exact_num_defaults)
+        {
+            res_parts.push_back(part);
+            continue;
+        }
+
+        bool drop = false;
+        if (classified->predicate_class == SparsityPredicateClass::MatchesNonDefault
+            && info_data.num_defaults == info_data.num_rows)
+        {
+            /// e.g. `WHERE col != 0` on a part where every row of `col` is the default.
+            drop = true;
+        }
+        else if (classified->predicate_class == SparsityPredicateClass::MatchesDefault
+            && info_data.num_defaults == 0)
+        {
+            /// e.g. `WHERE col = 0` on a part where no row of `col` is the default.
+            drop = true;
+        }
+
+        if (drop)
+            LOG_TRACE(log, "Part {} pruned by sparsity info on column {}", part.data_part->name, classified->column_name);
+        else
+            res_parts.push_back(part);
+    }
+
+    if (res_parts.size() < total_parts_before)
+    {
+        size_t total_granules_after = 0;
+        for (const auto & part : res_parts)
+            total_granules_after += part.data_part->index_granularity->getMarksCountWithoutFinal();
+
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Sparsity,
+            .used_keys = {classified->column_name},
+            .num_parts_after = res_parts.size(),
+            .num_granules_after = total_granules_after});
+
+        LOG_DEBUG(log, "Sparsity-info pruning on column {}: {} parts -> {} parts",
+            classified->column_name, total_parts_before, res_parts.size());
     }
 
     return res_parts;

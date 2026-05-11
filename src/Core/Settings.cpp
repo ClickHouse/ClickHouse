@@ -4496,6 +4496,29 @@ Possible values:
 See also:
 
 - [optimize_trivial_count_query](#optimize_trivial_count_query)
+- [use_serialization_info_for_part_pruning](#use_serialization_info_for_part_pruning)
+)", 0) \
+    DECLARE(Bool, use_serialization_info_for_part_pruning, true, R"(
+At part scan time, drop parts whose `WHERE` predicate is provably false on every row,
+based on the per-column `num_defaults` / `num_rows` counters in `serialization.json`.
+
+Drops a part when one of:
+
+- `col != default(col)` and the part records `num_defaults == num_rows` (every row is the default);
+- `col = default(col)` and the part records `num_defaults == 0` (no row is the default).
+
+Recognised predicate shapes match those of [optimize_trivial_count_with_sparsity_filter](#optimize_trivial_count_with_sparsity_filter).
+The check is skipped for parts that don't carry the `exact_num_defaults` flag (typically
+parts written by older servers), so it never produces wrong answers.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+
+See also:
+
+- [optimize_trivial_count_with_sparsity_filter](#optimize_trivial_count_with_sparsity_filter)
 )", 0) \
     DECLARE(Bool, optimize_count_from_files, true, R"(
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.

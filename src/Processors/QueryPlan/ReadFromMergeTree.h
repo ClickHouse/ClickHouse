@@ -93,6 +93,7 @@ public:
         PrimaryKeyExpand,
         Statistics,
         NonIntersectingSplit,
+        Sparsity,
     };
 
     struct DistributedIndexStat

@@ -1,0 +1,48 @@
+all_1_1_0	all_default	Sparse
+all_1_1_0	id	Default
+all_1_1_0	mixed	Default
+all_1_1_0	no_default	Default
+all_2_2_0	all_default	Sparse
+all_2_2_0	id	Default
+all_2_2_0	mixed	Sparse
+all_2_2_0	no_default	Default
+all_3_3_0	all_default	Default
+all_3_3_0	id	Default
+all_3_3_0	mixed	Default
+all_3_3_0	no_default	Sparse
+all_4_4_0	all_default	Sparse
+all_4_4_0	id	Default
+all_4_4_0	mixed	Sparse
+all_4_4_0	no_default	Default
+all_default != 0	1001
+all_default != 0 baseline	1001
+all_default  = 0	2999
+all_default  = 0 baseline	2999
+no_default  = 0	1000
+no_default  = 0 baseline	1000
+no_default != 0	3000
+no_default != 0 baseline	3000
+mixed != 0	1500
+mixed != 0 baseline	1500
+mixed  = 0	2500
+mixed  = 0 baseline	2500
+projection drop-extremal	1001
+projection drop-extremal baseline	1001
+      Sparsity
+          all_default
+        Parts: 2/4
+        Granules: 2/4
+        Parts: 2/2
+        Granules: 2/2
+      Sparsity
+          no_default
+        Parts: 1/4
+        Granules: 1/4
+        Parts: 1/1
+        Granules: 1/1
+      Sparsity
+          mixed
+        Parts: 2/4
+        Granules: 2/4
+        Parts: 2/2
+        Granules: 2/2

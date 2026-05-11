@@ -220,6 +220,18 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
+    /// Filter parts using per-column `num_defaults` / `num_rows` from `serialization.json`
+    /// when the WHERE predicate exactly partitions the column into defaults and non-defaults
+    /// (see `Storages/MergeTree/SparsityFilter.h`). Drops a part when all of its rows are
+    /// the default and the predicate matches non-defaults, or vice versa.
+    static RangesInDataParts filterPartsBySparsityInfo(
+        const RangesInDataParts & parts,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
     struct IndexAnalysisContext
     {
         StorageMetadataPtr metadata_snapshot;

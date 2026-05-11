@@ -2515,6 +2515,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     res_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
         res_parts, metadata_snapshot, query_info_, mutations_snapshot, context_, log, result.index_stats);
 
+    res_parts = MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
+        res_parts, query_info_, mutations_snapshot, context_, log, result.index_stats);
+
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
         query_info_,
         metadata_snapshot->getColumns().getAllPhysical(),
@@ -3838,6 +3841,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "PrimaryKeyExpand";
         case ReadFromMergeTree::IndexType::NonIntersectingSplit:
             return "NonIntersectingSplit";
+        case ReadFromMergeTree::IndexType::Sparsity:
+            return "Sparsity";
     }
 }
 
