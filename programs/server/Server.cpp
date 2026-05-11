@@ -1,6 +1,7 @@
 #include <Server.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
+#include <IO/SourceBufferLimit.h>
 
 #include <memory>
 #include <Interpreters/ClientInfo.h>
@@ -298,6 +299,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
     extern const ServerSettingsUInt64 max_keep_alive_requests;
+    extern const ServerSettingsUInt64 max_remote_read_connections;
     extern const ServerSettingsUInt64 max_outdated_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_partition_size_to_drop;
     extern const ServerSettingsUInt64 max_part_num_to_warn;
@@ -2492,6 +2494,9 @@ try
                 new_server_settings[ServerSetting::cpu_slot_preemption],
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
+
+            global_context->getSourceBufferLimit()->setCapacity(
+                new_server_settings[ServerSetting::max_remote_read_connections]);
 
             if (config().has("resources"))
             {

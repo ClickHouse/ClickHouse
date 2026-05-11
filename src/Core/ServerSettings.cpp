@@ -1303,7 +1303,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(NonZeroUInt64, threadpool_remote_fs_reader_pool_size, 250, R"(Number of threads in the Thread pool used for reading from remote filesystem when `remote_filesystem_read_method = 'threadpool'`.)", 0) \
     DECLARE(UInt64, threadpool_remote_fs_reader_queue_size, 10000, R"(The maximum number of jobs that can be scheduled on the thread pool for reading from remote filesystem.)", 0) \
     DECLARE(NonZeroUInt64, reader_executor_prefetch_pool_size, 16, R"(Number of threads in the shared prefetch pool for `ReaderExecutor` (experimental `use_reader_executor` setting).)", EXPERIMENTAL) \
-    DECLARE(UInt64, max_live_source_buffers, 128, R"(Maximum number of open source connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables live buffers.)", EXPERIMENTAL) \
+    DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \

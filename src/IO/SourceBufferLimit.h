@@ -54,10 +54,13 @@ public:
     /// Try to acquire a slot. Returns nullopt if at capacity.
     std::optional<SourceBufferSlot> tryAcquire(const String & object_path);
 
+    /// Update capacity at runtime (called from config reload in Server.cpp).
+    /// Existing slots beyond the new limit are not forcibly closed.
+    void setCapacity(size_t new_max_slots);
+    size_t getCapacity() const;
+
     /// Observability: snapshot of all active slots.
     std::vector<ActiveBufferInfo> getActive() const;
-
-    size_t getCapacity() const;
 
 private:
     friend class SourceBufferSlot;

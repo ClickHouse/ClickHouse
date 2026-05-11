@@ -376,7 +376,7 @@ namespace ServerSetting
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
-    extern const ServerSettingsUInt64 max_live_source_buffers;
+    extern const ServerSettingsUInt64 max_remote_read_connections;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_merges_bandwidth_for_server;
@@ -7600,7 +7600,7 @@ std::shared_ptr<SourceBufferLimit> Context::getSourceBufferLimit() const
     callOnce(shared->source_buffer_limit_initialized, [&]
     {
         const auto & server_settings = getServerSettings();
-        size_t max_live = server_settings[ServerSetting::max_live_source_buffers];
+        size_t max_live = server_settings[ServerSetting::max_remote_read_connections];
         shared->source_buffer_limit = std::make_shared<SourceBufferLimit>(max_live);
     });
     return shared->source_buffer_limit;
