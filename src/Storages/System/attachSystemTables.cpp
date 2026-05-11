@@ -38,6 +38,7 @@
 #include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Storages/System/StorageSystemHistogramMetrics.h>
+#include <Storages/System/StorageSystemLiveSourceBuffers.h>
 #include <Storages/System/StorageSystemDimensionalMetrics.h>
 #include <Storages/System/StorageSystemModels.h>
 #include <Storages/System/StorageSystemMutations.h>
@@ -287,6 +288,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 
     attach<StorageSystemCodecs>(context, system_database, "codecs", "Contains information about system codecs.");
     attach<StorageSystemCompletions>(context, system_database, "completions", "Contains a list of completion tokens.");
+    attach<StorageSystemLiveSourceBuffers>(context, system_database, "live_source_buffers", "Shows active live source connections held by ReaderExecutor for sequential read optimization.");
 
     attach<StorageSystemFailPoints>(context, system_database, "fail_points", "Contains a list of all available failpoints with their type and enabled status. Only available in debug builds.");
 
