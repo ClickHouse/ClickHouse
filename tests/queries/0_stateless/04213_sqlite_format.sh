@@ -75,7 +75,8 @@ ${CLICKHOUSE_LOCAL} \
     --structure "id UInt64, value String" \
     --input-format SQLite \
     --output-format TSV \
-    --query "SELECT id, value FROM table ORDER BY id SETTINGS input_format_null_as_default = 0" < "$DB" 2>&1 \
+    --input_format_null_as_default 0 \
+    --query "SELECT id, value FROM table ORDER BY id" < "$DB" 2>&1 \
     | grep -o "CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN" | head -1
 
 ${CLICKHOUSE_LOCAL} --query "
