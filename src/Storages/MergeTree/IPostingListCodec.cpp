@@ -8,7 +8,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 std::unique_ptr<IPostingListCodec> PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type type)
@@ -21,7 +20,7 @@ std::unique_ptr<IPostingListCodec> PostingListCodecFactory::createPostingListCod
             return std::make_unique<PostingListCodecBitpacking>();
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown posting list codec type: {}", static_cast<int>(type));
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown posting list codec type: {}", static_cast<int>(type));
 }
 
 std::unique_ptr<IPostingListCodec> PostingListCodecFactory::createPostingListCodec(std::string_view codec_name, const String & caller_name)

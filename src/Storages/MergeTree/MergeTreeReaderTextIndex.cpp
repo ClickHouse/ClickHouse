@@ -56,7 +56,6 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->all_mark_ranges,
         main_reader_->settings)
     , index(std::move(index_))
-    , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index.index).getPostingListCodec())
 {
     for (const auto & column : columns_)
     {
@@ -103,11 +102,9 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_granule)
 {
     granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule);
-    deserialization_state->version = granule->getSparseIndexVersion();
-
-    const auto * posting_list_codec = granule->getPostingListCodec();
-    postings_serialization = PostingsSerialization(posting_list_codec);
-    bool has_posting_list_codec = posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None;
+    auto postings_codec = PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType());
+    bool has_posting_list_codec = postings_codec->getType() != IPostingListCodec::Type::None;
+    postings_serialization = PostingsSerialization(std::move(postings_codec));
 
     if (lazy_mode_requested && !has_posting_list_codec)
     {
@@ -626,6 +623,9 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
     if (read_postings)
         return {read_postings};
 
+    if (!postings_serialization.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Postings serialization is not set");
+
     auto blocks_to_read = token_info.getBlocksToRead(range);
     std::vector<PostingListPtr> token_postings;
     token_postings.reserve(blocks_to_read.size());
@@ -637,7 +637,7 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
         if (inserted)
         {
             auto * postings_stream = large_postings_streams.at(token).get();
-            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx, postings_serialization, granule->getIndexIdForCaches());
+            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx, postings_serialization.value(), granule->getIndexIdForCaches());
         }
 
         token_postings.push_back(it->second);

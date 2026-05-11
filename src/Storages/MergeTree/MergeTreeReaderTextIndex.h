@@ -114,7 +114,7 @@ private:
     /// Tokens that are useful for analysis and filling virtual columns.
     absl::flat_hash_set<std::string_view> useful_tokens;
     std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
-    PostingsSerialization postings_serialization;
+    std::optional<PostingsSerialization> postings_serialization;
 
     /// Lazy mode is requested once in the constructor, but enabled per granule after reading the sparse-index header.
     bool lazy_mode_requested = false;

@@ -205,6 +205,13 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
         stream->finalize();
 }
 
+static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex & index)
+{
+    const auto * codec = typeid_cast<const MergeTreeIndexText &>(index).getPostingListCodec();
+    auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
+    return PostingsSerialization(PostingListCodecFactory::createPostingListCodec(codec_type));
+}
+
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
@@ -218,7 +225,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     , merged_part_offsets(std::move(merged_part_offsets_))
     , writer_settings(writer_settings_)
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
-    , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index_ptr).getPostingListCodec())
+    , postings_serialization(createPostingsSerialization(*index_ptr))
 {
     cursors.resize(segments.size());
     inputs.resize(segments.size());

@@ -126,6 +126,7 @@ PostingsSerialization::PostingsSerialization(PostingListCodecPtr posting_list_co
     : posting_list_codec(std::move(posting_list_codec_))
     , raw_postings_buffer(MAX_CARDINALITY_FOR_RAW_POSTINGS)
 {
+    chassert(posting_list_codec);
 }
 
 void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr)
@@ -248,9 +249,8 @@ size_t TokenPostingsInfo::bytesAllocated() const
         + (embedded_postings ? embedded_postings->getSizeInBytes() : 0);
 }
 
-MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, PostingListCodecPtr posting_list_codec_)
+MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
     : params(std::move(params_))
-    , postings_serialization(std::move(posting_list_codec_))
 {
 }
 
@@ -358,24 +358,27 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     pattern_tokens_per_query.clear();
     can_use_like_dictionary_scan = false;
 
-    analyzeDictionaryForTokens(*index_stream, *dictionary_stream, state);
-    analyzeDictionaryForPatterns(*index_stream, *dictionary_stream, state);
-    readPostingsForRareTokens(*postings_stream, state);
+    auto text_index_header = loadHeader(*index_stream, state);
+    auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
+    auto postings_serialization = PostingsSerialization(std::move(postings_codec));
+    postings_codec_type = text_index_header->codec_type;
+
+    analyzeDictionaryForTokens(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
+    analyzeDictionaryForPatterns(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
+    readPostingsForRareTokens(postings_serialization, *postings_stream, state);
 }
 
 void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
-    MergeTreeIndexReaderStream & header_stream,
+    const DictionarySparseIndex & sparse_index,
+    PostingsSerialization & postings_serialization,
     MergeTreeIndexReaderStream & dictionary_stream,
     MergeTreeIndexDeserializationState & state)
 {
-    auto tokens_to_read = fillTokensFromCache(state);
-    auto sparse_index_data = loadSparseIndex(header_stream, state);
-    const auto & sparse_index = sparse_index_data->sparse_index;
-
-    if (tokens_to_read.empty())
+    if (sparse_index.empty())
         return;
 
-    if (sparse_index.empty())
+    auto tokens_to_read = fillTokensFromCache(state);
+    if (tokens_to_read.empty())
         return;
 
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
@@ -462,7 +465,11 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
     }
 }
 
-void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state)
+void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
+    const DictionarySparseIndex & sparse_index,
+    PostingsSerialization & postings_serialization,
+    MergeTreeIndexReaderStream & dictionary_stream,
+    MergeTreeIndexDeserializationState & state)
 {
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     const auto & all_search_patterns = condition_text.getAllSearchPatterns();
@@ -472,9 +479,6 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReade
         can_use_like_dictionary_scan = true;
         return;
     }
-
-    auto sparse_index_data = loadSparseIndex(header_stream, state);
-    const auto & sparse_index = sparse_index_data->sparse_index;
 
     if (sparse_index.empty())
     {
@@ -585,25 +589,17 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
     return tokens_to_read;
 }
 
-std::shared_ptr<TextIndexSerialization::SparseIndexData> MergeTreeIndexGranuleText::loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state)
+std::shared_ptr<TextIndexHeader> MergeTreeIndexGranuleText::loadHeader(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state)
 {
-    const auto load_sparse_index = [&]
+    const auto load_header = [&]
     {
         header_stream.seekToStart();
-        return std::make_shared<TextIndexSerialization::SparseIndexData>(
-            TextIndexSerialization::deserializeSparseIndex(*header_stream.getDataBuffer()));
+        return std::make_shared<TextIndexHeader>(TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer()));
     };
 
     auto header_hash = TextIndexHeaderCache::hash(index_id_for_caches);
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    auto sparse_index_data = condition_text.headerCache()->getOrSet(header_hash, load_sparse_index);
-
-    sparse_index_version = sparse_index_data->header.version;
-    posting_list_codec_holder = PostingListCodecFactory::createPostingListCodec(sparse_index_data->header.codec_type);
-    postings_serialization = PostingsSerialization(posting_list_codec_holder.get());
-    state.version = sparse_index_version;
-
-    return sparse_index_data;
+    return condition_text.headerCache()->getOrSet(header_hash, load_header);
 }
 
 PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
@@ -628,7 +624,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
     return condition_text.postingsCache()->getOrSet(hash, load_postings);
 }
 
-void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
+void MergeTreeIndexGranuleText::readPostingsForRareTokens(PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
 {
     using enum PostingsSerialization::Flags;
 
@@ -827,7 +823,7 @@ PostingListPtr MergeTreeIndexGranuleText::getPostingsForRareToken(std::string_vi
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     MergeTreeIndexTextParams params_,
-    PostingListCodecPtr posting_list_codec_,
+    const IPostingListCodec * posting_list_codec_,
     SortedTokensAndPostings && tokens_and_postings_,
     TokenToPostingsBuilderMap && tokens_map_,
     std::list<PostingList> && posting_lists_,
@@ -986,7 +982,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     TokenPostingsInfo info;
     info.header = 0;
     info.cardinality = static_cast<UInt32>(postings.size());
-    PostingListCodecPtr posting_list_codec = postings_serialization.getPostingListCodec();
+    const IPostingListCodec * posting_list_codec = postings_serialization.getPostingListCodec();
 
     if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
     {
@@ -1001,13 +997,15 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
         info.header |= RawPostings;
         info.header |= EmbeddedPostings;
         info.header &= ~IsCompressed;
+        info.header &= ~HasBlockIndex;
         return info;
     }
     else if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
     {
         info.header |= RawPostings;
-        info.header &= ~IsCompressed;
         info.header |= SingleBlock;
+        info.header &= ~IsCompressed;
+        info.header &= ~HasBlockIndex;
     }
     else if (info.cardinality <= params.posting_list_block_size)
     {
@@ -1079,13 +1077,15 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-void TextIndexSerialization::serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr, PostingListCodecPtr posting_list_codec)
+void TextIndexSerialization::serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr, const IPostingListCodec * posting_list_codec)
 {
-    UInt64 version = static_cast<UInt64>(SparseIndexVersion::WithCodec);
-    writeVarUInt(version, ostr);
-    writeVarUInt(static_cast<UInt64>(posting_list_codec ? posting_list_codec->getType() : IPostingListCodec::Type::None), ostr);
-    chassert(sparse_index.tokens->size() == sparse_index.offsets_in_file->size());
+    UInt64 version = static_cast<UInt64>(TextIndexHeader::Version::WithCodec);
+    UInt64 codec_type = static_cast<UInt64>(posting_list_codec->getType());
 
+    writeVarUInt(version, ostr);
+    writeVarUInt(codec_type, ostr);
+
+    chassert(sparse_index.tokens->size() == sparse_index.offsets_in_file->size());
     auto serialization_string = SerializationString::create();
     auto serialization_number = SerializationNumber<UInt64>::create();
 
@@ -1094,20 +1094,20 @@ void TextIndexSerialization::serializeSparseIndex(const DictionarySparseIndex & 
     serialization_number->serializeBinaryBulk(*sparse_index.offsets_in_file, ostr, 0, sparse_index.offsets_in_file->size());
 }
 
-TextIndexSerialization::SparseIndexData TextIndexSerialization::deserializeSparseIndex(ReadBuffer & istr)
+TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
 
     UInt64 version;
     readVarUInt(version, istr);
 
-    if (version > static_cast<UInt64>(SparseIndexVersion::WithCodec))
+    if (version > static_cast<UInt64>(TextIndexHeader::Version::WithCodec))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
-    SparseIndexHeader header;
+    TextIndexHeader header;
     header.version = static_cast<MergeTreeIndexVersion>(version);
 
-    if (version >= static_cast<UInt64>(SparseIndexVersion::WithCodec))
+    if (version >= static_cast<UInt64>(TextIndexHeader::Version::WithCodec))
     {
         UInt64 codec_type;
         readVarUInt(codec_type, istr);
@@ -1122,7 +1122,8 @@ TextIndexSerialization::SparseIndexData TextIndexSerialization::deserializeSpars
 
     auto serialization_number = SerializationNumber<UInt64>::create();
     serialization_number->deserializeBinaryBulk(*offsets, istr, 0, num_sparse_index_tokens, 0.0);
-    return TextIndexSerialization::SparseIndexData{header, DictionarySparseIndex(std::move(tokens), std::move(offsets))};
+    header.sparse_index = DictionarySparseIndex(std::move(tokens), std::move(offsets));
+    return header;
 }
 
 TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr, PostingsSerialization * postings_serialization)
@@ -1348,7 +1349,10 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
     if (!index_stream || !dictionary_stream || !postings_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
-    PostingsSerialization postings_serialization(posting_list_codec);
+    PostingsSerialization postings_serialization(
+        posting_list_codec
+            ? PostingListCodecFactory::createPostingListCodec(posting_list_codec->getType())
+            : PostingListCodecPtr{});
     auto sparse_index_block = serializeTokensAndPostings(
         tokens_and_postings,
         *dictionary_stream,
@@ -1381,7 +1385,7 @@ size_t MergeTreeIndexGranuleTextWritable::memoryUsageBytes() const
 MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
     MergeTreeIndexTextParams params_,
     TokenizerPtr tokenizer_,
-    PostingListCodecPtr posting_list_codec_)
+    const IPostingListCodec * posting_list_codec_)
     : params(std::move(params_))
     , tokenizer(tokenizer_)
     , posting_list_codec(posting_list_codec_)
@@ -1488,7 +1492,7 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     String index_column_name_,
     MergeTreeIndexTextParams params_,
     TokenizerPtr tokenizer_,
-    PostingListCodecPtr posting_list_codec_,
+    const IPostingListCodec * posting_list_codec_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_)
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
@@ -1595,20 +1599,14 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
 MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const
 {
     if (indexFileExistsInChecksums(checksums, path_prefix, ".idx"))
-    {
-        return {1, {
-            {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
-            {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
-            {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
-        }};
-    }
+        return {1, getSubstreams()};
 
     return {0, {}};
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleText>(params, posting_list_codec.get());
+    return std::make_shared<MergeTreeIndexGranuleText>(params);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const

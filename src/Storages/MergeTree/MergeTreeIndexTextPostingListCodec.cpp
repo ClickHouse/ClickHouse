@@ -165,7 +165,8 @@ void PostingListCodecBitpackingImpl::encodeBlock(std::span<uint32_t> segment)
     /// Record packed block metadata for V2 Index Section.
     /// relative_offset is relative to the segment's compressed_data_offset.
     auto & block_metas = segment_block_metas.back().metas;
-    block_metas.push_back({
+    block_metas.push_back(
+    {
         prev_row_id,
         compressed_data.size() - segment_descriptor.compressed_data_offset
     });

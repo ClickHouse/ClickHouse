@@ -3550,7 +3550,7 @@ TEST(PostingListCursorTest, RawSingleBlockMaterializedUnionWithCompressed)
     EXPECT_EQ(result, expected);
 }
 
-TEST(PostingListCursorTest, SparseIndexHeaderPersistsCodecType)
+TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
 {
     auto tokens = ColumnString::create();
     tokens->insert("alpha");
@@ -3565,19 +3565,19 @@ TEST(PostingListCursorTest, SparseIndexHeaderPersistsCodecType)
     TextIndexSerialization::serializeSparseIndex(sparse_index, out, codec.get());
 
     ReadBufferFromString in(out.str());
-    auto sparse_index_data = TextIndexSerialization::deserializeSparseIndex(in);
+    auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
 
-    EXPECT_EQ(sparse_index_data.header.version, static_cast<MergeTreeIndexVersion>(TextIndexSerialization::SparseIndexVersion::WithCodec));
-    EXPECT_EQ(sparse_index_data.header.codec_type, IPostingListCodec::Type::Bitpacking);
+    EXPECT_EQ(sparse_index_data.version, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+    EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::Bitpacking);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
     EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "alpha");
     EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 42u);
 }
 
-TEST(PostingListCursorTest, SparseIndexHeaderInitialVersionDefaultsToNoneCodec)
+TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
 {
     WriteBufferFromOwnString out;
-    writeVarUInt(static_cast<UInt64>(TextIndexSerialization::SparseIndexVersion::Initial), out);
+    writeVarUInt(static_cast<UInt64>(TextIndexHeader::Version::Initial), out);
     writeVarUInt(1u, out);
 
     auto tokens = ColumnString::create();
@@ -3589,10 +3589,10 @@ TEST(PostingListCursorTest, SparseIndexHeaderInitialVersionDefaultsToNoneCodec)
     SerializationNumber<UInt64>::create()->serializeBinaryBulk(*offsets, out, 0, offsets->size());
 
     ReadBufferFromString in(out.str());
-    auto sparse_index_data = TextIndexSerialization::deserializeSparseIndex(in);
+    auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
 
-    EXPECT_EQ(sparse_index_data.header.version, static_cast<MergeTreeIndexVersion>(TextIndexSerialization::SparseIndexVersion::Initial));
-    EXPECT_EQ(sparse_index_data.header.codec_type, IPostingListCodec::Type::None);
+    EXPECT_EQ(sparse_index_data.version, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial));
+    EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
     EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "beta");
     EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 7u);
