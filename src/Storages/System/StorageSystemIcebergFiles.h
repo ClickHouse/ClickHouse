@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/System/IStorageSystemOneBlock.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 
 namespace DB
@@ -11,17 +11,25 @@ class Context;
 /** System table that lists data and delete files of currently loaded Iceberg tables.
   * Each row corresponds to one file referenced by the current snapshot's manifest entries.
   */
-class StorageSystemIcebergFiles final : public IStorageSystemOneBlock
+class StorageSystemIcebergFiles final : public StorageWithCommonVirtualColumns
 {
 public:
+    explicit StorageSystemIcebergFiles(const StorageID & table_id_);
+
     std::string getName() const override { return "SystemIcebergFiles"; }
 
-    static ColumnsDescription getColumnsDescription();
+    bool isSystemStorage() const override { return true; }
 
 protected:
-    using IStorageSystemOneBlock::IStorageSystemOneBlock;
-
-    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void readImpl(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override;
 };
 
 }

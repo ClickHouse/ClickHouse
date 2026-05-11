@@ -107,5 +107,4 @@ ${CLICKHOUSE_CLIENT} --query "
     FORMAT Vertical;
 "
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t0"
 rm -rf "${ICEBERG_TABLE_PATH}"
