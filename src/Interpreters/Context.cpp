@@ -4527,6 +4527,12 @@ std::shared_ptr<ParquetMetadataCache> Context::getParquetMetadataCache() const
     return shared->parquet_metadata_cache;
 }
 
+std::shared_ptr<ParquetMetadataCache> Context::tryGetParquetMetadataCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->parquet_metadata_cache;
+}
+
 void Context::clearParquetMetadataCache() const
 {
     auto cache = getParquetMetadataCache();
