@@ -27,6 +27,7 @@
 #include <aws/core/http/URI.h>
 #include <aws/core/utils/memory/stl/AWSStreamFwd.h>
 #include <chrono>
+#include <sstream>
 
 namespace DB
 {
@@ -110,7 +111,7 @@ String extractRegionFromBroker(const String & broker_address)
         broker_host = broker_host.substr(0, colon_pos);
     }
 
-    static const RE2 region_pattern(R"((?i)\.kafka(?:-serverless)?\.([a-z0-9-]+)\.(?:vpce\.)?amazonaws\.com$)");
+    static const RE2 region_pattern(R"(\.kafka(?:-serverless)?\.([a-z0-9-]+)\.(?:vpce\.)?amazonaws\.com$)");
     std::string region;
     if (RE2::PartialMatch(broker_host, region_pattern, &region))
         return region;
@@ -130,12 +131,18 @@ void setupAuthentication(
 
     if (effective_region.empty() && !broker_list.empty())
     {
-        size_t comma_pos = broker_list.find(',');
-        String first_broker = (comma_pos != String::npos) ? broker_list.substr(0, comma_pos) : broker_list;
-        boost::trim(first_broker);
-        effective_region = extractRegionFromBroker(first_broker);
-        if (!effective_region.empty())
-            LOG_DEBUG(log, "Auto-detected AWS region '{}' from broker address '{}'", effective_region, first_broker);
+        std::istringstream stream(broker_list);
+        String broker;
+        while (std::getline(stream, broker, ','))
+        {
+            boost::trim(broker);
+            effective_region = extractRegionFromBroker(broker);
+            if (!effective_region.empty())
+            {
+                LOG_DEBUG(log, "Auto-detected AWS region '{}' from broker address '{}'", effective_region, broker);
+                break;
+            }
+        }
     }
 
     if (effective_region.empty())
