@@ -269,6 +269,9 @@ void ConditionTemplate<Cond>::addTransformation(Transformer transformer_)
 {
     std::unique_lock lock(mutex);
 
+    unsubstituted.reset();
+    cache.clear();
+
     if (!transformer)
     {
         transformer = std::move(transformer_);
@@ -281,9 +284,6 @@ void ConditionTemplate<Cond>::addTransformation(Transformer transformer_)
         next_transform(condition);
         return condition;
     };
-
-    unsubstituted.reset();
-    cache.clear();
 }
 
 template class ConditionTemplate<KeyCondition>;
