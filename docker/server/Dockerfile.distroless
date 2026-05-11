@@ -37,7 +37,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="26.3.9.8"
+ARG VERSION="26.4.2.10"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 #docker-official-library:off
@@ -87,10 +87,17 @@ RUN clickhouse local -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
     && apt-get install --yes --no-install-recommends dirmngr gnupg2 \
     && mkdir -p /etc/apt/sources.list.d \
     && GNUPGHOME=$(mktemp -d) \
-    && GNUPGHOME="$GNUPGHOME" gpg --batch --no-default-keyring \
-        --keyring /usr/share/keyrings/clickhouse-keyring.gpg \
-        --keyserver hkp://keyserver.ubuntu.com:80 \
-        --recv-keys 3a9ea1193a97b548be1457d48919f6bd2b48d754 \
+    && ( set +e; \
+        for KEYSERVER in \
+            hkp://keys.openpgp.org:80 \
+            hkp://pgp.mit.edu:80 \
+            hkp://keyserver.ubuntu.com:80; do \
+            GNUPGHOME="$GNUPGHOME" gpg --batch --no-default-keyring \
+                --keyring /usr/share/keyrings/clickhouse-keyring.gpg \
+                --keyserver "$KEYSERVER" \
+                --recv-keys 3a9ea1193a97b548be1457d48919f6bd2b48d754 && break; \
+        done || exit 1 \
+    ) \
     && rm -rf "$GNUPGHOME" \
     && chmod +r /usr/share/keyrings/clickhouse-keyring.gpg \
     && echo "${REPOSITORY}" > /etc/apt/sources.list.d/clickhouse.list \

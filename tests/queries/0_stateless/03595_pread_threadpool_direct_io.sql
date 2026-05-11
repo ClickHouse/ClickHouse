@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas, no-object-storage
+-- Tags: no-parallel-replicas, no-object-storage, no-darwin
+-- no-darwin: min_bytes_to_use_direct_io relies on O_DIRECT, which is not supported on macOS.
 
 -- this test checks OSReadBytes per-thread counters incompatible with ReaderExecutor
 SET use_reader_executor = 0;

@@ -231,6 +231,15 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     bool restrict_seek) const
 {
     auto settings_ptr = s3_settings.get();
+
+    BlobStorageLogWriterPtr blob_storage_log;
+    if (read_settings.enable_blob_storage_log_for_read_operations)
+    {
+        blob_storage_log = BlobStorageLogWriter::create(disk_name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object.local_path;
+    }
+
     return std::make_unique<ReadBufferFromS3>(
         client.get(),
         uri.bucket,
@@ -243,7 +252,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         /* read_until_position */0,
         restrict_seek,
         object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
-        credentials_refresh_callback);
+        credentials_refresh_callback,
+        std::move(blob_storage_log));
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
