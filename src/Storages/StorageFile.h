@@ -299,6 +299,12 @@ private:
     String current_path;
     std::optional<size_t> current_file_size;
     std::optional<Poco::Timestamp> current_file_last_modified;
+    /// Sub-second precision token for the cache key, derived from the same `stat`
+    /// as `current_file_last_modified`. Kept separate so the user-visible
+    /// `_last_modified` virtual column keeps its existing second resolution while
+    /// the format metadata cache (e.g. Parquet footer cache) is invalidated even
+    /// for in-place rewrites within the same wall-clock second.
+    std::optional<String> current_file_cache_version;
     struct stat current_archive_stat;
     std::optional<String> filename_override;
     Block sample_block;
