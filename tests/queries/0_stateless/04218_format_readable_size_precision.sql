@@ -55,6 +55,19 @@ FROM system.numbers
 LIMIT 70;
 
 SELECT '--';
+SELECT 'special floating-point values';
+SELECT formatReadableSize(nan, 3);
+SELECT formatReadableSize(inf, 3);
+SELECT formatReadableSize(-inf, 3);
+SELECT formatReadableDecimalSize(nan, 3);
+SELECT formatReadableQuantity(inf, 3);
+
+SELECT '--';
+SELECT 'NULL propagation';
+SELECT formatReadableSize(toNullable(1024), 3);
+SELECT formatReadableSize(CAST(NULL AS Nullable(UInt64)), 3);
+
+SELECT '--';
 SELECT 'errors: precision argument shape';
 SELECT formatReadableSize(1024, 'two'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT formatReadableSize(1024, 1.5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

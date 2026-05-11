@@ -239,6 +239,17 @@ formatReadableQuantity: full value range, mixed input types, precision = 3
 340.428 octillion	18.447 quintillion	2.147 billion
 925.378 octillion	18.447 quintillion	2.147 billion
 --
+special floating-point values
+nan B
+inf YiB
+-inf YiB
+nan B
+inf vigintillion
+--
+NULL propagation
+1.000 KiB
+\N
+--
 errors: precision argument shape
 --
 errors: argument count
