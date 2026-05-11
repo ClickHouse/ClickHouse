@@ -27,10 +27,9 @@ TEST(Jemalloc, TryGetValueReportsFailureForUnknownMallctl)
 }
 
 /// `getValue` must return a zero-initialized value when the mallctl is
-/// missing. This is the contract relied upon by callers such as
-/// `AsynchronousMetrics::saveJemallocMetricImpl`: a missing mallctl reports
-/// the metric as `0` rather than aborting the server in debug builds or
-/// returning uninitialized memory in release builds.
+/// missing (call sites that only need a safe default). Optional metrics use
+/// `tryGetValue` in `AsynchronousMetrics::saveJemallocMetricImpl` so missing
+/// mallctls omit the metric instead of publishing `0` or garbage.
 TEST(Jemalloc, GetValueReturnsZeroForUnknownMallctl)
 {
     EXPECT_EQ(Jemalloc::getValue<uint64_t>("this.mallctl.does.not.exist"), 0u);
