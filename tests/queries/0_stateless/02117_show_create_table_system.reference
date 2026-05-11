@@ -323,7 +323,7 @@ CREATE TABLE system.functions
     `min_arguments` Nullable(UInt64),
     `max_arguments` Nullable(UInt64),
     `is_deterministic` Nullable(UInt8),
-    `accepts_lambda` Nullable(UInt8)
+    `higher_order_function` Nullable(UInt8)
 )
 ENGINE = SystemFunctions
 COMMENT 'Contains a list of all available ordinary and aggregate functions with their descriptions.'

@@ -44,7 +44,7 @@ namespace
         std::optional<UInt64> min_arguments;
         std::optional<UInt64> max_arguments;
         std::optional<UInt8> is_deterministic;
-        std::optional<UInt8> accepts_lambda;
+        std::optional<UInt8> higher_order_function;
     };
 
     template <typename Factory>
@@ -130,8 +130,8 @@ namespace
         else
             res_columns[16]->insertDefault();
 
-        if (extra.accepts_lambda)
-            res_columns[17]->insert(*extra.accepts_lambda);
+        if (extra.higher_order_function)
+            res_columns[17]->insert(*extra.higher_order_function);
         else
             res_columns[17]->insertDefault();
     }
@@ -149,7 +149,7 @@ namespace
                 return info;
 
             info.is_deterministic = resolver->isDeterministic() ? UInt8{1} : UInt8{0};
-            info.accepts_lambda = resolver->isHigherOrder() ? UInt8{1} : UInt8{0};
+            info.higher_order_function = resolver->isHigherOrder() ? UInt8{1} : UInt8{0};
 
             if (!resolver->isVariadic())
             {
@@ -246,7 +246,7 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
             "The maximum number of arguments the function accepts. NULL when unbounded (variadic) or unknown."},
         {"is_deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
             "Whether the function returns the same result for the same arguments. NULL when unknown (e.g. aggregate or user-defined functions)."},
-        {"accepts_lambda", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+        {"higher_order_function", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
             "Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown."}
     };
 }
@@ -365,7 +365,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[14]->insert(arity); // min_arguments
         res_columns[15]->insert(arity); // max_arguments
         res_columns[16]->insertDefault(); // is_deterministic
-        res_columns[17]->insert(UInt8{0}); // accepts_lambda
+        res_columns[17]->insert(UInt8{0}); // higher_order_function
     }
 }
 

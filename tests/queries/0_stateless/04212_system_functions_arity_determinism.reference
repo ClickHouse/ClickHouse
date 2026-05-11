@@ -1,5 +1,5 @@
 -- columns exist with the expected types
-accepts_lambda	Nullable(UInt8)
+higher_order_function	Nullable(UInt8)
 is_deterministic	Nullable(UInt8)
 max_arguments	Nullable(UInt64)
 min_arguments	Nullable(UInt64)
