@@ -26,16 +26,6 @@ TEST(Jemalloc, TryGetValueReportsFailureForUnknownMallctl)
     EXPECT_TRUE(out);
 }
 
-/// `getValue` must return a zero-initialized value when the mallctl is
-/// missing (call sites that only need a safe default). Optional metrics use
-/// `tryGetValue` in `AsynchronousMetrics::saveJemallocMetricImpl` so missing
-/// mallctls omit the metric instead of publishing `0` or garbage.
-TEST(Jemalloc, GetValueReturnsZeroForUnknownMallctl)
-{
-    EXPECT_EQ(Jemalloc::getValue<uint64_t>("this.mallctl.does.not.exist"), 0u);
-    EXPECT_EQ(Jemalloc::getValue<bool>("this.mallctl.does.not.exist"), false);
-}
-
 /// `verifySetup` must not abort or warn when the only potential mismatch
 /// comes from optional `background_thread` / `max_background_threads`
 /// mallctls that are not compiled into the running jemalloc -- the macOS

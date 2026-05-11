@@ -66,7 +66,8 @@ template <typename T>
 T getValue(const char * name)
 {
     T value{};
-    tryGetValue(name, value);
+    [[maybe_unused]] auto success = tryGetValue(name, value);
+    chassert(success, fmt::format("Failed to get jemalloc value for '{}'", name));
     return value;
 }
 

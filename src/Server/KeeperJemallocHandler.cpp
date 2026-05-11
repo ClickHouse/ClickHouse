@@ -185,16 +185,9 @@ try
 
     auto read_mallctl = [&]<typename T>(const char * name, std::type_identity<T>) -> std::optional<T>
     {
-        try
-        {
-            return Jemalloc::getValue<T>(name);
-        }
-        catch (...)
-        {
-            tryLogCurrentException("KeeperJemallocStatusHandler", std::string("Failed to read mallctl '") + name + "'");
-            errors.add(std::string(name));
-            return std::nullopt;
-        }
+        T value{};
+        (void)Jemalloc::tryGetValue(name, value);
+        return value;
     };
 
     auto prof_enabled = read_mallctl("opt.prof", std::type_identity<bool>{});
