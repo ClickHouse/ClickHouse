@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsBool joined_subquery_requires_alias;
     extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsUInt64 max_subquery_depth;
+    extern const SettingsUInt64 recursive_cte_max_steps_in_type_inference;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsBool rewrite_count_distinct_if_with_count_distinct_implementation;
     extern const SettingsBool single_join_prefer_left_table;
@@ -5805,29 +5806,102 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             ? non_recursive_query->as<QueryNode &>().getProjectionColumns()
             : non_recursive_query->as<UnionNode &>().computeProjectionColumns();
 
-        auto temporary_table_holder = std::make_shared<TemporaryTableHolder>(
-            non_recursive_query_mutable_context,
-            ColumnsDescription{NamesAndTypesList{temporary_table_columns.begin(), temporary_table_columns.end()}},
-            ConstraintsDescription{},
-            nullptr /*query*/,
-            true /*create_for_global_subquery*/);
-        auto temporary_table_storage = temporary_table_holder->getTable();
+        /// Column types are determined by iteratively applying `getLeastSupertype` across the non-recursive
+        /// and recursive sides until the types stabilize (or until the configured limit of widening steps).
+        /// Each widening step requires re-resolving the recursive queries with the new column types,
+        /// so we save clones of the unresolved recursive queries up-front and reuse them on each pass.
+        const size_t max_widening_steps = non_recursive_query_mutable_context->getSettingsRef()[Setting::recursive_cte_max_steps_in_type_inference];
 
-        recursive_cte_table_node = std::make_shared<TableNode>(temporary_table_storage, non_recursive_query_mutable_context);
-        recursive_cte_table_node->setTemporaryTableName(union_node_typed.getCTEName());
+        std::vector<QueryTreeNodePtr> original_recursive_queries;
+        if (max_widening_steps > 0)
+            for (size_t i = 1; i < queries_nodes.size(); ++i)
+                original_recursive_queries.push_back(queries_nodes[i]->clone());
 
-        recursive_cte_table.emplace(std::move(temporary_table_holder), std::move(temporary_table_storage), std::move(temporary_table_columns));
+        TemporaryTableHolderPtr final_temporary_table_holder;
+        StoragePtr final_temporary_table_storage;
+
+        auto resolve_recursive_queries_with_current_types = [&]
+        {
+            auto temporary_table_holder = std::make_shared<TemporaryTableHolder>(
+                non_recursive_query_mutable_context,
+                ColumnsDescription{NamesAndTypesList{temporary_table_columns.begin(), temporary_table_columns.end()}},
+                ConstraintsDescription{},
+                nullptr /*query*/,
+                true /*create_for_global_subquery*/);
+            auto temporary_table_storage = temporary_table_holder->getTable();
+
+            recursive_cte_table_node = std::make_shared<TableNode>(temporary_table_storage, non_recursive_query_mutable_context);
+            recursive_cte_table_node->setTemporaryTableName(union_node_typed.getCTEName());
+
+            for (size_t i = 1; i < queries_nodes.size(); ++i)
+            {
+                auto & query_node = queries_nodes[i];
+
+                IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(query_node, &scope /*parent_scope*/);
+                subquery_scope.expression_argument_name_to_node[union_node_typed.getCTEName()] = recursive_cte_table_node;
+
+                auto query_node_type = query_node->getNodeType();
+                if (query_node_type == QueryTreeNodeType::QUERY)
+                    resolveQuery(query_node, subquery_scope);
+                else if (query_node_type == QueryTreeNodeType::UNION)
+                    resolveUnion(query_node, subquery_scope);
+                else
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "UNION unsupported node {}. In scope {}",
+                        query_node->formatASTForErrorMessage(),
+                        scope.scope_node->formatASTForErrorMessage());
+            }
+
+            final_temporary_table_holder = std::move(temporary_table_holder);
+            final_temporary_table_storage = std::move(temporary_table_storage);
+        };
+
+        /// Initial resolve with column types from the non-recursive query.
+        resolve_recursive_queries_with_current_types();
+
+        /// Iteratively widen column types via getLeastSupertype, re-resolving the recursive queries each time.
+        for (size_t step = 0; step < max_widening_steps; ++step)
+        {
+            bool types_changed = false;
+            for (size_t i = 1; i < queries_nodes.size(); ++i)
+            {
+                auto & query_node = queries_nodes[i];
+                NamesAndTypes recursive_projection;
+                if (auto * qn = query_node->as<QueryNode>())
+                    recursive_projection = qn->getProjectionColumns();
+                else if (auto * un = query_node->as<UnionNode>())
+                    recursive_projection = un->computeProjectionColumns();
+
+                for (size_t col = 0; col < temporary_table_columns.size() && col < recursive_projection.size(); ++col)
+                {
+                    DataTypes types_to_merge = {temporary_table_columns[col].type, recursive_projection[col].type};
+                    auto merged_type = getLeastSupertype(types_to_merge);
+                    if (!merged_type->equals(*temporary_table_columns[col].type))
+                    {
+                        temporary_table_columns[col].type = merged_type;
+                        types_changed = true;
+                    }
+                }
+            }
+
+            if (!types_changed)
+                break;
+
+            for (size_t i = 1; i < queries_nodes.size(); ++i)
+                queries_nodes[i] = original_recursive_queries[i - 1]->clone();
+
+            resolve_recursive_queries_with_current_types();
+        }
+
+        recursive_cte_table.emplace(std::move(final_temporary_table_holder), std::move(final_temporary_table_storage), std::move(temporary_table_columns));
     }
 
     size_t queries_nodes_size = queries_nodes.size();
-    for (size_t i = recursive_cte_table.has_value(); i < queries_nodes_size; ++i)
+    for (size_t i = recursive_cte_table.has_value() ? queries_nodes_size : 0; i < queries_nodes_size; ++i)
     {
         auto & query_node = queries_nodes[i];
 
         IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(query_node, &scope /*parent_scope*/);
-
-        if (recursive_cte_table_node)
-            subquery_scope.expression_argument_name_to_node[union_node_typed.getCTEName()] = recursive_cte_table_node;
 
         auto query_node_type = query_node->getNodeType();
 

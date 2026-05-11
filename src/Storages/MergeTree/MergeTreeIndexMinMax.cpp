@@ -61,19 +61,33 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 
 void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
-    hyperrectangle.clear();
+    const size_t num_columns = index_sample_block.columns();
+
+    /// On subsequent calls (when granule is reused), deserialize directly into the existing
+    /// Range objects instead of clearing the vector and constructing new Ranges each time.
+    /// This avoids repeated vector operations and Field copy-constructions
+    /// in hot loops (e.g. skip index evaluation over hundreds of thousands of granules).
+    const bool update_in_place = (hyperrectangle.size() == num_columns);
+
+    if (!update_in_place)
+        hyperrectangle.clear();
+
     Field min_val;
     Field max_val;
 
-    for (size_t i = 0; i < index_sample_block.columns(); ++i)
+    for (size_t i = 0; i < num_columns; ++i)
     {
+        /// When updating in place, deserialize directly into the Range's fields.
+        Field & min_ref = update_in_place ? static_cast<Field &>(hyperrectangle[i].left) : min_val;
+        Field & max_ref = update_in_place ? static_cast<Field &>(hyperrectangle[i].right) : max_val;
+
         switch (version)
         {
             case 1:
                 if (!datatypes[i]->isNullable())
                 {
-                    serializations[i]->deserializeBinary(min_val, istr, format_settings);
-                    serializations[i]->deserializeBinary(max_val, istr, format_settings);
+                    serializations[i]->deserializeBinary(min_ref, istr, format_settings);
+                    serializations[i]->deserializeBinary(max_ref, istr, format_settings);
                 }
                 else
                 {
@@ -87,34 +101,42 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                     readBinary(is_null, istr);
                     if (!is_null)
                     {
-                        serializations[i]->deserializeBinary(min_val, istr, format_settings);
-                        serializations[i]->deserializeBinary(max_val, istr, format_settings);
+                        serializations[i]->deserializeBinary(min_ref, istr, format_settings);
+                        serializations[i]->deserializeBinary(max_ref, istr, format_settings);
                     }
                     else
                     {
-                        min_val = Null();
-                        max_val = Null();
+                        min_ref = Null();
+                        max_ref = Null();
                     }
                 }
                 break;
 
-            /// New format with proper Nullable support for values that includes Null values
+            /// New format with proper Nullable support for values that include NULL values
             case 2:
-                serializations[i]->deserializeBinary(min_val, istr, format_settings);
-                serializations[i]->deserializeBinary(max_val, istr, format_settings);
+                serializations[i]->deserializeBinary(min_ref, istr, format_settings);
+                serializations[i]->deserializeBinary(max_ref, istr, format_settings);
 
                 // NULL_LAST
-                if (min_val.isNull())
-                    min_val = POSITIVE_INFINITY;
-                if (max_val.isNull())
-                    max_val = POSITIVE_INFINITY;
+                if (min_ref.isNull())
+                    min_ref = POSITIVE_INFINITY;
+                if (max_ref.isNull())
+                    max_ref = POSITIVE_INFINITY;
 
                 break;
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
         }
 
-        hyperrectangle.emplace_back(min_val, true, max_val, true);
+        if (update_in_place)
+        {
+            hyperrectangle[i].left_included = true;
+            hyperrectangle[i].right_included = true;
+        }
+        else
+        {
+            hyperrectangle.emplace_back(min_val, true, max_val, true);
+        }
     }
 }
 

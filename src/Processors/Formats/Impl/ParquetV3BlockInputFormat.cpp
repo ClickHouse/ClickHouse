@@ -346,7 +346,11 @@ void registerInputFormatParquet(FormatFactory & factory)
         {
             size_t min_bytes_for_seek
                 = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
-            ParquetMetadataCachePtr metadata_cache = context->getParquetMetadataCache();
+            /// `tryGet` keeps the metadata-aware creator usable from contexts that don't
+            /// initialise the cache (e.g. the client side of `INSERT ... FROM INFILE`).
+            /// In such contexts we just don't memoise the footer — the format itself works
+            /// correctly with a null cache.
+            ParquetMetadataCachePtr metadata_cache = context->tryGetParquetMetadataCache();
             return std::make_shared<ParquetV3BlockInputFormat>(
                 buf,
                 std::make_shared<const Block>(sample),
