@@ -11,7 +11,14 @@ exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 set history_file $CLICKHOUSE_TMP/$basename.history
 
 log_user 0
-set timeout 60
+# Timeout is intentionally generous: under sanitizer + parallel + azure CI load,
+# `clickhouse-client` can take >60s just to print the initial `:) ` prompt
+# (the test itself completes in ~1 second on an unloaded machine). This is the
+# chronic root cause behind the `01179_insert_values_semicolon` flake tracked
+# in https://github.com/ClickHouse/ClickHouse/issues/104590 — bumping the timeout
+# from 60s to 300s gives enough headroom for slow client startup without
+# changing test behavior in the happy path.
+set timeout 300
 match_max 100000
 expect_after {
     # Do not ignore eof from expect
