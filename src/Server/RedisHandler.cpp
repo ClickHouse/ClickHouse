@@ -41,6 +41,9 @@ namespace ErrorCodes
 namespace
 {
 
+constexpr size_t MAX_KEY_SIZE = 64 * 1024;
+constexpr size_t MAX_MGET_KEYS = 1024;
+
 bool parseRedisUInt64Key(const String & key, UInt64 & value)
 {
     if (key.empty() || key.front() < '0' || key.front() > '9')
@@ -148,6 +151,11 @@ void RedisHandler::getKey(WriteBuffer & out, const String & key)
         RedisProtocol::writeError(out, "ERR no Redis DB selected");
         return;
     }
+    if (key.size() > MAX_KEY_SIZE)
+    {
+        RedisProtocol::writeError(out, "ERR key is too large");
+        return;
+    }
 
     try
     {
@@ -241,6 +249,19 @@ void RedisHandler::getKeys(WriteBuffer & out, const std::vector<String> & keys_t
     {
         RedisProtocol::writeError(out, "ERR no Redis DB selected");
         return;
+    }
+    if (keys_to_get.size() > MAX_MGET_KEYS)
+    {
+        RedisProtocol::writeError(out, "ERR too many keys for 'mget' command");
+        return;
+    }
+    for (const auto & key : keys_to_get)
+    {
+        if (key.size() > MAX_KEY_SIZE)
+        {
+            RedisProtocol::writeError(out, "ERR key is too large");
+            return;
+        }
     }
 
     try

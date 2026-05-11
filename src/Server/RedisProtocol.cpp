@@ -22,6 +22,9 @@ namespace RedisProtocol
 namespace
 {
 
+constexpr UInt64 MAX_ARRAY_ELEMENTS = 2048;
+constexpr UInt64 MAX_BULK_STRING_SIZE = 1024 * 1024;
+
 [[noreturn]] void throwProtocolError(std::string_view message)
 {
     throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Redis protocol error: {}", message);
@@ -98,6 +101,9 @@ Size checkedSize(UInt64 size, std::string_view value_name)
 String readBulkString(ReadBuffer & in)
 {
     UInt64 size = readBulkStringSize(in);
+    if (size > MAX_BULK_STRING_SIZE)
+        throwProtocolError("bulk string is too large");
+
     size_t string_size = checkedSize(size, "bulk string");
 
     String value;
@@ -128,6 +134,8 @@ Command readCommand(ReadBuffer & in)
     UInt64 size = readUnsignedLine(in);
     if (size == 0)
         throwProtocolError("expected non-empty command array");
+    if (size > MAX_ARRAY_ELEMENTS)
+        throwProtocolError("array is too large");
     size_t array_size = checkedSize(size, "array");
 
     Command command;

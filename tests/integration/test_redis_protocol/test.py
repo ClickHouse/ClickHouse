@@ -182,6 +182,16 @@ def assert_is_error(response):
     assert response[0] == "error"
 
 
+def assert_error_contains(response, expected):
+    assert response[0] == "error"
+    assert expected in response[1]
+
+
+def assert_server_accepts_new_connection():
+    with connect_redis() as sock:
+        assert command(sock, "PING") == ("simple", b"PONG")
+
+
 def test_ping(started_cluster):
     with connect_redis() as sock:
         assert command(sock, "PING") == ("simple", b"PONG")
@@ -271,6 +281,49 @@ def test_mget_wrong_arity(started_cluster):
 def test_mget_before_select(started_cluster):
     with connect_redis() as sock:
         assert_error(command(sock, "MGET", "key_1"), b"ERR no Redis DB selected")
+
+
+def test_get_key_too_large(started_cluster):
+    large_key = "x" * (64 * 1024 + 1)
+
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "0") == ("simple", b"OK")
+        assert_is_error(command(sock, "GET", large_key))
+        assert command(sock, "PING") == ("simple", b"PONG")
+
+
+def test_mget_key_too_large(started_cluster):
+    large_key = "x" * (64 * 1024 + 1)
+
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "0") == ("simple", b"OK")
+        assert_is_error(command(sock, "MGET", "key_1", large_key))
+        assert command(sock, "PING") == ("simple", b"PONG")
+
+
+def test_mget_too_many_keys(started_cluster):
+    keys = [f"key_{i}" for i in range(1025)]
+
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "0") == ("simple", b"OK")
+        assert_error_contains(command(sock, "MGET", *keys), b"too many keys")
+        assert command(sock, "PING") == ("simple", b"PONG")
+
+
+def test_resp_array_too_large(started_cluster):
+    with connect_redis() as sock:
+        sock.sendall(b"*2049\r\n")
+        assert_is_error(read_response(sock))
+
+    assert_server_accepts_new_connection()
+
+
+def test_resp_bulk_string_too_large(started_cluster):
+    with connect_redis() as sock:
+        sock.sendall(b"*1\r\n$1048577\r\n")
+        assert_is_error(read_response(sock))
+
+    assert_server_accepts_new_connection()
 
 
 def test_uint64_get_existing_key(started_cluster):
