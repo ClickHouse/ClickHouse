@@ -38,6 +38,56 @@ def prepare_table():
             ('key_1', 'value_1'),
             ('key_2', 'value_2'),
             ('key_3', 'value_3');
+
+        DROP TABLE IF EXISTS kv_uint64;
+        CREATE TABLE kv_uint64
+        (
+            key UInt64,
+            value String
+        )
+        ENGINE = EmbeddedRocksDB
+        PRIMARY KEY key;
+
+        INSERT INTO kv_uint64 VALUES
+            (0, 'value_0'),
+            (65536, 'value_65536'),
+            (131072, 'value_131072');
+
+        DROP TABLE IF EXISTS kv_not_key_value;
+        CREATE TABLE kv_not_key_value
+        (
+            key String,
+            value String
+        )
+        ENGINE = MergeTree
+        ORDER BY key;
+
+        INSERT INTO kv_not_key_value VALUES
+            ('key_1', 'value_1');
+
+        DROP TABLE IF EXISTS kv_uint32_key;
+        CREATE TABLE kv_uint32_key
+        (
+            key UInt32,
+            value String
+        )
+        ENGINE = EmbeddedRocksDB
+        PRIMARY KEY key;
+
+        INSERT INTO kv_uint32_key VALUES
+            (1, 'value_1');
+
+        DROP TABLE IF EXISTS kv_uint64_value;
+        CREATE TABLE kv_uint64_value
+        (
+            key UInt64,
+            value UInt64
+        )
+        ENGINE = EmbeddedRocksDB
+        PRIMARY KEY key;
+
+        INSERT INTO kv_uint64_value VALUES
+            (1, 10);
         """
     )
 
@@ -126,6 +176,10 @@ def command(sock, *parts):
 
 def assert_error(response, expected):
     assert response == ("error", expected)
+
+
+def assert_is_error(response):
+    assert response[0] == "error"
 
 
 def test_ping(started_cluster):
@@ -217,6 +271,117 @@ def test_mget_wrong_arity(started_cluster):
 def test_mget_before_select(started_cluster):
     with connect_redis() as sock:
         assert_error(command(sock, "MGET", "key_1"), b"ERR no Redis DB selected")
+
+
+def test_uint64_get_existing_key(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "1") == ("simple", b"OK")
+        assert command(sock, "GET", "0") == ("bulk", b"value_0")
+
+
+def test_uint64_get_another_existing_key(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "1") == ("simple", b"OK")
+        assert command(sock, "GET", "65536") == ("bulk", b"value_65536")
+
+
+def test_uint64_get_missing_key(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "1") == ("simple", b"OK")
+        assert command(sock, "GET", "999999") == ("bulk", None)
+
+
+def test_uint64_mget_existing_keys(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "1") == ("simple", b"OK")
+        assert command(sock, "MGET", "0", "65536", "131072") == (
+            "array",
+            [
+                ("bulk", b"value_0"),
+                ("bulk", b"value_65536"),
+                ("bulk", b"value_131072"),
+            ],
+        )
+
+
+def test_uint64_mget_mixed_existing_missing(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "1") == ("simple", b"OK")
+        assert command(sock, "MGET", "0", "999999", "131072") == (
+            "array",
+            [
+                ("bulk", b"value_0"),
+                ("bulk", None),
+                ("bulk", b"value_131072"),
+            ],
+        )
+
+
+def test_uint64_get_invalid_key(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "1") == ("simple", b"OK")
+        assert_is_error(command(sock, "GET", "abc"))
+        assert_is_error(command(sock, "GET", "-1"))
+        assert_is_error(command(sock, "GET", "18446744073709551616"))
+
+
+def test_uint64_mget_invalid_key(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "1") == ("simple", b"OK")
+        assert_is_error(command(sock, "MGET", "0", "abc"))
+        assert_is_error(command(sock, "MGET", "0", "-1"))
+        assert_is_error(command(sock, "MGET", "0", "18446744073709551616"))
+
+
+def test_uint64_server_survives_invalid_key_errors(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "1") == ("simple", b"OK")
+        assert_is_error(command(sock, "GET", "abc"))
+        assert command(sock, "PING") == ("simple", b"PONG")
+        assert command(sock, "SELECT", "1") == ("simple", b"OK")
+        assert command(sock, "GET", "0") == ("bulk", b"value_0")
+
+
+def test_get_non_key_value_table_error(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "2") == ("simple", b"OK")
+        assert_is_error(command(sock, "GET", "key_1"))
+        assert command(sock, "PING") == ("simple", b"PONG")
+
+
+def test_get_unsupported_key_type_error(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "3") == ("simple", b"OK")
+        assert_is_error(command(sock, "GET", "1"))
+        assert command(sock, "PING") == ("simple", b"PONG")
+
+
+def test_get_unsupported_value_type_error(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "4") == ("simple", b"OK")
+        assert_is_error(command(sock, "GET", "1"))
+        assert command(sock, "PING") == ("simple", b"PONG")
+
+
+def test_mget_non_key_value_table_error(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "2") == ("simple", b"OK")
+        assert_is_error(command(sock, "MGET", "key_1", "key_2"))
+        assert command(sock, "PING") == ("simple", b"PONG")
+
+
+def test_mget_unsupported_key_type_error(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "3") == ("simple", b"OK")
+        assert_is_error(command(sock, "MGET", "1", "2"))
+        assert command(sock, "PING") == ("simple", b"PONG")
+
+
+def test_mget_unsupported_value_type_error(started_cluster):
+    with connect_redis() as sock:
+        assert command(sock, "SELECT", "4") == ("simple", b"OK")
+        assert_is_error(command(sock, "MGET", "1", "2"))
+        assert command(sock, "PING") == ("simple", b"PONG")
 
 
 def test_quit(started_cluster):

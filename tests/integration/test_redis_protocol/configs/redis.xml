@@ -8,6 +8,26 @@
                 <table>kv_baseline</table>
                 <default_column>value</default_column>
             </_0>
+            <_1>
+                <database>default</database>
+                <table>kv_uint64</table>
+                <default_column>value</default_column>
+            </_1>
+            <_2>
+                <database>default</database>
+                <table>kv_not_key_value</table>
+                <default_column>value</default_column>
+            </_2>
+            <_3>
+                <database>default</database>
+                <table>kv_uint32_key</table>
+                <default_column>value</default_column>
+            </_3>
+            <_4>
+                <database>default</database>
+                <table>kv_uint64_value</table>
+                <default_column>value</default_column>
+            </_4>
         </db>
     </redis>
 </clickhouse>
