@@ -8,7 +8,6 @@
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -59,6 +58,7 @@ class Context;
 struct JobAndPool;
 class MergeTreeTransaction;
 struct ZeroCopyLock;
+struct ZooKeeperRetriesInfo;
 
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
