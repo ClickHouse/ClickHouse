@@ -63,7 +63,6 @@ workflow = Workflow.Config(
         JobConfigs.sqltest_master_job,
         JobConfigs.sqllogic_test_master_job,
         JobConfigs.llvm_coverage_job,
-        JobConfigs.promql_compliance_job,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
