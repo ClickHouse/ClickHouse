@@ -4,6 +4,7 @@
 #include <optional>
 #include <memory>
 #include <Poco/UUID.h>
+#include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -101,6 +102,7 @@
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/NamedScalars/NamedScalarsManager.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
@@ -219,6 +221,8 @@ namespace CurrentMetrics
     extern const Metric BackgroundDistributedSchedulePoolSize;
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
     extern const Metric BackgroundMessageBrokerSchedulePoolSize;
+    extern const Metric BackgroundNamedScalarRefreshPoolTask;
+    extern const Metric BackgroundNamedScalarRefreshPoolSize;
     extern const Metric BackgroundMergesAndMutationsPoolTask;
     extern const Metric BackgroundMergesAndMutationsPoolSize;
     extern const Metric BackgroundFetchesPoolTask;
@@ -360,6 +364,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_buffer_flush_schedule_pool_size;
     extern const ServerSettingsUInt64 background_common_pool_size;
     extern const ServerSettingsUInt64 background_distributed_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_named_scalar_refresh_pool_size;
     extern const ServerSettingsUInt64 background_fetches_pool_size;
     extern const ServerSettingsFloat background_merges_mutations_concurrency_ratio;
     extern const ServerSettingsString background_merges_mutations_scheduling_policy;
@@ -415,6 +420,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int INVALID_SETTING_VALUE;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
@@ -509,6 +515,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag user_defined_sql_objects_storage_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
 
+    /// Constructed eagerly by Context::initializeNamedScalars() at boot.
+    std::unique_ptr<NamedScalarsManager> named_scalars_manager;
+
     mutable OnceFlag workload_entity_storage_initialized;
     mutable std::unique_ptr<IWorkloadEntityStorage> workload_entity_storage;
 
@@ -593,6 +602,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable BackgroundSchedulePoolPtr message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
     OnceFlag iceberg_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr iceberg_schedule_pool; /// A thread pool that runs background metadata refresh for all active Iceberg tables
+    OnceFlag named_scalar_refresh_pool_initialized;
+    mutable BackgroundSchedulePoolPtr named_scalar_refresh_pool;
 
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
@@ -963,6 +974,11 @@ struct ContextSharedPart : boost::noncopyable
         // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
         SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
 
+        /// Stop the shared named-scalar watcher and drain scalar refresh
+        /// tasks before AccessControl, Keeper, and schedule pools start
+        /// shutting down. Destructors are only an idempotent fallback.
+        SHUTDOWN(log, "named scalars manager", named_scalars_manager, shutdown());
+
         std::unique_ptr<SystemLogs> delete_system_logs;
         std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
         std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
@@ -970,12 +986,14 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
         std::unique_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
         std::unique_ptr<DDLWorker> delete_ddl_worker;
+        std::unique_ptr<NamedScalarsManager> delete_named_scalars_manager;
 
         BackgroundSchedulePoolPtr delete_buffer_flush_schedule_pool;
         BackgroundSchedulePoolPtr delete_schedule_pool;
         BackgroundSchedulePoolPtr delete_distributed_schedule_pool;
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
         BackgroundSchedulePoolPtr delete_iceberg_schedule_pool;
+        BackgroundSchedulePoolPtr delete_named_scalar_refresh_pool;
 
         std::unique_ptr<AccessControl> delete_access_control;
 
@@ -1042,12 +1060,17 @@ struct ContextSharedPart : boost::noncopyable
             delete_user_defined_sql_objects_storage = std::move(user_defined_sql_objects_storage);
             delete_workload_entity_storage = std::move(workload_entity_storage);
             delete_ddl_worker = std::move(ddl_worker);
+            /// Explicit shutdown above already stopped the watcher and
+            /// drained refresh tasks. Keep the object alive until after
+            /// dependent services are moved out; destruction is fallback.
+            delete_named_scalars_manager = std::move(named_scalars_manager);
 
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
             delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
             delete_iceberg_schedule_pool = std::move(iceberg_schedule_pool);
+            delete_named_scalar_refresh_pool = std::move(named_scalar_refresh_pool);
 
             delete_access_control = std::move(access_control);
 
@@ -1105,6 +1128,7 @@ struct ContextSharedPart : boost::noncopyable
         join_background_pool(std::move(delete_distributed_schedule_pool));
         join_background_pool(std::move(delete_message_broker_schedule_pool));
         join_background_pool(std::move(delete_iceberg_schedule_pool));
+        join_background_pool(std::move(delete_named_scalar_refresh_pool));
 
         delete_access_control.reset();
 
@@ -3713,6 +3737,74 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
     return *shared->user_defined_sql_objects_storage;
 }
 
+NamedScalarsManager & Context::getNamedScalarsManager() const
+{
+    chassert(shared->named_scalars_manager);
+    return *shared->named_scalars_manager;
+}
+
+void Context::initializeNamedScalars()
+{
+    auto global = getGlobalContext();
+    const auto & config = global->getConfigRef();
+
+    static constexpr std::string_view definitions_disk_path_key = "named_scalar_definitions_path";
+    static constexpr std::string_view definitions_zookeeper_path_key = "named_scalar_definitions_zookeeper_path";
+    static constexpr std::string_view local_cache_path_key = "named_scalar_local_cache_path";
+    static constexpr std::string_view default_cache_key = "default_named_scalar_cache";
+
+    const bool has_disk_definitions = config.has(String(definitions_disk_path_key));
+    const bool has_keeper_definitions = config.has(String(definitions_zookeeper_path_key));
+    if (has_disk_definitions && has_keeper_definitions)
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Only one named scalar definition store can be configured: use either <{}> or <{}>, not both",
+            definitions_disk_path_key,
+            definitions_zookeeper_path_key);
+
+    String definitions_disk_path = config.getString(
+        String(definitions_disk_path_key),
+        std::filesystem::path{global->getPath()} / "named_scalars" / "");
+
+    /// Empty Keeper path -> disk definition store. In that mode SHARED
+    /// value cache is rejected at CREATE time because there is no
+    /// cluster-wide definition owner.
+    String definitions_zookeeper_path;
+    if (has_keeper_definitions)
+        definitions_zookeeper_path = config.getString(String(definitions_zookeeper_path_key));
+
+    String local_cache_path = config.getString(
+        String(local_cache_path_key),
+        std::filesystem::path{global->getPath()} / "named_scalars_cache" / "");
+
+    auto parse_cache_kind = [](const String & value)
+    {
+        const auto lower = Poco::toLower(value);
+        if (lower == "local")
+            return NamedScalarCacheKind::Local;
+        if (lower == "shared")
+            return NamedScalarCacheKind::Shared;
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Invalid <{}> value '{}': expected 'local' or 'shared'",
+            default_cache_key,
+            value);
+    };
+
+    const auto default_cache_kind = parse_cache_kind(config.getString(String(default_cache_key), "local"));
+    if (default_cache_kind == NamedScalarCacheKind::Shared && !has_keeper_definitions)
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "<{}>='shared' requires Keeper-backed named scalar definitions (configure <{}>)",
+            default_cache_key,
+            definitions_zookeeper_path_key);
+
+    shared->named_scalars_manager = std::make_unique<NamedScalarsManager>(
+        definitions_disk_path, definitions_zookeeper_path, local_cache_path, default_cache_kind, global);
+
+    shared->named_scalars_manager->initialize(global);
+}
+
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
 {
     callOnce(shared->workload_entity_storage_initialized, [&] {
@@ -4747,6 +4839,20 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     });
 
     return *shared->distributed_schedule_pool;
+}
+
+BackgroundSchedulePool & Context::getNamedScalarRefreshPool() const
+{
+    callOnce(shared->named_scalar_refresh_pool_initialized, [&] {
+        shared->named_scalar_refresh_pool = BackgroundSchedulePool::create(
+            shared->server_settings[ServerSetting::background_named_scalar_refresh_pool_size],
+            /*max_parallel_tasks_per_type*/ 0,
+            CurrentMetrics::BackgroundNamedScalarRefreshPoolTask,
+            CurrentMetrics::BackgroundNamedScalarRefreshPoolSize,
+            DB::ThreadName::BACKGROUND_NAMED_SCALAR_REFRESH_POOL);
+    });
+
+    return *shared->named_scalar_refresh_pool;
 }
 
 BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const

@@ -137,6 +137,36 @@ CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
 DROP FUNCTION linear_equation;
 ```
 
+## DROP NAMED SCALAR {#drop-named-scalar}
+
+Removes a named cached scalar created by [`CREATE NAMED SCALAR`](./create/named-scalar.md).
+Requires the `DROP_NAMED_SCALAR` privilege.
+
+**Syntax**
+
+```sql
+DROP NAMED SCALAR [IF EXISTS] name [ON CLUSTER cluster]
+```
+
+`IF EXISTS` suppresses the error when the scalar does not exist.
+
+`ON CLUSTER` fans the command out to every node in the specified cluster.
+`SHARED` scalars cannot be combined with `ON CLUSTER` — Keeper already
+propagates the removal cluster-wide; use `ON CLUSTER` only for `LOCAL` scalars
+where each server holds its own definition copy.
+
+**Example**
+
+```sql
+CREATE NAMED SCALAR fx_rate REFRESH EVERY 1 HOUR AS SELECT rate FROM rates WHERE pair = 'EUR/USD';
+DROP NAMED SCALAR fx_rate;
+```
+
+**See also**
+
+- [`CREATE NAMED SCALAR`](./create/named-scalar.md)
+- [`system.named_scalars`](/operations/system-tables/named_scalars)
+
 ## DROP NAMED COLLECTION {#drop-named-collection}
 
 Deletes a named collection.

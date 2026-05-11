@@ -7838,6 +7838,10 @@ The heartbeat interval in seconds to indicate watch query is alive.
 Timeout for waiting for window view fire signal in event time processing
 )", EXPERIMENTAL) \
     \
+    DECLARE(Bool, allow_experimental_named_scalars, false, R"(
+Enables experimental named scalars.
+)", EXPERIMENTAL) \
+    \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \

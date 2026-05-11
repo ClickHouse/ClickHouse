@@ -153,7 +153,15 @@ enum class AccessType : uint8_t
 /// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/SOURCE/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
 /// or specifies that the access type is a GROUP of other access types;
 /// parent_group_name is the name of the group containing this access type (or NONE if there is no such group).
-/// NOTE A parent group must be declared AFTER all its children.
+/// NOTE A parent group must be declared AFTER all its (direct *and* indirect) descendants.
+///      `Helper::addChild` in AccessFlags.cpp ORs the child's flags into
+///      the immediate parent only — it does NOT walk back up to ancestors.
+///      So if you add a new entry whose parent is `SHOW`, and the SHOW group
+///      itself has already been declared (and therefore already attached to
+///      ALL), the new bit lands on SHOW.flags but does NOT reach ALL.flags;
+///      `GRANT ALL ON *.*` will silently miss the new permission. Place new
+///      children among their group's existing children, BEFORE the group's
+///      own M(...) line.
 #define APPLY_FOR_ACCESS_TYPES(M) \
     M(SHOW_DATABASES, "", DATABASE, SHOW) /* allows to execute SHOW DATABASES, SHOW CREATE DATABASE, USE <database>;
                                              implicitly enabled by any grant on the database */\
@@ -247,6 +255,7 @@ enum class AccessType : uint8_t
     M(CREATE_WORKLOAD, "", GLOBAL, CREATE) /* allows to execute CREATE WORKLOAD */ \
     M(CREATE_RESOURCE, "", GLOBAL, CREATE) /* allows to execute CREATE RESOURCE */ \
     M(CREATE_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute CREATE NAMED COLLECTION */ \
+    M(CREATE_NAMED_SCALAR, "", GLOBAL, CREATE) /* allows to execute CREATE NAMED SCALAR */ \
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
     M(DROP_DATABASE, "", DATABASE, DROP) /* allows to execute {DROP|DETACH|TRUNCATE} DATABASE */\
@@ -258,6 +267,7 @@ enum class AccessType : uint8_t
     M(DROP_WORKLOAD, "", GLOBAL, DROP) /* allows to execute DROP WORKLOAD */\
     M(DROP_RESOURCE, "", GLOBAL, DROP) /* allows to execute DROP RESOURCE */\
     M(DROP_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute DROP NAMED COLLECTION */\
+    M(DROP_NAMED_SCALAR, "", GLOBAL, DROP) /* allows to execute DROP NAMED SCALAR */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \
     M(UNDROP_TABLE, "", TABLE, ALL) /* allows to execute {UNDROP} TABLE */\
@@ -387,10 +397,14 @@ enum class AccessType : uint8_t
     M(SYSTEM_UNLOAD_PRIMARY_KEY, "SYSTEM UNLOAD PRIMARY KEY", TABLE, SYSTEM) \
     M(SYSTEM_INSTRUMENT_ADD, "SYSTEM INSTRUMENT ADD", GLOBAL, SYSTEM) \
     M(SYSTEM_INSTRUMENT_REMOVE, "SYSTEM INSTRUMENT REMOVE", GLOBAL, SYSTEM) \
+    M(SYSTEM_REFRESH_NAMED_SCALAR, "SYSTEM REFRESH NAMED SCALAR", GLOBAL, SYSTEM) \
+    M(SYSTEM_NAMED_SCALAR_REFRESHES, "SYSTEM START NAMED SCALAR REFRESHES, SYSTEM STOP NAMED SCALAR REFRESHES", GLOBAL, SYSTEM) \
     M(SYSTEM, "", GROUP, ALL) /* allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...} */ \
     \
     M(dictGet, "dictHas, dictGetHierarchy, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictIsIn() */\
     M(displaySecretsInShowAndSelect, "", GLOBAL, ALL) /* allows to show plaintext secrets in SELECT and SHOW queries. display_secrets_in_show_and_select format and server settings must be turned on */\
+    M(getNamedScalar, "getNamedScalarOrDefault", GLOBAL, ALL) /* allows to execute functions getNamedScalar(), getNamedScalarOrDefault() */\
+    M(SHOW_NAMED_SCALARS, "", GLOBAL, ALL) /* allows to read system.named_scalars (operator-tier columns); named scalars are flat (no per-entity grant) so the scope is GLOBAL */\
     \
     M(addressToLine, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToLine() */\
     M(addressToLineWithInlines, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToLineWithInlines() */\

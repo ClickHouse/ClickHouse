@@ -1,0 +1,3 @@
+<clickhouse>
+    <named_scalar_definitions_zookeeper_path>/clickhouse/shared_named_scalars_test</named_scalar_definitions_zookeeper_path>
+</clickhouse>

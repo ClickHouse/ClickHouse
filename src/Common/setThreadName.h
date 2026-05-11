@@ -24,6 +24,7 @@ namespace DB
     M(AZURE_COPY_POOL, "AzureObjCopy") \
     M(AZURE_LIST_POOL, "AzureObjList") \
     M(BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, "BgBufSchPool") \
+    M(BACKGROUND_NAMED_SCALAR_REFRESH_POOL, "BgNSRefSchPool") \
     M(BACKGROUND_SCHEDULE_POOL, "BgSchPool") \
     M(BACKUP_ASYNC, "BackupAsync") \
     M(BACKUP_ASYNC_INTERNAL, "BackupAsyncInt") \
@@ -144,6 +145,7 @@ namespace DB
     M(S3_LIST_POOL, "ListObjectS3") \
     M(SESSION_CLEANUP, "SessionCleanup") \
     M(SEND_TO_SHELL_CMD, "SendToShellCmd") \
+    M(SHARED_NAMED_SCALARS, "NSCoord") \
     M(SUGGEST, "Suggest") \
     M(SYSTEM_LOG_FLUSH, "SystemLogFlush") \
     M(SYSTEM_REPLICAS, "SysReplicas") \

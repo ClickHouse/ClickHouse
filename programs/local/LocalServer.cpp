@@ -1176,6 +1176,10 @@ void LocalServer::processConfig()
         DatabaseCatalog::instance().startupBackgroundTasks();
     }
 
+    /// Always wire the manager, even without --path, so getNamedScalar
+    /// / system.named_scalars work.
+    global_context->initializeNamedScalars();
+
     /// Initialize system logs only when explicitly configured (e.g. `query_log`, `processors_profile_log`).
     /// Default `clickhouse-local` invocations have no system log sections in the config, and skipping
     /// initialization avoids a TSan-visible race between background pool task logging and `Context`
