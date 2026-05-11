@@ -16,7 +16,7 @@ def test_time_travel_bug_fix_validation(started_cluster_iceberg_no_spark):
 
     create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_no_spark, "(x String, y Int64)")
 
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
 
     default_download_directory(
         started_cluster_iceberg_no_spark,
@@ -27,7 +27,7 @@ def test_time_travel_bug_fix_validation(started_cluster_iceberg_no_spark):
 
     first_snapshot = get_last_snapshot(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/")
 
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
 
     instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"iceberg_snapshot_id": first_snapshot})
 

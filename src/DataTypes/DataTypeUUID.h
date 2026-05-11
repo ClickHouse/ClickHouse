@@ -8,6 +8,8 @@
 namespace DB
 {
 
+constexpr size_t UUID_BINARY_LENGTH = 16;
+
 class DataTypeUUID : public IDataType
 {
 public:
@@ -45,7 +47,7 @@ public:
 
     void updateHashImpl(SipHash &) const override {}
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
 };
 
 }

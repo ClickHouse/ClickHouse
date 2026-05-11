@@ -89,10 +89,23 @@ class SparkColumn:
         _column_name: str,
         _spark_type: DataType,
         _nullable: bool,
+        _generated: bool,
     ):
         self.column_name = _column_name
         self.spark_type = _spark_type
         self.nullable = _nullable
+        self.generated = _generated
+
+    def _flat_column(
+        self, res: dict[str, DataType], next_path: str, next_type: DataType
+    ):
+        res[next_path] = next_type
+        if isinstance(next_type, StructType):
+            for f in next_type.fields:
+                self._flat_column(res, f"{next_path}.`{f.name}`", f.dataType)
+
+    def flat_column(self, res: dict[str, DataType]):
+        self._flat_column(res, self.column_name, self.spark_type)
 
 
 class SparkTable:
@@ -103,20 +116,20 @@ class SparkTable:
         _table_name: str,
         _columns: dict[str, SparkColumn],
         _deterministic: bool,
-        _location: str,
         _lake_format: LakeFormat,
         _file_format: FileFormat,
         _storage: TableStorage,
+        _catalog: LakeCatalogs,
     ):
         self.catalog_name = _catalog_name
         self.database_name = _database_name
         self.table_name = _table_name
         self.columns = _columns
         self.deterministic = _deterministic
-        self.location = _location
         self.lake_format = _lake_format
         self.file_format = _file_format
         self.storage = _storage
+        self.catalog = _catalog
 
     def get_namespace_path(self) -> str:
         return f"test.{self.table_name}"
@@ -125,18 +138,12 @@ class SparkTable:
         return f"{self.catalog_name}.test.{self.table_name}"
 
     def get_clickhouse_path(self) -> str:
-        return f"{self.database_name}.{self.table_name}"
-
-    def _flat_columns(
-        self, res: dict[str, DataType], next_path: str, next_type: DataType
-    ):
-        res[next_path] = next_type
-        if isinstance(next_type, StructType):
-            for f in next_type.fields:
-                self._flat_columns(res, f"{next_path}.`{f.name}`", f.dataType)
+        if self.catalog == LakeCatalogs.NoCatalog:
+            return f"{self.database_name}.{self.table_name}"
+        return f"{self.database_name}.`test.{self.table_name}`"
 
     def flat_columns(self) -> dict[str, DataType]:
         res = {}
-        for k, val in self.columns.items():
-            self._flat_columns(res, k, val.spark_type)
+        for _, val in self.columns.items():
+            val.flat_column(res)
         return res

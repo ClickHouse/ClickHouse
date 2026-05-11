@@ -1,18 +1,22 @@
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
-#include <DataTypes/ObjectUtils.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/Pipe.h>
@@ -91,14 +95,6 @@ public:
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         storage_snapshot->metadata->check(block, true);
-        if (!storage_snapshot->object_columns.empty())
-        {
-            auto extended_storage_columns = storage_snapshot->getColumns(
-                GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
-
-            convertDynamicColumnsToTuples(block, storage_snapshot);
-        }
-
         if (storage.getMemorySettingsRef()[MemorySetting::compress])
         {
             Block compressed_block;
@@ -169,7 +165,7 @@ StorageMemory::StorageMemory(
     ConstraintsDescription constraints_,
     const String & comment,
     const MemorySettings & memory_settings_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , data(std::make_unique<const Blocks>())
     , memory_settings(std::make_unique<MemorySettings>(memory_settings_))
 {
@@ -178,7 +174,16 @@ StorageMemory::StorageMemory(
     storage_metadata.setConstraints(std::move(constraints_));
     storage_metadata.setComment(comment);
     storage_metadata.setSettingsChanges(memory_settings->getSettingsChangesQuery());
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageMemory::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 StorageMemory::~StorageMemory() = default;
@@ -190,20 +195,10 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// Not guaranteed to match `blocks`, but that's ok. It would probably be better to move
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
-
-    if (!hasDynamicSubcolumnsDeprecated(metadata_snapshot->getColumns()))
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
-
-    auto object_columns = getConcreteObjectColumns(
-        snapshot_data->blocks->begin(),
-        snapshot_data->blocks->end(),
-        metadata_snapshot->getColumns(),
-        [](const auto & block) -> const auto & { return block.getColumnsWithTypeAndName(); });
-
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns), std::move(snapshot_data));
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
-void StorageMemory::read(
+void StorageMemory::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -249,7 +244,7 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
 void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
     std::lock_guard lock(mutex);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
 
@@ -326,7 +321,7 @@ void StorageMemory::truncate(
 void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
     params.apply(new_metadata, context);
 
     if (params.isSettingsAlter())
@@ -502,13 +497,14 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
     }
 
     TemporaryDataOnDiskSettings tmp_data_settings;
-    tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+    tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
     auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
     const auto & read_settings = backup_entries_collector.getReadSettings();
 
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),
-        getInMemoryMetadataPtr(),
+        getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false),
         data.get(),
         data_path_in_backup,
         tmp_data,

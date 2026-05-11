@@ -3,11 +3,10 @@
 #include <Processors/Formats/IOutputFormat.h>
 
 #include <Common/ThreadPool.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -91,7 +90,9 @@ public:
         LOG_TEST(getLogger("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
         NullWriteBuffer buf;
-        save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
+        auto internal_formatter = internal_formatter_creator(buf);
+        save_totals_and_extremes_in_statistics = internal_formatter->areTotalsAndExtremesUsedInFinalize();
+        supports_non_default_serialization_kinds = internal_formatter->supportsSpecialSerializationKinds();
         buf.finalize();
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
@@ -102,7 +103,7 @@ public:
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
         /// Also some race condition is possible, because collector_thread runs in parallel with
         /// the destruction of the objects already created in this scope.
-        collector_thread = ThreadFromGlobalPool([thread_group = CurrentThread::getGroup(), this]
+        collector_thread = ThreadFromGlobalPool([thread_group = getCurrentThreadGroup(), this]
         {
             collectorThreadFunction(thread_group);
         });
@@ -145,6 +146,8 @@ public:
     }
 
     void setException(const String & exception_message_) override { exception_message = exception_message_; }
+
+    bool supportsSpecialSerializationKinds() const override { return supports_non_default_serialization_kinds; }
 
 private:
     void consume(Chunk chunk) final
@@ -252,6 +255,7 @@ private:
     /// We change statistics in onProgress() which can be called from different threads.
     std::mutex statistics_mutex;
     bool save_totals_and_extremes_in_statistics;
+    bool supports_non_default_serialization_kinds;
 
     String exception_message;
     bool exception_is_rethrown = false;
@@ -288,7 +292,7 @@ private:
 
     void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number, size_t first_row_num)
     {
-        pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup(), ticket_number, first_row_num]
+        pool.scheduleOrThrowOnError([this, thread_group = getCurrentThreadGroup(), ticket_number, first_row_num]
         {
             formatterThreadFunction(ticket_number, first_row_num, thread_group);
         });

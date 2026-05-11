@@ -1,5 +1,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -128,8 +129,8 @@ StorageNATS::StorageNATS(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals((*nats_settings)[NATSSetting::nats_handle_error_mode]));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals((*nats_settings)[NATSSetting::nats_handle_error_mode]));
 
     nats_context = addSettings(getContext());
     nats_context->makeQueryContext();
@@ -151,10 +152,10 @@ StorageNATS::StorageNATS(
         tryLogCurrentException(log);
     }
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSStreamingTask", [this] { streamingToViewsFunc(); });
+    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSStreamingTask", [this] { streamingToViewsFunc(); });
     streaming_task->deactivate();
 
-    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
+    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
     initialize_consumers_task->deactivate();
 }
 StorageNATS::~StorageNATS()
@@ -165,12 +166,13 @@ StorageNATS::~StorageNATS()
 VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_subject", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_subject", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
-        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
     }
 
     return desc;
@@ -374,7 +376,7 @@ void StorageNATS::read(
 
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
         throw Exception(
-            ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+            ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
 
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageNATS with attached materialized views");
@@ -398,7 +400,8 @@ void StorageNATS::read(
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
             sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            local_context);
 
         auto converting = std::make_shared<ExpressionActions>(std::move(converting_dag));
         auto converting_transform = std::make_shared<ExpressionTransform>(nats_source->getPort().getSharedHeader(), std::move(converting));
@@ -600,25 +603,7 @@ bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
 
 bool StorageNATS::checkDependencies(const StorageID & table_id)
 {
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (view_ids.empty())
-        return false;
-
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return false;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-    }
-
-    return true;
+    return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
 }
 
 void StorageNATS::streamingToViewsFunc()
@@ -705,20 +690,26 @@ bool StorageNATS::streamToViews()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist", table_id.getNameForLogs());
 
     // Create an INSERT query for streaming data
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
+
+    auto new_context = Context::createCopy(nats_context);
+
+    /// Create a fresh query context from nats_context, discarding any caches attached to the previous context to
+    /// ensure no stale state is reused.
+    new_context->makeQueryContext();
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(
         insert,
-        nats_context,
+        new_context,
         /* allow_materialized */ false,
         /* no_squash */ true,
         /* no_destination */ true,
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
     auto column_names = block_io.pipeline.getHeader().getNames();
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
@@ -732,7 +723,7 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
+        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, new_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -788,7 +779,7 @@ void registerStorageNATS(StorageFactory & factory)
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto nats_settings = std::make_unique<NATSSettings>();
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
             nats_settings->loadFromNamedCollection(named_collection);
         }

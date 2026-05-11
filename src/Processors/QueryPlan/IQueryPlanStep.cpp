@@ -1,9 +1,11 @@
+#include <Common/CurrentThread.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Common/CurrentThread.h>
-
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -37,9 +39,26 @@ void IQueryPlanStep::updateInputHeader(SharedHeader input_header, size_t idx)
     updateOutputHeader();
 }
 
+void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater)
+{
+    if (!supportsDataflowStatisticsCollection())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Step {} doesn't support dataflow statistics collection", getName());
+    dataflow_cache_updater = std::move(updater);
+}
+
+IQueryPlanStep::RemovedUnusedColumns IQueryPlanStep::removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
+}
+
+bool IQueryPlanStep::canRemoveColumnsFromOutput() const
+{
+    return false;
+}
+
 bool IQueryPlanStep::hasCorrelatedExpressions() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", getName());
+    return false;
 }
 
 const SharedHeader & IQueryPlanStep::getOutputHeader() const
@@ -158,7 +177,7 @@ static void doDescribeProcessor(const IProcessor & processor, size_t count, IQue
     if (!processor.getDescription().empty())
         settings.out << String(settings.offset, settings.indent_char) << "Description: " << processor.getDescription() << '\n';
 
-    settings.offset += settings.indent;
+    settings.offset += settings.base_indent;
 }
 
 void IQueryPlanStep::describePipeline(const Processors & processors, FormatSettings & settings)

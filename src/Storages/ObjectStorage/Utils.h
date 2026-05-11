@@ -1,5 +1,7 @@
 #pragma once
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/StorageFactory.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -28,7 +30,7 @@ void validateSupportedColumns(
     const StorageObjectStorageConfiguration & configuration);
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
-    ObjectInfo & object_info,
+    RelativePathWithMetadata & object_info,
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
@@ -62,6 +64,10 @@ struct ParseFromDiskResult
 };
 
 ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context, const fs::path & prefix);
+
+void expandPaimonKeeperMacrosIfNeeded(
+    const StorageFactory::Arguments & args,
+    const DataLakeStorageSettingsPtr & storage_settings);
 
 
 }

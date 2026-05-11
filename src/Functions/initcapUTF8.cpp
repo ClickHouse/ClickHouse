@@ -107,7 +107,7 @@ using FunctionInitcapUTF8 = FunctionStringToString<InitcapUTF8Impl, NameInitcapU
 REGISTER_FUNCTION(InitcapUTF8)
 {
     FunctionDocumentation::Description description = R"(
-Like [`initcap`](#initCap), `initcapUTF8` converts the first letter of each word to upper case and the rest to lower case.
+Like [`initcap`](#initcap), `initcapUTF8` converts the first letter of each word to upper case and the rest to lower case.
 Assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
 
@@ -134,7 +134,7 @@ If the length of the UTF-8 byte sequence is different for upper and lower case o
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionInitcapUTF8>(documentation);
 }

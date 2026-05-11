@@ -2,11 +2,12 @@
 
 #include <atomic>
 #include <variant>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
+#include <QueryPipeline/Pipe.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Block_fwd.h>
 
@@ -48,14 +49,14 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
@@ -107,13 +108,15 @@ public:
 
 private:
     template <typename Value>
-    using ContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
+    using ContainerType = std::conditional_t<
+        std::is_same_v<Value, Array> || std::is_same_v<Value, Map> || std::is_same_v<Value, Object>,
+        VectorWithMemoryTracking<Value>,
+        PaddedPODArray<Value>>;
 
-    using NullableSet = HashSet<UInt64, DefaultHash<UInt64>>;
+    using NullableSet = HashSet<UInt64, DefaultHash<UInt64>, HashTableGrower<>>;
 
     struct Attribute final
     {
-        AttributeUnderlyingType type;
         std::optional<NullableSet> is_nullable_set;
 
         std::variant<
@@ -139,9 +142,13 @@ private:
             ContainerType<UUID>,
             ContainerType<IPv4>,
             ContainerType<IPv6>,
-            ContainerType<StringRef>,
-            ContainerType<Array>>
+            ContainerType<std::string_view>,
+            ContainerType<Array>,
+            ContainerType<Map>,
+            ContainerType<Object>>
             container;
+
+        AttributeUnderlyingType type;
     };
 
     void createAttributes();
@@ -178,8 +185,8 @@ private:
     const DictionarySourcePtr source_ptr;
     const Configuration configuration;
 
-    std::vector<Attribute> attributes;
-    std::vector<bool> loaded_keys;
+    VectorWithMemoryTracking<Attribute> attributes;
+    VectorWithMemoryTracking<bool> loaded_keys;
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;

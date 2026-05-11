@@ -103,6 +103,7 @@ public:
     NamesAndTypesList getNamesAndTypesList() const;
     NamesAndTypes getNamesAndTypes() const;
     Names getNames() const;
+    NameSet getNameSet() const;
     DataTypes getDataTypes() const;
     Names getDataTypeNames() const;
 
@@ -157,6 +158,8 @@ public:
     /** Get columns from block for mutation. Columns in block will be nullptr. */
     MutableColumns mutateColumns();
 
+    Columns detachColumns();
+
     /** Replace columns in a block */
     void setColumns(MutableColumns && columns);
     Block cloneWithColumns(MutableColumns && columns) const;
@@ -198,6 +201,8 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 /// Throw exception when blocks are different.
 void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, std::string_view context_description);
 
+void assertBlocksHaveEqualStructureAllowReplicated(const Block & lhs, const Block & rhs, std::string_view context_description);
+
 /// Actual header is compatible to desired if block have equal structure except constants.
 /// It is allowed when column from actual header is constant, but in desired is not.
 /// If both columns are constant, it is checked that they have the same value.
@@ -207,11 +212,11 @@ void assertCompatibleHeader(const Block & actual, const Block & desired, std::st
 /// Calculate difference in structure of blocks and write description into output strings. NOTE It doesn't compare values of constant columns.
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
 
-void convertToFullIfSparse(Block & block);
+void removeSpecialColumnRepresentations(Block & block);
 
-/// Converts columns-constants to full columns ("materializes" them).
-Block materializeBlock(const Block & block);
-void materializeBlockInplace(Block & block);
+/// Converts columns-constants and special representations (like sparse or replicated) to full columns ("materializes" them).
+Block materializeBlock(const Block & block, bool remove_special_column_representations = true);
+void materializeBlockInplace(Block & block, bool remove_special_column_representations = true);
 
 Block concatenateBlocks(const std::vector<Block> & blocks);
 

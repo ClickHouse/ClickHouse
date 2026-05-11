@@ -43,6 +43,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool allowsOmittingParentheses() const override { return true; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeString().createColumnConst(input_rows_count, db_name);
@@ -71,12 +73,19 @@ SELECT currentDatabase()
 ┌─currentDatabase()─┐
 │ default           │
 └───────────────────┘
-        )"
-    }
+        )"},
+        {"SQL standard syntax without parentheses", R"(
+SELECT CURRENT_DATABASE
+        )",
+        R"(
+┌─CURRENT_DATABASE─┐
+│ default          │
+└──────────────────┘
+        )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCurrentDatabase>(documentation);
     factory.registerAlias("DATABASE", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);

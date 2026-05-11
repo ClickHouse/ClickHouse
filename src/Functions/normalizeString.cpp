@@ -78,6 +78,18 @@ struct NormalizeNFKDImpl
     }
 };
 
+struct NormalizeNFKCCasefoldImpl
+{
+    static constexpr auto name = "normalizeUTF8NFKCCasefold";
+
+    static constexpr auto expansionFactor = 18;
+
+    static const UNormalizer2 *getNormalizer(UErrorCode *err)
+    {
+        return unorm2_getNFKCCasefoldInstance(err);
+    }
+};
+
 template<typename NormalizeImpl>
 struct NormalizeUTF8Impl
 {
@@ -112,10 +124,10 @@ struct NormalizeUTF8Impl
                 int32_t from_code_points = 0;
                 u_strFromUTF8(
                     from_uchars.data(),
-                    from_uchars.size(),
+                    static_cast<int32_t>(from_uchars.size()),
                     &from_code_points,
                     reinterpret_cast<const char*>(&data[current_from_offset]),
-                    from_size,
+                    static_cast<int32_t>(from_size),
                     &err);
                 if (U_FAILURE(err))
                     throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (strFromUTF8): {}", u_errorName(err));
@@ -127,19 +139,21 @@ struct NormalizeUTF8Impl
                     from_uchars.data(),
                     from_code_points,
                     to_uchars.data(),
-                    to_uchars.size(),
+                    static_cast<int32_t>(to_uchars.size()),
                     &err);
                 if (U_FAILURE(err))
                     throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (normalize): {}", u_errorName(err));
 
-                size_t max_to_size = current_to_offset + 4 * to_code_points;
+                /// Each UTF-16 code unit produces at most 3 UTF-8 bytes.
+                /// Chars which require 4 UTF-8 bytes also require 2 UTF-16 code units, so the max expansion factor is 3.
+                size_t max_to_size = current_to_offset + 3 * to_code_points;
                 if (res_data.size() < max_to_size)
                     res_data.resize(max_to_size);
 
                 int32_t to_size = 0;
                 u_strToUTF8(
                     reinterpret_cast<char*>(&res_data[current_to_offset]),
-                    res_data.size() - current_to_offset,
+                    static_cast<int32_t>(res_data.size() - current_to_offset),
                     &to_size,
                     to_uchars.data(),
                     to_code_points,
@@ -167,6 +181,7 @@ using FunctionNormalizeUTF8NFC = FunctionStringToString<NormalizeUTF8Impl<Normal
 using FunctionNormalizeUTF8NFD = FunctionStringToString<NormalizeUTF8Impl<NormalizeNFDImpl>, NormalizeNFDImpl>;
 using FunctionNormalizeUTF8NFKC = FunctionStringToString<NormalizeUTF8Impl<NormalizeNFKCImpl>, NormalizeNFKCImpl>;
 using FunctionNormalizeUTF8NFKD = FunctionStringToString<NormalizeUTF8Impl<NormalizeNFKDImpl>, NormalizeNFKDImpl>;
+using FunctionNormalizeUTF8NFKCCasefold = FunctionStringToString<NormalizeUTF8Impl<NormalizeNFKCCasefoldImpl>, NormalizeNFKCCasefoldImpl>;
 }
 
 REGISTER_FUNCTION(NormalizeUTF8)
@@ -198,7 +213,7 @@ length(nfc_normalized);
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_nfc = {description_nfc, syntax_nfc, arguments_nfc, returned_value_nfc, examples_nfc, introduced_in, category};
+    FunctionDocumentation documentation_nfc = {description_nfc, syntax_nfc, arguments_nfc, {}, returned_value_nfc, examples_nfc, introduced_in, category};
 
     FunctionDocumentation::Description description_nfd = R"(
 Normalizes a UTF-8 string according to the [NFD normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
@@ -225,7 +240,7 @@ SELECT
         )"
     }
     };
-    FunctionDocumentation documentation_nfd = {description_nfd, syntax_nfd, arguments_nfd, returned_value_nfd, examples_nfd, introduced_in, category};
+    FunctionDocumentation documentation_nfd = {description_nfd, syntax_nfd, arguments_nfd, {}, returned_value_nfd, examples_nfd, introduced_in, category};
 
     FunctionDocumentation::Description description_nfkc = R"(
 Normalizes a UTF-8 string according to the [NFKC normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
@@ -250,7 +265,7 @@ SELECT
     )"
     }
     };
-    FunctionDocumentation documentation_nfkc = {description_nfkc, syntax_nfkc, arguments_nfkc, returned_value_nfkc, examples_nfkc, introduced_in, category};
+    FunctionDocumentation documentation_nfkc = {description_nfkc, syntax_nfkc, arguments_nfkc, {}, returned_value_nfkc, examples_nfkc, introduced_in, category};
 
     FunctionDocumentation::Description description_nfkd = R"(
 Normalizes a UTF-8 string according to the [NFKD normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
@@ -275,12 +290,40 @@ SELECT
         )"
     }
     };
-    FunctionDocumentation documentation_nfkd = {description_nfkd, syntax_nfkd, arguments_nfkd, returned_value_nfkd, examples_nfkd, introduced_in, category};
+    FunctionDocumentation documentation_nfkd = {description_nfkd, syntax_nfkd, arguments_nfkd, {}, returned_value_nfkd, examples_nfkd, introduced_in, category};
+
+    FunctionDocumentation::Description description_nfkc_cf = R"(
+Normalizes a UTF-8 string according to the [NFKC_Casefold normalization form](https://unicode.org/reports/tr44/#NFKC_Casefold), which applies NFKC normalization and then case folding.
+This is useful for case-insensitive matching of identifiers.
+)";
+    FunctionDocumentation::Syntax syntax_nfkc_cf = "normalizeUTF8NFKCCasefold(str)";
+    FunctionDocumentation::Arguments arguments_nfkc_cf = {
+        {"str", "UTF-8 encoded input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_nfkc_cf = {"Returns the NFKC_Casefold normalized form of the UTF-8 string.", {"String"}};
+    FunctionDocumentation::Examples examples_nfkc_cf = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    'Ä ① Hello' AS original,
+    normalizeUTF8NFKCCasefold('Ä ① Hello') AS nfkc_cf_normalized;
+        )",
+        R"(
+┌─original───┬─nfkc_cf_normalized─┐
+│ Ä ① Hello │ ä 1 hello           │
+└────────────┴────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_nfkc_cf = {26, 3};
+    FunctionDocumentation documentation_nfkc_cf = {description_nfkc_cf, syntax_nfkc_cf, arguments_nfkc_cf, {}, returned_value_nfkc_cf, examples_nfkc_cf, introduced_in_nfkc_cf, category};
 
     factory.registerFunction<FunctionNormalizeUTF8NFC>(documentation_nfc);
     factory.registerFunction<FunctionNormalizeUTF8NFD>(documentation_nfd);
     factory.registerFunction<FunctionNormalizeUTF8NFKC>(documentation_nfkc);
     factory.registerFunction<FunctionNormalizeUTF8NFKD>(documentation_nfkd);
+    factory.registerFunction<FunctionNormalizeUTF8NFKCCasefold>(documentation_nfkc_cf);
 }
 
 }

@@ -31,13 +31,15 @@ public:
     void read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule);
     void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);
     void adjustRightMark(size_t right_mark);
+    void prefetchBeginOfRange(size_t from_mark, Priority priority);
     const StreamMap & getStreams() { return streams; }
+    static MergeTreeReaderSettings patchSettings(MergeTreeReaderSettings settings, MergeTreeIndexSubstream::Type substream);
 
 private:
     MergeTreeIndexPtr index;
     MergeTreeData::DataPartPtr part;
     size_t marks_count;
-    const MarkRanges & all_mark_ranges;
+    MarkRanges all_mark_ranges;
     MarkCache * mark_cache;
     UncompressedCache * uncompressed_cache;
     VectorSimilarityIndexCache * vector_similarity_index_cache;

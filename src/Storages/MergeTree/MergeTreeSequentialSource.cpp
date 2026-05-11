@@ -149,6 +149,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
     read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+        = read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
@@ -170,18 +171,11 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             break;
     }
 
-    MergeTreeReaderSettings reader_settings =
-    {
-        .read_settings = read_settings,
-        .save_marks_in_cache = false,
-        .can_read_part_without_marks = true,
-    };
-
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
         .patch_join_cache = patch_join_cache.get(),
-        .reader_settings = reader_settings,
+        .reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings)),
         .storage_snapshot = storage_snapshot,
     };
 
@@ -195,7 +189,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     auto counters = std::make_shared<ReadStepPerformanceCounters>();
 
-    MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true);
+    MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true, readers.main->canReadIncompleteGranules());
     readers_chain = MergeTreeReadersChain{{std::move(range_reader)}, readers.patches};
 
     updateRowsToRead(0);
@@ -345,7 +339,7 @@ Pipe createMergeTreeSequentialSource(
 
     if (info->alter_conversions->hasPatches())
     {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals().withSubcolumns();
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader).withSubcolumns();
         auto all_read_columns = info->task_columns.getAllColumnNames();
         auto all_read_columns_list = storage_snapshot->getColumnsByNames(options, all_read_columns);
         info->patch_parts = info->alter_conversions->getPatchesForColumns(all_read_columns_list, need_to_filter_deleted_rows);

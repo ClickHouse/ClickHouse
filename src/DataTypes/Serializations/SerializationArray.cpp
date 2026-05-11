@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -6,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -23,9 +25,24 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
-    extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
+}
+
+UInt128 SerializationArray::getHash(const SerializationPtr & nested_)
+{
+    SipHash hash;
+    hash.update("Array");
+    hash.update(nested_->getHash());
+    return hash.get128();
+}
+
+SerializationPtr SerializationArray::create(const SerializationPtr & nested_)
+{
+    if (!nested_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationArray(nested_));
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationArray(nested_); });
 }
 
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
@@ -47,13 +64,13 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, con
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.binary.max_binary_array_size);
 
     field = Array();
     Array & arr = field.safeGet<Array>();
@@ -87,13 +104,13 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.binary.max_binary_array_size);
 
     IColumn & nested_column = column_array.getData();
 
@@ -113,6 +130,21 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
     offsets.push_back(offsets.back() + size);
 }
 
+void SerializationArray::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+
+    size_t offset = offsets[ssize_t(row_num) - 1];
+    size_t next_offset = offsets[row_num];
+    size_t size = next_offset - offset;
+
+    writeVarUInt(size, ostr);
+
+    const IColumn & nested_column = column_array.getData();
+    for (size_t i = offset; i < next_offset; ++i)
+        nested->serializeForHashCalculation(nested_column, i, ostr);
+}
 
 namespace
 {
@@ -230,7 +262,7 @@ DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & pre
 
 SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
-    return std::make_shared<SerializationArray>(prev);
+    return SerializationArray::create(prev);
 }
 
 ColumnPtr SerializationArray::SubcolumnCreator::create(const ColumnPtr & prev) const
@@ -247,9 +279,9 @@ void SerializationArray::enumerateStreams(
     const auto * column_array = data.column ? &assert_cast<const ColumnArray &>(*data.column) : nullptr;
     auto offsets = column_array ? column_array->getOffsetsPtr() : nullptr;
 
-    auto subcolumn_name = "size" + std::to_string(getArrayLevel(settings.path));
-    auto offsets_serialization = std::make_shared<SerializationNamed>(
-        std::make_shared<SerializationArrayOffsets>(),
+    auto subcolumn_name = "size" + std::to_string(settings.array_level);
+    auto offsets_serialization = SerializationNamed::create(
+        SerializationArrayOffsets::create(),
         subcolumn_name, SubstreamType::NamedOffsets);
 
     auto offsets_column = offsets && !settings.position_independent_encoding
@@ -267,6 +299,7 @@ void SerializationArray::enumerateStreams(
     settings.path.back() = Substream::ArrayElements;
     settings.path.back().data = data;
     settings.path.back().creator = std::make_shared<SubcolumnCreator>(offsets);
+    ++settings.array_level;
 
     auto next_data = SubstreamData(nested)
         .withType(type_array ? type_array->getNestedType() : nullptr)
@@ -275,6 +308,7 @@ void SerializationArray::enumerateStreams(
         .withDeserializeState(data.deserialize_state);
 
     nested->enumerateStreams(settings, callback, next_data);
+    --settings.array_level;
     settings.path.pop_back();
 }
 
@@ -321,7 +355,7 @@ void SerializationArray::serializeOffsetsBinaryBulk(
         if (settings.position_independent_encoding)
             serializeArraySizesPositionIndependent(offsets_column, *stream, offset, limit);
         else
-            SerializationNumber<ColumnArray::Offset>().serializeBinaryBulk(offsets_column, *stream, offset, limit);
+            SerializationNumber<ColumnArray::Offset>::create()->serializeBinaryBulk(offsets_column, *stream, offset, limit);
     }
 }
 
@@ -372,7 +406,7 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void SerializationArray::deserializeOffsetsBinaryBulk(
+bool SerializationArray::deserializeOffsetsBinaryBulk(
     ColumnPtr & offsets_column,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
@@ -390,15 +424,18 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
             insertArraySizesToOffsets(offsets_column, cached_column, cached_column->size() - num_read_rows, cached_column->size());
         else
             offsets_column = arraySizesToOffsets(*cached_column);
+
+        return true;
     }
-    else if (auto * stream = settings.getter(settings.path))
+
+    if (auto * stream = settings.getter(settings.path))
     {
         size_t prev_size = offsets_column->size();
 
         if (settings.position_independent_encoding)
             deserializeArraySizesPositionIndependent(*offsets_column->assumeMutable(), *stream, limit);
         else
-            SerializationNumber<ColumnArray::Offset>().deserializeBinaryBulk(*offsets_column->assumeMutable(), *stream, 0, limit, 0);
+            SerializationNumber<ColumnArray::Offset>::create()->deserializeBinaryBulk(*offsets_column->assumeMutable(), *stream, 0, limit, 0);
 
         /// Verify offsets if the data comes over the network
         if (settings.native_format)
@@ -416,7 +453,11 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
         /// Add array sizes read from current range into the cache.
         if (cache)
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column), offsets_column->size() - prev_size);
+
+        return true;
     }
+
+    return false;
 }
 
 std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(
@@ -429,7 +470,8 @@ std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGet
     const auto & offsets_data = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
     size_t prev_last_offset = offsets_data.back();
     size_t prev_offset_size = offsets_data.size();
-    deserializeOffsetsBinaryBulk(offsets_column, offset + limit, settings, cache);
+    if (!deserializeOffsetsBinaryBulk(offsets_column, offset + limit, settings, cache))
+        return {0, 0};
 
     size_t skipped_nested_rows = 0;
 
@@ -620,6 +662,32 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
     return ReturnType(true);
 }
 
+void SerializationArray::readArraySafe(DB::IColumn & column, std::function<void()> && read_func)
+{
+    size_t initial_size = column.size();
+
+    try
+    {
+        read_func();
+    }
+    catch (...)
+    {
+        ColumnArray & column_array = assert_cast<ColumnArray &>(column);
+        ColumnArray::Offsets & offsets = column_array.getOffsets();
+        IColumn & nested_column = column_array.getData();
+
+        if (offsets.size() > initial_size)
+        {
+            chassert(offsets.size() - initial_size == 1);
+            offsets.pop_back();
+        }
+
+        if (nested_column.size() > offsets.back())
+            nested_column.popBack(nested_column.size() - offsets.back());
+
+        throw;
+    }
+}
 
 void SerializationArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
@@ -705,16 +773,34 @@ void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t 
         return;
     }
 
-    writeCString("[\n", ostr);
+    auto nested_column_type = removeNullable(column_array.getDataPtr())->getDataType();
+    bool print_each_element_on_separate_line =
+        nested_column_type == TypeIndex::Array ||
+        nested_column_type == TypeIndex::Map ||
+        nested_column_type == TypeIndex::Object ||
+        nested_column_type == TypeIndex::Tuple;
+
+
+    writeChar('[', ostr);
     for (size_t i = offset; i < next_offset; ++i)
     {
         if (i != offset)
-            writeCString(",\n", ostr);
-        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+            writeChar(',', ostr);
+
+        if (print_each_element_on_separate_line)
+        {
+            writeChar('\n', ostr);
+            writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+        }
+
         nested->serializeTextJSONPretty(nested_column, i, ostr, settings, indent + 1);
     }
-    writeChar('\n', ostr);
-    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+
+    if (print_each_element_on_separate_line)
+    {
+        writeChar('\n', ostr);
+        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+    }
     writeChar(']', ostr);
 }
 

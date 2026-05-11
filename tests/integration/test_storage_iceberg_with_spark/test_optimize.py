@@ -70,7 +70,7 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_timestamp_ms = {int(snapshot_timestamp.timestamp() * 1000)}") == instance.query(
         "SELECT number FROM numbers(20, 80)"
     )
-    if storage_type != "local":
+    if storage_type == "azure":
         return
 
     default_download_directory(

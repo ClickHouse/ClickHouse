@@ -93,7 +93,20 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(step_uniq_id);
 }
 
-void logProcessorProfile(ContextPtr context, const Processors & processors)
+std::vector<IProcessor::ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors)
+{
+    std::vector<IProcessor::ProcessorsProfileLogInfo> infos;
+    infos.reserve(processors.size());
+
+    for (const auto & processor : processors)
+    {
+        infos.push_back(processor->getProcessorsProfileLogInfo());
+    }
+
+    return infos;
+}
+
+void logProcessorProfile(ContextPtr context, const std::vector<IProcessor::ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump)
 {
     const Settings & settings = context->getSettingsRef();
     if (settings[Setting::log_processors_profiles])
@@ -108,53 +121,46 @@ void logProcessorProfile(ContextPtr context, const Processors & processors)
             processor_elem.initial_query_id = context->getInitialQueryId();
             processor_elem.query_id = context->getCurrentQueryId();
 
-            auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
-
-            for (const auto & processor : processors)
+            for (const auto & info : profile_infos)
             {
-                std::vector<UInt64> parents;
-                for (const auto & port : processor->getOutputs())
-                {
-                    if (!port.isConnected())
-                        continue;
-                    const IProcessor & next = port.getInputPort().getProcessor();
-                    parents.push_back(get_proc_id(next));
-                }
+                processor_elem.id = info.id;
+                processor_elem.parent_ids = info.parent_ids;
 
-                processor_elem.id = get_proc_id(*processor);
-                processor_elem.parent_ids = std::move(parents);
+                processor_elem.plan_step = info.plan_step;
+                processor_elem.plan_step_name = info.plan_step_name;
+                processor_elem.plan_step_description = info.plan_step_description;
+                processor_elem.plan_group = info.plan_group;
+                processor_elem.processor_uniq_id = info.processor_uniq_id;
+                processor_elem.step_uniq_id = info.step_uniq_id;
 
-                processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
-                processor_elem.plan_step_name = processor->getPlanStepName();
-                processor_elem.plan_step_description = processor->getPlanStepDescription();
-                processor_elem.plan_group = processor->getQueryPlanStepGroup();
-                processor_elem.processor_uniq_id = processor->getUniqID();
-                processor_elem.step_uniq_id = processor->getStepUniqID();
+                processor_elem.processor_name = info.processor_name;
 
-                processor_elem.processor_name = processor->getName();
+                processor_elem.elapsed_us = info.elapsed_us;
+                processor_elem.input_wait_elapsed_us = info.input_wait_elapsed_us;
+                processor_elem.output_wait_elapsed_us = info.output_wait_elapsed_us;
 
-                processor_elem.elapsed_us = static_cast<UInt64>(processor->getElapsedNs() / 1000U);
-                processor_elem.input_wait_elapsed_us = static_cast<UInt64>(processor->getInputWaitElapsedNs() / 1000U);
-                processor_elem.output_wait_elapsed_us = static_cast<UInt64>(processor->getOutputWaitElapsedNs() / 1000U);
-
-                auto stats = processor->getProcessorDataStats();
-                processor_elem.input_rows = stats.input_rows;
-                processor_elem.input_bytes = stats.input_bytes;
-                processor_elem.output_rows = stats.output_rows;
-                processor_elem.output_bytes = stats.output_bytes;
+                processor_elem.input_rows = info.input_rows;
+                processor_elem.input_bytes = info.input_bytes;
+                processor_elem.output_rows = info.output_rows;
+                processor_elem.output_bytes = info.output_bytes;
 
                 processors_profile_log->add(processor_elem);
             }
         }
-
-        auto dump_pipeline = [&]()
-        {
-            WriteBufferFromOwnString out;
-            printPipeline(processors, out, true);
-            return out.str();
-        };
         auto logger = ::getLogger("ProcessorProfileLog");
-        LOG_TEST(logger, "Processors profile log:\n{}", dump_pipeline());
+        LOG_TEST(logger, "Processors profile log:\n{}", pipeline_dump);
     }
+}
+
+void logProcessorProfile(ContextPtr context, const Processors & processors)
+{
+    String pipeline_dump;
+    {
+        WriteBufferFromString out(pipeline_dump);
+        printPipeline(processors, out, true);
+    }
+
+    auto profile_infos = getProcessorsProfileLogInfo(processors);
+    logProcessorProfile(context, profile_infos, pipeline_dump);
 }
 }

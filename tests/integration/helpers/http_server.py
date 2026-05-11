@@ -87,9 +87,9 @@ def start_server(server_address, data_path, schema, cert_path, address_family):
         HTTPServer.address_family = socket.AF_INET6
     httpd = HTTPServer(server_address, TSVHTTPHandler)
     if schema == "https":
-        httpd.socket = ssl.wrap_socket(
-            httpd.socket, certfile=cert_path, server_side=True
-        )
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=cert_path)
+        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
     logging.info("Starting serving on %s", httpd.server_address)
     httpd.serve_forever()
     # Never reaches here

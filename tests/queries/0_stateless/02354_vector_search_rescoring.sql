@@ -5,8 +5,6 @@
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -31,7 +29,8 @@ SELECT trimLeft(explain) AS explain FROM (
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 3
     SETTINGS vector_search_with_rescoring = 0)
-WHERE (explain LIKE '%_distance%' OR explain LIKE '%vec%Array%') AND explain NOT LIKE '%L2Distance%';
+WHERE (explain LIKE '%_distance%' OR explain LIKE '%vec%Array%') AND explain NOT LIKE '%L2Distance%'
+LIMIT 1;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id

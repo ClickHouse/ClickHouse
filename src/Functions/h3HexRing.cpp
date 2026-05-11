@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -11,9 +11,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -34,7 +31,11 @@ class FunctionH3HexRing : public IFunction
 public:
     static constexpr auto name = "h3HexRing";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3HexRing>(); }
+    H3Validator validator;
+
+    explicit FunctionH3HexRing(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3HexRing>(context); }
 
     std::string getName() const override { return name; }
 
@@ -101,6 +102,7 @@ public:
         UInt64 current_offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
+            const H3Index origin_hindex = data_hindex[row];
             const int k = data_k[row];
 
             /// The result size is 6*k. We should not allow to generate too large arrays nevertheless.
@@ -110,6 +112,12 @@ public:
             /// Check is already made while fetching the argument for k (to determine if it's an unsigned integer). Nevertheless, it's checked again here.
             if (k < 0)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
+
+            if (!validator.validateCell(origin_hindex))
+            {
+                dst_offsets[row] = current_offset;
+                continue;
+            }
 
             const auto vec_size = (k == 0 ? 1 : 6 * k);  /// Required size according to comments in gridRingUnsafe() source code
 
@@ -127,13 +135,14 @@ public:
         {
             const H3Index origin_hindex = data_hindex[row];
             const int k = data_k[row];
+            const auto size = dst_offsets[row] - current_offset;
+            if (size == 0)
+                continue;
 
             H3Error err = gridRingUnsafe(origin_hindex, k, ptr + current_offset);
 
             if (err)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect arguments h3Index: {}, k: {}, error: {}", origin_hindex, k, err);
-
-            const auto size = dst_offsets[row] - current_offset;
             current_offset += size;
         }
 
@@ -145,7 +154,34 @@ public:
 
 REGISTER_FUNCTION(H3HexRing)
 {
-    factory.registerFunction<FunctionH3HexRing>();
+    FunctionDocumentation::Description description = R"(
+Returns the indexes of the hexagonal ring centered at the provided origin [H3](#h3-index) and length k.
+The ring is hollow when k > 0.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3HexRing(index, k)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number that represents the origin.", {"UInt64"}},
+        {"k", "Distance from the origin (ring size).", {"UInt16"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of H3 indices forming a hexagonal ring around the origin, or `0` if a pentagonal distortion is encountered.",
+        {"Array(UInt64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get hexagonal ring of distance 1",
+            "SELECT h3HexRing(590080540275638271, toUInt16(1)) AS hexRing",
+            R"(
+┌─hexRing─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [590080815153545215,590080471556161535,590080677714591743,590077585338138623,590077447899185151,590079509483487231] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3HexRing>(documentation);
 }
 
 }

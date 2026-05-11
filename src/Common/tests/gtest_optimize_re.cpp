@@ -11,7 +11,7 @@ TEST(OptimizeRE, analyze)
                      bool has_capture_expected = false,
                      bool prefix_expected = false)
     {
-        auto [answer, is_trivial, has_capture, is_prefix, alternatives] = OptimizedRegularExpression::analyze(regexp);
+        auto [answer, is_trivial, has_capture, is_prefix, alternatives] = DB::OptimizedRegularExpression::analyze(regexp);
         std::cerr << regexp << std::endl;
         EXPECT_EQ(required, answer);
         EXPECT_EQ(alternatives, expect_alternatives);

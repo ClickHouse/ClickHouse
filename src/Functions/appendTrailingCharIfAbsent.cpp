@@ -4,6 +4,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/assert_cast.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 
 namespace DB
@@ -12,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -42,13 +42,14 @@ private:
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the first argument of function {}", arguments[0]->getName(), getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"s", &isString, nullptr, "String"},
+            {"c", &isString, nullptr, "String"}
+        };
 
-        if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the second argument of function {}", arguments[1]->getName(), getName());
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeString>();
     }
@@ -69,12 +70,12 @@ private:
         if (!checkColumnConst<ColumnString>(column_char.get()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be a constant string", getName());
 
-        StringRef trailing_char_str = column_char->getDataAt(0);
+        std::string_view trailing_char_str = column_char->getDataAt(0);
 
-        if (trailing_char_str.size != 1)
+        if (trailing_char_str.size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must be a one-character string", getName());
 
-        UInt8 trailing_char = static_cast<UInt8>(trailing_char_str.data[0]);
+        UInt8 trailing_char = static_cast<UInt8>(trailing_char_str[0]);
 
         if (const auto * col = checkAndGetColumn<ColumnString>(column.get()))
         {
@@ -142,7 +143,7 @@ Appends character `c` to string `s` if `s` is non-empty and does not end with ch
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAppendTrailingCharIfAbsent>(documentation);
 }

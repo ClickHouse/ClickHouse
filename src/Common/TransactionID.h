@@ -1,8 +1,10 @@
 #pragma once
+
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <fmt/format.h>
 #include <IO/WriteHelpers.h>
+#include <fmt/format.h>
+
 
 namespace DB
 {
@@ -10,6 +12,8 @@ namespace DB
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 class MergeTreeTransaction;
+class ReadBuffer;
+class WriteBuffer;
 
 /// This macro is useful for places where a pointer to current transaction should be passed,
 /// but transactions are not supported yet (e.g. when calling MergeTreeData's methods from StorageReplicatedMergeTree)
@@ -30,8 +34,8 @@ namespace Tx
 {
     /// For transactions that are probably not committed (yet)
     const CSN UnknownCSN = 0;
-    /// For changes were made without creating a transaction
-    const CSN PrehistoricCSN = 1;
+    /// For changes made without creating a transaction.
+    const CSN NonTransactionalCSN = 1;
     /// Special reserved values
     const CSN CommittingCSN = 2;
     const CSN EverythingVisibleCSN = 3;
@@ -40,7 +44,10 @@ namespace Tx
     /// So far, that changes will never become visible
     const CSN RolledBackCSN = std::numeric_limits<CSN>::max();
 
-    const LocalTID PrehistoricLocalTID = 1;
+    /// Maximum possible CSN for committed transactions (used for visibility checks)
+    const CSN MaxCommittedCSN = RolledBackCSN - 1;
+
+    const LocalTID NonTransactionalLocalTID = 1;
     const LocalTID DummyLocalTID = 2;
     const LocalTID MaxReservedLocalTID = 32;
 }
@@ -78,10 +85,10 @@ struct TransactionID
         return local_tid == 0;
     }
 
-    bool isPrehistoric() const
+    bool isNonTransactional() const
     {
-        assert((local_tid == Tx::PrehistoricLocalTID) == (start_csn == Tx::PrehistoricCSN));
-        return local_tid == Tx::PrehistoricLocalTID;
+        assert((local_tid == Tx::NonTransactionalLocalTID) == (start_csn == Tx::NonTransactionalCSN));
+        return local_tid == Tx::NonTransactionalLocalTID;
     }
 
 
@@ -92,8 +99,8 @@ struct TransactionID
 namespace Tx
 {
     const TransactionID EmptyTID = {0, 0, UUIDHelpers::Nil};
-    const TransactionID PrehistoricTID = {PrehistoricCSN, PrehistoricLocalTID, UUIDHelpers::Nil};
-    const TransactionID DummyTID = {PrehistoricCSN, DummyLocalTID, UUIDHelpers::Nil};
+    const TransactionID NonTransactionalTID = {NonTransactionalCSN, NonTransactionalLocalTID, UUIDHelpers::Nil};
+    const TransactionID DummyTID = {NonTransactionalCSN, DummyLocalTID, UUIDHelpers::Nil};
 }
 
 }
@@ -101,13 +108,13 @@ namespace Tx
 template<>
 struct fmt::formatter<DB::TransactionID>
 {
-    template<typename ParseContext>
+    template <typename ParseContext>
     constexpr auto parse(ParseContext & context)
     {
         return context.begin();
     }
 
-    template<typename FormatContext>
+    template <typename FormatContext>
     auto format(const DB::TransactionID & tid, FormatContext & context) const
     {
         return fmt::format_to(context.out(), "({}, {}, {})", tid.start_csn, tid.local_tid, tid.host_id);

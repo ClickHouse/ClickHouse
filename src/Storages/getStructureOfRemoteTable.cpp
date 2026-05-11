@@ -1,5 +1,6 @@
 #include <Storages/getStructureOfRemoteTable.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
@@ -51,7 +52,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         if (shard_info.isLocal())
         {
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
-            return table_function_ptr->getActualTableStructure(context, /*is_insert_query*/ true);
+            return table_function_ptr->getActualTableStructureWithAccess(context, /*is_insert_query*/ true);
         }
 
         auto table_func_name = table_func_ptr->formatWithSecretsOneLine();
@@ -61,8 +62,9 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     {
         if (shard_info.isLocal())
         {
+            context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
             auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
-            return storage_ptr->getInMemoryMetadataPtr()->getColumns();
+            return storage_ptr->getInMemoryMetadataPtr(context, false)->getColumns();
         }
 
         /// Request for a table description
@@ -154,7 +156,12 @@ ColumnsDescription getStructureOfRemoteTable(
         if (shard_info.isLocal())
         {
             const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
-            chassert(!res.empty());
+
+            /// Columns may be empty due to a race with concurrent DDL (e.g. REPLACE TABLE or lazy storage initialization).
+            /// In that case, fall through to try remote shards.
+            if (res.empty())
+                break;
+
             return res;
         }
     }
@@ -182,72 +189,6 @@ ColumnsDescription getStructureOfRemoteTable(
 
     throw NetException(ErrorCodes::NO_REMOTE_SHARD_AVAILABLE,
         "All attempts to get table structure failed. Log: \n\n{}\n", fail_messages);
-}
-
-ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
-    const Cluster & cluster,
-    const StorageID & remote_table_id,
-    const ColumnsDescription & storage_columns,
-    ContextPtr context)
-{
-    const auto & shards_info = cluster.getShardsInfo();
-    auto query = "DESC TABLE " + remote_table_id.getFullTableName();
-
-    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), remote_table_id);
-    new_context->setSetting("describe_extend_object_types", true);
-
-    /// Expect only needed columns from the result of DESC TABLE.
-    Block sample_block
-    {
-        { ColumnString::create(), std::make_shared<DataTypeString>(), "name" },
-        { ColumnString::create(), std::make_shared<DataTypeString>(), "type" },
-    };
-
-    auto execute_query_on_shard = [&](const auto & shard_info)
-    {
-        /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
-        RemoteQueryExecutor executor(shard_info.pool, query, std::make_shared<const Block>(std::move(sample_block)), new_context);
-        executor.setPoolMode(PoolMode::GET_ONE);
-        executor.setMainTable(remote_table_id);
-
-        ColumnsDescription res;
-        for (auto block = executor.readBlock(); !block.empty(); block = executor.readBlock())
-        {
-            block = convertBLOBColumns(block);
-
-            const auto & name_col = *block.getByName("name").column;
-            const auto & type_col = *block.getByName("type").column;
-
-            size_t size = name_col.size();
-            for (size_t i = 0; i < size; ++i)
-            {
-                auto name = name_col[i].safeGet<String>();
-                auto type_name = type_col[i].safeGet<String>();
-
-                auto storage_column = storage_columns.tryGetPhysical(name);
-                if (storage_column && storage_column->type->hasDynamicSubcolumnsDeprecated())
-                    res.add(ColumnDescription(std::move(name), DataTypeFactory::instance().get(type_name)));
-            }
-        }
-
-        return res;
-    };
-
-    ColumnsDescriptionByShardNum columns;
-    for (const auto & shard_info : shards_info)
-    {
-        auto res = execute_query_on_shard(shard_info);
-
-        /// Expect at least some columns.
-        /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.
-        if (!res.empty())
-            columns.emplace(shard_info.shard_num, std::move(res));
-    }
-
-    if (columns.empty())
-        throw NetException(ErrorCodes::NO_REMOTE_SHARD_AVAILABLE, "All attempts to get table structure failed");
-
-    return columns;
 }
 
 }
