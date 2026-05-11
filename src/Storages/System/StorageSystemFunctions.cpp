@@ -357,6 +357,15 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[11]->insertDefault(); // examples
         res_columns[12]->insertDefault(); // introduced_in
         res_columns[13]->insertDefault(); // categories
+
+        /// WASM functions have a fixed, declared arity from their CREATE FUNCTION signature.
+        /// Determinism is unknown — the WASM module is opaque to ClickHouse — so report NULL.
+        /// They cannot accept lambda parameters.
+        const auto arity = static_cast<UInt64>(arg_types.size());
+        res_columns[14]->insert(arity); // min_arguments
+        res_columns[15]->insert(arity); // max_arguments
+        res_columns[16]->insertDefault(); // is_deterministic
+        res_columns[17]->insert(UInt8{0}); // accepts_lambda
     }
 }
 
