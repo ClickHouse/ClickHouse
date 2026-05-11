@@ -70,12 +70,14 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
 
     cursor.execute("ALTER TABLE test_table ADD COLUMN data Text")
     assert "data" in node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'"
+        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'",
+        settings={"show_external_databases_in_system_tables": 1},
     )
 
     cursor.execute("ALTER TABLE test_table DROP COLUMN data")
     assert "data" not in node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'"
+        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'",
+        settings={"show_external_databases_in_system_tables": 1},
     )
 
     node1.query("DROP DATABASE postgres_database")
@@ -285,7 +287,8 @@ def test_predefined_connection_configuration(started_cluster):
     node1.query("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1)")
 
     result = node1.query(
-        "select create_table_query from system.tables where database ='postgres_database'"
+        "select create_table_query from system.tables where database ='postgres_database'",
+        settings={"show_external_databases_in_system_tables": 1},
     )
     print(f"kssenii: {result}")
     assert result.strip().endswith(
@@ -449,7 +452,8 @@ def test_numeric_detach_attach(started_cluster):
 
     def get_actual_clickhouse_column_types():
         res = node1.query(
-            "SELECT name, type FROM system.columns WHERE database = 'postgres_database' AND table = 'test_table'"
+            "SELECT name, type FROM system.columns WHERE database = 'postgres_database' AND table = 'test_table'",
+            settings={"show_external_databases_in_system_tables": 1},
         )
 
         return dict(line.split('\t') for line in res.splitlines())
