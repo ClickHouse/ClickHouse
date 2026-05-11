@@ -1,12 +1,13 @@
 #pragma once
 
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Interpreters/Context_fwd.h>
+#include "Columns/ColumnsNumber.h"
 
 
 namespace DB
@@ -14,7 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -45,14 +46,21 @@ public:
         return true;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    bool isVariadic() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const IDataType & type = *arguments[0];
+        FunctionArgumentDescriptors mandatory_arguments{
+            {"x", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+        };
 
-        if (!isNumber(type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} because it's not a numeric type", type.getName());
+        FunctionArgumentDescriptors optional_arguments{
+            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), &isColumnConst, "const UInt8"},
+        };
+
+        validateFunctionArguments(getName(), arguments, mandatory_arguments, optional_arguments);
 
         return std::make_shared<DataTypeString>();
     }
@@ -64,8 +72,21 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        int precision = 2;
+        if (arguments.size() == 2)
+        {
+            const auto * col_precision = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get());
+            if (!col_precision)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of second argument of function {}",
+                    arguments[1].column->getName(), getName());
+            precision = col_precision->getValue<UInt8>();
+        }
+
         auto col_to = ColumnString::create();
 
         ColumnString::Chars & data_to = col_to->getChars();
@@ -78,7 +99,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             /// The cost of the virtual call for getFloat64 is negligible compared with the format calls
-            format_func(arguments[0].column->getFloat64(i), buf_to, 2);
+            format_func(arguments[0].column->getFloat64(i), buf_to, precision);
             offsets_to[i] = buf_to.count();
         }
 

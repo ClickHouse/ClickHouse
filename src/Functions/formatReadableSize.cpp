@@ -14,9 +14,10 @@ Given a size (number of bytes), this function returns a readable, rounded size w
 The opposite operations of this function are [`parseReadableSize`](#parseReadableSize), [`parseReadableSizeOrZero`](#parseReadableSizeOrZero), and [`parseReadableSizeOrNull`](#parseReadableSizeOrNull).
 This function accepts any numeric type as input, but internally it casts them to `Float64`. Results might be suboptimal with large values.
     )";
-    FunctionDocumentation::Syntax syntax = "formatReadableSize(x)";
+    FunctionDocumentation::Syntax syntax = "formatReadableSize(x[, precision])";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Size in bytes.", {"UInt64"}}
+        {"x", "Size in bytes.", {"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64", "Float32", "Float64", "Decimal"}},
+        {"precision", "Optional. Number of digits after the decimal point. Defaults to 2.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a readable, rounded size with suffix as a string.", {"String"}};
     FunctionDocumentation::Examples examples = {
@@ -34,6 +35,19 @@ SELECT
 │        1048576 │ 1.00 MiB   │
 │      192851925 │ 183.92 MiB │
 └────────────────┴────────────┘
+        )"
+    },
+    {
+        "With explicit precision",
+        R"(
+SELECT
+    formatReadableSize(192851925, 0) AS no_decimals,
+    formatReadableSize(192851925, 4) AS four_decimals
+        )",
+        R"(
+┌─no_decimals─┬─four_decimals──┐
+│ 184 MiB     │ 183.9179 MiB   │
+└─────────────┴────────────────┘
         )"
     }
     };
