@@ -39,8 +39,20 @@ ${CLICKHOUSE_CLIENT} -q "SELECT sleep(1.5) FORMAT Null" 2> "$err3" > /dev/null
 echo "3. clickhouse-client (no --chime), 1.5s < default 5s threshold: $(bel_count "$err3")"
 
 # Case 4: `--chime 1`, slow query that ends in an error — expect `BEL` on the error path.
+# Assert both that the query actually failed AND that the expected error message is
+# present in stderr before checking for `BEL`, otherwise this case could silently keep
+# passing if `throwIf` behaviour changes or the query is rewritten so the error path is
+# no longer exercised.
 ${CLICKHOUSE_CLIENT} --chime 1 -q "SELECT sleep(1.5), throwIf(1 = 1, 'expected error')" 2> "$err4" > /dev/null
-echo "4. clickhouse-client --chime 1, slow query then error: $(bel_count "$err4")"
+rc=$?
+if [ "$rc" -eq 0 ]; then
+    case4_status="FAIL: query unexpectedly succeeded"
+elif ! grep -q 'expected error' "$err4"; then
+    case4_status="FAIL: missing 'expected error' message in stderr"
+else
+    case4_status=$(bel_count "$err4")
+fi
+echo "4. clickhouse-client --chime 1, slow query then error: $case4_status"
 
 # Case 5: also verify the same behaviour in `clickhouse-local` so the feature is wired
 # in `ClientBase` rather than the network client only.
