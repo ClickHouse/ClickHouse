@@ -757,7 +757,7 @@ def test_iceberg_s3_cluster_read_task_failpoint(started_cluster):
     finally:
         for name in all_node_names:
             started_cluster.instances[name].query(
-                "SYSTEM DISABLE FAILPOINT iceberg_socket_fail"
+                "SYSTEM DISABLE FAILPOINT storage_cluster_read_sleep"
             )
         node.query(f"DROP TABLE IF EXISTS {dst_table}")
         node.query(f"DROP TABLE IF EXISTS {iceberg_table}")
