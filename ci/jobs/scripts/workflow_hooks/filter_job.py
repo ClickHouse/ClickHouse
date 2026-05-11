@@ -170,6 +170,10 @@ def should_skip_job(job_name):
     if Labels.CI_INTEGRATION in _info_cache.pr_labels and not (
         job_name.startswith(JobNames.INTEGRATION)
         or job_name in BUILDS_FOR_TESTS
+        or (
+            job_name == JobNames.PROMQL_COMPLIANCE
+            and Labels.COMP_PROMQL in _info_cache.pr_labels
+        )
     ):
         return (
             True,
