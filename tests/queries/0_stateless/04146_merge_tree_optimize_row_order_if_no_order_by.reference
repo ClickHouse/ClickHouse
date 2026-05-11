@@ -1,3 +1,9 @@
+default == explicit_on
+1
+1
+disabled != explicit_on
+1
+optimized rows
 Alex	1	63	0
 Alex	1	65	0
 Alex	1	239	0
