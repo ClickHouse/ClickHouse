@@ -2007,10 +2007,25 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     {
         if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
         {
-            return [range_begin, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
+            const size_t max_position = std::min(key_condition_rpn_template->getRPN().size(), MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT);
+            return [range_begin, max_position, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
             {
-                if (!is_unknown)
-                    partial_disjunction_result[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position] = element_result;
+                /// Index conditions may have extra condition-local RPN nodes after rewrites.
+                /// `mergePartialResultsForDisjunctions` reads only positions from
+                /// `key_condition_rpn_template`, so leave extra positions at the default.
+                if (is_unknown || position >= max_position)
+                    return;
+
+                const auto bit_index = (range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position;
+                if (bit_index >= partial_disjunction_result.size())
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Partial disjunction result bit index {} is out of range, bitset size: {}, mark: {}, position: {}",
+                        bit_index, partial_disjunction_result.size(), range_begin, position);
+                }
+
+                partial_disjunction_result[bit_index] = element_result;
             };
         }
         return nullptr;

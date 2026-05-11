@@ -27,6 +27,7 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -1308,7 +1309,14 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         database->detachTable(system_context, replica_table_id.table_name);
     }
     table.reset();
-    database->waitDetachedTableNotInUse(replica_table_id.uuid);
+    {
+        QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+        database->waitDetachedTableNotInUse(replica_table_id.uuid, [&]()
+        {
+            if (query_status)
+                query_status->throwIfKilled();
+        });
+    }
 
     /// Attach actions
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
