@@ -706,8 +706,14 @@ INSERT INTO t SELECT number, number FROM numbers(10000);
 
 CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
 
+-- Default — empirical (exact) measurement
 EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+
+-- Force the statistical / applicability_only path
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b = 42;
 ```
+
+The setting is written inline between `WHATIF` and the `SELECT` — there is no `SETTINGS` keyword (this matches how other `EXPLAIN` variants accept their options).
 
 If no hypothetical indexes are defined for the table, `EXPLAIN WHATIF` reports `status: not_applicable` with a hint to create one.
 

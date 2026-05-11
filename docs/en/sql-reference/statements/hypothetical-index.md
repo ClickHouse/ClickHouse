@@ -71,7 +71,13 @@ Estimation:
   elapsed_us:       631
 ```
 
-Use `EXPLAIN WHATIF empirical = 0 SELECT ...` to skip the in-memory empirical scan and estimate from column statistics instead. See the [`EXPLAIN WHATIF`](/sql-reference/statements/explain#explain-whatif) reference for the full output schema and settings.
+To skip the in-memory empirical scan and estimate from column statistics instead, set `empirical = 0` inline (no `SETTINGS` keyword):
+
+```sql
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b = 42;
+```
+
+See the [`EXPLAIN WHATIF`](/sql-reference/statements/explain#explain-whatif) reference for the full output schema and settings.
 
 ## DROP HYPOTHETICAL INDEX {#drop-hypothetical-index}
 
