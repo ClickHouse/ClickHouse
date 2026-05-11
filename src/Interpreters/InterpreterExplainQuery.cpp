@@ -749,7 +749,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::WhatIf:
         {
-            auto & query_ast = ast.getExplainedQuery();
+            const auto & query_ast = ast.getExplainedQuery();
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(query_ast.get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN WHATIF query");
 

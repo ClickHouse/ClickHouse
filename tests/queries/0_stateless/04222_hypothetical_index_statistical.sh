@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-random-merge-tree-settings
+# Tags: no-fasttest, no-replicated-database, no-random-merge-tree-settings
 # no-random-merge-tree-settings: need fixed index_granularity
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

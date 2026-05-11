@@ -1,4 +1,3 @@
-
 --- minmax on sorted column ---
   status:       applicable
   skip_ratio:   99.0%
