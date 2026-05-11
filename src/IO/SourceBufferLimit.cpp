@@ -54,13 +54,6 @@ SourceBufferLimit::SourceBufferLimit(size_t max_slots_)
 {
 }
 
-void SourceBufferLimit::setCapacity(size_t new_max_slots)
-{
-    std::lock_guard lock(mutex);
-    LOG_DEBUG(log, "setCapacity: {} -> {}", max_slots, new_max_slots);
-    max_slots = new_max_slots;
-}
-
 size_t SourceBufferLimit::getCapacity() const
 {
     std::lock_guard lock(mutex);
