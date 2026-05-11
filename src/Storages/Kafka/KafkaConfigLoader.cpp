@@ -1,11 +1,13 @@
 #include <Storages/Kafka/KafkaConfigLoader.h>
 
 #include <Access/KerberosInit.h>
+#include <Storages/Kafka/AWSMSKIAMAuth.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 #include <Storages/System/StorageSystemStackTrace.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
@@ -39,11 +41,13 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_compression_codec;
     extern const KafkaSettingsInt64 kafka_compression_level;
     extern const KafkaSettingsString kafka_autodetect_client_rack;
+    extern const KafkaSettingsString kafka_aws_region;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 template <typename TKafkaStorage>
@@ -386,7 +390,8 @@ void updateConfigurationFromConfig(
     auto kafka_settings = storage.getKafkaSettings();
     if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
         kafka_config.set("security.protocol", kafka_settings[KafkaSetting::kafka_security_protocol]);
-    if (!kafka_settings[KafkaSetting::kafka_sasl_mechanism].value.empty())
+    if (!kafka_settings[KafkaSetting::kafka_sasl_mechanism].value.empty()
+        && !boost::iequals(kafka_settings[KafkaSetting::kafka_sasl_mechanism].value, "AWS_MSK_IAM"))
         kafka_config.set("sasl.mechanism", kafka_settings[KafkaSetting::kafka_sasl_mechanism]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty())
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
@@ -415,6 +420,32 @@ void updateConfigurationFromConfig(
         }
         else
             LOG_ERROR(params.log, "Unknown kafka_autodetect_client_rack facility  {}. Expected one of AWS_ZONE_ID, AWS_ZONE_NAME, GCP_ZONE, CLICKHOUSE, AWS_ZONE_NAME_THEN_GCP_ZONE.", autodetect_rack);
+    }
+
+    const String sasl_mechanism = kafka_settings[KafkaSetting::kafka_sasl_mechanism].value;
+    if (boost::iequals(sasl_mechanism, "AWS_MSK_IAM"))
+    {
+#if USE_AWS_S3
+        if (kafka_config.has_property("security.protocol")
+            && !boost::iequals(kafka_config.get("security.protocol"), "SASL_SSL"))
+            LOG_WARNING(
+                params.log,
+                "kafka_security_protocol='{}' will be overridden to 'SASL_SSL' — AWS MSK IAM requires SASL_SSL.",
+                kafka_config.get("security.protocol"));
+
+        String aws_region = kafka_settings[KafkaSetting::kafka_aws_region].value;
+        String broker_list = kafka_config.has_property("metadata.broker.list") ? kafka_config.get("metadata.broker.list") : "";
+
+        std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> candidate;
+        AWSMSKIAMAuth::setupAuthentication(kafka_config, params.config, aws_region, broker_list, params.log, candidate);
+        auto shared_context = storage.ensureOAuthContext(candidate);
+        if (shared_context != candidate)
+            AWSMSKIAMAuth::setupAuthentication(kafka_config, params.config, aws_region, broker_list, params.log, shared_context);
+#else
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "AWS MSK IAM authentication is not supported in this build. ClickHouse must be built with USE_AWS_S3=1");
+#endif
     }
 
 #if USE_KRB5

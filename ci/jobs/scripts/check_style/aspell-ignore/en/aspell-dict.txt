@@ -557,6 +557,7 @@ Hudi
 HudiCluster
 HyperLogLog
 Hypot
+IAM
 IANA
 IDE
 IDEs
@@ -826,6 +827,7 @@ MMappedAllocBytes
 MMappedAllocs
 MMappedFileBytes
 MMappedFiles
+MSK
 MSSQL
 MSan
 MVCC
@@ -1194,6 +1196,7 @@ PrettySpaceNoEscapesMonoBlock
 Prewhere
 PrimaryKey
 PrivateKeyPassphraseHandler
+PrivateLink
 PrivatePreviewBadge
 ProfileEvent
 ProfileEvents
@@ -1385,6 +1388,7 @@ Sematext
 Semkath
 SendExternalTables
 SendScalars
+Serverless
 ServerSettings
 SessionID
 SetACL
@@ -1641,6 +1645,7 @@ Util
 Uyghur
 VARBINARY
 VARCHAR
+VPC
 VIEWs
 Vadim
 Valgrind
