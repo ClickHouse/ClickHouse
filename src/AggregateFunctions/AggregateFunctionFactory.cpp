@@ -214,9 +214,25 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             return nullptr;
 
         const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
+
+        AggregateFunctionPtr function;
         if (state_variant == AggregateFunctionStateVariant::Window && found.window_creator)
-            return found.window_creator(name, argument_types, parameters, settings);
-        return found.creator(name, argument_types, parameters, settings);
+            function = found.window_creator(name, argument_types, parameters, settings);
+        else
+            function = found.creator(name, argument_types, parameters, settings);
+
+        /// Invariant: For any aggregation function IAggregateFunction::getParameters() should return exactly
+        /// the parameters used to create the aggregation function. Aggregation functions are not allowed to change
+        /// or normalize these parameters.
+        /// (Otherwise it would become a different DataTypeAggregateFunction (see DataTypeAggregateFunction::strictEquals),
+        /// and could fail to reattach a table because decodeDataType() would reconstruct a type different from the one
+        /// recorded in the column metadata; or fail on parallel replicas under serialize_query_plan=1 because the replica's
+        /// decodeDataType() would reconstruct a type different from the one the coordinator sent in the plan.)
+        /// NOTE: Check for function->getParameters().empty() is here because some aggregation functions (kolmogorovSmirnovTest, mannWhitneyUTest) drop their parameters completely.
+        chassert(function && (function->getParameters().empty() || function->getParameters() == parameters),
+            "function->getParameters() must equal the parameters passed to the factory");
+
+        return function;
     }
 
     /// Combinators of aggregate functions.
@@ -255,13 +271,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         Array nested_parameters = combinator->transformParameters(parameters);
 
         AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
-        /// Aggregate function Nothing does not use parameters but preserves them for consistency.
-        if (std::dynamic_pointer_cast<const AggregateFunctionNothing>(nested_function) ||
-            std::dynamic_pointer_cast<const AggregateFunctionNothingNull>(nested_function) ||
-            std::dynamic_pointer_cast<const AggregateFunctionNothingUInt64>(nested_function))
-                return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
-
-        return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+        auto combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+        /// Same invariant as above.
+        chassert(combined_function && combined_function->getParameters() == parameters,
+            "function->getParameters() must equal the parameters passed to the factory");
+        return combined_function;
     }
 
 
