@@ -1,6 +1,5 @@
-import os
 import os.path
-import tempfile
+from os import remove
 
 import pytest
 
@@ -63,27 +62,27 @@ config_connection_accept = """<clickhouse>
 
 
 def execute_query_native(node, query, config):
-    fd, config_path = tempfile.mkstemp(
-        prefix="client_", suffix=".xml", dir=f"{SCRIPT_DIR}/configs"
+    config_path = f"{SCRIPT_DIR}/configs/client.xml"
+
+    file = open(config_path, "w")
+    file.write(config)
+    file.close()
+
+    client = Client(
+        node.ip_address,
+        9440,
+        command=cluster.client_bin_path,
+        secure=True,
+        config=config_path,
     )
+
     try:
-        with os.fdopen(fd, "w") as f:
-            f.write(config)
-
-        client = Client(
-            node.ip_address,
-            9440,
-            command=cluster.client_bin_path,
-            secure=True,
-            config=config_path,
-        )
-
-        return client.query(query)
-    finally:
-        try:
-            os.remove(config_path)
-        except FileNotFoundError:
-            pass
+        result = client.query(query)
+        remove(config_path)
+        return result
+    except:
+        remove(config_path)
+        raise
 
 
 def test_default():
