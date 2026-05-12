@@ -1,4 +1,5 @@
 #include <Common/CurrentThread.h>
+#include <Common/UTF8Helpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
@@ -7,6 +8,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -140,19 +142,32 @@ static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep:
     }
 }
 
-static void doDescribeProcessor(const IProcessor & processor, size_t count, IQueryPlanStep::FormatSettings & settings)
+static String getProcessorDescriptionLine(const IProcessor & processor, size_t count, size_t offset, char indent_char)
 {
-    settings.out << String(settings.offset, settings.indent_char) << processor.getName();
+    String line(offset, indent_char);
+    line += processor.getName();
+
     if (count > 1)
-        settings.out << " × " << std::to_string(count);
+    {
+        line += " × ";
+        line += std::to_string(count);
+    }
 
     size_t num_inputs = processor.getInputs().size();
     size_t num_outputs = processor.getOutputs().size();
     if (num_inputs != 1 || num_outputs != 1)
-        settings.out << " " << std::to_string(num_inputs) << " → " << std::to_string(num_outputs);
+    {
+        line += " ";
+        line += std::to_string(num_inputs);
+        line += " → ";
+        line += std::to_string(num_outputs);
+    }
 
-    settings.out << '\n';
+    return line;
+}
 
+static void doDescribeProcessorDetails(const IProcessor & processor, IQueryPlanStep::FormatSettings & settings)
+{
     if (settings.write_header)
     {
         const Block * last_header = nullptr;
@@ -176,29 +191,197 @@ static void doDescribeProcessor(const IProcessor & processor, size_t count, IQue
 
     if (!processor.getDescription().empty())
         settings.out << String(settings.offset, settings.indent_char) << "Description: " << processor.getDescription() << '\n';
+}
+
+static void doDescribeProcessor(const IProcessor & processor, size_t count, IQueryPlanStep::FormatSettings & settings)
+{
+    settings.out << getProcessorDescriptionLine(processor, count, settings.offset, settings.indent_char) << '\n';
+
+    doDescribeProcessorDetails(processor, settings);
 
     settings.offset += settings.base_indent;
 }
 
-void IQueryPlanStep::describePipeline(const Processors & processors, FormatSettings & settings)
+static size_t getLineWidth(const String & line)
 {
-    const IProcessor * prev = nullptr;
-    size_t count = 0;
+    return UTF8::computeWidth(reinterpret_cast<const UInt8 *>(line.data()), line.size());
+}
 
-    for (auto it = processors.rbegin(); it != processors.rend(); ++it)
+static bool areProcessorsSimilarForExplain(const IProcessor & lhs, const IProcessor & rhs)
+{
+    return lhs.getName() == rhs.getName()
+        && lhs.getInputs().size() == rhs.getInputs().size()
+        && lhs.getOutputs().size() == rhs.getOutputs().size()
+        && lhs.getDescription() == rhs.getDescription();
+}
+
+static bool areRepeatedProcessorRangesEqual(
+    const std::vector<const IProcessor *> & processors,
+    size_t lhs_begin,
+    size_t rhs_begin,
+    size_t length)
+{
+    for (size_t i = 0; i < length; ++i)
+        if (!areProcessorsSimilarForExplain(*processors[lhs_begin + i], *processors[rhs_begin + i]))
+            return false;
+
+    return true;
+}
+
+static bool hasConnectionTo(const IProcessor & from, const IProcessor & to)
+{
+    for (const auto & output : from.getOutputs())
+        if (output.isConnected() && &output.getInputPort().getProcessor() == &to)
+            return true;
+
+    return false;
+}
+
+static bool isProcessorRangeChain(const std::vector<const IProcessor *> & processors, size_t begin, size_t length)
+{
+    for (size_t i = 0; i + 1 < length; ++i)
     {
-        if (prev && prev->getName() != (*it)->getName())
-        {
-            doDescribeProcessor(*prev, count, settings);
-            count = 0;
-        }
-
-        ++count;
-        prev = it->get();
+        const auto & current = *processors[begin + i];
+        const auto & next = *processors[begin + i + 1];
+        if (!hasConnectionTo(next, current))
+            return false;
     }
 
-    if (prev)
-        doDescribeProcessor(*prev, count, settings);
+    return true;
+}
+
+static bool hasConnectionBetweenProcessorRanges(
+    const std::vector<const IProcessor *> & processors,
+    size_t lhs_begin,
+    size_t rhs_begin,
+    size_t length)
+{
+    for (size_t lhs_pos = lhs_begin; lhs_pos < lhs_begin + length; ++lhs_pos)
+        for (size_t rhs_pos = rhs_begin; rhs_pos < rhs_begin + length; ++rhs_pos)
+            if (hasConnectionTo(*processors[lhs_pos], *processors[rhs_pos]) || hasConnectionTo(*processors[rhs_pos], *processors[lhs_pos]))
+                return true;
+
+    return false;
+}
+
+static bool isRepeatedProcessorRangeIndependentChain(
+    const std::vector<const IProcessor *> & processors,
+    size_t begin,
+    size_t length,
+    size_t count)
+{
+    for (size_t item = 0; item < count; ++item)
+    {
+        const size_t item_begin = begin + item * length;
+        if (!isProcessorRangeChain(processors, item_begin, length))
+            return false;
+    }
+
+    for (size_t lhs_item = 0; lhs_item < count; ++lhs_item)
+        for (size_t rhs_item = lhs_item + 1; rhs_item < count; ++rhs_item)
+            if (hasConnectionBetweenProcessorRanges(processors, begin + lhs_item * length, begin + rhs_item * length, length))
+                return false;
+
+    return true;
+}
+
+static std::pair<size_t, size_t> findRepeatedProcessorChainRange(const std::vector<const IProcessor *> & processors, size_t begin)
+{
+    static constexpr size_t min_period = 2;
+    static constexpr size_t max_period = 8;
+
+    const size_t remaining = processors.size() - begin;
+    const size_t max_candidate_period = std::min(max_period, remaining / 2);
+
+    for (size_t period = min_period; period <= max_candidate_period; ++period)
+    {
+        size_t count = 1;
+        while (begin + (count + 1) * period <= processors.size()
+            && areRepeatedProcessorRangesEqual(processors, begin, begin + count * period, period))
+        {
+            ++count;
+        }
+
+        if (count > 1 && isRepeatedProcessorRangeIndependentChain(processors, begin, period, count))
+            return {period, count};
+    }
+
+    return {0, 0};
+}
+
+static void doDescribeRepeatedProcessorChains(
+    const std::vector<const IProcessor *> & processors,
+    size_t begin,
+    size_t length,
+    size_t count,
+    IQueryPlanStep::FormatSettings & settings)
+{
+    static constexpr size_t marker_padding = 4;
+
+    std::vector<String> processor_lines;
+    processor_lines.reserve(length);
+    size_t max_line_width = 0;
+
+    for (size_t i = 0; i < length; ++i)
+    {
+        processor_lines.emplace_back(
+            getProcessorDescriptionLine(*processors[begin + i], 1, settings.offset + i * settings.base_indent, settings.indent_char));
+        max_line_width = std::max(max_line_width, getLineWidth(processor_lines.back()));
+    }
+
+    for (size_t i = 0; i < length; ++i)
+    {
+        settings.offset += settings.base_indent * i;
+
+        settings.out << processor_lines[i];
+        settings.out << String(max_line_width - getLineWidth(processor_lines[i]) + marker_padding, ' ') << "│";
+        if (i + 1 == length)
+            settings.out << " × " << count;
+        settings.out << '\n';
+
+        doDescribeProcessorDetails(*processors[begin + i], settings);
+
+        settings.offset -= settings.base_indent * i;
+    }
+
+    settings.offset += settings.base_indent * length;
+}
+
+void IQueryPlanStep::describePipeline(const Processors & processors, FormatSettings & settings)
+{
+    std::vector<const IProcessor *> ordered_processors;
+    ordered_processors.reserve(processors.size());
+    for (auto it = processors.rbegin(); it != processors.rend(); ++it)
+        ordered_processors.emplace_back(it->get());
+
+    size_t position = 0;
+    while (position < ordered_processors.size())
+    {
+        size_t equal_processors_count = 1;
+        while (position + equal_processors_count < ordered_processors.size()
+            && areProcessorsSimilarForExplain(*ordered_processors[position], *ordered_processors[position + equal_processors_count]))
+        {
+            ++equal_processors_count;
+        }
+
+        if (equal_processors_count > 1)
+        {
+            doDescribeProcessor(*ordered_processors[position], equal_processors_count, settings);
+            position += equal_processors_count;
+            continue;
+        }
+
+        const auto [repeated_period, repeated_count] = findRepeatedProcessorChainRange(ordered_processors, position);
+        if (repeated_count > 1)
+        {
+            doDescribeRepeatedProcessorChains(ordered_processors, position, repeated_period, repeated_count, settings);
+            position += repeated_period * repeated_count;
+            continue;
+        }
+
+        doDescribeProcessor(*ordered_processors[position], 1, settings);
+        ++position;
+    }
 }
 
 void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
