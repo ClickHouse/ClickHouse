@@ -32,9 +32,9 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeString>();
+        return "() -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override

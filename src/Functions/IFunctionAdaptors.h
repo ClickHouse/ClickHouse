@@ -139,6 +139,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return function->getReturnTypeImpl(arguments); }
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return function->getReturnTypeImpl(arguments); }
+    String getSignatureString() const override { return function->getSignatureString(); }
 
     bool useDefaultImplementationForNulls() const override { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForNothing() const override { return function->useDefaultImplementationForNothing(); }

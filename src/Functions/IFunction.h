@@ -399,6 +399,15 @@ public:
     /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
     virtual bool allowsOmittingParentheses() const { return false; }
 
+    /** Declarative signature of this function, see DataTypes/FunctionSignature.h.
+      *
+      * When non-empty, the default getReturnTypeImpl uses this signature to validate argument
+      * types/constness and compute the return type, throwing ILLEGAL_TYPE_OF_ARGUMENT on mismatch.
+      *
+      * Example: "f(T : Number) -> T".
+      */
+    virtual String getSignatureString() const { return {}; }
+
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
 protected:
@@ -408,14 +417,7 @@ protected:
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
 
     /// This function will be called in default implementation. You can overload it or the previous one.
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-
-        return getReturnTypeImpl(data_types);
-    }
+    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
 
     /** If useDefaultImplementationForNulls() is true, then change arguments for getReturnType() and build():
       *  if some of arguments are Nullable(Nothing) then don't call getReturnType(), call build() with return_type = Nullable(Nothing),
@@ -582,14 +584,10 @@ public:
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
 
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
+    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
 
-        return getReturnTypeImpl(data_types);
-    }
+    /// Declarative signature, see IFunction::getSignatureString. Same opt-in mechanism.
+    virtual String getSignatureString() const { return {}; }
 
     virtual bool isVariadic() const { return false; }
 

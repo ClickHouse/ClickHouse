@@ -36,19 +36,9 @@ private:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto check_argument_type = [this] (const IDataType * arg)
-        {
-            if (!isNativeNumber(arg) && !isDecimal(arg))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                    arg->getName(), getName());
-        };
-
-        check_argument_type(arguments.front().get());
-        check_argument_type(arguments.back().get());
-
-        return std::make_shared<DataTypeFloat64>();
+        return "(NativeNumberOrDecimal, NativeNumberOrDecimal) -> Float64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

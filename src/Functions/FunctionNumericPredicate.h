@@ -43,12 +43,9 @@ public:
         return false;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isNativeNumber(arguments.front()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be a number", getName());
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(NativeNumber) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

@@ -30,9 +30,9 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<ColumnT>();
+        return "() -> " + ColumnT{}.getName();
     }
 
     bool isDeterministic() const override { return false; }

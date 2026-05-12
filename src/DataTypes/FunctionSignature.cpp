@@ -1114,25 +1114,42 @@ bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroup & res, const Argume
 
 bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignatureImpl & res)
 {
-    if (parseFunctionLikeExpression(pos, res.name, true,
-        [&](TokenIterator & inner)
-        {
-            return parseList(inner, true,
-                [&](TokenIterator & inner2)
+    /// Allow signatures with no function name, starting directly with '('.
+    auto parse_args_in_parens = [&](TokenIterator & inner)
+    {
+        return parseList(inner, true,
+            [&](TokenIterator & inner2)
+            {
+                ArgumentsGroup group;
+                if (parseArgumentsGroup(inner2, group, res.arguments_description.groups.empty() ? ArgumentsGroup() : res.arguments_description.groups.back()))
                 {
-                    ArgumentsGroup group;
-                    if (parseArgumentsGroup(inner2, group, res.arguments_description.groups.empty() ? ArgumentsGroup() : res.arguments_description.groups.back()))
-                    {
-                        res.arguments_description.groups.emplace_back(group);
-                        return true;
-                    }
-                    return false;
-                },
-                [](TokenIterator & inner2)
-                {
-                    return consumeToken(inner2, TokenType::Comma);
-                });
-        })
+                    res.arguments_description.groups.emplace_back(group);
+                    return true;
+                }
+                return false;
+            },
+            [](TokenIterator & inner2)
+            {
+                return consumeToken(inner2, TokenType::Comma);
+            });
+    };
+
+    bool args_parsed = false;
+    if (pos->type == TokenType::OpeningRoundBracket)
+    {
+        ++pos;
+        args_parsed = parse_args_in_parens(pos) && consumeToken(pos, TokenType::ClosingRoundBracket);
+    }
+    else
+    {
+        args_parsed = parseFunctionLikeExpression(pos, res.name, true,
+            [&](TokenIterator & inner)
+            {
+                return parse_args_in_parens(inner);
+            });
+    }
+
+    if (args_parsed
         && consumeToken(pos, TokenType::Arrow)
         && parseTypeExpression(pos, res.return_type))
     {

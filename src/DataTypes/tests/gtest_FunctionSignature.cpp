@@ -125,3 +125,27 @@ GTEST_TEST(FunctionSignature, ConstStringExtractedAsType)
             {makeConstColumn("String", Field(String("UInt16")))}),
         "UInt16");
 }
+
+GTEST_TEST(FunctionSignature, NoFunctionName)
+{
+    EXPECT_EQ(checkSignature("(T) -> T", {makeColumn("UInt32")}), "UInt32");
+    EXPECT_EQ(checkSignature("() -> String", {}), "String");
+}
+
+GTEST_TEST(FunctionSignature, NewMatchers)
+{
+    EXPECT_EQ(checkSignature("(Float) -> Float64", {makeColumn("Float32")}), "Float64");
+    EXPECT_EQ(checkSignature("(NativeNumber) -> UInt8", {makeColumn("Int32")}), "UInt8");
+    EXPECT_THAT(checkSignature("(NativeNumber) -> UInt8", {makeColumn("UInt128")}), ::testing::StartsWith("FAIL:"));
+    EXPECT_EQ(checkSignature("(Decimal) -> Float64", {makeColumn("Decimal(10, 2)")}), "Float64");
+    EXPECT_EQ(checkSignature("(UUID) -> String", {makeColumn("UUID")}), "String");
+    EXPECT_EQ(checkSignature("(StringArrayMapIP) -> UInt64", {makeColumn("IPv4")}), "UInt64");
+    EXPECT_EQ(checkSignature("(StringArrayMapIP) -> UInt64", {makeColumn("Map(String, UInt8)")}), "UInt64");
+}
+
+GTEST_TEST(FunctionSignature, MaybeNullableUnwrap)
+{
+    /// (MaybeNullable(U)) -> U: U captures the inner non-nullable type, used by `assumeNotNull`.
+    EXPECT_EQ(checkSignature("(MaybeNullable(U)) -> U", {makeColumn("UInt32")}), "UInt32");
+    EXPECT_EQ(checkSignature("(MaybeNullable(U)) -> U", {makeColumn("Nullable(UInt32)")}), "UInt32");
+}

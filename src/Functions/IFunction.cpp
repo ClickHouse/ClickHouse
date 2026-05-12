@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/FunctionSignature.h>
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
@@ -826,6 +827,48 @@ FunctionBasePtr IFunctionOverloadResolver::buildImpl(const ColumnsWithTypeAndNam
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "buildImpl is not implemented for {}", getName());
 }
 
+namespace
+{
+    /// Parse and cache function signatures globally.
+    DataTypePtr applyFunctionSignature(const String & signature_str, const String & function_name, const ColumnsWithTypeAndName & arguments)
+    {
+        static std::mutex cache_mutex;
+        static std::unordered_map<String, std::shared_ptr<FunctionSignature>> cache;
+
+        std::shared_ptr<FunctionSignature> sig;
+        {
+            std::lock_guard lock(cache_mutex);
+            auto it = cache.find(signature_str);
+            if (it == cache.end())
+            {
+                sig = std::make_shared<FunctionSignature>(signature_str);
+                cache.emplace(signature_str, sig);
+            }
+            else
+                sig = it->second;
+        }
+
+        std::string reason;
+        DataTypePtr result = sig->check(arguments, reason);
+        if (!result)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Arguments of function {} do not match its signature ({}): {}",
+                function_name, signature_str, reason);
+        return result;
+    }
+}
+
+DataTypePtr IFunctionOverloadResolver::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    if (auto signature_str = getSignatureString(); !signature_str.empty())
+        return applyFunctionSignature(signature_str, getName(), arguments);
+
+    DataTypes data_types(arguments.size());
+    for (size_t i = 0; i < arguments.size(); ++i)
+        data_types[i] = arguments[i].type;
+    return getReturnTypeImpl(data_types);
+}
+
 DataTypePtr IFunctionOverloadResolver::getReturnTypeImpl(const DataTypes & /*arguments*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
@@ -844,6 +887,17 @@ FieldIntervalPtr IFunction::getPreimage(const IDataType & /*type*/, const Field 
 DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & /*arguments*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
+}
+
+DataTypePtr IFunction::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    if (auto signature_str = getSignatureString(); !signature_str.empty())
+        return applyFunctionSignature(signature_str, getName(), arguments);
+
+    DataTypes data_types(arguments.size());
+    for (size_t i = 0; i < arguments.size(); ++i)
+        data_types[i] = arguments[i].type;
+    return getReturnTypeImpl(data_types);
 }
 
 void IFunction::getLambdaArgumentTypes(DataTypes & /*arguments*/) const

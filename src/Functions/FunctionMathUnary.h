@@ -41,20 +41,13 @@ private:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto & argument = arguments.front();
-
-        if (!isNumber(argument))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                argument->getName(),
-                getName());
-
-        /// Integers are converted to Float64.
-        if (Impl::always_returns_float64 || !isFloat(argument))
-            return std::make_shared<DataTypeFloat64>();
-        return argument;
+        /// Float32/Float64 keep their precision unless always_returns_float64; other Number types become Float64.
+        if constexpr (Impl::always_returns_float64)
+            return "(Number) -> Float64";
+        else
+            return "(T : Float) -> T OR (Number) -> Float64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
