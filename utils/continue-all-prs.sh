@@ -27,6 +27,14 @@ fi
 echo "${S}Shard ${SHARD} of ${SHARDS}${R}"
 echo ""
 
+# Cleans up the per-round temp directory.
+cleanup_round_tmp() {
+    if [[ -n "${ROUND_TMP:-}" && -d "$ROUND_TMP" ]]; then
+        rm -rf "$ROUND_TMP"
+    fi
+}
+trap cleanup_round_tmp EXIT
+
 ROUND=0
 while true; do
     ROUND=$((ROUND + 1))
@@ -34,13 +42,117 @@ while true; do
     echo "${S}# Round ${ROUND}${R}"
     echo "${S}##########################################${R}"
     echo ""
-    echo "${S}Fetching open PRs by ${AUTHOR} in ${REPO}...${R}"
 
-    PRS=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" --paginate \
-        --jq "[.[] | select(.user.login == \"${AUTHOR}\")] | sort_by(.updated_at) | .[] | \"\(.number)\t\(.title)\"")
+    cleanup_round_tmp
+    ROUND_TMP=$(mktemp -d)
+
+    FIVE_DAYS_AGO=$(date -u -d "5 days ago" +"%Y-%m-%dT%H:%M:%SZ")
+    ONE_MONTH_AGO=$(date -u -d "1 month ago" +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Fetch open PRs that involve me (authored, assigned, mentioned, commented,
+    # or reviewed by me). This is the universe for all three filters. PRs in
+    # which I only pushed a commit without any comment will not appear here -
+    # an accepted tradeoff that keeps the candidate set ~hundreds instead of
+    # ~thousands.
+    echo "${S}Fetching open PRs in ${REPO} involving ${AUTHOR}...${R}"
+    INVOLVES_FILE="$ROUND_TMP/involves.json"
+    gh search prs --repo "$REPO" --state open --involves "$AUTHOR" --limit 1000 \
+        --json number,title,author,assignees,updatedAt > "$INVOLVES_FILE"
+    INVOLVES_COUNT=$(jq 'length' "$INVOLVES_FILE")
+    echo "${S}Found ${INVOLVES_COUNT} PR(s) involving ${AUTHOR}.${R}"
+
+    # Filter 1: PRs authored by me.
+    AUTHORED_FILE="$ROUND_TMP/authored.json"
+    jq --arg me "$AUTHOR" '[.[] | select(.author.login == $me)]' \
+        "$INVOLVES_FILE" > "$AUTHORED_FILE"
+    AUTHORED_COUNT=$(jq 'length' "$AUTHORED_FILE")
+
+    # Filter 2 candidates: I'm an assignee but not the author. These still
+    # need the 5-day check (latest commit by the PR's original author must
+    # be more than 5 days ago before we touch the PR).
+    ASSIGNED_CAND_FILE="$ROUND_TMP/assigned_candidates.json"
+    jq --arg me "$AUTHOR" \
+        '[.[] | select(.author.login != $me) | select((.assignees // []) | map(.login) | index($me))]' \
+        "$INVOLVES_FILE" > "$ASSIGNED_CAND_FILE"
+    ASSIGNED_CAND_COUNT=$(jq 'length' "$ASSIGNED_CAND_FILE")
+
+    # Filter 3 candidates: not authored by me, not assigned to me. We will
+    # check that I added at least one commit and the latest commit from
+    # anyone else was more than one month ago.
+    TAKEN_OVER_CAND_FILE="$ROUND_TMP/taken_over_candidates.json"
+    jq --arg me "$AUTHOR" \
+        '[.[] | select(.author.login != $me) | select((.assignees // []) | map(.login) | index($me) | not)]' \
+        "$INVOLVES_FILE" > "$TAKEN_OVER_CAND_FILE"
+    TAKEN_OVER_CAND_COUNT=$(jq 'length' "$TAKEN_OVER_CAND_FILE")
+
+    echo "${S}Candidates: ${AUTHORED_COUNT} authored, ${ASSIGNED_CAND_COUNT} assigned (pending 5-day check), ${TAKEN_OVER_CAND_COUNT} potentially taken-over (pending commit check).${R}"
+
+    # Helper: fetch all commits of a PR as a single JSON array on stdout.
+    # Falls back to "[]" on failure.
+    fetch_commits() {
+        local num="$1"
+        gh api "repos/${REPO}/pulls/${num}/commits?per_page=100" --paginate 2>/dev/null \
+            | jq -s 'add // []' || echo "[]"
+    }
+
+    # Resolve assigned candidates via the 5-day check.
+    ASSIGNED_NUMS=()
+    if (( ASSIGNED_CAND_COUNT > 0 )); then
+        echo "${S}Checking last author-commit date for ${ASSIGNED_CAND_COUNT} assigned PR(s)...${R}"
+        while IFS= read -r LINE; do
+            NUM=$(jq -r '.number' <<< "$LINE")
+            PR_AUTHOR=$(jq -r '.author.login' <<< "$LINE")
+            [[ -z "$NUM" || "$NUM" == "null" ]] && continue
+            COMMITS=$(fetch_commits "$NUM")
+            LATEST_AUTHOR_COMMIT=$(jq -r --arg a "$PR_AUTHOR" \
+                '[.[] | select((.author.login // "") == $a) | .commit.committer.date] | (max // "")' \
+                <<< "$COMMITS")
+            if [[ -z "$LATEST_AUTHOR_COMMIT" || "$LATEST_AUTHOR_COMMIT" < "$FIVE_DAYS_AGO" ]]; then
+                ASSIGNED_NUMS+=("$NUM")
+            fi
+        done < <(jq -c '.[]' "$ASSIGNED_CAND_FILE")
+    fi
+
+    # Resolve taken-over candidates: must contain at least one commit by me
+    # and the latest non-me commit must be older than one month.
+    TAKEN_OVER_NUMS=()
+    if (( TAKEN_OVER_CAND_COUNT > 0 )); then
+        echo "${S}Checking commits for ${TAKEN_OVER_CAND_COUNT} taken-over candidate PR(s)...${R}"
+        while IFS= read -r LINE; do
+            NUM=$(jq -r '.number' <<< "$LINE")
+            [[ -z "$NUM" || "$NUM" == "null" ]] && continue
+            COMMITS=$(fetch_commits "$NUM")
+            HAS_MINE=$(jq --arg me "$AUTHOR" 'any(.[]; (.author.login // "") == $me)' <<< "$COMMITS")
+            [[ "$HAS_MINE" != "true" ]] && continue
+            LATEST_OTHER=$(jq -r --arg me "$AUTHOR" \
+                '[.[] | select((.author.login // "") != $me) | .commit.committer.date] | (max // "")' \
+                <<< "$COMMITS")
+            if [[ -n "$LATEST_OTHER" && "$LATEST_OTHER" < "$ONE_MONTH_AGO" ]]; then
+                TAKEN_OVER_NUMS+=("$NUM")
+            fi
+        done < <(jq -c '.[]' "$TAKEN_OVER_CAND_FILE")
+    fi
+
+    # Build the merged list as JSON: authored + selected assigned + selected
+    # taken-over, deduped by number, sorted by updatedAt ascending.
+    SELECTED_NUMS_FILE="$ROUND_TMP/selected_nums.json"
+    {
+        jq -r '.[].number' "$AUTHORED_FILE"
+        printf '%s\n' "${ASSIGNED_NUMS[@]:-}"
+        printf '%s\n' "${TAKEN_OVER_NUMS[@]:-}"
+    } | awk 'NF' | jq -R 'tonumber' | jq -s 'unique' > "$SELECTED_NUMS_FILE"
+
+    MERGED_FILE="$ROUND_TMP/merged.json"
+    jq --slurpfile nums "$SELECTED_NUMS_FILE" \
+        '[.[] | select(.number as $n | $nums[0] | index($n))] | sort_by(.updatedAt)' \
+        "$INVOLVES_FILE" > "$MERGED_FILE"
+
+    PRS=$(jq -r '.[] | "\(.number)\t\(.title)"' "$MERGED_FILE")
+
+    echo "${S}Selected: ${AUTHORED_COUNT} authored, ${#ASSIGNED_NUMS[@]} assigned, ${#TAKEN_OVER_NUMS[@]} taken-over.${R}"
 
     if [[ -z "$PRS" ]]; then
-        echo "${S}No open PRs found. Sleeping 60s before retrying...${R}"
+        echo "${S}No matching open PRs found. Sleeping 60s before retrying...${R}"
         sleep 60
         continue
     fi
