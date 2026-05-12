@@ -998,7 +998,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
     bool use_async_buffer = use_prefetch || use_distributed_cache;
 
-    /// Prefer bigger buffer size when filesystem cache is active
+    /// Prefer bigger buffer size when filesystem cache is active.
+    /// Note: master checked `impl->isCached()` at runtime (after building the buffer)
+    /// to gate this, but the pipeline approach configures buffer sizes before building.
+    /// This means the bigger buffer may be used even when the cache stage is later
+    /// skipped (e.g. missing etag). This is slightly wasteful but not incorrect.
     if (modified_read_settings.filesystem_cache_prefer_bigger_buffer_size && use_filesystem_cache)
         modified_read_settings.remote_fs_buffer_size = std::max<size_t>(
             modified_read_settings.remote_fs_buffer_size,
