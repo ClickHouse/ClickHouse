@@ -29,7 +29,6 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
-#include <Coordination/Utils.h>
 
 #include <limits>
 #include <shared_mutex>
@@ -1804,6 +1803,9 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
     if (parent_node->stats.isEphemeral())
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOCHILDRENFOREPHEMERALS}};
+
+    if (parent_node->ttl.has_value())
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
     std::string path_created = zk_request.path;
     if (zk_request.is_sequential)
@@ -4515,7 +4517,7 @@ uint64_t KeeperStorage<Container>::getNodesCount() const
 template<typename Container>
 std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpiredTTLPaths(int64_t now_ms) const
 {
-    std::vector<std::pair<String, bool>> nodes;
+    std::vector<String> expired_nodes;
     std::unordered_map<String, Int32> versions;
 
     for (const auto & ttl_path : ttl_paths)
@@ -4526,15 +4528,12 @@ std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpi
         const Node & node = node_it->value;
         versions[ttl_path] = node.stats.version;
         if (node.destroy_time.has_value() && now_ms >= *node.destroy_time)
-            nodes.push_back({ttl_path, /* outdated */ true});
-        else
-            nodes.push_back({ttl_path, /* outdated */ false});
+            expired_nodes.push_back(ttl_path);
     }
 
-    auto expired = findOldNodes(nodes);
     std::vector<std::pair<std::string, Int32>> result;
-    result.reserve(expired.size());
-    for (auto & path : expired)
+    result.reserve(expired_nodes.size());
+    for (auto & path : expired_nodes)
         result.emplace_back(std::move(path), versions.at(path));
     return result;
 }
