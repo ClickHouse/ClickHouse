@@ -229,6 +229,48 @@ public:
 };
 
 
+/// Matches if any of the children matches. Children are tried in order; the first match wins.
+/// On a failed branch, variable assignments made by that branch are rolled back before trying the next.
+class OrTypeMatcher : public ITypeMatcher
+{
+private:
+    TypeMatchers children;
+
+public:
+    explicit OrTypeMatcher(TypeMatchers children_) : children(std::move(children_)) {}
+
+    std::string toString() const override
+    {
+        WriteBufferFromOwnString out;
+        writeList(children, [&](const auto & c){ out << c->toString(); }, [&]{ out << " | "; });
+        return out.str();
+    }
+
+    bool match(const DataTypePtr & what, Variables & vars, size_t iteration, size_t arg_num, std::string & out_reason) const override
+    {
+        for (const auto & child : children)
+        {
+            auto saved = vars;
+            std::string reason;
+            if (child->match(what, vars, iteration, arg_num, reason))
+                return true;
+            vars = std::move(saved);
+        }
+        /// Outer ArgumentDescription will format "has type X that is not <our toString>", so leave out_reason empty.
+        out_reason.clear();
+        return false;
+    }
+
+    size_t getIndex() const override
+    {
+        size_t res = 0;
+        for (const auto & child : children)
+            res = getCommonIndex(res, child->getIndex());
+        return res;
+    }
+};
+
+
 /// Use another matcher and assign or check the matched type to the variable.
 class AssignTypeMatcher : public ITypeMatcher
 {
@@ -980,12 +1022,37 @@ bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
     return false;
 }
 
+/// One or more simple matchers separated by `|`. The `|` operator binds tighter than `T :`
+/// so `T : Float | Decimal` reads as `T : (Float | Decimal)`.
+bool parseOrTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
+{
+    if (!parseSimpleTypeMatcher(pos, res))
+        return false;
+
+    TypeMatchers alternatives;
+    while (consumeToken(pos, TokenType::PipeMark))
+    {
+        TypeMatcherPtr next;
+        if (!parseSimpleTypeMatcher(pos, next))
+            return false;
+        if (alternatives.empty())
+            alternatives.emplace_back(res);
+        alternatives.emplace_back(next);
+    }
+
+    if (!alternatives.empty())
+        res = std::make_shared<OrTypeMatcher>(std::move(alternatives));
+    return true;
+}
+
 bool parseTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
 {
     /// Matcher
     /// Matcher(...)
+    /// Matcher | Matcher | ...
     /// T : Matcher
     /// T : Matcher(...)
+    /// T : Matcher | Matcher | ...
 
     auto next_pos = pos;
     ++next_pos;
@@ -996,15 +1063,14 @@ bool parseTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
         if (!parseIdentifier(pos, var_name))
             return false;
 
-        if (!parseSimpleTypeMatcher(next_pos, res))
+        if (!parseOrTypeMatcher(next_pos, res))
             return false;
 
         pos = next_pos;
         res = std::make_shared<AssignTypeMatcher>(res, Key(var_name));
         return true;
     }
-    else
-        return parseSimpleTypeMatcher(pos, res);
+    return parseOrTypeMatcher(pos, res);
 }
 
 bool parseSimpleArgumentDescription(TokenIterator & pos, ArgumentDescription & res)

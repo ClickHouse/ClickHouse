@@ -139,8 +139,28 @@ GTEST_TEST(FunctionSignature, NewMatchers)
     EXPECT_THAT(checkSignature("(NativeNumber) -> UInt8", {makeColumn("UInt128")}), ::testing::StartsWith("FAIL:"));
     EXPECT_EQ(checkSignature("(Decimal) -> Float64", {makeColumn("Decimal(10, 2)")}), "Float64");
     EXPECT_EQ(checkSignature("(UUID) -> String", {makeColumn("UUID")}), "String");
-    EXPECT_EQ(checkSignature("(StringArrayMapIP) -> UInt64", {makeColumn("IPv4")}), "UInt64");
-    EXPECT_EQ(checkSignature("(StringArrayMapIP) -> UInt64", {makeColumn("Map(String, UInt8)")}), "UInt64");
+    EXPECT_EQ(checkSignature("(FixedString) -> UInt64", {makeColumn("FixedString(5)")}), "UInt64");
+    EXPECT_EQ(checkSignature("(Map) -> UInt64", {makeColumn("Map(String, UInt8)")}), "UInt64");
+}
+
+GTEST_TEST(FunctionSignature, OrOperator)
+{
+    /// Inline alternatives within a single argument.
+    String sig = "(NativeNumber | Decimal) -> Float64";
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Int32")}), "Float64");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Decimal(10, 2)")}), "Float64");
+    EXPECT_THAT(checkSignature(sig, {makeColumn("String")}), ::testing::StartsWith("FAIL:"));
+
+    /// Many alternatives.
+    String many = "(String | FixedString | Array | Map | UUID | IPv4 | IPv6) -> UInt64";
+    for (const String & accepted : {"String", "FixedString(7)", "Array(UInt8)", "Map(String, UInt8)", "UUID", "IPv4", "IPv6"})
+        EXPECT_EQ(checkSignature(many, {makeColumn(accepted)}), "UInt64") << "input: " << accepted;
+    EXPECT_THAT(checkSignature(many, {makeColumn("UInt8")}), ::testing::StartsWith("FAIL:"));
+
+    /// `|` binds tighter than `:` so this captures T as the original (Float32 or Float64) input.
+    String captured = "(T : Float | Decimal) -> T";
+    EXPECT_EQ(checkSignature(captured, {makeColumn("Float32")}), "Float32");
+    EXPECT_EQ(checkSignature(captured, {makeColumn("Decimal(5, 2)")}), "Decimal(5, 2)");
 }
 
 GTEST_TEST(FunctionSignature, MaybeNullableUnwrap)

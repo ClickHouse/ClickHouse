@@ -49,7 +49,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(StringArrayMapIP) -> " + DataTypeNumber<ResultType>{}.getName();
+        return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6) -> " + DataTypeNumber<ResultType>{}.getName();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

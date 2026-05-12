@@ -142,14 +142,6 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
-class TypeMatcherNativeNumberOrDecimal : public ITypeMatcher
-{
-public:
-    std::string toString() const override { return "NativeNumberOrDecimal"; }
-    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isNativeNumber(type) || isDecimal(type); }
-    size_t getIndex() const override { return 0; }
-};
-
 class TypeMatcherDecimal : public ITypeMatcher
 {
 public:
@@ -182,17 +174,27 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
-/// String, FixedString, Array, Map, UUID, IPv4 or IPv6 — anything for which a byte/element length is well-defined.
-class TypeMatcherStringArrayMapIP : public ITypeMatcher
+class TypeMatcherMap : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "StringArrayMapIP"; }
-    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override
-    {
-        WhichDataType which(type);
-        return isStringOrFixedString(type) || isArray(type) || isMap(type)
-            || which.isUUID() || which.isIPv4() || which.isIPv6();
-    }
+    std::string toString() const override { return "Map"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isMap(type); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherString : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "String"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isString(type); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherFixedString : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "FixedString"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isFixedString(type); }
     size_t getIndex() const override { return 0; }
 };
 
@@ -355,12 +357,13 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherAny>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherFloat>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherNativeNumber>(factory);
-    registerTypeMatcherWithNoArguments<TypeMatcherNativeNumberOrDecimal>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDecimal>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherUUID>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherIPv4>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherIPv6>(factory);
-    registerTypeMatcherWithNoArguments<TypeMatcherStringArrayMapIP>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherString>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherFixedString>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherMap>(factory);
 
     factory.registerElement("Array", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherArray>(children); });
     factory.registerElement("Tuple", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherTuple>(children); });
