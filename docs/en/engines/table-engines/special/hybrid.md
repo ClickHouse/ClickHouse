@@ -20,7 +20,7 @@ Typical use cases include:
 - Tiered storage, for example fresh data on a local cluster and historical data in S3.
 - Gradual roll-outs where only a subset of rows should be served from a new backend.
 
-By giving mutually exclusive predicates to the segments (for example, `date < watermark` and `date >= watermark`), you ensure that each row is read from exactly one source.
+By giving mutually exclusive predicates to the segments (for example, `date < watermark` and `date >= watermark`), you ensure that each row is read from exactly one source. To move the boundary at runtime without recreating the table, use [`hybridParam()`](#dynamic-watermarks-with-hybridparam) placeholders in predicates.
 
 ## Enable the engine
 
@@ -57,6 +57,57 @@ You must pass at least two arguments – the first table function and its predic
 - The query planner picks the same processing stage for every segment as it does for the base `Distributed` plan, so remote aggregation, ORDER BY pushdown, `skip_unused_shards`, and the legacy/analyzer execution modes behave the same way.
 - `INSERT` statements are forwarded to the first table function only. If you need multi-destination writes, use explicit `INSERT` statements into the respective sources.
 - Align schemas across the segments. ClickHouse builds a common header and rejects creation if any segment misses a column defined in the Hybrid schema. If the physical types differ you may need to add casts on one side or in the query, just as you would when reading from heterogeneous replicas.
+
+## Dynamic watermarks with `hybridParam()`
+
+Hard-coded date literals in predicates work, but changing the boundary requires recreating the table. `hybridParam()` lets you embed a named, typed placeholder in any predicate and manage its value through ordinary engine `SETTINGS`:
+
+```sql
+CREATE TABLE tiered
+ENGINE = Hybrid(
+    remote('localhost:9000', currentDatabase(), 'local_hot'),
+        ts > hybridParam('hybrid_watermark_hot', 'DateTime'),
+    remote('localhost:9000', currentDatabase(), 'local_cold'),
+        ts <= hybridParam('hybrid_watermark_hot', 'DateTime')
+)
+SETTINGS hybrid_watermark_hot = '2025-09-01'
+AS local_hot;
+```
+
+`hybridParam(name, type)` takes exactly two string-literal arguments:
+
+| Argument | Description |
+|----------|-------------|
+| `name` | Must start with `hybrid_watermark_`. This is the setting name used in `SETTINGS` and `ALTER`. |
+| `type` | A ClickHouse type name (`DateTime`, `Date`, `UInt64`, etc.). The engine validates and deserializes the setting value through this type at CREATE and ALTER time. |
+
+Every `hybridParam()` used in predicates must have a corresponding value in the `SETTINGS` clause. The engine rejects the `CREATE` if any declared watermark name is missing from `SETTINGS`, or if the value cannot be parsed as the declared type.
+
+The same watermark name can appear in multiple predicates (e.g. in both the hot and cold segments). All occurrences must declare the same type.
+
+### Moving the boundary at runtime
+
+Use `ALTER TABLE ... MODIFY SETTING` to change a watermark without recreating the table:
+
+```sql
+ALTER TABLE tiered MODIFY SETTING hybrid_watermark_hot = '2025-10-01';
+```
+
+The new value takes effect for all subsequent queries immediately. The update is persisted in table metadata and survives `DETACH`/`ATTACH` and server restarts.
+
+Multiple watermarks can be updated in a single statement:
+
+```sql
+ALTER TABLE tiered MODIFY SETTING
+    hybrid_watermark_hot  = '2025-11-01',
+    hybrid_watermark_cold = '2025-08-01';
+```
+
+### Restrictions
+
+- Only `hybrid_watermark_*` settings are accepted on Hybrid tables. Regular `DistributedSettings` (e.g. `bytes_to_delay_insert`) are rejected.
+- `ALTER TABLE ... RESET SETTING` is not supported on Hybrid tables. Use `MODIFY SETTING` to change a watermark value.
+- Watermark names in `SETTINGS` and `ALTER` must exactly match a `hybridParam()` declared in the predicates. Typos are rejected.
 
 ## Example: local cluster plus S3 historical tier
 

@@ -4,10 +4,12 @@
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Columns/IColumn.h>
+#include <Common/MultiVersion.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
+#include <map>
 #include <pcg_random.hpp>
 
 namespace DB
@@ -169,6 +171,15 @@ public:
     void setHybridLayout(std::vector<HybridSegment> segments_);
     void setCachedColumnsToCast(ColumnsDescription columns);
 
+    using WatermarkParams = std::map<String, String>;
+
+    static constexpr std::string_view HYBRID_WATERMARK_PREFIX = "hybrid_watermark_";
+
+    MultiVersion<WatermarkParams>::Version getHybridWatermarkParams() const
+    { return hybrid_watermark_params.get(); }
+
+    void loadHybridWatermarkParams(SettingsChanges & changes);
+
     /// Getter methods for ClusterProxy::executeQuery
     StorageID getRemoteStorageID() const { return remote_storage; }
     ColumnsDescription getColumnsToCast() const;
@@ -311,6 +322,8 @@ private:
     pcg64 rng;
 
     bool is_remote_function;
+
+    MultiVersion<WatermarkParams> hybrid_watermark_params;
 
     /// Additional filter expression for Hybrid engine
     ASTPtr base_segment_predicate;

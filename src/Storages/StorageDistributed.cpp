@@ -27,6 +27,7 @@
 
 #include <Columns/ColumnConst.h>
 
+#include <Common/FieldVisitorToString.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -41,6 +42,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -109,6 +111,8 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
+#include <Formats/FormatSettings.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -1176,6 +1180,43 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
 }
 
+std::optional<std::pair<String, String>> tryGetParamTypeAndName(const ASTPtr & node)
+{
+    if (auto * func = node->as<ASTFunction>(); func && func->name == "hybridParam")
+    {
+        auto * arg_list = func->arguments ? func->arguments->as<ASTExpressionList>() : nullptr;
+        if (!arg_list || arg_list->children.size() != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "hybridParam() requires exactly 2 arguments: (name, type)");
+
+        auto * name_lit = arg_list->children[0]->as<ASTLiteral>();
+        auto * type_lit = arg_list->children[1]->as<ASTLiteral>();
+        if (!name_lit || name_lit->value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "hybridParam() first argument (name) must be a string literal");
+        if (!type_lit || type_lit->value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "hybridParam() second argument (type) must be a string literal");
+
+        const auto & param_name = name_lit->value.safeGet<String>();
+        const auto & type_name = type_lit->value.safeGet<String>();
+        return {{param_name, type_name}};
+    }
+    return std::nullopt;
+}
+
+template <typename ASTPtrType, typename Visitor>
+void visitHybridParams(ASTPtrType & node, Visitor & visitor)
+{
+    if (!node)
+        return;
+
+    if (auto param_type_and_name = tryGetParamTypeAndName(node); param_type_and_name.has_value())
+    {
+        visitor(node, *param_type_and_name);
+        return;
+    }
+
+    for (auto & child : node->children)
+        visitHybridParams(child, visitor);
+}
 }
 
 void StorageDistributed::read(
@@ -1228,6 +1269,39 @@ void StorageDistributed::read(
         LOG_TRACE(log, "rewriteSelectQuery (target: {}) -> {}", target, ast->formatForLogging());
     };
 
+    auto watermark_snapshot = hybrid_watermark_params.get();
+
+    auto substitute_watermarks = [&](ASTPtr predicate_ast) -> ASTPtr
+    {
+        if (!predicate_ast)
+            return predicate_ast;
+        predicate_ast = predicate_ast->clone();
+
+        auto replace_hybrid_params = [&](ASTPtr & node, const std::pair<String, String> & param_type_and_name)
+        {
+            const auto & [param_name, type_name] = param_type_and_name;
+
+            if (!watermark_snapshot)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Hybrid watermark '{}' has no value; use ALTER TABLE ... MODIFY SETTING {} = '...' to set it",
+                    param_name, param_name);
+
+            auto it = watermark_snapshot->find(param_name);
+            if (it == watermark_snapshot->end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Hybrid watermark '{}' has no value; use ALTER TABLE ... MODIFY SETTING {} = '...' to set it",
+                    param_name, param_name);
+
+            auto data_type = DataTypeFactory::instance().get(type_name);
+            auto col = data_type->createColumn();
+            ReadBufferFromString buf(it->second);
+            data_type->getDefaultSerialization()->deserializeWholeText(*col, buf, FormatSettings{});
+            node = make_intrusive<ASTLiteral>((*col)[0]);
+        };
+        visitHybridParams(predicate_ast, replace_hybrid_params);
+        return predicate_ast;
+    };
+
     if (settings[Setting::allow_experimental_analyzer])
     {
         StorageID remote_storage_id = StorageID::createEmpty();
@@ -1238,7 +1312,7 @@ void StorageDistributed::read(
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr,
-            base_segment_predicate);
+            substitute_watermarks(base_segment_predicate));
         Block block = *InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
@@ -1271,7 +1345,7 @@ void StorageDistributed::read(
                     query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
                     segment.storage_id ? *segment.storage_id : StorageID::createEmpty(),
                     segment.storage_id ? nullptr :  segment.table_function_ast,
-                    segment.predicate_ast);
+                    substitute_watermarks(segment.predicate_ast));
 
                 additional_query_info.query = queryNodeToDistributedSelectQuery(additional_query_tree);
                 additional_query_info.query_tree = std::move(additional_query_tree);
@@ -1292,7 +1366,7 @@ void StorageDistributed::read(
         modified_query_info.query = ClusterProxy::rewriteSelectQuery(
             local_context, modified_query_info.query,
             remote_database, remote_table, remote_table_function_ptr,
-            base_segment_predicate);
+            substitute_watermarks(base_segment_predicate));
         log_rewritten_query(base_target, modified_query_info.query);
 
         if (!segments.empty())
@@ -1301,20 +1375,21 @@ void StorageDistributed::read(
             {
                 SelectQueryInfo additional_query_info = query_info;
 
+                ASTPtr resolved_predicate = substitute_watermarks(segment.predicate_ast);
                 if (segment.storage_id)
                 {
                     additional_query_info.query = ClusterProxy::rewriteSelectQuery(
                         local_context, additional_query_info.query,
                         segment.storage_id->database_name, segment.storage_id->table_name,
                         nullptr,
-                        segment.predicate_ast);
+                        resolved_predicate);
                 }
                 else
                 {
                     additional_query_info.query = ClusterProxy::rewriteSelectQuery(
                         local_context, additional_query_info.query,
                         "", "", segment.table_function_ast,
-                        segment.predicate_ast);
+                        resolved_predicate);
                 }
 
                 log_rewritten_query(describe_segment_target(segment), additional_query_info.query);
@@ -1726,11 +1801,78 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 }
 
 
+/// Extract declared hybridParam types from all Hybrid predicate ASTs.
+static std::unordered_map<String, String> collectHybridParamTypes(
+    const ASTPtr & base_predicate, const std::vector<StorageDistributed::HybridSegment> & segs)
+{
+    std::unordered_map<String, String> result;
+    auto collect_hybrid_param = [&](const ASTPtr &, const std::pair<String, String> & param_type_and_name)
+    {
+        result.emplace(param_type_and_name);
+    };
+    visitHybridParams(base_predicate, collect_hybrid_param);
+    for (const auto & seg : segs)
+        visitHybridParams(seg.predicate_ast, collect_hybrid_param);
+    return result;
+}
+
 void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     std::optional<NameDependencies> name_deps{};
     for (const auto & command : commands)
     {
+        if (command.type == AlterCommand::Type::MODIFY_SETTING)
+        {
+            if (getName() != "Hybrid")
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Alter of type '{}' is not supported by storage {}", command.type, getName());
+
+            auto declared_types = collectHybridParamTypes(base_segment_predicate, segments);
+
+            for (const auto & change : command.settings_changes)
+            {
+                if (!change.name.starts_with(HYBRID_WATERMARK_PREFIX))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "ALTER MODIFY SETTING on Hybrid tables currently only supports "
+                        "'hybrid_watermark_*' settings, got '{}'", change.name);
+
+                auto type_it = declared_types.find(change.name);
+                if (type_it == declared_types.end())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "ALTER MODIFY SETTING name '{}' does not match any declared hybridParam(); "
+                        "check for typos in the watermark name",
+                        change.name);
+
+                const auto & type_name = type_it->second;
+                auto value_str = convertFieldToString(change.value);
+                auto data_type = DataTypeFactory::instance().get(type_name);
+                try
+                {
+                    auto col = data_type->createColumn();
+                    ReadBufferFromString buf(value_str);
+                    data_type->getDefaultSerialization()->deserializeWholeText(*col, buf, FormatSettings{});
+                }
+                catch (const Exception & e)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "ALTER MODIFY SETTING value for '{}' is not valid for declared type '{}': {}",
+                        change.name, type_name, e.message());
+                }
+            }
+            continue;
+        }
+
+        if (command.type == AlterCommand::Type::RESET_SETTING)
+        {
+            if (getName() == "Hybrid")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ALTER RESET SETTING is not supported on Hybrid tables "
+                    "(use MODIFY SETTING to change the watermark value instead)");
+
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Alter of type '{}' is not supported by storage {}", command.type, getName());
+        }
+
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
             && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN
             && command.type != AlterCommand::Type::RENAME_COLUMN && command.type != AlterCommand::Type::COMMENT_TABLE)
@@ -1738,7 +1880,7 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
 
-        if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
+        if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
             if (!name_deps)
                 name_deps = getDependentViewsByColumn(local_context);
@@ -1766,8 +1908,37 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+
+    DatabaseCatalog::instance()
+        .getDatabase(table_id.database_name)
+        ->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+
+    /// Publish Hybrid watermark snapshot before metadata so concurrent
+    /// readers never observe new metadata with stale watermark values.
+    if (getName() == "Hybrid" && new_metadata.settings_changes)
+    {
+        SettingsChanges changes_copy =
+            new_metadata.settings_changes->as<ASTSetQuery &>().changes;
+        loadHybridWatermarkParams(changes_copy);
+    }
+
     setInMemoryMetadata(new_metadata);
+}
+
+void StorageDistributed::loadHybridWatermarkParams(SettingsChanges & changes)
+{
+    auto new_params = std::make_unique<WatermarkParams>();
+    SettingsChanges remaining;
+    remaining.reserve(changes.size());
+    for (auto & change : changes)
+    {
+        if (change.name.starts_with(HYBRID_WATERMARK_PREFIX))
+            (*new_params)[change.name] = convertFieldToString(change.value);
+        else
+            remaining.push_back(std::move(change));
+    }
+    changes = std::move(remaining);
+    hybrid_watermark_params.set(std::move(new_params));
 }
 
 void StorageDistributed::initializeFromDisk()
@@ -2842,12 +3013,65 @@ void registerStorageHybrid(StorageFactory & factory)
                             "TableFunctionRemote did not return a StorageDistributed or StorageProxy, got: {}", actual_type);
         }
 
+        /// Declared types per watermark name — enforces a single type contract.
+        std::unordered_map<String, String> hybridparam_declared_types;
+        /// Effective watermark values from SETTINGS, keyed by name.
+        std::unordered_map<String, String> effective_watermark_values;
+
+        /// First pass: collect declared hybridParam() names and types from a predicate AST.
+        auto collect_hybrid_params = [&](const ASTPtr & node)
+        {
+            auto collect_hybrid_param = [&](const ASTPtr &, const std::pair<String, String> & param_type_and_name)
+            {
+                const auto & [param_name, type_name] = param_type_and_name;
+
+                if (!param_name.starts_with(StorageDistributed::HYBRID_WATERMARK_PREFIX))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "hybridParam() name '{}' must start with '{}'; "
+                        "only watermark parameters are supported",
+                        param_name, String(StorageDistributed::HYBRID_WATERMARK_PREFIX));
+
+                auto [it, inserted] = hybridparam_declared_types.emplace(param_name, type_name);
+                if (!inserted && it->second != type_name)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "hybridParam() type conflict for '{}': "
+                        "'{}' vs '{}'; all occurrences must declare the same type",
+                        param_name, it->second, type_name);
+            };
+            visitHybridParams(node, collect_hybrid_param);
+        };
+
+        /// Second pass: substitute hybridParam() with effective values and run ExpressionAnalyzer.
         auto validate_predicate = [&](ASTPtr & predicate, size_t argument_index)
         {
+            ASTPtr predicate_for_validation = predicate->clone();
+
+            auto substitute_param = [&](ASTPtr & node, const std::pair<String, String> & param_type_and_name)
+            {
+                const auto & [param_name, type_name] = param_type_and_name;
+
+                auto data_type = DataTypeFactory::instance().get(type_name);
+                auto val_it = effective_watermark_values.find(param_name);
+                if (val_it != effective_watermark_values.end())
+                {
+                    auto col = data_type->createColumn();
+                    ReadBufferFromString buf(val_it->second);
+                    data_type->getDefaultSerialization()->deserializeWholeText(*col, buf, FormatSettings{});
+                    node = make_intrusive<ASTLiteral>((*col)[0]);
+                }
+                else
+                {
+                    auto col = data_type->createColumn();
+                    col->insertDefault();
+                    node = make_intrusive<ASTLiteral>((*col)[0]);
+                }
+            };
+            visitHybridParams(predicate_for_validation, substitute_param);
+
             try
             {
-                auto syntax_result = TreeRewriter(local_context).analyze(predicate, physical_columns);
-                ExpressionAnalyzer(predicate, syntax_result, local_context).getActions(true);
+                auto syntax_result = TreeRewriter(local_context).analyze(predicate_for_validation, physical_columns);
+                ExpressionAnalyzer(predicate_for_validation, syntax_result, local_context).getActions(true);
             }
             catch (const Exception & e)
             {
@@ -2857,7 +3081,7 @@ void registerStorageHybrid(StorageFactory & factory)
         };
 
         ASTPtr second_arg = engine_args[1];
-        validate_predicate(second_arg, 1);
+        collect_hybrid_params(second_arg);
         distributed_storage->setBaseSegmentPredicate(second_arg);
 
         // Parse additional table function pairs (if any)
@@ -2871,7 +3095,7 @@ void registerStorageHybrid(StorageFactory & factory)
             ASTPtr table_function_ast = engine_args[i];
             ASTPtr predicate_ast = engine_args[i + 1];
 
-            validate_predicate(predicate_ast, i + 1);
+            collect_hybrid_params(predicate_ast);
 
             // Validate table function or table identifier
             if (const auto * func = table_function_ast->as<ASTFunction>())
@@ -3002,13 +3226,94 @@ void registerStorageHybrid(StorageFactory & factory)
             distributed_storage->setCachedColumnsToCast(ColumnsDescription(cast_cols));
         }
 
+        /// Validate SETTINGS and build effective watermark values map.
+        if (args.storage_def->settings)
+        {
+            for (const auto & change :
+                 args.storage_def->settings->as<ASTSetQuery &>().changes)
+            {
+                if (!change.name.starts_with(StorageDistributed::HYBRID_WATERMARK_PREFIX))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Hybrid tables only support 'hybrid_watermark_*' engine settings, "
+                        "got '{}'", change.name);
+
+                auto type_it = hybridparam_declared_types.find(change.name);
+                if (type_it == hybridparam_declared_types.end())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Hybrid SETTINGS name '{}' does not match any declared hybridParam(); "
+                        "check for typos in the watermark name",
+                        change.name);
+
+                const auto & type_name = type_it->second;
+                auto value_str = convertFieldToString(change.value);
+                auto data_type = DataTypeFactory::instance().get(type_name);
+                try
+                {
+                    auto col = data_type->createColumn();
+                    ReadBufferFromString buf(value_str);
+                    data_type->getDefaultSerialization()->deserializeWholeText(*col, buf, FormatSettings{});
+                }
+                catch (const Exception & e)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "SETTINGS value for '{}' is not valid for declared type '{}': {}",
+                        change.name, type_name, e.message());
+                }
+
+                effective_watermark_values[change.name] = value_str;
+            }
+        }
+
+        /// Every declared hybridParam() must have a value in SETTINGS.
+        for (const auto & [name, type_name] : hybridparam_declared_types)
+        {
+            if (!effective_watermark_values.contains(name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "hybridParam('{}', '{}') has no value; "
+                    "add SETTINGS {} = '...' to the CREATE TABLE statement",
+                    name, type_name, name);
+        }
+
+        /// Now validate all predicates with effective SETTINGS values substituted.
+        validate_predicate(second_arg, 1);
+        for (size_t i = 2; i < engine_args.size(); i += 2)
+            validate_predicate(engine_args[i + 1], i + 1);
+
+        /// Build watermark changes from effective values and load into runtime.
+        SettingsChanges watermark_changes;
+        for (const auto & [name, value] : effective_watermark_values)
+            watermark_changes.push_back({name, value});
+        distributed_storage->loadHybridWatermarkParams(watermark_changes);
+
+        /// Rebuild the SETTINGS AST from the runtime watermark snapshot so metadata is authoritative.
+        auto settings_ast = make_intrusive<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        auto snapshot = distributed_storage->getHybridWatermarkParams();
+        if (snapshot)
+            for (const auto & [name, value] : *snapshot)
+                settings_ast->changes.push_back({name, value});
+
+        if (!settings_ast->changes.empty())
+        {
+            ASTPtr settings_ptr = settings_ast;
+            args.storage_def->set(args.storage_def->settings, settings_ptr);
+
+            StorageInMemoryMetadata metadata = distributed_storage->getInMemoryMetadata();
+            metadata.setSettingsChanges(args.storage_def->settings->clone());
+            distributed_storage->setInMemoryMetadata(metadata);
+        }
+
         return distributed_storage;
     },
     {
-        .supports_settings = false,
+        .supports_settings = true,
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::REMOTE,
+        .has_builtin_setting_fn = [](std::string_view name) -> bool
+        {
+            return name.starts_with(StorageDistributed::HYBRID_WATERMARK_PREFIX);
+        },
     });
 }
 
