@@ -1467,15 +1467,17 @@ public:
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
     bool useDefaultImplementationForVariant() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        /// backward-compatible
-        if constexpr (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring)
-        {
-            return std::make_shared<DataTypeFixedString>(sizeof(UInt128));
-        }
-        else
-            return std::make_shared<DataTypeNumber<ToType>>();
+        /// backward-compatible: UInt128 hashes serialize to FixedString(16) unless the trait
+        /// opts into returning UInt128 directly. Functions in this family are variadic;
+        /// individual implementations may reject zero arguments at execute time.
+        const String ret = (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring)
+            ? "FixedString(16)"
+            : DataTypeNumber<ToType>{}.getName();
+        return
+            "() -> " + ret
+            + " OR (Any, ...) -> " + ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
