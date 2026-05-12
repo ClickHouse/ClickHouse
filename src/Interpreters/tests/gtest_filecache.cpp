@@ -1549,85 +1549,97 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
 {
     /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/104307
     ///
-    /// `freeSpaceRatioKeepingThreadFunc` calls `SLRUFileCachePriority::collectEvictionInfo`
-    /// with `is_total_space_cleanup=true`. With `keep_free_space_elements_ratio = 1.0`
-    /// (or any value high enough that the desired element count is below the current count)
-    /// the function used to chassert that we are evicting at least one element/byte from the
-    /// probationary queue. This is wrong when entries have all been promoted to the protected
-    /// queue and the probationary queue is empty: the function must still be able to evict
-    /// from the protected queue. Without the fix, the chassert aborts the server in
-    /// debug/sanitizer builds.
+    /// `SLRUFileCachePriority::collectEvictionInfo` is invoked from
+    /// `FileCache::freeSpaceRatioKeepingThreadFunc` (driven by the
+    /// `keep_free_space_size(elements)_ratio` features) with `is_total_space_cleanup=true`.
+    /// With a high enough free-space target the function used to `chassert` that we
+    /// evict at least one element/byte from the probationary queue. This is wrong when
+    /// entries have all been promoted to the protected queue and the probationary queue
+    /// is empty: the function must still be able to evict from the protected queue.
+    /// Without the fix, the assertion aborts the server in debug/sanitizer builds and
+    /// throws a `LOGICAL_ERROR` in release.
+    ///
+    /// We exercise `SLRUFileCachePriority::collectEvictionInfo` directly rather than
+    /// going through `FileCache::freeSpaceRatioKeepingThreadFunc` to avoid the timing
+    /// race with the asynchronous background eviction task that `FileCache` schedules
+    /// when `keep_free_space_*_ratio` is set: that task evicts entries between the
+    /// populate and assert steps, especially on slow builds (e.g. coverage), which
+    /// makes the higher-level test inherently flaky. The unit-level test below
+    /// reproduces the exact bug condition deterministically and on every build flavor.
+
     ServerUUID::setRandomForUnitTests();
-    DB::ThreadStatus thread_status;
 
-    ReadSettings read_settings;
-    read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    /// Match the parameters of the original repro: 30 bytes / 6 elements with
+    /// slru_size_ratio = 0.5 yields protected = 15 bytes / 3 elements and probationary
+    /// = 15 bytes / 3 elements.
+    const size_t max_size = 30;
+    const size_t max_elements = 6;
+    const double slru_size_ratio = 0.5;
+    SLRUFileCachePriority priority(max_size, max_elements, slru_size_ratio, "test_104307");
 
-    auto write_file = [](const std::string & filename, const std::string & s)
+    const std::string cache_path = caches_dir / "test_slru_104307";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path,
+                                 /* background_download_queue_size_limit */0,
+                                 /* background_download_threads */0,
+                                 /* write_cache_per_user_directory */false);
+
+    const auto key = DB::FileCacheKey::fromPath("104307_protected_only_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    /// Add 3 entries of 5 bytes each (15 bytes total) directly to the protected queue,
+    /// leaving probationary empty. This is the precondition that used to trigger the
+    /// chassert in `collectEvictionInfo`.
     {
-        std::string file_path = fs::current_path() / filename;
-        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
-        wb->write(s.data(), s.size());
-        wb->next();
-        wb->finalize();
-        return file_path;
-    };
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        priority.addForRestore(key_metadata, /* offset */0, /* size */5,
+                               IFileCachePriority::QueueEntryType::SLRU_Protected,
+                               write_lock, &state_lock);
+        priority.addForRestore(key_metadata, /* offset */5, /* size */5,
+                               IFileCachePriority::QueueEntryType::SLRU_Protected,
+                               write_lock, &state_lock);
+        priority.addForRestore(key_metadata, /* offset */10, /* size */5,
+                               IFileCachePriority::QueueEntryType::SLRU_Protected,
+                               write_lock, &state_lock);
+    }
 
-    /// Create SLRU cache: max_size=30, max_elements=6, ratio=0.5 -- protected = 15/3, probationary = 15/3.
-    /// Crucially, set `keep_free_space_elements_ratio = 1.0` so the background-keeping thread
-    /// targets `desired_elements_num = 0` and tries to evict every element from total cache.
-    DB::FileCacheSettings settings;
-    settings[FileCacheSetting::path] = cache_base_path2;
-    settings[FileCacheSetting::max_file_segment_size] = 5;
-    settings[FileCacheSetting::max_size] = 30;
-    settings[FileCacheSetting::max_elements] = 6;
-    settings[FileCacheSetting::boundary_alignment] = 1;
-    settings[FileCacheSetting::slru_size_ratio] = 0.5;
-    settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
-    settings[FileCacheSetting::keep_free_space_elements_ratio] = 1.0;
+    /// Verify the precondition: 3 entries / 15 bytes total, all in protected,
+    /// probationary empty. The total counters alone would still pass if entries
+    /// leaked into probationary, so we also assert per-queue contents explicitly --
+    /// the empty-probationary assertion is what proves the regression precondition.
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getSize(state_guard.lock()), 15);
+    ASSERT_EQ(priority.getProtectedElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getProtectedSize(state_guard.lock()), 15);
+    ASSERT_EQ(priority.getProbationaryElementsCount(state_guard.lock()), 0);
+    ASSERT_EQ(priority.getProbationarySize(state_guard.lock()), 0);
 
-    auto cache = std::make_shared<DB::FileCache>("slru_free_space_104307", settings);
-    cache->initialize();
+    /// Call `collectEvictionInfo` with `is_total_space_cleanup=true` and a request
+    /// covering everything currently in the cache. This is what the background thread
+    /// invokes when `desired_size`/`desired_elements_num` is below the current usage
+    /// (i.e. `keep_free_space_size(elements)_ratio` is set high enough to drain the cache).
+    ///
+    /// Without the fix, this aborts via the chassert in debug/sanitizer builds.
+    /// With the fix, the function routes the full request to the protected queue
+    /// (since probationary is empty) and returns a valid eviction info.
+    EvictionInfoPtr eviction_info;
+    ASSERT_NO_THROW({
+        eviction_info = priority.collectEvictionInfo(
+            /* size */15,
+            /* elements */3,
+            /* reservee */nullptr,
+            /* is_total_space_cleanup */true,
+            origin,
+            state_guard.lock());
+    });
 
-    const auto & user = FileCache::getCommonOrigin();
-
-    auto read_and_check = [&](const std::string & file, const FileCacheKey & key, const std::string & expect_result)
-    {
-        auto read_buffer_creator = [&]()
-        {
-            return createReadBufferFromFileBase(file, read_settings, std::nullopt, std::nullopt);
-        };
-        auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-            file, key, cache, user, read_buffer_creator, read_settings,
-            "test", expect_result.size(), false, false, std::nullopt, nullptr);
-        WriteBufferFromOwnString result;
-        copyData(*cached_buffer, result);
-        ASSERT_EQ(result.str(), expect_result);
-    };
-
-    /// Read file1 twice -> 15 bytes / 3 segments in protected, probationary stays empty.
-    /// This is the exact precondition that used to trigger the chassert.
-    std::string data1(15, '*');
-    auto file1 = write_file("test_free_space_104307", data1);
-    auto key1 = DB::FileCacheKey::fromPath(file1);
-    read_and_check(file1, key1, data1);
-    read_and_check(file1, key1, data1);
-
-    assertProbationary(cache->dumpQueue(), Ranges{});
-    assertProtected(cache->dumpQueue(), { Range(0, 4), Range(5, 9), Range(10, 14) });
-
-    /// Without the fix, this call (or the background scheduling that immediately follows
-    /// `cache->initialize()` with the same precondition) aborts via
-    /// `chassert(evict_size_from_probationary || evict_elements_from_probationary)`.
-    /// With the fix, the function evicts from the protected queue and returns cleanly.
-    ASSERT_NO_THROW(cache->freeSpaceRatioKeepingThreadFunc());
-
-    /// And the eviction thread should make progress -- with `keep_free_space_elements_ratio = 1.0`
-    /// and a `keep_free_space_remove_batch` of 10 by default, all 3 protected entries fit in one batch.
-    ASSERT_EQ(cache->getFileSegmentsNum(), 0);
-    ASSERT_EQ(cache->getUsedCacheSize(), 0);
+    ASSERT_NE(eviction_info, nullptr);
+    ASSERT_TRUE(eviction_info->requiresEviction());
 }
 
 TEST_F(FileCacheTest, FileCacheGetOrSet)
