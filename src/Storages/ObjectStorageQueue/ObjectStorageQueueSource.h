@@ -184,7 +184,8 @@ public:
         const StorageID & storage_id_,
         LoggerPtr log_,
         bool commit_once_processed_,
-        bool add_deduplication_info_);
+        bool add_deduplication_info_,
+        bool is_deduplication_v2_);
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
@@ -258,6 +259,8 @@ private:
     const StorageID storage_id;
     const bool commit_once_processed;
     const bool add_deduplication_info;
+    /// Effective dedup: gates whether shutdown can abort mid-file.
+    const bool is_deduplication_v2;
     const InsertDeduplicationVersions insert_deduplication_version;
     time_t transaction_start_time;
 

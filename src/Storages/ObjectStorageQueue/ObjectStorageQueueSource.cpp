@@ -951,7 +951,8 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const StorageID & storage_id_,
     LoggerPtr log_,
     bool commit_once_processed_,
-    bool add_deduplication_info_)
+    bool add_deduplication_info_,
+    bool is_deduplication_v2_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
@@ -974,6 +975,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , storage_id(storage_id_)
     , commit_once_processed(commit_once_processed_)
     , add_deduplication_info(add_deduplication_info_)
+    , is_deduplication_v2(is_deduplication_v2_)
     , insert_deduplication_version(context_->getServerSettings()[ServerSetting::insert_deduplication_version].value)
     , log(log_)
 {
@@ -1067,20 +1069,23 @@ Chunk ObjectStorageQueueSource::generateImpl()
             }
 
             auto started_file = processed_files.back().metadata;
-            /// Something must have been already read.
-            chassert(started_file->getFileStatus()->processed_rows > 0);
-            /// Mark file as Cancelled, such files will not be set as Failed.
-            processed_files.back().state = FileState::Cancelled;
-            /// Throw to abort reading more rows from this file rather than blocking shutdown
-            /// for the rest of the file. Rows already returned by previous generateImpl() calls
-            /// may have been inserted into the destination table; the file is marked Cancelled
-            /// (not Processed) and will be retried on next start, which can produce duplicates
-            /// for those rows.
-            throw Exception(
-                ErrorCodes::QUERY_WAS_CANCELLED,
-                "{} (having unfinished file: {})",
-                table_is_being_dropped ? "Table is being dropped" : "Shutdown was called",
-                started_file->getPath());
+            /// Aborting re-reads the file from offset 0 on next start, duplicating
+            /// any rows already inserted. Only safe when dedup will drop those rows,
+            /// or when the table is being dropped (no retry).
+            if (table_is_being_dropped || is_deduplication_v2)
+            {
+                chassert(started_file->getFileStatus()->processed_rows > 0);
+                processed_files.back().state = FileState::Cancelled;
+                throw Exception(
+                    ErrorCodes::QUERY_WAS_CANCELLED,
+                    "{} (having unfinished file: {})",
+                    table_is_being_dropped ? "Table is being dropped" : "Shutdown was called",
+                    started_file->getPath());
+            }
+
+            LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
+                     "Will process the file fully and then shutdown (dedup off).",
+                     started_file->getPath(), started_file->getFileStatus()->processed_rows.load());
         }
 
         FileMetadataPtr file_metadata;
