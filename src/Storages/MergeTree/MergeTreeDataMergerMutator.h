@@ -134,6 +134,18 @@ private:
     PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
+
+    /// Stores the next allowed periodic cleanup merge time for each partition.
+    /// Used when `replacing_merge_cleanup_period_seconds` is set on a ReplacingMergeTree with `is_deleted`.
+    PartitionIdToTTLs next_cleanup_merge_time_by_partition;
+
+    /// Returns the partition ID ready for a periodic cleanup merge, or an empty string if none qualifies.
+    /// A partition qualifies when `now >= next_cleanup_merge_time_by_partition[partition]`
+    /// and the partition is non-empty. Single-part partitions are included because a cleanup
+    /// rewrite is still needed to physically remove `is_deleted = 1` rows.
+    String getBestPartitionForPeriodicCleanup(
+        const PartitionsStatistics & stats,
+        time_t current_time) const;
 };
 
 std::string convertMergeConstraintsToString(const MergeConstraints & constraints);

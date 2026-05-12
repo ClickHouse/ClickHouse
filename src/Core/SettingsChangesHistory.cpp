@@ -1201,6 +1201,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
+            {"replacing_merge_cleanup_period_seconds", 0, 0, "New setting to periodically trigger FINAL CLEANUP merges for ReplacingMergeTree with is_deleted"},
             {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
             {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},

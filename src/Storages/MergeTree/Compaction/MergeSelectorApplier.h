@@ -21,6 +21,9 @@ struct MergeSelectorChoice
 
     /// If this merges down to a single part in a partition
     bool final = false;
+
+    /// If this merge was triggered by the periodic cleanup timer (replacing_merge_cleanup_period_seconds)
+    bool is_periodic_cleanup = false;
 };
 using MergeSelectorChoices = std::vector<MergeSelectorChoice>;
 

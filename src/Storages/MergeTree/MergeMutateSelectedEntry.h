@@ -47,6 +47,10 @@ struct MergeMutateSelectedEntry
     MergeTreeTransactionPtr txn;
     Strings mutation_ids; /// List of mutation version strings being applied
     bool finalized{false};
+
+    /// True if this merge was triggered by the periodic cleanup timer (replacing_merge_cleanup_period_seconds)
+    bool is_periodic_cleanup{false};
+
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
                              MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,
                              Strings mutation_ids_ = {})
