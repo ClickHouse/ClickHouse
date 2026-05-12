@@ -266,7 +266,7 @@ void HTTPHandler::processQuery(
     ConnectionInfo http_conn_info;
     http_conn_info.protocol = "HTTP";
     http_conn_info.client_address = http_client_info.current_address->host();
-    http_conn_info.client_port = static_cast<UInt16>(http_client_info.current_address->port());
+    http_conn_info.client_port = static_cast<UInt16>(request.clientAddress().port());
     http_conn_info.server_port = static_cast<UInt16>(request.serverAddress().port());
     /// Note: for HTTP, client_port reflects the proxy-to-server port when behind a proxy,
     /// not the original client's ephemeral port. HTTP headers carry no client port information.
