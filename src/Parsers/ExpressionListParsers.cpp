@@ -1334,9 +1334,6 @@ public:
                         for (auto & elem : tup)
                             elements.push_back(make_intrusive<ASTLiteral>(std::move(elem)));
                         is_tuple = true;
-                        /// Outer parens were grouping (single inner literal-tuple), not tuple delimiters,
-                        /// so the resulting literal is parenthesized and must round-trip back to `((1, 2))`.
-                        outer_paren_was_grouping = true;
                     }
                 }
 
@@ -1358,7 +1355,6 @@ protected:
         if (!is_tuple && elements.size() == 1)
         {
             node = std::move(elements[0]);
-            node->setParenthesized(true);
         }
         else if (elements.size() >= 2 && allElementsAreCompatibleLiterals(elements, Field::Types::Tuple))
         {
@@ -1370,14 +1366,10 @@ protected:
             for (auto & elem : elements)
                 tup.push_back(elem->as<ASTLiteral &>().value);
             node = make_intrusive<ASTLiteral>(std::move(tup));
-            if (outer_paren_was_grouping)
-                node->setParenthesized(true);
         }
         else
         {
             node = makeASTOperator("tuple", std::move(elements));
-            if (outer_paren_was_grouping)
-                node->setParenthesized(true);
         }
 
         return true;
@@ -1385,7 +1377,6 @@ protected:
 
 private:
     bool is_tuple = false;
-    bool outer_paren_was_grouping = false;
 };
 
 /// Layer for array square brackets operator
@@ -3295,6 +3286,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         }
         else if (pos->type == TokenType::OpeningRoundBracket)
         {
+
             if (subquery_parser.parse(pos, tmp, expected))
             {
                 layers.back()->pushOperand(std::move(tmp));
