@@ -106,18 +106,16 @@ public:
         return true;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if ((!is_utf8 && isStringOrFixedString(arguments[0]) && isStringOrFixedString(arguments[1]))
-            || (isString(arguments[0]) && isString(arguments[1])))
-            return std::make_shared<DataTypeUInt8>();
-
-        if (isArray(arguments[0]) && isArray(arguments[1]))
-            return std::make_shared<DataTypeUInt8>();
-
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal types {} {} of arguments of function {}. Both must be String or Array",
-            arguments[0]->getName(), arguments[1]->getName(), getName());
+        if constexpr (is_utf8)
+            return
+                "(String, String) -> UInt8"
+                " OR (Array, Array) -> UInt8";
+        else
+            return
+                "(StringOrFixedString, StringOrFixedString) -> UInt8"
+                " OR (Array, Array) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
