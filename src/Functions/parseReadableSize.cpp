@@ -54,18 +54,11 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args
-        {
-            {"readable_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-        };
-        validateFunctionArguments(*this, arguments, args);
-        DataTypePtr return_type = std::make_shared<DataTypeUInt64>();
-        if (error_handling == ErrorHandling::Null)
-            return std::make_shared<DataTypeNullable>(return_type);
-        else
-            return return_type;
+        return error_handling == ErrorHandling::Null
+            ? "(String) -> Nullable(UInt64)"
+            : "(String) -> UInt64";
     }
 
 
