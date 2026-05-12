@@ -3967,6 +3967,9 @@ CONV_FN(DescribeStatement, ds)
 {
     ret += "DESCRIBE ";
     using DescType = DescribeStatement::DescOneofCase;
+    /// `TEMPORARY TABLE` qualifier is only meaningful when the target is a bare table name.
+    if (ds.temporary() && ds.desc_oneof_case() == DescType::kTof)
+        ret += "TEMPORARY TABLE ";
     switch (ds.desc_oneof_case())
     {
         case DescType::kTof:

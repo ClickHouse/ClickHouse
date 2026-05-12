@@ -307,6 +307,19 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                     case TableEngineValues::DeltaLakeLocal:
                         val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeLocal;
                         break;
+                    case TableEngineValues::Paimon:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimon;
+                        break;
+                    case TableEngineValues::PaimonS3:
+                        val = rg.nextBool() ? ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimon
+                                            : ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonS3;
+                        break;
+                    case TableEngineValues::PaimonAzure:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonAzure;
+                        break;
+                    case TableEngineValues::PaimonLocal:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonLocal;
+                        break;
                     default:
                         UNREACHABLE();
                 }
@@ -743,6 +756,9 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::MergeProjectionUDF)] = has_mergetree_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::MergeTextIndexUDF)] = has_mergetree_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::MergeIndexAnalyzeUDF)] = has_mergetree_table && this->allow_engine_udf;
+    /// `filesystem([path])` reads local files (metadata + optional content) — non-deterministic
+    /// and needs FILE access. Don't emit it through `remote()` either.
+    queryMask[static_cast<size_t>(QueryOp::FilesystemUDF)] = !under_remote && this->allow_not_deterministic && this->allow_engine_udf;
 
     queryGen.setEnabled(queryMask);
     /// If MV chaining is requested, force the next source to be a view (clears flag after use)
@@ -1249,6 +1265,28 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             }
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"ranges"}, size_tp.get()));
+            this->levels[this->current_level].rels.emplace_back(rel);
+        }
+        break;
+        case QueryOp::FilesystemUDF: {
+            SQLRelation rel(rel_name);
+            SQLTableFuncCall * fsc = tof->mutable_tfunc()->mutable_func();
+
+            fsc->set_func(SQLTableFunc::TFfilesystem);
+            /// 0 or 1 path argument. Mostly call with no args (lists user_files) so we don't
+            /// burn cycles on permission-denied errors from random paths.
+            if (rg.nextSmallNumber() < 3)
+                fsc->add_args()->mutable_expr()->mutable_lit_val()->set_string_lit(rg.nextBool() ? "." : "user_files");
+            /// Subset of columns the `filesystem` table function returns. SELECT * gets the
+            /// full schema at execution time; these registrations let the generator reference
+            /// specific columns in projections and predicates.
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"path"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"name"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"type"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"size"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"depth"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"is_symlink"}, uint8_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"content"}, string_tp.get()));
             this->levels[this->current_level].rels.emplace_back(rel);
         }
         break;

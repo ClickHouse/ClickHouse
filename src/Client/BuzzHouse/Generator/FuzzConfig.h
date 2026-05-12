@@ -69,7 +69,9 @@ const constexpr uint64_t allow_replacing_mergetree = (UINT64_C(1) << 0), allow_c
                          allow_external_distributed = (UINT64_C(1) << 38), allow_materialized_postgresql = (UINT64_C(1) << 39),
                          allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41),
                          allow_datalakecatalog = (UINT64_C(1) << 42), allow_arrowflight = (UINT64_C(1) << 43),
-                         allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45), allow_backup = (UINT64_C(1) << 46);
+                         allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45), allow_backup = (UINT64_C(1) << 46),
+                         allow_paimon = (UINT64_C(1) << 47), allow_paimonS3 = (UINT64_C(1) << 48),
+                         allow_paimonAzure = (UINT64_C(1) << 49), allow_paimonLocal = (UINT64_C(1) << 50);
 
 extern const DB::Strings compressionMethods;
 extern const DB::Strings codecs;

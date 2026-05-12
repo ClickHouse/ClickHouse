@@ -2119,13 +2119,17 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     }
     if (storage == LakeStorage::All || storage == LakeStorage::Local)
     {
-        if (format != LakeFormat::DeltaLake && (fc.engine_mask & allow_icebergLocal) != 0)
+        if (format != LakeFormat::DeltaLake && format != LakeFormat::Paimon && (fc.engine_mask & allow_icebergLocal) != 0)
         {
             this->ids.emplace_back(IcebergLocal);
         }
-        if (format != LakeFormat::Iceberg && (fc.engine_mask & allow_deltalakelocal) != 0)
+        if (format != LakeFormat::Iceberg && format != LakeFormat::Paimon && (fc.engine_mask & allow_deltalakelocal) != 0)
         {
             this->ids.emplace_back(DeltaLakeLocal);
+        }
+        if (format != LakeFormat::Iceberg && format != LakeFormat::DeltaLake && (fc.engine_mask & allow_paimonLocal) != 0)
+        {
+            this->ids.emplace_back(PaimonLocal);
         }
     }
     if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
@@ -2211,13 +2215,17 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             }
             if (storage == LakeStorage::All || storage == LakeStorage::S3)
             {
-                if (format != LakeFormat::DeltaLake && (fc.engine_mask & allow_icebergS3) != 0)
+                if (format != LakeFormat::DeltaLake && format != LakeFormat::Paimon && (fc.engine_mask & allow_icebergS3) != 0)
                 {
                     this->ids.emplace_back(IcebergS3);
                 }
-                if (format != LakeFormat::Iceberg && (fc.engine_mask & allow_deltalakeS3) != 0)
+                if (format != LakeFormat::Iceberg && format != LakeFormat::Paimon && (fc.engine_mask & allow_deltalakeS3) != 0)
                 {
                     this->ids.emplace_back(DeltaLakeS3);
+                }
+                if (format != LakeFormat::Iceberg && format != LakeFormat::DeltaLake && (fc.engine_mask & allow_paimonS3) != 0)
+                {
+                    this->ids.emplace_back(PaimonS3);
                 }
             }
         }
@@ -2233,13 +2241,17 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             }
             if (storage == LakeStorage::All || storage == LakeStorage::Azure)
             {
-                if (format != LakeFormat::DeltaLake && (fc.engine_mask & allow_icebergAzure) != 0)
+                if (format != LakeFormat::DeltaLake && format != LakeFormat::Paimon && (fc.engine_mask & allow_icebergAzure) != 0)
                 {
                     this->ids.emplace_back(IcebergAzure);
                 }
-                if (format != LakeFormat::Iceberg && (fc.engine_mask & allow_deltalakeAzure) != 0)
+                if (format != LakeFormat::Iceberg && format != LakeFormat::Paimon && (fc.engine_mask & allow_deltalakeAzure) != 0)
                 {
                     this->ids.emplace_back(DeltaLakeAzure);
+                }
+                if (format != LakeFormat::Iceberg && format != LakeFormat::DeltaLake && (fc.engine_mask & allow_paimonAzure) != 0)
+                {
+                    this->ids.emplace_back(PaimonAzure);
                 }
             }
         }

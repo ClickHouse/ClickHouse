@@ -431,19 +431,44 @@ bool SQLBase::isAnyIcebergEngine() const
     return teng >= TableEngineValues::IcebergS3 && teng <= TableEngineValues::IcebergLocal;
 }
 
+bool SQLBase::isPaimonEngine() const
+{
+    return teng == TableEngineValues::Paimon;
+}
+
+bool SQLBase::isPaimonS3Engine() const
+{
+    return teng == TableEngineValues::PaimonS3;
+}
+
+bool SQLBase::isPaimonAzureEngine() const
+{
+    return teng == TableEngineValues::PaimonAzure;
+}
+
+bool SQLBase::isPaimonLocalEngine() const
+{
+    return teng == TableEngineValues::PaimonLocal;
+}
+
+bool SQLBase::isAnyPaimonEngine() const
+{
+    return teng >= TableEngineValues::Paimon && teng <= TableEngineValues::PaimonLocal;
+}
+
 bool SQLBase::isOnS3() const
 {
-    return isIcebergS3Engine() || isDeltaLakeS3Engine() || isAnyS3Engine();
+    return isIcebergS3Engine() || isDeltaLakeS3Engine() || isPaimonS3Engine() || isAnyS3Engine();
 }
 
 bool SQLBase::isOnAzure() const
 {
-    return isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isAnyAzureEngine();
+    return isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isPaimonAzureEngine() || isAnyAzureEngine();
 }
 
 bool SQLBase::isOnLocal() const
 {
-    return isIcebergLocalEngine() || isDeltaLakeLocalEngine();
+    return isIcebergLocalEngine() || isDeltaLakeLocalEngine() || isPaimonLocalEngine();
 }
 
 bool SQLBase::isMergeEngine() const
@@ -510,9 +535,9 @@ bool SQLBase::isNotTruncableEngine() const
 
 bool SQLBase::isEngineReplaceable() const
 {
-    return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine()
-        || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine()
-        || isNullEngine() || isGenerateRandomEngine() || isArrowFlightEngine();
+    return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyIcebergEngine() || isAnyDeltaLakeEngine()
+        || isAnyPaimonEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine()
+        || isMongoDBEngine() || isDictionaryEngine() || isNullEngine() || isGenerateRandomEngine() || isArrowFlightEngine();
 }
 
 bool SQLBase::isAnotherRelationalDatabaseEngine() const

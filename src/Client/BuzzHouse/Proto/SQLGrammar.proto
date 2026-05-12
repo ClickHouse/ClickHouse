@@ -1756,6 +1756,7 @@ enum SQLTableFunc {
     TFvalues = 73;
     TFview = 74;
     TFytsaurus = 75;
+    TFfilesystem = 76;
 }
 
 message SQLIdentifier {
@@ -3446,6 +3447,10 @@ enum TableEngineValues {
     Executable = 54;
     ExecutablePool = 55;
     FileLog = 56;
+    Paimon = 57;
+    PaimonS3 = 58;
+    PaimonAzure = 59;
+    PaimonLocal = 60;
 }
 
 enum TableEngineOption {
@@ -3704,6 +3709,9 @@ message DescribeStatement {
     }
     optional SettingValues setting_values = 5;
     optional OutFormat format = 6;
+    /// When set with a `tof` target, emits `DESCRIBE TEMPORARY TABLE ...`. Only valid for
+    /// targets that are actual temporary tables.
+    optional bool temporary = 7;
 }
 
 message DeduplicateExpr {

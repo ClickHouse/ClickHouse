@@ -151,14 +151,15 @@ StatementGenerator::StatementGenerator(
               {0.02, 0.05}, /// MergeIndexUDF
               {0.01, 0.10}, /// MergeProjectionUDF
               {0.01, 0.10}, /// MergeTextIndexUDF
-              {0.01, 0.05} /// MergeIndexAnalyzeUDF
+              {0.01, 0.05}, /// MergeIndexAnalyzeUDF
+              {0.005, 0.02} /// FilesystemUDF (filesystem reads files, gate behind allow_not_deterministic)
           }},
           "SQL queries"))
     , SQLMask(static_cast<size_t>(SQLOp::SnapshotQuery) + 1, true)
     , litMask(static_cast<size_t>(LitOp::LitFraction) + 1, true)
     , expMask(static_cast<size_t>(ExpOp::LitAccurateCast) + 1, true)
     , predMask(static_cast<size_t>(PredOp::OtherExpr) + 1, true)
-    , queryMask(static_cast<size_t>(QueryOp::MergeIndexAnalyzeUDF) + 1, true)
+    , queryMask(static_cast<size_t>(QueryOp::FilesystemUDF) + 1, true)
 {
     chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
 
@@ -1108,10 +1109,13 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
         {{desc_table,
           [&]
           {
-              const auto is_url
-                  = tableOrFunctionRef(rg, rg.pickRandomly(filterCollection<SQLTable>(attached_tables)), true, dt->mutable_tof());
+              const auto & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+              const auto is_url = tableOrFunctionRef(rg, t, true, dt->mutable_tof());
               UNUSED(is_url);
               this->entries.clear();
+              /// Exercise the `DESCRIBE TEMPORARY TABLE` syntax half the time when the
+              /// picked target is actually a temporary table.
+              dt->set_temporary(t.get().is_temp && rg.nextBool());
           }},
          {desc_view,
           [&]

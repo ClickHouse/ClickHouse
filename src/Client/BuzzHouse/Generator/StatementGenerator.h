@@ -363,7 +363,8 @@ private:
         MergeIndexUDF,
         MergeProjectionUDF,
         MergeTextIndexUDF,
-        MergeIndexAnalyzeUDF
+        MergeIndexAnalyzeUDF,
+        FilesystemUDF
     };
 
     ProbabilityGenerator SQLGen;
