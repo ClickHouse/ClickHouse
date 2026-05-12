@@ -313,6 +313,13 @@ def main():
     croot = ctree.getroot()
     if croot.tag != "clickhouse":
         raise Exception("<clickhouse> element not found")
+    # Under sanitizers Keeper can be slow enough that the default 15s ZK session
+    # timeout makes DatabaseReplicated abort during reconnect (the worker waits
+    # 3 * session_timeout_ms for stale ephemeral nodes to expire). Give it more
+    # headroom on sanitizer builds.
+    if is_sanitized:
+        zk_xml = ET.SubElement(croot, "zookeeper")
+        ET.SubElement(zk_xml, "session_timeout_ms").text = "60000"
     remote_servers = ET.SubElement(croot, "remote_servers")
     for i in range(number_of_nodes):
         next_node = ET.SubElement(remote_servers, f"cluster{i}")
