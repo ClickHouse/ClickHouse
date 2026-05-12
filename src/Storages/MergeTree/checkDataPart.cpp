@@ -247,65 +247,24 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     }
     else if (part_type == MergeTreeDataPartType::Wide)
     {
-        const auto & columns_substreams = data_part->getColumnsSubstreams();
-        if (!columns_substreams.empty())
+        for (const auto & column : columns_list)
         {
-            /// Use columns_substreams.txt which contains the exact list of substream
-            /// file names written at part creation time. This is more reliable than
-            /// enumerateStreams for types with complex serialization (e.g. JSON)
-            /// where enumerateStreams needs deserialization state to enumerate
-            /// the correct streams.
-            size_t col_idx = 0;
-            for (const auto & column : columns_list)
+            get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
-                const auto & substreams = columns_substreams.getColumnSubstreams(col_idx);
-                for (const auto & substream_name : substreams)
-                {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream_name, ".bin", data_part_storage);
+                /// Skip ephemeral subcolumns that don't store any real data.
+                if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                    return;
 
-                    if (!stream_name)
-                        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "There is no file for column '{}' (substream '{}') in data part '{}'",
-                            column.name, substream_name, data_part->name);
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
 
-                    auto file_name = *stream_name + ".bin";
-                    checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
-                }
-                ++col_idx;
-            }
-        }
-        else
-        {
-            /// Fallback for old parts without columns_substreams.txt.
-            /// Disable enumerate_dynamic_streams because without deserialization state
-            /// we don't know the correct dynamic structure and serialization version for types like JSON,
-            /// and enumerating dynamic streams with wrong defaults would produce
-            /// incorrect stream names leading to false positive errors.
-            /// The files for dynamic streams will still be checked against checksums.txt
-            /// by the subsequent iteration over all files in the part directory.
-            for (const auto & column : columns_list)
-            {
-                auto serialization = get_serialization(column);
-                ISerialization::EnumerateStreamsSettings settings;
-                settings.enumerate_dynamic_streams = false;
-                auto data = ISerialization::SubstreamData(serialization).withType(column.type).withColumn(column.type->createColumn());
-                serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
-                {
-                    /// Skip ephemeral subcolumns that don't store any real data.
-                    if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                        return;
+                if (!stream_name)
+                    throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                        "There is no file for column '{}' in data part '{}'",
+                        column.name, data_part->name);
 
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
-
-                    if (!stream_name)
-                        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "There is no file for column '{}' in data part '{}'",
-                            column.name, data_part->name);
-
-                    auto file_name = *stream_name + ".bin";
-                    checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
-                }, data);
-            }
+                auto file_name = *stream_name + ".bin";
+                checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
+            }, column.type, data_part->getColumnSample(column));
         }
     }
     else

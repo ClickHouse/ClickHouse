@@ -1011,6 +1011,49 @@ def test_postgres_date32_array(started_cluster):
     cursor.execute("DROP TABLE test_date32_array")
 
 
+def test_postgres_array_parser_dimension_underflow(started_cluster):
+    """Regression test for `size_t` underflow in the PostgreSQL array parser.
+
+    When `pqxx::array_parser` emits `row_end` while the parser's `dimension`
+    counter is 0 (for example, an array text starting with `}`), the previous
+    code decremented `dimension` past 0 — a `size_t` underflow to `SIZE_MAX` —
+    and then indexed `dimensions[SIZE_MAX]`, which is out-of-bounds. The fix
+    throws a `BAD_ARGUMENTS` exception in this case instead.
+
+    PostgreSQL itself validates array literals at INSERT time, so the bug is
+    unreachable via a column declared as `boolean[]`/`integer[]` on the
+    PostgreSQL side. The reproducer below stores the malformed payload in a
+    PostgreSQL `text` column and declares the same column as `Array(Int32)` on
+    the ClickHouse side via the `PostgreSQL` table engine. ClickHouse then
+    dispatches the raw `'}'` value through the `vtArray` branch of
+    `insertPostgreSQLValue`, which calls `pqxx::array_parser` on it and
+    reproduces the bug.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_array_underflow")
+    cursor.execute(
+        "CREATE TABLE test_array_underflow (id integer, payload text)"
+    )
+    cursor.execute("INSERT INTO test_array_underflow VALUES (1, '}')")
+    started_cluster.postgres_conn.commit()
+
+    node1.query("DROP TABLE IF EXISTS pg_array_underflow")
+    node1.query(
+        f"CREATE TABLE pg_array_underflow (id Int32, payload Array(Int32)) "
+        f"ENGINE = PostgreSQL("
+        f"'{started_cluster.postgres_ip}:{started_cluster.postgres_port}', "
+        f"'postgres', 'test_array_underflow', 'postgres', '{pg_pass}')"
+    )
+
+    error = node1.query_and_get_error("SELECT id, payload FROM pg_array_underflow")
+    assert "Unexpected array closing bracket" in error, (
+        f"Expected BAD_ARGUMENTS('Unexpected array closing bracket'), got: {error}"
+    )
+
+    node1.query("DROP TABLE pg_array_underflow")
+    cursor.execute("DROP TABLE test_array_underflow")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

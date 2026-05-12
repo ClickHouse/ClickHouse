@@ -187,8 +187,12 @@ std::optional<String> optimizeUseNormalProjections(
 
     if (!force_optimize_projection)
     {
-        /// /// Skip normal projection analysis if the query has no filter condition
-        if (!query.dag || !query.filter_node)
+        /// A normal projection can help in two ways:
+        ///     1. Pruning rows via a filter
+        ///     2. Providing data already in the order required by an outer ORDER BY (read-in-order).
+        bool has_filter = query.dag && query.filter_node;
+        bool can_use_sort_order = outer_sorting_step && optimization_settings.read_in_order;
+        if (!has_filter && !can_use_sort_order)
             return {};
     }
 
@@ -263,7 +267,7 @@ std::optional<String> optimizeUseNormalProjections(
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
     projection_query_info.row_level_filter = nullptr;
-    if (query.dag)
+    if (query.dag && query.filter_node)
         projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
     for (const auto * projection : normal_projections)

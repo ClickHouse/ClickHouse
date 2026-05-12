@@ -129,14 +129,19 @@ public:
         }
 
         /// Fill the data for missing buckets
-        TimestampType current_timestamp = Base::start_timestamp;
-
         bool has_previous_value = false;
         ValueType previous_value = {};
         TimestampType previous_timestamp = {};
 
-        for (size_t i = 0; i < Base::bucket_count; ++i, current_timestamp += Base::step)
+        for (size_t i = 0; i < Base::bucket_count; ++i)
         {
+            /// Compute `current_timestamp` via `Base::timestampAtIndex` rather than with a
+            /// loop-carried `current_timestamp += Base::step`. The accumulator form performed
+            /// one final, unused `+=` on the last iteration which signed-overflowed
+            /// `TimestampType` (e.g. `Decimal<Int64>::operator+=`) when `start_timestamp` was
+            /// near `INT64_MIN` and `step` was near `INT64_MAX`, triggering UBSAN.
+            const TimestampType current_timestamp = Base::timestampAtIndex(i);
+
             /// Current bucket has a value?
             if (!nulls[i])
             {

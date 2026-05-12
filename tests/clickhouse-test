@@ -987,7 +987,11 @@ def get_stacktraces_from_clickhouse(args):
     return shell_get_output(msg)
 
 def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[str]]:
-    ps = shell_get_output("ps -eo pid,ppid,pgid,command").splitlines()[1:]
+    # -ww disables line-width truncation of the command column.  Without it,
+    # ps cuts the cmdline at 80 chars when stdout is not a TTY, which can hide
+    # the "clickhouse-server" substring when the binary lives deep in the
+    # filesystem (e.g. /home/ubuntu/actions-runner/_work/.../ci/tmp/...).
+    ps = shell_get_output("ps -ww -eo pid,ppid,pgid,command").splitlines()[1:]
     ps = [p.split(None, 3) for p in ps]
     ps = [[int(p[0]), int(p[1]), int(p[2]), p[3]] for p in ps]
 
@@ -1006,7 +1010,7 @@ def get_all_server_pids():
     return [p[0] for p in pgrep(pgid=pgid, command="clickhouse-server")]
 
 
-def is_asan_build():
+def is_asan_build(args):
     """Check if the server is an ASan build — gdb disables LeakSanitizer detections."""
     try:
         result = clickhouse_execute(
@@ -1019,14 +1023,14 @@ def is_asan_build():
         return bool(os.environ.get("ASAN_OPTIONS"))
 
 
-def print_stacktraces() -> None:
+def print_stacktraces(args) -> None:
     server_pid = get_server_pid()
 
     bt = None
 
     # Collect gdb stacktraces from all server processes (main + replicas).
     # Skip gdb under ASan — it disables LeakSanitizer detections.
-    if not is_asan_build():
+    if not is_asan_build(args):
         all_pids = get_all_server_pids()
         if all_pids:
             parts = []
@@ -1052,8 +1056,8 @@ def print_stacktraces() -> None:
 
     print(
         colored(
-            f"\nUnable to locate ClickHouse server process listening at TCP port "
-            f"{args.tcp_port}. It must have crashed or exited prematurely!",
+            f"\nUnable to locate any ClickHouse server process. "
+            f"It must have crashed or exited prematurely!",
             args,
             "red",
             attrs=["bold"],
@@ -1062,22 +1066,15 @@ def print_stacktraces() -> None:
 
 
 def get_server_pid():
-    # lsof does not work in stress tests for some reason
-    cmd_lsof = f"lsof -i tcp:{args.tcp_port} -s tcp:LISTEN -Fp | sed 's/^p//p;d'"
-    cmd_pidof = "pidof -s clickhouse-server"
-
-    commands = [cmd_lsof, cmd_pidof]
-    output = None
-
-    for cmd in commands:
-        try:
-            output = shell_get_output(cmd)
-            if output:
-                return int(output)
-        except Exception as e:
-            print(f"Cannot get server pid with {cmd}, got {output}: {e}")
-
-    return None  # most likely server is dead
+    # Use the portable pgrep helper (built on `ps -eo pid,ppid,pgid,command`)
+    # so this works on both Linux and macOS — `pidof` does not exist on
+    # macOS, and `lsof -i tcp:PORT` would require knowing the port (only
+    # available on `args`, which is undefined in multiprocessing children
+    # spawned with the `spawn` start method).
+    procs = pgrep(command="clickhouse-server")
+    if not procs:
+        return None  # most likely server is dead
+    return procs[0][0]
 
 
 def colored(text, args, color=None, on_color=None, attrs=None):
@@ -4312,7 +4309,7 @@ def run_tests_array(
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
-                    print_stacktraces()
+                    print_stacktraces(args)
                     stop_tests()
                     stop_testing.set()
                     raise ServerDied("Server died")
@@ -4772,7 +4769,7 @@ def do_run_tests(
             if args.hung_check:
                 if not check_server_liveness(args):
                     print("Hung check failed: server is not responding")
-                    print_stacktraces()
+                    print_stacktraces(args)
                     stop_testing.set()
 
             if stop_testing.is_set():
@@ -5077,7 +5074,7 @@ def main(args):
             print(msg)
             pid = get_server_pid()
             print("Got server pid", pid)
-            print_stacktraces()
+            print_stacktraces(args)
         raise TestException(msg)
 
     if args.cloud:
@@ -5480,7 +5477,7 @@ ORDER BY (test_name, callee_offset)
             print(processlist.decode())
             print(get_transactions_list(args))
 
-            print_stacktraces()
+            print_stacktraces(args)
             exit_code.value = 1
         elif not hung_check_failed:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))

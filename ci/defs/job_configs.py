@@ -184,6 +184,7 @@ class JobConfigs:
         name=JobNames.CODE_REVIEW,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/copilot_review_job.py --pre",
+        allow_failure=True,
     )
     ci_results_review = Job.Config(
         name=JobNames.CI_RESULTS_REVIEW,

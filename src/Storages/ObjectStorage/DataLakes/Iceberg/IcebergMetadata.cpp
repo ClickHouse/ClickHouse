@@ -497,13 +497,13 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
                 "No snapshot found in snapshot log before requested timestamp for iceberg table {}",
                 persistent_components.table_path);
         auto data_snapshot = getIcebergDataSnapshot(metadata_object, *current_snapshot_id, local_context);
-        return {data_snapshot, data_snapshot->schema_id_on_snapshot_commit};
+        return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
     }
     else if (snapshot_id_changed)
     {
         Int64 current_snapshot_id = local_context->getSettingsRef()[Setting::iceberg_snapshot_id];
         auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context);
-        return {data_snapshot, data_snapshot->schema_id_on_snapshot_commit};
+        return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
     }
     else
     {
@@ -870,11 +870,13 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         history_record.manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(f_manifest_list));
         const auto summary = snapshot->getObject(f_summary);
         if (summary->has(f_added_data_files))
-            history_record.added_files = summary->getValue<Int32>(f_added_data_files);
+            history_record.added_files = summary->getValue<Int64>(f_added_data_files);
         if (summary->has(f_added_records))
-            history_record.added_records = summary->getValue<Int32>(f_added_records);
-        history_record.added_files_size = summary->getValue<Int32>(f_added_files_size);
-        history_record.num_partitions = summary->getValue<Int32>(f_changed_partition_count);
+            history_record.added_records = summary->getValue<Int64>(f_added_records);
+        if (summary->has(f_added_files_size))
+            history_record.added_files_size = summary->getValue<Int64>(f_added_files_size);
+        if (summary->has(f_changed_partition_count))
+            history_record.num_partitions = summary->getValue<Int64>(f_changed_partition_count);
 
         if (snapshot->has(f_parent_snapshot_id) && !snapshot->isNull(f_parent_snapshot_id))
             history_record.parent_id = snapshot->getValue<Int64>(f_parent_snapshot_id);

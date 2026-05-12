@@ -532,6 +532,38 @@ bool canOptimizeWithWherePrewhereOrGroupBy(const String & function_name)
     return function_name != "distinctJSONPaths";
 }
 
+/// Follow a chain of trivial ALIAS columns (an ALIAS column whose body is itself a ColumnNode
+/// from the same table) down to the underlying storage column. Used to let the function-to-subcolumn
+/// rewrite see through `c ALIAS some_storage_column` (possibly chained) and rewrite as if the query
+/// had referenced the storage column directly.
+///
+/// Returns nullptr if any step is not a same-table ColumnNode. In particular this guards against
+/// ColumnNodes whose expression is not really a "rename":
+///   * non-trivial ALIAS bodies (function calls, casts), where the value differs from the source column.
+///   * ARRAY JOIN columns (source is ArrayJoinNode), where the column is an unrolled element.
+///   * JOIN USING columns (source is JoinNode, expression is a ListNode), where the value comes from the join.
+///   * subquery columns (source is QueryNode or UnionNode), which are not storage columns.
+ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
+{
+    auto initial_source = column_node->getColumnSource();
+    if (!initial_source->as<TableNode>())
+        return nullptr;
+
+    while (column_node->hasExpression())
+    {
+        auto * inner = column_node->getExpression()->as<ColumnNode>();
+        if (!inner)
+            return nullptr;
+        /// Every step must come from the same TableNode as the outer column. This rejects
+        /// ARRAY JOIN, JOIN USING, and subquery-resolved aliases whose expression happens to be
+        /// a ColumnNode of an unrelated source. Substituting those would change query semantics.
+        if (inner->getColumnSource().get() != initial_source.get())
+            return nullptr;
+        column_node = inner;
+    }
+    return column_node;
+}
+
 std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * function_node = node->as<FunctionNode>();
@@ -543,8 +575,17 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
         return {};
 
     auto * first_argument_column_node = function_arguments_nodes.front()->as<ColumnNode>();
-    if (!first_argument_column_node || first_argument_column_node->getColumnName() == "__grouping_set" || first_argument_column_node->hasExpression())
+    if (!first_argument_column_node || first_argument_column_node->getColumnName() == "__grouping_set")
         return {};
+
+    /// For ALIAS columns whose body is just another ColumnNode (i.e. `c ALIAS some_storage_column`, maybe chained),
+    /// follow the chain to the underlying storage column and rewrite as if the query had referenced it directly.
+    if (first_argument_column_node->hasExpression())
+    {
+        first_argument_column_node = resolveTrivialAliasChain(first_argument_column_node);
+        if (!first_argument_column_node)
+            return {};
+    }
 
     auto column_source = first_argument_column_node->getColumnSource();
     auto * table_node = column_source->as<TableNode>();
