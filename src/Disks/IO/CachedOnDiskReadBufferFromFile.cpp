@@ -55,13 +55,15 @@ CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
     bool use_external_buffer_,
     const FilesystemCacheSettings & cache_settings_,
     size_t local_fs_buffer_size_,
-    size_t read_until_position_)
+    size_t read_until_position_,
+    ThrottlerPtr local_throttler_)
     : cache_key(cache_key_)
     , source_file_path(source_file_path_)
     , implementation_buffer_creator(impl_creator_)
     , use_external_buffer(use_external_buffer_)
     , cache_settings(cache_settings_)
     , local_fs_buffer_size(local_fs_buffer_size_)
+    , local_throttler(std::move(local_throttler_))
     , read_until_position(read_until_position_)
 {
 }
@@ -87,7 +89,8 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     bool allow_seeks_after_first_read_,
     bool use_external_buffer_,
     std::optional<size_t> read_until_position_,
-    std::shared_ptr<FilesystemCacheLog> cache_log_)
+    std::shared_ptr<FilesystemCacheLog> cache_log_,
+    ThrottlerPtr local_throttler_)
     : ReadBufferFromFileBase(
         /* buf_size */use_external_buffer_ ? 0 : remote_fs_buffer_size_,
         /* existing_memory */nullptr,
@@ -114,7 +117,8 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
         use_external_buffer_,
         cache_settings_,
         local_fs_buffer_size_,
-        read_until_position_.value_or(file_size_))
+        read_until_position_.value_or(file_size_),
+        std::move(local_throttler_))
 {
     LOG_TEST(
         log, "Cache key: {}, source file path: {}, boundary alignment: {}, "
@@ -265,6 +269,7 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     ReadSettings local_read_settings;
     local_read_settings.local_fs_method = LocalFSReadMethod::pread;
     local_read_settings.local_fs_buffer_size = info.use_external_buffer ? 0 : info.local_fs_buffer_size;
+    local_read_settings.local_throttler = info.local_throttler;
 
     info.cache_file_reader
         = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());

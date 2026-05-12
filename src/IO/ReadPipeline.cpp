@@ -203,7 +203,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                         /* allow_seeks_after_first_read */ !restricted_seek,
                         /* use_external_buffer */ true,
                         /* read_until_position */ std::nullopt,
-                        cache_log);
+                        cache_log,
+                        captured_settings.local_throttler);
                 };
             }
             else
@@ -242,7 +243,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                         /* allow_seeks_after_first_read */ !restricted_seek,
                         /* use_external_buffer */ true,
                         /* read_until_position */ std::nullopt,
-                        cache_log);
+                        cache_log,
+                        captured_settings.local_throttler);
                 };
             }
         }
@@ -407,7 +409,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 /* allow_seeks_after_first_read */ true,
                 use_ext_buf,
                 /* read_until_position */ std::nullopt,
-                disk_cache->cache_log);
+                disk_cache->cache_log,
+                settings.local_throttler);
         }
         else
         {
