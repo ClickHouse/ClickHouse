@@ -479,7 +479,23 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// where a malicious client sends one byte at a time to hold the connection.
     socket.setReceiveTimeout(Poco::Timespan(5, 0)); /// 5 seconds per individual read
     UInt64 auth_deadline = clock_gettime_ns() + 5'000'000'000ULL; /// 5 seconds total
-    WebSocketFrame auth_frame = readWebSocketFrame(socket, auth_deadline);
+    /// After the 101 handshake the stream is in WebSocket framing mode. If the
+    /// client stalls mid-frame, `readWebSocketFrame` calls into `socket.receiveBytes`
+    /// which throws `Poco::TimeoutException` on recv timeout. An uncaught exception
+    /// would unwind without a close frame, so the browser would observe an abnormal
+    /// close (`1006`) indistinguishable from a network drop. Catch read errors
+    /// here and send an explicit policy close (`1008`) instead.
+    WebSocketFrame auth_frame;
+    try
+    {
+        auth_frame = readWebSocketFrame(socket, auth_deadline);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to read WebSocket auth frame");
+        sendWebSocketClose(socket, 1008, "Auth read failed");
+        return;
+    }
     socket.setReceiveTimeout(Poco::Timespan(0)); /// Clear timeout for the main loop
     if (auth_frame.protocol_error)
     {
