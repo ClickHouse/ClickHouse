@@ -145,20 +145,6 @@ FunctionHasPhraseOverloadResolver::FunctionHasPhraseOverloadResolver(ContextPtr)
 {
 }
 
-DataTypePtr FunctionHasPhraseOverloadResolver::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-{
-    FunctionArgumentDescriptors mandatory_args{
-        {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        {"phrase", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}};
-
-    FunctionArgumentDescriptors optional_args{
-        {"tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}};
-
-    validateFunctionArguments(name, arguments, mandatory_args, optional_args);
-
-    return std::make_shared<DataTypeNumber<UInt8>>();
-}
-
 FunctionBasePtr
 FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const
 {

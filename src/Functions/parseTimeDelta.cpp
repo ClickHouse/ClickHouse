@@ -11,9 +11,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -109,34 +106,13 @@ namespace
 
         String getName() const override { return name; }
 
-        bool isVariadic() const override { return true; }
-
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        size_t getNumberOfArguments() const override { return 0; }
+        size_t getNumberOfArguments() const override { return 1; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        String getSignatureString() const override
         {
-            if (arguments.empty())
-                throw Exception(
-                    ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1.",
-                    getName(),
-                    arguments.size());
-
-            if (arguments.size() > 1)
-                throw Exception(
-                    ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1.",
-                    getName(),
-                    arguments.size());
-
-            const IDataType & type = *arguments[0];
-
-            if (!isString(type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time string.", type.getName());
-
-            return std::make_shared<DataTypeFloat64>();
+            return "(String) -> Float64";
         }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
