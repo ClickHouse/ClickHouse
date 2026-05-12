@@ -262,6 +262,32 @@ def test_merge_tree_setting_constraint_via_alias(started_cluster):
     instance.query("DROP TABLE IF EXISTS test_alias_constraint")
 
 
+def test_disallowed_value_is_clamped_not_thrown(started_cluster):
+    """The disallowed_values check must respect the `reaction` parameter:
+    initial queries throw, but secondary queries (clamp path) must silently
+    drop the change instead of throwing. Otherwise a value that happens to
+    match a disallowed entry can break secondary queries even though the
+    user set a value the initiator already accepted."""
+
+    # Initial query: throws (unchanged behavior).
+    assert " Setting max_memory_usage shouldn't be 6000000000" in instance.query_and_get_error(
+        "SELECT 1", settings={"max_memory_usage": 6000000000}
+    )
+
+    # Secondary query: must not throw. The clamp implementation should leave
+    # the value alone (no clamp target for disallowed entries) and proceed.
+    result = instance.exec_in_container(
+        [
+            "clickhouse",
+            "client",
+            "--query_kind=secondary_query",
+            "--max_memory_usage=6000000000",
+            "--query=SELECT 1",
+        ]
+    )
+    assert result.strip() == "1"
+
+
 def test_create_table_query_setting_constraints(started_cluster):
     """Test that query-level settings passed in CREATE TABLE's engine SETTINGS clause
     are validated against setting constraints (not bypassing them)."""

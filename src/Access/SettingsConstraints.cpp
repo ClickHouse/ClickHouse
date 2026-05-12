@@ -427,8 +427,15 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
     {
         bool equals = equals_or_cannot_compare(value, new_value);
         if (equals)
-            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
-                setting_name, applyVisitor(FieldVisitorToString(), value));
+        {
+            if (reaction == THROW_ON_VIOLATION)
+                throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
+                    setting_name, applyVisitor(FieldVisitorToString(), value));
+            /// On clamp paths there is no sensible value to clamp to — disallowed entries are a
+            /// deny-list, not a range. Drop the change and let the caller proceed with the
+            /// existing value rather than failing the query.
+            return false;
+        }
     }
 
     if (!getSettingSourceRestrictions(setting_name).isSourceAllowed(source))
