@@ -29,12 +29,18 @@ settings
 
 insert into metric_log select * from generateRandom() limit 10;
 
-optimize table metric_log final;
+-- The merge of a 1200+ column `metric_log` on `s3_no_cache` storage is intrinsically slow
+-- under sanitizers (TSan in particular) and can exceed the default 300s client `receive_timeout`,
+-- producing a transient TIMEOUT_EXCEEDED. The merge itself is healthy and continues on the server;
+-- only the client gives up while waiting. Bumping `receive_timeout` for the OPTIMIZE statements
+-- makes the test stable on slow combinations of sanitizer + remote storage without changing
+-- what the test verifies (peak memory of a wide-column merge).
+optimize table metric_log final settings receive_timeout = 900;
 system flush logs part_log;
 select 'max_merge_delayed_streams_for_parallel_write=100' as test, * from system.part_log where table = 'metric_log' and database = currentDatabase() and event_date >= yesterday() AND event_time >= now() - 600 and event_type = 'MergeParts' and peak_memory_usage > 1_000_000_000 format Vertical;
 
 alter table metric_log modify setting max_merge_delayed_streams_for_parallel_write = 10000;
 
-optimize table metric_log final;
+optimize table metric_log final settings receive_timeout = 900;
 system flush logs part_log;
 select 'max_merge_delayed_streams_for_parallel_write=1000' as test, count() as count from system.part_log where table = 'metric_log' and database = currentDatabase() and event_date >= yesterday() AND event_time >= now() - 600 and event_type = 'MergeParts' and peak_memory_usage > 1_000_000_000;
