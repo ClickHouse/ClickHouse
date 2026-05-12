@@ -170,7 +170,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
     }
 
-    /// PK mark ranges for this chunk after pruning (filterMarksUsingIndex).
+    /// PK ranges for the current data range (see filterMarksUsingIndex).
     struct GranuleRowFilter
     {
         const MergeTreeIndexGranularity * index_granularity;
@@ -183,7 +183,7 @@ public:
     /// Returns the N nearest neighbors of a reference vector in the index granule.
     /// The nearest neighbors are returned as row positions.
     /// If VectorSearchParameters::return_distances = true, then the distances are returned as well.
-    /// With `row_filter`, drops neighbors whose row is outside `pk_ranges`. May return fewer than requested.
+    /// row_filter restricts keys to pk_ranges; fewer than requested hits is allowed.
     virtual NearestNeighbours calculateApproximateNearestNeighbors(
         MergeTreeIndexGranulePtr /*granule*/,
         const std::optional<GranuleRowFilter> & row_filter = std::nullopt) const

@@ -6,3 +6,5 @@ empty_pk_filter
 0
 full_table_top3_sorted_ids
 [6,7,8]
+time_filtered_vector_search
+1

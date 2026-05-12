@@ -1973,7 +1973,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         part->index_granularity_info.fixed_index_granularity,
         part->index_granularity_info.index_granularity_bytes);
 
-    /// If PK leaves a subset of marks (`!all_match`), vector search still runs; neighbors are filtered to those marks.
+    /// Partial PK on the part: still run vector index; restrict hits to marks in ranges.
     const bool all_match = (marks_count == ranges.getNumberOfMarks());
 
     MarkRanges index_ranges;

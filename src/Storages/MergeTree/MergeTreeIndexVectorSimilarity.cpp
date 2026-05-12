@@ -601,7 +601,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
 
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present || is_rescoring || row_filter.has_value())
-        /// Post-filters / rescoring / PK row filter can drop candidates; fetch more from the index (same multiplier).
+        /// Fewer hits after post-filter, rescoring, or PK row filter: raise fetch limit by index_fetch_multiplier.
         limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
 
     auto search_result = [&]()
@@ -620,7 +620,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
         return index->filtered_search(parameters->reference_vector.data(), limit, std::move(predicate), USearchIndex::any_thread(), false, expansion_search);
     }();
 
-    /// `filtered_search` may return fewer than `limit` hits when the predicate rejects most keys.
+    /// filtered_search can return fewer than limit under a tight predicate.
 
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
