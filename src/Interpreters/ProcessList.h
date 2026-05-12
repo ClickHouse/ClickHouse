@@ -18,7 +18,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Scheduler/MemoryReservation.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/OvercommitTracker.h>
@@ -43,6 +42,11 @@ struct ProcessListForUser;
 class QueryStatus;
 class ThreadStatus;
 class ProcessListEntry;
+
+/// Forward-declare to avoid pulling the whole scheduler stack into every TU that includes this header.
+/// The unique_ptr destructor is instantiated only in ProcessList.cpp where MemoryReservation.h is included.
+struct MemoryReservation;
+using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;
 
 enum CancelReason
 {
@@ -290,11 +294,7 @@ public:
     }
 
     /// Manually release all acquired workload resources.
-    void releaseWorkloadResources()
-    {
-        memory_reservation.reset();
-        query_slot.reset();
-    }
+    void releaseWorkloadResources();
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;

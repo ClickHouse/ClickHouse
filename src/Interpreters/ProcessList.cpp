@@ -15,6 +15,7 @@
 #include <Common/OvercommitTracker.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
+#include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
 #include <chrono>
 #include <memory>
@@ -512,6 +513,12 @@ QueryStatus::QueryStatus(
     /// would lock the context's lock too, whereas holding two those locks simultaneously is not good.
     limits.max_execution_time = query_settings_[Setting::max_execution_time];
     overflow_mode = query_settings_[Setting::timeout_overflow_mode];
+}
+
+void QueryStatus::releaseWorkloadResources()
+{
+    memory_reservation.reset();
+    query_slot.reset();
 }
 
 QueryStatus::~QueryStatus()

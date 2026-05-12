@@ -56,6 +56,9 @@ MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, Reso
         std::unique_lock lock(mutex);
         auto admit_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationAdmitMicroseconds);
         cv.wait(lock, [this] { return kill_reason || fail_reason || actual_size <= allocated_size; });
+        // Flush deferred profile-event counters before potentially throwing,
+        // so failure metrics (e.g. MemoryReservationFailed) are not lost.
+        metrics.apply();
         throwIfNeeded();
     }
 }
@@ -67,10 +70,12 @@ MemoryReservation::~MemoryReservation()
         if (removed)
         {
             chassert(allocated_size == 0);
+            metrics.apply();
             return;
         }
         if (fail_reason)
         {
+            metrics.apply();
             return;
         }
         actual_size = 0;

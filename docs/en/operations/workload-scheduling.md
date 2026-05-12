@@ -288,7 +288,7 @@ If eviction is prevented or does not free enough memory, the new allocation is b
 Workload limits are independent from other ways to limit memory consumption like [max_memory_usage](/operations/settings/settings.md#max_memory_usage) query setting. They could be used together to achieve better control over memory consumption. It is possible to set independent memory limits based on users (not workloads). This is less flexible and does not provide features like memory reservation and queueing of pending queries. See [Memory overcommit](settings/memory-overcommit.md)
 :::
 
-Workload setting `max_waiting_queries` limits the number of pending allocations for the workload. When the limit is reached, the server returns an error `SERVER_OVERLOADED`. Note that `max_waiting_queries` is not inherited by children workloads and make sense only for leaf workloads.
+Workload setting `max_waiting_queries` limits the number of pending allocations for the workload. When the limit is reached, the server returns an error `SERVER_OVERLOADED`. Note that `max_waiting_queries` is not inherited by children workloads and makes sense only for leaf workloads.
 
 Memory reservation scheduling is not supported for merges and mutations yet.
 
@@ -327,7 +327,7 @@ Workload setting `max_concurrent_queries` limits the number of concurrent querie
 
 Workload settings `max_queries_per_second` and `max_burst_queries` limit the number of queries for the workload using a token bucket throttler. It guarantees that during any time interval `T` no more than `max_queries_per_second * T + max_burst_queries` new queries will start execution.
 
-Workload setting `max_waiting_queries` limits the number of waiting queries for the workload. When the limit is reached, the server returns an error `SERVER_OVERLOADED`. Note that `max_waiting_queries` is not inherited by children workloads and make sense only for leaf workloads.
+Workload setting `max_waiting_queries` limits the number of waiting queries for the workload. When the limit is reached, the server returns an error `SERVER_OVERLOADED`. Note that `max_waiting_queries` is not inherited by children workloads and makes sense only for leaf workloads.
 
 :::note
 Blocked queries will wait indefinitely and do not appear in `SHOW PROCESSLIST` until all constraints are satisfied.
