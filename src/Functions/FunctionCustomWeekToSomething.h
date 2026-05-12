@@ -17,10 +17,17 @@ class FunctionCustomWeekToSomething : public IFunctionCustomWeek<Transform>
 public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        this->checkArguments(arguments, /*is_result_type_date_or_date32*/ false, Transform::value_may_be_string);
-        return std::make_shared<ToDataType>();
+        const String to = ToDataType{}.getName();
+        const String input_matcher = Transform::value_may_be_string
+            ? "Date | Date32 | DateTime | DateTime64 | String"
+            : "Date | Date32 | DateTime | DateTime64";
+        const String ret = "typeFromString('" + to + "')";
+        return
+            "(" + input_matcher + ") -> " + ret
+            + " OR (" + input_matcher + ", UInt8) -> " + ret
+            + " OR (" + input_matcher + ", UInt8, String) -> " + ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
