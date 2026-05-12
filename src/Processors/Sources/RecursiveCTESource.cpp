@@ -331,6 +331,47 @@ public:
             recursive_query = std::move(working_union_query);
         }
 
+        /// Disable parallel replicas in every `QueryNode`/`UnionNode` of the recursive query.
+        /// When parallel replicas is enabled, the planner rewrites JOINs to GLOBAL JOIN and
+        /// materializes the right-side subquery into a cached external table keyed by tree
+        /// hash. Across recursive steps the tree structure is identical (only the working
+        /// table's data changes), so the cache key collides and stale data is reused —
+        /// producing wrong results. The planner reads this setting from each node's
+        /// `mutable_context` (see `Planner::buildPlannerContext`), not from the outer
+        /// interpreter context, so overriding only the interpreter context is not enough.
+        /// We rewrite the contexts once at construction time and preserve sharing: nodes
+        /// that originally pointed to the same context will share the same copy afterwards.
+        std::map<Context *, ContextMutablePtr> context_copies;
+        auto rewrite_context = [&context_copies](ContextMutablePtr & ctx)
+        {
+            if (auto it = context_copies.find(ctx.get()); it != context_copies.end())
+            {
+                ctx = it->second;
+                return;
+            }
+            auto new_ctx = Context::createCopy(ctx);
+            new_ctx->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
+            context_copies.emplace(ctx.get(), new_ctx);
+            ctx = std::move(new_ctx);
+        };
+
+        std::vector<IQueryTreeNode *> nodes_to_visit;
+        nodes_to_visit.push_back(recursive_query.get());
+        while (!nodes_to_visit.empty())
+        {
+            auto * node = nodes_to_visit.back();
+            nodes_to_visit.pop_back();
+
+            if (auto * qn = node->as<QueryNode>())
+                rewrite_context(qn->getMutableContext());
+            else if (auto * un = node->as<UnionNode>())
+                rewrite_context(un->getMutableContext());
+
+            for (auto & child : node->getChildren())
+                if (child)
+                    nodes_to_visit.push_back(child.get());
+        }
+
         recursive_query_context = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getMutableContext() :
             recursive_query->as<UnionNode &>().getMutableContext();
 
@@ -483,22 +524,12 @@ private:
         const auto & recursive_table_name = recursive_cte_union_node->as<UnionNode &>().getCTEName();
         recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
 
-        ContextMutablePtr interpreter_context = recursive_query_context;
+        const auto & interpreter_context = recursive_query_context;
 
         /// recursive_step was already incremented above — `>1` means we are
         /// executing the recursive query (the seed query is step `1`).
         if (recursive_step > 1)
         {
-            /// Disable parallel replicas for recursive CTE step queries. When parallel replicas
-            /// is enabled, JOINs are rewritten to GLOBAL JOINs and the right-side subquery is
-            /// materialized into a cached external table keyed by tree hash. Since the recursive
-            /// CTE temporary table has the same tree structure across steps (only the data changes),
-            /// the hash stays identical and stale cached data is reused, producing wrong results.
-            /// A per-step copy of the context is used so concurrent reads of the shared `Settings`
-            /// object from other recursive CTEs (e.g. nested ones) are not racing with this write.
-            interpreter_context = Context::createCopy(recursive_query_context);
-            interpreter_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
-
             const auto max_in_filter_cardinality
                 = recursive_subquery_settings[Setting::recursive_cte_max_in_filter_cardinality].value;
 
