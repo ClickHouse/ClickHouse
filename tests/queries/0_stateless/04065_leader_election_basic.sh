@@ -8,12 +8,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_leader_election_s3"
 
-# Create a table with leader_election enabled on S3 storage.
-# The instance should become leader since it's the only writer.
+# Create a table with leader_election enabled on a shared-metadata S3 disk
+# (`s3_plain_rewritable` — the only metadata layout where parts written by one
+# node are visible to another). The instance should become leader since it's
+# the only writer.
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE test_leader_election_s3 (x UInt64, s String)
     ENGINE = MergeTree ORDER BY x
-    SETTINGS storage_policy = 's3_cache', leader_election = true,
+    SETTINGS disk = 's3_plain_rewritable', leader_election = true,
         leader_election_heartbeat_interval = 1, leader_election_session_timeout = 5
 "
 
