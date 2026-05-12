@@ -352,65 +352,65 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                         "ReadPipeline: disk cache without gather requires ObjectStorageSource or CustomSource");
                 }
 
-                /// Wrap each cache layer (innermost first). For stacked caches, each layer's
+                /// Wrap inner cache layers (all except the outermost). Each layer's
                 /// impl_creator produces the previous layer's CachedOnDiskReadBufferFromFile.
-                for (size_t i = 0; i < disk_caches.size(); ++i)
+                /// Inner layers always use use_external_buffer=true.
+                for (size_t i = 0; i + 1 < disk_caches.size(); ++i)
                 {
                     const auto & dc = disk_caches[i];
-                    bool is_outermost = (i == disk_caches.size() - 1);
                     auto fs_cache_settings = dc.cache_settings.value_or(settings.getFilesystemCacheSettings());
                     auto cache_key = dc.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
                     auto origin = dc.custom_origin.value_or(dc.cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
-                    if (is_outermost)
+                    impl_creator = [
+                        prev_creator = std::move(impl_creator),
+                        path = object.remote_path,
+                        cache_key, cache = dc.cache, origin,
+                        fs_cache_settings,
+                        remote_buf_size = settings.remote_fs_buffer_size,
+                        local_buf_size = settings.local_fs_buffer_size,
+                        object_size = object.bytes_size,
+                        cache_log = dc.cache_log,
+                        throttler = settings.local_throttler
+                    ]() mutable -> std::unique_ptr<ReadBufferFromFileBase>
                     {
-                        impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
-                            object.remote_path,
-                            cache_key,
-                            dc.cache,
-                            origin,
-                            std::move(impl_creator),
+                        return std::make_unique<CachedOnDiskReadBufferFromFile>(
+                            path, cache_key, cache, origin,
+                            std::move(prev_creator),
                             fs_cache_settings,
-                            settings.remote_fs_buffer_size,
-                            settings.local_fs_buffer_size,
+                            remote_buf_size, local_buf_size,
                             std::string(CurrentThread::getQueryId()),
-                            object.bytes_size,
+                            object_size,
                             /* allow_seeks_after_first_read */ true,
-                            use_ext_buf,
+                            /* use_external_buffer */ true,
                             /* read_until_position */ std::nullopt,
-                            dc.cache_log,
-                            settings.local_throttler);
-                    }
-                    else
-                    {
-                        /// Inner layer: wrap current impl_creator in a new one that produces
-                        /// a CachedOnDiskReadBufferFromFile for the next (outer) layer's impl_creator.
-                        impl_creator = [
-                            prev_creator = std::move(impl_creator),
-                            path = object.remote_path,
-                            cache_key, cache = dc.cache, origin,
-                            fs_cache_settings,
-                            remote_buf_size = settings.remote_fs_buffer_size,
-                            local_buf_size = settings.local_fs_buffer_size,
-                            object_size = object.bytes_size,
-                            cache_log = dc.cache_log,
-                            throttler = settings.local_throttler
-                        ]() mutable -> std::unique_ptr<ReadBufferFromFileBase>
-                        {
-                            return std::make_unique<CachedOnDiskReadBufferFromFile>(
-                                path, cache_key, cache, origin,
-                                std::move(prev_creator),
-                                fs_cache_settings,
-                                remote_buf_size, local_buf_size,
-                                std::string(CurrentThread::getQueryId()),
-                                object_size,
-                                /* allow_seeks_after_first_read */ true,
-                                /* use_external_buffer */ true,
-                                /* read_until_position */ std::nullopt,
-                                cache_log, throttler);
-                        };
-                    }
+                            cache_log, throttler);
+                    };
                 }
+
+                /// Build the outermost CachedOnDiskReadBufferFromFile.
+                /// The impl_creator now produces the full inner cache chain.
+                const auto & outermost = disk_caches.back();
+                auto fs_cache_settings = outermost.cache_settings.value_or(settings.getFilesystemCacheSettings());
+                auto cache_key = outermost.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
+                auto origin = outermost.custom_origin.value_or(outermost.cache->getCommonOriginWithSegmentKeyType(object.local_path));
+
+                impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
+                    object.remote_path,
+                    cache_key,
+                    outermost.cache,
+                    origin,
+                    std::move(impl_creator),
+                    fs_cache_settings,
+                    settings.remote_fs_buffer_size,
+                    settings.local_fs_buffer_size,
+                    std::string(CurrentThread::getQueryId()),
+                    object.bytes_size,
+                    /* allow_seeks_after_first_read */ true,
+                    use_ext_buf,
+                    /* read_until_position */ std::nullopt,
+                    outermost.cache_log,
+                    settings.local_throttler);
             }
             else
             {
