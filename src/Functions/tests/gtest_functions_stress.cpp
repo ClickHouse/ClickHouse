@@ -1186,6 +1186,14 @@ struct FunctionsStressTestThread
 
     Operation operation;
 
+    /// `QueryStatusPtr` of the iteration currently in flight. Published under
+    /// `active_query_mutex` by the worker at the start of each iteration and cleared at
+    /// the end. Read by the signal listener thread in `request_shutdown` to cancel the
+    /// in-flight query without touching the worker's `Context` (which has no
+    /// synchronization around `process_list_elem`).
+    std::mutex active_query_mutex;
+    QueryStatusPtr active_query_status TSA_GUARDED_BY(active_query_mutex);
+
     /// Call before mutating `operation`.
     [[nodiscard]] std::unique_lock<std::mutex> lockMutex()
     {
@@ -1284,15 +1292,28 @@ struct FunctionsStressTestThread
             randomizeSettings();
 
             /// Wire each iteration to its own `QueryStatus` / `ProcessListEntry` so the
-            /// `CancellationChecker` enforces `max_execution_time` (set above) and so
-            /// `Context::killCurrentQuery` (called from `request_shutdown`) reaches the
-            /// running function via `CurrentThread::isQueryCanceled`.
+            /// `CancellationChecker` enforces `max_execution_time` (set above), and publish
+            /// the `QueryStatusPtr` under `active_query_mutex` so `request_shutdown` can
+            /// call `cancelQuery` on it directly. We do not touch the worker's `Context`
+            /// from the listener thread: `Context::process_list_elem` / `has_process_list_elem`
+            /// are not synchronized, but `QueryStatus::cancelQuery` takes its own
+            /// `cancel_mutex` so cross-thread cancellation through the `QueryStatusPtr` is
+            /// safe.
             context->setCurrentQueryId(""); // generate a fresh random query id
             auto process_list_entry = context->getProcessList().insert(
                 /*query_=*/"", /*normalized_query_hash=*/0, /*ast=*/nullptr, context,
                 /*watch_start_nanoseconds=*/clock_gettime_ns(), /*is_internal=*/true);
-            context->setProcessListElement(process_list_entry->getQueryStatus());
+            QueryStatusPtr query_status = process_list_entry->getQueryStatus();
+            context->setProcessListElement(query_status);
+            {
+                std::lock_guard active_query_lock(active_query_mutex);
+                active_query_status = query_status;
+            }
             SCOPE_EXIT({
+                {
+                    std::lock_guard active_query_lock(active_query_mutex);
+                    active_query_status.reset();
+                }
                 context->setProcessListElement(nullptr);
                 process_list_entry.reset();
             });
@@ -1333,8 +1354,12 @@ struct FunctionsStressTestThread
                 }
                 else if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
                 {
-                    /// Iteration's per-query `max_execution_time` fired, or shutdown called
-                    /// `Context::killCurrentQuery()`. Both are guards we set up ourselves.
+                    /// The iteration's `QueryStatus::is_killed` was flipped either by the
+                    /// `CancellationChecker` once `max_execution_time` expired (cancel
+                    /// reason `TIMEOUT`, surfaces as `TIMEOUT_EXCEEDED`) or by
+                    /// `request_shutdown` cancelling on shutdown (reason
+                    /// `CANCELLED_BY_USER`, surfaces as `QUERY_WAS_CANCELLED`). Both are
+                    /// guards we set up ourselves.
                     stats.add(S_QUERY_CANCELLED, 1);
                 }
                 else if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("incorrect data types") != String::npos)
@@ -2259,22 +2284,18 @@ TEST(FunctionsStress, stress)
                 t->thread_should_stop.store(true);
                 /// Trip the per-iteration `QueryStatus::is_killed` flag so any
                 /// cancellation-aware code inside the running function returns immediately
-                /// rather than waiting for the natural `max_execution_time` to elapse.
-                /// `Context::process_list_elem` is non-atomic and the worker may be tearing
-                /// down its `ProcessListEntry` at the same moment: in that narrow window
-                /// `getProcessListElement` can see `has_process_list_elem == true` with an
-                /// expired `weak_ptr` and throw `LOGICAL_ERROR`. Log it: the worker is
-                /// between iterations and is about to observe `thread_should_stop` anyway.
-                if (!t->context)
-                    continue;
-                try
+                /// rather than waiting for the natural `max_execution_time` to elapse. We
+                /// cancel through the worker's published `QueryStatusPtr`, not through its
+                /// `Context`: `Context::process_list_elem` / `has_process_list_elem` are
+                /// not synchronized, while `QueryStatus::cancelQuery` takes its own
+                /// `cancel_mutex` and is safe to call from another thread.
+                QueryStatusPtr query_status;
                 {
-                    t->context->killCurrentQuery();
+                    std::lock_guard active_query_lock(t->active_query_mutex);
+                    query_status = t->active_query_status;
                 }
-                catch (Exception & e)
-                {
-                    LOG_INFO(logger, "killCurrentQuery raced with worker shutdown: {}", e.message());
-                }
+                if (query_status)
+                    query_status->cancelQuery(CancelReason::CANCELLED_BY_USER);
             }
         };
 
