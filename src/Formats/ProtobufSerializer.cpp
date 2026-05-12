@@ -83,6 +83,13 @@ namespace
     /// includes the caller's storage, the message-level `mutable_columns` cache, and
     /// each leaf field serializer's stored `ColumnPtr` for the same column, which can
     /// add up to more than two owners even on the happy path.
+    ///
+    /// Mutability is instead validated at the read-mode entry point in
+    /// `ProtobufSerializerMessage::setColumns(const MutableColumnPtr *)`: that overload
+    /// chasserts that each input column has `use_count() == 1`, which is the contract
+    /// of `MutableColumnPtr` (move-only, unique-ownership). Internal sharing past that
+    /// point is bounded by `ProtobufSerializer` itself and is safe to mutate through
+    /// this helper.
     IColumn & borrowColumnRef(const ColumnPtr & col)
     {
         return const_cast<IColumn &>(*col);
@@ -2591,6 +2598,19 @@ namespace
 
         void setColumns(const MutableColumnPtr * columns_, size_t num_columns_) override
         {
+            /// This is the read-mode entry point. `MutableColumnPtr` is move-only and represents
+            /// unique ownership, so the caller's mutability claim is equivalent to `use_count() == 1`
+            /// at this exact moment (before we add any references of our own via `getPtr()`).
+            ///
+            /// Validating here gives us a debug ownership check for the entire read path without
+            /// false-positives from `ProtobufSerializer`-internal sharing (the message-level
+            /// `mutable_columns` cache and each leaf field serializer's stored `ColumnPtr`), which
+            /// only accrue after this point.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+            for (size_t i : collections::range(num_columns_))
+                chassert(columns_[i]->use_count() == 1);
+#endif
+
             Columns cols;
             cols.reserve(num_columns_);
             for (size_t i : collections::range(num_columns_))
