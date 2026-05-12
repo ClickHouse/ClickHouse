@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <IO/ParallelReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -243,10 +244,12 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
     {
-        /// Convert the `Map(String, Int32)` setting into a plain vector of pairs that the
-        /// output format can consume without depending on Field / Map types. Basic structural
-        /// validation happens here; semantic checks (uniqueness of IDs, etc.) happen at
-        /// parquet-output time where we also know the header.
+        /// Convert the `Map(String, String)` setting into a plain vector of (name, field_id)
+        /// pairs that the output format can consume without depending on Field / Map types.
+        /// Setting values are always strings (SettingFieldMap stores Map(String, String)), so
+        /// each value string is parsed into a signed integer here. Basic structural validation
+        /// happens here; semantic checks (uniqueness of IDs, etc.) happen at parquet-output
+        /// time where we also know the header.
         const auto & raw = settings[Setting::output_format_parquet_column_field_ids].value;
         format_settings.parquet.column_field_ids.clear();
         format_settings.parquet.column_field_ids.reserve(raw.size());
@@ -257,20 +260,15 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
                     "output_format_parquet_column_field_ids must be a Map(String, Int32)");
 
             const auto & tuple = entry.safeGet<Tuple>();
-            if (tuple.at(0).getType() != Field::Types::String)
+            if (tuple.at(0).getType() != Field::Types::String || tuple.at(1).getType() != Field::Types::String)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "output_format_parquet_column_field_ids keys must be Strings");
+                    "output_format_parquet_column_field_ids must be a Map(String, Int32)");
 
-            const auto & id_field = tuple.at(1);
+            const auto & id_string = tuple.at(1).safeGet<String>();
             Int64 id_value = 0;
-            switch (id_field.getType())
-            {
-                case Field::Types::Int64:  id_value = id_field.safeGet<Int64>();  break;
-                case Field::Types::UInt64: id_value = static_cast<Int64>(id_field.safeGet<UInt64>()); break;
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "output_format_parquet_column_field_ids values must be integers");
-            }
+            if (!tryParse<Int64>(id_value, id_string))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids value '{}' is not an integer", id_string);
 
             if (id_value < 0 || id_value > std::numeric_limits<Int32>::max())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,

@@ -1557,9 +1557,11 @@ Allow to write information about geo columns in parquet metadata and encode colu
     DECLARE(Map, output_format_parquet_column_field_ids, "", R"(
 Explicit Parquet `field_id` overrides for output columns, keyed by column name. Useful for producing Parquet files compatible with Apache Iceberg, which identifies columns by `field_id` rather than by name.
 
-Takes precedence over `output_format_parquet_auto_assign_field_ids` for any column that appears in the map. Field IDs must be non-negative integers and must be unique.
+The value of the map is a string holding a non-negative `Int32` `field_id`. IDs must be unique across the map.
 
-Example: `SET output_format_parquet_column_field_ids = '{"col_a": 1, "col_b": 2, "col_c": 3}'`.
+Takes precedence over `output_format_parquet_auto_assign_field_ids` for any column that appears in the map.
+
+Example: `SET output_format_parquet_column_field_ids = {'col_a': '1', 'col_b': '2', 'col_c': '3'}`.
 )", 0) \
     DECLARE(Bool, output_format_parquet_auto_assign_field_ids, false, R"(
 When enabled, every output column is assigned a unique Parquet `field_id` automatically (sequential, starting at 1), matching the convention used by Apache Iceberg writers. Columns with an explicit override in `output_format_parquet_column_field_ids` keep the overridden value; remaining columns fill in around those overrides.

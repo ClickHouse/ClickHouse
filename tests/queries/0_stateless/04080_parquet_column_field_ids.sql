@@ -7,7 +7,7 @@
 -- Explicit per-column overrides.
 INSERT INTO FUNCTION file('04080_field_ids_custom.parquet')
 SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
-SETTINGS output_format_parquet_column_field_ids = '{"a": 10, "b": 20, "c": 30}';
+SETTINGS output_format_parquet_column_field_ids = {'a': '10', 'b': '20', 'c': '30'};
 
 SELECT a, b, c FROM file('04080_field_ids_custom.parquet');
 
@@ -23,7 +23,7 @@ SELECT a, b, c FROM file('04080_field_ids_auto.parquet');
 INSERT INTO FUNCTION file('04080_field_ids_mixed.parquet')
 SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
 SETTINGS output_format_parquet_auto_assign_field_ids = 1,
-         output_format_parquet_column_field_ids = '{"b": 1}';
+         output_format_parquet_column_field_ids = {'b': '1'};
 
 SELECT a, b, c FROM file('04080_field_ids_mixed.parquet');
 
@@ -35,12 +35,16 @@ SELECT a, b, c FROM file('04080_field_ids_none.parquet');
 
 -- Error: override references a column that isn't in the output.
 SELECT 1 AS a INTO OUTFILE '04080_field_ids_err.parquet' FORMAT Parquet
-SETTINGS output_format_parquet_column_field_ids = '{"missing": 1}'; -- { serverError BAD_ARGUMENTS }
+SETTINGS output_format_parquet_column_field_ids = {'missing': '1'}; -- { serverError BAD_ARGUMENTS }
 
 -- Error: override doesn't cover every column when auto-assign is off.
 SELECT 1 AS a, 2 AS b INTO OUTFILE '04080_field_ids_err.parquet' FORMAT Parquet
-SETTINGS output_format_parquet_column_field_ids = '{"a": 1}'; -- { serverError BAD_ARGUMENTS }
+SETTINGS output_format_parquet_column_field_ids = {'a': '1'}; -- { serverError BAD_ARGUMENTS }
 
 -- Error: two overrides claim the same id.
 SELECT 1 AS a, 2 AS b INTO OUTFILE '04080_field_ids_err.parquet' FORMAT Parquet
-SETTINGS output_format_parquet_column_field_ids = '{"a": 1, "b": 1}'; -- { serverError BAD_ARGUMENTS }
+SETTINGS output_format_parquet_column_field_ids = {'a': '1', 'b': '1'}; -- { serverError BAD_ARGUMENTS }
+
+-- Error: value is not an integer.
+SELECT 1 AS a INTO OUTFILE '04080_field_ids_err.parquet' FORMAT Parquet
+SETTINGS output_format_parquet_column_field_ids = {'a': 'oops'}; -- { serverError BAD_ARGUMENTS }
