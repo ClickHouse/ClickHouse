@@ -35,6 +35,7 @@ struct HiveSettingsImpl;
     M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
+    M(CLASS_NAME, Map) \
     M(CLASS_NAME, MsgPackUUIDRepresentation) \
     M(CLASS_NAME, ORCCompression) \
     M(CLASS_NAME, ParquetCompression) \

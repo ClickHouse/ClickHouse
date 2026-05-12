@@ -39,6 +39,7 @@ const auto KAFKA_CONSUMER_CLOSE_TIMEOUT_S = 60;
     M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
+    M(CLASS_NAME, Map) \
     M(CLASS_NAME, Milliseconds) \
     M(CLASS_NAME, MsgPackUUIDRepresentation) \
     M(CLASS_NAME, ORCCompression) \
