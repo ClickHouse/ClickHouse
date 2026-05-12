@@ -1339,8 +1339,12 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
     /// BF index types: require positional arguments — swap name only, keep args.
     static const std::unordered_set<String> bf_index_types = {"ngrambf_v1", "tokenbf_v1", "sparse_grams"};
     /// Simple no-arg tokenizers valid as text index tokenizer values.
-    static const Strings simple_tokenizers = {"splitByNonAlpha", "splitByString", "array"};
+    static const Strings simple_tokenizers = {"splitByNonAlpha", "splitByString", "array", "asciiCJK", "unicodeWord"};
     static const Strings posting_list_codecs = {"none", "bitpacking"};
+    /// vector_similarity index parameters (positional):
+    ///   ('hnsw', distance, M, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction)
+    static const Strings vector_similarity_distances = {"L2Distance", "cosineDistance"};
+    static const Strings vector_similarity_quantizations = {"i8", "b1", "bf16", "f16", "f32", "f64"};
 
     /// Fuzz named parameters of text index independently of type swap.
     if (index_type->name == "text" && index_type->arguments)
@@ -1431,6 +1435,30 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
                     value_ast = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2048 + 1));
             }
         }
+    }
+
+    /// Fuzz vector_similarity index positional arguments independently of type swap.
+    /// Signature: vector_similarity('hnsw', distance, M, quantization,
+    ///                              hnsw_max_connections_per_layer,
+    ///                              hnsw_candidate_list_size_for_construction)
+    if (index_type->name == "vector_similarity" && index_type->arguments)
+    {
+        auto & args = index_type->arguments->children;
+        /// distance (arg 1): string literal
+        if (args.size() > 1 && args[1]->as<ASTLiteral>() && fuzz_rand() % 5 == 0)
+            args[1] = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, vector_similarity_distances));
+        /// M (arg 2): power-of-two integer, 1..128
+        if (args.size() > 2 && args[2]->as<ASTLiteral>() && fuzz_rand() % 5 == 0)
+            args[2] = make_intrusive<ASTLiteral>(UInt64(1) << (fuzz_rand() % 8));
+        /// quantization (arg 3): string literal
+        if (args.size() > 3 && args[3]->as<ASTLiteral>() && fuzz_rand() % 5 == 0)
+            args[3] = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, vector_similarity_quantizations));
+        /// hnsw_max_connections_per_layer (arg 4): small-to-medium integer
+        if (args.size() > 4 && args[4]->as<ASTLiteral>() && fuzz_rand() % 5 == 0)
+            args[4] = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 4194304 + 1));
+        /// hnsw_candidate_list_size_for_construction (arg 5): small-to-medium integer
+        if (args.size() > 5 && args[5]->as<ASTLiteral>() && fuzz_rand() % 5 == 0)
+            args[5] = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 4194304 + 1));
     }
 
     /// Fuzz index granularity (1/10 probability).
