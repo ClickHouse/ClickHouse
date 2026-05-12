@@ -178,8 +178,8 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         {Highlight::substitution, Replxx::Color::MAGENTA},
         {Highlight::number, replxx::color::rgb666(0, 4, 0)},
         {Highlight::string, Replxx::Color::GREEN},
-        {Highlight::string_like, Replxx::Color::GREEN},
-        {Highlight::string_regexp, Replxx::Color::GREEN},
+        {Highlight::string_escape, replxx::color::bold(Replxx::Color::LIGHTGRAY)},
+        {Highlight::string_metacharacter, replxx::color::bold(Replxx::Color::BRIGHTMAGENTA)},
     };
 
     /// We set reasonably small limits for size/depth, because we don't want the CLI to be slow.
@@ -235,17 +235,15 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         : end;
     const HighlightedRange * highlight_matching_identifiers = nullptr;
 
+    /// Expand string_like/string_regexp into character-level sub-ranges
+    /// (string, string_escape, string_metacharacter).
+    const auto expanded = expandHighlights(expected.highlights);
+
     /// We have to map from byte positions to Unicode positions.
     size_t code_point_pos = 0;
     const char * char_pos = begin;
-    for (const auto & range : expected.highlights)
+    for (const auto & range : expanded)
     {
-        const char * metacharacters = "";
-        if (range.highlight == Highlight::string_like)
-            metacharacters = "%_";
-        if (range.highlight == Highlight::string_regexp)
-            metacharacters = "|()^$.[]?*+{:-";
-
         auto it = type_to_color.find(range.highlight);
         if (it != type_to_color.end())
         {
@@ -268,25 +266,9 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
             std::optional<size_t> regular_number_before_decimal_code_point_first;
             std::optional<size_t> regular_number_before_decimal_code_point_last;
 
-            int escaped = 0;
             while (char_pos < range.end)
             {
-                if (*char_pos == '\\')
-                {
-                    ++escaped;
-                    colors[code_point_pos] = replxx::color::bold(Replxx::Color::LIGHTGRAY);
-                }
-                /// The counting of escape characters is quite tricky due to double escaping of string literals + regexps,
-                /// and the special logic of interpreting escape sequences that are not interpreted by the string literals.
-                else if ((escaped % 4 == 0 || escaped % 4 == 3) && nullptr != strchr(metacharacters, *char_pos))
-                {
-                    colors[code_point_pos] = replxx::color::bold(Replxx::Color::BRIGHTMAGENTA);
-                }
-                else
-                {
-                    colors[code_point_pos] = it->second;
-                    escaped = 0;
-                }
+                colors[code_point_pos] = it->second;
 
                 if (is_regular_number)
                 {
@@ -342,7 +324,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     {
         const char * identifiers_char_pos = begin;
         size_t identifiers_code_point_pos = 0;
-        for (const auto & range : expected.highlights)
+        for (const auto & range : expanded)
         {
             if ((range.highlight == Highlight::identifier || range.highlight == Highlight::alias)
                 && std::string_view(range.begin, range.end) == std::string_view(highlight_matching_identifiers->begin, highlight_matching_identifiers->end))
