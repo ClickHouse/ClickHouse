@@ -8,6 +8,7 @@ import typing
 
 from environment import get_system_timezones
 from integration.helpers.cluster import ClickHouseCluster
+from integration.helpers.config_cluster import mongo_pass, mysql_pass, pg_pass
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
@@ -513,7 +514,9 @@ cache_storage_properties = {
     "load_metadata_asynchronously": true_false_lambda,
     "load_metadata_threads": no_zero_threads_lambda,
     "max_elements": threshold_generator(0.2, 0.2, 10000, 10000000),
-    "max_file_segment_size": threshold_generator(0.2, 0.2, 4 * 1024 * 1024, 32 * 1024 * 1024),  # must be >= default boundary_alignment (4Mi)
+    "max_file_segment_size": threshold_generator(
+        0.2, 0.2, 4 * 1024 * 1024, 32 * 1024 * 1024
+    ),  # must be >= default boundary_alignment (4Mi)
     "overcommit_eviction_evict_step": threshold_generator(
         0.2, 0.2, 1, 10 * 1024 * 1024
     ),
@@ -1309,22 +1312,40 @@ def modify_server_settings(
         named_collections_xml = ET.SubElement(root, "named_collections")
         if args.with_minio:
             s3_xml = ET.SubElement(named_collections_xml, "s3")
-            url_xml = ET.SubElement(s3_xml, "url")
-            url_xml.text = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/"
-            access_key_id_xml = ET.SubElement(s3_xml, "access_key_id")
-            access_key_id_xml.text = "minio"
-            secret_access_key_xml = ET.SubElement(s3_xml, "secret_access_key")
-            secret_access_key_xml.text = cluster.minio_secret_key
+            ET.SubElement(s3_xml, "url").text = (
+                f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/"
+            )
+            ET.SubElement(s3_xml, "access_key_id").text = "minio"
+            ET.SubElement(s3_xml, "secret_access_key").text = cluster.minio_secret_key
         if args.with_azurite:
             azure_xml = ET.SubElement(named_collections_xml, "azure")
-            account_name_xml = ET.SubElement(azure_xml, "account_name")
-            account_name_xml.text = cluster.azurite_account
-            account_key_xml = ET.SubElement(azure_xml, "account_key")
-            account_key_xml.text = cluster.azurite_key
-            container_xml = ET.SubElement(azure_xml, "container")
-            container_xml.text = cluster.azure_container_name
-            storage_account_url_xml = ET.SubElement(azure_xml, "storage_account_url")
-            storage_account_url_xml.text = f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}"
+            ET.SubElement(azure_xml, "account_name").text = cluster.azurite_account
+            ET.SubElement(azure_xml, "account_key").text = cluster.azurite_key
+            ET.SubElement(azure_xml, "container").text = cluster.azure_container_name
+            ET.SubElement(azure_xml, "storage_account_url").text = (
+                f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}"
+            )
+        if args.with_mysql:
+            mysql_xml = ET.SubElement(named_collections_xml, "mysql_remote")
+            ET.SubElement(mysql_xml, "host").text = cluster.mysql8_host
+            ET.SubElement(mysql_xml, "port").text = str(cluster.mysql8_port)
+            ET.SubElement(mysql_xml, "user").text = "root"
+            ET.SubElement(mysql_xml, "password").text = mysql_pass
+            ET.SubElement(mysql_xml, "database").text = "test"
+        if args.with_postgresql:
+            pg_xml = ET.SubElement(named_collections_xml, "postgres_remote")
+            ET.SubElement(pg_xml, "host").text = cluster.postgres_host
+            ET.SubElement(pg_xml, "port").text = str(cluster.postgres_port)
+            ET.SubElement(pg_xml, "user").text = "postgres"
+            ET.SubElement(pg_xml, "password").text = pg_pass
+            ET.SubElement(pg_xml, "database").text = "test"
+        if args.with_mongodb:
+            mongo_xml = ET.SubElement(named_collections_xml, "mongo_remote")
+            ET.SubElement(mongo_xml, "host").text = cluster.mongo_host
+            ET.SubElement(mongo_xml, "port").text = str(cluster.mongo_port)
+            ET.SubElement(mongo_xml, "user").text = "root"
+            ET.SubElement(mongo_xml, "password").text = mongo_pass
+            ET.SubElement(mongo_xml, "database").text = "test"
         ET.SubElement(named_collections_xml, "local")
 
     if "timezone" not in possible_properties:

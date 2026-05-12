@@ -2621,10 +2621,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
                   est->mutable_database()->set_value(sc.database);
                   est->mutable_table()->set_value(t.getBaseName());
-                  dsd->set_host(sc.server_hostname);
-                  dsd->set_port(std::to_string(sc.port));
-                  dsd->set_user(sc.user);
-                  dsd->set_password(sc.password);
+                  dsd->set_named_collection(sc.named_collection);
                   dsd->set_source(DictionarySourceDetails::POSTGRESQL);
               }
               else if (t.isMySQLEngine() && fc.mysql_server.has_value() && rg.nextSmallNumber() < 8)
@@ -2634,10 +2631,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
                   est->mutable_database()->set_value(sc.database);
                   est->mutable_table()->set_value(t.getBaseName());
-                  dsd->set_host(sc.server_hostname);
-                  dsd->set_port(std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
-                  dsd->set_user(sc.user);
-                  dsd->set_password(sc.password);
+                  dsd->set_named_collection(sc.named_collection);
                   dsd->set_source(DictionarySourceDetails::MYSQL);
               }
               else if (t.isMongoDBEngine() && fc.mongodb_server.has_value() && rg.nextSmallNumber() < 8)
@@ -2647,10 +2641,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
                   est->mutable_database()->set_value(sc.database);
                   est->mutable_table()->set_value(t.getBaseName());
-                  dsd->set_host(sc.server_hostname);
-                  dsd->set_port(std::to_string(sc.port));
-                  dsd->set_user(sc.user);
-                  dsd->set_password(sc.password);
+                  dsd->set_named_collection(sc.named_collection);
                   dsd->set_source(DictionarySourceDetails::MONGODB);
               }
               else if (t.isFileEngine() && rg.nextSmallNumber() < 8)

@@ -235,11 +235,9 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         const ServerCredentials & sc = fc.mysql_server.value();
         MySQLFunc * mfunc = tfunc->mutable_mysql();
 
-        mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
         mfunc->set_rdatabase(sc.database);
         mfunc->set_rtable(t.getBaseName());
-        mfunc->set_user(sc.user);
-        mfunc->set_password(sc.password);
+        mfunc->set_named_collection(sc.named_collection);
     }
     else if (
         (usage == TableFunctionUsage::EngineReplace && t.isPostgreSQLEngine())
@@ -248,12 +246,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         const ServerCredentials & sc = fc.postgresql_server.value();
         PostgreSQLFunc * pfunc = tfunc->mutable_postgresql();
 
-        pfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
+        pfunc->set_named_collection(sc.named_collection);
         pfunc->set_rdatabase(sc.database);
-        pfunc->set_rtable(t.getBaseName());
-        pfunc->set_user(sc.user);
-        pfunc->set_password(sc.password);
         pfunc->set_rschema("test");
+        pfunc->set_rtable(t.getBaseName());
     }
     else if (
         (usage == TableFunctionUsage::EngineReplace && t.isSQLiteEngine()) || (usage == TableFunctionUsage::PeerTable && t.hasSQLitePeer()))
@@ -430,12 +426,8 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             mfunc->set_collection(t.getBaseName());
             if (fc.mongodb_server.has_value())
             {
-                const ServerCredentials & sc = fc.mongodb_server.value();
-
-                mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
-                mfunc->set_database(sc.database);
-                mfunc->set_user(sc.user);
-                mfunc->set_password(sc.password);
+                mfunc->set_database(fc.mongodb_server.value().database);
+                mfunc->set_named_collection(fc.mongodb_server.value().named_collection);
             }
             structure = rg.nextMediumNumber() < 96 ? mfunc->mutable_structure() : nullptr;
         }
@@ -512,9 +504,16 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             const ServerCredentials & sc = fc.clickhouse_server.value();
 
-            rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
-            rfunc->set_user(sc.user);
-            rfunc->set_password(sc.password);
+            if (!sc.named_collection.empty())
+            {
+                rfunc->set_named_collection(sc.named_collection);
+            }
+            else
+            {
+                rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
+                rfunc->set_user(sc.user);
+                rfunc->set_password(sc.password);
+            }
         }
         else
         {

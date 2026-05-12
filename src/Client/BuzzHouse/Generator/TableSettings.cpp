@@ -78,8 +78,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"async_insert", trueOrFalseSetting},
     {"auto_statistics_types",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         { return settingCombinations(rg, {"tdigest", "countmin", "minmax", "uniq", "nullcount"}); },
+         [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"tdigest", "countmin", "minmax", "uniq", "nullcount"}); },
          {"'tdigest'", "'countmin'", "'minmax'", "'uniq'", "'nullcount'"},
          false)},
     {"background_task_preferred_step_execution_time_ms", highRangeSetting},

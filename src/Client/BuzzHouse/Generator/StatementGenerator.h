@@ -895,8 +895,7 @@ public:
     /// not just this one's USING, and the oracle's "Q2 WHERE = this policy's USING"
     /// invariant would produce false positives (see debug2.sql case with two permissive
     /// policies on t0: effective filter `c0=2 OR TRUE` = TRUE, but the oracle picks one).
-    const std::function<bool(const SQLPolicy &)> row_policies_for_oracle
-        = [this](const SQLPolicy & p) -> bool
+    const std::function<bool(const SQLPolicy &)> row_policies_for_oracle = [this](const SQLPolicy & p) -> bool
     {
         if (!(p.is_row && p.where_expr.has_value() && p.targets_oracle_role))
             return false;

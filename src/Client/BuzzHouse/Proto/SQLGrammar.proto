@@ -2678,28 +2678,25 @@ message RemoteFunc {
         remoteSecure = 2;
     }
     required RName rname = 1;
-    required string address = 2;
-    required TableOrFunction tof = 3;
-    optional string user = 4;
-    optional string password = 5;
-    optional Expr sharding_key = 6;
+    optional string named_collection = 2;
+    optional string address = 3;
+    required TableOrFunction tof = 4;
+    optional string user = 5;
+    optional string password = 6;
+    optional Expr sharding_key = 7;
 }
 
 message MySQLFunc {
-    required string address = 1;
-    required string rdatabase = 2;
-    required string rtable = 3;
-    required string user = 4;
-    required string password = 5;
+    optional string named_collection = 1;
+    optional string rdatabase = 2;
+    optional string rtable = 3;
 }
 
 message PostgreSQLFunc {
-    required string address = 1;
-    required string rdatabase = 2;
-    required string rtable = 3;
-    required string user = 4;
-    required string password = 5;
-    optional string rschema = 6;
+    optional string named_collection = 1;
+    optional string rdatabase = 2;
+    optional string rschema = 3;
+    optional string rtable = 4;
 }
 
 message SQLiteFunc {
@@ -2717,12 +2714,10 @@ message RedisFunc {
 }
 
 message MongoDBFunc {
-    required string address = 1;
-    required string database = 2;
-    required string collection = 3;
-    required string user = 4;
-    required string password = 5;
-    optional Expr structure = 6;
+    optional string named_collection = 1;
+    optional string database = 2;
+    optional string collection = 3;
+    optional Expr structure = 4;
 }
 
 message ObjectStoreFunc {
@@ -3908,18 +3903,19 @@ message DictionarySourceDetails {
         hash_map = 2;
     }
     required DictionarySourceType source = 1;
-    optional ExprSchemaTable est = 2;
-    optional string host = 3;
-    optional string port = 4;
-    optional string user = 5;
-    optional string password = 6;
-    optional RedisStorageType redis_storage = 7;
-    optional string invalidate_query = 8;
-    optional ColumnPath update_field = 9;
-    optional uint32 update_lag = 10;
-    optional string url = 11;
-    optional string path = 12;
-    optional string format = 13;
+    optional string named_collection = 2;
+    optional ExprSchemaTable est = 3;
+    optional string host = 4;
+    optional string port = 5;
+    optional string user = 6;
+    optional string password = 7;
+    optional RedisStorageType redis_storage = 8;
+    optional string invalidate_query = 9;
+    optional ColumnPath update_field = 10;
+    optional uint32 update_lag = 11;
+    optional string url = 12;
+    optional string path = 13;
+    optional string format = 14;
 }
 
 message DictionarySource {

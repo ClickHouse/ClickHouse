@@ -2129,25 +2129,73 @@ static void TableOrFunctionToString(String & ret, const bool tudf, const TableOr
 CONV_FN(RemoteFunc, rfunc)
 {
     const TableOrFunction & tof = rfunc.tof();
+    bool need_comma = false;
 
     ret += RemoteFunc_RName_Name(rfunc.rname());
     ret += "(";
-    appendSQLStringLiteral(ret, rfunc.address());
-    ret += ", ";
-    TableOrFunctionToString(ret, true, tof);
-    if (rfunc.has_user())
+    if (rfunc.has_named_collection())
+    {
+        ret += rfunc.named_collection();
+        need_comma = true;
+    }
+    if (rfunc.has_address())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        appendSQLStringLiteral(ret, rfunc.address());
+        need_comma = true;
+    }
+    if (need_comma)
     {
         ret += ", ";
+    }
+    if (rfunc.has_named_collection() && tof.has_est())
+    {
+        const ExprSchemaTable & est = tof.est();
+        if (est.has_database())
+        {
+            ret += "database=";
+            appendSQLStringLiteral(ret, est.database().value());
+            ret += ", ";
+        }
+        ret += "table=";
+        appendSQLStringLiteral(ret, est.table().value());
+    }
+    else
+    {
+        TableOrFunctionToString(ret, true, tof);
+    }
+    need_comma = true;
+    if (rfunc.has_user())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
         appendSQLStringLiteral(ret, rfunc.user());
+        need_comma = true;
     }
     if (rfunc.has_password())
     {
-        ret += ", ";
+        if (need_comma)
+        {
+            ret += ", ";
+        }
         appendSQLStringLiteral(ret, rfunc.password());
+        need_comma = true;
     }
     if (rfunc.has_sharding_key())
     {
-        ret += ", ";
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        if (rfunc.has_named_collection())
+        {
+            ret += "sharding_key=";
+        }
         ExprToString(ret, rfunc.sharding_key());
     }
     ret += ")";
@@ -2155,35 +2203,74 @@ CONV_FN(RemoteFunc, rfunc)
 
 CONV_FN(MySQLFunc, mfunc)
 {
+    bool need_comma = false;
+
     ret += "mysql(";
-    appendSQLStringLiteral(ret, mfunc.address());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.rdatabase());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.rtable());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.user());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.password());
+    if (mfunc.has_named_collection())
+    {
+        ret += mfunc.named_collection();
+        need_comma = true;
+    }
+    if (mfunc.has_rdatabase())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "database=";
+        appendSQLStringLiteral(ret, mfunc.rdatabase());
+        need_comma = true;
+    }
+    if (mfunc.has_rtable())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "table=";
+        appendSQLStringLiteral(ret, mfunc.rtable());
+    }
     ret += ")";
 }
 
 CONV_FN(PostgreSQLFunc, pfunc)
 {
+    bool need_comma = false;
+
     ret += "postgresql(";
-    appendSQLStringLiteral(ret, pfunc.address());
-    ret += ", ";
-    appendSQLStringLiteral(ret, pfunc.rdatabase());
-    ret += ", ";
-    appendSQLStringLiteral(ret, pfunc.rtable());
-    ret += ", ";
-    appendSQLStringLiteral(ret, pfunc.user());
-    ret += ", ";
-    appendSQLStringLiteral(ret, pfunc.password());
+    if (pfunc.has_named_collection())
+    {
+        ret += pfunc.named_collection();
+        need_comma = true;
+    }
+    if (pfunc.has_rdatabase())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "database=";
+        appendSQLStringLiteral(ret, pfunc.rdatabase());
+        need_comma = true;
+    }
     if (pfunc.has_rschema())
     {
-        ret += ", ";
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "schema=";
         appendSQLStringLiteral(ret, pfunc.rschema());
+        need_comma = true;
+    }
+    if (pfunc.has_rtable())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "table=";
+        appendSQLStringLiteral(ret, pfunc.rtable());
     }
     ret += ")";
 }
@@ -2228,19 +2315,41 @@ CONV_FN(RedisFunc, rfunc)
 
 CONV_FN(MongoDBFunc, mfunc)
 {
+    bool need_comma = false;
+
     ret += "mongodb(";
-    appendSQLStringLiteral(ret, mfunc.address());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.database());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.collection());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.user());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.password());
+    if (mfunc.has_named_collection())
+    {
+        ret += mfunc.named_collection();
+        need_comma = true;
+    }
+    if (mfunc.has_database())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "database=";
+        appendSQLStringLiteral(ret, mfunc.database());
+        need_comma = true;
+    }
+    if (mfunc.has_collection())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "collection=";
+        appendSQLStringLiteral(ret, mfunc.collection());
+        need_comma = true;
+    }
     if (mfunc.has_structure())
     {
-        ret += ", ";
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "structure=";
         ExprToString(ret, mfunc.structure());
     }
     ret += ")";
@@ -4276,10 +4385,20 @@ CONV_FN(DictionarySourceDetails, dsd)
 
     ret += DictionarySourceDetails_DictionarySourceType_Name(dsd.source());
     ret += "(";
+    if (dsd.has_named_collection())
+    {
+        ret += "NAME ";
+        appendSQLStringLiteral(ret, dsd.named_collection());
+        has_something = true;
+    }
     if (dsd.has_est())
     {
         const String & separator = dsd.source() == DictionarySourceDetails::MONGODB ? "' COLLECTION '" : "' TABLE '";
 
+        if (has_something)
+        {
+            ret += " ";
+        }
         ret += "DB ";
         FlatExprSchemaTableToString(ret, dsd.est(), separator);
         has_something = true;

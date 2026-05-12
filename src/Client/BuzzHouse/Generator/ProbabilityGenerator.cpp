@@ -188,10 +188,7 @@ std::vector<double> ProbabilityGenerator::genBounded()
         }
         const auto b = bounds[i];
         if (b.min < 0.0 || b.max < 0.0 || b.min > b.max)
-            throw DB::Exception(
-                DB::ErrorCodes::BUZZHOUSE,
-                "Invalid bounds at {} index {}: min={}, max={}",
-                description, i, b.min, b.max);
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Invalid bounds at {} index {}: min={}, max={}", description, i, b.min, b.max);
         std::uniform_real_distribution<double> unif(b.min, b.max);
         w[i] = unif(generator);
     }
