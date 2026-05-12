@@ -13,6 +13,7 @@ NOT_FAILED_SIGN = "[ NOT_FAILED "
 HUNG_SIGN = "Found hung queries in processlist"
 SERVER_DIED_SIGN = "Server died, terminating all processes"
 SERVER_DIED_SIGN2 = "Server does not respond to health check"
+SERVER_DIED_SIGN3 = "Hung check failed: server is not responding"
 DATABASE_SIGN = "Database: "
 
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
@@ -75,7 +76,7 @@ class FTResultsProcessor:
                 if HUNG_SIGN in line:
                     hung = True
                     break
-                if SERVER_DIED_SIGN in line or SERVER_DIED_SIGN2 in line:
+                if SERVER_DIED_SIGN in line or SERVER_DIED_SIGN2 in line or SERVER_DIED_SIGN3 in line:
                     server_died = True
                 if RETRIES_SIGN in line:
                     retries = True
