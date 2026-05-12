@@ -1,5 +1,7 @@
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/PreparedSets.h>
@@ -124,4 +126,37 @@ TEST(FutureSetContentHash, TypeSensitivity)
     /// "1" as a string vs 1 as a UInt64 — different type names, different hash.
     EXPECT_NE(contentHash(makeStringBlock({"1"})),
               contentHash(makeUInt64Block({1})));
+}
+
+/// Duplicate elements are removed after Set::insertFromColumns, so IN ('a','a')
+/// and IN ('a') must hash identically.
+TEST(FutureSetContentHash, DuplicatesNormalized)
+{
+    EXPECT_EQ(contentHash(makeStringBlock({"a"})),
+              contentHash(makeStringBlock({"a", "a"})));
+    EXPECT_EQ(contentHash(makeStringBlock({"a", "b"})),
+              contentHash(makeStringBlock({"a", "b", "a"})));
+}
+
+/// With transform_null_in = false (the default), NULL-containing rows are skipped
+/// during insertion, so IN ('a', NULL) and IN ('a') must hash identically.
+TEST(FutureSetContentHash, NullsFilteredWhenTransformNullInDisabled)
+{
+    auto makeBlockWithNull = [](std::vector<std::optional<String>> values)
+    {
+        auto col = ColumnString::create();
+        auto null_map = ColumnVector<UInt8>::create();
+        for (const auto & v : values)
+        {
+            col->insert(v.value_or(""));
+            null_map->insert(v.has_value() ? 0 : 1);
+        }
+        auto nullable = ColumnNullable::create(std::move(col), std::move(null_map));
+        return ColumnsWithTypeAndName{
+            {std::move(nullable), std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "s"}};
+    };
+
+    /// transform_null_in = false: NULL rows are dropped, so {'a', NULL} == {'a'}
+    EXPECT_EQ(contentHash(makeBlockWithNull({"a", std::nullopt})),
+              contentHash(makeBlockWithNull({"a"})));
 }
