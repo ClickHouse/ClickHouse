@@ -102,6 +102,37 @@ static Poco::AutoPtr<Poco::Util::MapConfiguration> emptyConfig()
     return Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration);
 }
 
+// ---------------------------------------------------------------------------
+// setupAuthentication rewrite: AWS_MSK_IAM from server/named-collection config
+// ---------------------------------------------------------------------------
+
+TEST(AWSMSKIAMAuth, SetupRewritesPresetAWSMSKIAMToOAUTHBEARER)
+{
+    // Simulate sasl.mechanism = AWS_MSK_IAM already written into kafka_config by
+    // loadFromConfig (server config path) before setupAuthentication is called.
+    // After setup, sasl.mechanism must be OAUTHBEARER and security.protocol SASL_SSL.
+    // AWS_MSK_IAM must NOT be passed through to librdkafka.
+    cppkafka::Configuration cfg;
+    cfg.set("sasl.mechanism", "AWS_MSK_IAM");
+    auto config = emptyConfig();
+    std::shared_ptr<OAuthBearerTokenRefreshContext> ctx;
+
+    try
+    {
+        setupAuthentication(cfg, *config, "us-east-1", "", nullptr, ctx);
+        EXPECT_EQ(cfg.get("sasl.mechanism"), "OAUTHBEARER");
+        EXPECT_EQ(cfg.get("security.protocol"), "SASL_SSL");
+    }
+    catch (const DB::Exception & e)
+    {
+        FAIL() << "Unexpected DB::Exception: " << e.message();
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        // Ok: non-setup exceptions (e.g. missing AWS credentials) are acceptable here.
+    }
+}
+
 TEST(AWSMSKIAMAuth, SetupFailsWhenRegionCannotBeInferred)
 {
     cppkafka::Configuration cfg;

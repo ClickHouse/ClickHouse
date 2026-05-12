@@ -431,7 +431,12 @@ void updateConfigurationFromConfig(
             LOG_ERROR(params.log, "Unknown kafka_autodetect_client_rack facility  {}. Expected one of AWS_ZONE_ID, AWS_ZONE_NAME, GCP_ZONE, CLICKHOUSE, AWS_ZONE_NAME_THEN_GCP_ZONE.", autodetect_rack);
     }
 
-    const String sasl_mechanism = kafka_settings[KafkaSetting::kafka_sasl_mechanism].value;
+    /// Derive effective SASL mechanism from both table settings and server/named-collection config.
+    /// Table settings take priority; fall back to whatever loadFromConfig already wrote to kafka_config.
+    String sasl_mechanism = kafka_settings[KafkaSetting::kafka_sasl_mechanism].value;
+    if (sasl_mechanism.empty() && kafka_config.has_property("sasl.mechanism"))
+        sasl_mechanism = kafka_config.get("sasl.mechanism");
+
     if (boost::iequals(sasl_mechanism, "AWS_MSK_IAM"))
     {
 #if USE_AWS_S3
