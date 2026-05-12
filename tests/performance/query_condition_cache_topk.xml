@@ -5,20 +5,48 @@
          QCC never cached anything, so every run paid the full WHERE-filter cost.
          With the QCC entry now salted by the TopK plan parameters, the second
          and subsequent runs of the same query reuse the cached granule
-         decisions and skip the marks dropped by the WHERE filter. -->
+         decisions and skip the granules dropped by the WHERE filter.
 
-    <preconditions>
-        <table_exists>hits_100m_single</table_exists>
-    </preconditions>
+         Data layout:
+           * 50M rows, `index_granularity = 8192` → ~6 100 granules per part.
+           * `v2` is random per row, so per-part minmax statistics span the full
+             `UInt32` range and cannot prune parts on `v2 = constant`.
+           * Exactly one row is injected with `v2 = 12345`, so the matching row
+             sits in a single granule. The other ~6 100 granules have zero
+             matches and are recorded as skippable in the QCC after the prewarm
+             run, leaving only that one granule to scan on every subsequent run. -->
+
+    <create_query>
+        CREATE TABLE qcc_topk_test (id UInt32, v1 UInt32, v2 UInt32) ENGINE = MergeTree ORDER BY id
+        SETTINGS index_granularity = 8192,
+                 min_bytes_for_wide_part = 0,
+                 min_bytes_for_full_part_storage = 0,
+                 add_minmax_index_for_numeric_columns = 0,
+                 auto_statistics_types = ''
+    </create_query>
+
+    <fill_query>
+        INSERT INTO qcc_topk_test SELECT rand(), number, if(number = 12345678, 12345, rand()) FROM numbers(50000000)
+    </fill_query>
 
     <settings>
+        <enable_analyzer>1</enable_analyzer>
         <use_top_k_dynamic_filtering>1</use_top_k_dynamic_filtering>
         <use_skip_indexes_for_top_k>1</use_skip_indexes_for_top_k>
+        <query_plan_max_limit_for_top_k_optimization>1000</query_plan_max_limit_for_top_k_optimization>
+        <!-- Keep WHERE as a separate `FilterStep` above `ReadFromMergeTree` so the
+             dynamic-filtering branch of `tryOptimizeTopK` applies (it bails out
+             when `getPrewhereInfo()` is already set) and the WHERE condition is
+             the one written into the query condition cache. -->
+        <optimize_move_to_prewhere>0</optimize_move_to_prewhere>
+        <enable_parallel_replicas>0</enable_parallel_replicas>
     </settings>
 
-    <!-- QCC enabled: this PR makes the cache effective for TopK reads. -->
-    <query>SELECT URL, EventTime FROM hits_100m_single WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 SETTINGS use_query_condition_cache = 1</query>
+    <!-- QCC enabled: prewarm primes the cache, measured runs reuse it. -->
+    <query>SELECT v1 FROM qcc_topk_test WHERE v2 = 12345 ORDER BY v1 ASC LIMIT 10 SETTINGS use_query_condition_cache = 1 FORMAT Null</query>
 
-    <!-- QCC disabled: baseline, unaffected by this PR. -->
-    <query>SELECT URL, EventTime FROM hits_100m_single WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 SETTINGS use_query_condition_cache = 0</query>
+    <!-- QCC disabled: baseline, every run pays the full WHERE-filter cost. -->
+    <query>SELECT v1 FROM qcc_topk_test WHERE v2 = 12345 ORDER BY v1 ASC LIMIT 10 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS qcc_topk_test</drop_query>
 </test>
