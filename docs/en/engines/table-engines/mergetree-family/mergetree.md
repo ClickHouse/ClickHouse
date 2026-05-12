@@ -1224,7 +1224,7 @@ Requirements and constraints:
 
 Behavior on the leader vs. on followers:
 
-- Leader: inserts, `INSERT`-driven merges, mutations, `DROP`/`DETACH`/`ATTACH`/`MOVE`/`REPLACE PARTITION`, `OPTIMIZE` all run normally. Background merges, mutations, moves, and cleanup are active. When leadership is acquired, the leader refreshes its in-memory view of parts from shared storage (loading any parts the previous leader committed) and advances the local block-number counter past anything the previous leader wrote. The counter advancement uses both the shared metadata refresh and a direct `listObjects` probe of the object storage prefix as a defense in depth against metadata-cache staleness.
+- Leader: inserts, `INSERT`-driven merges, mutations, `DROP`/`DETACH`/`ATTACH`/`MOVE`/`REPLACE PARTITION`, `OPTIMIZE` all run normally. Background merges, mutations, moves, and cleanup are active. When leadership is acquired, the leader refreshes its in-memory view of parts from shared storage (loading any parts the previous leader committed) and advances the local block-number counter past anything the previous leader wrote.
 - Follower: writes and DDL fail with `TABLE_IS_READ_ONLY`. `SELECT` is allowed. Background write tasks are stopped, and any in-flight merges or moves on a node that just lost leadership are actively cancelled to bound the dual-writer window. `DROP TABLE` is allowed and removes only local metadata, leaving the shared data intact for the leader.
 
 Unsupported operations under `leader_election`:

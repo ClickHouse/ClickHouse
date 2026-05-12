@@ -318,34 +318,24 @@ void StorageMergeTree::startup()
                     /// advance the block-number counter past anything the previous leader
                     /// committed on shared storage. The constructor has already validated that
                     /// every disk uses `PlainRewritable` or `Keeper` metadata, so the
-                    /// metadata refresh below picks up parts written by other nodes.
-                    /// Two mechanisms feed the counter:
+                    /// `disk->refresh(0)` inside `loadNewlyAppearedParts` makes the previous
+                    /// leader's committed parts visible via `disk->iterateDirectory`. After
+                    /// `loadNewlyAppearedParts` returns, the in-memory part set reflects every
+                    /// part the previous leader committed and `getMaxBlockNumber` reflects the
+                    /// highest block number among them — so advancing `increment` past that
+                    /// max is sufficient to avoid block-number reuse.
                     ///
-                    /// 1. `loadNewlyAppearedParts` — refreshes the metadata cache via
-                    ///    `disk->refresh(0)` and adds any newly-visible parts to the local
-                    ///    in-memory part set. After this returns, `SELECT` queries on the
-                    ///    new leader see every part the previous leader committed.
-                    ///
-                    /// 2. `getMaxBlockNumberFromObjectStorage` — probes the object storage
-                    ///    directly via `IObjectStorage::listObjects`, parses every top-level
-                    ///    directory that looks like a part name, and returns the highest
-                    ///    `max_block`/`mutation` across them. This is a defense in depth
-                    ///    against any metadata-cache staleness that the refresh might miss.
-                    ///
-                    /// We use the max of (current `increment`, local-metadata max, object-
-                    /// storage max). If either probe fails, refuse to enable writes — running
-                    /// without a fresh view is precisely the split-brain case we are
-                    /// guarding against. The election task will retry on the next heartbeat.
+                    /// If the refresh fails, refuse to enable writes — running without a fresh
+                    /// view is precisely the split-brain case we are guarding against. The
+                    /// election task will retry on the next heartbeat.
                     try
                     {
                         size_t newly_loaded = loadNewlyAppearedParts();
-                        Int64 local_max = getMaxBlockNumber();
-                        Int64 remote_max = getMaxBlockNumberFromObjectStorage();
-                        Int64 max_block_number = std::max(local_max, remote_max);
+                        Int64 max_block_number = getMaxBlockNumber();
                         UInt64 next_block = std::max<UInt64>(increment.value.load(), static_cast<UInt64>(std::max<Int64>(0, max_block_number)));
                         increment.set(next_block);
-                        LOG_INFO(log, "Synced from shared storage: loaded {} new parts, max block on disk {} (local view) / {} (object-storage probe), advanced counter to {}",
-                            newly_loaded, local_max, remote_max, increment.value.load());
+                        LOG_INFO(log, "Synced from shared storage: loaded {} new parts, max block {}, advanced counter to {}",
+                            newly_loaded, max_block_number, increment.value.load());
                     }
                     catch (...)
                     {

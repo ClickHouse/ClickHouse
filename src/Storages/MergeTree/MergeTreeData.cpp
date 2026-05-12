@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeString.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskType.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
@@ -2712,79 +2711,6 @@ try
 catch (...)
 {
     tryLogCurrentException(log, "Failed to refresh parts");
-}
-
-Int64 MergeTreeData::getMaxBlockNumberFromObjectStorage() const
-{
-    Int64 max_block_number = 0;
-
-    for (const auto & disk : getStoragePolicy()->getDisks())
-    {
-        if (disk->isBroken() || !disk->isRemote())
-            continue;
-
-        ObjectStoragePtr object_storage;
-        try
-        {
-            object_storage = disk->getObjectStorage();
-        }
-        catch (...) /// Ok: not all disks expose an object storage handle (e.g. local-disk policies).
-        {
-            continue;
-        }
-        if (!object_storage)
-            continue;
-
-        /// We need the prefix that the disk maps to in object storage, not the local
-        /// metadata path. The metadata storage maps `relative_data_path` to an object
-        /// storage key prefix; for `s3_plain_rewritable` setups the local path IS the
-        /// object-storage key, while for ordinary `s3` the storage uses random keys and
-        /// listing by `relative_data_path` would return nothing. We rely on the disk's
-        /// own remote-path translation when available.
-        std::string remote_prefix = relative_data_path;
-
-        RelativePathsWithMetadata children;
-        try
-        {
-            object_storage->listObjects(remote_prefix, children, /* max_keys= */ 0);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to list object storage during leader-election block-number probe");
-            continue;
-        }
-
-        /// Each child is a flat object key under the table prefix. Extract the first
-        /// path component after `remote_prefix` and try to parse it as a part name.
-        /// Use a hash set so we only parse each distinct part directory once.
-        std::unordered_set<std::string> part_dirs;
-        for (const auto & child : children)
-        {
-            if (!child)
-                continue;
-            const std::string & key = child->relative_path;
-            if (key.size() <= remote_prefix.size())
-                continue;
-            auto rest = std::string_view(key).substr(remote_prefix.size());
-            auto slash = rest.find('/');
-            std::string_view part_dir = slash == std::string_view::npos ? rest : rest.substr(0, slash);
-            if (part_dir.empty() || part_dir == DETACHED_DIR_NAME || part_dir == MergeTreeData::FORMAT_VERSION_FILE_NAME)
-                continue;
-            if (part_dir.starts_with("tmp"))
-                continue;
-            part_dirs.emplace(part_dir);
-        }
-
-        for (const auto & part_dir : part_dirs)
-        {
-            if (auto part_info = MergeTreePartInfo::tryParsePartName(part_dir, format_version))
-            {
-                max_block_number = std::max({max_block_number, part_info->max_block, part_info->mutation});
-            }
-        }
-    }
-
-    return max_block_number;
 }
 
 void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
