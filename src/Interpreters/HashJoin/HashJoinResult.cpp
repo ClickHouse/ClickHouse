@@ -77,7 +77,7 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
 
 static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes, bool force_lazy_replication)
 {
-    if (force_lazy_replication || isLazyReplicationUseful(column))
+    if ((force_lazy_replication && !column->isConst()) || isLazyReplicationUseful(column))
     {
         if (!indexes)
             indexes = convertOffsetsToIndexes(offsets);

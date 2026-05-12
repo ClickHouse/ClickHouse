@@ -56,6 +56,13 @@ SELECT count() FROM (
     JOIN t3 ON sub.a = t3.a
 );
 
+-- Join with constant columns
+SELECT *
+FROM (SELECT 1 AS a, 2 AS b, 3 AS c) AS t1
+JOIN (SELECT 4 AS c, 5 AS b, 1 AS a) AS t2
+ON t2.a = t1.a AND ( t1.b != t2.b OR t1.c != t2.c )
+LIMIT 1;
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
