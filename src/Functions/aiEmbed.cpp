@@ -52,7 +52,7 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
     extern const SettingsBool ai_function_throw_on_quota_exceeded;
-    extern const SettingsUInt64 ai_function_embedding_max_batch_size;
+    extern const SettingsNonZeroUInt64 ai_function_embedding_max_batch_size;
 }
 
 namespace ErrorCodes
