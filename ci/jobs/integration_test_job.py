@@ -83,7 +83,7 @@ def _mark_infrastructure_errors(results: list) -> int:
     return count
 
 
-def _start_docker_in_docker():
+def start_docker_in_docker():
     with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
         dockerd_proc = subprocess.Popen(
             "./ci/jobs/scripts/docker_in_docker.sh",
@@ -692,6 +692,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         changed_test_modules.append(
                             file.removeprefix("tests/integration/")
                         )
+                if not changed_test_modules and Labels.CI_FORCE_ALL in info.pr_labels:
+                    print(
+                        f"NOTE: No changed test modules found, but '{Labels.CI_FORCE_ALL}' label forces run - using sanity test"
+                    )
+                    changed_test_modules = ["test_accept_invalid_certificate/test.py"]
 
     if is_bugfix_validation:
         if Utils.is_arm():
@@ -742,7 +747,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
     if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
-        _start_docker_in_docker()
+        start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
     parallel_test_modules, sequential_test_modules = (
@@ -806,6 +811,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         Result.create_from(
             status=Result.Status.ERROR,
             info="Failed to pre-pull Docker images needed by the test batch",
+            labels=[Result.Label.INFRA],
         ).complete_job()
 
     test_env = {
@@ -818,6 +824,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
+        # PromQL compliance: deterministic JSON for post-hook (see promql_compliance_hook.py).
+        "COMPLIANCE_RESULT_FILE": os.environ.get(
+            "COMPLIANCE_RESULT_FILE", os.path.join(temp_path, "promql_compliance_result.json")
+        ),
     }
     if is_llvm_coverage:
         test_env["LLVM_PROFILE_FILE"] = f"it-%4m.profraw"
