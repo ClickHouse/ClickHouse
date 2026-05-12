@@ -40,7 +40,7 @@ namespace
     struct ExtraInfo
     {
         std::optional<UInt8> is_deterministic;
-        std::optional<UInt8> higher_order_function;
+        std::optional<UInt8> higher_order;
     };
 
     template <typename Factory>
@@ -116,39 +116,23 @@ namespace
         else
             res_columns[14]->insertDefault();
 
-        if (extra.higher_order_function)
-            res_columns[15]->insert(*extra.higher_order_function);
+        if (extra.higher_order)
+            res_columns[15]->insert(*extra.higher_order);
         else
             res_columns[15]->insertDefault();
     }
 
     /// Resolve an ordinary function and read static metadata from its overload resolver.
-    /// Anything that throws or returns no resolver is reported as NULL — the function is
-    /// genuinely unavailable to introspection without a richer query context.
+    /// When `tryGet` returns no resolver, leave the optionals empty so the column is NULL.
     ExtraInfo getOrdinaryFunctionExtraInfo(const FunctionFactory & factory, const String & name, ContextPtr context)
     {
         ExtraInfo info;
-        try
-        {
-            auto resolver = factory.tryGet(name, context);
-            if (!resolver)
-                return info;
+        auto resolver = factory.tryGet(name, context);
+        if (!resolver)
+            return info;
 
-            info.is_deterministic = resolver->isDeterministic() ? UInt8{1} : UInt8{0};
-            info.higher_order_function = resolver->isHigherOrder() ? UInt8{1} : UInt8{0};
-        }
-        catch (...)
-        {
-            /// Some functions need a fully-formed query context to construct (e.g. those that
-            /// inspect settings at build time). Reporting NULL is the honest answer; log the
-            /// exception message at debug level so the failure is visible to anyone
-            /// investigating empty cells.
-            LOG_DEBUG(
-                getLogger("system.functions"),
-                "Cannot resolve function {} for introspection: {}",
-                name,
-                getCurrentExceptionMessage(/* with_stacktrace */ false));
-        }
+        info.is_deterministic = resolver->isDeterministic() ? UInt8{1} : UInt8{0};
+        info.higher_order = resolver->isHigherOrder() ? UInt8{1} : UInt8{0};
         return info;
     }
 
@@ -183,9 +167,9 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
         {"introduced_in", std::make_shared<DataTypeString>(), "ClickHouse version in which the function was first introduced."},
         {"categories", std::make_shared<DataTypeString>(), "The category of the function."},
-        {"is_deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+        {"deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
             "Whether the function returns the same result for the same arguments. NULL when unknown (e.g. aggregate or user-defined functions)."},
-        {"higher_order_function", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+        {"higher_order", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
             "Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown."}
     };
 }
@@ -299,7 +283,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         /// Determinism is unknown — the WASM module is opaque to ClickHouse — so report NULL.
         /// They cannot accept lambda parameters.
         res_columns[14]->insertDefault(); // is_deterministic
-        res_columns[15]->insert(UInt8{0}); // higher_order_function
+        res_columns[15]->insert(UInt8{0}); // higher_order
     }
 }
 

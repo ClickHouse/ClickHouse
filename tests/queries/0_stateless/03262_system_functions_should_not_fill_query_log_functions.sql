@@ -1,5 +1,5 @@
 -- Project only the non-Nullable `name` column. SELECT * would project the new
--- Nullable(...) columns (is_deterministic / higher_order_function),
+-- Nullable(...) columns (deterministic / higher_order),
 -- and the analyzer injects null-handling helpers (assumeNotNull, isNotNull, multiIf, ...)
 -- for those — they would then leak into used_functions and defeat the test's purpose.
 SELECT name FROM system.functions WHERE name = 'bitShiftLeft' format Null;
