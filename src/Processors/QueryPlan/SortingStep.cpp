@@ -4,6 +4,7 @@
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -252,7 +253,7 @@ SortingStep::SortingStep(
 SortingStep::SortingStep(
     const SharedHeader & input_header,
     SortDescription sort_description_,
-    size_t max_block_size_,
+    const Settings & settings_,
     UInt64 limit_,
     bool always_read_till_end_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
@@ -260,9 +261,8 @@ SortingStep::SortingStep(
     , result_description(std::move(sort_description_))
     , limit(limit_)
     , always_read_till_end(always_read_till_end_)
-    , sort_settings(max_block_size_)
+    , sort_settings(settings_)
 {
-    sort_settings.max_block_size = max_block_size_;
 }
 
 void SortingStep::updateOutputHeader()
@@ -277,6 +277,8 @@ void SortingStep::updateLimit(size_t limit_)
         limit = limit_;
         transform_traits.preserves_number_of_rows = false;
     }
+    if (limit)
+        use_buffering = false;
 }
 
 void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_, bool apply_virtual_row_conversions_)
@@ -580,17 +582,17 @@ void SortingStep::describeActions(FormatSettings & settings) const
     if (!prefix_description.empty())
     {
         settings.out << prefix << "Prefix sort description: ";
-        dumpSortDescription(prefix_description, settings.out);
+        dumpSortDescription(prefix_description, settings);
         settings.out << '\n';
 
         settings.out << prefix << "Result sort description: ";
-        dumpSortDescription(result_description, settings.out);
+        dumpSortDescription(result_description, settings);
         settings.out << '\n';
     }
     else
     {
         settings.out << prefix << "Sort description: ";
-        dumpSortDescription(result_description, settings.out);
+        dumpSortDescription(result_description, settings);
         settings.out << '\n';
     }
 
