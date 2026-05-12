@@ -113,19 +113,19 @@ ColumnsCache::getIntersecting(
 
         /// Collect all intervals that intersect with [row_begin, row_end).
         /// An interval [a, b) intersects if a < row_end AND b > row_begin.
-        /// The map is sorted by (range_begin, range_end). Use lower_bound to skip
-        /// past predecessor intervals whose range_begin is far below row_begin,
-        /// then walk forward and stop once range_begin >= row_end. The immediate
-        /// predecessor is also checked because it can still extend into the query
-        /// range. Cache writers normally cache disjoint task ranges, so at most
-        /// one predecessor can overlap; if rare concurrent writers create deeper
-        /// overlap, only the most recent overlapping predecessor is reused, which
-        /// preserves correctness (additional overlapping entries become stale and
-        /// are evicted by LRU later).
+        /// The map is sorted by (range_begin, range_end). Use lower_bound to find
+        /// the first interval with range_begin >= row_begin, then walk forward and
+        /// stop once range_begin >= row_end. Predecessors (range_begin < row_begin)
+        /// must also be inspected because their range_end can still extend into the
+        /// query range. Cache writers normally cache disjoint task ranges so the
+        /// number of predecessors that need to be checked is small, but concurrent
+        /// writers may legitimately leave deeper overlap (for example a wide range
+        /// and a nested narrower range for the same column). Scanning the immediate
+        /// predecessor only would miss a wide covering interval hidden behind a
+        /// closer non-overlapping one, so all predecessors are inspected.
         auto it = intervals.lower_bound({row_begin, 0});
-        if (it != intervals.begin())
+        for (auto prev_it = intervals.begin(); prev_it != it; ++prev_it)
         {
-            auto prev_it = std::prev(it);
             if (prev_it->second.row_end > row_begin)
                 intersecting_keys.push_back(prev_it->second);
         }
