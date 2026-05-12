@@ -520,7 +520,17 @@ public:
     {
         auto compartment_entry = compartment_pool.acquire();
         auto * compartment_ptr = &(*compartment_entry);
-        return execute(compartment_ptr, arguments, input_rows_count);
+        try
+        {
+            return execute(compartment_ptr, arguments, input_rows_count);
+        }
+        catch (...)
+        {
+            /// A trapped/faulted compartment may have leftovers, half-allocated buffers,
+            /// or otherwise inconsistent guest state. Drop it so the pool recreates it.
+            compartment_entry.expire();
+            throw;
+        }
     }
 
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
