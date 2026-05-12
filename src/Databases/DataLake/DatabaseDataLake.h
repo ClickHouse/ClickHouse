@@ -9,7 +9,6 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
-#include <mutex>
 
 namespace DB
 {
@@ -82,10 +81,15 @@ private:
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;
 
-    mutable std::mutex catalog_mutex;
-    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl TSA_GUARDED_BY(catalog_mutex);
+    std::shared_ptr<DataLake::ICatalog> catalog_impl;
 
     void validateSettings();
+
+    /// Builds `catalog_impl` based on the configured catalog type.
+    /// Called only from the constructor, so no synchronization is required; `catalog_impl`
+    /// is published when the constructed `DatabaseDataLake` is handed off to other threads.
+    /// If `initialize` is called outside the constructor (e.g. on config reload),
+    /// a mutex must be added to guard `catalog_impl` against concurrent readers in `getCatalog`.
     void initialize();
 
     std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(

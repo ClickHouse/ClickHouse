@@ -156,8 +156,9 @@ void DatabaseDataLake::validateSettings()
 
 void DatabaseDataLake::initialize()
 {
-    std::lock_guard lock(catalog_mutex);
-
+    /// This function is intentionally not synchronized: it is invoked only from the
+    /// constructor, before the `DatabaseDataLake` instance becomes reachable by any
+    /// other thread.
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
 
@@ -298,7 +299,6 @@ void DatabaseDataLake::initialize()
 
 std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 {
-    std::lock_guard lock(catalog_mutex);
     return catalog_impl;
 }
 
