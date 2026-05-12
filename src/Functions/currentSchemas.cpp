@@ -42,14 +42,9 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        // For compatibility, function implements the same signature as Postgres'
-        const bool argument_is_valid = arguments.size() == 1 && isBool(arguments.front());
-        if (!argument_is_valid)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be bool", getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        return "(UInt8) -> Array(String)";
     }
 
     bool isDeterministic() const override { return false; }

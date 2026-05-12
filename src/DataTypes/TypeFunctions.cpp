@@ -1,6 +1,7 @@
 #include <DataTypes/FunctionSignature.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -77,6 +78,19 @@ public:
     }
 
     std::string name() const override { return "Tuple"; }
+};
+
+class TypeFunctionMap : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function Map requires exactly 2 arguments (key, value)");
+        return Value(DataTypePtr(std::make_shared<DataTypeMap>(args[0].type(), args[1].type())));
+    }
+
+    std::string name() const override { return "Map"; }
 };
 
 class TypeFunctionFixedString : public ITypeFunction
@@ -319,6 +333,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionLeastSupertype>();
     factory.registerElement<TypeFunctionArray>();
     factory.registerElement<TypeFunctionTuple>();
+    factory.registerElement<TypeFunctionMap>();
     factory.registerElement<TypeFunctionFixedString>();
     factory.registerElement<TypeFunctionDateTime>();
     factory.registerElement<TypeFunctionDateTime64>();
