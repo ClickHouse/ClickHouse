@@ -11,6 +11,7 @@ DROP FUNCTION IF EXISTS as_double;
 DROP FUNCTION IF EXISTS as_greet;
 DROP FUNCTION IF EXISTS as_str_repeat;
 DROP FUNCTION IF EXISTS as_str_length;
+DROP FUNCTION IF EXISTS as_concat3;
 DELETE FROM system.webassembly_modules WHERE name = 'as_example';
 EOF
 
@@ -44,6 +45,11 @@ CREATE OR REPLACE FUNCTION as_str_length
     FROM 'as_example' :: 'str_length'
     ARGUMENTS (s String) RETURNS UInt32;
 
+CREATE OR REPLACE FUNCTION as_concat3
+    LANGUAGE WASM ABI ASSEMBLYSCRIPT
+    FROM 'as_example' :: 'concat3'
+    ARGUMENTS (a String, b String, c String) RETURNS String;
+
 SELECT '== numeric ==';
 SELECT as_add(1::UInt32, 2::UInt32);
 SELECT sum(as_add(number::UInt32, (number*2)::UInt32)) FROM numbers(10);
@@ -62,10 +68,22 @@ SELECT as_str_length(as_greet(arrayJoin(['x', 'yz'])));
 SELECT '== block ==';
 SELECT count(), sum(length(as_greet(toString(number)))) FROM numbers(1000);
 
+SELECT '== multi-string ==';
+SELECT as_concat3('hello', 'world', '!');
+SELECT as_concat3(toString(number), toString(number + 1), toString(number + 2)) FROM numbers(3);
+-- Stress the AS GC: many rows, each row allocates three sibling AS String objects.
+-- Without pinning, a later __new can collect an earlier argument before invocation,
+-- producing a wrong/garbled result or a WASM_ERROR exception.
+SELECT count(), sum(length(as_concat3(repeat('a', 64), repeat('b', 64), repeat('c', 64))))
+FROM numbers(2000);
+SELECT count(DISTINCT as_concat3(toString(number), toString(number * 7), toString(number * 13)))
+FROM numbers(500);
+
 DROP FUNCTION as_add;
 DROP FUNCTION as_double;
 DROP FUNCTION as_greet;
 DROP FUNCTION as_str_repeat;
 DROP FUNCTION as_str_length;
+DROP FUNCTION as_concat3;
 DELETE FROM system.webassembly_modules WHERE name = 'as_example';
 EOF

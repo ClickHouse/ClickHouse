@@ -13,6 +13,9 @@
 #include <Common/Exception.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
+
+#include <base/scope_guard.h>
 
 #include <Interpreters/WebAssembly/WasmEngine.h>
 #include <Interpreters/WebAssembly/WasmTypes.h>
@@ -176,9 +179,13 @@ void appendUTF16LEAsUTF8(const uint8_t * le_bytes, size_t byte_count, std::strin
 /// (https://github.com/AssemblyScript/assemblyscript/issues/2982), so this ABI only
 /// exposes `String` and primitive types to ClickHouse.
 ///
-/// Object lifetime: AS objects are GC-managed. The host does not pin argument objects:
-/// they are reachable via the call's shadow stack while the user function runs, and the
-/// returned object is read back before any further `__new` could trigger collection.
+/// Object lifetime: AS objects are GC-managed. Argument `String` objects are allocated
+/// one at a time by the host and live in `wasm_args` until the user function is invoked.
+/// Between two `__new` calls the AS runtime cannot see the previous pointer as a root,
+/// so a later allocation can collect it. The host must therefore `__pin` every freshly
+/// allocated argument object and `__unpin` it after the call (guaranteed cleanup).
+/// The returned object does not need pinning: nothing between the call's return and
+/// `readStringInto` allocates, so it cannot be collected before being read.
 class AssemblyScriptRuntime
 {
 public:
@@ -212,14 +219,27 @@ public:
     }
 
     /// `__new(payload_size, class_id)`. Returns a pointer to the payload.
-    /// (`__pin` / `__unpin` are intentionally not wrapped here: argument objects are
-    /// rooted by the call's shadow stack while the user fn runs, and the returned
-    /// object is read back before any further `__new` could trigger collection. Their
-    /// presence in the module is still required and enforced via `checkSignature`.)
     WasmPtr allocateObject(WasmSizeT payload_size, uint32_t class_id) const
     {
         return compartment->invoke<WasmPtr>(
             new_function_name, {payload_size, class_id}, stop_token);
+    }
+
+    /// `__pin(ptr)`. Roots `ptr` against the AS GC until matching `unpinObject`.
+    /// Needed when the host holds a freshly-allocated object across further `__new`
+    /// calls (e.g. while allocating sibling arguments): the AS runtime cannot see the
+    /// pointer in host memory and may otherwise collect it.
+    void pinObject(WasmPtr ptr) const
+    {
+        compartment->invoke<WasmPtr>(pin_function_name, {ptr}, stop_token);
+    }
+
+    /// `__unpin(ptr)`. Releases the pin set by `pinObject`. Used in cleanup paths,
+    /// so this swallows exceptions — losing the original error here would mask any
+    /// failure of the user function itself.
+    void unpinObject(WasmPtr ptr) const noexcept
+    {
+        compartment->invoke<void>(unpin_function_name, {ptr}, stop_token);
     }
 
     /// Read `(rtId, rtSize)` from the object header at `ptr - 8`.
@@ -381,11 +401,13 @@ public:
     {
         ProfileEventTimeIncrement<Microseconds> timer_execute(ProfileEvents::WasmTotalExecuteMicroseconds);
 
-        AssemblyScriptRuntime as_rt(compartment, std::move(stop_token));
+        AssemblyScriptRuntime as_rt(compartment, stop_token);
         MutableColumnPtr result_column = result_type->createColumn();
 
         size_t num_columns = block.columns();
         std::vector<WasmVal> wasm_args(num_columns);
+
+        std::vector<WasmPtr> pinned_string_args;
 
         auto * result_string_column = typeid_cast<ColumnString *>(result_column.get());
 
@@ -422,6 +444,12 @@ public:
 
         for (size_t row_idx = 0; row_idx < num_rows; ++row_idx)
         {
+            pinned_string_args.clear();
+            SCOPE_EXIT({
+                for (WasmPtr ptr : pinned_string_args)
+                    as_rt.unpinObject(ptr);
+            });
+
             for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
             {
                 const auto & col = block.getByPosition(col_idx);
@@ -430,7 +458,10 @@ public:
                 if (const auto * column_string = checkAndGetColumn<ColumnString>(column))
                 {
                     std::string_view str = column_string->getDataAt(row_idx);
-                    wasm_args[col_idx] = static_cast<uint32_t>(as_rt.createString(str));
+                    WasmPtr ptr = as_rt.createString(str);
+                    pinned_string_args.push_back(ptr);
+                    as_rt.pinObject(ptr);
+                    wasm_args[col_idx] = static_cast<uint32_t>(ptr);
                 }
                 else if (!tryExecuteForNumericTypes(get_numeric_arg, column, row_idx, wasm_args[col_idx]))
                 {

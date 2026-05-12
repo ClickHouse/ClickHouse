@@ -15,3 +15,10 @@ ababab
 10
 == block ==
 1000	10890
+== multi-string ==
+hello|world|!
+0|1|2
+1|2|3
+2|3|4
+2000	388000
+500

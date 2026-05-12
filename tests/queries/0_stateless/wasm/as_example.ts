@@ -34,3 +34,12 @@ export function str_repeat(s: string, n: u32): string {
 export function str_length(s: string): u32 {
   return s.length;
 }
+
+// SQL: concat3(a String, b String, c String) RETURNS String
+//      Returns `a + sep + b + sep + c`. Used to exercise the multi-String argument
+//      path of the AS ABI: each argument is allocated on the WASM heap by `__new`,
+//      and the host must pin earlier arguments while later ones are allocated so the
+//      AS GC does not collect them under memory pressure.
+export function concat3(a: string, b: string, c: string): string {
+  return a + "|" + b + "|" + c;
+}
