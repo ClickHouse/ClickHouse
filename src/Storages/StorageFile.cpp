@@ -25,6 +25,7 @@
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/EmptyReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -76,6 +77,7 @@
 #include <algorithm>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/String.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -1598,7 +1600,13 @@ Chunk StorageFileSource::generate()
                 if (need_only_count && tryGetCountFromCache(file_stat))
                     continue;
 
-                read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                if (Poco::toLower(storage->format_name) == "one")
+                {
+                    /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
+                    read_buf = std::make_unique<EmptyReadBuffer>();
+                }
+                else
+                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
             }
 
             size_t file_num = 0;

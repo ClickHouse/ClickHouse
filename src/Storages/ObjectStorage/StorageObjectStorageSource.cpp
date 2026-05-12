@@ -15,6 +15,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
+#include <IO/EmptyReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Interpreters/FileCache/FileCache.h>
@@ -755,17 +756,26 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     else
     {
-        ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
+        const auto format_name = object_info->getFileFormat().value_or(configuration->format);
+        const bool input_format_does_not_read_file = Poco::toLower(format_name) == "one";
 
         CompressionMethod compression_method;
-        if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
+        if (input_format_does_not_read_file)
         {
+            /// `One` produces a single row per object without consuming the underlying `ReadBuffer`.
+            read_buf = std::make_unique<EmptyReadBuffer>();
+            compression_method = CompressionMethod::None;
+        }
+        else if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
+        {
+            ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
             const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else
         {
+            ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
             read_buf = createReadBuffer(object_info->relative_path_with_metadata, object_storage, context_, log);
         }
@@ -800,20 +810,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             "Reading object '{}', size: {} bytes, with format: {}",
             object_info->getPath(),
             object_info->getObjectMetadata()->size_bytes,
-            object_info->getFileFormat().value_or(configuration->format));
+            format_name);
 
         logIcebergFileStats(object_info, log);
 
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
-            && (Poco::toLower(object_info->getFileFormat().value_or(configuration->format)) == "parquet")
+            && (Poco::toLower(format_name) == "parquet")
             && !object_info->getObjectMetadata()->etag.empty())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
                 object_with_metadata->relative_path = object_info->getPath();
             input_format = FormatFactory::instance().getInputWithMetadata(
-                object_info->getFileFormat().value_or(configuration->format),
+                format_name,
                 *read_buf,
                 initial_header,
                 context_,
@@ -832,7 +842,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else
         {
             input_format = FormatFactory::instance().getInput(
-            object_info->getFileFormat().value_or(configuration->format),
+            format_name,
             *read_buf,
             initial_header,
             context_,
