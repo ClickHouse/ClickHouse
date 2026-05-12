@@ -9,6 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -n -q "
     SET allow_experimental_statistics = 1;
     SET allow_statistics_optimize = 1;
+    SET materialize_statistics_on_insert = 1;
 
     DROP TABLE IF EXISTS t_hypo_stat;
     CREATE TABLE t_hypo_stat (a UInt64, b UInt64 STATISTICS(tdigest, uniq))
@@ -28,6 +29,7 @@ echo "--- statistical: range query on column with stats ---"
 $CLICKHOUSE_CLIENT -n -q "
     SET allow_experimental_statistics = 1;
     SET allow_statistics_optimize = 1;
+    SET materialize_statistics_on_insert = 1;
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_stat (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF empirical = 0 SELECT * FROM t_hypo_stat WHERE b < 50;
 " | grep -E '^\s+status:|^\s+source:|^\s+empirical_status:'
