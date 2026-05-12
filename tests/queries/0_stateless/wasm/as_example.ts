@@ -1,4 +1,4 @@
-// Examples for the AssemblyScript ABI (ASSEMBLYSCRIPT_V1) of ClickHouse WASM UDFs.
+// Examples for the AssemblyScript ABI of ClickHouse WASM UDFs.
 //
 // Each exported function corresponds to a single SQL UDF call per row.
 // Numeric arguments and return values are passed directly. ClickHouse `String`

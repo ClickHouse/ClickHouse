@@ -66,6 +66,9 @@ size_t convertUTF8ToUTF16LE(std::string_view utf8, uint8_t * out)
         else if ((b & 0xE0) == 0xC0 && i + 1 < n && (data[i + 1] & 0xC0) == 0x80)
         {
             cp = (uint32_t(b & 0x1F) << 6) | uint32_t(data[i + 1] & 0x3F);
+            /// Reject overlong: cp < 0x80 should have used the 1-byte form.
+            if (cp < 0x80)
+                cp = 0xFFFD;
             i += 2;
         }
         else if ((b & 0xF0) == 0xE0 && i + 2 < n
@@ -74,6 +77,10 @@ size_t convertUTF8ToUTF16LE(std::string_view utf8, uint8_t * out)
             cp = (uint32_t(b & 0x0F) << 12)
                 | (uint32_t(data[i + 1] & 0x3F) << 6)
                 | uint32_t(data[i + 2] & 0x3F);
+            /// Reject overlong (cp < 0x800, should have used a shorter form) and surrogates
+            /// (U+D800..U+DFFF are forbidden as Unicode scalars per RFC 3629 §3).
+            if (cp < 0x800 || (cp >= 0xD800 && cp <= 0xDFFF))
+                cp = 0xFFFD;
             i += 3;
         }
         else if ((b & 0xF8) == 0xF0 && i + 3 < n
@@ -85,6 +92,9 @@ size_t convertUTF8ToUTF16LE(std::string_view utf8, uint8_t * out)
                 | (uint32_t(data[i + 1] & 0x3F) << 12)
                 | (uint32_t(data[i + 2] & 0x3F) << 6)
                 | uint32_t(data[i + 3] & 0x3F);
+            /// Reject overlong (cp < 0x10000) and out-of-range (Unicode tops out at U+10FFFF).
+            if (cp < 0x10000 || cp > 0x10FFFF)
+                cp = 0xFFFD;
             i += 4;
         }
         else
@@ -118,22 +128,23 @@ void appendUTF16LEAsUTF8(const uint8_t * le_bytes, size_t byte_count, std::strin
 
     for (size_t i = 0; i < num_units; ++i)
     {
-        uint16_t unit;
-        std::memcpy(&unit, le_bytes + i * 2, 2);
-        if constexpr (std::endian::native == std::endian::big)
-            unit = static_cast<uint16_t>((unit >> 8) | (unit << 8));
-
-        uint32_t cp = unit;
-        if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < num_units)
+        uint32_t cp = loadFromWasmMemory<uint16_t>(le_bytes + i * 2);
+        if (cp >= 0xD800 && cp <= 0xDBFF)
         {
-            uint16_t next;
-            std::memcpy(&next, le_bytes + (i + 1) * 2, 2);
-            if constexpr (std::endian::native == std::endian::big)
-                next = static_cast<uint16_t>((next >> 8) | (next << 8));
-            if (next >= 0xDC00 && next <= 0xDFFF)
+            /// High surrogate. Need a following low surrogate to form a valid pair;
+            /// otherwise (no next unit, or next is not a low surrogate) substitute U+FFFD.
+            if (i + 1 < num_units)
             {
-                cp = 0x10000 + (((cp - 0xD800) << 10) | (next - 0xDC00));
-                ++i;
+                uint16_t next = loadFromWasmMemory<uint16_t>(le_bytes + (i + 1) * 2);
+                if (next >= 0xDC00 && next <= 0xDFFF)
+                {
+                    cp = 0x10000 + (((cp - 0xD800) << 10) | (next - 0xDC00));
+                    ++i;
+                }
+                else
+                {
+                    cp = 0xFFFD;
+                }
             }
             else
             {
@@ -395,7 +406,7 @@ public:
         size_t num_columns = block.columns();
         std::vector<WasmVal> wasm_args(num_columns);
 
-        std::vector<WasmPtr> pinned_string_args;
+        std::vector<WasmPtr> pinned_args;
 
         auto * result_string_column = typeid_cast<ColumnString *>(result_column.get());
 
@@ -432,10 +443,7 @@ public:
 
         for (size_t row_idx = 0; row_idx < num_rows; ++row_idx)
         {
-            for (WasmPtr ptr : pinned_string_args)
-                as_rt.unpinObject(ptr);
-
-            pinned_string_args.clear();
+            pinned_args.clear();
 
             for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
             {
@@ -446,7 +454,7 @@ public:
                 {
                     std::string_view str = column_string->getDataAt(row_idx);
                     WasmPtr ptr = as_rt.createString(str);
-                    pinned_string_args.push_back(ptr);
+                    pinned_args.push_back(ptr);
                     as_rt.pinObject(ptr);
                     wasm_args[col_idx] = static_cast<uint32_t>(ptr);
                 }
@@ -491,6 +499,12 @@ public:
                         "Cannot store AssemblyScript result of kind {} into result column {}",
                         toString(*ret_kind), result_column->getName());
             }
+
+            /// Unpin only on happy path.
+            /// if the call threw, the compartment may be in a faulted state where even the pin/unpin calls could also fail,
+            /// so just let it leak and expire instead of risking another exception during cleanup.
+            for (auto ptr : pinned_args)
+                as_rt.unpinObject(ptr);
         }
 
         return result_column;
