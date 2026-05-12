@@ -11,16 +11,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_nonconst_timezone_arguments;
-}
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-}
 
 namespace
 {
@@ -93,35 +83,15 @@ public:
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<Now64OverloadResolver>(context); }
-    explicit Now64OverloadResolver(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
-    {}
+    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<Now64OverloadResolver>(); }
+    Now64OverloadResolver() = default;
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        UInt32 scale = DataTypeDateTime64::default_scale;
-        String timezone_name;
-
-        if (arguments.size() > 2)
-        {
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Arguments size of function {} should be 0, or 1, or 2", getName());
-        }
-        if (!arguments.empty())
-        {
-            const auto & argument = arguments[0];
-            if (!isInteger(argument.type) || !argument.column || !isColumnConst(*argument.column))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 0 argument of function {}. "
-                                "Expected const integer.", argument.type->getName(), getName());
-
-            scale = static_cast<UInt32>(argument.column->get64(0));
-        }
-        if (arguments.size() == 2)
-        {
-            timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
-        }
-
-        return std::make_shared<DataTypeDateTime64>(scale, timezone_name);
+        return
+            "() -> DateTime64(3)"
+            " OR (const scale Integer) -> DateTime64(scale)"
+            " OR (const scale Integer, const tz StringOrFixedString) -> DateTime64(scale, tz)";
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
@@ -138,8 +108,6 @@ public:
 
         return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), std::move(arg_types), result_type);
     }
-private:
-    const bool allow_nonconst_timezone_arguments;
 };
 
 }
