@@ -5528,7 +5528,7 @@ ORDER BY (test_name, callee_offset)
             # `processlist` above already shows per-thread stacks for
             # every user query still running (system.processes JOIN
             # system.stack_trace by query_id).  print_sql_stacktraces
-            # here adds the rest of system.stack_trace — BG threads
+            # here dumps the rest of system.stack_trace — BG threads
             # with no query_id (merges, replication, schedule pool),
             # which are the typical lock-holders when a user query is
             # wedged but looks idle.
