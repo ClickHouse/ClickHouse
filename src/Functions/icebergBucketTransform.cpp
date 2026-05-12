@@ -54,10 +54,7 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeInt32>();
-    }
+    String getSignatureString() const override { return "(Any) -> Int32"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
@@ -312,10 +309,7 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeUInt32>();
-    }
+    String getSignatureString() const override { return "(const Any, Any) -> UInt32"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {

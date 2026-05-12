@@ -8,16 +8,6 @@
 namespace DB
 {
 
-namespace
-{
-
-bool isDateOrDateTime(const IDataType & type)
-{
-    return isDate(type) || isDateTime(type) || isDateTime64(type);
-}
-
-}
-
 class FunctionMonthName : public IFunction
 {
 public:
@@ -39,14 +29,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"datetime", isDateOrDateTime, nullptr, "Date or DateTime"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-        return std::make_shared<DataTypeString>();
+        /// Legacy `isDateOrDateTime` matched only Date / DateTime / DateTime64 — not Date32.
+        return "(Date | DateTime | DateTime64) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
