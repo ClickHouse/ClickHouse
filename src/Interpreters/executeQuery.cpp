@@ -1353,6 +1353,9 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                     tryLogCurrentException("reattachTablesUsedInQuery",
                         fmt::format("Failed to re-attach table {} after failed DETACH/ATTACH cycle", quoted_name),
                         LogsLevel::error);
+                    /// Re-throw so the outer query fails clearly instead of running against a permanently
+                    /// detached table and producing confusing `UNKNOWN_TABLE` errors later.
+                    throw;
                 }
             }
         }
