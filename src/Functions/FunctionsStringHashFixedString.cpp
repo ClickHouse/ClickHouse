@@ -258,13 +258,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isStringOrFixedString(arguments[0]) && !isIPv6(arguments[0]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeFixedString>(Impl::length);
+        return "(String | FixedString | IPv6) -> FixedString(" + std::to_string(Impl::length) + ")";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

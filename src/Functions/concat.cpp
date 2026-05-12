@@ -48,12 +48,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() == 1)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Number of arguments for function {} should not be 1", getName());
-
-        return std::make_shared<DataTypeString>();
+        return "(Any, Any, ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -239,10 +236,10 @@ public:
             return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        /// We always return Strings from concat, even if arguments were fixed strings.
-        return std::make_shared<DataTypeString>();
+        /// We always return String from concat, even if arguments were fixed strings.
+        return "(Any, ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

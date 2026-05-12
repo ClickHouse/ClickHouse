@@ -55,16 +55,9 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() != 1)
-            throw Exception(
-                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "Number of arguments for function {} can't be {}, should be 1",
-                getName(),
-                arguments.size());
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(Any) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
