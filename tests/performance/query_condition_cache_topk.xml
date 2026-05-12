@@ -7,14 +7,23 @@
          and subsequent runs of the same query reuse the cached granule
          decisions and skip the granules dropped by the WHERE filter.
 
-         Data layout:
-           * 50M rows, `index_granularity = 8192` → ~6 100 granules per part.
-           * `v2` is random per row, so per-part minmax statistics span the full
-             `UInt32` range and cannot prune parts on `v2 = constant`.
-           * Exactly one row is injected with `v2 = 12345`, so the matching row
-             sits in a single granule. The other ~6 100 granules have zero
-             matches and are recorded as skippable in the QCC after the prewarm
-             run, leaving only that one granule to scan on every subsequent run. -->
+         Data layout (chosen so the QCC has full per-granule coverage on the
+         first run, instead of being limited to the handful of granules that
+         survive `__topKFilter`):
+
+           * 100M rows, `index_granularity = 8192` → ~12 200 granules.
+           * `v1 = number % 1000`, so every granule contains ~8 rows with
+             `v1 = 0`. The TopK threshold settles to `0` almost immediately,
+             and `__topKFilter` keeps those ~8 rows per granule — they
+             reach the WHERE filter and let the QCC record a "no match"
+             entry for every granule on the prewarm run.
+           * `v2` is random per row, so per-part minmax statistics span the
+             full `UInt32` range and cannot prune parts on `v2 = constant`.
+             Exactly one row is injected with `v2 = 12345` (and `v1 = 0`
+             so it also survives `__topKFilter`), so the matching row sits
+             in a single granule and the remaining ~12 200 granules are
+             recorded as skippable in the QCC, leaving only that one granule
+             to scan on every subsequent run. -->
 
     <create_query>
         CREATE TABLE qcc_topk_test (id UInt32, v1 UInt32, v2 UInt32) ENGINE = MergeTree ORDER BY id
@@ -26,7 +35,10 @@
     </create_query>
 
     <fill_query>
-        INSERT INTO qcc_topk_test SELECT rand(), number, if(number = 12345678, 12345, rand()) FROM numbers(50000000)
+        INSERT INTO qcc_topk_test SELECT rand(),
+            if(number = 12345678, 0, number % 1000),
+            if(number = 12345678, 12345, rand())
+        FROM numbers(100000000)
     </fill_query>
 
     <settings>
