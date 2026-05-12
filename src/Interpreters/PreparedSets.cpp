@@ -2,6 +2,7 @@
 #include <variant>
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
+#include <Interpreters/sortBlock.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -143,35 +144,29 @@ FutureSetFromTuple::FutureSetFromTuple(
         hash = CityHash_v1_0_2::CityHash128WithSeed(name.data(), name.size(), hash);
     }
 
-    /// Compute a content-based hash This is used by the aggregate projection matcher (actionsDAGUtils.cpp) to distinguish different
-    /// IN-clause sets.
+    /// Compute a content-based hash. Used by the aggregate projection matcher
+    /// (actionsDAGUtils.cpp) to distinguish different IN-clause sets.
     ///
-    /// We hash the normalized set elements (deduplicated, NULL-filtered and sorted) rather than the raw input block in order to make input
-    /// repetitions and permutations equivalent
+    /// We hash the normalized set elements (deduplicated, NULL-filtered, sorted) rather
+    /// than the raw input block so that permutations and duplicate inputs are equivalent.
     {
         const Columns & normalized = getKeyColumns();
-        const size_t normalized_rows = normalized.empty() ? 0 : normalized[0]->size();
-
-        IColumn::Permutation perm;
-        EqualRanges ranges;
-        if (!normalized.empty() && normalized_rows > 0)
-        {
-            normalized[0]->getPermutation(IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Stable, 0, 1, perm);
-            ranges.push_back({0, normalized_rows});
-            for (size_t i = 1; i < normalized.size(); ++i)
-                normalized[i]->updatePermutation(IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Stable, 0, 1, perm, ranges);
-        }
-
-        SipHash siphasher;
         const DataTypes element_types = set->getElementsTypes();
+
+        Block sort_block;
+        SortDescription sort_desc;
         for (size_t i = 0; i < normalized.size(); ++i)
         {
-            const auto type_name = element_types[i]->getName();
-            siphasher.update(type_name.data(), type_name.size());
-            if (!perm.empty())
-                normalized[i]->permute(perm, 0)->updateHashFast(siphasher);
-            else
-                normalized[i]->updateHashFast(siphasher);
+            sort_block.insert({normalized[i], element_types[i], element_types[i]->getName()});
+            sort_desc.emplace_back(element_types[i]->getName(), 1 /* ascending */);
+        }
+        sortBlock(sort_block, sort_desc);
+
+        SipHash siphasher;
+        for (const auto & col : sort_block)
+        {
+            siphasher.update(col.name.data(), col.name.size());
+            col.column->updateHashFast(siphasher);
         }
         content_hash = getSipHash128AsPair(siphasher);
     }
