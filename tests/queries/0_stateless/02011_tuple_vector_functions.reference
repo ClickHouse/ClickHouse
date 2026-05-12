@@ -97,3 +97,14 @@ FROM system.one
 (15,5)
 (15,5)
 -- Variadic error cases: too few arguments
+-- Size mismatch detected on a later argument (not just the second)
+-- NULL propagation across more than two folded arguments
+(NULL,4)
+-- tupleIntDivOrZero: zero divisor in a middle fold step still proceeds
+(0,0)
+-- Mixed numeric types: result type promotes across fold steps (Int -> Float -> Decimal)
+(3.5,6.5)
+-- tupleDivide: division by zero in a later fold step yields inf
+(inf,inf)
+-- tupleDivide: division by zero in a middle fold step propagates inf to the final result
+(inf,inf)

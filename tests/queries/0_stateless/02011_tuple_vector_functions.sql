@@ -156,3 +156,20 @@ SELECT tupleModulo((1, 2)); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
 SELECT tupleIntDiv((1, 2)); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
 SELECT tupleIntDivOrZero((1, 2)); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
 SELECT tupleMultiply((1, 2), (3, 4, 5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- Size mismatch detected on a later argument (not just the second)';
+SELECT tupleMultiply((1, 2), (3, 4), (5, 6, 7)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- NULL propagation across more than two folded arguments';
+SELECT tuplePlus((NULL, 1), (1, 2), (1, 1));
+
+SELECT '-- tupleIntDivOrZero: zero divisor in a middle fold step still proceeds';
+SELECT tupleIntDivOrZero((10, 10), (2, 2), (0, 0), (5, 5));
+
+SELECT '-- Mixed numeric types: result type promotes across fold steps (Int -> Float -> Decimal)';
+SELECT tuplePlus((1, 2), (1.5, 2.5), (toDecimal32(1.0, 2), toDecimal32(2.0, 2)));
+
+SELECT '-- tupleDivide: division by zero in a later fold step yields inf';
+SELECT tupleDivide((1.0, 2.0), (1.0, 1.0), (0.0, 0.0));
+SELECT '-- tupleDivide: division by zero in a middle fold step propagates inf to the final result';
+SELECT tupleDivide((1.0, 2.0), (1.0, 1.0), (0.0, 0.0), (5.0, 5.0));
