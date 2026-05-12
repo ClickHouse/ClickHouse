@@ -21,7 +21,6 @@ namespace Setting
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool apply_mutations_on_fly;
-    extern const SettingsBool apply_patch_parts;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool parallel_replicas_local_plan;
@@ -104,12 +103,10 @@ PartitionIdToMaxBlockPtr getMaxAddedBlocks(ReadFromMergeTree * reading)
 
 void QueryDAG::appendExpression(const ActionsDAG & expression)
 {
-    auto cloned = expression.clone();
-
     if (dag)
-        dag->mergeInplace(std::move(cloned));
+        dag->mergeInplace(expression.clone());
     else
-        dag = std::move(cloned);
+        dag = expression.clone();
 }
 
 const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
@@ -248,9 +245,6 @@ bool QueryDAG::build(QueryPlan::Node & node)
         auto & outputs = dag->getOutputs();
         outputs.insert(outputs.begin(), filter_node);
     }
-
-    if (dag)
-        dag->removeTrivialWrappers();
 
     return true;
 }

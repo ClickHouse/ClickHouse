@@ -48,21 +48,17 @@ ColumnsDescription AggregatedZooKeeperLogElement::getColumnsDescription()
                 Coordination::SystemTablesDataTypes::operationEnum(),
                 "Type of ZooKeeper operation."});
 
-    result.add({"is_subrequest",
-                std::make_shared<DataTypeUInt8>(),
-                "Whether this operation was a subrequest inside a Multi or MultiRead operation."});
-
     result.add({"count",
                 std::make_shared<DataTypeUInt32>(),
-                "Number of operations in the (session_id, parent_path, operation, component, is_subrequest) group."});
+                "Number of operations in the (session_id, parent_path, operation) group."});
 
     result.add({"errors",
                 std::make_shared<DataTypeMap>(Coordination::SystemTablesDataTypes::errorCodeEnum(), std::make_shared<DataTypeUInt32>()),
-                "Errors in the (session_id, parent_path, operation, component, is_subrequest) group."});
+                "Errors in the (session_id, parent_path, operation) group."});
 
     result.add({"average_latency",
                 std::make_shared<DataTypeFloat64>(),
-                "Average latency across all operations in (session_id, parent_path, operation, component, is_subrequest) group, in microseconds. Subrequests have zero latency because the latency is attributed to the enclosing Multi or MultiRead operation."});
+                "Average latency across all operations in (session_id, parent_path, operation) group, in microseconds."});
 
     result.add({"component",
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
@@ -79,7 +75,6 @@ void AggregatedZooKeeperLogElement::appendToBlock(MutableColumns & columns) cons
     columns[i++]->insert(session_id);
     columns[i++]->insert(parent_path);
     columns[i++]->insert(operation);
-    columns[i++]->insert(static_cast<UInt8>(is_subrequest));
     columns[i++]->insert(count);
     errors->dumpToMapColumn(&typeid_cast<DB::ColumnMap &>(*columns[i++]));
     columns[i++]->insert(static_cast<Float64>(total_latency_microseconds) / count);
@@ -102,7 +97,6 @@ void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
             .parent_path = entry_key.parent_path,
             .operation = entry_key.operation,
             .component = entry_key.component,
-            .is_subrequest = entry_key.is_subrequest,
             .count = entry_stats.count,
             .errors = std::move(entry_stats.errors),
             .total_latency_microseconds = entry_stats.total_latency_microseconds,
@@ -117,8 +111,7 @@ void AggregatedZooKeeperLog::observe(
     const std::filesystem::path & path,
     UInt64 latency_microseconds,
     Coordination::Error error,
-    StaticString component,
-    bool is_subrequest)
+    StaticString component)
 {
     std::lock_guard lock(stats_mutex);
 
@@ -126,8 +119,7 @@ void AggregatedZooKeeperLog::observe(
         .session_id = session_id,
         .operation = operation,
         .parent_path = path.parent_path(),
-        .component = component,
-        .is_subrequest = is_subrequest
+        .component = component
     };
     stats[std::move(entry_key)].observe(latency_microseconds, error);
 }
@@ -137,7 +129,7 @@ size_t AggregatedZooKeeperLog::EntryKeyHash::operator()(const EntryKey & entry_k
     return CityHash_v1_0_2::CityHash64WithSeed(
         entry_key.parent_path.data(),
         entry_key.parent_path.size(),
-        static_cast<uint64_t>(entry_key.operation) ^ static_cast<uint64_t>(entry_key.session_id) ^ entry_key.is_subrequest);
+        static_cast<uint64_t>(entry_key.operation) ^ static_cast<uint64_t>(entry_key.session_id));
 }
 
 void AggregatedZooKeeperLog::EntryStats::observe(UInt64 latency_microseconds, Coordination::Error error)
