@@ -10,6 +10,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -n -q "
     SET allow_experimental_statistics = 1;
     SET allow_statistics_optimize = 1;
+    -- master's default for \`materialize_statistics_on_insert\` is 0; force on so
+    -- the INSERT below builds statistics files that the statistical path reads.
+    SET materialize_statistics_on_insert = 1;
 
     DROP TABLE IF EXISTS t_hypo_stat;
     CREATE TABLE t_hypo_stat (a UInt64, b UInt64 STATISTICS(tdigest, uniq))
