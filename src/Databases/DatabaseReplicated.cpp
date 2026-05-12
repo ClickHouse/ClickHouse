@@ -1939,7 +1939,18 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
 
         auto it = std::find(responses[1].names.begin(), responses[1].names.end(), "max_log_ptr");
         if (it == responses[1].names.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "max_log_ptr node not found in ZooKeeper path {}", zookeeper_path);
+        {
+            /// `/max_log_ptr` is created together with the database root and only disappears
+            /// when the whole subtree is removed by `DROP DATABASE`. Treat its absence as
+            /// the same drop/recreate race surfaced by the other guards in this function,
+            /// so callers see one operation-level error rather than a `LOGICAL_ERROR`
+            /// depending on whether the multi-read landed before or after the drop.
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(max_log_ptr node missing in children of {})",
+                zookeeper_path);
+        }
 
         UInt32 new_max_log_ptr = parse<UInt32>(responses[1].data[it - responses[1].names.begin()]);
         if (max_log_ptr > new_max_log_ptr)
@@ -2050,6 +2061,18 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
         auto current_max_log_ptr_idx = paths_to_fetch.size() - 1;
         auto current_max_log_ptr = table_metadata_and_version[current_max_log_ptr_idx];
 
+        if (current_max_log_ptr.error == Coordination::Error::ZNONODE)
+        {
+            /// Symmetric to the fast-path handling: a missing `/max_log_ptr` here means
+            /// `DROP DATABASE` removed the subtree between the children read and this
+            /// multi-get. Surface the operation-level error instead of a generic Keeper
+            /// exception so all drop/recreate windows produce the same outcome.
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(max_log_ptr node missing during retry iteration {})",
+                iteration);
+        }
         if (current_max_log_ptr.error != Coordination::Error::ZOK)
             Coordination::Exception::fromPath(current_max_log_ptr.error, zookeeper_path + "/max_log_ptr");
 
