@@ -4,6 +4,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <memory>
 #include <fmt/format.h>
@@ -2562,7 +2563,13 @@ private:
 
 void MergeTask::addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx)
 {
-    auto indices_expression = indices_description.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
+    /// Virtual columns are needed for implicit indices created for virtual columns.
+    auto columns_for_indices = global_ctx->metadata_snapshot->getColumns();
+    for (const auto & vc : global_ctx->metadata_snapshot->virtuals.toColumnsDescription(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader))
+        if (!columns_for_indices.has(vc.name))
+            columns_for_indices.add(vc);
+
+    auto indices_expression = indices_description.getSingleExpressionForIndices(columns_for_indices, global_ctx->data->getContext());
     auto indices_expression_dag = indices_expression->getActionsDAG().clone();
     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(*plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
     indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
