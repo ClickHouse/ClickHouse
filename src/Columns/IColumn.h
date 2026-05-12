@@ -376,6 +376,14 @@ public:
     ///  passed bytes to hash must identify sequence of values unambiguously.
     virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
 
+    /// Update state of hash function with values in range [begin, end).
+    /// Used for deduplication: the hash must be the same for the same INSERT data producing
+    /// the same in-memory representation. It does NOT guarantee the same hash for logically
+    /// equivalent data stored differently in memory (e.g. different dynamic/shared path layout
+    /// in ColumnObject, or different variant layout in ColumnDynamic).
+    /// Default implementation calls updateHashWithValue for each element.
+    virtual void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const;
+
     /// Get hash function value. Hash is calculated for each element.
     /// It's a fast weak hash function. Mainly need to scatter data between threads.
     /// WeakHash32 must have the same size as column.
@@ -856,10 +864,12 @@ protected:
 private:
     void assertTypeEquality(const IColumn & rhs) const
     {
-        /// For Sparse and Const columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
-        /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const column.
+        /// For Sparse, Const, and Replicated columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
+        /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const and Replicated columns.
         /// For the rest of column types we can compare the types directly.
-        chassert((isConst() || isSparse() || isReplicated()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
+        chassert((isConst() || isSparse() || isReplicated() || rhs.isConst() || rhs.isSparse() || rhs.isReplicated())
+            ? getDataType() == rhs.getDataType()
+            : typeid(*this) == typeid(rhs));
     }
 #endif
 };
@@ -915,7 +925,7 @@ bool isColumnNullable(const IColumn & column);
 /// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
 bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 
-/// Implement methods to devirtualize some calls of IColumn in final descendents.
+/// Implement methods to devirtualize some calls of IColumn in final descendants.
 /// `typename Parent` is needed because some columns don't inherit IColumn directly.
 /// See ColumnFixedSizeHelper for example.
 template <typename Derived, typename Parent = IColumn>

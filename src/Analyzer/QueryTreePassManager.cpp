@@ -33,6 +33,7 @@
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
 #include <Analyzer/Passes/InjectRandomOrderIfNoOrderByPass.h>
+#include <Analyzer/Passes/DictGetTupleElementPass.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
 #include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
 #include <Analyzer/Passes/LikePerfectAffixRewritePass.h>
@@ -53,6 +54,7 @@
 #include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
+#include <Analyzer/Passes/TruncateOrderByAfterGroupByKeysPass.h>
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/UniqToCountPass.h>
 #include <Analyzer/Utils.h>
@@ -269,6 +271,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
     manager.addPass(std::make_unique<PruneArrayJoinColumnsPass>());
 
+    manager.addPass(std::make_unique<DictGetTupleElementPass>());
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
@@ -320,6 +323,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<OrderByTupleEliminationPass>());
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
+
+    manager.addPass(std::make_unique<TruncateOrderByAfterGroupByKeysPass>());
 
     manager.addPass(std::make_unique<FuseFunctionsPass>());
 

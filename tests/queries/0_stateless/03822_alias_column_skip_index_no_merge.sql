@@ -5,6 +5,10 @@
 -- Regression test for issue #98822.
 
 SET enable_analyzer = 1;
+-- Disable statistics-based part pruning so that randomly injected
+-- `auto_statistics_types` in CI does not add a Statistics section
+-- to the EXPLAIN output and break the reference file.
+SET use_statistics_for_part_pruning = 0;
 
 DROP TABLE IF EXISTS test_alias_skip_idx;
 
