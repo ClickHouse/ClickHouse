@@ -153,31 +153,17 @@ private:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        auto optional_args = FunctionArgumentDescriptors
-            {
-            {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
-        };
-
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
-        {
-            optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Additional authenticated data binary string for GCM mode"
-            });
-        }
-
-        validateFunctionArguments(*this, arguments,
-            FunctionArgumentDescriptors
-            {
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "encryption mode string"},
-                {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "plaintext"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "encryption key binary string"},
-            },
-            optional_args
-        );
-
-        return std::make_shared<DataTypeString>();
+            return
+                "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String"
+                " OR (const StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String"
+                " OR (const StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String";
+        else
+            return
+                "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String"
+                " OR (const StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -428,32 +414,18 @@ private:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        auto optional_args = FunctionArgumentDescriptors{
-            {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
-        };
-
+        const String ret = use_null_when_decrypt_fail ? "Nullable(String)" : "String";
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
-        {
-            optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Additional authenticated data binary string for GCM mode"
-            });
-        }
-
-        validateFunctionArguments(*this, arguments,
-            FunctionArgumentDescriptors{
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "decryption mode string"},
-                {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "ciphertext"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "decryption key binary string"},
-            },
-            optional_args
-        );
-
-        if constexpr (use_null_when_decrypt_fail)
-            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
-
-        return std::make_shared<DataTypeString>();
+            return
+                "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> " + ret
+                + " OR (const StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString) -> " + ret
+                + " OR (const StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString) -> " + ret;
+        else
+            return
+                "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> " + ret
+                + " OR (const StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString) -> " + ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
