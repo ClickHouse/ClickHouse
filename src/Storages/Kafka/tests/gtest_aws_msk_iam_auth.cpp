@@ -49,6 +49,14 @@ TEST(AWSMSKIAMAuth, ExtractRegionGovCloudBroker)
     EXPECT_EQ(extractRegionFromBroker("b-1.cluster.kafka.us-gov-east-1.amazonaws.com"), "us-gov-east-1");
 }
 
+TEST(AWSMSKIAMAuth, ExtractRegionMixedCaseBroker)
+{
+    // DNS is case-insensitive; uppercase/mixed-case hostnames must still work.
+    EXPECT_EQ(extractRegionFromBroker("B-1.Cluster.Kafka.US-EAST-1.amazonaws.com:9098"), "us-east-1");
+    EXPECT_EQ(extractRegionFromBroker("b-1.cluster.KAFKA.eu-west-2.AMAZONAWS.COM"), "eu-west-2");
+    EXPECT_EQ(extractRegionFromBroker("B-1.CLUSTER.KAFKA-SERVERLESS.AP-SOUTHEAST-1.amazonaws.com:9098"), "ap-southeast-1");
+}
+
 TEST(AWSMSKIAMAuth, ExtractRegionNegativeCases)
 {
     EXPECT_EQ(extractRegionFromBroker(""), "");

@@ -11,6 +11,7 @@
 #include <Core/SettingsFields.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/URI.h>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <cppkafka/configuration.h>
 #include <cppkafka/kafka_handle_base.h>
@@ -109,6 +110,8 @@ String extractRegionFromBroker(const String & broker_address)
             return "";
         broker_host = broker_host.substr(0, colon_pos);
     }
+
+    boost::algorithm::to_lower(broker_host);
 
     static const RE2 region_pattern(R"(\.kafka(?:-serverless)?\.([a-z0-9-]+)\.(?:vpce\.)?amazonaws\.com$)");
     std::string region;
