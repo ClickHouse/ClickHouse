@@ -47,6 +47,23 @@ public:
             return inner;
     }
 
+    /// Fields read from the named collection that every AI function needs. Function-specific knobs
+    /// (max_tokens, temperature, dimensions, …) are layered on top by individual callers.
+    struct AINamedCollectionConfig
+    {
+        String collection_name;
+        String provider;
+        String endpoint;
+        String model;
+        String api_key;
+        String api_version;
+    };
+
+    /// Resolve the named-collection argument: cast the first argument to a `ColumnConst`, run the
+    /// `NAMED_COLLECTION` access check, fetch from `NamedCollectionFactory`, and validate that the
+    /// required fields (`provider`, `endpoint`, `model`, `api_key`) are non-empty.
+    static AINamedCollectionConfig resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg);
+
 protected:
     ContextWeakPtr context_weak;
     ContextPtr getContext() const { return context_weak.lock(); }

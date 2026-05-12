@@ -5,11 +5,8 @@
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
 
-#include <Access/Common/AccessFlags.h>
-
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/RemoteHostFilter.h>
 
 #include <Columns/ColumnArray.h>
@@ -117,29 +114,8 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        const auto * collection_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
-        chassert(collection_const, "First argument must be a constant String (validated by getReturnTypeImpl)");
-        String collection_name = collection_const->getValue<String>();
-
-        getContext()->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
-        const auto & named_collection = NamedCollectionFactory::instance().get(collection_name);
-
-        String provider_name = named_collection->getOrDefault<String>("provider", "");
-        String endpoint = named_collection->getOrDefault<String>("endpoint", "");
-        String model = named_collection->getOrDefault<String>("model", "");
-        String api_key = named_collection->getOrDefault<String>("api_key", "");
-        String api_version = named_collection->getOrDefault<String>("api_version", "");
-
-        if (provider_name.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'provider'", collection_name);
-        if (endpoint.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", collection_name);
-        if (model.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'model'", collection_name);
-        if (api_key.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'api_key'", collection_name);
-
-        getContext()->getRemoteHostFilter().checkURL(Poco::URI(endpoint));
+        auto nc = FunctionBaseAI::resolveAINamedCollection(getContext(), arguments[0].column);
+        getContext()->getRemoteHostFilter().checkURL(Poco::URI(nc.endpoint));
 
         UInt64 dimensions = 0;
         if (arguments.size() > 2)
@@ -162,7 +138,7 @@ public:
             settings[Setting::ai_function_max_api_calls_per_query].value,
             settings[Setting::ai_function_throw_on_quota_exceeded].value);
 
-        auto provider = createAIProvider(provider_name, endpoint, api_key, api_version);
+        auto provider = createAIProvider(nc.provider, nc.endpoint, nc.api_key, nc.api_version);
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -209,7 +185,7 @@ public:
             size_t batch_end = std::min(batch_start + max_batch_size, unique_texts.size());
 
             AIEmbeddingRequest ai_embedding_request;
-            ai_embedding_request.model = model;
+            ai_embedding_request.model = nc.model;
             ai_embedding_request.dimensions = dimensions;
             ai_embedding_request.inputs.assign(unique_texts.begin() + batch_start, unique_texts.begin() + batch_end);
 

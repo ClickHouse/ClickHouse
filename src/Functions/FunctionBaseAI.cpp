@@ -75,41 +75,56 @@ FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context_weak(context_)
             "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
 }
 
-FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTypeAndName & arguments) const
+FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg)
 {
-    ResolvedConfig config;
-
-    const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
+    const auto * col_const = typeid_cast<const ColumnConst *>(first_arg.get());
     if (!col_const)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument to AI function must be a named collection (constant String)");
 
-    String collection_name = col_const->getValue<String>();
+    AINamedCollectionConfig config;
+    config.collection_name = col_const->getValue<String>();
 
-    getContext()->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
+    context->checkAccess(AccessType::NAMED_COLLECTION, config.collection_name);
 
-    const auto & named_collection = NamedCollectionFactory::instance().get(collection_name);
+    const auto & named_collection = NamedCollectionFactory::instance().get(config.collection_name);
 
     config.provider = named_collection->getOrDefault<String>("provider", "");
     config.endpoint = named_collection->getOrDefault<String>("endpoint", "");
     config.model = named_collection->getOrDefault<String>("model", "");
     config.api_key = named_collection->getOrDefault<String>("api_key", "");
     config.api_version = named_collection->getOrDefault<String>("api_version", "");
-    config.max_tokens = named_collection->getOrDefault<UInt64>("max_tokens", DEFAULT_AI_MAX_TOKENS);
+
+    if (config.provider.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'provider'", config.collection_name);
+    if (config.endpoint.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", config.collection_name);
+    if (config.model.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'model'", config.collection_name);
+    if (config.api_key.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'api_key'", config.collection_name);
+
+    return config;
+}
+
+FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTypeAndName & arguments) const
+{
+    auto base = resolveAINamedCollection(getContext(), arguments[0].column);
+
+    ResolvedConfig config;
+    config.provider = std::move(base.provider);
+    config.endpoint = std::move(base.endpoint);
+    config.model = std::move(base.model);
+    config.api_key = std::move(base.api_key);
+    config.api_version = std::move(base.api_version);
     config.temperature = defaultTemperature();
+
+    const auto & named_collection = NamedCollectionFactory::instance().get(base.collection_name);
+    config.max_tokens = named_collection->getOrDefault<UInt64>("max_tokens", DEFAULT_AI_MAX_TOKENS);
 
     /// Poco JSON does not support UInt64, so providers cast max_tokens to Int64 for serialization.
     if (config.max_tokens > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}': max_tokens exceeds maximum ({})",
-            collection_name, std::numeric_limits<Int64>::max());
-
-    if (config.provider.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'provider'", collection_name);
-    if (config.endpoint.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", collection_name);
-    if (config.model.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'model'", collection_name);
-    if (config.api_key.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'api_key'", collection_name);
+            base.collection_name, std::numeric_limits<Int64>::max());
 
     return config;
 }
