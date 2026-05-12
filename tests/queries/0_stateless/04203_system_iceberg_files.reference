@@ -24,7 +24,7 @@ snapshot_id_nonzero:         1
 content:                     DATA
 file_path_ends_with_parquet: 1
 file_format:                 Parquet
-record_count:                3
+record_count:                1
 file_size_positive:          1
 partition:                   {'eu', 1}
 schema_id:                   0
@@ -43,7 +43,7 @@ snapshot_id_nonzero:         1
 content:                     DATA
 file_path_ends_with_parquet: 1
 file_format:                 Parquet
-record_count:                3
+record_count:                2
 file_size_positive:          1
 partition:                   {'us', 0}
 schema_id:                   0

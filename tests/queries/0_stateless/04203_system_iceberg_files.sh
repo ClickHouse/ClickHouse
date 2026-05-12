@@ -64,9 +64,6 @@ ${CLICKHOUSE_CLIENT} --query "
         content,
         endsWith(file_path, '.parquet')               AS file_path_ends_with_parquet,
         file_format,
-        -- record_count and file_size_in_bytes currently have incorrect values due to a bug in the Iceberg writer.
-        -- See https://github.com/ClickHouse/ClickHouse/issues/66153
-        -- TODO: Once bug is fixed, adjust expected output for record_count.
         record_count,
         file_size_in_bytes > 0                        AS file_size_positive,
         partition,
