@@ -1241,7 +1241,7 @@ struct FunctionsStressTestThread
         /// tracked by the `CancellationChecker` singleton; when it expires,
         /// `QueryStatus::is_killed` flips to true and `CurrentThread::isQueryCanceled()`
         /// starts returning true on this thread. An iteration that takes more than
-        /// `2 * options.iteration_timeout_seconds` to terminate (no matter how — success,
+        /// `2 * options.iteration_timeout_seconds` to terminate (no matter how: success,
         /// MLE, cancellation, etc.) is reported as `P_TIMEOUT_NOT_HONORED`. The remedy
         /// depends on the function: poll `CurrentThread::isQueryCanceled` between iterations,
         /// make the per-iteration work cheaper, or reject the offending input shape inside
@@ -2263,7 +2263,7 @@ TEST(FunctionsStress, stress)
                 /// `Context::process_list_elem` is non-atomic and the worker may be tearing
                 /// down its `ProcessListEntry` at the same moment: in that narrow window
                 /// `getProcessListElement` can see `has_process_list_elem == true` with an
-                /// expired `weak_ptr` and throw `LOGICAL_ERROR`. Swallow it — the worker is
+                /// expired `weak_ptr` and throw `LOGICAL_ERROR`. Log it: the worker is
                 /// between iterations and is about to observe `thread_should_stop` anyway.
                 if (!t->context)
                     continue;
@@ -2271,7 +2271,10 @@ TEST(FunctionsStress, stress)
                 {
                     t->context->killCurrentQuery();
                 }
-                catch (...) {} // NOLINT(bugprone-empty-catch)
+                catch (Exception & e)
+                {
+                    LOG_INFO(logger, "killCurrentQuery raced with worker shutdown: {}", e.message());
+                }
             }
         };
 
