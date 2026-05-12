@@ -849,9 +849,17 @@ void RemoteQueryExecutor::finish()
             return;
     }
 
-    /// To make sure finish is only called once: `finished` is atomic; we set it on
-    /// exit so subsequent `finish` calls return early via `!isQueryPending()`.
-    SCOPE_EXIT({ finished = true; });
+    /// Mark `finished` only when the drain loop completes (or rethrows on exception):
+    /// `SCOPE_EXIT` runs regardless of how we leave the loop, but if we exit early via
+    /// `drain_should_stop` we still have active connections with unread packets, and
+    /// leaving `finished = false` lets the destructor (or a subsequent caller) clean up
+    /// the connection state via `disconnect`. On exception, the loop rethrows out of
+    /// `finish`, so `SCOPE_EXIT` still runs — gate it on the loop-exit condition to keep
+    /// `isQueryPending` truthful in the preemption case.
+    SCOPE_EXIT({
+        if (!connections->hasActiveConnections() || hasThrownException())
+            finished = true;
+    });
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling `drain` because we want to process `Log`, `ProfileEvents`
@@ -863,8 +871,8 @@ void RemoteQueryExecutor::finish()
     /// first `EndOfStream` would exit the loop early and discard remaining `Progress` packets from the other
     /// replicas, which is exactly what causes `rows_read = 0` in JSON/XML statistics on the client side.
     /// Loop until all replicas have completed (`hasActiveConnections` returns false); the `SCOPE_EXIT` above
-    /// flips `finished` to true once we leave the loop. This mirrors the check in `processPacket` which only
-    /// flips `finished` when `!hasActiveConnections`.
+    /// flips `finished` to true only when that condition holds (or an exception was observed). This mirrors
+    /// the check in `processPacket` which only flips `finished` when `!hasActiveConnections`.
     while (connections->hasActiveConnections())
     {
         /// Allow a concurrent hard cancel (via `abortDrain`) to interrupt the drain loop
