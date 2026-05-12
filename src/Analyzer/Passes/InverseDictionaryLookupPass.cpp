@@ -374,6 +374,10 @@ public:
 
         auto attr_comparison_function_node = std::static_pointer_cast<FunctionNode>(node_function->clone());
         attr_comparison_function_node->markAsOperator();
+        /// The clone copies `parenthesized` from `node_function`, but this is now a fresh comparison
+        /// node placed inside a synthetic subquery's WHERE — it should not inherit the original
+        /// parens.
+        attr_comparison_function_node->setParenthesized(false);
 
         if (dict_side == Side::LHS)
         {
