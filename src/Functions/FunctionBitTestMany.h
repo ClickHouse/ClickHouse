@@ -33,27 +33,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() < 2)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Number of arguments for function {} doesn't match: "
-                "passed {}, should be at least 2.", getName(), arguments.size());
-
-        const auto & first_arg = arguments.front();
-
-        if (!isInteger(first_arg))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}", first_arg->getName(), getName());
-
-
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            const auto & pos_arg = arguments[i];
-
-            if (!isUInt(pos_arg))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {}", pos_arg->getName(), i, getName());
-        }
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(Integer, NativeUInt, ...) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

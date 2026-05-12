@@ -36,7 +36,10 @@ public:
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    String getSignatureString() const override
+    {
+        return "(T : Any, Array, ...) -> Array(T)";
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override;
 };
