@@ -502,6 +502,7 @@ struct Reader
     /// Moves the column out of ColumnSubchunk-s, leaving nullptrs in ColumnSubchunk::column.
     /// The caller is responsible for caching the result (in RowSubGroup::output) to make sure this
     /// is not called again for the moved-out columns.
+    MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, const OutputColumnInfo & output_info, size_t num_rows);
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
 
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group);

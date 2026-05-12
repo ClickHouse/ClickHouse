@@ -6,6 +6,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
 #include <Common/FieldAccurateComparison.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
@@ -1930,6 +1931,11 @@ void Reader::decompressPageIfCompressed(PageState & page)
 MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows)
 {
     const OutputColumnInfo & output_info = output_columns.at(output_column_idx);
+    return formOutputColumn(row_subgroup, output_info, num_rows);
+}
+
+MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, const OutputColumnInfo & output_info, size_t num_rows)
+{
     TypeIndex kind = output_info.type->getColumnType();
     MutableColumnPtr res;
 
@@ -1986,6 +1992,45 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), offsets.back());
         res = ColumnArray::create(std::move(nested), std::move(offsets_column));
     }
+    else if (kind == TypeIndex::Nullable)
+    {
+        const auto * nullable_type = assert_cast<const DataTypeNullable *>(output_info.type.get());
+        OutputColumnInfo nested_output_info = output_info;
+        nested_output_info.type = nullable_type->getNestedType();
+        auto nested = formOutputColumn(row_subgroup, nested_output_info, num_rows);
+        auto null_map = ColumnUInt8::create(nested->size(), 0);
+
+        if (const auto * tuple = typeid_cast<const ColumnTuple *>(nested.get()))
+        {
+            auto & null_map_data = assert_cast<ColumnUInt8 &>(*null_map).getData();
+            bool initialized = false;
+            for (const auto & tuple_elem : tuple->getColumns())
+            {
+                const auto * nullable_elem = typeid_cast<const ColumnNullable *>(tuple_elem.get());
+                if (!nullable_elem)
+                {
+                    initialized = false;
+                    break;
+                }
+
+                const auto & elem_null_map = nullable_elem->getNullMapData();
+                if (!initialized)
+                {
+                    null_map_data.assign(elem_null_map.begin(), elem_null_map.end());
+                    initialized = true;
+                }
+                else
+                {
+                    for (size_t i = 0; i < null_map_data.size(); ++i)
+                        null_map_data[i] &= elem_null_map[i];
+                }
+            }
+
+            if (!initialized)
+                memset(null_map_data.data(), 0, null_map_data.size());
+        }
+        res = ColumnNullable::create(std::move(nested), std::move(null_map));
+    }
     else if (kind == TypeIndex::Tuple)
     {
         MutableColumns columns;
@@ -1998,7 +2043,34 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         chassert(kind == TypeIndex::Map);
         chassert(output_info.nested_columns.size() == 1);
         MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), num_rows);
-        res = ColumnMap::create(std::move(nested));
+        /// Normally nested is Array(Tuple(keys, values)). However, in some edge cases
+        /// (e.g. schema/nested column index mismatches) we may already get a ColumnMap here.
+        /// Avoid wrapping it again, which would fail ColumnMap's structural checks.
+        if (typeid_cast<ColumnMap *>(nested.get()))
+            res = std::move(nested);
+        else
+        {
+            /// Add context before ColumnMap throws, to simplify debugging schema wiring issues.
+            const auto * as_array = typeid_cast<const ColumnArray *>(nested.get());
+            if (!as_array)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Parquet Map output column `{}` (type `{}`) expects nested Array(Tuple(keys,values)), got `{}`",
+                    output_info.name,
+                    output_info.type->getName(),
+                    nested ? nested->getName() : "nullptr");
+
+            const auto * as_tuple = typeid_cast<const ColumnTuple *>(as_array->getDataPtr().get());
+            if (!as_tuple || as_tuple->getColumns().size() != 2)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Parquet Map output column `{}` (type `{}`) expects nested Array(Tuple(keys,values)), got nested data `{}`",
+                    output_info.name,
+                    output_info.type->getName(),
+                    as_array->getDataPtr() ? as_array->getDataPtr()->getName() : "nullptr");
+
+            res = ColumnMap::create(std::move(nested));
+        }
     }
 
     chassert(res->getDataType() == output_info.type->getColumnType());

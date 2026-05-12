@@ -20,6 +20,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int DUPLICATE_COLUMN;
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
@@ -32,6 +33,17 @@ namespace DB::ErrorCodes
 
 namespace DB::Parquet
 {
+
+/// Physical layout for parquet MAP decoded as ClickHouse Map: nested column is Array(Tuple(keys T0, values T1)).
+static bool nestedColumnMatchesMapKvArrayTuple(const SchemaConverter::OutputColumnInfo & col)
+{
+    const auto * arr = typeid_cast<const DataTypeArray *>(removeNullable(col.type).get());
+    if (!arr)
+        return false;
+    const auto * tup = typeid_cast<const DataTypeTuple *>(removeNullable(arr->getNestedType()).get());
+    return tup && tup->getElements().size() == 2 && tup->hasExplicitNames() && tup->getElementNames()[0] == "keys"
+        && tup->getElementNames()[1] == "values";
+}
 
 SchemaConverter::SchemaConverter(
     const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
@@ -192,7 +204,10 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                 {
                     if (levels[i].is_array)
                     {
-                        const DataTypeArray * array = typeid_cast<const DataTypeArray *>(node.type_hint.get());
+                        DataTypePtr arr_hint = node.type_hint;
+                        if (arr_hint->isNullable())
+                            arr_hint = removeNullable(arr_hint);
+                        const DataTypeArray * array = typeid_cast<const DataTypeArray *>(arr_hint.get());
                         if (!array)
                             throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of nested column {} doesn't match parquet schema: parquet type is Array, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
                         node.type_hint = array->getNestedType();
@@ -227,7 +242,13 @@ void SchemaConverter::processSubtree(TraversalNode & node)
             /// We'll first process schema for array element type, then wrap it in Array type.
             if (node.type_hint)
             {
-                const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(node.type_hint.get());
+                DataTypePtr array_hint = node.type_hint;
+                if (array_hint->isNullable())
+                {
+                    array_hint = removeNullable(array_hint);
+                    node.nullable_array_outer_from_hint = true;
+                }
+                const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(array_hint.get());
                 if (!array_type)
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Array, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
                 node.type_hint = array_type->getNestedType();
@@ -250,7 +271,12 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     if (!node.output_idx.has_value())
         return;
     if (!node.requested)
+    {
+        /// Discard output_idx from subtree walks that are not part of any requested projection;
+        /// otherwise callers (e.g. MAP wrapper) might accidentally reference a dangling primitive idx.
+        node.output_idx.reset();
         return; // we just needed to recurse to children, not interested in output_idx
+    }
 
     auto make_array = [&](UInt8 rep)
     {
@@ -261,6 +287,12 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         array.primitive_start = array_element.primitive_start;
         array.primitive_end = primitive_columns.size();
         array.type = std::make_shared<DataTypeArray>(array_element.type);
+        if (node.nullable_array_outer_from_hint)
+        {
+            /// ClickHouse doesn't support Nullable(Array(...)) in parquet reader path.
+            /// We convert null arrays to empty arrays during rep/def processing (no null map).
+            node.nullable_array_outer_from_hint = false;
+        }
         array.nested_columns = {*node.output_idx};
         array.rep = rep;
         node.output_idx = array_idx;
@@ -427,7 +459,10 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
     /// (not to be confused with the case when `Array(Tuple(key, value))` was requested).
     if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement)
         return false;
-    if (typeid_cast<const DataTypeTuple *>(node.type_hint.get()))
+    /// Spark often requests Nullable(Tuple(...)) for structs (same as processSubtreeTuple). Without
+    /// stripping Nullable, we'd fail to recognize Tuple here and could wrongly treat MAP-shaped
+    /// parquet groups as ClickHouse Map while the scan expects a struct — wiring then breaks at ColumnMap.
+    if (node.type_hint && typeid_cast<const DataTypeTuple *>(removeNullable(node.type_hint).get()))
         return false;
     if (node.element->num_children != 1)
         return false;
@@ -437,15 +472,22 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
 
     DataTypePtr array_type_hint;
     bool no_map = false; // return plain Array(Tuple) instead of Map
+    bool wrap_map_in_nullable = false;
     if (node.type_hint)
     {
-        if (const DataTypeMap * map_type = typeid_cast<const DataTypeMap *>(node.type_hint.get()))
+        DataTypePtr map_hint = node.type_hint;
+        if (map_hint->isNullable())
+        {
+            wrap_map_in_nullable = true;
+            map_hint = removeNullable(map_hint);
+        }
+        if (const DataTypeMap * map_type = typeid_cast<const DataTypeMap *>(map_hint.get()))
         {
             array_type_hint = map_type->getNestedType();
         }
-        else if (typeid_cast<const DataTypeArray *>(node.type_hint.get()))
+        else if (typeid_cast<const DataTypeArray *>(map_hint.get()))
         {
-            array_type_hint = node.type_hint;
+            array_type_hint = map_hint;
             no_map = true;
         }
         else
@@ -456,11 +498,45 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
     /// (MapTupleAsPlainTuple is needed to skip a level in the column name: it changes
     /// `my_map.key_value.key` to `my_map.key`.
     TraversalNode subnode = node.prepareToRecurse(no_map ? SchemaContext::MapTupleAsPlainTuple : SchemaContext::MapTuple, array_type_hint);
+    const size_t output_columns_start = output_columns.size();
     processSubtree(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())
         return true;
     size_t array_idx = subnode.output_idx.value();
+
+    if (!no_map)
+    {
+        /// Be defensive: in case subnode.output_idx ends up pointing to a primitive/tuple output
+        /// (e.g. due to schema traversal quirks), try to locate the expected Array(Tuple(keys,values))
+        /// produced while processing the map's key_value subtree.
+        if (!nestedColumnMatchesMapKvArrayTuple(output_columns.at(array_idx)))
+        {
+            std::optional<size_t> fixed_array_idx;
+            for (size_t i = output_columns.size(); i-- > output_columns_start;)
+            {
+                if (nestedColumnMatchesMapKvArrayTuple(output_columns[i]))
+                {
+                    fixed_array_idx = i;
+                    break;
+                }
+            }
+            if (fixed_array_idx.has_value())
+            {
+                array_idx = *fixed_array_idx;
+            }
+            else
+            {
+                const OutputColumnInfo & arr_out = output_columns.at(array_idx);
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Parquet MAP column `{}` has inconsistent schema wiring: nested output [{}] type `{}`, expected Nullable(Array(Tuple(keys, ...), values(...))) wrapping key/value",
+                    node.getNameForLogging(),
+                    arr_out.name,
+                    arr_out.type->getName());
+            }
+        }
+    }
 
     /// Support explicitly requesting Array(Tuple) type for map columns. Useful e.g. if the map
     /// key type is something that's not allowed as Map key in clickhouse.
@@ -478,6 +554,8 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
         output.primitive_start = array.primitive_start;
         output.primitive_end = array.primitive_end;
         output.type = std::make_shared<DataTypeMap>(array.type);
+        if (wrap_map_in_nullable)
+            output.type = makeNullable(output.type);
         output.nested_columns = {array_idx};
     }
 
@@ -551,9 +629,17 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///     <recurse> `name2`
     ///     ...
 
-    const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get());
-    if (node.type_hint && !tuple_type_hint)
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+    /// Spark often requests Nullable(Tuple(...)) for struct columns; unwrap for matching element types.
+    DataTypePtr tuple_hint_for_match = node.type_hint;
+    const DataTypeTuple * tuple_type_hint = nullptr;
+    if (tuple_hint_for_match)
+    {
+        if (tuple_hint_for_match->isNullable())
+            tuple_hint_for_match = removeNullable(tuple_hint_for_match);
+        tuple_type_hint = typeid_cast<const DataTypeTuple *>(tuple_hint_for_match.get());
+        if (!tuple_type_hint)
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+    }
 
     /// 3 modes:
     ///  * If type_hint has element names, we match elements from parquet to elements from type

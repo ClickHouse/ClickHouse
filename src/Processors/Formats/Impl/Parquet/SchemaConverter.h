@@ -75,6 +75,8 @@ private:
         std::optional<String> parquet_name;
         DataTypePtr type_hint;
         bool requested = false;
+        /// When type_hint was Nullable(Array(...)) before stripping one Array level in processSubtree (REPEATED).
+        bool nullable_array_outer_from_hint = false;
 
         /// These are assigned by the callee.
         const parq::SchemaElement * element = nullptr;
