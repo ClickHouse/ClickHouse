@@ -1160,6 +1160,7 @@ CREATE TABLE system.tables
     `sorting_key` String,
     `primary_key` String,
     `sampling_key` String,
+    `unique_key` String,
     `storage_policy` String,
     `total_rows` Nullable(UInt64),
     `total_bytes` Nullable(UInt64),
