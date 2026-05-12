@@ -67,12 +67,12 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        Int64 previous_untracked_memory = current_thread->untracked_memory;
-        current_thread->untracked_memory += size;
-        if (current_thread->untracked_memory > current_thread->untracked_memory_limit)
+        Int64 previous_untracked_memory = current_thread->untracked_memory.load();
+        current_thread->untracked_memory.add(size);
+        if (current_thread->untracked_memory.load() > current_thread->untracked_memory_limit)
         {
-            Int64 current_untracked_memory = current_thread->untracked_memory;
-            current_thread->untracked_memory = 0;
+            Int64 current_untracked_memory = current_thread->untracked_memory.load();
+            current_thread->untracked_memory.store(0);
 
             try
             {
@@ -80,7 +80,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             }
             catch (...)
             {
-                current_thread->untracked_memory += previous_untracked_memory;
+                current_thread->untracked_memory.add(previous_untracked_memory);
                 throw;
             }
         }
@@ -123,11 +123,11 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        current_thread->untracked_memory -= size;
-        if (current_thread->untracked_memory < -current_thread->untracked_memory_limit)
+        current_thread->untracked_memory.add(-size);
+        if (current_thread->untracked_memory.load() < -current_thread->untracked_memory_limit)
         {
-            Int64 untracked_memory = current_thread->untracked_memory;
-            current_thread->untracked_memory = 0;
+            Int64 untracked_memory = current_thread->untracked_memory.load();
+            current_thread->untracked_memory.store(0);
             return memory_tracker->free(-untracked_memory);
         }
 
