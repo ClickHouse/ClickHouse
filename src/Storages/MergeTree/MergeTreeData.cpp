@@ -1229,23 +1229,32 @@ void MergeTreeData::setProperties(
 
     setInMemoryMetadata(new_metadata);
 
-    /// Invalidate the columns cache when columns are dropped or renamed: cache keys
-    /// identify columns by name, so a `RENAME a TO b; ADD COLUMN a` sequence could
-    /// otherwise serve stale data for the freshly added `a`.
+    /// Invalidate the columns cache when column identity changes: cache keys identify
+    /// columns by name, so any operation that makes a name refer to a different column
+    /// (drop, rename, or single-statement `RENAME a TO b, ADD COLUMN a` where the old
+    /// name is reintroduced as a new column) can otherwise serve stale data. We also
+    /// invalidate on type or default changes for the same name, since `MODIFY COLUMN`
+    /// can change how the data is interpreted on read.
     if (!attach)
     {
         const auto & old_columns = old_metadata.columns;
         const auto & new_columns = new_metadata.columns;
-        bool columns_dropped_or_renamed = false;
+        bool columns_identity_changed = false;
         for (const auto & column : old_columns)
         {
             if (!new_columns.has(column.name))
             {
-                columns_dropped_or_renamed = true;
+                columns_identity_changed = true;
+                break;
+            }
+            const auto & new_column = new_columns.get(column.name);
+            if (!column.type->equals(*new_column.type) || !(column.default_desc == new_column.default_desc))
+            {
+                columns_identity_changed = true;
                 break;
             }
         }
-        if (columns_dropped_or_renamed)
+        if (columns_identity_changed)
         {
             if (auto columns_cache = getContext()->getColumnsCache())
                 columns_cache->removeTable(getStorageID().uuid);
