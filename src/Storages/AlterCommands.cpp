@@ -711,8 +711,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
 
-        auto using_auto_minmax_index = metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns
-            || metadata.add_minmax_index_for_temporal_columns;
+        auto using_auto_minmax_index =
+               metadata.add_minmax_index_for_numeric_columns
+            || metadata.add_minmax_index_for_string_columns
+            || metadata.add_minmax_index_for_temporal_columns
+            || metadata.add_minmax_index_for_block_number_column
+            || metadata.add_minmax_index_for_block_offset_column;
         if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX) && using_auto_minmax_index)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {} because it uses a reserved index name", index_name);

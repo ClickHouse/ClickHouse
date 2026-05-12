@@ -858,8 +858,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
-                auto using_auto_minmax_index = metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns
-                    || metadata.add_minmax_index_for_temporal_columns;
+                auto using_auto_minmax_index =
+                       metadata.add_minmax_index_for_numeric_columns
+                    || metadata.add_minmax_index_for_string_columns
+                    || metadata.add_minmax_index_for_temporal_columns
+                    || metadata.add_minmax_index_for_block_number_column
+                    || metadata.add_minmax_index_for_block_offset_column;
                 if (using_auto_minmax_index && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
