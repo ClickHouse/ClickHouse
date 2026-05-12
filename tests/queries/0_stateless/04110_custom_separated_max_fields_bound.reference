@@ -1,8 +1,4 @@
-bounded-header-detection:
-Too many fields in a single row of CustomSeparated input (limit: 10)
-bounded-schema-inference:
-Too many fields in a single row of CustomSeparated input (limit: 10)
+bounded:
+Too many fields in a single row of CustomSeparated input
 well-formed:
 3
-default-limit:
-1

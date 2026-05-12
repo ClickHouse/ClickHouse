@@ -145,7 +145,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.custom.try_detect_header = settings[Setting::input_format_custom_detect_header];
     format_settings.custom.skip_trailing_empty_lines = settings[Setting::input_format_custom_skip_trailing_empty_lines];
     format_settings.custom.allow_variable_number_of_columns = settings[Setting::input_format_custom_allow_variable_number_of_columns];
-    format_settings.custom.max_number_of_fields_per_row = settings[Setting::input_format_custom_max_number_of_fields_per_row];
     format_settings.date_time_input_format = settings[Setting::date_time_input_format];
     format_settings.date_time_output_format = settings[Setting::date_time_output_format];
     format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = settings[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];

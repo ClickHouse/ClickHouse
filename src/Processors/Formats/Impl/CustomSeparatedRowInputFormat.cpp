@@ -16,6 +16,18 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+namespace
+{
+    /// Hard cap on the number of fields read per row in `CustomSeparated` when
+    /// the column count is unknown (header detection or
+    /// `input_format_custom_allow_variable_number_of_columns`). Without this
+    /// bound, an adversarial input in which `format_custom_row_after_delimiter`
+    /// never matches grows the `values` vector unboundedly and can request many
+    /// gigabytes of memory before anything detects the malformed input.
+    /// 1 million is comfortably above every realistic CustomSeparated schema.
+    constexpr size_t MAX_FIELDS_PER_ROW = 1'000'000;
+}
+
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
     SharedHeader header_,
     ReadBuffer & in_buf_,
@@ -214,16 +226,14 @@ std::vector<String> CustomSeparatedFormatReader::readRowImpl()
         /// where `format_custom_row_after_delimiter` never matches): without this
         /// bound, the loop below can grow `values` unboundedly and allocate
         /// many gigabytes of memory before anything detects the malformed input.
-        const size_t max_fields = format_settings.custom.max_number_of_fields_per_row;
         do
         {
-            if (values.size() >= max_fields)
+            if (values.size() >= MAX_FIELDS_PER_ROW)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "Too many fields in a single row of CustomSeparated input (limit: {}). "
-                    "The configured `format_custom_row_after_delimiter` was likely not found in the input data. "
-                    "Increase `input_format_custom_max_number_of_fields_per_row` if this is a legitimate ultra-wide row.",
-                    max_fields);
+                    "The configured `format_custom_row_after_delimiter` was likely not found in the input data.",
+                    MAX_FIELDS_PER_ROW);
 
             values.push_back(readFieldIntoString<mode>(values.empty(), false, true));
         } while (!checkForEndOfRow());
