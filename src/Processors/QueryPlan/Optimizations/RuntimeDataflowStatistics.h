@@ -95,6 +95,11 @@ public:
 
     void recordAggregationKeySizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types);
 
+    /// Estimates compressed size of aggregate state columns in the output chunk.
+    /// Mirrors the logic of Aggregator::estimateSizeOfCompressedState but works on ColumnAggregateFunction columns
+    /// rather than a hash table. Used by in-order aggregation where states are already materialized into columns (single-stream case).
+    void recordAggregationStateColumnSizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const Block & header);
+
     /// Updates should_continue_sampling to true if the current read block is chosen for sampling.
     /// It is needed because in general we read each block in multiple steps because of prewhere.
     /// If the first part of the block was chosen for sampling, we want to record statistics for the whole block in later steps,
@@ -109,7 +114,9 @@ public:
     void markUnsupportedCase() { unsupported_case.store(true, std::memory_order_relaxed); }
 
 private:
-    bool shouldSampleBlock(Statistics & statistics, size_t block_rows) const;
+    static bool shouldSampleBlock(Statistics & statistics, size_t block_rows);
+
+    static void recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols);
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
