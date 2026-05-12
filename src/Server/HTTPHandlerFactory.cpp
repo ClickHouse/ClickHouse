@@ -232,13 +232,18 @@ static inline auto createHandlersFactoryFromConfig(
             }
             else if (handler_type == "js")
             {
-                // NOTE: JavaScriptWebUIRequestHandler only makes sense for paths other then /js/uplot.js, /js/lz-string.js
-                // because these paths are hardcoded in dashboard.html
+                /// `JavaScriptWebUIRequestHandler` serves a fixed set of embedded JS/CSS
+                /// assets hardcoded inside other UI pages (`dashboard.html` references
+                /// `/js/uplot.js` and `/js/lz-string.js`; `webterminal.html` references
+                /// the xterm files). The handler itself routes by exact path and replies
+                /// with `404` for anything else, so accept any URL under the `/js/` prefix
+                /// here rather than maintaining a parallel allowlist that drifts every
+                /// time a new asset is embedded.
                 const auto & path = config.getString(prefix + "." + key + ".url", "");
-                if (path != "/js/uplot.js" && path != "/js/lz-string.js")
+                if (!startsWith(path, "/js/"))
                 {
                     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                                    "Handler type 'js' is only supported for url '/js/'. "
+                                    "Handler type 'js' is only supported for urls under '/js/'. "
                                     "Configured path here: {}", path);
                 }
 
