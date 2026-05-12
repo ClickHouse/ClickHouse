@@ -12,7 +12,6 @@
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -134,7 +133,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr metadata,
-    StorageID storage_id,
+    StoragePtr storage_ptr,
     ObjectStoragePtr object_storage,
     String write_format,
     FileNamesGenerator & generator,
@@ -144,8 +143,6 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     Poco::JSON::Object::Ptr data_schema)
 {
     chassert(commands.size() == 1);
-
-    auto storage_ptr = DatabaseCatalog::instance().getTable(storage_id, context);
     DataFileWriteResultByPartitionKey delete_data_result;
     DataFileStatisticsByPartitionKey delete_data_statistics;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> delete_data_write_buffers;
@@ -557,6 +554,7 @@ static bool writeMetadataFiles(
 void mutate(
     const MutationCommands & commands,
     ContextPtr context,
+    StoragePtr storage_ptr,
     StorageMetadataPtr storage_metadata,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
@@ -628,7 +626,7 @@ void mutate(
             commands,
             context,
             storage_metadata,
-            storage_id,
+            storage_ptr,
             object_storage,
             write_format,
             filename_generator,
