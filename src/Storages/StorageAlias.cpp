@@ -120,7 +120,9 @@ public:
         for (const auto & col : non_materialized_header)
             non_materialized_block.insert(block.getByName(col.name));
 
-        executor->push(std::move(non_materialized_block));
+        Chunk non_materialized_chunk(non_materialized_block.getColumns(), non_materialized_block.rows());
+        non_materialized_chunk.setChunkInfos(chunk.getChunkInfos().clone());
+        executor->push(std::move(non_materialized_chunk));
     }
 
     void onFinish() override
