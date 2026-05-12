@@ -79,10 +79,17 @@ void CachedObjectStorage::prepareRead(
     object_storage->prepareRead(object_storage, objects, read_settings, read_hint, pipeline);
 
     /// Add the disk cache stage if filesystem cache is enabled.
-    if (read_settings.enable_filesystem_cache && cache->isInitialized())
+    if (read_settings.enable_filesystem_cache)
     {
-        auto global_context = Context::getGlobalContextInstance();
-        pipeline.needDiskCache(cache, read_settings.getFilesystemCacheSettings(), global_context->getFilesystemCacheLog());
+        if (cache->isInitialized())
+        {
+            auto global_context = Context::getGlobalContextInstance();
+            pipeline.needDiskCache(cache, read_settings.getFilesystemCacheSettings(), global_context->getFilesystemCacheLog());
+        }
+        else
+        {
+            cache->throwInitExceptionIfNeeded();
+        }
     }
 }
 
