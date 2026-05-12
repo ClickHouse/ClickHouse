@@ -765,15 +765,37 @@ Strings getPathsListOnDisk(
                 continue;
             if (target_disk->existsFile(entry_rel))
             {
-                total_bytes_to_read += target_disk->getFileSize(entry_rel);
-                absolute_paths.push_back(disk_prefix + entry_rel);
+                try
+                {
+                    total_bytes_to_read += target_disk->getFileSize(entry_rel);
+                    absolute_paths.push_back(disk_prefix + entry_rel);
+                }
+                catch (const Exception & e)
+                {
+                    /// File can disappear between `existsFile` and `getFileSize` under
+                    /// concurrent rotation/deletion. Skip vanished entries; rethrow other errors.
+                    if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                        throw;
+                }
             }
         }
         return absolute_paths;
     }
 
     if (target_disk->existsFile(relative_pattern))
-        total_bytes_to_read += target_disk->getFileSize(relative_pattern);
+    {
+        try
+        {
+            total_bytes_to_read += target_disk->getFileSize(relative_pattern);
+        }
+        catch (const Exception & e)
+        {
+            /// Tolerate a concurrent deletion between `existsFile` and `getFileSize`;
+            /// the path is still returned so the caller surfaces any read error.
+            if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                throw;
+        }
+    }
     absolute_paths.push_back(disk_prefix + relative_pattern);
     return absolute_paths;
 }
