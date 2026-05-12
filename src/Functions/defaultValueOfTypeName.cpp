@@ -45,14 +45,9 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        const ColumnConst * col_type_const = typeid_cast<const ColumnConst *>(arguments.front().column.get());
-        if (!col_type_const || !isString(arguments.front().type))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be a constant string describing type.",
-                getName());
-
-        return DataTypeFactory::instance().get(col_type_const->getValue<String>());
+        return "(const t String) -> typeFromString(t)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override

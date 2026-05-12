@@ -96,17 +96,11 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
+    String getSignatureString() const override
     {
-        if (data_types.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires single argument with type JSON", getName());
-
-        if (data_types[0]->getTypeId() != TypeIndex::Object)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} requires argument with type JSON, got: {}", getName(),data_types[0]->getName());
-
         if constexpr (Impl::with_types)
-            return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+            return "(JSON) -> Map(String, String)";
+        return "(JSON) -> Array(String)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override

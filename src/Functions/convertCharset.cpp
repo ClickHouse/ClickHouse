@@ -169,14 +169,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        for (size_t i : collections::range(0, 3))
-            if (!isString(arguments[i]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, must be String",
-                    arguments[i]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        return "(String, String, String) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

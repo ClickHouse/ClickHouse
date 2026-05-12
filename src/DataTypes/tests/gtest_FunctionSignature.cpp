@@ -206,10 +206,16 @@ GTEST_TEST(FunctionSignature, DateTime64ScaleFromSource)
 
 GTEST_TEST(FunctionSignature, NamedTuple)
 {
-    /// Build a named tuple via NamedField wrappers inside Tuple(...).
-    String sig = "(UInt64) -> Tuple(NamedField('origin', UInt64), NamedField('destination', UInt64))";
+    /// Natural shorthand for named tuple elements: `name Type` desugars to NamedField.
     EXPECT_EQ(
-        checkSignature(sig, {makeColumn("UInt64")}),
+        checkSignature("(UInt64) -> Tuple(origin UInt64, destination UInt64)",
+                       {makeColumn("UInt64")}),
+        "Tuple(origin UInt64, destination UInt64)");
+
+    /// The explicit NamedField form is still accepted and equivalent.
+    EXPECT_EQ(
+        checkSignature("(UInt64) -> Tuple(NamedField('origin', UInt64), NamedField('destination', UInt64))",
+                       {makeColumn("UInt64")}),
         "Tuple(origin UInt64, destination UInt64)");
 
     /// Unnamed Tuple still works.

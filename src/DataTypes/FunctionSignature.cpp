@@ -933,6 +933,38 @@ bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
         [&](TokenIterator & inner)
         {
             TypeExpressionPtr elem;
+
+            /// Named-field shorthand: `<field_name> <type_expr>` inside a function-call arg list
+            /// desugars to `NamedField('<field_name>', <type_expr>)`. Used by Tuple, e.g.
+            /// `Tuple(origin UInt64, destination UInt64)`. Restricted to inside parens so that
+            /// top-level `T OR ...` and `UInt64 OR ...` don't get misparsed.
+            if (inner->type == TokenType::BareWord)
+            {
+                auto probe = inner;
+                ++probe;
+                if (probe->type == TokenType::BareWord)
+                {
+                    auto saved = inner;
+                    std::string field_name;
+                    if (parseIdentifier(inner, field_name))
+                    {
+                        TypeExpressionPtr inner_expr;
+                        if (parseTypeExpression(inner, inner_expr))
+                        {
+                            elem = std::make_shared<TypeExpressionTree>(
+                                TypeFunctionFactory::instance().get("NamedField"),
+                                TypeExpressions{
+                                    std::make_shared<ConstantTypeExpression>(Value(Field(field_name))),
+                                    inner_expr,
+                                });
+                            children.emplace_back(elem);
+                            return true;
+                        }
+                        inner = saved;
+                    }
+                }
+            }
+
             if (parseTypeExpression(inner, elem))
             {
                 children.emplace_back(elem);

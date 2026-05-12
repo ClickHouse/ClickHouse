@@ -264,6 +264,22 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+class TypeMatcherJSON : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "JSON"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->getTypeId() == TypeIndex::Object; }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherDynamic : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Dynamic"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isDynamic(type); }
+    size_t getIndex() const override { return 0; }
+};
+
 
 class TypeMatcherArray : public ITypeMatcher
 {
@@ -434,6 +450,8 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherMap>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDate>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDate32>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherJSON>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherDynamic>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDateTime>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDateTime64>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherTime>(factory);

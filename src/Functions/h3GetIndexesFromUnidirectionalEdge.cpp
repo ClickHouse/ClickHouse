@@ -43,7 +43,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(UInt64) -> Tuple(NamedField('origin', UInt64), NamedField('destination', UInt64))";
+        return "(UInt64) -> Tuple(origin UInt64, destination UInt64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

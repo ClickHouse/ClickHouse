@@ -71,39 +71,9 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}",
-                getName(),
-                arguments.size());
-
-        if (!WhichDataType(arguments[0].type).isString())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 1 argument of function {}. Must be string",
-                arguments[0].type->getName(),
-                getName());
-
-        WhichDataType first_argument_type(arguments[1].type);
-
-        if (!(first_argument_type.isDate() || first_argument_type.isDateTime() || first_argument_type.isDate32() || first_argument_type.isDateTime64()))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 2 argument of function {}. Must be a date or a date with time",
-                arguments[1].type->getName(),
-                getName());
-
-        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 3 argument of function {}. Must be string",
-                arguments[2].type->getName(),
-                getName());
-
-        return std::make_shared<DataTypeString>();
+        return "(String, DateOrDateTime, [String]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
