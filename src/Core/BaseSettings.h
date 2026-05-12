@@ -168,14 +168,18 @@ public:
     {
         static_assert(std::is_same_v<Owner, typename SettingsOwner<TTraits>::type>,
                       "SettingIndex belongs to a different settings class than this BaseSettings");
-        return *reinterpret_cast<const FieldType *>(reinterpret_cast<const char *>(this) + index.offset);
+        /* `index.offset` is relative to `Traits::Data`; convert from `this` (a real Impl object) */
+        /* to its `Data` base subobject via a well-defined static_cast, then add the field offset. */
+        const auto * data = static_cast<const typename TTraits::Data *>(this);
+        return *reinterpret_cast<const FieldType *>(reinterpret_cast<const char *>(data) + index.offset);
     }
     template <typename Owner, typename FieldType>
     FieldType & operator[](SettingIndex<Owner, FieldType> index)
     {
         static_assert(std::is_same_v<Owner, typename SettingsOwner<TTraits>::type>,
                       "SettingIndex belongs to a different settings class than this BaseSettings");
-        return *reinterpret_cast<FieldType *>(reinterpret_cast<char *>(this) + index.offset);
+        auto * data = static_cast<typename TTraits::Data *>(this);
+        return *reinterpret_cast<FieldType *>(reinterpret_cast<char *>(data) + index.offset);
     }
     BaseSettings & operator=(const BaseSettings &) = default;
     BaseSettings & operator=(BaseSettings &&) noexcept = default;
@@ -1065,18 +1069,21 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 #define SETTING_DECLARE_DATA_ARRAY_(CLASS_NAME, TYPE) \
     SettingField##TYPE TYPE##_[settings_layout.type_counts[static_cast<size_t>(SettingTypeTag::TYPE)]];
 
-/// These reference Traits_ / Owner_ / DATA_BASE_OFFSET_ which are `using` aliases
-/// injected by IMPLEMENT_SETTINGS_TRAITS_COMMON / IMPLEMENT_SETTINGS_EXTERN_ into
-/// the enclosing scope before LIST_OF_SETTINGS expansion. This indirection is needed
-/// because LIST_OF_SETTINGS callbacks are global #defines and can't reference the
-/// traits name directly (it's a parameter of the outer macro, not visible to inner #defines).
+/// These reference Traits_ / Owner_ which are `using` aliases injected by
+/// IMPLEMENT_SETTINGS_TRAITS_COMMON / IMPLEMENT_SETTINGS_EXTERN_ into the enclosing scope
+/// before LIST_OF_SETTINGS expansion. This indirection is needed because LIST_OF_SETTINGS
+/// callbacks are global #defines and can't reference the traits name directly (it's a
+/// parameter of the outer macro, not visible to inner #defines).
 #define SETTING_INIT_DEFAULT_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     TYPE##_[Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)]] = SettingField##TYPE(DEFAULT);
+/* Offset is relative to `Traits_::Data` (not the Impl); `BaseSettings::operator[]` does the */
+/* derived-to-base cast on a real `this` before adding it, so we never need a forged-pointer */
+/* probe to compute the Impl->Data base distance. */
 #define SETTING_EXTERN_ENTRY_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     SettingIndex<Owner_, SettingField##TYPE> NAME{  \
         offsetof(Traits_::Data, TYPE##_) \
         + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
-        + DATA_BASE_OFFSET_}; /* NOLINT(misc-use-internal-linkage) */
+        }; /* NOLINT(misc-use-internal-linkage) */
 
 /// Generate traits for a basic settings collection (no custom settings, no paths)
 /// NOLINTNEXTLINE
@@ -1360,15 +1367,6 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 /// NOLINTNEXTLINE
 #define SETTING_SKIP_TRAIT(...)
 
-/// Compute the byte offset of the Data base class within an Impl type.
-template <typename Impl, typename Data>
-size_t settingsDataBaseOffset()
-{
-    const Impl * fake = reinterpret_cast<const Impl *>(alignof(Impl));
-    const auto * data = static_cast<const Data *>(fake);
-    return reinterpret_cast<const char *>(data) - reinterpret_cast<const char *>(fake);
-}
-
 
 /// Generates an alias mapping entry
 /// NOLINTNEXTLINE
@@ -1384,31 +1382,30 @@ size_t settingsDataBaseOffset()
 #define IMPLEMENT_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, CLASS_NAME, SETTING_NAMESPACE) \
     struct CLASS_NAME##Impl : public BaseSettings<SETTINGS_TRAITS_NAME> {}; \
     IMPLEMENT_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT) \
-    IMPLEMENT_SETTINGS_EXTERN_(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, CLASS_NAME##Impl, CLASS_NAME, SETTING_NAMESPACE)
+    IMPLEMENT_SETTINGS_EXTERN_(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, CLASS_NAME, SETTING_NAMESPACE)
 
 /// For Impl types that have extra methods (sanityCheck, loadFromConfig, etc.)
 /// and must be defined manually before this macro.
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, CLASS_NAME, SETTING_NAMESPACE) \
     IMPLEMENT_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT) \
-    IMPLEMENT_SETTINGS_EXTERN_(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, CLASS_NAME##Impl, CLASS_NAME, SETTING_NAMESPACE)
+    IMPLEMENT_SETTINGS_EXTERN_(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, CLASS_NAME, SETTING_NAMESPACE)
 
 /// For settings with config file paths (ServerSettings) that need a custom Impl.
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_CUSTOM_IMPL(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, CLASS_NAME, SETTING_NAMESPACE) \
     IMPLEMENT_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH) \
-    IMPLEMENT_SETTINGS_EXTERN_WITH_PATH_(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, CLASS_NAME##Impl, CLASS_NAME, SETTING_NAMESPACE)
+    IMPLEMENT_SETTINGS_EXTERN_WITH_PATH_(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, CLASS_NAME, SETTING_NAMESPACE)
 
 /// Generates the extern SettingIndex variables inside namespace SETTING_NAMESPACE.
 /// Owner_ and Traits_ are `using` aliases so that SETTING_EXTERN_ENTRY_ (a global #define)
 /// can reference the per-traits types without knowing the traits name directly.
-/// DATA_BASE_OFFSET_ accounts for the vtable/base-class offset between Impl and Data,
-/// so that SettingIndex offsets can be applied directly to the Impl pointer.
+/// SettingIndex offsets are relative to `Traits::Data` so `BaseSettings::operator[]` can do
+/// the derived-to-base conversion on a real `this` and avoid any forged-pointer arithmetic.
 /// NOLINTNEXTLINE
-#define IMPLEMENT_SETTINGS_EXTERN_(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, IMPL_TYPE, CLASS_NAME, SETTING_NAMESPACE) \
+#define IMPLEMENT_SETTINGS_EXTERN_(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, CLASS_NAME, SETTING_NAMESPACE) \
     _Pragma("clang diagnostic push") \
     _Pragma("clang diagnostic ignored \"-Winvalid-offsetof\"") \
-    /* NOLINTNEXTLINE(misc-use-internal-linkage) */ \
     struct CLASS_NAME; /* forward declaration for SettingIndex owner tag */ \
     /* Bind the traits to its owning class so `BaseSettings<Traits>::operator[]` rejects */ \
     /* SettingIndex values from a different settings class at compile time. */ \
@@ -1417,26 +1414,23 @@ size_t settingsDataBaseOffset()
     { \
         using Owner_ = CLASS_NAME; \
         using Traits_ = SETTINGS_TRAITS_NAME; \
-        static const size_t DATA_BASE_OFFSET_ = settingsDataBaseOffset<IMPL_TYPE, Traits_::Data>(); \
         LIST_OF_SETTINGS_MACRO(SETTING_EXTERN_ENTRY_, SETTING_EXTERN_ENTRY_) \
     } \
     _Pragma("clang diagnostic pop")
 
 /// Same as IMPLEMENT_SETTINGS_EXTERN_ but iterates both path and non-path lists.
 /// NOLINTNEXTLINE
-#define IMPLEMENT_SETTINGS_EXTERN_WITH_PATH_(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, IMPL_TYPE, CLASS_NAME, SETTING_NAMESPACE) \
+#define IMPLEMENT_SETTINGS_EXTERN_WITH_PATH_(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, CLASS_NAME, SETTING_NAMESPACE) \
     _Pragma("clang diagnostic push") \
     _Pragma("clang diagnostic ignored \"-Winvalid-offsetof\"") \
     struct CLASS_NAME; /* forward declaration for SettingIndex owner tag */ \
     /* Bind the traits to its owning class so `BaseSettings<Traits>::operator[]` rejects */ \
     /* SettingIndex values from a different settings class at compile time. */ \
     template <> struct SettingsOwner<SETTINGS_TRAITS_NAME> { using type = CLASS_NAME; }; \
-    /* NOLINTNEXTLINE(misc-use-internal-linkage) */ \
     namespace SETTING_NAMESPACE \
     { \
         using Owner_ = CLASS_NAME; \
         using Traits_ = SETTINGS_TRAITS_NAME; \
-        static const size_t DATA_BASE_OFFSET_ = settingsDataBaseOffset<IMPL_TYPE, Traits_::Data>(); \
         LIST_NO_PATH(SETTING_EXTERN_ENTRY_, SETTING_EXTERN_ENTRY_) \
         LIST_WITH_PATH(SETTING_EXTERN_ENTRY_, SETTING_EXTERN_ENTRY_) \
     } \

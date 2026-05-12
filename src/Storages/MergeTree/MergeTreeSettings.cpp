@@ -2232,11 +2232,13 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
+    /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
+    /// by a real derived-to-base static_cast (offsets are stored relative to `Data`, not Impl).
 #define IMPL_SUBSCRIPT_OP_(CLASS_NAME, TYPE) \
     const SettingField##TYPE & operator[](CLASS_NAME##TYPE t) const \
-    { return *reinterpret_cast<const SettingField##TYPE *>(reinterpret_cast<const char *>(this) + t.offset); } \
+    { return BaseSettings::operator[](t); } \
     SettingField##TYPE & operator[](CLASS_NAME##TYPE t) \
-    { return *reinterpret_cast<SettingField##TYPE *>(reinterpret_cast<char *>(this) + t.offset); }
+    { return BaseSettings::operator[](t); }
     MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, IMPL_SUBSCRIPT_OP_)
 #undef IMPL_SUBSCRIPT_OP_
 };
