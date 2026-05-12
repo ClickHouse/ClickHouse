@@ -15,7 +15,7 @@ DROP TABLE IF EXISTS map_protobuf_00825;
 CREATE TABLE map_protobuf_00825
 (
   a Map(String, UInt32)
-) ENGINE = MergeTree ORDER BY tuple();
+) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
 INSERT INTO map_protobuf_00825 VALUES ({'x':5, 'y':7}), ({'z':11}), ({'temp':0}), ({'':0});
 
