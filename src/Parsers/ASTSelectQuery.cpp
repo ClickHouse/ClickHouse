@@ -59,7 +59,6 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
 void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
-    frame.need_parens = false;
     frame.expression_list_prepend_whitespace = true;
 
     std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
@@ -82,7 +81,13 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
     /// from OFFSET.  Otherwise, the formatted "... SAMPLE r OFFSET n ..." is
     /// ambiguous: the parser would consume OFFSET as the SAMPLE offset instead
     /// of a query-level OFFSET.
-    bool format_from_first = sampleSize() && limitOffset() && !limitLength();
+    /// Note: FROM-first syntax is disabled for SELECTs inside INSERT to avoid
+    /// parsing ambiguity with INSERT ... FROM INFILE syntax.
+    bool format_from_first = sampleSize() && limitOffset() && !limitLength() && !frame.disable_from_first_syntax;
+
+    /// Reset the flag so that nested subqueries in the FROM clause can make their own decision
+    /// about FROM-first formatting (they might need it for SAMPLE + standalone OFFSET).
+    frame.disable_from_first_syntax = false;
 
     if (format_from_first && tables())
     {

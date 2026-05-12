@@ -125,7 +125,7 @@ class S3:
                     inferred_content_type, _ = mimetypes.guess_type(key)
 
                 if text and not content_type:
-                    extra_args["ContentType"] = "text/plain"
+                    extra_args["ContentType"] = "text/plain; charset=utf-8"
                 elif content_type:
                     extra_args["ContentType"] = content_type
                 elif inferred_content_type:
@@ -169,7 +169,7 @@ class S3:
             # boto3 not available, use AWS CLI
             cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
             if text and not content_type:
-                cmd += " --content-type text/plain"
+                cmd += ' --content-type "text/plain; charset=utf-8"'
             elif content_type:
                 cmd += f" --content-type {content_type}"
             if content_encoding:
@@ -243,7 +243,7 @@ class S3:
                 command += f" --metadata {k}={v}"
 
         if text:
-            command += " --content-type text/plain"
+            command += ' --content-type "text/plain; charset=utf-8"'
         res = cls.run_command_with_retries(command, no_strict=no_strict)
         if res:
             StorageUsage.add_uploaded(local_path)
@@ -585,7 +585,9 @@ class S3:
                     client = cls._get_boto3_client()
                     extra_args = {
                         "ContentType": (
-                            "text/plain" if text else "application/octet-stream"
+                            "text/plain; charset=utf-8"
+                            if text
+                            else "application/octet-stream"
                         ),
                         "Metadata": {"version": str(version)},
                     }
@@ -621,7 +623,7 @@ class S3:
                                 Key=key,
                                 Body=f,
                                 ContentType=(
-                                    "text/plain"
+                                    "text/plain; charset=utf-8"
                                     if text
                                     else "application/octet-stream"
                                 ),
@@ -694,8 +696,12 @@ class S3:
                     return False
 
                 # Upload with If-Match condition
-                content_type = "text/plain" if text else "application/octet-stream"
-                command = f'aws s3api put-object --bucket {bucket} --key {key} --body {local_path} --content-type {content_type} --metadata version={version} --if-match "{current_etag}"'
+                content_type = (
+                    "text/plain; charset=utf-8"
+                    if text
+                    else "application/octet-stream"
+                )
+                command = f'aws s3api put-object --bucket {bucket} --key {key} --body {local_path} --content-type "{content_type}" --metadata version={version} --if-match "{current_etag}"'
                 res = cls.run_command_with_retries(command, no_strict=no_strict)
                 if not res:
                     print("Failed to put file (precondition failed or other error)")

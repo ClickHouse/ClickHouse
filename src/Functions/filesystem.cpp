@@ -25,7 +25,12 @@ public:
     using GetFunc = UInt64 (*)(const DiskPtr &);
 
     FilesystemImpl(ContextPtr context_, const char * name_, GetFunc get_func_)
-        : context(context_), function_name(name_), get_func(get_func_) {}
+        : default_disk(context_->getDisk("default"))
+        , disk_map(context_->getDisksMap())
+        , function_name(name_)
+        , get_func(get_func_)
+    {
+    }
 
     static FunctionPtr create(ContextPtr context_, const char * name, GetFunc get_func)
     {
@@ -64,15 +69,12 @@ public:
     {
         if (arguments.empty())
         {
-            auto disk = context->getDisk("default");
-            return DataTypeUInt64().createColumnConst(input_rows_count, get_func(disk));
+            return DataTypeUInt64().createColumnConst(input_rows_count, get_func(default_disk));
         }
 
         auto col = arguments[0].column;
         if (const ColumnString * col_str = checkAndGetColumn<ColumnString>(col.get()))
         {
-            auto disk_map = context->getDisksMap();
-
             auto col_res = ColumnVector<UInt64>::create(col_str->size());
             auto & data = col_res->getData();
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -90,7 +92,8 @@ public:
     }
 
 private:
-    ContextPtr context;
+    DiskPtr default_disk;
+    DisksMap disk_map;
     const char * function_name;
     GetFunc get_func;
 };
