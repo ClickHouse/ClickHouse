@@ -132,8 +132,10 @@ void ASTOrderByElement::readJSON(const Poco::JSON::Object & json)
     nulls_direction_was_explicitly_specified = r.getBool("nulls_direction_was_explicitly_specified");
     with_fill = r.getBool("with_fill");
 
-    if (auto expression = r.readChild("expression"))
-        children.push_back(std::move(expression));
+    auto expression = r.readChild("expression");
+    if (!expression)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'expression' is missing in JSON AST for OrderByElement");
+    children.push_back(std::move(expression));
 
     if (auto child = r.readChild("collation"))
         setCollation(child);

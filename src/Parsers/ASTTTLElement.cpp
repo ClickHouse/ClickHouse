@@ -68,21 +68,24 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     String mode_str = r.getString("mode");
-    auto mode_opt = magic_enum::enum_cast<TTLMode>(mode_str);
-    if (mode_opt)
+    if (auto mode_opt = magic_enum::enum_cast<TTLMode>(mode_str))
         mode = *mode_opt;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown 'mode' value in JSON AST for TTLElement: '{}'", mode_str);
 
     String dest_type_str = r.getString("destination_type");
-    auto dest_opt = magic_enum::enum_cast<DataDestinationType>(dest_type_str);
-    if (dest_opt)
+    if (auto dest_opt = magic_enum::enum_cast<DataDestinationType>(dest_type_str))
         destination_type = *dest_opt;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown 'destination_type' value in JSON AST for TTLElement: '{}'", dest_type_str);
 
     destination_name = r.getString("destination_name");
     if_exists = r.getBool("if_exists");
 
     auto ttl_child = r.readChild("ttl_expr");
-    if (ttl_child)
-        setTTL(std::move(ttl_child));
+    if (!ttl_child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'ttl_expr' is missing in JSON AST for TTLElement");
+    setTTL(std::move(ttl_child));
 
     auto where_child = r.readChild("where_expr");
     if (where_child)

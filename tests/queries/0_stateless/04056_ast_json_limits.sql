@@ -48,3 +48,15 @@ SELECT formatQueryFromJSON('{"type":"Literal","value":"oops"}'); -- { serverErro
 SET max_ast_depth = 8;
 SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"AggregateFunctionState","value":"Array_[Array_[Array_[Array_[Array_[Array_[Array_[Array_[Array_[Array_[Array_[Array_[1]]]]]]]]]]]]"}}'); -- { serverError BAD_ARGUMENTS }
 SET max_ast_depth = 1000;
+
+-- ASTOrderByElement: `expression` is required; otherwise `formatImpl` dereferences `children.front()`.
+SELECT formatQueryFromJSON('{"type":"OrderByElement","direction":1,"nulls_direction":1}'); -- { serverError BAD_ARGUMENTS }
+
+-- ASTTTLElement: unknown `mode` / `destination_type` must be rejected, and `ttl_expr` is required.
+SELECT formatQueryFromJSON('{"type":"TTLElement","mode":"NoSuchMode","destination_type":"DELETE","if_exists":false}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"TTLElement","mode":"DELETE","destination_type":"NoSuchDestination","if_exists":false}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"TTLElement","mode":"DELETE","destination_type":"DELETE","if_exists":false}'); -- { serverError BAD_ARGUMENTS }
+
+-- ASTRefreshStrategy: `period` is required for `schedule_kind` AFTER / EVERY.
+SELECT formatQueryFromJSON('{"type":"RefreshStrategy","schedule_kind":"AFTER"}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"RefreshStrategy","schedule_kind":"EVERY"}'); -- { serverError BAD_ARGUMENTS }

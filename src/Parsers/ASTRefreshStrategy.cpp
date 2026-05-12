@@ -99,6 +99,10 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
     auto period_child = r.readChild("period");
     if (period_child)
         set(period, period_child);
+    else if (schedule_kind == RefreshScheduleKind::AFTER || schedule_kind == RefreshScheduleKind::EVERY)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Required field 'period' is missing in JSON AST for RefreshStrategy with schedule_kind '{}'",
+            magic_enum::enum_name(schedule_kind));
     auto offset_child = r.readChild("offset");
     if (offset_child)
         set(offset, offset_child);
