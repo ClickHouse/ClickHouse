@@ -213,30 +213,9 @@ namespace DB
             return executeImpl(*col_addr, *col_cidr, input_rows_count);
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        String getSignatureString() const override
         {
-            if (arguments.size() != 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                    getName(), arguments.size());
-
-            const DataTypePtr & addr_type = arguments[0];
-            const DataTypePtr & prefix_type = arguments[1];
-
-            WhichDataType type = WhichDataType(addr_type);
-            if (const auto * nullable_type = dynamic_cast<const DataTypeNullable *>(&*addr_type))
-                type = WhichDataType(nullable_type->getNestedType());
-
-            if (!(type.isString() || type.isIPv4() || type.isIPv6()) || !isString(prefix_type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The first argument of function {} must be one of: String, IPv4, IPv6, Nullable(String), Nullable(IPv4), or "
-                    "Nullable(IPv6) and the second argument must be String. Type of the first argument: {}, type of the second argument: {}",
-                    getName(),
-                    addr_type->getName(),
-                    prefix_type->getName());
-
-            return std::make_shared<DataTypeUInt8>();
+            return "(MaybeNullable(String | IPv4 | IPv6), String) -> UInt8";
         }
 
         size_t getNumberOfArguments() const override { return 2; }

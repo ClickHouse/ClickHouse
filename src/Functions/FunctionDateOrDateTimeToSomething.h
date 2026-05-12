@@ -17,8 +17,25 @@ class FunctionDateOrDateTimeToSomething : public IFunctionDateOrDateTime<Transfo
 public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
 
+    String getSignatureString() const override
+    {
+        /// For DateTime/DateTime64/Time64 returns we need to construct the type with a
+        /// timezone or computed scale; that logic doesn't fit a static signature, so we keep
+        /// the legacy getReturnTypeImpl path for those.
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>
+                   || std::is_same_v<ToDataType, DataTypeDateTime64>
+                   || std::is_same_v<ToDataType, DataTypeTime64>)
+            return {};
+        else
+            return "(DateOrDateTime, [String]) -> " + ToDataType{}.getName();
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        /// Defer to signature-based dispatch when getSignatureString returns non-empty.
+        if (!this->getSignatureString().empty())
+            return IFunction::getReturnTypeImpl(arguments);
+
         constexpr bool result_is_date_or_date32 = (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>);
         this->checkArguments(arguments, result_is_date_or_date32);
 

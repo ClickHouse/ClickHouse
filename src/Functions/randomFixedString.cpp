@@ -39,16 +39,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isNativeUInt(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be unsigned integer", getName());
-
-        if (!arguments[0].column || !isColumnConst(*arguments[0].column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument for function {} must be constant", getName());
-
-        const size_t n = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<UInt64>();
-        return std::make_shared<DataTypeFixedString>(n);
+        return "(const N NativeUInt) -> FixedString(N)";
     }
 
     bool isDeterministic() const override { return false; }

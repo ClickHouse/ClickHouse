@@ -40,29 +40,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
-                getName(), arguments.size());
-
-        WhichDataType which_first(arguments[0]->getTypeId());
-
-        if (!which_first.isDecimal())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
-
-        if (arguments.size() == 2)
-        {
-            WhichDataType which_second(arguments[1]->getTypeId());
-            if (!which_second.isUInt8())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[1]->getName(), getName());
-        }
-
-        return std::make_shared<DataTypeUInt8>();
-    }
+    String getSignatureString() const override { return "(Decimal, [UInt8]) -> UInt8"; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {

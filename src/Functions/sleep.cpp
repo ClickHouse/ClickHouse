@@ -83,21 +83,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        auto is_float_or_native_uint = [](const IDataType & type)
-        {
-            WhichDataType which(type);
-            return which.isFloat() || which.isNativeUInt();
-        };
-
-        FunctionArgumentDescriptors mandatory_args{
-            {"seconds", is_float_or_native_uint, nullptr, "UInt* or Float*"}
-        };
-        validateFunctionArguments(getName(), arguments, mandatory_args);
-
-        return std::make_shared<DataTypeUInt8>();
-    }
+    String getSignatureString() const override { return "(Float | NativeUInt) -> UInt8"; }
     ColumnPtr
     executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
