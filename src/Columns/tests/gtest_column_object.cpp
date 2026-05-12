@@ -486,7 +486,7 @@ TEST(ColumnObject, TryInsertRestoresSortedDynamicPaths)
     auto ref = col_object.serializeValueIntoArena(0, arena, begin, nullptr);
 
     /// Round-trip sanity check.
-    ReadBufferFromMemory buf(ref.data(), ref.size());
+    ReadBufferFromMemory buf(ref.data, ref.size);
     col_object.deserializeAndInsertFromArena(buf, nullptr);
     ASSERT_EQ(col_object.size(), 2u);
     ASSERT_EQ(col_object[1], col_object[0]);
