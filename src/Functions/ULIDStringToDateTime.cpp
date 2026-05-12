@@ -49,36 +49,13 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Wrong number of arguments for function {}: should be 1 or 2",
-                getName());
-
-        const auto * arg_fixed_string = checkAndGetDataType<DataTypeFixedString>(arguments[0].type.get());
-        const auto * arg_string = checkAndGetDataType<DataTypeString>(arguments[0].type.get());
-
-        if (!arg_string && !(arg_fixed_string && arg_fixed_string->getN() == ULID_LENGTH))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}. Must be String or FixedString(26).",
-                arguments[0].type->getName(),
-                getName());
-
-        String timezone;
-        if (arguments.size() == 2)
-        {
-            timezone = extractTimeZoneNameFromColumn(arguments[1].column.get(), arguments[1].name);
-
-            if (timezone.empty())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function {} supports a 2nd argument (optional) that must be a valid time zone",
-                    getName());
-        }
-
-        return std::make_shared<DataTypeDateTime64>(DATETIME_SCALE, timezone);
+        /// Legacy further constrains FixedString(N) to N=26 at executeImpl; here we accept
+        /// any FixedString and let the executor reject the wrong length.
+        return
+            "(String | FixedString, const tz String) -> DateTime64(3, tz)"
+            " OR (String | FixedString) -> DateTime64(3)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
