@@ -9,30 +9,15 @@ namespace DB
 void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
 {
     if (out_file)
-    {
-        cloned.out_file = out_file->clone();
-        cloned.children.push_back(cloned.out_file);
-    }
+        cloned.set(cloned.out_file, out_file->clone());
     if (format_ast)
-    {
-        cloned.format_ast = format_ast->clone();
-        cloned.children.push_back(cloned.format_ast);
-    }
+        cloned.set(cloned.format_ast, format_ast->clone());
     if (settings_ast)
-    {
-        cloned.settings_ast = settings_ast->clone();
-        cloned.children.push_back(cloned.settings_ast);
-    }
+        cloned.set(cloned.settings_ast, settings_ast->clone());
     if (compression)
-    {
-        cloned.compression = compression->clone();
-        cloned.children.push_back(cloned.compression);
-    }
+        cloned.set(cloned.compression, compression->clone());
     if (compression_level)
-    {
-        cloned.compression_level = compression_level->clone();
-        cloned.children.push_back(cloned.compression_level);
-    }
+        cloned.set(cloned.compression_level, compression_level->clone());
 }
 
 void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
@@ -94,22 +79,11 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
     /// FIXME: try to prettify this cast using `as<>()`
     if (auto * ast_with_output = dynamic_cast<ASTQueryWithOutput *>(&ast))
     {
-        auto remove_if_exists = [&](ASTPtr & p)
-        {
-            if (p)
-            {
-                if (auto it = std::find(ast_with_output->children.begin(), ast_with_output->children.end(), p);
-                    it != ast_with_output->children.end())
-                    ast_with_output->children.erase(it);
-                p.reset();
-            }
-        };
-
-        remove_if_exists(ast_with_output->out_file);
-        remove_if_exists(ast_with_output->format_ast);
-        remove_if_exists(ast_with_output->settings_ast);
-        remove_if_exists(ast_with_output->compression);
-        remove_if_exists(ast_with_output->compression_level);
+        ast_with_output->reset(ast_with_output->out_file);
+        ast_with_output->reset(ast_with_output->format_ast);
+        ast_with_output->reset(ast_with_output->settings_ast);
+        ast_with_output->reset(ast_with_output->compression);
+        ast_with_output->reset(ast_with_output->compression_level);
 
         return true;
     }

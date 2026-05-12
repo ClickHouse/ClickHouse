@@ -72,13 +72,13 @@ set (SRCS
     "${LIBRARY_DIR}/src/arena.c"
     "${LIBRARY_DIR}/src/background_thread.c"
     "${LIBRARY_DIR}/src/base.c"
-    "${LIBRARY_DIR}/src/batcher.c"
     "${LIBRARY_DIR}/src/bin.c"
     "${LIBRARY_DIR}/src/bin_info.c"
     "${LIBRARY_DIR}/src/bitmap.c"
     "${LIBRARY_DIR}/src/buf_writer.c"
     "${LIBRARY_DIR}/src/cache_bin.c"
     "${LIBRARY_DIR}/src/ckh.c"
+    "${LIBRARY_DIR}/src/conf.c"
     "${LIBRARY_DIR}/src/counter.c"
     "${LIBRARY_DIR}/src/ctl.c"
     "${LIBRARY_DIR}/src/decay.c"
@@ -96,7 +96,9 @@ set (SRCS
     "${LIBRARY_DIR}/src/fxp.c"
     "${LIBRARY_DIR}/src/hook.c"
     "${LIBRARY_DIR}/src/hpa.c"
+    "${LIBRARY_DIR}/src/hpa_central.c"
     "${LIBRARY_DIR}/src/hpa_hooks.c"
+    "${LIBRARY_DIR}/src/hpa_utils.c"
     "${LIBRARY_DIR}/src/hpdata.c"
     "${LIBRARY_DIR}/src/inspect.c"
     "${LIBRARY_DIR}/src/jemalloc.c"
@@ -109,15 +111,14 @@ set (SRCS
     "${LIBRARY_DIR}/src/pac.c"
     "${LIBRARY_DIR}/src/pa_extra.c"
     "${LIBRARY_DIR}/src/pages.c"
-    "${LIBRARY_DIR}/src/pai.c"
     "${LIBRARY_DIR}/src/peak_event.c"
     "${LIBRARY_DIR}/src/prof.c"
     "${LIBRARY_DIR}/src/prof_data.c"
     "${LIBRARY_DIR}/src/prof_log.c"
     "${LIBRARY_DIR}/src/prof_recent.c"
     "${LIBRARY_DIR}/src/prof_stats.c"
+    "${LIBRARY_DIR}/src/prof_stack_range.c"
     "${LIBRARY_DIR}/src/prof_sys.c"
-    "${LIBRARY_DIR}/src/prof_threshold.c"
     "${LIBRARY_DIR}/src/psset.c"
     "${LIBRARY_DIR}/src/rtree.c"
     "${LIBRARY_DIR}/src/safety_check.c"
@@ -130,6 +131,7 @@ set (SRCS
     "${LIBRARY_DIR}/src/tcache.c"
     "${LIBRARY_DIR}/src/test_hooks.c"
     "${LIBRARY_DIR}/src/thread_event.c"
+    "${LIBRARY_DIR}/src/thread_event_registry.c"
     "${LIBRARY_DIR}/src/ticker.c"
     "${LIBRARY_DIR}/src/tsd.c"
     "${LIBRARY_DIR}/src/util.c"
@@ -191,6 +193,8 @@ target_compile_definitions(_jemalloc INTERFACE -DJEMALLOC_NO_RENAME)
 
 # Because our coverage callbacks call malloc, and recursive call of malloc could not work.
 target_compile_options(_jemalloc PRIVATE ${WITHOUT_COVERAGE_FLAGS_LIST})
+# Due to LTO there are some UB in tcache
+target_compile_options(_jemalloc PRIVATE -fno-lto -fno-whole-program-vtables)
 
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 
