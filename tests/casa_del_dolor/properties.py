@@ -423,8 +423,8 @@ object_storages_properties = {
         "s3_max_single_part_upload_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "s3_max_single_read_retries": threshold_generator(0.2, 0.2, 0, 16),
-        "s3_max_unexpected_write_error_retries": threshold_generator(0.2, 0.2, 0, 16),
+        "s3_max_single_read_retries": threshold_generator(0.2, 0.2, 1, 16),
+        "s3_max_unexpected_write_error_retries": threshold_generator(0.2, 0.2, 1, 16),
         "s3_max_upload_part_size": threshold_generator(
             0.2, 0.2, 16 * 1024 * 1024, 5 * 1024 * 1024 * 1024, 33
         ),
@@ -446,16 +446,16 @@ object_storages_properties = {
         "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024),
         "max_blocks_in_multipart_upload": threshold_generator(0.2, 0.2, 1, 100000),
         "max_inflight_parts_for_one_file": threshold_generator(0.2, 0.2, 1, 100),
-        "max_single_download_retries": threshold_generator(0.2, 0.2, 0, 16),
+        "max_single_download_retries": threshold_generator(0.2, 0.2, 1, 16),
         "max_single_part_copy_size": threshold_generator(
             0.2, 0.2, 0, 1024 * 1024 * 1024
         ),
         "max_single_part_upload_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "max_single_read_retries": threshold_generator(0.2, 0.2, 0, 16),
-        "max_tries": threshold_generator(0.2, 0.2, 0, 16),
-        "max_unexpected_write_error_retries": threshold_generator(0.2, 0.2, 0, 16),
+        "max_single_read_retries": threshold_generator(0.2, 0.2, 1, 16),
+        "max_tries": threshold_generator(0.2, 0.2, 1, 16),
+        "max_unexpected_write_error_retries": threshold_generator(0.2, 0.2, 1, 16),
         "max_upload_part_size": threshold_generator(
             0.2, 0.2, 16 * 1024 * 1024, 5 * 1024 * 1024 * 1024, 33
         ),
