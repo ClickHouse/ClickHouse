@@ -338,21 +338,90 @@ if __name__ == "__main__":
             _lbc_lines = print_res.ext.get("lbc_lines", 0)
             _lbc_fns = print_res.ext.get("lbc_fns", 0)
 
+            # Classify the changed paths so we can decide what coverage signal is most
+            # useful. Functional tests (tests/queries/...), integration tests
+            # (tests/integration/...) and unit tests (src/**/tests/...) all shift
+            # coverage even though the production binary may be unchanged, so for a
+            # tests-only PR the per-file diff report is uninformative — we want to
+            # show "which previously-uncovered code did these tests start to cover".
+            _changed_paths: set[str] = set()
+            _changes_diff = Path(TEMP_DIR) / "changes.diff"
+            if _changes_diff.exists():
+                try:
+                    _file_re = re.compile(r"^(?:--- a/|\+\+\+ b/)(.+)$")
+                    with open(_changes_diff, encoding="utf-8", errors="replace") as _df:
+                        for _ln in _df:
+                            m = _file_re.match(_ln.rstrip("\n"))
+                            if m:
+                                _path = m.group(1)
+                                if _path != "/dev/null":
+                                    _changed_paths.add(_path)
+                except Exception as _e:
+                    print(f"Warning: could not parse changes.diff for path detection: {_e}")
+
+            def _is_test_path(p: str) -> bool:
+                # Functional + integration tests live under tests/...
+                # Unit tests are C++ files under src/**/tests/...
+                if p.startswith("tests/"):
+                    return True
+                if p.startswith("src/") and "/tests/" in p:
+                    return True
+                return False
+
+            _tests_changed = any(_is_test_path(p) for p in _changed_paths)
+            _only_tests_changed = bool(_changed_paths) and all(
+                _is_test_path(p) for p in _changed_paths
+            )
+
+            _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
+            _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
+            _global_stats_available = Path(_base_info).exists() and Path(_curr_info).exists()
+
+            # For a tests-only PR, the small global delta is useless on its own (a single
+            # new test rarely moves overall coverage by more than 0.01 pp). Run a dedicated
+            # analysis that lists lines/functions whose coverage transitioned from 0 in the
+            # master baseline to >0 in the current build — that is the concrete payoff of
+            # the new test(s).
+            _nc_info = ""
+            _nc_url = ""
+            _nc_top_files: list[dict] = []
+            if _only_tests_changed and _global_stats_available:
+                _nc_log = f"{TEMP_DIR}{Utils.normalize_string('Newly Covered Code')}.log"
+                Shell.run(
+                    f"python3 ci/jobs/scripts/print_newly_covered_code.py 2>&1 | tee {_nc_log}",
+                    verbose=True,
+                )
+                nc_res = Result.from_fs("Newly Covered Code")
+                nc_res.files.append(_nc_log)
+                results.append(nc_res)
+                _nc_info = nc_res.ext.get("comment", "") or ""
+                _nc_top_files = list(nc_res.ext.get("newly_covered_top_files", []))
+                _nc_log_name = f"{Utils.normalize_string(nc_res.name)}.log"
+                _nc_url = (
+                    f"{_s3_base}/llvm_coverage/"
+                    f"{Utils.normalize_string(nc_res.name)}/{_nc_log_name}"
+                )
+
             # Only write coverage_comment.json (and thus post a GitHub comment) when
-            # there is something coverage-related to report: either the diff HTML report
-            # was generated (C++ source files changed) or LBC was detected (tests removed).
-            # Pure non-C++ PRs (scripts, Docker, configs) produce neither and should not
-            # generate a comment.
-            _has_coverage_data = _diff_ran or _lbc_lines > 0 or _lbc_fns > 0
+            # there is something coverage-related to report:
+            #   - the diff HTML report was generated (C/C++ source files changed), OR
+            #   - LBC was detected (tests removed -> baseline coverage lost), OR
+            #   - tests were added/modified (changes overall coverage even without C/C++ edits).
+            # Pure non-C++/non-test PRs (scripts, Docker, configs, docs) produce none of
+            # these and should not generate a comment.
+            _has_coverage_data = (
+                _diff_ran
+                or _lbc_lines > 0
+                or _lbc_fns > 0
+                or (_tests_changed and _global_stats_available)
+            )
             if not _has_coverage_data:
-                print("No C/C++ source files changed and no lost baseline coverage — skipping coverage comment.")
+                print("No C/C++ source files changed, no test changes, and no lost baseline coverage — skipping coverage comment.")
             else:
-                # When _diff_ran is False but LBC was found (test-only removal), fetch
-                # the global percentages from the .info files that were downloaded during
-                # the diff script run for LBC comparison.
-                _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
-                _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
-                if not _diff_ran and Path(_base_info).exists() and Path(_curr_info).exists():
+                # When _diff_ran is False (LBC-only or tests-only PR), fetch the global
+                # percentages from the .info files that were downloaded during the diff
+                # script run.
+                if not _diff_ran and _global_stats_available:
                     try:
                         (b_line_cov, b_line_hit, b_line_total), \
                         (b_function_cov, b_func_hit, b_func_total), \
@@ -389,7 +458,15 @@ if __name__ == "__main__":
                     "changed_lines_covered": _changed_lines_covered,
                     "changed_lines_cov": _changed_lines_cov,
                     "diff_url": _diff_url if _diff_ran else "",
-                    "uncovered_code_url": uncovered_code_url,
+                    # The uncovered-code log is produced only when print_uncovered_code.py
+                    # actually ran (i.e. C/C++ source files changed). For tests-only PRs
+                    # the log doesn't exist on S3, so don't surface a 404 link.
+                    "uncovered_code_url": uncovered_code_url if _diff_inputs_exist else "",
+                    # Newly-covered code analysis: only run (and only meaningful) for
+                    # tests-only PRs. Empty fields are gracefully ignored by the hook.
+                    "newly_covered_info": _nc_info,
+                    "newly_covered_url": _nc_url,
+                    "newly_covered_top_files": _nc_top_files,
                     # CIDB fields
                     "check_start_time": datetime.now(timezone.utc).strftime(
                         "%Y-%m-%d %H:%M:%S"
