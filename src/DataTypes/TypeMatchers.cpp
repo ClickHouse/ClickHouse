@@ -183,6 +183,16 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+/// Matches any type whose value is internally stored as a number — used by hashing functions
+/// that accept Number, Date, DateTime, IPv4, IPv6, Decimal, UUID, Bool, Enum, etc.
+class TypeMatcherValueRepresentedByNumber : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "NumberRepresentable"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->isValueRepresentedByNumber(); }
+    size_t getIndex() const override { return 0; }
+};
+
 class TypeMatcherDecimal32 : public ITypeMatcher
 {
 public:
@@ -573,6 +583,7 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherDecimal64>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDecimal128>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDecimal256>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherValueRepresentedByNumber>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherUUID>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherIPv4>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherIPv6>(factory);

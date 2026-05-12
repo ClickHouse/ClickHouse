@@ -805,13 +805,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!arguments[0]->isValueRepresentedByNumber())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
+        return "(NumberRepresentable) -> " + DataTypeNumber<typename Impl::ReturnType>{}.getName();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
