@@ -1,6 +1,5 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
-#include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Poco/String.h>
 #include <Common/quoteString.h>
@@ -63,32 +62,16 @@ String ASTSystemQuery::getTable() const
 
 void ASTSystemQuery::setDatabase(const String & name)
 {
-    if (database)
-    {
-        std::erase(children, database);
-        database.reset();
-    }
-
+    reset(database);
     if (!name.empty())
-    {
-        database = make_intrusive<ASTIdentifier>(name);
-        children.push_back(database);
-    }
+        set(database, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTSystemQuery::setTable(const String & name)
 {
-    if (table)
-    {
-        std::erase(children, table);
-        table.reset();
-    }
-
+    reset(table);
     if (!name.empty())
-    {
-        table = make_intrusive<ASTIdentifier>(name);
-        children.push_back(table);
-    }
+        set(table, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -210,6 +193,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 print_on_volume();
             }
+            break;
+        }
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        {
+            ostr << ' ';
+            print_database_table();
+            ostr << " PATH " << quoteString(queue_path);
             break;
         }
         case Type::RESTART_REPLICA:
@@ -380,7 +370,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::UNLOCK_SNAPSHOT:
         {
-            ostr << quoteString(backup_name);
+            ostr << " " << quoteString(backup_name);
             if (backup_source)
             {
                 print_keyword(" FROM ");
@@ -469,6 +459,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
         case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
         case Type::CANCEL_VIEW:
         case Type::WAIT_VIEW:
         {
@@ -627,6 +618,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::STOP_THREAD_FUZZER:
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
+        case Type::PAUSE_VIEWS:
         case Type::CLEAR_PAGE_CACHE:
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:

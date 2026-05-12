@@ -1,10 +1,16 @@
+#include "config.h"
+
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/SharedMergeTree/MergeMutateIntention.h>
+#endif
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>

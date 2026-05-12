@@ -93,6 +93,21 @@ void setProfileSamplingRate(size_t lg_prof_sample)
 }
 
 
+std::string getStats()
+{
+    std::string result;
+    auto callback = [](void * opaque, const char * data)
+    {
+        auto * str = static_cast<std::string *>(opaque);
+        str->append(data);
+    };
+    size_t epoch = 1;
+    size_t sz = sizeof(epoch);
+    je_mallctl("epoch", &epoch, &sz, &epoch, sz);
+    je_malloc_stats_print(callback, &result, nullptr);
+    return result;
+}
+
 namespace
 {
 
@@ -239,6 +254,28 @@ std::string_view getLastFlushProfileForThread()
     return last_flush_profile;
 }
 
+}
+
+ScopedJemallocThreadArena::ScopedJemallocThreadArena(unsigned arena_idx)
+{
+    if (arena_idx == 0)
+        return;
+
+    /// `thread.arena` returns the previous value via the read pointer and sets the new one.
+    size_t previous_size = sizeof(previous_arena);
+    int err = je_mallctl("thread.arena", &previous_arena, &previous_size, &arena_idx, sizeof(arena_idx));
+    /// We deliberately don't throw here: if jemalloc rejects the switch (e.g. arena doesn't exist),
+    /// fall back to the previous behavior of allocating in the default arena. The cost is fragmentation,
+    /// not correctness.
+    active = (err == 0);
+}
+
+ScopedJemallocThreadArena::~ScopedJemallocThreadArena()
+{
+    if (!active)
+        return;
+
+    je_mallctl("thread.arena", nullptr, nullptr, &previous_arena, sizeof(previous_arena));
 }
 
 }
