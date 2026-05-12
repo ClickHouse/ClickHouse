@@ -849,9 +849,14 @@ def main():
         has_failure = False
         for r in test_result.results:
             r.set_label(Result.Label.XFAIL)
-            if r.status in (Result.Status.FAIL, Result.Status.ERROR):
-                # Both test failures and crashes (e.g. sanitizer errors) count as
-                # successful bug reproduction
+            # Invert only explicit reproduction signals (`FAIL`).
+            # Crashes are reported as a separate `Server died` / fatal-message
+            # entry with `FAIL` status, so they still flip the job to success
+            # via this branch. Generic `ERROR` is left untouched because in
+            # `FTResultsProcessor` it can also represent parser failures or
+            # unexpected runner termination, which must not be treated as a
+            # successful bug reproduction.
+            if r.status == Result.Status.FAIL:
                 r.status = Result.Status.OK
                 has_failure = True
             elif r.status == Result.Status.OK:
@@ -861,7 +866,8 @@ def main():
             test_result.set_failed().set_info("Failed to reproduce the bug")
         else:
             # For bugfix validation, the expected behavior is:
-            # - At least one test must fail or crash (bug reproduced)
+            # - At least one test must fail (bug reproduced); crashes show up
+            #   as a `FAIL` `Server died` / fatal-message entry
             # - The overall Tests result is treated as success in that case
             test_result.set_success()
 

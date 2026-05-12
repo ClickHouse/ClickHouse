@@ -1147,11 +1147,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
         ), "Bugfix validation with LLVM coverage is not supported"
         has_failure = False
         for r in R.results:
-            # invert statuses
+            # invert statuses: only `FAIL` is treated as a successful
+            # reproduction signal. Generic `ERROR` is left untouched because
+            # in integration tests `ERROR` is also used for runner-level
+            # problems (for example session-timeout paths in
+            # `run_pytest_and_collect_results`), and infrastructure errors
+            # that escape `_mark_infrastructure_errors` could otherwise flip
+            # the job to green.
             r.set_label(Result.Label.XFAIL)
-            if r.status in (Result.Status.FAIL, Result.Status.ERROR):
-                # Both test failures and crashes (e.g. sanitizer errors) count as
-                # successful bug reproduction
+            if r.status == Result.Status.FAIL:
                 r.status = Result.Status.OK
                 has_failure = True
             elif r.status == Result.Status.OK:
