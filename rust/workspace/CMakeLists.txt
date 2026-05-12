@@ -18,7 +18,8 @@ endif()
 option (ENABLE_PRQL "Enable prql" ${ENABLE_LIBRARIES})
 option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
 option (ENABLE_POLYGLOT "Enable polyglot SQL transpiler" ${ENABLE_LIBRARIES})
-option (ENABLE_H3 "Enable H3 (via Rust h3o)" ${ENABLE_LIBRARIES})
+# ENABLE_H3 is defined at the top-level CMakeLists.txt so it can be validated
+# even when Rust is disabled (otherwise -DENABLE_H3=ON would be silently ignored).
 
 if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT AND NOT ENABLE_H3)
     message(STATUS "prql, skim, polyglot, and h3o are disabled")

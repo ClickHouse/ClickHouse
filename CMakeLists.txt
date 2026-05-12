@@ -580,6 +580,8 @@ include_directories(${CONFIG_INCLUDE_PATH})
 include (cmake/warnings.cmake)
 include (cmake/print_flags.cmake)
 
+option (ENABLE_H3 "Enable H3 (via Rust h3o)" ${ENABLE_LIBRARIES})
+
 if (ENABLE_RUST)
     add_subdirectory (rust)
 
@@ -602,6 +604,15 @@ if (ENABLE_RUST)
     if (ENABLE_THINLTO)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--allow-multiple-definition")
     endif()
+endif()
+
+# H3 is provided by the Rust h3o crate. If the user requested ENABLE_H3=ON
+# but Rust is not available (e.g. cross-compilation to an unsupported target,
+# FreeBSD, or ENABLE_RUST=OFF), fail explicitly so the request is never silently ignored.
+if (ENABLE_H3 AND NOT TARGET ch_rust::h3o)
+    message (FATAL_ERROR "ENABLE_H3=ON was requested, but H3 (via Rust h3o) is unavailable. "
+        "This usually means ENABLE_RUST is OFF or the target platform does not support Rust. "
+        "Either enable Rust or pass -DENABLE_H3=OFF.")
 endif()
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
