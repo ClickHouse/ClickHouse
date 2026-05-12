@@ -152,6 +152,10 @@ if (TARGET ch_contrib::pocketfft)
     list (APPEND PRIVATE_LIBS ch_contrib::pocketfft)
 endif()
 
+if (TARGET ch_contrib::ipcrypt2)
+    list (APPEND PRIVATE_LIBS ch_contrib::ipcrypt2)
+endif()
+
 if (TARGET ch_contrib::crc32-vpmsum)
     list (APPEND PUBLIC_LIBS ch_contrib::crc32-vpmsum)
 endif()
