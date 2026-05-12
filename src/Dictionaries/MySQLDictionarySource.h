@@ -10,7 +10,6 @@
 #    include <Dictionaries/DictionaryStructure.h>
 #    include <Dictionaries/ExternalQueryBuilder.h>
 #    include <Dictionaries/IDictionarySource.h>
-#    include <Dictionaries/InvalidateQueryResponse.h>
 #    include <Processors/Sources/MySQLSource.h>
 
 namespace Poco
@@ -90,7 +89,7 @@ private:
     Block sample_block;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
-    mutable InvalidateQueryResponse invalidate_query_response;
+    mutable std::string invalidate_query_response;
     const StreamSettings settings;
 };
 

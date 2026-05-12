@@ -8,7 +8,6 @@
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -576,12 +575,6 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
             return {getIcebergType(type_nullable->getNestedType(), iter).first, false};
         }
-        case TypeIndex::Variant:
-        {
-            if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
-                return {Iceberg::f_geometry, false};
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
-        }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
     }
@@ -591,10 +584,6 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
 {
     switch (type->getTypeId())
     {
-        case TypeIndex::UInt8:
-        case TypeIndex::Int8:
-        case TypeIndex::UInt16:
-        case TypeIndex::Int16:
         case TypeIndex::UInt32:
         case TypeIndex::Int32:
         case TypeIndex::Date:
