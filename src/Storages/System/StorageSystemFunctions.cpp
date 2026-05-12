@@ -40,7 +40,8 @@ namespace
         UInt64 is_aggregate,
         const String & create_query,
         FunctionOrigin function_origin,
-        const Factory & factory)
+        const Factory & factory,
+        ContextPtr context)
     {
         res_columns[0]->insert(name);
         res_columns[1]->insert(is_aggregate);
@@ -99,6 +100,28 @@ namespace
             res_columns[12]->insertDefault();
             res_columns[13]->insertDefault();
         }
+
+        /// Declarative signature (see IFunction::getSignatureString). Only regular functions
+        /// in the system FunctionFactory carry one; for everything else (aliases, aggregates,
+        /// user-defined, WASM) leave the cell empty.
+        String signature;
+        if constexpr (std::is_same_v<Factory, FunctionFactory>)
+        {
+            if (!factory.isAlias(name))
+            {
+                try
+                {
+                    if (auto resolver = factory.tryGet(name, context))
+                        signature = resolver->getSignatureString();
+                }
+                catch (...)
+                {
+                    /// Some functions throw on construction unless certain settings are set
+                    /// (e.g. deprecated/error-prone functions). Treat them as having no signature.
+                }
+            }
+        }
+        res_columns[14]->insert(signature);
     }
 }
 
@@ -130,7 +153,8 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"returned_value", std::make_shared<DataTypeString>(), "What does the function return."},
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
         {"introduced_in", std::make_shared<DataTypeString>(), "ClickHouse version in which the function was first introduced."},
-        {"categories", std::make_shared<DataTypeString>(), "The category of the function."}
+        {"categories", std::make_shared<DataTypeString>(), "The category of the function."},
+        {"signature", std::make_shared<DataTypeString>(), "Declarative signature of the function, when available."}
     };
 }
 
@@ -140,14 +164,14 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & function_name : function_names)
     {
-        fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory);
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory, context);
     }
 
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : aggregate_function_names)
     {
-        fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory);
+        fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory, context);
     }
 
     const auto & user_defined_sql_functions_factory = UserDefinedSQLFunctionFactory::instance();
@@ -174,14 +198,14 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         String create_query;
         if (ast)
             create_query = format({context, *ast});
-        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
+        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory, context);
     }
 
     const auto & user_defined_executable_functions_factory = UserDefinedExecutableFunctionFactory::instance();
     const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context); /// NOLINT(readability-static-accessed-through-instance)
     for (const auto & function_name : user_defined_executable_functions_names)
     {
-        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory, context);
     }
 
     const auto & wasm_functions_factory = UserDefinedWebAssemblyFunctionFactory::instance();
@@ -230,6 +254,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[11]->insertDefault(); // examples
         res_columns[12]->insertDefault(); // introduced_in
         res_columns[13]->insertDefault(); // categories
+        res_columns[14]->insertDefault(); // signature
     }
 }
 
