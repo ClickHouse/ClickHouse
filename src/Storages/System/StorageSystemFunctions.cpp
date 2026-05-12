@@ -123,16 +123,33 @@ namespace
     }
 
     /// Resolve an ordinary function and read static metadata from its overload resolver.
-    /// When `tryGet` returns no resolver, leave the optionals empty so the column is NULL.
+    /// `tryGet` invokes the function's creator, which can throw — e.g. `showCertificate`
+    /// throws `SUPPORT_IS_DISABLED` when SSL is compiled out. Report NULL in that case so
+    /// querying `system.functions` doesn't fail on build-dependent surfaces.
     ExtraInfo getOrdinaryFunctionExtraInfo(const FunctionFactory & factory, const String & name, ContextPtr context)
     {
         ExtraInfo info;
-        auto resolver = factory.tryGet(name, context);
-        if (!resolver)
-            return info;
+        try
+        {
+            auto resolver = factory.tryGet(name, context);
+            if (!resolver)
+                return info;
 
-        info.is_deterministic = resolver->isDeterministic() ? UInt8{1} : UInt8{0};
-        info.higher_order = resolver->isHigherOrder() ? UInt8{1} : UInt8{0};
+            info.is_deterministic = resolver->isDeterministic() ? UInt8{1} : UInt8{0};
+            info.higher_order = resolver->isHigherOrder() ? UInt8{1} : UInt8{0};
+        }
+        catch (...)
+        {
+            /// Some functions need a fully-formed query context to construct (e.g. those that
+            /// inspect settings at build time). Reporting NULL is the honest answer; log the
+            /// exception message at debug level so the failure is visible to anyone
+            /// investigating empty cells.
+            LOG_DEBUG(
+                getLogger("system.functions"),
+                "Cannot resolve function {} for introspection: {}",
+                name,
+                getCurrentExceptionMessage(/* with_stacktrace */ false));
+        }
         return info;
     }
 
