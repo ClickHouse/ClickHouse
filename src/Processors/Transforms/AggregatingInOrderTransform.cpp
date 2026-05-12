@@ -1,4 +1,5 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
@@ -17,11 +18,13 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     AggregatingTransformParamsPtr params_,
     const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
-    size_t max_block_size_, size_t max_block_bytes_)
+    size_t max_block_size_, size_t max_block_bytes_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
     : AggregatingInOrderTransform(std::move(header), std::move(params_),
         sort_description_for_merging, group_by_description_,
         max_block_size_, max_block_bytes_,
-        std::make_unique<ManyAggregatedData>(1), 0)
+        std::make_unique<ManyAggregatedData>(1), 0,
+        std::move(dataflow_cache_updater_))
 {
 }
 
@@ -30,7 +33,8 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
     size_t max_block_size_, size_t max_block_bytes_,
-    ManyAggregatedDataPtr many_data_, size_t current_variant)
+    ManyAggregatedDataPtr many_data_, size_t current_variant,
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
     : IProcessor({std::move(header)}, {params_->getCustomHeader(false)})
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
@@ -40,6 +44,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
+    , dataflow_cache_updater(std::move(dataflow_cache_updater_))
 {
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
     res_header = params->getCustomHeader(/* final_= */ false);
@@ -330,6 +335,14 @@ void AggregatingInOrderTransform::generate()
 
     if (!to_push_chunk.getNumRows())
         return;
+
+    if (dataflow_cache_updater)
+    {
+        dataflow_cache_updater->recordAggregationKeySizes(
+            to_push_chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
+        dataflow_cache_updater->recordAggregationStateColumnSizes(
+            to_push_chunk, params->aggregator.getKeysPositions(), res_header);
+    }
 
     /// Clear arenas to allow to free them, when chunk will reach the end of pipeline.
     /// It's safe clear them here, because columns with aggregate functions already holds them.
