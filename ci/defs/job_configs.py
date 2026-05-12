@@ -1149,6 +1149,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/integration_tests_configs.py",
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/fuzzer/",
+                "./ci/jobs/scripts/server_fuzzer/",
                 "./tests/casa_del_dolor/",
                 # Integration helpers imported by tests/casa_del_dolor — changes to these
                 # files alter the job's behavior, so they must invalidate the cache digest.
