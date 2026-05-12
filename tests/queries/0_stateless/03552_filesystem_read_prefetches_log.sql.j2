@@ -2,6 +2,8 @@
 -- - no-fasttest -- requires S3
 -- - no-random-settings -- prefetch is non deterministic
 
+SET use_reader_executor = 0;
+
 drop table if exists test;
 
 {% for disk in ['default', 's3_disk'] %}

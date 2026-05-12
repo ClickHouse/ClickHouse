@@ -1,5 +1,7 @@
 -- Tags: long, no-random-settings, no-tsan, no-asan, no-msan, no-object-storage
 
+SET use_reader_executor = 0;
+
 DROP TABLE IF EXISTS t_read_in_order_2;
 
 CREATE TABLE t_read_in_order_2 (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;

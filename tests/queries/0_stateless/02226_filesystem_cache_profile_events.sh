@@ -7,6 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_reader_executor=0"
+
 for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
 

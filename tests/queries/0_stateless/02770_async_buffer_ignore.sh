@@ -5,6 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_reader_executor=0"
+
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE IF EXISTS test_s3;
 

@@ -3,6 +3,7 @@
 -- - no-random-settings -- more deterministic prefetch
 -- - no-parallel-replicas -- other replicas may do prefetch
 
+SET use_reader_executor = 0;
 -- Disable multibuffer, there is a separate test
 SET merge_tree_compact_parts_min_granules_to_multibuffer_read = 129;
 

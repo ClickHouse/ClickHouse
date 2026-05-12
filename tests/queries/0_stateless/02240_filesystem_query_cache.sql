@@ -1,5 +1,7 @@
 -- Tags: no-parallel, no-fasttest, no-object-storage, no-random-settings
 
+SET use_reader_executor = 0;
+
 -- { echo }
 
 SYSTEM CLEAR FILESYSTEM CACHE;
