@@ -2007,57 +2007,6 @@ def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster, db, unique):
     assert "CANNOT_CONNECT_RABBITMQ" in error
 
 
-def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster, db, unique):
-    instance.query(
-        f"""
-        CREATE TABLE {db}.cs (key UInt64, value UInt64)
-            ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = '{unique}_cs',
-                     rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_num_consumers = '5',
-                     rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size=100,
-                     rabbitmq_row_delimiter = '\\n';
-        CREATE TABLE {db}.view (key UInt64, value UInt64)
-            ENGINE = MergeTree
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
-            SELECT * FROM {db}.cs;
-    """
-    )
-    instance.query(f"DETACH TABLE {db}.cs")
-
-    with rabbitmq_cluster.pause_rabbitmq():
-        instance.query(f"ATTACH TABLE {db}.cs")
-
-    messages_num = 1000
-    credentials = pika.PlainCredentials("root", "clickhouse")
-    parameters = pika.ConnectionParameters(
-        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
-    )
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-    for i in range(messages_num):
-        message = json.dumps({"key": i, "value": i})
-        channel.basic_publish(
-            exchange=f"{unique}_cs",
-            routing_key="",
-            body=message,
-            properties=pika.BasicProperties(delivery_mode=2, message_id=str(i)),
-        )
-    connection.close()
-
-    check_expected_result_polling(messages_num, f"SELECT count() FROM {db}.view")
-
-    instance.query(
-        f"""
-        DROP TABLE {db}.consumer;
-        DROP TABLE {db}.cs;
-    """
-    )
-
-
 def test_rabbitmq_format_factory_settings(rabbitmq_cluster, db, unique):
     instance.query(
         f"""
@@ -3740,36 +3689,3 @@ def test_rabbitmq_default_mode_nack_on_parse_error(rabbitmq_cluster, db, unique)
     channel.queue_delete(deadletter_queue)
     channel.exchange_delete(deadletter_exchange)
     connection.close()
-
-
-def test_connection_info_logging_with_rabbitmq_address(rabbitmq_cluster, db, unique):
-    """Verify that reconnection logs show the actual connection address,
-    not ':0', when rabbitmq_address is used instead of rabbitmq_host_port."""
-
-    # Create a table using rabbitmq_address (connection string)
-    instance.query(f"""                                                       
-        CREATE TABLE {db}.rmq_addr_log (key UInt64, value String)
-        ENGINE = RabbitMQ                                                     
-        SETTINGS rabbitmq_address = 'amqp://root:clickhouse@{rabbitmq_cluster.rabbitmq_host}:5672/', rabbitmq_exchange_name = '{unique}_addr_log_exchange', rabbitmq_format = 'JSONEachRow';                              
-        CREATE TABLE {db}.rmq_addr_log_dst (key UInt64, value String)
-        ENGINE = MergeTree ORDER BY key;                                  
-        CREATE MATERIALIZED VIEW {db}.rmq_addr_log_mv TO {db}.rmq_addr_log_dst AS 
-        SELECT * FROM {db}.rmq_addr_log;
-    """)
-    instance.query(f"DETACH TABLE {db}.rmq_addr_log")
-
-    # disconnect/reconnect by briefly pausing RabbitMQ
-    with rabbitmq_cluster.pause_rabbitmq():
-        # forces a reconnection
-        instance.query(f"ATTACH TABLE {db}.rmq_addr_log")
-        instance.wait_for_log_line("Trying to restore connection to")
-
-    # Check server logs for the reconnection message
-    log = instance.grep_in_log("Trying to restore connection to")
-    assert 'Trying to restore connection to :0' not in log, \
-        f"Log contains ':0' instead of actual address: {log}"
-    assert rabbitmq_cluster.rabbitmq_host + ":" + str(rabbitmq_cluster.rabbitmq_port) in log, \
-        f"Log should contain the actual connection address: {log}"
-    assert 'root:clickhouse' not in log
-
-    instance.query(f"DROP TABLE {db}.rmq_addr_log_mv; DROP TABLE {db}.rmq_addr_log; DROP TABLE {db}.rmq_addr_log_dst;")

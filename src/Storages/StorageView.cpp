@@ -5,6 +5,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -50,11 +51,14 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsBool extremes;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool enable_positional_arguments;
 }
 
 namespace ErrorCodes
@@ -116,6 +120,10 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
+  *
+  * The context is also marked as a view inner context so that the query analyzer
+  * resolves positional arguments inside the view even on remote/secondary nodes
+  * (views are expanded on remote nodes, unlike the outer query).
   */
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
@@ -132,6 +140,7 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
+    view_context->setIsViewInnerQuery(true);
     return view_context;
 }
 
@@ -502,6 +511,25 @@ void registerStorageView(StorageFactory & factory)
     {
         if (args.query.storage)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Specifying ENGINE is not allowed for a View");
+
+        /// Resolve INTERSECT/EXCEPT precedence before constructing StorageView.
+        /// StorageView's constructor runs NormalizeSelectWithUnionQueryVisitor which
+        /// does not understand INTERSECT/EXCEPT modes and would incorrectly drop
+        /// SELECT branches connected by these operators.
+        /// This is needed when the AST is freshly parsed from stored metadata
+        /// (e.g. during ATTACH) and has not been through executeQuery's visitors.
+        /// For already-processed ASTs (e.g. from CREATE VIEW via executeQuery),
+        /// this is a safe no-op since INTERSECT/EXCEPT modes have already been
+        /// converted to ASTSelectIntersectExceptQuery nodes.
+        if (args.query.select)
+        {
+            auto context = args.getContext();
+            SelectIntersectExceptQueryVisitor::Data data{
+                context->getSettingsRef()[Setting::intersect_default_mode],
+                context->getSettingsRef()[Setting::except_default_mode]};
+            auto select = args.query.select->ptr();
+            SelectIntersectExceptQueryVisitor{data}.visit(select);
+        }
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
     });

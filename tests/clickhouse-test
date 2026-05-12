@@ -1143,6 +1143,7 @@ class FailureReason(enum.Enum):
     NO_OPENSSL_FIPS = "no-openssl-fips"
     ENCRYPTED_STORAGE = "encrypted-storage"
     NOT_SUPPORTED_ON_DARWIN = "not supported on Darwin"
+    LINUX_ONLY = "supported only on Linux"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -1173,7 +1174,7 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin']
+        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin', 'nullcount']
         return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
 
     return gen
@@ -1394,8 +1395,6 @@ class SettingsRandomizer:
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
-        # Use the new reader most of the time.
-        "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
         "use_skip_indexes_for_top_k": lambda: random.randint(0, 1),
@@ -1409,6 +1408,7 @@ class SettingsRandomizer:
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
+        "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
         # changing grace_hash_join_initial_buckets is giving wrong results in a test
         # "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8, 16, 32, 64, 128]),
@@ -2484,6 +2484,9 @@ class TestCase:
 
         if "no-darwin" in tags and platform.system() == "Darwin":
             return FailureReason.NOT_SUPPORTED_ON_DARWIN
+
+        if "linux" in tags and platform.system() != "Linux":
+            return FailureReason.LINUX_ONLY
 
         # Do not run *Log and Memory engine-specific tests
         if (
@@ -3999,7 +4002,7 @@ class GlobalTimeout(Exception):
     pass
 
 
-def run_diagnose_from_artifacts(args, server_died):
+def run_diagnose_from_artifacts(args, stop_testing):
     """Read saved randomized settings artifacts and run diagnosis for each entry."""
     entries = load_random_settings_artifacts(args)
     if not entries:
@@ -4026,7 +4029,7 @@ def run_diagnose_from_artifacts(args, server_died):
     results_path = get_random_settings_diagnostics_results_path(args)
     # Non-zero exit code is reserved for unexpected script termination
     # (e.g. uncaught exception in the diagnosis machinery). Environmental
-    # conditions like server_died are not script failures — they are
+    # conditions like stop_testing are not script failures — they are
     # already surfaced by the main test stage, so the diagnostics stage
     # should exit cleanly when interrupted by them.
     exit_code = 0
@@ -4037,9 +4040,9 @@ def run_diagnose_from_artifacts(args, server_died):
             settings = entry.get("settings", {})
             mt_settings = entry.get("merge_tree_settings", {})
 
-            # Server died — stop diagnosing further tests but exit cleanly:
-            # the main test stage has already reported the server failure.
-            if server_died.is_set():
+            # Testing stopped — stop diagnosing further tests but exit cleanly:
+            # the main test stage has already reported the failure.
+            if stop_testing.is_set():
                 break
 
             # Find the test case file across suites
@@ -4148,7 +4151,7 @@ def run_tests_array(
         is_concurrent,
         args,
         exit_code,
-        server_died,
+        stop_testing,
         workers_to_shed,
         restarted_tests,
         process_index,
@@ -4224,7 +4227,7 @@ def run_tests_array(
         else:
             break
 
-        if server_died.is_set():
+        if stop_testing.is_set():
             stop_tests()
             raise ServerDied("Server died")
 
@@ -4309,14 +4312,16 @@ def run_tests_array(
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
+                    print_stacktraces()
                     stop_tests()
-                    server_died.set()
+                    stop_testing.set()
                     raise ServerDied("Server died")
                 if args.max_failures > 0:
                     with total_failures_shared.get_lock():
                         total_failures_shared.value += 1
                         if total_failures_shared.value >= args.max_failures:
                             stop_tests()
+                            stop_testing.set()
                             raise ServerDied(f"Reached --max-failures limit ({args.max_failures})")
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
@@ -4328,6 +4333,7 @@ def run_tests_array(
 
         if failures_chain >= args.max_failures_chain:
             stop_tests()
+            stop_testing.set()
             raise ServerDied("Max failures chain")
 
     if failures_total > 0:
@@ -4647,7 +4653,7 @@ def do_run_tests(
     args,
     exit_code,
     restarted_tests,
-    server_died,
+    stop_testing,
     runner_process_killed,
 ):
     print(
@@ -4712,7 +4718,7 @@ def do_run_tests(
                         True,
                         args,
                         exit_code,
-                        server_died,
+                        stop_testing,
                         workers_to_shed,
                         restarted_tests,
                         i,  # process index
@@ -4766,10 +4772,11 @@ def do_run_tests(
             if args.hung_check:
                 if not check_server_liveness(args):
                     print("Hung check failed: server is not responding")
-                    server_died.set()
+                    print_stacktraces()
+                    stop_testing.set()
 
-            if server_died.is_set():
-                print("Server died, terminating all processes...")
+            if stop_testing.is_set():
+                print("Stopping tests, terminating all processes...")
                 # Wait briefly for test results to be written
                 sleep(5)
                 for p in processes:
@@ -4807,7 +4814,7 @@ def do_run_tests(
                 False,
                 args,
                 exit_code,
-                server_died,
+                stop_testing,
                 multiprocessing.Value('i', 0),  # sequential runner is never shed
                 restarted_tests,
                 jobs + 1,
@@ -5058,7 +5065,7 @@ def try_get_skip_list(base_dir, name, remove_comment=True):
 
 def main(args):
     exit_code = multiprocessing.Value("i", 0)
-    server_died = multiprocessing.Event()
+    stop_testing = multiprocessing.Event()
     runner_process_killed = multiprocessing.Event()
     multiprocessing_manager = multiprocessing.Manager()
     restarted_tests = multiprocessing_manager.list()
@@ -5204,7 +5211,7 @@ def main(args):
             create_common_database(args, "test")
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
-        server_died.set()
+        stop_testing.set()
         raise
 
     if (
@@ -5368,7 +5375,7 @@ ORDER BY (test_name, callee_offset)
         cloud_skip_errors_list += ["Cannot attach table with UUID"]
 
     if args.diagnose_random_settings:
-        diag_exit_code = run_diagnose_from_artifacts(args, server_died)
+        diag_exit_code = run_diagnose_from_artifacts(args, stop_testing)
         # Exit immediately: post-run checks below (hung check, coverage export,
         # log stats, etc.) assume a completed test run and would surface spurious
         # failures in diagnose mode. Any real diagnostics error is already in
@@ -5382,7 +5389,7 @@ ORDER BY (test_name, callee_offset)
             pass
 
         for suite in sorted(os.listdir(base_dir), key=suite_key_func):
-            if server_died.is_set():
+            if stop_testing.is_set():
                 break
 
             test_suite = TestSuite.read_test_suite(args, suite)
@@ -5400,11 +5407,11 @@ ORDER BY (test_name, callee_offset)
                 args,
                 exit_code,
                 restarted_tests,
-                server_died,
+                stop_testing,
                 runner_process_killed,
             )
 
-    if server_died.is_set():
+    if stop_testing.is_set():
         exit_code.value = 1
 
     if runner_process_killed.is_set():
@@ -6439,6 +6446,7 @@ if __name__ == "__main__":
         main(args)
     except ServerDied as e:
         print(f"{e}", file=sys.stderr)
+        traceback.print_exc()
         sys.exit(1)
     except Terminated as e:
         print(f"Terminated with {e.signal} signal", file=sys.stderr)
