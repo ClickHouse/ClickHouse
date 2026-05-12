@@ -231,6 +231,8 @@ public:
 
     void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
 
+    bool isShuttingDown() const { return is_shutting_down.load(); }
+
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if "B" is referenced in the definition of "A".
     /// Loading dependencies were used to check whether a table can be removed before we had those referential dependencies.
