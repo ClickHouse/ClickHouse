@@ -16,28 +16,29 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/UnionNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/JoinNode.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeTuple.h>
+
+#include <Common/assert_cast.h>
+
 #include <optional>
 #include <set>
-#include <Common/FieldVisitorToString.h>
-#include <Common/quoteString.h>
-#include <Common/assert_cast.h>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsMap additional_table_filters;
-    extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
     extern const SettingsUInt64 recursive_cte_max_in_filter_cardinality;
 }
@@ -78,25 +79,16 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
     return result;
 }
 
-/// Information about a join key between a CTE table and a real table.
-struct JoinKeyInfo
+/// Equi-join key between the recursive CTE working table and a real table,
+/// tagged with the `QueryNode` whose join tree contains the join. The filter
+/// will be injected into that `QueryNode`'s `WHERE` clause.
+struct CTEJoinKey
 {
-    String real_table_column_name;
+    QueryNode * containing_query_node;
     String cte_column_name;
-    StorageID real_table_storage_id;
-    /// Alias of the real table expression, if any. When present, the generated
-    /// filter is keyed by alias so each occurrence of the same physical table
-    /// in the join tree receives only the filter derived from its own join keys.
-    String real_table_alias;
-    /// Index of the recursive `UNION` branch this key was extracted from
-    /// (0 for non-union recursive queries). `additional_table_filters` is keyed
-    /// by alias/table name with no branch dimension, so when the same key is
-    /// seen in multiple branches the generated filter must be dropped — see
-    /// the `branches` check in `buildAdditionalTableFiltersForRecursiveStep`.
-    size_t branch_index = 0;
+    ColumnNode * real_column_node;
 };
 
-/// Check if a query tree node pointer matches one of the CTE table nodes.
 bool isCTETableNode(const IQueryTreeNode * node, const std::vector<TableNode *> & recursive_table_nodes)
 {
     for (const auto * table_node : recursive_table_nodes)
@@ -105,13 +97,13 @@ bool isCTETableNode(const IQueryTreeNode * node, const std::vector<TableNode *> 
     return false;
 }
 
-/// Extract equi-join key pairs from an ON join expression.
+/// Extract equi-join key pairs from an `ON` join expression.
 /// Handles single `equals` and `AND`-combined conditions.
 void extractEquiJoinKeys(
     const QueryTreeNodePtr & expression,
     const std::vector<TableNode *> & recursive_table_nodes,
-    size_t branch_index,
-    std::vector<JoinKeyInfo> & result)
+    QueryNode & containing_query_node,
+    std::vector<CTEJoinKey> & result)
 {
     const auto * function_node = expression->as<FunctionNode>();
     if (!function_node)
@@ -120,7 +112,7 @@ void extractEquiJoinKeys(
     if (function_node->getFunctionName() == "and")
     {
         for (const auto & arg : function_node->getArguments().getNodes())
-            extractEquiJoinKeys(arg, recursive_table_nodes, branch_index, result);
+            extractEquiJoinKeys(arg, recursive_table_nodes, containing_query_node, result);
         return;
     }
 
@@ -131,8 +123,8 @@ void extractEquiJoinKeys(
     if (args.size() != 2)
         return;
 
-    const auto * left_column = args[0]->as<ColumnNode>();
-    const auto * right_column = args[1]->as<ColumnNode>();
+    auto * left_column = args[0]->as<ColumnNode>();
+    auto * right_column = args[1]->as<ColumnNode>();
     if (!left_column || !right_column)
         return;
 
@@ -148,32 +140,23 @@ void extractEquiJoinKeys(
     if (left_is_cte == right_is_cte)
         return;
 
-    const auto * cte_column = left_is_cte ? left_column : right_column;
-    const auto * real_column = left_is_cte ? right_column : left_column;
+    auto * cte_column = left_is_cte ? left_column : right_column;
+    auto * real_column = left_is_cte ? right_column : left_column;
     const auto & real_source = left_is_cte ? right_source : left_source;
 
-    const auto * real_table_node = real_source->as<TableNode>();
-    if (!real_table_node)
+    /// Real side must be a physical table — filter pushdown only makes sense
+    /// against a storage's primary key.
+    if (!real_source->as<TableNode>())
         return;
 
-    /// Use the original alias (the one the user wrote) — the analyzer rewrites
-    /// aliases to internal `__tableN` names, but `PlannerJoinTree::buildAdditionalFiltersIfNeeded`
-    /// matches `additional_table_filters` keys against `getOriginalAlias()`.
-    result.push_back({
-        real_column->getColumnName(),
-        cte_column->getColumnName(),
-        real_table_node->getStorageID(),
-        real_table_node->getOriginalAlias(),
-        branch_index,
-    });
+    result.push_back({&containing_query_node, cte_column->getColumnName(), real_column});
 }
 
-/// Extract equi-join keys from the join tree of a single QueryNode.
-void findJoinKeysInQueryNode(
-    const QueryNode & query_node,
+/// Walk the join tree of a single `QueryNode` to collect equi-join keys.
+void collectCTEJoinKeysInQuery(
+    QueryNode & query_node,
     const std::vector<TableNode *> & recursive_table_nodes,
-    size_t branch_index,
-    std::vector<JoinKeyInfo> & result)
+    std::vector<CTEJoinKey> & result)
 {
     std::vector<IQueryTreeNode *> nodes_to_visit;
     nodes_to_visit.push_back(query_node.getJoinTree().get());
@@ -191,7 +174,7 @@ void findJoinKeysInQueryNode(
             && join_node->hasJoinExpression()
             && join_node->isOnJoinExpression())
         {
-            extractEquiJoinKeys(join_node->getJoinExpression(), recursive_table_nodes, branch_index, result);
+            extractEquiJoinKeys(join_node->getJoinExpression(), recursive_table_nodes, query_node, result);
         }
 
         nodes_to_visit.push_back(join_node->getLeftTableExpression().get());
@@ -199,39 +182,34 @@ void findJoinKeysInQueryNode(
     }
 }
 
-/// Walk the join tree of the recursive query to find equi-join keys
-/// between the CTE table and real tables. Only handles INNER JOINs with ON
-/// expressions. When the recursive query has more than two branches, its root
-/// is a UnionNode and each branch must be inspected independently. Each
-/// extracted key is tagged with the `UNION`-branch index it came from so the
-/// filter builder can detect cross-branch collisions.
-std::vector<JoinKeyInfo> findJoinKeysWithCTETable(
-    const QueryTreeNodePtr & recursive_query,
+/// Collect all CTE join keys in the recursive query. When the recursive query
+/// is a `UnionNode`, every branch is inspected independently so that filters
+/// can later be injected into each branch's `WHERE` in isolation.
+std::vector<CTEJoinKey> collectCTEJoinKeys(
+    IQueryTreeNode & recursive_query,
     const std::vector<TableNode *> & recursive_table_nodes)
 {
-    std::vector<JoinKeyInfo> result;
+    std::vector<CTEJoinKey> result;
 
-    if (const auto * query_node = recursive_query->as<QueryNode>())
+    if (auto * query_node = recursive_query.as<QueryNode>())
     {
-        findJoinKeysInQueryNode(*query_node, recursive_table_nodes, 0, result);
+        collectCTEJoinKeysInQuery(*query_node, recursive_table_nodes, result);
     }
-    else if (const auto * union_node = recursive_query->as<UnionNode>())
+    else if (auto * union_node = recursive_query.as<UnionNode>())
     {
-        size_t branch_index = 0;
-        for (const auto & subquery : union_node->getQueries().getNodes())
+        for (auto & subquery : union_node->getQueries().getNodes())
         {
-            if (const auto * sub_query_node = subquery->as<QueryNode>())
-                findJoinKeysInQueryNode(*sub_query_node, recursive_table_nodes, branch_index, result);
-            ++branch_index;
+            if (auto * sub_query_node = subquery->as<QueryNode>())
+                collectCTEJoinKeysInQuery(*sub_query_node, recursive_table_nodes, result);
         }
     }
 
     return result;
 }
 
-/// Read deduplicated values of a column from a StorageMemory-backed temporary table.
-/// Returns nullopt if the number of distinct values exceeds max_cardinality
-/// (caller falls back to user-specified filters in that case).
+/// Read deduplicated values of a column from a `StorageMemory`-backed temporary
+/// table. Returns nullopt if the number of distinct values exceeds
+/// `max_cardinality` — the caller then skips filter injection for the step.
 std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
     const StoragePtr & storage,
     const String & column_name,
@@ -271,221 +249,49 @@ std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
     return std::vector<Field>(unique_values.begin(), unique_values.end());
 }
 
-/// Build a SQL filter expression like: `column_name` IN (val1, val2, ...)
-String buildInFilterExpression(const String & column_name, const std::vector<Field> & values)
+/// Build a resolved query-tree expression equivalent to `real_column IN (values...)`.
+QueryTreeNodePtr buildInFilterNode(
+    ColumnNode & real_column,
+    const std::vector<Field> & values,
+    const ContextPtr & context)
 {
-    if (values.empty())
-        return {};
+    Tuple tuple_values;
+    tuple_values.reserve(values.size());
+    DataTypes tuple_element_types;
+    tuple_element_types.reserve(values.size());
 
-    String result = backQuoteIfNeed(column_name) + " IN (";
-    for (size_t i = 0; i < values.size(); ++i)
+    const auto & column_type = real_column.getColumnType();
+    for (const auto & value : values)
     {
-        if (i > 0)
-            result += ", ";
-        result += applyVisitor(FieldVisitorToString(), values[i]);
+        tuple_values.push_back(value);
+        tuple_element_types.push_back(column_type);
     }
-    result += ")";
-    return result;
+
+    auto rhs_node = std::make_shared<ConstantNode>(
+        Field(std::move(tuple_values)),
+        std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
+
+    auto in_function_node = std::make_shared<FunctionNode>("in");
+    in_function_node->markAsOperator();
+    in_function_node->getArguments().getNodes() = {real_column.clone(), std::move(rhs_node)};
+    resolveOrdinaryFunctionNodeByName(*in_function_node, "in", context);
+
+    return in_function_node;
 }
 
-/// Identity of a real table occurrence in the join tree: its alias (preferred
-/// when present) or its full table name. Keying generated filters by this value
-/// ensures that different occurrences of the same physical table (e.g., two
-/// aliases of `edges` in a self-join) receive only the filter derived from
-/// their own join keys — rather than a single combined filter that would
-/// over-constrain every occurrence.
-struct TableExpressionKey
+/// Conjoin a list of predicate nodes into a single `and(...)` expression.
+QueryTreeNodePtr conjoinPredicates(std::vector<QueryTreeNodePtr> predicates, const ContextPtr & context)
 {
-    String value;
-    bool is_alias = false;
-};
+    if (predicates.empty())
+        return nullptr;
+    if (predicates.size() == 1)
+        return std::move(predicates.front());
 
-TableExpressionKey makeTableExpressionKey(const JoinKeyInfo & key_info)
-{
-    if (!key_info.real_table_alias.empty())
-        return {key_info.real_table_alias, true};
-    return {key_info.real_table_storage_id.getFullNameNotQuoted(), false};
-}
-
-/// Build the `additional_table_filters` Map for a recursive CTE step.
-/// Reads join key values from the working (CTE) table and creates IN filters
-/// for the corresponding real tables.
-/// Merges with user-specified `additional_table_filters` to avoid overwriting them.
-Map buildAdditionalTableFiltersForRecursiveStep(
-    const QueryTreeNodePtr & recursive_query,
-    std::optional<std::vector<JoinKeyInfo>> & cached_join_keys,
-    const std::vector<TableNode *> & recursive_table_nodes,
-    const StoragePtr & working_table_storage,
-    const ContextPtr & context,
-    const Map & original_additional_table_filters,
-    size_t max_in_filter_cardinality,
-    size_t max_filter_size)
-{
-    if (max_in_filter_cardinality == 0)
-        return original_additional_table_filters;
-
-    if (!cached_join_keys.has_value())
-        cached_join_keys = findJoinKeysWithCTETable(recursive_query, recursive_table_nodes);
-
-    if (cached_join_keys->empty())
-        return original_additional_table_filters;
-
-    /// Group filter expressions by table-expression identity (alias when
-    /// present, otherwise full table name). Remember the StorageID so we can
-    /// still match user filters written as short name / full name.
-    struct GroupedFilter
-    {
-        std::vector<String> parts;
-        StorageID storage_id = StorageID::createEmpty();
-        /// Recursive `UNION` branches that contributed join keys for this group.
-        /// `additional_table_filters` is global across branches, so when more
-        /// than one branch contributes — even with the same `StorageID` — we
-        /// cannot express branch-local predicates and must drop the filter to
-        /// avoid over-constraining results.
-        std::set<size_t> branches;
-        /// Set when the same key (e.g. alias) is used for join keys belonging
-        /// to different physical tables — typically when the recursive query
-        /// is a UNION whose branches reuse the same alias for different
-        /// tables. `additional_table_filters` matches by alias alone, so the
-        /// planner cannot disambiguate the two; emitting a combined filter
-        /// would over-constrain (or reference missing columns on) one of
-        /// them. We drop the CTE-derived filter for such keys; user filters
-        /// for the same key are still preserved below.
-        bool ambiguous = false;
-    };
-    std::map<String, GroupedFilter> filters_by_key; /// keyed by TableExpressionKey::value
-    std::set<String> alias_keys;
-
-    for (const auto & key_info : *cached_join_keys)
-    {
-        auto key = makeTableExpressionKey(key_info);
-        auto & entry = filters_by_key[key.value];
-
-        if (!entry.parts.empty() && entry.storage_id != key_info.real_table_storage_id)
-            entry.ambiguous = true;
-
-        if (entry.ambiguous)
-            continue;
-
-        auto values = readColumnValuesFromMemoryStorage(
-            working_table_storage, key_info.cte_column_name, context, max_in_filter_cardinality);
-
-        /// nullopt means cardinality exceeded the limit — skip the optimization entirely
-        /// for this step and fall back to unfiltered scans.
-        if (!values.has_value())
-            return original_additional_table_filters;
-
-        if (values->empty())
-            continue;
-
-        String filter_expr = buildInFilterExpression(key_info.real_table_column_name, *values);
-        if (filter_expr.empty())
-            continue;
-
-        if (entry.parts.empty())
-            entry.storage_id = key_info.real_table_storage_id;
-        entry.parts.push_back(std::move(filter_expr));
-        entry.branches.insert(key_info.branch_index);
-        if (key.is_alias)
-            alias_keys.insert(key.value);
-    }
-
-    /// Find the user-specified filter for a given generated filter group.
-    /// Mirrors the matching logic in `PlannerJoinTree::buildAdditionalFiltersIfNeeded`
-    /// so that user filters referencing the table by alias, short name, or full name
-    /// are merged (rather than shadowed) by CTE-generated filters.
-    auto find_user_filter = [&](const String & group_key, const StorageID & storage_id)
-        -> std::pair<size_t, String>
-    {
-        const auto & current_database = context->getCurrentDatabase();
-        const bool group_key_is_alias = alias_keys.contains(group_key);
-
-        for (size_t idx = 0; idx < original_additional_table_filters.size(); ++idx)
-        {
-            const auto & tuple = original_additional_table_filters[idx].safeGet<Tuple>();
-            const auto & user_key = tuple.at(0).safeGet<String>();
-
-            const bool matches_alias = group_key_is_alias && user_key == group_key;
-            const bool matches_full_name = user_key == storage_id.getFullNameNotQuoted();
-            const bool matches_short_name = user_key == storage_id.getTableName()
-                && current_database == storage_id.getDatabaseName();
-
-            if (matches_alias || matches_full_name || matches_short_name)
-                return {idx, tuple.at(1).safeGet<String>()};
-        }
-
-        return {SIZE_MAX, {}};
-    };
-
-    Map filters_map;
-    std::set<size_t> merged_user_filter_indices;
-
-    for (auto & [group_key, entry] : filters_by_key)
-    {
-        if (entry.ambiguous || entry.parts.empty())
-            continue;
-
-        /// Cross-branch occurrence of the same key cannot be expressed via
-        /// `additional_table_filters` (which is global across branches), so
-        /// drop the CTE-derived filter — user filters for the same key are
-        /// still preserved below.
-        if (entry.branches.size() > 1)
-            continue;
-
-        String combined_filter;
-        for (size_t i = 0; i < entry.parts.size(); ++i)
-        {
-            if (i > 0)
-                combined_filter += " AND ";
-            combined_filter += entry.parts[i];
-        }
-
-        /// `PlannerJoinTree::buildAdditionalFiltersIfNeeded` re-parses each
-        /// filter expression with `parseQuery` under the user's
-        /// `max_query_size`. With long join key strings or many distinct
-        /// values, the serialized filter can exceed that limit and break
-        /// recursive evaluation. Drop the CTE-derived filter when its size
-        /// exceeds the budget; the user filter for the same group, if any,
-        /// is still preserved by the loop below.
-        ///
-        /// `max_query_size == 0` is the parser's "unlimited" sentinel
-        /// (see `Lexer::nextToken`), so skip the size guard in that case.
-        if (max_filter_size != 0 && combined_filter.size() > max_filter_size)
-            continue;
-
-        /// Combine with user-specified filter for the same table, if any.
-        auto [user_idx, user_filter] = find_user_filter(group_key, entry.storage_id);
-        if (user_idx != SIZE_MAX)
-        {
-            String merged_filter = "(" + combined_filter + ") AND (" + user_filter + ")";
-
-            /// The merged predicate is also re-parsed under `max_query_size`. If the
-            /// CTE-derived filter and the user filter together exceed the budget,
-            /// drop the CTE-derived part and let the user filter pass through
-            /// unchanged via the loop below. This preserves the pre-optimization
-            /// behavior for queries that previously worked with just the user filter.
-            /// As above, `max_query_size == 0` means "unlimited".
-            if (max_filter_size != 0 && merged_filter.size() > max_filter_size)
-                continue;
-
-            combined_filter = std::move(merged_filter);
-            merged_user_filter_indices.insert(user_idx);
-        }
-
-        Tuple tuple;
-        tuple.push_back(Field(group_key));
-        tuple.push_back(Field(std::move(combined_filter)));
-        filters_map.push_back(Field(std::move(tuple)));
-    }
-
-    /// Preserve user-specified filters for tables not involved in the CTE join.
-    for (size_t i = 0; i < original_additional_table_filters.size(); ++i)
-    {
-        if (!merged_user_filter_indices.contains(i))
-            filters_map.push_back(original_additional_table_filters[i]);
-    }
-
-    return filters_map;
+    auto and_function_node = std::make_shared<FunctionNode>("and");
+    and_function_node->markAsOperator();
+    and_function_node->getArguments().getNodes() = std::move(predicates);
+    resolveOrdinaryFunctionNodeByName(*and_function_node, "and", context);
+    return and_function_node;
 }
 
 }
@@ -528,36 +334,6 @@ public:
         recursive_query_context = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getMutableContext() :
             recursive_query->as<UnionNode &>().getMutableContext();
 
-        /// Save the original additional_table_filters so we can merge CTE-derived filters
-        /// with user-specified ones on each recursive step, instead of overwriting them.
-        original_additional_table_filters = recursive_query_context->getSettingsRef()[Setting::additional_table_filters].value;
-
-        /// Collect all QueryNodes/UnionNodes inside the recursive query, together with their
-        /// original `mutable_context`. On each recursive step we re-point their `mutable_context`
-        /// at a per-step copy so the planner sees per-step settings (the planner reads settings
-        /// from the query node's mutable context, not from the interpreter's context). For each
-        /// branch of a UNION, the analyzer creates a `QueryNode` with its own context (a copy of
-        /// the parent), so we must visit and update every nested node — not only those that
-        /// happen to share the outer recursive query's context.
-        std::vector<IQueryTreeNode *> nodes_to_visit;
-        nodes_to_visit.push_back(recursive_query.get());
-        while (!nodes_to_visit.empty())
-        {
-            auto * node = nodes_to_visit.back();
-            nodes_to_visit.pop_back();
-
-            if (auto * qn = node->as<QueryNode>())
-                recursive_query_nodes_and_original_contexts.push_back({node, qn->getMutableContext()});
-            else if (auto * un = node->as<UnionNode>())
-                recursive_query_nodes_and_original_contexts.push_back({node, un->getMutableContext()});
-
-            for (auto & child : node->getChildren())
-            {
-                if (child)
-                    nodes_to_visit.push_back(child.get());
-            }
-        }
-
         const auto & recursive_query_projection_columns = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getProjectionColumns() :
             recursive_query->as<UnionNode &>().computeProjectionColumns();
 
@@ -576,6 +352,13 @@ public:
             nullptr /*query*/,
             true /*create_for_global_subquery*/);
         intermediate_temporary_table_storage = intermediate_temporary_table_holder->getTable();
+
+        /// Collect equi-join keys between the CTE table and physical tables.
+        /// Filters built from working-table values will be ANDed into each
+        /// containing `QueryNode`'s WHERE during the recursive step.
+        cte_join_keys = collectCTEJoinKeys(*recursive_query, recursive_table_nodes);
+        for (const auto & key : cte_join_keys)
+            original_wheres.emplace(key.containing_query_node, key.containing_query_node->getWhere());
     }
 
     Chunk generate()
@@ -620,6 +403,65 @@ public:
     }
 
 private:
+    /// Inject `WHERE original_where AND col IN (values)` into each affected
+    /// `QueryNode` before executing a recursive step. Each step rebuilds the
+    /// filter from the pristine original WHERE saved at construction time, so
+    /// nothing accumulates across steps.
+    ///
+    /// Returns true on success, false if the join-key cardinality exceeded the
+    /// configured cap for some key — in that case the recursive step runs
+    /// without any CTE-derived filter (the caller restores original WHEREs).
+    bool injectFiltersIntoRecursiveQuery(size_t max_in_filter_cardinality)
+    {
+        if (cte_join_keys.empty() || max_in_filter_cardinality == 0)
+            return false;
+
+        /// Group join keys by their containing `QueryNode`. A `QueryNode` may
+        /// have multiple joins against the CTE — their predicates are combined
+        /// with `AND`.
+        std::map<QueryNode *, std::vector<QueryTreeNodePtr>> predicates_by_query;
+
+        for (const auto & key : cte_join_keys)
+        {
+            auto values = readColumnValuesFromMemoryStorage(
+                working_temporary_table_storage, key.cte_column_name, recursive_query_context, max_in_filter_cardinality);
+
+            if (!values.has_value())
+                return false;
+
+            if (values->empty())
+                continue;
+
+            predicates_by_query[key.containing_query_node]
+                .push_back(buildInFilterNode(*key.real_column_node, *values, recursive_query_context));
+        }
+
+        bool injected_any = false;
+        for (auto & [query_node, predicates] : predicates_by_query)
+        {
+            if (predicates.empty())
+                continue;
+
+            auto cte_filter = conjoinPredicates(std::move(predicates), recursive_query_context);
+
+            const auto & original_where = original_wheres.at(query_node);
+            if (original_where)
+                query_node->getWhere() = conjoinPredicates({original_where, std::move(cte_filter)}, recursive_query_context);
+            else
+                query_node->getWhere() = std::move(cte_filter);
+
+            injected_any = true;
+        }
+
+        return injected_any;
+    }
+
+    void restoreOriginalWheres()
+    {
+        for (auto & [query_node, original_where] : original_wheres)
+            query_node->getWhere() = original_where;
+    }
+
     void buildStepExecutor()
     {
         const auto & recursive_subquery_settings = recursive_query_context->getSettingsRef();
@@ -641,118 +483,75 @@ private:
         const auto & recursive_table_name = recursive_cte_union_node->as<UnionNode &>().getCTEName();
         recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
 
-        /// For recursive steps, inject additional_table_filters to push join key values
-        /// into MergeTree's key condition, enabling index usage.
-        /// recursive_step was already incremented above, so >1 means we're executing the recursive query.
-        /// The interpreter receives a per-step copy of the context so that the per-step setting
-        /// mutations below do not race with concurrent reads of the shared Settings object
-        /// from other recursive CTEs (e.g. nested ones) that share `recursive_query_context`.
-        ///
-        /// We also re-point every QueryNode/UnionNode inside the recursive query at a per-step
-        /// copy of its own original context: `Planner::buildPlannerContext` reads its settings
-        /// directly from the query node's mutable context (not from the interpreter's context),
-        /// and for `UNION ALL` branches the planner spawns a child `Planner` for each branch
-        /// using that branch's own context, so the per-step settings must be visible there too.
-        /// Restoring the original context after the step is unnecessary because the next step
-        /// rebuilds fresh copies from the originals captured at construction time.
-        auto interpreter_context = recursive_step > 1 ? Context::createCopy(recursive_query_context) : recursive_query_context;
+        ContextMutablePtr interpreter_context = recursive_query_context;
+
+        /// recursive_step was already incremented above — `>1` means we are
+        /// executing the recursive query (the seed query is step `1`).
         if (recursive_step > 1)
         {
-            const auto max_in_filter_cardinality
-                = recursive_subquery_settings[Setting::recursive_cte_max_in_filter_cardinality].value;
-            const auto max_filter_size
-                = recursive_subquery_settings[Setting::max_query_size].value;
-
-            auto filters = buildAdditionalTableFiltersForRecursiveStep(
-                recursive_query, cached_join_keys, recursive_table_nodes,
-                working_temporary_table_storage, interpreter_context,
-                original_additional_table_filters,
-                max_in_filter_cardinality,
-                max_filter_size);
-
             /// Disable parallel replicas for recursive CTE step queries. When parallel replicas
             /// is enabled, JOINs are rewritten to GLOBAL JOINs and the right-side subquery is
             /// materialized into a cached external table keyed by tree hash. Since the recursive
             /// CTE temporary table has the same tree structure across steps (only the data changes),
             /// the hash stays identical and stale cached data is reused, producing wrong results.
-            /// We do this only for recursive iterations (not the seed) so that the seed query —
-            /// which does not reference the CTE table — keeps the user's parallel replicas
-            /// configuration. Setting it on every recursive iteration is idempotent.
-            auto apply_step_overrides = [&](ContextMutablePtr & ctx)
-            {
-                ctx->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
-                ctx->setSetting("additional_table_filters", Field(filters));
-            };
+            /// A per-step copy of the context is used so concurrent reads of the shared `Settings`
+            /// object from other recursive CTEs (e.g. nested ones) are not racing with this write.
+            interpreter_context = Context::createCopy(recursive_query_context);
+            interpreter_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
 
-            apply_step_overrides(interpreter_context);
+            const auto max_in_filter_cardinality
+                = recursive_subquery_settings[Setting::recursive_cte_max_in_filter_cardinality].value;
 
-            /// Re-point each tracked QueryNode/UnionNode `mutable_context` at a per-step copy of
-            /// its own original context, deduplicating so nodes that originally shared a context
-            /// continue to share one after the rewrite.
-            std::map<Context *, ContextMutablePtr> step_context_for_original;
-            for (const auto & [node, original_context] : recursive_query_nodes_and_original_contexts)
-            {
-                ContextMutablePtr step_context;
-                if (original_context == recursive_query_context)
-                {
-                    step_context = interpreter_context;
-                }
-                else
-                {
-                    auto it = step_context_for_original.find(original_context.get());
-                    if (it != step_context_for_original.end())
-                    {
-                        step_context = it->second;
-                    }
-                    else
-                    {
-                        step_context = Context::createCopy(original_context);
-                        apply_step_overrides(step_context);
-                        step_context_for_original.emplace(original_context.get(), step_context);
-                    }
-                }
-
-                if (auto * qn = node->as<QueryNode>())
-                    qn->getMutableContext() = step_context;
-                else if (auto * un = node->as<UnionNode>())
-                    un->getMutableContext() = step_context;
-            }
+            injectFiltersIntoRecursiveQuery(max_in_filter_cardinality);
         }
 
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, interpreter_context, select_query_options);
-        auto pipeline_builder = interpreter->buildQueryPipeline();
-
-        pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
+        try
         {
-            return std::make_shared<MaterializingTransform>(in_header);
-        });
+            auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, interpreter_context, select_query_options);
+            auto pipeline_builder = interpreter->buildQueryPipeline();
 
-        auto convert_to_temporary_tables_header_actions_dag = ActionsDAG::makeConvertingActions(
-            pipeline_builder.getHeader().getColumnsWithTypeAndName(),
-            header->getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            interpreter->getContext());
-        auto convert_to_temporary_tables_header_actions = std::make_shared<ExpressionActions>(std::move(convert_to_temporary_tables_header_actions_dag));
-        pipeline_builder.addSimpleTransform([&](const SharedHeader & input_header)
+            pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
+            {
+                return std::make_shared<MaterializingTransform>(in_header);
+            });
+
+            auto convert_to_temporary_tables_header_actions_dag = ActionsDAG::makeConvertingActions(
+                pipeline_builder.getHeader().getColumnsWithTypeAndName(),
+                header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Position,
+                interpreter->getContext());
+            auto convert_to_temporary_tables_header_actions = std::make_shared<ExpressionActions>(std::move(convert_to_temporary_tables_header_actions_dag));
+            pipeline_builder.addSimpleTransform([&](const SharedHeader & input_header)
+            {
+                return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
+            });
+
+            /// TODO: Support squashing transform
+
+            auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
+                {},
+                intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false),
+                recursive_query_context,
+                false /*async_insert*/);
+
+            pipeline_builder.addChain(Chain(std::move(intermediate_temporary_table_storage_sink)));
+
+            pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
+            pipeline.setProgressCallback(recursive_query_context->getProgressCallback());
+            pipeline.setProcessListElement(recursive_query_context->getProcessListElement());
+
+            executor.emplace(pipeline);
+        }
+        catch (...)
         {
-            return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
-        });
+            restoreOriginalWheres();
+            throw;
+        }
 
-        /// TODO: Support squashing transform
-
-        auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
-            {},
-            intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false),
-            recursive_query_context,
-            false /*async_insert*/);
-
-        pipeline_builder.addChain(Chain(std::move(intermediate_temporary_table_storage_sink)));
-
-        pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
-        pipeline.setProgressCallback(recursive_query_context->getProgressCallback());
-        pipeline.setProcessListElement(recursive_query_context->getProcessListElement());
-
-        executor.emplace(pipeline);
+        /// The pipeline was built and captured the (filter-injected) state of
+        /// the query tree. The tree itself is reused across steps, so restore
+        /// the original WHEREs now to leave it pristine for the next step.
+        restoreOriginalWheres();
     }
 
     void truncateTemporaryTable(StoragePtr & temporary_table)
@@ -782,15 +581,11 @@ private:
     QueryPipeline pipeline;
     std::optional<PullingAsyncPipelineExecutor> executor;
 
-    std::optional<std::vector<JoinKeyInfo>> cached_join_keys;
-    Map original_additional_table_filters;
-
-    struct RecursiveQueryNodeAndOriginalContext
-    {
-        IQueryTreeNode * node;
-        ContextMutablePtr original_context;
-    };
-    std::vector<RecursiveQueryNodeAndOriginalContext> recursive_query_nodes_and_original_contexts;
+    std::vector<CTEJoinKey> cte_join_keys;
+    /// Pristine `WHERE` clauses captured at construction time, one per affected
+    /// `QueryNode`. The recursive step rebuilds `WHERE = original AND in(...)`
+    /// from these and restores them once the pipeline has been built.
+    std::map<QueryNode *, QueryTreeNodePtr> original_wheres;
 
     size_t recursive_step = 0;
     size_t read_rows_during_recursive_step = 0;

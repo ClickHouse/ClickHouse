@@ -4707,9 +4707,9 @@ Maximum parser backtracking (how many times it tries different alternatives in t
 Maximum limit on recursive CTE evaluation depth
 )", 0) \
     DECLARE(UInt64, recursive_cte_max_in_filter_cardinality, 10000, R"(
-During recursive CTE evaluation, join keys from the working table are pushed into the real table as an `IN (...)` filter so that the MergeTree primary key index can be used. This setting caps the number of distinct values included in that generated filter.
+During recursive CTE evaluation, join keys from the working table are injected into the recursive step's `WHERE` clause as an `IN (...)` predicate against the joined physical table, so that the MergeTree primary key index can be used. This setting caps the number of distinct values included in that generated predicate.
 
-If the working table contains more distinct join key values than this limit at some recursive step, the optimization is skipped for that step and the real table is scanned without the generated filter (user-specified `additional_table_filters` are still applied).
+If the working table contains more distinct join key values than this limit at some recursive step, the optimization is skipped for that step and the physical table is scanned without the generated predicate.
 
 Setting this to `0` disables the optimization entirely.
 )", 0) \

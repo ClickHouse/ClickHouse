@@ -1,7 +1,8 @@
 -- Test that recursive CTEs with JOINs use MergeTree primary key index.
 -- Without the optimization, each recursion step scans the entire table.
--- With the optimization, join key values from the working table are pushed
--- as additional_table_filters, enabling index usage.
+-- With the optimization, join key values from the working table are injected
+-- into the recursive step's WHERE clause as an `IN (...)` predicate, enabling
+-- MergeTree primary key index usage.
 
 SET enable_analyzer = 1;
 
@@ -75,9 +76,9 @@ ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
 -- Self-join of the same physical table via two aliases in the recursive step.
--- Each alias has a different join key, so keying the generated filter by
--- alias (rather than by StorageID) is required to avoid applying a combined
--- filter to each occurrence.
+-- Only one of the aliases joins against the CTE table; injecting the filter
+-- directly into WHERE keeps it scoped to that alias, leaving the other
+-- occurrence's scan unconstrained.
 DROP TABLE IF EXISTS two_hop;
 CREATE TABLE two_hop (from_id UInt64, to_id UInt64)
 ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 8192;
@@ -113,11 +114,9 @@ SELECT current_id FROM traverse3 ORDER BY current_id
 SETTINGS recursive_cte_max_in_filter_cardinality = 0;
 
 -- Three-branch recursive CTE where two branches reuse the same alias `x`
--- for different physical tables. `additional_table_filters` matches by alias
--- alone, so emitting a single combined filter for key `x` would either reference
--- columns that do not exist on one of the tables (producing an exception) or
--- over-constrain both branches. The optimization must skip filter generation
--- for `x` and let the recursive step run with unfiltered scans.
+-- for different physical tables. Each branch's `WHERE` is independent, so
+-- the injected `IN (...)` predicate is scoped to its own branch and there
+-- is no cross-branch interference.
 DROP TABLE IF EXISTS t_a;
 DROP TABLE IF EXISTS t_b;
 CREATE TABLE t_a (col_a UInt64, val UInt64) ENGINE = MergeTree ORDER BY col_a;
@@ -137,11 +136,9 @@ WITH RECURSIVE rec AS
 SELECT id FROM rec ORDER BY id;
 
 -- Same alias `x` referring to the same physical table across two recursive
--- branches, but with different join columns. `additional_table_filters` is
--- global across branches (keyed by alias), so emitting a combined filter
--- (`col_a IN (...) AND col_b IN (...)`) for `x` would over-constrain both
--- branches. The optimization must skip filter generation for `x` and let the
--- recursive step run with unfiltered scans, producing correct results.
+-- branches, but with different join columns. Each branch is its own
+-- `QueryNode` with its own `WHERE`, so the per-branch `IN (...)` filter does
+-- not over-constrain the other branch.
 DROP TABLE IF EXISTS pairs;
 CREATE TABLE pairs (col_a UInt64, col_b UInt64, val UInt64) ENGINE = MergeTree ORDER BY col_a;
 INSERT INTO pairs VALUES (0, 100, 1) (1, 200, 2) (100, 0, 3);
