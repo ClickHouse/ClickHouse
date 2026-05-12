@@ -1,5 +1,7 @@
 #include <Common/checkStackSize.h>
 
+#include <fstream>
+
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
@@ -1641,7 +1643,7 @@ void StatementGenerator::addTableColumnInternal(
 
             if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_ALIAS) && rg.nextMediumNumber() < 16)
             {
-                cd->set_codecs(generateNextCodecString(rg));
+                cd->set_codecs(generateNextCodecStringForType(rg, col.tp.get()));
             }
             if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !csettings.empty() && rg.nextMediumNumber() < 16)
             {
@@ -1728,16 +1730,11 @@ String StatementGenerator::addTableColumn(
 void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const bool projection, IndexDef * idef)
 {
     Expr * expr = idef->mutable_expr();
-    std::uniform_int_distribution<uint32_t> idx_range(1, static_cast<uint32_t>(IndexType::IDX_text));
-    auto generate_idx = [&]() -> IndexType
-    {
-        auto raw_idx = idx_range(rg.generator);
-        /// Value 3 was previously IDX_hypothesis which has been removed; remap to IDX_minmax.
-        if (raw_idx == 3)
-            raw_idx = static_cast<uint32_t>(IndexType::IDX_minmax);
-        return static_cast<IndexType>(raw_idx);
-    };
-    const IndexType itpe = projection ? IndexType::IDX_basic : ((rg.nextMediumNumber() < 21) ? IndexType::IDX_text : generate_idx());
+    std::uniform_int_distribution<uint32_t> idx_range(
+        static_cast<uint32_t>(projection ? IndexType::IDX_basic : IndexType::IDX_set),
+        static_cast<uint32_t>(projection ? IndexType::IDX_commit_order : IndexType::IDX_text));
+    const IndexType itpe
+        = (!projection && rg.nextMediumNumber() < 21) ? IndexType::IDX_text : static_cast<IndexType>(idx_range(rg.generator));
 
     chassert(!t.cols.empty());
     idef->set_type(itpe);
@@ -1917,8 +1914,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
         }
         break;
-        case IndexType::IDX_minmax:
-        case IndexType::IDX_basic:
+        default:
             break;
     }
     if (!projection)
@@ -1969,18 +1965,7 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
         this->levels.clear();
         /// Add projection settings
         if (rg.nextSmallNumber() < 4)
-        {
-            const auto & engineSettings = allTableSettings.at(t.teng);
-
-            if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
-            {
-                generateSettingValues(rg, engineSettings, psdef->mutable_setting_values());
-            }
-            if (t.isMergeTreeFamily() && !fc.hot_table_settings.empty() && rg.nextBool())
-            {
-                generateHotTableSettingsValues(rg, false, psdef->mutable_setting_values());
-            }
-        }
+            generateSettingValues(rg, projectionSettings, psdef->mutable_setting_values());
     }
     else
     {
@@ -2548,6 +2533,9 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     uint32_t col_counter = 0;
     const DictionaryLayouts & dl = rg.pickRandomly(allDictionaryLayoutSettings);
     const bool isRange = dl == COMPLEX_KEY_RANGE_HASHED || dl == RANGE_HASHED;
+    const bool is_complex_key
+        = (dl == COMPLEX_KEY_CACHE || dl == COMPLEX_KEY_DIRECT || dl == COMPLEX_KEY_HASHED || dl == COMPLEX_KEY_HASHED_ARRAY
+           || dl == COMPLEX_KEY_RANGE_HASHED || dl == COMPLEX_KEY_SPARSE_HASHED || dl == COMPLEX_KEY_SSD_CACHE);
     /// Range requires 2 cols for min and max
     const uint32_t dictionary_ncols = std::max(rg.randomInt<uint32_t>(1, fc.max_columns), isRange ? UINT32_C(2) : UINT32_C(1));
     SettingValues * svs = nullptr;
@@ -2595,11 +2583,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const bool has_view = collectionHas<SQLView>(dictionary_view_lambda);
     const bool has_dictionary = collectionHas<SQLDictionary>(dictionary_dictionary_lambda);
 
-    const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table);
-    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!next.is_deterministic && !systemTables.empty());
-    const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
-    const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary);
-    const uint32_t null_src = 5;
+    /// REGEXP_TREE layout is tied to YAMLRegExpTree source: skip all other source types when this layout is in use.
+    const uint32_t generic_src_mult = static_cast<uint32_t>(dl != REGEXP_TREE);
+    const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table) * generic_src_mult;
+    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!next.is_deterministic && !systemTables.empty()) * generic_src_mult;
+    const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view) * generic_src_mult;
+    const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary) * generic_src_mult;
+    const uint32_t null_src = 5 * generic_src_mult;
+    /// YAMLRegExpTree only makes sense when paired with REGEXP_TREE layout.
+    const uint32_t yaml_regexp_tree_src = !generic_src_mult ? 100 : 0;
+    DictionarySourceDetails * clickhouse_dsd = nullptr;
+    DictionarySourceDetails * yaml_dsd = nullptr;
 
     rg.pickWeighted(
         {{dict_table,
@@ -2647,6 +2641,24 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
                   dsd->set_password(sc.password);
                   dsd->set_source(DictionarySourceDetails::MONGODB);
               }
+              else if (t.isFileEngine() && rg.nextSmallNumber() < 8)
+              {
+                  dsd->set_path(t.getTablePath(rg, this->allow_not_deterministic));
+                  if (t.file_format.has_value())
+                  {
+                      dsd->set_format(InOutFormat_Name(t.file_format.value()).substr(6));
+                  }
+                  dsd->set_source(DictionarySourceDetails::FILE);
+              }
+              else if (t.isURLEngine() && fc.http_server.has_value() && rg.nextSmallNumber() < 8)
+              {
+                  dsd->set_url(t.getTablePath(rg, this->allow_not_deterministic));
+                  if (t.file_format.has_value())
+                  {
+                      dsd->set_format(InOutFormat_Name(t.file_format.value()).substr(6));
+                  }
+                  dsd->set_source(DictionarySourceDetails::HTTP);
+              }
               else if (t.isRedisEngine() && fc.redis_server.has_value() && rg.nextSmallNumber() < 8)
               {
                   const ServerCredentials & sc = fc.redis_server.value();
@@ -2668,6 +2680,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
               {
                   t.setName(dsd->mutable_est(), false);
                   dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
+                  clickhouse_dsd = dsd;
               }
           }},
          {dict_system_table,
@@ -2680,6 +2693,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
               est->mutable_database()->set_value(ntable.schema_name);
               est->mutable_table()->set_value(ntable.table_name);
               dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
+              clickhouse_dsd = dsd;
           }},
          {dict_view,
           [&]
@@ -2689,6 +2703,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
               v.setName(dsd->mutable_est(), false);
               dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
+              clickhouse_dsd = dsd;
           }},
          {dict_dict,
           [&]
@@ -2698,8 +2713,16 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
               d.setName(dsd->mutable_est(), false);
               dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
+              clickhouse_dsd = dsd;
           }},
-         {null_src, [&] { cd->mutable_source()->set_null_src(true); }}});
+         {null_src, [&] { cd->mutable_source()->set_null_src(true); }},
+         {yaml_regexp_tree_src,
+          [&]
+          {
+              DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
+              dsd->set_source(DictionarySourceDetails::YAMLRegExpTree);
+              yaml_dsd = dsd;
+          }}});
 
     /// Set columns
     for (uint32_t i = 0; i < dictionary_ncols; i++)
@@ -2715,8 +2738,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         /// Many types are not allowed in dictionaries
         this->next_type_mask = fc.type_mask
             & ~(allow_JSON | allow_variant | allow_dynamic | allow_tuple | allow_low_cardinality | allow_map | allow_enum | allow_geo
-                | allow_fixed_strings | allow_time);
-        col.tp = randomNextType(rg, this->next_type_mask, col_counter, dc->mutable_type()->mutable_type());
+                | allow_time | allow_array | (is_complex_key ? UINT64_C(0) : allow_fixed_strings));
+        if (yaml_dsd && i == 0)
+        {
+            /// YAMLRegExpTree requires the primary key to be exactly one String column.
+            dc->mutable_type()->mutable_type()->mutable_non_nullable()->set_standard_string(true);
+            col.tp = std::make_unique<StringType>(std::nullopt);
+        }
+        else
+        {
+            col.tp = randomNextType(rg, this->next_type_mask, col_counter, dc->mutable_type()->mutable_type());
+        }
         this->next_type_mask = type_mask_backup;
 
         const String dict_col_name = col.getColumnName();
@@ -2787,18 +2819,177 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
     /// Add Primary Key
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
-    const size_t kcols = dl == IP_TRIE ? 1 : ((rg.nextLargeNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1);
+    if (clickhouse_dsd)
+    {
+        if (rg.nextSmallNumber() < 4)
+        {
+            clickhouse_dsd->set_invalidate_query("SELECT 1");
+        }
+        else if (rg.nextSmallNumber() < 4)
+        {
+            columnPathRef(rg.pickRandomly(this->entries), clickhouse_dsd->mutable_update_field());
+            clickhouse_dsd->set_update_lag(rg.randomInt<uint32_t>(0, 3600));
+        }
+    }
+    if (dl == IP_TRIE || yaml_dsd)
+    {
+        /// IP_TRIE and YAMLRegExpTree both require a String primary key
+        std::vector<ColumnPathChain> str_entries;
+        for (const auto & e : this->entries)
+        {
+            const SQLType * tp = e.getBottomType();
+            if (tp && tp->getTypeClass() == SQLTypeClass::NULLABLE)
+                tp = static_cast<const Nullable *>(tp)->subtype.get();
+            if (tp && tp->getTypeClass() == SQLTypeClass::STRING)
+                str_entries.push_back(e);
+        }
+        if (!str_entries.empty())
+            this->entries = std::move(str_entries);
+    }
+    else if (!is_complex_key)
+    {
+        /// Non-complex-key layouts require a single UInt64 primary key
+        std::vector<ColumnPathChain> uint64_entries;
+        for (const auto & e : this->entries)
+        {
+            const SQLType * tp = e.getBottomType();
+            if (tp && tp->getTypeClass() == SQLTypeClass::NULLABLE)
+                tp = static_cast<const Nullable *>(tp)->subtype.get();
+            if (tp && tp->getTypeClass() == SQLTypeClass::INT)
+            {
+                const auto * itp = static_cast<const IntType *>(tp);
+                if (itp->is_unsigned && itp->size == 64)
+                    uint64_entries.push_back(e);
+            }
+        }
+        if (!uint64_entries.empty() && !isRange)
+            this->entries = std::move(uint64_entries);
+    }
+    const size_t kcols
+        = (dl == IP_TRIE || !is_complex_key) ? 1 : ((rg.nextLargeNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1);
     std::shuffle(entries.begin(), entries.end(), rg.generator);
     TableKey * tkey = cd->mutable_primary_key();
     for (size_t i = 0; i < kcols; i++)
     {
         columnPathRef(this->entries[i], tkey->add_exprs()->mutable_expr());
     }
-    if (isRange)
+    if (yaml_dsd && !this->entries.empty())
     {
-        /// Range properties
-        DictionaryRange * dr = cd->mutable_range();
+        /// Write a small YAML fixture that matches the dictionary's columns so that both
+        /// CREATE-time validation and runtime LOAD succeed. The chosen primary-key column
+        /// is the regex pattern; every other column becomes an attribute.
+        ///
+        /// regexp_tree's loader parses YAML attribute values via deserializeWholeText for
+        /// the target type, which expects plain text (NOT SQL literal syntax with quotes
+        /// or `::Type` casts). We emit a fixed plain-text default per type class instead
+        /// of using appendRandomRawValue (which produces SQL literals).
+        const auto yaml_plain_value = [](const SQLType * tp) -> std::optional<String>
+        {
+            const SQLType * t = tp;
+            if (t && t->getTypeClass() == SQLTypeClass::NULLABLE)
+                t = static_cast<const Nullable *>(t)->subtype.get();
+            if (t && t->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
+                t = static_cast<const LowCardinality *>(t)->subtype.get();
+            if (!t)
+                return std::nullopt;
+            switch (t->getTypeClass())
+            {
+                case SQLTypeClass::BOOL:
+                    return "true";
+                case SQLTypeClass::INT:
+                case SQLTypeClass::FLOAT:
+                case SQLTypeClass::DECIMAL:
+                    return "0";
+                case SQLTypeClass::ENUM: {
+                    /// regexp_tree parses enum YAML values via deserializeWholeText with
+                    /// enum_as_number=false, so we must emit a label, not a numeric id.
+                    const auto * et = static_cast<const EnumType *>(t);
+                    if (et->values.empty())
+                        return "0";
+                    String label = et->values[0].val;
+                    /// EnumValue::val stores the SQL form including surrounding single quotes
+                    /// (e.g. "'foo'" or "'-1'"); strip them for the YAML plain text.
+                    if (label.size() >= 2 && label.front() == '\'' && label.back() == '\'')
+                        label = label.substr(1, label.size() - 2);
+                    return label;
+                }
+                case SQLTypeClass::STRING:
+                    return "text";
+                case SQLTypeClass::DATE:
+                    return "2024-01-01";
+                case SQLTypeClass::DATETIME:
+                    return "2024-01-01 12:00:00";
+                case SQLTypeClass::TIME:
+                    return "12:00:00";
+                case SQLTypeClass::UUID:
+                    return "00000000-0000-0000-0000-000000000000";
+                case SQLTypeClass::IPV4:
+                    return "0.0.0.0";
+                case SQLTypeClass::IPV6:
+                    return "::";
+                default:
+                    /// Skip complex (Array/Map/Tuple/JSON/Variant/Dynamic/etc.)
+                    return std::nullopt;
+            }
+        };
 
+        const String pkey_name = this->entries[0].getBottomName();
+        const String fname = fmt::format("d{}.yaml", next.counter);
+        std::ofstream yaml_file(fc.client_file_path / fname);
+        if (!yaml_file.is_open())
+        {
+            /// user_files isn't writable from this process — fail closed by switching to a null
+            /// source so we don't generate a CREATE DICTIONARY pointing at a non-existent file.
+            /// This will still fail validation (REGEXP_TREE requires YAMLRegExpTree), but with a
+            /// meaningful "incompatible source/layout" error instead of CANNOT_OPEN_FILE.
+            LOG_DEBUG(
+                getLogger("BuzzHouse"),
+                "Failed to open YAML fixture {} for write — falling back to null dictionary source",
+                (fc.client_file_path / fname).generic_string());
+            cd->mutable_source()->Clear();
+            cd->mutable_source()->set_null_src(true);
+        }
+        else
+        {
+            for (uint32_t j = 0; j < 3; j++)
+            {
+                /// regexp_tree requires each rule to use the dictionary's primary-key field name
+                /// (not a literal "regexp"). This is the column we forced to String earlier.
+                yaml_file << "- " << pkey_name << ": '.*pattern" << j << ".*'\n";
+                for (const auto & [cname, cdata] : next.cols)
+                {
+                    if (cname == pkey_name || !cdata.tp)
+                        continue;
+                    auto value = yaml_plain_value(cdata.tp.get());
+                    if (value.has_value())
+                        yaml_file << "  " << cname << ": " << value.value() << "\n";
+                }
+            }
+            yaml_file.close();
+            yaml_dsd->set_path(fmt::format("{}/{}", fc.server_file_path.generic_string(), fname));
+        }
+    }
+    if (isRange && this->entries.size() > 1)
+    {
+        /// Range properties — min/max must be numeric or date type
+        DictionaryRange * dr = cd->mutable_range();
+        std::vector<ColumnPathChain> range_entries;
+
+        for (const auto & e : this->entries)
+        {
+            const SQLType * tp = e.getBottomType();
+            if (tp && tp->getTypeClass() == SQLTypeClass::NULLABLE)
+                tp = static_cast<const Nullable *>(tp)->subtype.get();
+            if (tp)
+            {
+                const auto cls = tp->getTypeClass();
+                if (cls == SQLTypeClass::INT || cls == SQLTypeClass::BOOL || cls == SQLTypeClass::DATE || cls == SQLTypeClass::DATETIME
+                    || cls == SQLTypeClass::FLOAT || cls == SQLTypeClass::DECIMAL)
+                    range_entries.push_back(e);
+            }
+        }
+        if (range_entries.size() >= 2)
+            std::swap(this->entries, range_entries);
         std::shuffle(entries.begin(), entries.end(), rg.generator);
         columnPathRef(this->entries[0], dr->mutable_min());
         columnPathRef(this->entries[1], dr->mutable_max());

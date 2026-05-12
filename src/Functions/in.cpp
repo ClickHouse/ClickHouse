@@ -108,12 +108,7 @@ public:
 
         auto set = future_set->get();
         if (!set)
-        {
-            if (dry_run)
-                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
-
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
-        }
 
         /// Empty set: return a constant result. Must be checked before input_rows_count == 0
         /// so that header evaluation produces a ColumnConst detectable by ConstantFilterDescription.
