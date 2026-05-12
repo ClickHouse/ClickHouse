@@ -13,10 +13,13 @@ DROP FUNCTION IF EXISTS as_str_repeat;
 DROP FUNCTION IF EXISTS as_str_length;
 DROP FUNCTION IF EXISTS as_concat3;
 DROP FUNCTION IF EXISTS as_add128;
+DROP FUNCTION IF EXISTS as_start_add1;
 DELETE FROM system.webassembly_modules WHERE name = 'as_example';
+DELETE FROM system.webassembly_modules WHERE name = 'as_infinite_start';
 EOF
 
 cat "${CUR_DIR}/wasm/as_example.wasm" | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'as_example', code FROM input('code String') FORMAT RawBlob"
+cat "${CUR_DIR}/wasm/as_infinite_start.wasm" | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'as_infinite_start', code FROM input('code String') FORMAT RawBlob"
 
 ${CLICKHOUSE_CLIENT} <<EOF
 SET webassembly_udf_max_fuel = 100000000;
@@ -95,6 +98,15 @@ SELECT as_add128(toUInt128('340282366920938463463374607431768211455'), toUInt128
 SELECT as_add128(toUInt128('18446744073709551616') /* 2^64 */, toUInt128('18446744073709551616'));
 SELECT sum(as_add128(toUInt128(number), toUInt128(number))) FROM numbers(100);
 
+-- Module with infinite loop in start function, to test interruption
+CREATE OR REPLACE FUNCTION as_start_add1
+    LANGUAGE WASM ABI ASSEMBLYSCRIPT
+    FROM 'as_infinite_start' :: 'add1'
+    ARGUMENTS (a UInt64) RETURNS UInt64;
+
+SELECT as_start_add1(1 :: UInt32) SETTINGS webassembly_udf_max_fuel = 18446744073709551615, max_execution_time = 0.5; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
+SELECT as_start_add1(1 :: UInt32) SETTINGS webassembly_udf_max_fuel = 0, max_execution_time = 0.5; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
+
 DROP FUNCTION as_add;
 DROP FUNCTION as_double;
 DROP FUNCTION as_greet;
@@ -102,5 +114,7 @@ DROP FUNCTION as_str_repeat;
 DROP FUNCTION as_str_length;
 DROP FUNCTION as_concat3;
 DROP FUNCTION as_add128;
+DROP FUNCTION as_start_add1;
 DELETE FROM system.webassembly_modules WHERE name = 'as_example';
+DELETE FROM system.webassembly_modules WHERE name = 'as_infinite_start';
 EOF

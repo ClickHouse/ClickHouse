@@ -416,10 +416,14 @@ public:
     using ObjectPtr = Base::ObjectPtr;
 
     explicit WasmCompartmentPool(
-        unsigned limit, std::shared_ptr<WebAssembly::WasmModule> wasm_module_, WebAssembly::WasmModule::Config module_cfg_)
+        unsigned limit,
+        std::shared_ptr<WebAssembly::WasmModule> wasm_module_,
+        WebAssembly::WasmModule::Config module_cfg_,
+        StopToken stop_token_)
         : Base(limit, getLogger("WasmCompartmentPool"))
         , wasm_module(std::move(wasm_module_))
         , module_cfg(std::move(module_cfg_))
+        , stop_token(std::move(stop_token_))
     {
         LOG_DEBUG(log, "WasmCompartmentPool created with limit: {}", limit);
     }
@@ -430,12 +434,15 @@ protected:
     ObjectPtr allocObject() override
     {
         LOG_DEBUG(log, "Allocating new WasmCompartment");
-        return wasm_module->instantiate(module_cfg);
+        return wasm_module->instantiate(module_cfg, stop_token);
     }
 
 private:
     std::shared_ptr<WebAssembly::WasmModule> wasm_module;
     WebAssembly::WasmModule::Config module_cfg;
+
+    std::mutex acquire_mutex;
+    StopToken stop_token;
 };
 
 
@@ -461,10 +468,12 @@ public:
         , function_name(std::move(function_name_))
         , argument_names(user_defined_function->getArgumentNames())
         , context(std::move(context_))
+        , interrupt_source()
         , compartment_pool(
               static_cast<UInt32>(context->getSettingsRef()[Setting::webassembly_udf_max_instances]),
               wasm_module,
-              getWasmModuleConfig(context))
+              getWasmModuleConfig(context),
+              interrupt_source.get_token())
     {
     }
 

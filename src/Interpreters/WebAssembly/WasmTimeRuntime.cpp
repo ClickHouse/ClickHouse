@@ -384,7 +384,7 @@ public:
 
     }
 
-    std::unique_ptr<WasmCompartment> instantiate(Config cfg) const override
+    std::unique_ptr<WasmCompartment> instantiate(Config cfg, StopToken stop_token) const override
     {
         wasmtime::Store store(engine);
         if (cfg.memory_limit)
@@ -396,12 +396,37 @@ public:
                 throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel for wasm module instantiation: {}", result.err().message());
         }
 
-        /// `Engine::Config::epoch_interruption(true)` makes wasmtime trap on every entry to wasm
-        /// code if no epoch deadline has been set yet. The start function (e.g. AssemblyScript's
-        /// runtime init) runs as part of `Linker::instantiate` below — set a very large relative
-        /// deadline now so module instantiation can complete. Per-call cancellation is still
-        /// handled through the `epoch_deadline_callback` configured in `WasmTimeCompartment`.
-        store.context().set_epoch_deadline(std::numeric_limits<uint64_t>::max());
+        /// The module's `(start)` function runs as part of `Linker::instantiate` below, so we set up
+        /// epoch interruption *before* instantiate
+        /// The callback consults a local atomic flipped by `StopCallback`
+        /// because the long-lived `WasmTimeCompartment` does not exist yet
+        /// it overwrites the store's data slot and deadline callback once it is constructed.
+        store.context().set_epoch_deadline(1);
+        auto stop_requested = std::make_shared<std::atomic_bool>(false);
+        store.context().set_data(stop_requested);
+        store.epoch_deadline_callback(
+            [](wasmtime::Store::Context ctx, uint64_t & epoch_deadline_delta) -> wasmtime::Result<wasmtime::DeadlineKind>
+            {
+                epoch_deadline_delta += 1;
+                const auto & ctx_data = ctx.get_data();
+                if (ctx_data.has_value())
+                {
+                    if (const auto * flag_ptr = std::any_cast<std::shared_ptr<std::atomic_bool>>(&ctx_data))
+                    {
+                        if ((*flag_ptr)->load())
+                            return wasmtime::Error("WASM instantiation was stopped by request");
+                    }
+                }
+                return wasmtime::DeadlineKind::Continue;
+            }
+        );
+
+        StopCallback stop_callback(stop_token, [this, stop_requested]
+        {
+            LOG_DEBUG(log, "Stop requested for wasm module instantiation");
+            stop_requested->store(true);
+            engine.increment_epoch();
+        });
 
         wasmtime::Linker linker(engine);
         for (const auto & host_function : host_functions)
