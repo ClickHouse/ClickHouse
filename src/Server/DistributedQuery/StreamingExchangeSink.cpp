@@ -1,3 +1,4 @@
+#include <limits>
 #include <memory>
 #include <base/defines.h>
 #ifdef OS_LINUX
@@ -70,7 +71,11 @@ void StreamingExchangeSink::sendToSocket()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No more data needed packet was not received");
 
             size_t bytes_to_send = current_send_buffer.size() - current_send_position_in_buffer;
-            ssize_t sent = socket->sendBytes(current_send_buffer.data() + current_send_position_in_buffer, static_cast<int>(bytes_to_send));
+            /// Saturate at INT_MAX: a plain cast would wrap negative for buffers > 2 GiB, after
+            /// which Poco's wrapper short-circuits without ever calling ::send.
+            ssize_t sent = socket->sendBytes(
+                current_send_buffer.data() + current_send_position_in_buffer,
+                static_cast<int>(std::min<size_t>(bytes_to_send, std::numeric_limits<int>::max())));
             if (sent < 0)
             {
                 auto last_error = errno;
