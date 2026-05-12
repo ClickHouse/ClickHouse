@@ -803,16 +803,17 @@ private:
         return impl.isInjective(sample_columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
+        /// dictGetUInt8/Int64/Date/UUID/IPv4/String/... - the typed variants always return
+        /// the type embedded in the function name. Arguments mirror dictGet: at minimum
+        /// (dict, attr, key); a default-value tuple may follow.
         DataTypePtr result;
-
         if constexpr (IsDataTypeDecimal<DataType>)
             result = std::make_shared<DataType>(DataType::maxPrecision(), 0);
         else
             result = std::make_shared<DataType>();
-
-        return result;
+        return "(const String, const String, Any, ...) -> " + result->getName();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
