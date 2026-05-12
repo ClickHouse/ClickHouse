@@ -513,3 +513,83 @@ QUERY id: 0
   SETTINGS optimize_or_like_chain=1 enable_analyzer=1 max_hyperscan_regexp_total_length=10
 Привет, World	Привет, World
 Привет, World	Привет, World
+QUERY id: 0
+  PROJECTION COLUMNS
+    s1 String
+    s2 String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'aaa\', constant_value_type: String
+      FUNCTION id: 5, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 6, nodes: 1
+            CONSTANT id: 7, constant_value: \'bbb\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 8, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 3
+                FUNCTION id: 13, function_name: like, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 14, nodes: 2
+                      FUNCTION id: 15, function_name: materialize, function_type: ordinary, result_type: String
+                        ARGUMENTS
+                          LIST id: 16, nodes: 1
+                            CONSTANT id: 17, constant_value: \'aaa\', constant_value_type: String
+                      CONSTANT id: 18, constant_value: \'hellooooo%\', constant_value_type: String
+                FUNCTION id: 19, function_name: ilike, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 20, nodes: 2
+                      FUNCTION id: 21, function_name: materialize, function_type: ordinary, result_type: String
+                        ARGUMENTS
+                          LIST id: 22, nodes: 1
+                            CONSTANT id: 23, constant_value: \'aaa\', constant_value_type: String
+                      CONSTANT id: 24, constant_value: \'worldddddd%\', constant_value_type: String
+                FUNCTION id: 25, function_name: multiSearchAny, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 26, nodes: 2
+                      FUNCTION id: 27, function_name: materialize, function_type: ordinary, result_type: String
+                        ARGUMENTS
+                          LIST id: 28, nodes: 1
+                            CONSTANT id: 29, constant_value: \'bbb\', constant_value_type: String
+                      CONSTANT id: 30, constant_value: Array_[\'foo\'], constant_value_type: Array(String)
+          FUNCTION id: 31, function_name: indexHint, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 32, nodes: 1
+                FUNCTION id: 33, function_name: or, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 34, nodes: 3
+                      FUNCTION id: 35, function_name: like, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 36, nodes: 2
+                            FUNCTION id: 37, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 38, nodes: 1
+                                  CONSTANT id: 39, constant_value: \'aaa\', constant_value_type: String
+                            CONSTANT id: 40, constant_value: \'hellooooo%\', constant_value_type: String
+                      FUNCTION id: 41, function_name: ilike, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 42, nodes: 2
+                            FUNCTION id: 43, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 44, nodes: 1
+                                  CONSTANT id: 45, constant_value: \'aaa\', constant_value_type: String
+                            CONSTANT id: 46, constant_value: \'worldddddd%\', constant_value_type: String
+                      FUNCTION id: 47, function_name: like, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 48, nodes: 2
+                            FUNCTION id: 49, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 50, nodes: 1
+                                  CONSTANT id: 51, constant_value: \'bbb\', constant_value_type: String
+                            CONSTANT id: 52, constant_value: \'%foo%\', constant_value_type: String
+  SETTINGS optimize_or_like_chain=1 enable_analyzer=1 max_hyperscan_regexp_length=5
+bbb foo
+bbb foo

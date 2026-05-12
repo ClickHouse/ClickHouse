@@ -340,8 +340,15 @@ public:
         const size_t max_hyperscan_regexp_total_length = context->getSettingsRef()[Setting::max_hyperscan_regexp_total_length];
         const bool reject_expensive_hyperscan_regexps = context->getSettingsRef()[Setting::reject_expensive_hyperscan_regexps];
 
-        /// Decide per-key whether to rewrite, and collect originals of all keys we keep rewriting
-        /// (those originals form the indexHint payload).
+        /// `indexHint(X) AND expr` restricts index analysis to granules that may satisfy `X`. To stay
+        /// correct, `X` must be a *superset* of the rows the outer OR can match — otherwise we'd
+        /// prune granules whose only matching rows come from branches missing in `X`. We therefore
+        /// wrap with `indexHint(<original full OR chain>)` only when every OR branch is a
+        /// LIKE/ILIKE/match (no `URL = 'foo'`-style branches that the index might match independently
+        /// of the LIKE chain), and include originals for *all* per-key groups — both rewritten and
+        /// the ones we keep as-is due to hyperscan size limits.
+        const bool is_pure_like_chain = per_key_data.size() == slots.size();
+
         bool any_rewrite = false;
         QueryTreeNodes index_hint_originals;
 
@@ -395,7 +402,14 @@ public:
                     match_function->resolveAsFunction(resolver);
                 }
             }
-            else
+
+            /// Collect originals for the indexHint payload. Done for *all* keys (including kept-as-is)
+            /// so the hint represents the full original chain — see comment above.
+            if (is_pure_like_chain)
+                for (const auto & original : key_data.originals)
+                    index_hint_originals.push_back(original->clone());
+
+            if (!match_function)
             {
                 /// Patterns exceed the configured hyperscan size limits. We cannot emit
                 /// `multiMatchAny` (would throw at runtime), and emitting a single combined `match`
@@ -407,22 +421,10 @@ public:
 
             slot.push_back(std::move(match_function));
             any_rewrite = true;
-
-            for (auto & original : key_data.originals)
-                index_hint_originals.push_back(original->clone());
         }
 
         if (!any_rewrite)
             return;
-
-        /// `indexHint(A) AND expr` restricts index analysis to ranges satisfying `A`, so wrapping the
-        /// optimized chain in `indexHint(<LIKE subset>)` is only safe when every OR branch was a
-        /// LIKE/ILIKE/match: for mixed chains (e.g. `URL LIKE 'a%' OR UserID = 1`), the hint would
-        /// prune ranges where only the non-LIKE branch matches, producing false negatives.
-        size_t total_like_branches = 0;
-        for (const auto & key_data : per_key_data)
-            total_like_branches += key_data.originals.size();
-        const bool is_pure_like_chain = total_like_branches == function_node->getArguments().getNodes().size();
 
         QueryTreeNodePtr index_hint_node;
         if (is_pure_like_chain && !index_hint_originals.empty())
@@ -434,9 +436,6 @@ public:
             }
             else
             {
-                /// Create OR of all original expressions for the rewritten keys. Originals of keys
-                /// that were not rewritten still appear in the outer OR, so the index can use them
-                /// directly without indexHint.
                 auto original_or = std::make_shared<FunctionNode>("or");
                 original_or->getArguments().getNodes() = std::move(index_hint_originals);
                 original_or->resolveAsFunction(or_function_resolver);
