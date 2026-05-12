@@ -3,6 +3,7 @@
 
 #include <bit>
 #include <cstring>
+#include <utility>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -91,20 +92,16 @@ size_t convertUTF8ToUTF16LE(std::string_view utf8, uint8_t * out)
             cp = 0xFFFD;
             i += 1;
         }
-
         if (cp < 0x10000)
         {
-            uint16_t unit = static_cast<uint16_t>(cp);
-            std::memcpy(out + out_units * 2, &unit, 2);
+            storeToWasmMemory<uint16_t>(out + out_units * 2, static_cast<uint16_t>(cp));
             out_units += 1;
         }
         else
         {
             cp -= 0x10000;
-            uint16_t high = static_cast<uint16_t>(0xD800 | (cp >> 10));
-            uint16_t low = static_cast<uint16_t>(0xDC00 | (cp & 0x3FF));
-            std::memcpy(out + out_units * 2, &high, 2);
-            std::memcpy(out + (out_units + 1) * 2, &low, 2);
+            storeToWasmMemory<uint16_t>(out + out_units * 2, static_cast<uint16_t>(0xD800 | (cp >> 10)));
+            storeToWasmMemory<uint16_t>(out + (out_units + 1) * 2, static_cast<uint16_t>(0xDC00 | (cp & 0x3FF)));
             out_units += 2;
         }
     }
@@ -245,10 +242,8 @@ public:
                 "AssemblyScript pointer {} is too small to fit the runtime header", ptr);
 
         auto header = compartment->getMemory(ptr - header_offset_rt_id, header_offset_rt_id);
-        uint32_t rt_id = 0;
-        uint32_t rt_size = 0;
-        std::memcpy(&rt_id, header.data(), sizeof(rt_id));
-        std::memcpy(&rt_size, header.data() + sizeof(rt_id), sizeof(rt_size));
+        uint32_t rt_id = loadFromWasmMemory<uint32_t>(header.data());
+        uint32_t rt_size = loadFromWasmMemory<uint32_t>(header.data() + sizeof(rt_id));
         return {rt_id, rt_size};
     }
 
@@ -276,7 +271,7 @@ public:
 
             /// Patch rtSize at (ptr - 4); `__new` set it to `max_bytes`.
             auto rt_size_slot = compartment->getMemory(ptr - header_offset_rt_size, sizeof(WasmSizeT));
-            std::memcpy(rt_size_slot.data(), &actual_bytes, sizeof(actual_bytes));
+            storeToWasmMemory<WasmSizeT>(rt_size_slot.data(), actual_bytes);
         }
         return ptr;
     }

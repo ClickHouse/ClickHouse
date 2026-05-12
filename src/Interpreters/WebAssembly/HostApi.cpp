@@ -79,9 +79,8 @@ static std::string decodeAssemblyScriptString(WasmCompartment * compartment, Was
     if (ptr < header_size)
         throw Exception(ErrorCodes::WASM_ERROR, "Illegal AssemblyScript string pointer {}", ptr);
 
-    uint32_t rt_size = 0;
     auto header = compartment->getMemory(ptr - header_size, header_size);
-    std::memcpy(&rt_size, header.data(), sizeof(rt_size));
+    uint32_t rt_size = loadFromWasmMemory<uint32_t>(header.data());
 
     /// rtSize is the byte length; AS strings are UTF-16, so length is rt_size / 2.
     if (rt_size == 0 || rt_size % 2 != 0 || rt_size > (1u << 24))

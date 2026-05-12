@@ -235,17 +235,9 @@ public:
 
         auto raw_buffer_span = compartment->getMemory(handle, sizeof(WasmBuffer));
         const auto * raw_buffer_ptr = raw_buffer_span.data();
-        WasmBuffer buffer;
-        if (reinterpret_cast<uintptr_t>(raw_buffer_ptr) % alignof(WasmBuffer) != 0)
-        {
-            std::memcpy(&buffer, raw_buffer_ptr, sizeof(WasmBuffer));
-        }
-        else
-        {
-            buffer = *reinterpret_cast<const WasmBuffer *>(raw_buffer_ptr);
-        }
-
-        return compartment->getMemory(buffer.ptr, buffer.size);
+        auto ptr = loadFromWasmMemory<WasmPtr>(raw_buffer_ptr);
+        auto size = loadFromWasmMemory<WasmSizeT>(raw_buffer_ptr + sizeof(WasmPtr));
+        return compartment->getMemory(ptr, size);
     }
 
 private:
