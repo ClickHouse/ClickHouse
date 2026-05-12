@@ -1004,6 +1004,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             modified_read_settings.remote_fs_buffer_size,
             modified_read_settings.prefetch_buffer_size);
 
+    /// Ensure the disk-level DC flag is consistent with the table-engine decision.
+    /// `table_engine_read_through_distributed_cache` is a separate setting that enables DC
+    /// for table engine reads. `readWithDistributedCache` checks `read_through_distributed_cache`
+    /// (the disk-level flag) internally, so it must be set when the pipeline uses DC.
+    if (use_distributed_cache)
+        modified_read_settings.read_through_distributed_cache = true;
+
     ReadPipeline pipeline;
 
     StoredObject stored_object(object_info.getPath(), "", object_size);
