@@ -147,6 +147,9 @@ namespace FunctionSignatures
     {
         std::variant<DataTypePtr, Field> value;
         std::optional<size_t> captured_at_arg_num;
+        /// Optional element name — used when this Value flows into the Tuple type-function
+        /// as a way to name tuple elements (see TypeFunctionNamedField).
+        std::string name;
 
         explicit Value(const DataTypePtr & type) : value(type) {}
         explicit Value(const Field & field) : value(field) {}

@@ -915,6 +915,17 @@ bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
         }
     }
 
+    /// String literal — used inside return-type expressions, e.g. `NamedField('origin', UInt64)`.
+    if (pos->type == TokenType::StringLiteral)
+    {
+        ReadBufferFromMemory buf(pos->begin, pos->end - pos->begin);
+        String value;
+        readQuotedStringWithSQLStyle(value, buf);
+        res = std::make_shared<ConstantTypeExpression>(Value(Field(value)));
+        ++pos;
+        return true;
+    }
+
     TokenIterator begin = pos;
     std::string name;
     TypeExpressions children;

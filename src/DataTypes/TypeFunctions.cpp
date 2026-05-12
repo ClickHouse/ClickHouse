@@ -70,14 +70,51 @@ public:
     {
         if (args.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function Tuple requires at least one element");
+
         DataTypes elems;
+        Strings names;
         elems.reserve(args.size());
+        names.reserve(args.size());
+        bool any_named = false;
         for (const Value & arg : args)
+        {
             elems.emplace_back(arg.type());
+            names.emplace_back(arg.name);
+            if (!arg.name.empty())
+                any_named = true;
+        }
+
+        if (any_named)
+        {
+            /// All elements must be named (mixing named and unnamed is not a valid Tuple).
+            for (size_t i = 0; i < args.size(); ++i)
+                if (names[i].empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Tuple element {} has no name but other elements are named — "
+                        "either all elements must be wrapped in NamedField or none", i + 1);
+            return Value(DataTypePtr(std::make_shared<DataTypeTuple>(elems, names)));
+        }
         return Value(DataTypePtr(std::make_shared<DataTypeTuple>(elems)));
     }
 
     std::string name() const override { return "Tuple"; }
+};
+
+/// Attach a name to a type. Only meaningful inside the Tuple type-function — flows through
+/// the Value::name field. Syntax: `NamedField('field_name', Type)`.
+class TypeFunctionNamedField : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "NamedField requires exactly 2 arguments (name, type)");
+        Value res = args[1];
+        res.name = args[0].field().safeGet<String>();
+        return res;
+    }
+
+    std::string name() const override { return "NamedField"; }
 };
 
 class TypeFunctionMap : public ITypeFunction
@@ -333,6 +370,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionLeastSupertype>();
     factory.registerElement<TypeFunctionArray>();
     factory.registerElement<TypeFunctionTuple>();
+    factory.registerElement<TypeFunctionNamedField>();
     factory.registerElement<TypeFunctionMap>();
     factory.registerElement<TypeFunctionFixedString>();
     factory.registerElement<TypeFunctionDateTime>();

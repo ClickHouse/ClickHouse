@@ -204,6 +204,20 @@ GTEST_TEST(FunctionSignature, DateTime64ScaleFromSource)
         "DateTime64(2, 'UTC')");
 }
 
+GTEST_TEST(FunctionSignature, NamedTuple)
+{
+    /// Build a named tuple via NamedField wrappers inside Tuple(...).
+    String sig = "(UInt64) -> Tuple(NamedField('origin', UInt64), NamedField('destination', UInt64))";
+    EXPECT_EQ(
+        checkSignature(sig, {makeColumn("UInt64")}),
+        "Tuple(origin UInt64, destination UInt64)");
+
+    /// Unnamed Tuple still works.
+    EXPECT_EQ(
+        checkSignature("(UInt64) -> Tuple(UInt64, UInt64)", {makeColumn("UInt64")}),
+        "Tuple(UInt64, UInt64)");
+}
+
 GTEST_TEST(FunctionSignature, DateTime64SubsecondMinScale)
 {
     /// max(scaleOf(T), 6) — used by toStartOfMicrosecond etc.
