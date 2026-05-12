@@ -482,8 +482,6 @@ bool Client::processBuzzHouseQuery(const String & full_query)
 {
     bool server_up = true;
 
-    have_error = false;
-    error_code = 0;
     if (!processQueryText(full_query))
     {
         have_error = true;
@@ -667,7 +665,7 @@ bool Client::buzzHouse()
             else
             {
                 const uint32_t correctness_oracle = 20 * static_cast<uint32_t>(fuzz_config->allow_query_oracles);
-                const uint32_t settings_oracle = 30 * static_cast<uint32_t>(fuzz_config->allow_query_oracles);
+                const uint32_t settings_oracle = 20 * static_cast<uint32_t>(fuzz_config->allow_query_oracles);
                 const uint32_t dump_oracle = 10
                     * static_cast<uint32_t>(fuzz_config->allow_query_oracles && fuzz_config->use_dump_table_oracle > 0
                                             && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
@@ -755,7 +753,7 @@ bool Client::buzzHouse()
 
                     const uint32_t optimize_table = 20 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges);
                     const uint32_t reattach_table = 20 * static_cast<uint32_t>(test_content);
-                    const uint32_t backup_restore_table = 5 * static_cast<uint32_t>(test_content);
+                    const uint32_t backup_restore_table = 20 * static_cast<uint32_t>(test_content);
                     const uint32_t alter_update_table = 20 * static_cast<uint32_t>(test_content);
                     const uint32_t insert_count_table = 20 * static_cast<uint32_t>(test_content && tbl.get().areInsertsAppends());
                     const uint32_t dump_table = 40;
@@ -783,7 +781,7 @@ bool Client::buzzHouse()
                         strategy = BuzzHouse::DumpOracleStrategy::ALTER_UPDATE;
                     }
                     else if (
-                        insert_count_table
+                        alter_update_table
                         && nopt2 < (optimize_table + reattach_table + backup_restore_table + alter_update_table + insert_count_table + 1))
                     {
                         strategy = BuzzHouse::DumpOracleStrategy::INSERT_COUNT;
@@ -863,7 +861,7 @@ bool Client::buzzHouse()
                     fuzz_config->outf << full_query2 << std::endl;
                     if (clickhouse_only)
                     {
-                        err_res = external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, full_query2) ? 0 : 1;
+                        err_res = external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, full_query2);
                     }
                     else
                     {
@@ -929,11 +927,6 @@ bool Client::buzzHouse()
     }
     if (!no_timeout)
     {
-        /// Don't let the last query's error code become the exit code
-        have_error = false;
-        error_code = 0;
-        server_exception.reset();
-        client_exception.reset();
         LOG_INFO(fuzz_config->log, "The fuzzing time limit has been reached, stopping fuzzing");
     }
     if (!no_eof)

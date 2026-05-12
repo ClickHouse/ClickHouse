@@ -98,19 +98,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         written_offset_substreams);
 }
 
-void MergeTreeDataPartWide::addStreamToColumnSize(const String & stream_name, ColumnSize & size) const
-{
-    auto bin_checksum = checksums.files.find(stream_name + ".bin");
-    if (bin_checksum != checksums.files.end())
-    {
-        size.data_compressed += bin_checksum->second.file_size;
-        size.data_uncompressed += bin_checksum->second.uncompressed_size;
-    }
-
-    auto mrk_checksum = checksums.files.find(stream_name + getMarksFileExtension());
-    if (mrk_checksum != checksums.files.end())
-        size.marks += mrk_checksum->second.file_size;
-}
 
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.
@@ -120,6 +107,20 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     ColumnSize size;
     if (checksums.empty())
         return size;
+
+    auto add_stream_size = [&](const String & stream_name)
+    {
+        auto bin_checksum = checksums.files.find(stream_name + ".bin");
+        if (bin_checksum != checksums.files.end())
+        {
+            size.data_compressed += bin_checksum->second.file_size;
+            size.data_uncompressed += bin_checksum->second.uncompressed_size;
+        }
+
+        auto mrk_checksum = checksums.files.find(stream_name + getMarksFileExtension());
+        if (mrk_checksum != checksums.files.end())
+            size.marks += mrk_checksum->second.file_size;
+    };
 
     if (column.type->hasDynamicSubcolumns() && !columns_substreams.empty())
     {
@@ -131,7 +132,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
         for (const auto & substream : substreams)
         {
             if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, DATA_FILE_EXTENSION, checksums))
-                addStreamToColumnSize(*stream_name, size);
+                add_stream_size(*stream_name);
         }
     }
     else
@@ -146,22 +147,9 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
             if (processed_substreams && !processed_substreams->insert(*stream_name).second)
                 return;
 
-            addStreamToColumnSize(*stream_name, size);
+            add_stream_size(*stream_name);
         }, column.type, getColumnSample(column));
     }
-
-    return size;
-}
-
-
-ColumnSize MergeTreeDataPartWide::calculateSubcolumnSize(const String & subcolumn_name) const
-{
-    ColumnSize size;
-    if (checksums.empty())
-        return size;
-
-    for (const auto & stream : getListOfStreamsForColumn(getColumn(subcolumn_name)))
-        addStreamToColumnSize(stream, size);
 
     return size;
 }
@@ -345,31 +333,77 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
     {
         if (require_part_metadata)
         {
-            for (const auto & name_type : columns)
+            const auto & cols_substreams = getColumnsSubstreams();
+            if (!cols_substreams.empty())
             {
-                getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+                /// Use columns_substreams.txt which contains the exact list of substream
+                /// file names written at part creation time. This is more reliable than
+                /// enumerateStreams for types with complex serialization (e.g. JSON)
+                /// where enumerateStreams needs deserialization state to enumerate
+                /// the correct streams.
+                size_t col_idx = 0;
+                for (const auto & name_type : columns)
                 {
-                    /// Skip ephemeral subcolumns that don't store any real data.
-                    if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                        return;
+                    const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
+                    for (const auto & substream_name : substreams)
+                    {
+                        auto bin_file_name = getStreamNameOrHash(substream_name, DATA_FILE_EXTENSION, checksums);
+                        if (!bin_file_name)
+                            throw Exception(
+                                ErrorCodes::NO_FILE_IN_DATA_PART,
+                                "No stream ({}{}) file checksum for column {} in part {}",
+                                substream_name,
+                                DATA_FILE_EXTENSION,
+                                name_type.name,
+                                getDataPartStorage().getFullPath());
 
-                    auto stream_name = getStreamNameForColumn(name_type, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
-                    if (!stream_name)
-                        throw Exception(
-                            ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "No stream ({}{}) file checksum for column {} in part {}",
-                            ISerialization::getFileNameForStream(name_type, substream_path, ISerialization::StreamFileNameSettings(*storage.getSettings())),
-                            DATA_FILE_EXTENSION,
-                            name_type.name,
-                            getDataPartStorage().getFullPath());
+                        auto mrk_file_name = *bin_file_name + marks_file_extension;
+                        if (!checksums.files.contains(mrk_file_name))
+                            throw Exception(
+                                ErrorCodes::NO_FILE_IN_DATA_PART,
+                                "No {} file checksum for column {} in part {} ",
+                                mrk_file_name, name_type.name, getDataPartStorage().getFullPath());
+                    }
+                    ++col_idx;
+                }
+            }
+            else
+            {
+                /// Fallback for old parts without columns_substreams.txt.
+                /// Disable enumerate_dynamic_streams because without deserialization state
+                /// we don't know the correct serialization version for types like JSON,
+                /// and enumerating dynamic streams with wrong defaults would produce
+                /// incorrect stream names leading to false positive errors.
+                for (const auto & name_type : columns)
+                {
+                    auto serialization = getSerialization(name_type.name);
+                    ISerialization::EnumerateStreamsSettings settings;
+                    settings.enumerate_dynamic_streams = false;
+                    auto data = ISerialization::SubstreamData(serialization).withType(name_type.type).withColumn(name_type.type->createColumn());
+                    serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
+                    {
+                        /// Skip ephemeral subcolumns that don't store any real data.
+                        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                            return;
 
-                    auto mrk_file_name = *stream_name + marks_file_extension;
-                    if (!checksums.files.contains(mrk_file_name))
-                        throw Exception(
-                            ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "No {} file checksum for column {} in part {} ",
-                            mrk_file_name, name_type.name, getDataPartStorage().getFullPath());
-                });
+                        auto stream_name = getStreamNameForColumn(name_type, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+                        if (!stream_name)
+                            throw Exception(
+                                ErrorCodes::NO_FILE_IN_DATA_PART,
+                                "No stream ({}{}) file checksum for column {} in part {}",
+                                ISerialization::getFileNameForStream(name_type, substream_path, ISerialization::StreamFileNameSettings(*storage.getSettings())),
+                                DATA_FILE_EXTENSION,
+                                name_type.name,
+                                getDataPartStorage().getFullPath());
+
+                        auto mrk_file_name = *stream_name + marks_file_extension;
+                        if (!checksums.files.contains(mrk_file_name))
+                            throw Exception(
+                                ErrorCodes::NO_FILE_IN_DATA_PART,
+                                "No {} file checksum for column {} in part {} ",
+                                mrk_file_name, name_type.name, getDataPartStorage().getFullPath());
+                    }, data);
+                }
             }
         }
     }
@@ -377,33 +411,76 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
     {
         /// Check that all marks are nonempty and have the same size.
         std::optional<UInt64> marks_size;
-        for (const auto & name_type : columns)
+
+        const auto & cols_substreams = getColumnsSubstreams();
+        if (!cols_substreams.empty())
         {
-            getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            for (size_t col_idx = 0; col_idx != columns.size(); ++col_idx)
             {
-                auto stream_name = getStreamNameForColumn(name_type, substream_path, marks_file_extension, getDataPartStorage(), storage.getSettings());
+                const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
+                for (const auto & substream_name : substreams)
+                {
+                    auto stream_name = getStreamNameOrHash(substream_name, marks_file_extension, getDataPartStorage());
 
-                /// Missing file is Ok for case when new column was added.
-                if (!stream_name)
-                    return;
+                    /// Missing file is Ok for case when new column was added.
+                    if (!stream_name)
+                        continue;
 
-                auto file_path = *stream_name + marks_file_extension;
-                UInt64 file_size = getDataPartStorage().getFileSize(file_path);
+                    auto file_path = *stream_name + marks_file_extension;
+                    UInt64 file_size = getDataPartStorage().getFileSize(file_path);
 
-                if (!file_size)
-                    throw Exception(
-                        ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                        "Part {} is broken: {} is empty.",
-                        getDataPartStorage().getFullPath(),
-                        std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
+                    if (!file_size)
+                        throw Exception(
+                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                            "Part {} is broken: {} is empty.",
+                            getDataPartStorage().getFullPath(),
+                            std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
 
-                if (!marks_size)
-                    marks_size = file_size;
-                else if (file_size != *marks_size)
-                    throw Exception(
-                        ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                        "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
-            });
+                    if (!marks_size)
+                        marks_size = file_size;
+                    else if (file_size != *marks_size)
+                        throw Exception(
+                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                            "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
+                }
+            }
+        }
+        else
+        {
+            /// Fallback for old parts without columns_substreams.txt.
+            /// Disable enumerate_dynamic_streams (see comment above).
+            for (const auto & name_type : columns)
+            {
+                auto serialization = getSerialization(name_type.name);
+                ISerialization::EnumerateStreamsSettings settings;
+                settings.enumerate_dynamic_streams = false;
+                auto data = ISerialization::SubstreamData(serialization).withType(name_type.type).withColumn(name_type.type->createColumn());
+                serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    auto stream_name = getStreamNameForColumn(name_type, substream_path, marks_file_extension, getDataPartStorage(), storage.getSettings());
+
+                    /// Missing file is Ok for case when new column was added.
+                    if (!stream_name)
+                        return;
+
+                    auto file_path = *stream_name + marks_file_extension;
+                    UInt64 file_size = getDataPartStorage().getFileSize(file_path);
+
+                    if (!file_size)
+                        throw Exception(
+                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                            "Part {} is broken: {} is empty.",
+                            getDataPartStorage().getFullPath(),
+                            std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
+
+                    if (!marks_size)
+                        marks_size = file_size;
+                    else if (file_size != *marks_size)
+                        throw Exception(
+                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                            "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
+                }, data);
+            }
         }
     }
 }
@@ -481,10 +558,6 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
 #ifndef NDEBUG
         /// Most trivial types
         if (rows_count != 0
-            /// Skip columns that are declared in metadata but not actually persisted in this part.
-            /// This can legitimately happen when concurrent ALTER ADD/DROP COLUMN and mutations
-            /// produce a part where a column is in the columns list but has no data file.
-            && size.data_uncompressed != 0
             && column.type->isValueRepresentedByNumber()
             && !column.type->haveSubtypes()
             && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
@@ -501,41 +574,6 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
         }
 #endif
     }
-}
-
-std::vector<String> MergeTreeDataPartWide::getListOfStreamsForColumn(const NameAndTypePair & column) const
-{
-    NamesAndTypesList cols;
-    cols.emplace_back(column);
-
-    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
-    StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
-
-    /// We need to read only prefixes, so no data will be read.
-    /// Use read settings without prefetches/filesystem cache/etc.
-    MergeTreeReaderSettings settings = MergeTreeReaderSettings::createFromSettings(getReadSettingsForMetadata());
-    settings.can_read_part_without_marks = true;
-    settings.read_only_column_sample = true;
-
-    auto alter_conversions = std::make_shared<AlterConversions>();
-    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
-
-    MergeTreeReaderPtr reader = createMergeTreeReaderWide(
-        part_info,
-        cols,
-        storage_snapshot_ptr,
-        storage.getSettings(),
-        MarkRanges{MarkRange(0, getMarksCount())},
-        /*virtual_fields=*/{},
-        /*uncompressed_cache=*/{},
-        storage.getContext()->getMarkCache().get(),
-        nullptr,
-        settings,
-        ValueSizeMap{},
-        ReadBufferFromFileBase::ProfileCallback{});
-
-    auto & reader_wide = assert_cast<MergeTreeReaderWide &>(*reader);
-    return reader_wide.getAllColumnsSubstreams()[column.name];
 }
 
 }

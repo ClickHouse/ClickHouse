@@ -61,17 +61,17 @@ bool IColumn::Options::notFull(WriteBufferFromOwnString & buf) const
     return optimize_const_name_size < 0 || static_cast<Int64>(buf.count()) <= optimize_const_name_size;
 }
 
-String IColumn::getValueName(size_t n, const Options & options) const
+std::pair<String, DataTypePtr> IColumn::getValueNameAndType(size_t n, const Options & options) const
 {
     WriteBufferFromOwnString name_buf;
-    getValueNameImpl(name_buf, n, options);
+    const auto & type = getValueNameAndTypeImpl(name_buf, n, options);
     if (options.notFull(name_buf))
-        return name_buf.str();
+        return {name_buf.str(), type};
 
     HashState h;
     updateHashWithValue(n, h);
     auto p = getSipHash128AsPair(h);
-    return fmt::format("{}_{}", p.high64, p.low64);
+    return {fmt::format("{}_{}", p.high64, p.low64), type};
 }
 
 String IColumn::dumpStructure() const
@@ -95,6 +95,12 @@ void IColumn::doInsertFrom(const IColumn & src, size_t n)
 #endif
 {
     insert(src[n]);
+}
+
+void IColumn::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    for (size_t i = begin; i < end; ++i)
+        updateHashWithValue(i, hash);
 }
 
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const

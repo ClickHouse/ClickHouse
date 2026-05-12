@@ -9,7 +9,6 @@
 #include <Common/SettingSource.h>
 #include <IO/WriteHelpers.h>
 
-#include <bitset>
 #include <string_view>
 #include <unordered_map>
 

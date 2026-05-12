@@ -32,7 +32,6 @@ namespace DB
 struct ManifestFileCacheKey
 {
     String manifest_file_path;
-    size_t manifest_file_byte_size;
     Int64 added_sequence_number;
     Int64 added_snapshot_id;
     Iceberg::ManifestFileContentType content_type;
@@ -48,7 +47,7 @@ struct IcebergMetadataFilesCacheCell : private boost::noncopyable
     /// - metadata.json content
     /// - manifest list consists of cache keys which will retrieve the manifest file from cache
     /// - manifest file
-    std::variant<String, ManifestFileCacheKeys, Iceberg::ManifestFileCacheableInfo> cached_element;
+    std::variant<String, ManifestFileCacheKeys, Iceberg::ManifestFilePtr> cached_element;
     Int64 memory_bytes;
 
     explicit IcebergMetadataFilesCacheCell(String && metadata_json_str)
@@ -61,9 +60,9 @@ struct IcebergMetadataFilesCacheCell : private boost::noncopyable
         , memory_bytes(getMemorySizeOfManifestCacheKeys(std::get<ManifestFileCacheKeys>(cached_element)) + SIZE_IN_MEMORY_OVERHEAD)
     {
     }
-    explicit IcebergMetadataFilesCacheCell(Iceberg::ManifestFileCacheableInfo manifest_file_)
-        : cached_element(std::move(manifest_file_))
-        , memory_bytes(3 * std::get<Iceberg::ManifestFileCacheableInfo>(cached_element).file_bytes_size + SIZE_IN_MEMORY_OVERHEAD)
+    explicit IcebergMetadataFilesCacheCell(Iceberg::ManifestFilePtr manifest_file_)
+        : cached_element(manifest_file_)
+        , memory_bytes(std::get<Iceberg::ManifestFilePtr>(cached_element)->getSizeInMemory() + SIZE_IN_MEMORY_OVERHEAD)
     {
     }
 private:
@@ -133,11 +132,11 @@ public:
     }
 
     template <typename LoadFunc>
-    Iceberg::ManifestFileCacheableInfo getOrSetManifestFile(const String & data_path, LoadFunc && load_fn)
+    Iceberg::ManifestFilePtr getOrSetManifestFile(const String & data_path, LoadFunc && load_fn)
     {
         auto load_fn_wrapper = [&]()
         {
-            Iceberg::ManifestFileCacheableInfo manifest_file = load_fn();
+            Iceberg::ManifestFilePtr manifest_file = load_fn();
             return std::make_shared<IcebergMetadataFilesCacheCell>(manifest_file);
         };
         auto result = Base::getOrSet(data_path, load_fn_wrapper);
@@ -145,7 +144,7 @@ public:
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
-        return std::get<Iceberg::ManifestFileCacheableInfo>(result.first->cached_element);
+        return std::get<Iceberg::ManifestFilePtr>(result.first->cached_element);
     }
 
 private:

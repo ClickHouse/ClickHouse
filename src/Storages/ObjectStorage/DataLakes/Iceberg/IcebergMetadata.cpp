@@ -529,6 +529,16 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN
             && command.type != AlterCommand::Type::MODIFY_COLUMN && command.type != AlterCommand::Type::RENAME_COLUMN)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by Iceberg storage", command.type);
+
+        if (command.type == AlterCommand::Type::MODIFY_COLUMN && command.to_remove != AlterCommand::RemoveProperty::NO_PROPERTY)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Removing column property '{}' from column '{}' is not supported by Iceberg storage", command.to_remove, command.column_name);
+
+        if (command.type == AlterCommand::Type::MODIFY_COLUMN && !command.data_type)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Modifying column '{}' without changing its type is not supported by Iceberg storage", command.column_name);
     }
 }
 
@@ -783,10 +793,16 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
 
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
-        auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
+        auto manifest_file_ptr = getManifestFile(
+            object_storage,
+            persistent_components,
+            context,
+            log,
+            manifest_list_entry.manifest_file_path,
+            manifest_list_entry.added_sequence_number,
+            manifest_list_entry.added_snapshot_id);
 
-        if (!files_handle.areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
+        if (!manifest_file_ptr->areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
             return false;
     }
     return true;
@@ -814,10 +830,16 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     Int64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
-        auto manifest_file_ptr = getManifestFileEntriesHandle(
-            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
-        auto data_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
-        auto position_deletes_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
+        auto manifest_file_ptr = getManifestFile(
+            object_storage,
+            persistent_components,
+            local_context,
+            log,
+            manifest_list_entry.manifest_file_path,
+            manifest_list_entry.added_sequence_number,
+            manifest_list_entry.added_snapshot_id);
+        auto data_count = manifest_file_ptr->getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        auto position_deletes_count = manifest_file_ptr->getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
         if (!data_count.has_value() || !position_deletes_count.has_value())
             return {};
 
@@ -843,9 +865,15 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     Int64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
-        auto manifest_file_ptr = getManifestFileEntriesHandle(
-            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
-        auto count = manifest_file_ptr.getBytesCountInAllDataFilesExcludingDeleted();
+        auto manifest_file_ptr = getManifestFile(
+            object_storage,
+            persistent_components,
+            local_context,
+            log,
+            manifest_list_entry.manifest_file_path,
+            manifest_list_entry.added_sequence_number,
+            manifest_list_entry.added_snapshot_id);
+        auto count = manifest_file_ptr->getBytesCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())
             return {};
 

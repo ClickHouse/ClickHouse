@@ -280,28 +280,8 @@ def get_parallel_sequential_tests_to_run(
             return f"{test_arg}/" in test_file
         if test_arg.endswith(".py"):
             return test_file == test_arg
-        parts = test_arg.split("::", maxsplit=1)
-        test_module = parts[0]
-        if test_file.removesuffix(".py") != test_module.removesuffix(".py"):
-            return False
-        # When a specific test function is requested, verify it exists in the
-        # file.  Targeted CI runs pull test names from CIDB, but the test may
-        # have been moved or removed since the record was written.  Passing a
-        # stale nodeID to pytest causes the entire collection to fail with
-        # exit-code 5 ("no tests collected"), aborting all other tests too.
-        if len(parts) > 1:
-            test_func = parts[1].split("[")[0]  # strip parametrization
-            file_path = Path("./tests/integration/") / test_file
-            try:
-                content = file_path.read_text()
-                if f"def {test_func}(" not in content:
-                    print(
-                        f"WARNING: test function '{test_func}' not found in {test_file}, skipping stale target"
-                    )
-                    return False
-            except OSError:
-                return False
-        return True
+        test_arg = test_arg.split("::", maxsplit=1)[0]
+        return test_file.removesuffix(".py") == test_arg.removesuffix(".py")
 
     parallel_tests = []
     sequential_tests = []
@@ -651,14 +631,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         module_repeat_cnt = FLAKY_CHECK_MODULE_REPEAT_COUNT
 
     failed_test_cases = []
-
-    # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host.
-    # Do this only in CI (non-local runs) and via a non-interactive privileged helper.
-    if not info.is_local_run:
-        try:
-            Utils.clear_dmesg()
-        except Exception as ex:
-            print(f"Failed to clear dmesg before integration tests: {ex}")
 
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):

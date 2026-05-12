@@ -269,6 +269,16 @@ struct KeeperHTTPContext : public IHTTPContext
         return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
     }
 
+    uint64_t getMaxRequestHeaderSize() const override
+    {
+        return context->getConfigRef().getUInt64("keeper_server.http_max_request_header_size", 0);
+    }
+
+    Poco::Timespan getHeadersReadTimeout() const override
+    {
+        return {context->getConfigRef().getInt64("keeper_server.http_headers_read_timeout", 0), 0};
+    }
+
     Poco::Timespan getReceiveTimeout() const override
     {
         return {context->getConfigRef().getInt64("keeper_server.http_receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0};
@@ -658,10 +668,6 @@ try
         main_config_reloader.reset();
 
         async_metrics.stop();
-
-        /// Signal Keeper TCP handlers to close before waiting for connections,
-        /// otherwise they keep running indefinitely and block shutdown.
-        global_context->signalKeeperDispatcherShutdown();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         size_t current_connections = 0;

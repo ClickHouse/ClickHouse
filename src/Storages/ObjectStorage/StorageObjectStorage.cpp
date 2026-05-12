@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
-#include <Core/LogsLevel.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -34,6 +33,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+
 
 namespace DB
 {
@@ -79,6 +79,9 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         nullptr, // read_keys
         {} // file_progress_callback
     );
+    /// This iterator is used only to get a sample path for hive partitioning,
+    /// not for actual data reading, so do not emit ProfileEvents.
+    file_iterator->setEmitProfileEvents(false);
 
     const auto path = configuration->getRawPath();
 
@@ -132,7 +135,7 @@ StorageObjectStorage::StorageObjectStorage(
         is_datalake_query, columns_in_table_or_function_definition.toString(true));
 
     bool is_delta_lake_cdf = context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1
-            || context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1;
+            || context->getSettingsRef()[Setting::delta_lake_snapshot_end_version] != -1;
 
     if (!is_table_function && is_delta_lake_cdf)
     {
@@ -151,10 +154,10 @@ StorageObjectStorage::StorageObjectStorage(
     {
         if (!do_lazy_init)
         {
-            if (is_table_function)
-                configuration->lazyInitializeIfNeeded(object_storage, context);
-            else
-                configuration->update(object_storage, context);
+            configuration->update(
+                object_storage,
+                context,
+                /* if_not_updated_before */ is_table_function);
             updated_configuration = true;
         }
     }
@@ -174,6 +177,8 @@ StorageObjectStorage::StorageObjectStorage(
     ColumnsDescription columns{columns_in_table_or_function_definition};
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+    else
+        validateSupportedColumns(columns, *configuration);
 
     configuration->check(context);
 
@@ -202,25 +207,6 @@ StorageObjectStorage::StorageObjectStorage(
         columns_in_table_or_function_definition.empty(),
         format_settings,
         context);
-
-    bool validate_schema_with_remote = !need_resolve_columns_or_format
-        && !configuration->isDataLakeConfiguration()
-        && !columns_in_table_or_function_definition.empty()
-        && !is_table_function
-        && mode == LoadingStrictnessLevel::CREATE
-        && !do_lazy_init;
-
-    validateColumns(
-        columns,
-        configuration_,
-        validate_schema_with_remote,
-        object_storage_,
-        &format_settings,
-        &sample_path,
-        context,
-        &hive_partition_columns_to_read_from_file_path,
-        &columns_in_table_or_function_definition,
-        log);
 
     // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
     if (!columns.empty() && file_columns.empty())
@@ -265,7 +251,7 @@ StorageObjectStorage::StorageObjectStorage(
         /// Additionally reload columns from the snapshot when the per-format setting is enabled.
         /// This is done eagerly because select queries for table functions may bypass
         /// updateExternalDynamicMetadataIfExists.
-        configuration->lazyInitializeIfNeeded(object_storage, context);
+        configuration->update(object_storage, context, /* if_not_updated_before */true);
         if (auto state = configuration->getTableStateSnapshot(context))
         {
             metadata.setDataLakeTableState(*state);
@@ -342,9 +328,12 @@ IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
     if (!configuration->isDataLakeConfiguration())
-    return nullptr;
+        return nullptr;
 
-configuration->update(object_storage, query_context);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ false);
 
     return configuration->getExternalMetadata();
 }
@@ -357,7 +346,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     /// Always force an update to pick up the latest snapshot version.
     /// Using if_not_updated_before=true would leave latest_snapshot_version
     /// stale from the first query and silently omit new files.
-    configuration->update(object_storage, query_context);
+    configuration->update(object_storage, query_context, /* if_not_updated_before */ false);
 
     auto state = configuration->getTableStateSnapshot(query_context);
     if (!state)
@@ -391,8 +380,10 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
     if (distributed_processing)
         return std::nullopt;
 
-    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
-
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ is_table_function);
     return configuration->totalRows(query_context);
 }
 
@@ -404,7 +395,10 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
     if (distributed_processing)
         return std::nullopt;
 
-    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ is_table_function);
     return configuration->totalBytes(query_context);
 }
 
@@ -424,7 +418,10 @@ void StorageObjectStorage::read(
     /// For data lake we did update in getExternalDynamicMetadata.
     if (!is_table_function && !configuration->isDataLakeConfiguration())
     {
-        configuration->update(object_storage, local_context);
+        configuration->update(
+            object_storage,
+            local_context,
+            /* if_not_updated_before */ false);
     }
 
 
@@ -467,7 +464,7 @@ void StorageObjectStorage::read(
                 return;
             }
         }
-        else if (auto end_version = settings[Setting::delta_lake_snapshot_start_version].value;
+        else if (auto end_version = settings[Setting::delta_lake_snapshot_end_version].value;
                  end_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
         {
             throw DB::Exception(
@@ -528,7 +525,10 @@ SinkToStoragePtr StorageObjectStorage::write(
     /// For data lake we did update in getExternalDynamicMetadata.
     if (!is_table_function && !configuration->isDataLakeConfiguration())
     {
-        configuration->update(object_storage, local_context);
+        configuration->update(
+            object_storage,
+            local_context,
+            /* if_not_updated_before */ false);
     }
 
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());

@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -55,6 +57,13 @@ void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
     hash.update(arr[n]);
     if (arr[n] == 0)
         getNestedColumn().updateHashWithValue(n, hash);
+}
+
+void ColumnNullable::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    const auto & arr = getNullMapData();
+    getNestedColumn().updateHashWithValueRange(begin, end, hash);
+    hash.update(reinterpret_cast<const char *>(&arr[begin]), (end - begin) * sizeof(arr[0]));
 }
 
 WeakHash32 ColumnNullable::getWeakHash32() const
@@ -115,16 +124,16 @@ void ColumnNullable::get(size_t n, Field & res) const
         getNestedColumn().get(n, res);
 }
 
-void ColumnNullable::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnNullable::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     if (isNullAt(n))
     {
         if (options.notFull(name_buf))
             name_buf << "NULL";
-        return;
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
     }
 
-    getNestedColumn().getValueNameImpl(name_buf, n, options);
+    return getNestedColumn().getValueNameAndTypeImpl(name_buf, n, options);
 }
 
 Float64 ColumnNullable::getFloat64(size_t n) const

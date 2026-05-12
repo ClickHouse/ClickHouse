@@ -4,7 +4,6 @@
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeCleanupThread.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -52,7 +51,6 @@ public:
         std::unique_ptr<MergeTreeSettings> settings_);
 
     void startup() override;
-    void flushAndPrepareForShutdown() override;
     void shutdown(bool is_drop) override;
 
     ~StorageMergeTree() override;
@@ -96,8 +94,6 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr query_context) override;
 
-    bool hasLightweightDeletedMask() const override;
-
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
 
@@ -132,13 +128,16 @@ private:
 
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
-    MergeTreeCleanupThread cleanup_thread;
 
     std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
 
     /// For block numbers.
     SimpleIncrement increment;
 
+    /// For clearOldParts
+    AtomicStopwatch time_after_previous_cleanup_parts;
+    /// For clearOldTemporaryDirectories.
+    AtomicStopwatch time_after_previous_cleanup_temporary_directories;
     /// For clearOldBrokenDetachedParts
     AtomicStopwatch time_after_previous_cleanup_broken_detached_parts;
 
@@ -310,7 +309,6 @@ private:
     friend class MergeTreeData;
     friend class MergePlainMergeTreeTask;
     friend class MutatePlainMergeTreeTask;
-    friend class MergeTreeCleanupThread;
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {

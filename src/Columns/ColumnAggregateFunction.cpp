@@ -1,5 +1,6 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -528,7 +529,7 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res = operator[](n);
 }
 
-void ColumnAggregateFunction::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     if (options.notFull(name_buf))
     {
@@ -536,6 +537,8 @@ void ColumnAggregateFunction::getValueNameImpl(WriteBufferFromOwnString & name_b
         func->serialize(data[n], buffer, version);
         writeQuoted(buffer.str(), name_buf);
     }
+
+    return DataTypeFactory::instance().get(type_string);
 }
 
 std::string_view ColumnAggregateFunction::getDataAt(size_t n) const

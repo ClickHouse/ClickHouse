@@ -78,7 +78,7 @@ static String numberColumn(RandomGenerator & rg, const bool can_negative, String
     if (iffunc)
     {
         buf += "if(";
-        buf += numberColumnEntry(rg, false, true);
+        buf += numberColumnEntry(rg, can_negative && rg.nextBool(), true);
         buf += ",";
     }
     buf += "CAST(";
@@ -190,85 +190,6 @@ SQLType * IntType::typeDeepCopy() const
 
 String IntType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    /// ~10% chance of a special boundary value
-    if (rg.nextSmallNumber() < 2)
-    {
-        if (is_unsigned)
-        {
-            switch (rg.randomInt<uint32_t>(0, 2))
-            {
-                case 0:
-                    return "0";
-                case 1:
-                    return "1";
-                case 2: /// Maximum value per width
-                    switch (size)
-                    {
-                        case 8:
-                            return "255";
-                        case 16:
-                            return "65535";
-                        case 32:
-                            return "4294967295";
-                        case 64:
-                            return "18446744073709551615";
-                        case 128:
-                            return "340282366920938463463374607431768211455";
-                        default:
-                            return "115792089237316195423570985008687907853269984665640564039457584007913129639935";
-                    }
-                default:
-                    UNREACHABLE();
-            }
-        }
-        else
-        {
-            switch (rg.randomInt<uint32_t>(0, 4))
-            {
-                case 0:
-                    return "0";
-                case 1:
-                    return "1";
-                case 2:
-                    return "-1";
-                case 3: /// Minimum (most negative) value per width
-                    switch (size)
-                    {
-                        case 8:
-                            return "-128";
-                        case 16:
-                            return "-32768";
-                        case 32:
-                            return "-2147483648";
-                        case 64:
-                            return "-9223372036854775808";
-                        case 128:
-                            return "-170141183460469231731687303715884105728";
-                        default:
-                            return "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
-                    }
-                case 4: /// Maximum value per width
-                    switch (size)
-                    {
-                        case 8:
-                            return "127";
-                        case 16:
-                            return "32767";
-                        case 32:
-                            return "2147483647";
-                        case 64:
-                            return "9223372036854775807";
-                        case 128:
-                            return "170141183460469231731687303715884105727";
-                        default:
-                            return "57896044618658097711785492504343953926634992332820282019728792003956564819967";
-                    }
-                default:
-                    UNREACHABLE();
-            }
-        }
-    }
-
     if (is_unsigned)
     {
         switch (size)
@@ -517,7 +438,7 @@ String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerat
 {
     const bool allow_func = gen.getAllowNotDetermistic();
     String ret
-        = extended ? rg.nextDateTime64("'", allow_func, precision.has_value()) : rg.nextDateTime("'", allow_func, precision.has_value());
+        = extended ? rg.nextDateTime64("'", allow_func, rg.nextSmallNumber() < 8) : rg.nextDateTime("'", allow_func, precision.has_value());
 
     ret += allow_func ? fmt::format("::{}", typeName(false, false)) : "";
     return ret;
@@ -598,7 +519,7 @@ SQLType * DecimalType::typeDeepCopy() const
 String DecimalType::appendDecimalValue(RandomGenerator & rg, const bool use_func, const DecimalType * dt)
 {
     const uint32_t right = dt->scale.value_or(0);
-    const uint32_t left = dt->precision.value_or(9) - right;
+    const uint32_t left = dt->precision.value_or(10) - right;
 
     return appendDecimal(rg, use_func, left, right);
 }
@@ -1589,15 +1510,12 @@ SQLType * AggregateFunctionType::typeDeepCopy() const
 
 String AggregateFunctionType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    String ret = SQLFunc_Name(aggregate).substr(4);
-
-    ret += "State(";
-    if (!subtypes.empty())
+    /// This doesn't work yet I think
+    if (subtypes.empty())
     {
-        ret += subtypes[0]->appendRandomRawValue(rg, gen);
+        return std::to_string(rg.nextRandomUInt64());
     }
-    ret += ")";
-    return ret;
+    return subtypes[0]->appendRandomRawValue(rg, gen);
 }
 
 String AggregateFunctionType::insertNumberEntry(
@@ -2477,76 +2395,37 @@ String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t l
         }
         ret += "('";
     }
-
-    /// ~20% chance of a special boundary value
-    if (rg.nextSmallNumber() < 3)
+    ret += rg.nextBool() ? "-" : "";
+    if (left > 0)
     {
-        switch (rg.randomInt<uint32_t>(0, 3))
+        std::uniform_int_distribution<uint32_t> next_dist(1, left);
+        const uint32_t nlen = next_dist(rg.generator);
+
+        ret += std::max<char>(rg.nextDigit(), '1');
+        for (uint32_t j = 1; j < nlen; j++)
         {
-            case 0:
-                /// Zero
-                ret += "0.0";
-                break;
-            case 1:
-                /// One / negative one
-                ret += rg.nextBool() ? "-1.0" : "1.0";
-                break;
-            case 2:
-                /// Maximum representable value: all nines
-                ret += rg.nextBool() ? "-" : "";
-                for (uint32_t j = 0; j < std::max(1u, left); j++)
-                    ret += '9';
-                ret += '.';
-                for (uint32_t j = 0; j < std::max(1u, right); j++)
-                    ret += '9';
-                break;
-            case 3:
-                /// Smallest non-zero: 0.00...01 (or 1.0 when scale == 0)
-                ret += rg.nextBool() ? "-" : "";
-                ret += "0.";
-                for (uint32_t j = 0; j + 1 < std::max(1u, right); j++)
-                    ret += '0';
-                ret += '1';
-                break;
-            default:
-                UNREACHABLE();
+            ret += rg.nextDigit();
         }
     }
     else
     {
-        ret += rg.nextBool() ? "-" : "";
-        if (left > 0)
-        {
-            std::uniform_int_distribution<uint32_t> next_dist(1, left);
-            const uint32_t nlen = next_dist(rg.generator);
+        ret += "0";
+    }
+    ret += ".";
+    if (right > 0)
+    {
+        std::uniform_int_distribution<uint32_t> next_dist(1, right);
+        const uint32_t nlen = next_dist(rg.generator);
 
-            ret += std::max<char>(rg.nextDigit(), '1');
-            for (uint32_t j = 1; j < nlen; j++)
-            {
-                ret += rg.nextDigit();
-            }
-        }
-        else
+        for (uint32_t j = 0; j < nlen; j++)
         {
-            ret += "0";
-        }
-        ret += ".";
-        if (right > 0)
-        {
-            std::uniform_int_distribution<uint32_t> next_dist(1, right);
-            const uint32_t nlen = next_dist(rg.generator);
-
-            for (uint32_t j = 0; j < nlen; j++)
-            {
-                ret += rg.nextDigit();
-            }
-        }
-        else
-        {
-            ret += "0";
+            ret += rg.nextDigit();
         }
     }
-
+    else
+    {
+        ret += "0";
+    }
     if (use_func)
     {
         ret += fmt::format("', {})", right);
@@ -2554,114 +2433,84 @@ String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t l
     return ret;
 }
 
-/// Returns a single geo point as (lon, lat).
-/// 80% of the time uses WGS84-bounded coordinates so geo functions see realistic input;
-/// 20% of the time falls back to arbitrary values to probe edge cases.
-static String nextGeoPoint(RandomGenerator & rg)
-{
-    if (rg.nextSmallNumber() < 9)
-    {
-        std::uniform_real_distribution<double> lon(-180.0, 180.0);
-        std::uniform_real_distribution<double> lat(-90.0, 90.0);
-        return fmt::format("({},{})", lon(rg.generator), lat(rg.generator));
-    }
-    return fmt::format("({},{})", nextFloatingPoint(rg, false), nextFloatingPoint(rg, false));
-}
-
-/// Returns a closed Ring: npoints unique points followed by the first point repeated.
-/// An empty ring (npoints == 0) is returned as [] for degenerate-case coverage.
-static String nextGeoRing(RandomGenerator & rg, const uint32_t npoints)
-{
-    String first_point;
-    String ret = "[";
-    for (uint32_t i = 0; i < npoints; i++)
-    {
-        if (i != 0)
-            ret += ", ";
-        const String pt = nextGeoPoint(rg);
-        if (i == 0)
-            first_point = pt;
-        ret += pt;
-    }
-    if (npoints > 0)
-        ret += ", " + first_point; /// Close the ring
-    ret += "]";
-    return ret;
-}
-
 String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
 {
     String ret;
     const uint32_t limit = rg.randomInt<uint32_t>(0, 10);
-    const GeoTypes imp
+    const GeoTypes & imp
         = gt == GeoTypes::Geometry ? static_cast<GeoTypes>(rg.randomInt<uint32_t>(1, static_cast<uint32_t>(GeoTypes::MultiPolygon))) : gt;
 
     switch (imp)
     {
         case GeoTypes::Point:
-            ret = nextGeoPoint(rg);
+            ret = fmt::format("({},{})", nextFloatingPoint(rg, false), nextFloatingPoint(rg, false));
             break;
         case GeoTypes::Ring:
-            /// Closed ring: array of points where first == last
-            ret = nextGeoRing(rg, limit);
-            break;
         case GeoTypes::LineString:
-            /// Open sequence of points, no closure requirement
             ret += "[";
             for (uint32_t i = 0; i < limit; i++)
             {
                 if (i != 0)
+                {
                     ret += ", ";
-                ret += nextGeoPoint(rg);
+                }
+                ret += fmt::format("({},{})", nextFloatingPoint(rg, false), nextFloatingPoint(rg, false));
             }
             ret += "]";
             break;
         case GeoTypes::MultiLineString:
-            /// Array of LineStrings (open, no closure)
+        case GeoTypes::Polygon:
             ret += "[";
             for (uint32_t i = 0; i < limit; i++)
             {
-                const uint32_t npoints = rg.randomInt<uint32_t>(0, 10);
+                const uint32_t nlines = rg.randomInt<uint32_t>(0, 10);
+
                 if (i != 0)
+                {
                     ret += ", ";
+                }
                 ret += "[";
-                for (uint32_t j = 0; j < npoints; j++)
+                for (uint32_t j = 0; j < nlines; j++)
                 {
                     if (j != 0)
+                    {
                         ret += ", ";
-                    ret += nextGeoPoint(rg);
+                    }
+                    ret += fmt::format("({},{})", nextFloatingPoint(rg, false), nextFloatingPoint(rg, false));
                 }
                 ret += "]";
             }
             ret += "]";
             break;
-        case GeoTypes::Polygon:
-            /// Array of closed Rings: first is outer boundary, rest are holes
-            ret += "[";
-            for (uint32_t i = 0; i < limit; i++)
-            {
-                const uint32_t npoints = rg.randomInt<uint32_t>(0, 10);
-                if (i != 0)
-                    ret += ", ";
-                ret += nextGeoRing(rg, npoints);
-            }
-            ret += "]";
-            break;
         case GeoTypes::MultiPolygon:
-            /// Array of Polygons, each an array of closed Rings
             ret += "[";
             for (uint32_t i = 0; i < limit; i++)
             {
-                const uint32_t nrings = rg.randomInt<uint32_t>(0, 10);
+                const uint32_t npoligons = rg.randomInt<uint32_t>(0, 10);
+
                 if (i != 0)
-                    ret += ", ";
-                ret += "[";
-                for (uint32_t j = 0; j < nrings; j++)
                 {
-                    const uint32_t npoints = rg.randomInt<uint32_t>(0, 10);
+                    ret += ", ";
+                }
+                ret += "[";
+                for (uint32_t j = 0; j < npoligons; j++)
+                {
+                    const uint32_t nlines = rg.randomInt<uint32_t>(0, 10);
+
                     if (j != 0)
+                    {
                         ret += ", ";
-                    ret += nextGeoRing(rg, npoints);
+                    }
+                    ret += "[";
+                    for (uint32_t k = 0; k < nlines; k++)
+                    {
+                        if (k != 0)
+                        {
+                            ret += ", ";
+                        }
+                        ret += fmt::format("({},{})", nextFloatingPoint(rg, false), nextFloatingPoint(rg, false));
+                    }
+                    ret += "]";
                 }
                 ret += "]";
             }
@@ -2673,67 +2522,9 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
     return ret;
 }
 
-static String homogeneousJSONArray(RandomGenerator & rg)
-{
-    /// Homogeneous typed array: pick element type once, generate 0-5 elements of that type
-    String ret;
-    std::uniform_int_distribution<int> alen(0, 30);
-    std::uniform_int_distribution<int> atype(1, 9);
-    const int nelems = alen(rg.generator);
-    const int elem_type = atype(rg.generator);
-
-    for (int j = 0; j < nelems; j++)
-    {
-        if (j != 0)
-            ret += ",";
-        switch (elem_type)
-        {
-            case 1: {
-                std::uniform_int_distribution<int> numbers(-1000, 1000);
-                ret += std::to_string(numbers(rg.generator));
-                break;
-            }
-            case 2:
-                ret += std::to_string(rg.nextRandomInt64());
-                break;
-            case 3:
-                ret += std::to_string(rg.nextRandomUInt64());
-                break;
-            case 4:
-                ret += nextFloatingPoint(rg, true);
-                break;
-            case 5:
-                ret += rg.nextString("\"", false, rg.nextStrlen());
-                break;
-            case 6:
-                ret += rg.nextBool() ? "true" : "false";
-                break;
-            case 7:
-                ret += "null";
-                break;
-            case 8:
-                /// Empty string
-                ret += "\"\"";
-                break;
-            case 9: {
-                /// Decimal
-                std::uniform_int_distribution<uint32_t> next_dist(0, 76);
-                const uint32_t left = next_dist(rg.generator);
-                const uint32_t right = next_dist(rg.generator);
-
-                ret += appendDecimal(rg, false, left, right);
-            }
-            break;
-            default:
-                UNREACHABLE();
-        }
-    }
-    return ret;
-}
-
 String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth)
 {
-    std::uniform_int_distribution<int> jopt(1, 4);
+    std::uniform_int_distribution<int> jopt(1, 3);
     int nelems = 0;
     int next_width = 0;
 
@@ -2766,10 +2557,6 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
                     /// Others
                     ret += strBuildJSONElement(rg);
                     break;
-                case 4:
-                    /// Homogeneous array
-                    ret += homogeneousJSONArray(rg);
-                    break;
                 default:
                     UNREACHABLE();
             }
@@ -2787,7 +2574,7 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
 String strBuildJSONElement(RandomGenerator & rg)
 {
     String ret;
-    std::uniform_int_distribution<int> opts(1, 25);
+    std::uniform_int_distribution<int> opts(1, 23);
 
     switch (opts(rg.generator))
     {
@@ -2872,14 +2659,6 @@ String strBuildJSONElement(RandomGenerator & rg)
             /// Floating-point
             ret = nextFloatingPoint(rg, true);
             break;
-        case 24:
-            /// Empty string
-            ret = "\"\"";
-            break;
-        case 25:
-            /// String with escape sequences
-            ret = '[' + homogeneousJSONArray(rg) + ']';
-            break;
         default:
             UNREACHABLE();
     }
@@ -2892,7 +2671,7 @@ String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
 
     if (jdepth && jwidth && rg.nextSmallNumber() < 9)
     {
-        std::uniform_int_distribution<int> childd(0, jwidth);
+        std::uniform_int_distribution<int> childd(1, jwidth);
         const int nchildren = childd(rg.generator);
 
         for (int i = 0; i < nchildren; i++)

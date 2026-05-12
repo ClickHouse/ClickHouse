@@ -256,6 +256,17 @@ logger.jetty.level = warn
                         )
                 self.logger.info(f"Starting UC server using pid = {self.uc_server.pid}")
                 if not wait_for_port("localhost", uc_port, timeout=120):
+                    # Print a few lines of output to help debug
+                    try:
+                        for _ in range(50):
+                            line = self.uc_server.stdout.readline()
+                            if not line:
+                                break
+                            self.logger.error(
+                                f"UC server did not start: Here is a line {line}"
+                            )
+                    except Exception:
+                        pass
                     raise TimeoutError(
                         f"UC server did not start on localhost:{uc_port} within timeout"
                     )
@@ -270,19 +281,15 @@ logger.jetty.level = warn
             )
         cmd: list[str] = [str(self.uc_server_dir / "bin" / "uc")]
         cmd.extend(args)
-        result = subprocess.run(
-            cmd,
-            cwd=str(self.uc_server_run_dir),
-            env=os.environ.copy(),
-            text=True,
-            capture_output=True,
+        proc = subprocess.Popen(
+            cmd, cwd=str(self.uc_server_run_dir), env=os.environ.copy(), text=True
         )
-        if result.returncode != 0:
+        if proc.returncode != 0:
             self.logger.error(
-                f"UC CLI failed (exit {result.returncode}).\n"
+                f"UC CLI failed (exit {proc.returncode}).\n"
                 f"Command: {' '.join(cmd)}\n"
-                f"stdout:\n{result.stdout}\n"
-                f"stderr:\n{result.stderr}"
+                f"stdout:\n{proc.stdout}\n"
+                f"stderr:\n{proc.stderr}"
             )
 
     def get_spark(

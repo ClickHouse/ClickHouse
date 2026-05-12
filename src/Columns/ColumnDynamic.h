@@ -144,7 +144,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override
     {
@@ -201,6 +201,12 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
+    /// Used for deduplication: hashes the raw in-memory representation of the variant column.
+    /// The hash is the same for the same INSERT data, but NOT necessarily the same for
+    /// logically equivalent data with different variant layouts (e.g. value stored in a typed
+    /// variant vs the shared variant).
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
+
     WeakHash32 getWeakHash32() const override
     {
         return variant_column_ptr->getWeakHash32();
@@ -213,7 +219,7 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     void filter(const Filter & filt) override
@@ -234,12 +240,12 @@ public:
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
-        return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override
     {
-        return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     MutableColumns scatter(size_t num_columns, const Selector & selector) const override
@@ -248,7 +254,7 @@ public:
         MutableColumns scattered_columns;
         scattered_columns.reserve(num_columns);
         for (auto & scattered_variant_column : scattered_variant_columns)
-            scattered_columns.emplace_back(create(std::move(scattered_variant_column), variant_info, max_dynamic_types, global_max_dynamic_types));
+            scattered_columns.emplace_back(create(std::move(scattered_variant_column), variant_info, max_dynamic_types, global_max_dynamic_types, statistics));
 
         return scattered_columns;
     }
