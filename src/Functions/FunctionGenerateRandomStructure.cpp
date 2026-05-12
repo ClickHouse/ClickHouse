@@ -23,8 +23,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -363,31 +361,6 @@ namespace
 FunctionPtr FunctionGenerateRandomStructure::create(DB::ContextPtr context)
 {
     return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types].value);
-}
-
-DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes & arguments) const
-{
-    if (arguments.size() > 2)
-        throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Number of arguments for function {} doesn't match: passed {}, expected from 0 to 2",
-            getName(), arguments.size());
-
-
-    for (size_t i = 0; i != arguments.size(); ++i)
-    {
-        if (!isUInt(arguments[i]) && !arguments[i]->onlyNull())
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the {} argument of function {}, expected unsigned integer or Null",
-                arguments[i]->getName(),
-                i + 1,
-                getName());
-        }
-    }
-
-    return std::make_shared<DataTypeString>();
 }
 
 ColumnPtr FunctionGenerateRandomStructure::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const

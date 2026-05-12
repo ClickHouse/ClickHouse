@@ -356,6 +356,15 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+/// Matches `Nullable(Nothing)` — i.e. the type of a literal `NULL` or an `onlyNull` column.
+class TypeMatcherNothing : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Nothing"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->onlyNull(); }
+    size_t getIndex() const override { return 0; }
+};
+
 class TypeMatcherDynamic : public ITypeMatcher
 {
 public:
@@ -581,6 +590,7 @@ void registerTypeMatchers()
         return std::make_shared<TypeMatcherLowCardinalityOf>(children);
     });
     registerTypeMatcherWithNoArguments<TypeMatcherJSON>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherNothing>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDynamic>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDateTime>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDateTime64>(factory);
