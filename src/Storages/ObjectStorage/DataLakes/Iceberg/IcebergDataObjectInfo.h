@@ -8,12 +8,17 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/EqualityDeleteObject.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 
+#include <Core/Field.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 
 namespace DB::Iceberg
 {
+
+String computePartitionId(const Row & partition_key_value);
+
+
 struct IcebergObjectSerializableInfo
 {
     IcebergPathFromMetadata data_object_file_path_key;
@@ -21,6 +26,8 @@ struct IcebergObjectSerializableInfo
     Int32 schema_id_relevant_to_iterator;
     Int64 sequence_number;
     String file_format;
+    String manifest_file;
+    String partition_id;
     std::vector<Iceberg::PositionDeleteObject> position_deletes_objects;
     std::vector<Iceberg::EqualityDeleteObject> equality_deletes_objects;
     std::optional<Int64> record_count;
@@ -53,6 +60,7 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     explicit IcebergDataObjectInfo(Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_, const String & resolved_storage_path_, Int32 schema_id_relevant_to_iterator_);
 
     explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_);
+    explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_, const Iceberg::IcebergObjectSerializableInfo & info_);
 
     std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         ObjectStoragePtr object_storage,

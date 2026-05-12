@@ -425,8 +425,6 @@ public:
 
     const DataTypePtr & getResultType() const override { return result_type; }
     const DataTypes & getArgumentTypes() const override { return argument_types; }
-
-    /// Returns the parameters passed to the constructor as is.
     const Array & getParameters() const override { return parameters; }
 
     // Any aggregate function can be calculated over a window, but there are some

@@ -21,6 +21,9 @@ A plan:
 Cherry-pick stage:
     - From time to time the cherry-pick fails, if it was done manually. In the
     case we check if it's even needed, and mark the release as done somehow.
+
+The cross-repo synchronization is described in the KB article:
+https://github.com/ClickHouse/internal-knowledge-base/issues/452
 """
 
 import argparse
@@ -30,6 +33,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Iterable, List, Optional
+
+from github.GithubException import GithubException
 
 from cache_utils import GitHubCache
 from ci_buddy import CIBuddy
@@ -43,7 +48,6 @@ from env_helper import (
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
-from github.GithubException import GithubException
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from pr_info import Labels
 from report import GITHUB_JOB_URL
@@ -54,6 +58,44 @@ from synchronizer_utils import SYNC_PR_PREFIX
 
 class BackportException(Exception):
     pass
+
+
+def recover_git_state() -> None:
+    """
+    Best-effort recovery of the working tree after a git command crashed
+    (e.g. an internal assertion in `merge-ort`) and left `.git/index.lock`
+    behind. In that state subsequent commands -- including
+    `git merge --abort` -- fail with "Unable to create '.git/index.lock'",
+    which would otherwise poison every later PR processed in the same run.
+    """
+    try:
+        # `--absolute-git-dir` -- avoid a relative `.git` resolved against
+        # Python's cwd (which is `tests/ci/`, not the repo root).
+        git_dir = git_runner("git rev-parse --absolute-git-dir")
+    except CalledProcessError:
+        return
+    lock = Path(git_dir) / "index.lock"
+    if lock.exists():
+        logging.warning(
+            "Removing stale %s left by a crashed git process", lock
+        )
+        try:
+            lock.unlink()
+        except OSError as e:
+            logging.error("Failed to remove %s: %s", lock, e)
+            return
+    # Best-effort cleanup of any in-progress merge / cherry-pick and the
+    # working tree. None of these are required to succeed -- they only run
+    # to bring the tree back to a usable state for the next PR.
+    for cmd in (
+        f"{GIT_PREFIX} merge --abort",
+        f"{GIT_PREFIX} cherry-pick --abort",
+        f"{GIT_PREFIX} reset --hard HEAD",
+    ):
+        try:
+            git_runner(cmd)
+        except CalledProcessError as e:
+            logging.info("recover_git_state: %s -> %s (ignored)", cmd, e)
 
 
 class ReleaseBranch:
@@ -183,6 +225,10 @@ close it.
                 )
                 return
             self.create_cherrypick()
+
+        if self.backported:
+            # The `backported` can be set to True if the changes are already applied
+            return
         assert self.cherrypick_pr, "Unable to create cherry-pick PR"
 
         if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
@@ -281,7 +327,15 @@ close it.
                 self._backported = True
                 return
         except CalledProcessError:
-            git_runner(f"{GIT_PREFIX} merge --abort")
+            try:
+                git_runner(f"{GIT_PREFIX} merge --abort")
+            except CalledProcessError:
+                # `merge --abort` itself can fail when the merge process
+                # crashed (e.g. merge-ort assertion) and left
+                # `.git/index.lock` behind -- the lock blocks any further
+                # git command in this checkout. Clean it up so subsequent
+                # PRs in the same run are not poisoned.
+                recover_git_state()
 
         # Push, create the cherry-pick PR and label it
         for branch in [self.cherrypick_branch, self.backport_branch]:
@@ -664,6 +718,10 @@ class BackportPRs:
                     "During processing the PR #%s error occurred: %s", pr.number, e
                 )
                 self.error = e
+                # Whatever went wrong, make sure the next PR starts from a
+                # clean working tree -- a leftover `.git/index.lock` from a
+                # crashed git process would otherwise break every later PR.
+                recover_git_state()
 
     def _rolling_out_branches(self) -> List[str]:
         """
@@ -679,9 +737,7 @@ class BackportPRs:
             if Labels.ROLLING_OUT in {label.name for label in release_pr.labels}
         ]
 
-    def _close_prs_for_rolling_out_branch(
-        self, pr: PullRequest, branch: str
-    ) -> None:
+    def _close_prs_for_rolling_out_branch(self, pr: PullRequest, branch: str) -> None:
         """
         Close any open cherry-pick or backport PRs that were previously created
         for a release branch that is now marked `rolling-out`.
@@ -730,8 +786,10 @@ class BackportPRs:
         pr_labels = [label.name for label in pr.labels]
 
         is_force_backport = Labels.MUST_BACKPORT_FORCE in pr_labels
-        is_general_backport = is_force_backport or Labels.MUST_BACKPORT in pr_labels or bool(
-            Labels.AUTO_BACKPORT & set(pr_labels)
+        is_general_backport = (
+            is_force_backport
+            or Labels.MUST_BACKPORT in pr_labels
+            or bool(Labels.AUTO_BACKPORT & set(pr_labels))
         )
         if is_general_backport:
             if is_force_backport:
@@ -743,8 +801,7 @@ class BackportPRs:
                     Labels.MUST_BACKPORT_FORCE,
                 )
                 branches = [
-                    ReleaseBranch(br, pr, self.repo)
-                    for br in self.release_branches
+                    ReleaseBranch(br, pr, self.repo) for br in self.release_branches
                 ]  # type: List[ReleaseBranch]
             else:
                 # For general backports (pr-must-backport / critical bugfix), skip
@@ -1005,7 +1062,17 @@ class CherryPickPRs:
             )
             return
 
-        original_pr.remove_from_labels(Labels.PR_BACKPORTS_CREATED)
+        try:
+            original_pr.remove_from_labels(Labels.PR_BACKPORTS_CREATED)
+        except GithubException as e:
+            if e.status == 404:
+                logging.info(
+                    "Label %s is already removed from PR #%s",
+                    Labels.PR_BACKPORTS_CREATED,
+                    original_pr.number,
+                )
+            else:
+                raise
         pr.create_issue_comment(comment_body)
         logging.info(
             "Removed label %s from PR #%s and posted comment to cherry-pick PR #%s",

@@ -3682,7 +3682,9 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
 }
 
 
-Aggregator::AggregatedChunk Aggregator::mergeBlocks(AggregatedChunks & chunks, bool final, std::atomic<bool> & is_cancelled)
+Aggregator::AggregatedChunk Aggregator::mergeBlocks(
+    AggregatedChunks & chunks, bool final, std::atomic<bool> & is_cancelled,
+    const RuntimeDataflowStatisticsCacheUpdaterPtr & dataflow_cache_updater)
 {
     if (chunks.empty())
         return {};
@@ -3759,6 +3761,9 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(AggregatedChunks & chunks, b
             throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
     }
 
+    if (dataflow_cache_updater)
+        dataflow_cache_updater->recordAggregationStateSizes(result, bucket_num);
+
     AggregatedChunk agg_chunk;
     if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
     {
@@ -3770,6 +3775,9 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(AggregatedChunks & chunks, b
         constexpr bool return_single_block = true;
         agg_chunk = prepareChunkAndFillSingleLevel<return_single_block>(result, final);
     }
+
+    if (dataflow_cache_updater && agg_chunk.chunk.getNumRows())
+        dataflow_cache_updater->recordAggregationKeySizes(agg_chunk.chunk, getKeysPositions(), getKeyTypes());
     /// NOTE: two-level data is not possible here - chooseAggregationMethod chooses only among single-level methods.
 
     agg_chunk.bucket_num = bucket_num;

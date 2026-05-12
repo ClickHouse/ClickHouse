@@ -122,9 +122,9 @@ _WITH_FLAG_TO_COMPOSE: dict[str, List[str]] = {
     ],
     "hms_catalog": ["docker_compose_iceberg_hms_catalog.yml"],
     "glue_catalog": ["docker_compose_glue_catalog.yml"],
-    "prometheus_writer": ["docker_compose_prometheus.yml"],
-    "prometheus_reader": ["docker_compose_prometheus.yml"],
-    "prometheus_receiver": ["docker_compose_prometheus.yml"],
+    "prometheus_writer": ["docker_compose_prometheus_writer.yml"],
+    "prometheus_reader": ["docker_compose_prometheus_reader.yml"],
+    "prometheus_receiver": ["docker_compose_prometheus_receiver.yml"],
     # with_odbc_drivers implicitly sets up mysql8 + postgres
     "odbc_drivers": ["docker_compose_mysql_8_0.yml", "docker_compose_postgres.yml"],
     # Flags with no separate compose file of their own

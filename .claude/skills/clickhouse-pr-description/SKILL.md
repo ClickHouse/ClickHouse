@@ -14,8 +14,11 @@ Generate a good PR description and apply it, with optional confirmation based on
 
 Plain description of what changed. No prefix conventions like `fix():` or `feat():`.
 
+**Exception — `.claude/` changes:** when the PR only touches files under `.claude/` (settings, tools, skills, instructions, etc.), prefix the title with `claude: `. Example: `claude: add fetch_ci_report.js to allowed commands`.
+
 - Good: `Change default stderr_reaction to log_last for executable UDFs`
 - Good: `Fix exception when inserting NULL into non-nullable column via CAST`
+- Good: `claude: allow fetch_ci_report.js and grep in Claude Code settings`
 - Bad: `fix(udf): Change default stderr_reaction` — conventional commits, ClickHouse doesn't use them
 - Bad: `Fuzzer fixes` — too vague, tells the reviewer nothing
 - Bad: `Improve error handling and enrich exit code exceptions with stderr context` — too vague, doesn't say what was actually changed

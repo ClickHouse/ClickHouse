@@ -24,8 +24,8 @@ timestamp = 1753199684.626
 
 def send_preset_to_prometheus_receiver():
     send_protobuf_to_remote_write(
-        cluster.prometheus_receiver_ip,
-        cluster.prometheus_receiver_port,
+        cluster.prometheus_ip["receiver"],
+        cluster.prometheus_port["receiver"],
         "api/v1/write",
         preset,
     )
@@ -68,8 +68,8 @@ def check_queries_in_prometheus_receiver():
     for query, result, _ in test_queries:
         assert (
             execute_query_via_http_api(
-                cluster.prometheus_receiver_ip,
-                cluster.prometheus_receiver_port,
+                cluster.prometheus_ip["receiver"],
+                cluster.prometheus_port["receiver"],
                 "/api/v1/query",
                 query,
                 timestamp,
@@ -85,8 +85,8 @@ def check_queries_in_prometheus_reader():
     for query, result, _ in test_queries:
         assert (
             execute_query_via_http_api(
-                cluster.prometheus_reader_ip,
-                cluster.prometheus_reader_port,
+                cluster.prometheus_ip["reader"],
+                cluster.prometheus_port["reader"],
                 "/api/v1/query",
                 query,
                 timestamp,

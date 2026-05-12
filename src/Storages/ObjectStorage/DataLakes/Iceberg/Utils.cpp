@@ -1417,6 +1417,24 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
     sortBlock(block, result_sort_description);
 }
 
+void forEachAvroEntry(
+    const String & filename,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    const String & logger_name,
+    std::function<void(const avro::GenericDatum &)> callback)
+{
+    RelativePathWithMetadata relative_path_with_metadata(filename);
+    auto manifest_list_buf = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger(logger_name));
+
+    auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
+    avro::DataFileReader<avro::GenericDatum> reader(std::move(input_stream));
+
+    avro::GenericDatum datum(reader.readerSchema());
+    while (reader.read(datum))
+        callback(datum);
+}
+
 }
 
 #endif

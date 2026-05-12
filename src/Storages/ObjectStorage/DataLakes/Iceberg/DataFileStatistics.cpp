@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 
 namespace DB
@@ -29,6 +30,8 @@ Range getExtremeRangeFromColumn(const ColumnPtr & column)
 
 void DataFileStatistics::update(const Chunk & chunk)
 {
+    if (!chunk.hasRows())
+        return;
     size_t num_columns = chunk.getNumColumns();
     if (column_sizes.empty())
     {
@@ -44,10 +47,36 @@ void DataFileStatistics::update(const Chunk & chunk)
 
     for (size_t i = 0; i < num_columns; ++i)
     {
-        column_sizes[i] += chunk.getColumns()[i]->byteSize();
-        for (size_t j = 0; j < chunk.getNumRows(); ++j)
-            null_counts[i] += (chunk.getColumns()[i]->isNullAt(j));
-        ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(chunk.getColumns()[i]));
+        const auto & col = chunk.getColumns()[i];
+        column_sizes[i] += col->byteSize();
+        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(col.get()))
+        {
+            for (UInt8 v : nullable_col->getNullMapData())
+                null_counts[i] += v;
+        }
+        ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(col));
+    }
+}
+
+void DataFileStatistics::merge(const DataFileStatistics & other)
+{
+    if (other.column_sizes.empty())
+        return;
+
+    if (column_sizes.empty())
+    {
+        column_sizes = other.column_sizes;
+        null_counts = other.null_counts;
+        ranges = other.ranges;
+        return;
+    }
+
+    chassert(column_sizes.size() == other.column_sizes.size());
+    for (size_t i = 0; i < column_sizes.size(); ++i)
+    {
+        column_sizes[i] += other.column_sizes[i];
+        null_counts[i] += other.null_counts[i];
+        ranges[i] = uniteRanges(ranges[i], other.ranges[i]);
     }
 }
 
@@ -100,6 +129,13 @@ std::vector<std::pair<size_t, Field>> DataFileStatistics::getUpperBounds() const
     }
     return result;
 }
+
+void IcebergStatisticsTransform::transform(Chunk & chunk)
+{
+    stats->update(chunk);
+    cur_chunk = chunk.clone();
+}
+
 
 #endif
 

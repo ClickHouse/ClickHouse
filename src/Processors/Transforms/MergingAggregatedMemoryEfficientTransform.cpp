@@ -342,8 +342,13 @@ void GroupingAggregatedTransform::work()
 
 
 MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(
-    AggregatingTransformParamsPtr params_, const SortDescription & required_sort_description_)
-    : ISimpleTransform({}, params_->getHeader(), false), params(std::move(params_)), required_sort_description(required_sort_description_)
+    AggregatingTransformParamsPtr params_,
+    const SortDescription & required_sort_description_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
+    : ISimpleTransform({}, params_->getHeader(), false)
+    , params(std::move(params_))
+    , required_sort_description(required_sort_description_)
+    , dataflow_cache_updater(std::move(dataflow_cache_updater_))
 {
     setInputNotNeededAfterRead(true);
 }
@@ -386,7 +391,7 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     res_info->chunk_num = chunks_to_merge->chunk_num;
     chunk.getChunkInfos().add(std::move(res_info));
 
-    auto agg_chunk = params->aggregator.mergeBlocks(chunks_list, params->final, is_cancelled);
+    auto agg_chunk = params->aggregator.mergeBlocks(chunks_list, params->final, is_cancelled, dataflow_cache_updater);
 
     if (!required_sort_description.empty() && agg_chunk.chunk)
     {

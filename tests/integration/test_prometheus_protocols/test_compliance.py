@@ -340,8 +340,8 @@ def _ingest_openmetrics(data_path):
         batch = all_series[i : i + batch_size]
         protobuf = convert_time_series_to_protobuf(batch)
         send_protobuf_to_remote_write(
-            cluster.prometheus_receiver_ip,
-            cluster.prometheus_receiver_port,
+            cluster.prometheus_ip["receiver"],
+            cluster.prometheus_port["receiver"],
             "api/v1/write",
             protobuf,
         )
@@ -525,8 +525,8 @@ def test_promql_compliance():
 
     for query, should_fail in test_cases:
         ref_data, ref_err = _run_range_query(
-            cluster.prometheus_receiver_ip,
-            cluster.prometheus_receiver_port,
+            cluster.prometheus_ip["receiver"],
+            cluster.prometheus_port["receiver"],
             "/api/v1/query_range",
             query,
         )

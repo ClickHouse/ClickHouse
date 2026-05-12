@@ -54,10 +54,18 @@ public:
         return stats;
     }
 
+    const std::vector<DataFileStatisticsPtr> & getPerFileStatistics() const
+    {
+        return completed_file_stats;
+    }
+
 private:
     UInt64 max_data_file_num_rows;
     UInt64 max_data_file_num_bytes;
+    Poco::JSON::Array::Ptr schema;
     DataFileStatistics stats;
+    DataFileStatisticsPtr current_file_stats;
+    std::vector<DataFileStatisticsPtr> completed_file_stats;
     std::optional<size_t> current_file_num_rows = std::nullopt;
     std::optional<size_t> current_file_num_bytes = std::nullopt;
     std::vector<Iceberg::IcebergPathFromMetadata> data_file_names;

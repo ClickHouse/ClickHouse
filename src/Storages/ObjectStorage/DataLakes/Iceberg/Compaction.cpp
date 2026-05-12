@@ -441,7 +441,7 @@ void writeMetadataFiles(
                 metadata_object,
                 partition_columns,
                 plan.partition_encoder.getPartitionValue(grouped_by_manifest_files_partitions[manifest_entry]),
-                ChunkPartitioner(fields_from_partition_spec, current_schema, context, sample_block_).getResultTypes(),
+                ChunkPartitioner(fields_from_partition_spec, current_schema->getArray(Iceberg::f_fields), context, sample_block_).getResultTypes(),
                 data_files_vec,
                 file_row_counts,
                 file_byte_counts,
