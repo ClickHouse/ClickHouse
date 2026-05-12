@@ -227,26 +227,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        WhichDataType which(arguments[0]);
-
-        if (!which.isStringOrFixedString() &&
-            !which.isDate() &&
-            !which.isDateTime() &&
-            !which.isDateTime64() &&
-            !which.isUInt() &&
-            !which.isInt() &&
-            !which.isFloat() &&
-            !which.isDecimal() &&
-            !which.isUUID() &&
-            !which.isIPv4() &&
-            !which.isIPv6() &&
-            !which.isAggregateFunction())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        /// Accepts a broad set of representable types; the executor handles each.
+        return "(Any) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -600,15 +584,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        WhichDataType which(arguments[0]);
-        if (!which.isStringOrFixedString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignatureString() const override { return "(StringOrFixedString) -> String"; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
