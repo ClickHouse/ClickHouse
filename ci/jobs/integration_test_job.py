@@ -1101,9 +1101,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )
                 attached_files.append("./ci/tmp/dmesg.log")
 
-    # For targeted checks, session-timeout is an expected risk (because of --count N
-    # overloading), so do not propagate the synthetic "Timeout" result as a failure.
-    if is_targeted_check:
+    # For targeted checks and bugfix validation, the synthetic "Timeout"
+    # result must not be propagated as a top-level `FAIL`: for targeted
+    # checks a session-timeout is an expected risk (because of `--count N`
+    # overloading), and for bugfix validation an inverted `FAIL` would be
+    # mistakenly treated as successful bug reproduction.
+    if is_targeted_check or is_bugfix_validation:
         test_results = [r for r in test_results if r.name != "Timeout"]
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
@@ -1145,27 +1148,36 @@ tar -czf ./ci/tmp/logs.tar.gz \
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"
-        has_failure = False
-        for r in R.results:
-            # invert statuses: only `FAIL` is treated as a successful
-            # reproduction signal. Generic `ERROR` is left untouched because
-            # in integration tests `ERROR` is also used for runner-level
-            # problems (for example session-timeout paths in
-            # `run_pytest_and_collect_results`), and infrastructure errors
-            # that escape `_mark_infrastructure_errors` could otherwise flip
-            # the job to green.
-            r.set_label(Result.Label.XFAIL)
-            if r.status == Result.Status.FAIL:
-                r.status = Result.Status.OK
-                has_failure = True
-            elif r.status == Result.Status.OK:
-                r.status = Result.Status.FAIL
-        if not has_failure:
-            print("Failed to reproduce the bug")
-            R.set_failed()
-            R.set_info("Failed to reproduce the bug")
+        if has_error:
+            # An infrastructure/harness error (e.g. session-timeout) is not
+            # bug reproduction. Keep `has_error` dominant over inversion so a
+            # non-reproduction failure cannot be flipped to `OK` and promoted
+            # to job success.
+            print(
+                "Bugfix validation: has_error is set, skipping status inversion"
+            )
         else:
-            R.set_success()
+            has_failure = False
+            for r in R.results:
+                # invert statuses: only `FAIL` is treated as a successful
+                # reproduction signal. Generic `ERROR` is left untouched
+                # because in integration tests `ERROR` is also used for
+                # runner-level problems (for example session-timeout paths
+                # in `run_pytest_and_collect_results`), and infrastructure
+                # errors that escape `_mark_infrastructure_errors` could
+                # otherwise flip the job to green.
+                r.set_label(Result.Label.XFAIL)
+                if r.status == Result.Status.FAIL:
+                    r.status = Result.Status.OK
+                    has_failure = True
+                elif r.status == Result.Status.OK:
+                    r.status = Result.Status.FAIL
+            if not has_failure:
+                print("Failed to reproduce the bug")
+                R.set_failed()
+                R.set_info("Failed to reproduce the bug")
+            else:
+                R.set_success()
 
     force_ok_exit = False
     if is_llvm_coverage and llvm_profdata_cmd:
