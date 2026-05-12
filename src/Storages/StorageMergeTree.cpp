@@ -224,6 +224,14 @@ StorageMergeTree::StorageMergeTree(
         /// storage to implement the lease protocol. Only `S3` and `Azure` backends support these
         /// operations. Other remote backends (`HDFS`, `Web`) and local disks do not.
         ///
+        /// In addition to a shared object-storage backend, we also require shared *metadata*:
+        /// after failover, the new leader must see all parts committed by the previous leader,
+        /// otherwise the active/standby invariant ("the elected leader sees all successful
+        /// inserts") cannot be enforced. Only `PlainRewritable` and `Keeper` metadata are
+        /// shared across nodes. The default `Local` metadata is per-replica — each node's
+        /// metadata files live on its own local disk and are not visible to its peers, so the
+        /// next leader after a failover would lose the previous leader's parts from its view.
+        ///
         /// Validate every disk in the storage policy, not just the primary one. Otherwise a
         /// multi-volume policy could place parts on a non-shared disk via `TTL`-driven moves
         /// or a default-volume fallback, and the new leader after a failover would not see
@@ -239,6 +247,18 @@ StorageMergeTree::StorageMergeTree(
                     " an `S3` or `Azure` object storage disk that supports conditional writes, but"
                     " disk '{}' uses a different backend. Mixed shared and non-shared disks would"
                     " place parts on a node-local volume that another node cannot see after failover.",
+                    disk->getName());
+            }
+
+            if (description.metadata_type != MetadataStorageType::PlainRewritable
+                && description.metadata_type != MetadataStorageType::Keeper)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The `leader_election` setting requires every disk in the storage policy to use"
+                    " shared metadata so that the next leader after a failover sees the parts"
+                    " written by the previous leader. Disk '{}' uses node-local metadata, where"
+                    " each replica's part list is invisible to its peers. Use a disk with"
+                    " `metadata_type = plain_rewritable` (recommended) or `metadata_type = keeper`.",
                     disk->getName());
             }
         }
@@ -294,22 +314,23 @@ void StorageMergeTree::startup()
                 {
                     LOG_INFO(log, "Became leader, syncing shared storage and starting background operations");
 
-                    /// Before accepting any writes, advance the local block-number counter
-                    /// past anything the previous leader committed on shared storage. Two
-                    /// mechanisms feed into this:
+                    /// Before accepting any writes, refresh the local view of parts and
+                    /// advance the block-number counter past anything the previous leader
+                    /// committed on shared storage. The constructor has already validated that
+                    /// every disk uses `PlainRewritable` or `Keeper` metadata, so the
+                    /// metadata refresh below picks up parts written by other nodes.
+                    /// Two mechanisms feed the counter:
                     ///
-                    /// 1. `loadNewlyAppearedParts` — populates the local in-memory part set
-                    ///    from the disk's metadata cache, after a `disk->refresh(0)`. Works for
-                    ///    storage policies with shared metadata (`s3_plain_rewritable`,
-                    ///    object-storage `with_keeper`); on plain `s3` it is essentially a
-                    ///    no-op because the metadata is per-replica.
+                    /// 1. `loadNewlyAppearedParts` — refreshes the metadata cache via
+                    ///    `disk->refresh(0)` and adds any newly-visible parts to the local
+                    ///    in-memory part set. After this returns, `SELECT` queries on the
+                    ///    new leader see every part the previous leader committed.
                     ///
                     /// 2. `getMaxBlockNumberFromObjectStorage` — probes the object storage
                     ///    directly via `IObjectStorage::listObjects`, parses every top-level
                     ///    directory that looks like a part name, and returns the highest
-                    ///    `max_block`/`mutation` across them. This works regardless of how
-                    ///    the disk's metadata is configured and is the only way to detect
-                    ///    block numbers committed by another node on plain-`s3` setups.
+                    ///    `max_block`/`mutation` across them. This is a defense in depth
+                    ///    against any metadata-cache staleness that the refresh might miss.
                     ///
                     /// We use the max of (current `increment`, local-metadata max, object-
                     /// storage max). If either probe fails, refuse to enable writes — running

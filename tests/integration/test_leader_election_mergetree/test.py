@@ -487,65 +487,48 @@ def test_concurrent_inserts_with_restarts(started_cluster):
         f"Failover did not occur during the test."
     )
 
-    # Wait for a stable leader so the cluster is in a defined state for read queries.
-    wait_for_leader(nodes, table_name=table)
-
-    # Invariant 3: data integrity. Under shared-storage leader election, each node's
-    # local metadata only references the parts that node itself wrote during its
-    # leadership epoch — there's no cross-node metadata sync. So every successful
-    # insert must be visible from SOMEWHERE in the cluster (the node that wrote it),
-    # and the union of what every node sees must contain only values we attempted.
+    # Invariant 3: data integrity on failover. The active/standby contract is that
+    # whoever holds the lease can serve the full history — not just the rows that
+    # node happened to write. After leadership stabilises post-chaos, the elected
+    # leader must see every successful insert from every previous epoch, and only
+    # values we attempted.
     success_values = set(r[4] for r in successes)
     attempted_values = set(r[4] for r in records)
-    visible = set()
-    per_node_visible = {}
-    for n in nodes:
-        try:
-            rows_str = n.query(f"SELECT x FROM {table}", timeout=30)
-            node_values = {
-                int(line) for line in rows_str.strip().split("\n") if line
-            }
-            per_node_visible[n.name] = node_values
-            visible |= node_values
-        except Exception as e:
-            logging.warning(f"Could not read from {n.name}: {e}")
-            per_node_visible[n.name] = set()
-    for name, values in per_node_visible.items():
-        logging.info(f"  {name}: sees {len(values)} rows")
+    leader, _followers = wait_for_leader(nodes, table_name=table)
+    rows_str = leader.query(f"SELECT x FROM {table}", timeout=30)
+    leader_visible = {int(line) for line in rows_str.strip().split("\n") if line}
+    logging.info(f"  elected leader {leader.name}: sees {len(leader_visible)} rows")
 
-    missing = success_values - visible
+    missing = success_values - leader_visible
     if missing:
         sample = sorted(missing)[:10]
         raise AssertionError(
-            f"Data loss: {len(missing)} of {len(success_values)} successful inserts "
-            f"are not visible on any node. Sample missing values: {sample}"
+            f"Failover data loss: {len(missing)} of {len(success_values)} successful "
+            f"inserts not visible on the elected leader {leader.name}. "
+            f"Sample missing values: {sample}"
         )
 
-    extra = visible - attempted_values
+    extra = leader_visible - attempted_values
     if extra:
         sample = sorted(extra)[:10]
         raise AssertionError(
-            f"Phantom rows: {len(extra)} values present that we never tried to insert. "
-            f"Sample: {sample}"
+            f"Phantom rows: {len(extra)} values on the elected leader that we never "
+            f"tried to insert. Sample: {sample}"
         )
 
     # Invariant 4: merges happened. Each insert produces a part; the leader's
-    # background scheduler must have merged at least some of them. Check the union
-    # of active parts across all nodes (each node sees its own).
-    total_parts = 0
-    for n in nodes:
-        try:
-            count_str = n.query(
-                f"SELECT count() FROM system.parts "
-                f"WHERE table = '{table}' AND active"
-            ).strip()
-            total_parts += int(count_str)
-        except Exception:
-            pass
+    # background scheduler must have merged at least some of them. With shared
+    # metadata every node observes the same active-part set, so reading from the
+    # leader is sufficient.
+    count_str = leader.query(
+        f"SELECT count() FROM system.parts "
+        f"WHERE table = '{table}' AND active"
+    ).strip()
+    active_parts = int(count_str)
     expected_count = len(success_values)
-    logging.info(f"Inserts: {expected_count}, total active parts across all nodes: {total_parts}")
-    assert total_parts < expected_count, (
-        f"No merges happened: {total_parts} active parts for {expected_count} inserts"
+    logging.info(f"Inserts: {expected_count}, active parts on leader {leader.name}: {active_parts}")
+    assert active_parts < expected_count, (
+        f"No merges happened: {active_parts} active parts for {expected_count} inserts"
     )
 
     for n in nodes:
@@ -586,17 +569,9 @@ def ensure_node_up(node, timeout=60):
 #   `max(local_max_block_number, getMaxBlockNumberFromObjectStorage())`
 # before background writes are enabled, so a freshly elected leader can never
 # allocate a block number that collides with a part the previous leader
-# committed on shared storage.
-#
-# We do NOT add an integration test for this here because the default `s3`
-# disk used in this test suite stores its filesystem mapping as random UUID
-# object keys; the on-disk part name (`all_X_X_0`) is not the S3 key, so two
-# nodes writing `all_1_1_0` simply produce two unrelated S3 objects and no
-# collision is possible. The block-number safeguard is meaningful only on
-# storage policies whose object key IS the part path, e.g.
-# `s3_plain_rewritable` or `s3_plain` with shared metadata. A dedicated
-# integration test for that environment lives outside this file's scope
-# (it would need a different `storage_conf.xml`).
+# committed on shared storage. The chaos test above (`test_chaos_failover`)
+# exercises this path on `s3_plain_rewritable`, where the object key IS the
+# part path and a colliding block number would produce a real conflict.
 
 
 def test_alter_rejected_under_leader_election(started_cluster):
@@ -671,6 +646,41 @@ def test_alter_rejected_under_leader_election(started_cluster):
 # performs renames in-memory (UUID-stable, no data move), so the override is
 # not reached in the integration test environment. No dedicated test here; the
 # override remains as defensive coverage for the deprecated `Ordinary` engine.
+
+
+def test_local_metadata_rejects_leader_election(started_cluster):
+    """
+    Regression: `leader_election` on a storage policy with node-local metadata
+    (e.g. the default local-disk policy, or a plain `s3` disk with `Local`
+    metadata) cannot satisfy the active/standby invariant — the next leader
+    after a failover would lose the previous leader's parts from its view.
+    The constructor must reject this configuration before any data is written.
+    """
+    ensure_node_up(node1)
+    table = "test_local_md_rejected"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS leader_election = 1
+            """
+        )
+    except Exception as e:
+        msg = str(e)
+        assert "leader_election" in msg and "metadata" in msg, (
+            f"Expected rejection mentioning `leader_election` and metadata, got: {msg}"
+        )
+        return
+    finally:
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+    raise AssertionError(
+        "MergeTree with leader_election=1 on a node-local-metadata policy "
+        "should have been rejected at CREATE"
+    )
 
 
 def test_replicated_mergetree_rejects_leader_election(started_cluster):
