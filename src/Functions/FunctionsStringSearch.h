@@ -129,43 +129,21 @@ public:
         return Impl::getArgumentsThatAreAlwaysConstant();
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() < 2 || 3 < arguments.size())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                getName(), arguments.size());
-
-        const auto & haystack_type = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0] : arguments[1];
-        const auto & needle_type = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1] : arguments[0];
-
-        if (!(isStringOrFixedString(haystack_type) || isEnum(haystack_type)))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                haystack_type->getName(), getName());
-
-        if (!isString(needle_type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                needle_type->getName(), getName());
-
-        if (arguments.size() >= 3)
-        {
-            if (!isUInt(arguments[2]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}",
-                    arguments[2]->getName(), getName());
-        }
-
-        auto return_type = std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
-        if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)
-            return makeNullable(return_type);
-
-        return return_type;
+        const String elem = DataTypeNumber<typename Impl::ResultType>{}.getName();
+        const String ret = (execution_error_policy == ExecutionErrorPolicy::Null)
+            ? ("Nullable(" + elem + ")")
+            : elem;
+        const String haystack = (argument_order == ArgumentOrder::HaystackNeedle)
+            ? "StringOrFixedString | Enum, String"
+            : "String, StringOrFixedString | Enum";
+        if constexpr (Impl::supports_start_pos)
+            return
+                "(" + haystack + ") -> " + ret
+                + " OR (" + haystack + ", NativeUInt) -> " + ret;
+        else
+            return "(" + haystack + ") -> " + ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
