@@ -1234,11 +1234,16 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
             out_file = out_file_node.value.safeGet<std::string>();
 
-            if (query_with_output->isOutfileTruncate())
+            if (query_with_output->isOutfileTruncate() && fs::is_regular_file(out_file))
             {
                 out_file_if_truncated = out_file;
                 fs::path out_file_path(out_file);
                 out_file = (out_file_path.parent_path() / fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file_path.filename().string())).string();
+
+                /// Update the AST literal so that initOutputFormat writes to the temp file
+                /// and performAtomicRename reads the temp path from the AST.
+                auto & out_file_node_mutable = query_with_output->out_file->as<ASTLiteral &>();
+                out_file_node_mutable.value = out_file;
             }
 
             if (client_context->getSettingsRef()[Setting::into_outfile_create_parent_directories])
@@ -1350,8 +1355,8 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             }
             catch (const NetException &)
             {
-                // Clean up temporary file if it exists
-                cleanupTempFile(parsed_query, out_file);
+                if (!out_file_if_truncated.empty())
+                    cleanupTempFile(parsed_query, out_file);
 
                 // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
                 receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
@@ -1360,15 +1365,20 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
 
-            // After successful query execution, perform atomic rename for TRUNCATE mode
-            performAtomicRename(parsed_query, out_file_if_truncated);
+            if (!out_file_if_truncated.empty())
+            {
+                if (have_error)
+                    cleanupTempFile(parsed_query, out_file);
+                else
+                    performAtomicRename(parsed_query, out_file_if_truncated);
+            }
 
             break;
         }
         catch (const Exception & e)
         {
-            // Clean up temporary file if it exists
-            cleanupTempFile(parsed_query, out_file);
+            if (!out_file_if_truncated.empty())
+                cleanupTempFile(parsed_query, out_file);
 
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
@@ -2995,6 +3005,17 @@ bool ClientBase::processQueryText(const String & text)
     if (exit_strings.contains(trimmed_input))
         return false;
 
+    /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
+    /// Only in interactive mode, or in clickhouse-local (including `-q`), so `clickhouse-client` batch
+    /// mode still parses `clear` as SQL and errors on mistakes (UNKNOWN_IDENTIFIER).
+    if ((boost::iequals(trimmed_input, "clear") || boost::iequals(trimmed_input, "/clear"))
+        && (is_interactive || supportsLocalMetaCommands()))
+    {
+        if (stdout_is_a_tty)
+            output_stream << "\033[2J\033[H" << std::flush;
+        return true;
+    }
+
     if (trimmed_input.starts_with("\\i"))
     {
         size_t skip_prefix_size = std::strlen("\\i");
@@ -3832,6 +3853,12 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
 
+    /// For `clickhouse-local` only: same entry point as `-q` / stdin so meta-commands (`clear`, `ls`,
+    /// `\i`, …) work for whole-file input. Remote `clickhouse-client` keeps `executeMultiQuery` so
+    /// `--queries-file` does not apply `exit_strings` and other text-level metas (avoids silent
+    /// behavior changes for batch automation).
+    if (supportsLocalMetaCommands())
+        return processQueryText(queries_from_file);
     return executeMultiQuery(queries_from_file);
 }
 
