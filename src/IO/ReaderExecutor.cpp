@@ -326,7 +326,7 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
     /// Try to acquire a slot for a new live buffer.
     if (buffer_limit)
     {
-        auto slot = buffer_limit->tryAcquire(object.remote_path, String(CurrentThread::getQueryId()));
+        auto slot = buffer_limit->tryAcquire(buffer_limit, object.remote_path, String(CurrentThread::getQueryId()));
         if (slot)
         {
             auto opened = source->open(object, /*use_external_buffer=*/true);

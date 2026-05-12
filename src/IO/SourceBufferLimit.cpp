@@ -10,8 +10,8 @@ namespace CurrentMetrics
 namespace DB
 {
 
-SourceBufferSlot::SourceBufferSlot(SourceBufferLimit * limit_, size_t slot_id_)
-    : limit(limit_)
+SourceBufferSlot::SourceBufferSlot(std::shared_ptr<SourceBufferLimit> limit_, size_t slot_id_)
+    : limit(std::move(limit_))
     , slot_id(slot_id_)
 {
 }
@@ -20,26 +20,6 @@ SourceBufferSlot::~SourceBufferSlot()
 {
     if (limit)
         limit->release(slot_id);
-}
-
-SourceBufferSlot::SourceBufferSlot(SourceBufferSlot && other) noexcept
-    : limit(other.limit)
-    , slot_id(other.slot_id)
-{
-    other.limit = nullptr;
-}
-
-SourceBufferSlot & SourceBufferSlot::operator=(SourceBufferSlot && other) noexcept
-{
-    if (this != &other)
-    {
-        if (limit)
-            limit->release(slot_id);
-        limit = other.limit;
-        slot_id = other.slot_id;
-        other.limit = nullptr;
-    }
-    return *this;
 }
 
 void SourceBufferSlot::updatePosition(size_t new_position)
@@ -67,7 +47,7 @@ size_t SourceBufferLimit::getCapacity() const
     return max_slots;
 }
 
-std::optional<SourceBufferSlot> SourceBufferLimit::tryAcquire(const String & object_path, const String & query_id)
+std::optional<SourceBufferSlot> SourceBufferLimit::tryAcquire(std::shared_ptr<SourceBufferLimit> self, const String & object_path, const String & query_id)
 {
     std::lock_guard lock(mutex);
 
@@ -87,7 +67,7 @@ std::optional<SourceBufferSlot> SourceBufferLimit::tryAcquire(const String & obj
 
     CurrentMetrics::add(CurrentMetrics::LiveSourceBuffers);
     LOG_TRACE(log, "tryAcquire: got slot {} for {} ({}/{})", id, object_path, registry.size(), max_slots);
-    return SourceBufferSlot(this, id);
+    return SourceBufferSlot(std::move(self), id);
 }
 
 void SourceBufferLimit::release(size_t slot_id)

@@ -22,17 +22,17 @@ public:
 
     SourceBufferSlot(const SourceBufferSlot &) = delete;
     SourceBufferSlot & operator=(const SourceBufferSlot &) = delete;
-    SourceBufferSlot(SourceBufferSlot && other) noexcept;
-    SourceBufferSlot & operator=(SourceBufferSlot && other) noexcept;
+    SourceBufferSlot(SourceBufferSlot && other) noexcept = default;
+    SourceBufferSlot & operator=(SourceBufferSlot && other) noexcept = default;
 
     /// Update the position tracked in the registry (for observability).
     void updatePosition(size_t new_position);
 
 private:
     friend class SourceBufferLimit;
-    SourceBufferSlot(SourceBufferLimit * limit, size_t slot_id);
+    SourceBufferSlot(std::shared_ptr<SourceBufferLimit> limit, size_t slot_id);
 
-    SourceBufferLimit * limit = nullptr;
+    std::shared_ptr<SourceBufferLimit> limit;
     size_t slot_id = 0;
 };
 
@@ -53,7 +53,8 @@ public:
     explicit SourceBufferLimit(size_t max_slots);
 
     /// Try to acquire a slot. Returns nullopt if at capacity.
-    std::optional<SourceBufferSlot> tryAcquire(const String & object_path, const String & query_id = {});
+    /// self must be the shared_ptr owning this instance (kept alive by the slot).
+    std::optional<SourceBufferSlot> tryAcquire(std::shared_ptr<SourceBufferLimit> self, const String & object_path, const String & query_id = {});
 
     /// Update capacity at runtime (called from config reload in Server.cpp).
     /// Existing slots beyond the new limit are not forcibly closed.
