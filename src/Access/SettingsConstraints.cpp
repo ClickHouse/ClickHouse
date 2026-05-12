@@ -143,7 +143,7 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
         }
     }
 
-    for (const auto & [other_alias, other_resolved_name] : settings_alias_cache)
+    for (const auto & [other_alias, other_resolved_name] : other.settings_alias_cache)
         settings_alias_cache.try_emplace(other_alias, other_resolved_name);
 }
 
