@@ -45,6 +45,8 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
@@ -132,6 +134,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char remove_merge_tree_part_delay[];
+    extern const char merge_tree_load_statistics_throw[];
 }
 
 namespace
@@ -632,6 +635,13 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 
 void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version)
 {
+    /// Per-part metadata (`columns`, `serialization_infos`, the `serializations` map,
+    /// `column_name_to_position`, and the `columns_description{,_with_collected_nested}`) lives as
+    /// long as the part — i.e. far longer than a query. Routing these allocations to the dedicated
+    /// parts arena keeps them off the default arena's pages, which would otherwise be pinned by
+    /// per-part survivors and unable to be returned to the OS while query allocations come and go.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     columns = new_columns;
     serialization_infos = new_infos;
     metadata_version = new_metadata_version;
@@ -1128,6 +1138,12 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
+    fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+    {
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Injected failure in loadStatistics");
+    });
+
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
 
     if (auto * reader = getStatisticsPackedReader())
@@ -1154,12 +1170,13 @@ Estimates IMergeTreeDataPart::getEstimates() const
     if (estimates.has_value())
         return *estimates;
 
-    estimates = Estimates();
+    Estimates new_estimates;
     auto statistics = loadStatistics();
 
     for (const auto & [column_name, stats] : statistics)
-        estimates->emplace(column_name, stats->getEstimate());
+        new_estimates.emplace(column_name, stats->getEstimate());
 
+    estimates = std::move(new_estimates);
     return *estimates;
 }
 
@@ -1175,6 +1192,14 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// This is already true at the server startup but must be also ensured for manual table ATTACH.
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
+    /// Everything loaded here (columns, substreams, checksums, index granularity, primary index,
+    /// per-column sizes, rows count, partition / minmax index, TTL infos, projections, default
+    /// compression codec, source parts set) lives for the whole part lifetime. Route the heap
+    /// allocations into the dedicated parts arena. This block is on the hot server-startup path
+    /// (`MergeTreeData::loadDataPart` → `loadColumnsChecksumsIndexes`), so per-part metadata
+    /// allocated at boot also lands in the arena from the start.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     try
     {
@@ -1279,6 +1304,14 @@ void IMergeTreeDataPart::addProjectionPart(
 void IMergeTreeDataPart::loadProjections(
     bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded, bool only_metadata)
 {
+    /// Each loaded projection becomes its own `IMergeTreeDataPart` (via `getProjectionPartBuilder().build()`)
+    /// and is stored in the parent's `projection_parts` map. Both the map node insertion in
+    /// `addProjectionPart` and any allocation paths reached during build/load that aren't already
+    /// scoped by their own helpers belong in the parts arena. This is also the entry point used
+    /// directly by `MutateTask`, where the surrounding `loadColumnsChecksumsIndexes` scope is not
+    /// in effect; without this guard those calls would land in the default arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     for (const auto & projection : metadata_snapshot->projections)
     {
@@ -1383,6 +1416,14 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadIndex");
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
+    /// The loaded primary-index `Columns` live for the part's lifetime when stored on the part
+    /// (`primary_key_lazy_load=0`, or lazy load with `use_primary_key_cache=0`), or for the
+    /// cache entry's lifetime when the result is handed to `PrimaryIndexCache`. `loadIndex` is
+    /// reachable from `loadColumnsChecksumsIndexes` (already wrapped) but also from `getIndex`
+    /// and `loadIndexToCache` on the lazy-load path; wrapping inside `loadIndex` itself covers
+    /// every entry point.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     auto metadata_snapshot = getMetadataSnapshot();
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
@@ -1662,6 +1703,10 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 
 void IMergeTreeDataPart::loadChecksums(bool require)
 {
+    /// `MergeTreeDataPartChecksums` is a `std::map<String, MergeTreeDataPartChecksum>` that lives as
+    /// long as the part. Its tree-node allocations belong in the parts arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     if (auto buf = readFileIfExists("checksums.txt"))
     {
         if (checksums.read(*buf))
@@ -2013,6 +2058,11 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
 void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_)
 {
+    /// `ColumnsSubstreams::operator=` is one of the heaviest per-part allocators (deep copy of nested
+    /// vector-of-pair-of-string-of-strings + per-substream maps). Route into the parts arena, same
+    /// rationale as `setColumns` above.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     columns_substreams_.validateColumns(getColumns().getNames());
     columns_substreams = columns_substreams_;
 }
