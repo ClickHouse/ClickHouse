@@ -770,6 +770,7 @@ public:
         MAX_ATTACHED_DATABASES,
         MAX_ATTACHED_DICTIONARIES,
         MAX_ATTACHED_TABLES,
+        MAX_ATTACHED_REPLICATED_TABLES,
         MAX_ATTACHED_VIEWS,
         MAX_NAMED_COLLECTIONS,
         MAX_NUM_THREADS_LOWER_THAN_LIMIT,
@@ -1203,6 +1204,7 @@ public:
 
     size_t getMaxNamedCollectionNumToWarn() const;
     size_t getMaxTableNumToWarn() const;
+    size_t getMaxReplicatedTableNumToWarn() const;
     size_t getMaxViewNumToWarn() const;
     size_t getMaxDictionaryNumToWarn() const;
     size_t getMaxDatabaseNumToWarn() const;
@@ -1212,6 +1214,7 @@ public:
 
     void setMaxNamedCollectionNumToWarn(size_t max_named_collection_to_warn);
     void setMaxTableNumToWarn(size_t max_table_to_warn);
+    void setMaxReplicatedTableNumToWarn(size_t max_replicated_table_to_warn);
     void setMaxViewNumToWarn(size_t max_view_to_warn);
     void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
     void setMaxDatabaseNumToWarn(size_t max_database_to_warn);

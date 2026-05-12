@@ -685,6 +685,15 @@ namespace
     <max_table_num_to_warn>400</max_table_num_to_warn>
     ```
     )", 0) \
+    DECLARE(UInt64, max_replicated_table_num_to_warn, 3000lu, R"(
+    If the number of attached replicated tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+
+    **Example**
+
+    ```xml
+    <max_replicated_table_num_to_warn>400</max_replicated_table_num_to_warn>
+    ```
+    )", 0) \
     DECLARE(UInt64, max_pending_mutations_to_warn, 500lu, R"(
     If the number of pending mutations exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
 
@@ -1746,6 +1755,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_table_size_to_drop", {std::to_string(context->getMaxTableSizeToDrop()), ChangeableWithoutRestart::Yes}},
             {"max_named_collection_num_to_warn", {std::to_string(context->getMaxNamedCollectionNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_table_num_to_warn", {std::to_string(context->getMaxTableNumToWarn()), ChangeableWithoutRestart::Yes}},
+            {"max_replicated_table_num_to_warn", {std::to_string(context->getMaxReplicatedTableNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_view_num_to_warn", {std::to_string(context->getMaxViewNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_dictionary_num_to_warn", {std::to_string(context->getMaxDictionaryNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_database_num_to_warn", {std::to_string(context->getMaxDatabaseNumToWarn()), ChangeableWithoutRestart::Yes}},

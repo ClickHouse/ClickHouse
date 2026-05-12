@@ -1,5 +1,6 @@
 <clickhouse>
     <max_table_num_to_warn>5</max_table_num_to_warn>
+    <max_replicated_table_num_to_warn>3</max_replicated_table_num_to_warn>
     <max_view_num_to_warn>5</max_view_num_to_warn>
     <max_dictionary_num_to_warn>5</max_dictionary_num_to_warn>
     <max_database_num_to_warn>2</max_database_num_to_warn>

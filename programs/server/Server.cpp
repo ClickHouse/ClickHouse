@@ -312,6 +312,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_server_memory_usage;
     extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
     extern const ServerSettingsUInt64 max_table_num_to_warn;
+    extern const ServerSettingsUInt64 max_replicated_table_num_to_warn;
     extern const ServerSettingsUInt64 max_table_size_to_drop;
     extern const ServerSettingsUInt64 max_temporary_data_on_disk_size;
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
@@ -2343,6 +2344,7 @@ try
             global_context->setMaxPartitionSizeToDrop(new_server_settings[ServerSetting::max_partition_size_to_drop]);
             global_context->setMaxNamedCollectionNumToWarn(new_server_settings[ServerSetting::max_named_collection_num_to_warn]);
             global_context->setMaxTableNumToWarn(new_server_settings[ServerSetting::max_table_num_to_warn]);
+            global_context->setMaxReplicatedTableNumToWarn(new_server_settings[ServerSetting::max_replicated_table_num_to_warn]);
             global_context->setMaxViewNumToWarn(new_server_settings[ServerSetting::max_view_num_to_warn]);
             global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
