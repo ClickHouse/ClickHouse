@@ -15,6 +15,37 @@ namespace DB
 void registerObjectStorages();
 void registerMetadataStorages();
 
+void ConfigurationFields getS3DiskConfigurationFields(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix)
+{
+    static const std::unordered_set<String> whitelist =
+    {
+        "s3_max_get_rps",
+        "s3_max_get_burst",
+        "s3_max_put_rps",
+        "s3_max_put_burst",
+        "s3_max_redirects",
+        "s3_max_single_read_retries",
+        "s3_max_single_download_retries",
+        "max_connections",
+        "request_timeout_ms",
+        "connect_timeout_ms",
+        "metadata_keep_free_space_bytes",
+    };
+
+    IDisk::ConfigurationFields result;
+
+    for (const auto & key : whitelist)
+    {
+        const auto full_key = config_prefix + "." + key;
+        if (config.has(full_key))
+            result.emplace(key, config.getString(full_key));
+    }
+
+    return result;
+}
+
 void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check)
 {
     registerObjectStorages();
@@ -82,6 +113,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
             std::move(cluster),
             std::move(metadata_storage),
             std::move(object_storages),
+            getS3DiskConfigurationFields(),
             /*wrapped_disk=*/nullptr,
             config,
             config_prefix,

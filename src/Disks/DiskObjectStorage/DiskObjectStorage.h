@@ -37,6 +37,7 @@ public:
         ClusterConfigurationPtr cluster_,
         MetadataStoragePtr metadata_storage_,
         ObjectStorageRouterPtr object_storages_,
+        ConfigurationFields configuration_fields_,
         DiskObjectStorageConstPtr wrapped_disk_,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
@@ -47,6 +48,8 @@ public:
     DiskTransactionPtr createTransaction() override;
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
+
+    ConfigurationFields getConfigurationFields() const override { return configuration_fields; }
 
     bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
 
@@ -255,6 +258,7 @@ private:
     MetadataStoragePtr metadata_storage;
     ObjectStorageRouterPtr object_storages;
     DataSourceDescription data_source_description;
+    ConfigurationFields configuration_fields;
 
     BlobKillerThreadPtr blob_killer;
     BlobCopierThreadPtr blob_copier;

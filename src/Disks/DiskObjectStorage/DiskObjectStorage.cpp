@@ -73,6 +73,7 @@ DiskObjectStorage::DiskObjectStorage(
     ClusterConfigurationPtr cluster_,
     MetadataStoragePtr metadata_storage_,
     ObjectStorageRouterPtr object_storages_,
+    ConfigurationFields configuration_fields_,
     DiskObjectStorageConstPtr wrapped_disk_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
@@ -83,6 +84,7 @@ DiskObjectStorage::DiskObjectStorage(
     , cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))
+    , configuration_fields(std::move(configuration_fields_))
     , blob_killer(std::make_shared<BlobKillerThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages, wrapped_disk ? wrapped_disk->blob_killer : nullptr))
     , blob_copier(std::make_shared<BlobCopierThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages))
     , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
@@ -960,6 +962,11 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
     wait_blob_removal = config.getBool(config_prefix + ".wait_for_blob_removal", context->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
     blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
+}
+
+std::map<String, String> DiskObjectStorage::getConfigurationFields() const override
+{
+    return configuration_fields;
 }
 
 #if USE_AWS_S3

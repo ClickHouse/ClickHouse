@@ -55,6 +55,7 @@ namespace ErrorCodes
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 using DisksMap = std::map<String, DiskPtr, std::less<>>;
+using ConfigurationFields = std::map<String, String>;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
@@ -444,6 +445,8 @@ public:
 
     /// Return data source description
     virtual DataSourceDescription getDataSourceDescription() const = 0;
+
+    virtual ConfigurationFields getConfigurationFields() const { return {}; }
 
     /// Involves network interaction.
     virtual bool isRemote() const = 0;
