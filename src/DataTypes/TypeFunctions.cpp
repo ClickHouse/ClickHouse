@@ -9,13 +9,19 @@
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Field.h>
 #include <Common/typeid_cast.h>
+#include <Poco/String.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -30,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace FunctionSignatures
@@ -382,6 +389,60 @@ public:
 };
 
 
+/// IntervalType('week') → DataTypeInterval(Kind::Week). Used by functions that take a
+/// constant string naming an interval unit and return an Interval-typed value, such as
+/// `toInterval(value, 'day')`.
+class TypeFunctionIntervalType : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function IntervalType");
+
+        const String name = args.front().field().safeGet<String>();
+        IntervalKind kind;
+        if (!IntervalKind::tryParseString(Poco::toLower(name), kind.kind))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' doesn't look like an interval unit", name);
+
+        return Value(DataTypePtr(std::make_shared<DataTypeInterval>(kind.kind)));
+    }
+
+    std::string name() const override { return "IntervalType"; }
+};
+
+
+/// AggregateFunction('sum', UInt64) → DataTypeAggregateFunction wrapping the sum aggregator
+/// over UInt64. Used by functions whose result is an aggregation state typed by both the
+/// aggregator name (constant string) and the argument types of the aggregator.
+class TypeFunctionAggregateFunctionType : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Type function AggregateFunction requires at least one argument (aggregator name)");
+
+        const String agg_name = args.front().field().safeGet<String>();
+
+        DataTypes arg_types;
+        arg_types.reserve(args.size() - 1);
+        for (size_t i = 1; i < args.size(); ++i)
+            arg_types.emplace_back(args[i].type());
+
+        Array params;
+        AggregateFunctionProperties properties;
+        AggregateFunctionPtr func
+            = AggregateFunctionFactory::instance().get(agg_name, NullsAction::EMPTY, arg_types, params, properties);
+
+        return Value(DataTypePtr(std::make_shared<DataTypeAggregateFunction>(std::move(func), std::move(arg_types), std::move(params))));
+    }
+
+    std::string name() const override { return "AggregateFunction"; }
+};
+
+
 void registerTypeFunctions()
 {
     auto & factory = TypeFunctionFactory::instance();
@@ -402,6 +463,8 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionNullable>();
     factory.registerElement<TypeFunctionLowCardinality>();
     factory.registerElement<TypeFunctionDictionaryTypeOf>();
+    factory.registerElement<TypeFunctionIntervalType>();
+    factory.registerElement<TypeFunctionAggregateFunctionType>();
 
     /// Predicates.
     factory.registerElement<TypeFunctionTuplesHaveSameSize>();

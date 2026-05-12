@@ -1034,6 +1034,18 @@ bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
     if (parseFunctionLikeExpression(pos, name, true,
         [&](TokenIterator & inner)
         {
+            /// String literal child — used by matchers like AggregateFunction('groupBitmap', T)
+            /// to require a specific name. Wrap in a placeholder matcher that the parent reads.
+            if (inner->type == TokenType::StringLiteral)
+            {
+                ReadBufferFromMemory buf(inner->begin, inner->end - inner->begin);
+                String value;
+                readQuotedStringWithSQLStyle(value, buf);
+                args.emplace_back(makeStringLiteralMatcher(std::move(value)));
+                ++inner;
+                return true;
+            }
+
             TypeMatcherPtr elem;
             if (parseTypeMatcher(inner, elem))
             {

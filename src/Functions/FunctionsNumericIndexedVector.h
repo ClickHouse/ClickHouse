@@ -48,19 +48,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = checkAndGetDataType<DataTypeMap>(arguments[0].get());
-        if (!arg)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Map type", getName());
-        DataTypes argument_types = {arg->getKeyType(), arg->getValueType()};
-        Array params_row;
-        AggregateFunctionProperties properties;
-        AggregateFunctionPtr numeric_indexed_vector_function;
-        auto action = NullsAction::EMPTY;
-        numeric_indexed_vector_function = AggregateFunctionFactory::instance().get(
-            NameAggregateFunctionGroupNumericIndexedVector::name, action, argument_types, params_row, properties);
-        return std::make_shared<DataTypeAggregateFunction>(numeric_indexed_vector_function, argument_types, params_row);
+        return "(Map(K : Any, V : Any)) -> AggregateFunction('groupNumericIndexedVector', K, V)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

@@ -200,6 +200,11 @@ namespace FunctionSignatures
     using TypeMatchers = std::vector<TypeMatcherPtr>;
     using TypeMatcherFactory = Factory<TypeMatcherPtr, const TypeMatchers &>;
 
+    /// Builds a placeholder matcher that carries a string literal to its parent matcher.
+    /// Used so that matchers like AggregateFunction('groupBitmap', T) can require a specific
+    /// aggregator name without inventing one matcher class per name.
+    TypeMatcherPtr makeStringLiteralMatcher(std::string literal);
+
 
     /** A function of variables (types and constants) that returns a value (type or constant).
       * May return a Value containing nullptr type, meaning "not applicable".

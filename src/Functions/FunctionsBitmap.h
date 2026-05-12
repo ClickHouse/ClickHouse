@@ -104,53 +104,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments[0]->onlyNull())
-            return arguments[0];
-
-        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
-        if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be an array but it has type {}.",
-                            getName(), arguments[0]->getName());
-
-        auto nested_type = array_type->getNestedType();
-        DataTypes argument_types = {nested_type};
-        Array params_row;
-        AggregateFunctionProperties properties;
-        AggregateFunctionPtr bitmap_function;
-        WhichDataType which(nested_type);
-        auto action = NullsAction::EMPTY;
-        if (which.isUInt8())
-            bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<UInt8>::name(), action, argument_types, params_row, properties);
-        else if (which.isUInt16())
-            bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<UInt16>::name(), action, argument_types, params_row, properties);
-        else if (which.isUInt32())
-            bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<UInt32>::name(), action, argument_types, params_row, properties);
-        else if (which.isUInt64())
-            bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<UInt64>::name(), action, argument_types, params_row, properties);
-        else if (which.isInt8())
-            bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<Int8>::name(), action, argument_types, params_row, properties);
-        else if (which.isInt16())
-            bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<Int16>::name(), action, argument_types, params_row, properties);
-        else if (which.isInt32())
-            bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<Int32>::name(), action, argument_types, params_row, properties);
-        else if (which.isInt64())
-            bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<Int64>::name(), action, argument_types, params_row, properties);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
-                array_type->getName(), getName());
-
-        return std::make_shared<DataTypeAggregateFunction>(bitmap_function, argument_types, params_row);
+        return "(Array(T : Integer)) -> AggregateFunction('groupBitmap', T)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -235,17 +191,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type && bitmap_type->getFunctionName() =="groupBitmap"))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be a bitmap but it has type {}.",
-                            getName(), arguments[0]->getName());
-
-        const DataTypePtr data_type = bitmap_type->getArgumentsDataTypes()[0];
-
-        return std::make_shared<DataTypeArray>(data_type);
+        return "(AggregateFunction('groupBitmap', T : Any)) -> Array(T)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

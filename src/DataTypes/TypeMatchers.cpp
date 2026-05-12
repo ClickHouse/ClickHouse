@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeSet.h>
 
 #include <Common/typeid_cast.h>
@@ -257,6 +258,46 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+class TypeMatcherMapOf : public ITypeMatcher
+{
+private:
+    TypeMatcherPtr key_matcher;
+    TypeMatcherPtr value_matcher;
+public:
+    explicit TypeMatcherMapOf(const TypeMatchers & child_matchers)
+    {
+        if (child_matchers.size() != 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Map type matcher requires exactly two arguments (key and value)");
+        key_matcher = child_matchers[0];
+        value_matcher = child_matchers[1];
+    }
+
+    std::string toString() const override { return "Map(" + key_matcher->toString() + ", " + value_matcher->toString() + ")"; }
+
+    bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string & out_reason) const override
+    {
+        if (!isMap(type))
+        {
+            out_reason = "expected Map, got " + type->getName();
+            return false;
+        }
+        const auto & map_type = static_cast<const DataTypeMap &>(*type);
+        if (!key_matcher->match(map_type.getKeyType(), variables, iteration, arg_num, out_reason))
+        {
+            out_reason = "Map key type doesn't match " + key_matcher->toString() + (out_reason.empty() ? "" : ": " + out_reason);
+            return false;
+        }
+        if (!value_matcher->match(map_type.getValueType(), variables, iteration, arg_num, out_reason))
+        {
+            out_reason = "Map value type doesn't match " + value_matcher->toString() + (out_reason.empty() ? "" : ": " + out_reason);
+            return false;
+        }
+        return true;
+    }
+
+    size_t getIndex() const override { return getCommonIndex(key_matcher->getIndex(), value_matcher->getIndex()); }
+};
+
 class TypeMatcherString : public ITypeMatcher
 {
 public:
@@ -364,6 +405,94 @@ public:
     std::string toString() const override { return "JSON"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->getTypeId() == TypeIndex::Object; }
     size_t getIndex() const override { return 0; }
+};
+
+/// Wraps a string literal token; used as a non-matching constraint passed to parent matchers
+/// that need to know an identifier (e.g. an aggregate-function name to require).
+class TypeMatcherStringLiteral : public ITypeMatcher
+{
+private:
+    std::string literal;
+public:
+    explicit TypeMatcherStringLiteral(std::string literal_) : literal(std::move(literal_)) {}
+    const std::string & getLiteral() const { return literal; }
+    std::string toString() const override { return "'" + literal + "'"; }
+    bool match(const DataTypePtr &, Variables &, size_t, size_t, std::string & out_reason) const override
+    {
+        out_reason = "string literal '" + literal + "' cannot be used as a top-level type matcher";
+        return false;
+    }
+    size_t getIndex() const override { return 0; }
+};
+
+/// Matches AggregateFunction(<name>, <element matchers...>) where <name> is a string literal
+/// in the signature (e.g. AggregateFunction('groupBitmap', T)).
+class TypeMatcherAggregateFunctionOf : public ITypeMatcher
+{
+private:
+    std::string agg_name;
+    TypeMatchers element_matchers;
+public:
+    explicit TypeMatcherAggregateFunctionOf(const TypeMatchers & children)
+    {
+        if (children.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "AggregateFunction matcher requires at least one argument (the aggregator name as a string literal)");
+        const auto * name_lit = dynamic_cast<const TypeMatcherStringLiteral *>(children.front().get());
+        if (!name_lit)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "First argument of AggregateFunction matcher must be a string literal (the aggregator name)");
+        agg_name = name_lit->getLiteral();
+        element_matchers.assign(children.begin() + 1, children.end());
+    }
+
+    std::string toString() const override
+    {
+        std::string s = "AggregateFunction('" + agg_name + "'";
+        for (const auto & m : element_matchers)
+            s += ", " + m->toString();
+        s += ")";
+        return s;
+    }
+
+    bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string & out_reason) const override
+    {
+        const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(type.get());
+        if (!agg_type)
+        {
+            out_reason = "expected AggregateFunction, got " + type->getName();
+            return false;
+        }
+        if (agg_type->getFunctionName() != agg_name)
+        {
+            out_reason = "expected AggregateFunction('" + agg_name + "'...), got " + agg_type->getName();
+            return false;
+        }
+        const auto & arg_types = agg_type->getArgumentsDataTypes();
+        if (element_matchers.size() != arg_types.size())
+        {
+            out_reason = "AggregateFunction arity mismatch: expected " + DB::toString(element_matchers.size())
+                + " element matchers, got AggregateFunction with " + DB::toString(arg_types.size()) + " arguments";
+            return false;
+        }
+        for (size_t i = 0; i < element_matchers.size(); ++i)
+        {
+            if (!element_matchers[i]->match(arg_types[i], variables, iteration, arg_num, out_reason))
+            {
+                out_reason = "AggregateFunction argument " + DB::toString(i) + " doesn't match: " + out_reason;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    size_t getIndex() const override
+    {
+        size_t res = 0;
+        for (const auto & m : element_matchers)
+            res = getCommonIndex(res, m->getIndex());
+        return res;
+    }
 };
 
 /// Matches `Nullable(Nothing)` — i.e. the type of a literal `NULL` or an `onlyNull` column.
@@ -589,7 +718,13 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherIPv6>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherString>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherFixedString>(factory);
-    registerTypeMatcherWithNoArguments<TypeMatcherMap>(factory);
+    /// Map: 0 args matches any Map; (K, V) matches Map(K, V) and captures key/value types.
+    factory.registerElement("Map", [](const TypeMatchers & children) -> TypeMatcherPtr
+    {
+        if (children.empty())
+            return std::make_shared<TypeMatcherMap>();
+        return std::make_shared<TypeMatcherMapOf>(children);
+    });
     registerTypeMatcherWithNoArguments<TypeMatcherDate>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDate32>(factory);
     /// LowCardinality has both a 0-arg form (matches any LowCardinality type) and a
@@ -612,6 +747,12 @@ void registerTypeMatchers()
     factory.registerElement("Tuple", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherTuple>(children); });
     factory.registerElement("MaybeNullable", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherMaybeNullable>(children); });
     factory.registerElement("Nullable", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherNullable>(children); });
+    factory.registerElement("AggregateFunction", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherAggregateFunctionOf>(children); });
+}
+
+TypeMatcherPtr makeStringLiteralMatcher(std::string literal)
+{
+    return std::make_shared<TypeMatcherStringLiteral>(std::move(literal));
 }
 
 }
