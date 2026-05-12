@@ -198,6 +198,56 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+/// Matches any DateTime regardless of timezone metadata.
+class TypeMatcherDateTime : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "DateTime"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDateTime(); }
+    size_t getIndex() const override { return 0; }
+};
+
+/// Matches any DateTime64 regardless of scale/timezone.
+class TypeMatcherDateTime64 : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "DateTime64"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDateTime64(); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherTime : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Time"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isTime(); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherTime64 : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Time64"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isTime64(); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherDate32 : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Date32"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDate32(); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherDate : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Date"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDate(); }
+    size_t getIndex() const override { return 0; }
+};
+
 
 class TypeMatcherArray : public ITypeMatcher
 {
@@ -364,6 +414,12 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherString>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherFixedString>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherMap>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherDate>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherDate32>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherDateTime>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherDateTime64>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherTime>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherTime64>(factory);
 
     factory.registerElement("Array", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherArray>(children); });
     factory.registerElement("Tuple", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherTuple>(children); });

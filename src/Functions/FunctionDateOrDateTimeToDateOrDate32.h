@@ -32,24 +32,26 @@ public:
     {
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        this->checkArguments(arguments, /*is_result_type_date_or_date32*/ true);
-
-        const IDataType * from_type = arguments[0].type.get();
-        WhichDataType which(from_type);
-
-        /// If the time zone is specified but empty, throw an exception.
-        /// only validate the time_zone part if the number of arguments is 2.
-        if ((which.isDateTime() || which.isDateTime64()) && arguments.size() == 2
-            && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false).empty())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Function {} supports a 2nd argument (optional) that must be a valid time zone",
-                this->getName());
-
-        if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions)
-            return std::make_shared<DataTypeDate32>();
-        return std::make_shared<DataTypeDate>();
+        /// `checkArguments(..., is_result_type_date_or_date32=true)` originally disallowed a
+        /// timezone arg when the 1st argument was Date or Date32; only DateTime/DateTime64
+        /// inputs accept the optional 2nd argument. The return type doesn't carry the timezone
+        /// (Date and Date32 have no tz field), so `[const tz String]` is enough.
+        ///
+        /// When extended results are enabled, Date32 and DateTime64 inputs return Date32
+        /// instead of Date.
+        if (enable_extended_results_for_datetime_functions)
+        {
+            return
+                "(Date) -> Date"
+                " OR (DateTime, [const tz String]) -> Date"
+                " OR (Date32) -> Date32"
+                " OR (DateTime64, [const tz String]) -> Date32";
+        }
+        return
+            "(Date | Date32) -> Date"
+            " OR (DateTime | DateTime64, [const tz String]) -> Date";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

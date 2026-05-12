@@ -58,9 +58,9 @@ public:
                 ? "scaleOf(T)"
                 : "max(scaleOf(T), " + min_scale + ")";
 
-            /// DataTypeTime64 doesn't carry a timezone of its own, but the 2nd arg is still accepted.
-            return "(T : DateOrDateTime) -> Time64(" + scale_expr + ")"
-                   " OR (T : DateOrDateTime, const tz String) -> Time64(" + scale_expr + ")";
+            /// DataTypeTime64 doesn't carry a timezone of its own, but the 2nd arg is still
+            /// accepted. Since both branches return the same shape, an optional group works.
+            return "(T : DateOrDateTime, [const tz String]) -> Time64(" + scale_expr + ")";
         }
         else
         {
