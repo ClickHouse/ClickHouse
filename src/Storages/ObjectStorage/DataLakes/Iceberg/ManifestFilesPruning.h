@@ -2,6 +2,7 @@
 #include "config.h"
 
 
+#include <Core/NamesAndTypes.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
