@@ -12,6 +12,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <cppkafka/configuration.h>
 #include <cppkafka/kafka_handle_base.h>
