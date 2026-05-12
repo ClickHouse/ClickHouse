@@ -173,7 +173,7 @@ bool tryEstimateEmpirical(
     ContextPtr /* context */)
 {
     const auto & data = read_step->getMergeTreeData();
-    const auto & storage_snapshot = read_step->getStorageSnapshot();
+    auto storage_snapshot = read_step->getStorageSnapshot();
 
     Names index_columns = index_helper->getColumnsRequiredForIndexCalc();
     if (index_columns.empty())
@@ -193,8 +193,14 @@ bool tryEstimateEmpirical(
         if (mark_ranges.empty())
             continue;
 
+        /// Read the whole part: `MergeTreeSequentialSource` sizes reads from mark 0, so
+        /// passing pruned ranges trips a `LOGICAL_ERROR` when marks are non-uniform
+        std::vector<bool> in_baseline(part->getMarksCount(), false);
+        for (const auto & range : mark_ranges)
+            for (size_t m = range.begin; m < range.end && m < in_baseline.size(); ++m)
+                in_baseline[m] = true;
+
         RangesInDataPart part_for_read(part);
-        part_for_read.ranges = mark_ranges;
 
         Pipe pipe = createMergeTreeSequentialSource(
             MergeTreeSequentialSourceType::Merge,
@@ -204,7 +210,7 @@ bool tryEstimateEmpirical(
             std::make_shared<AlterConversions>(),
             nullptr,
             index_columns,
-            mark_ranges,
+            std::nullopt,
             std::make_shared<std::atomic<size_t>>(0),
             false,
             false,
@@ -213,10 +219,22 @@ bool tryEstimateEmpirical(
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
-        /// Sequential source produces one block per data granule
-        /// accumulate skip_index_granularity blocks per index granule
+        /// Feed every granule to the aggregator (matches what a real index would see),
+        /// but only count baseline marks in kept/skipped
         auto aggregator = index_helper->createIndexAggregator();
-        size_t data_granules_in_current = 0;
+        size_t mark_idx = 0;
+        size_t data_granules_in_window = 0;
+        size_t baseline_marks_in_window = 0;
+
+        auto flush_window = [&]
+        {
+            if (baseline_marks_in_window == 0)
+                return;
+            auto granule = aggregator->getGranuleAndReset();
+            total_data_granules += baseline_marks_in_window;
+            if (!condition->mayBeTrueOnGranule(granule, {}))
+                skipped_data_granules += baseline_marks_in_window;
+        };
 
         Block block;
         while (executor.pull(block))
@@ -226,27 +244,22 @@ bool tryEstimateEmpirical(
 
             size_t pos = 0;
             aggregator->update(block, &pos, block.rows());
-            ++data_granules_in_current;
+            ++data_granules_in_window;
+            if (mark_idx < in_baseline.size() && in_baseline[mark_idx])
+                ++baseline_marks_in_window;
+            ++mark_idx;
 
-            if (data_granules_in_current >= skip_index_granularity)
+            if (data_granules_in_window >= skip_index_granularity)
             {
-                auto granule = aggregator->getGranuleAndReset();
-                total_data_granules += data_granules_in_current;
-                if (!condition->mayBeTrueOnGranule(granule, {}))
-                    skipped_data_granules += data_granules_in_current;
-
+                flush_window();
                 aggregator = index_helper->createIndexAggregator();
-                data_granules_in_current = 0;
+                data_granules_in_window = 0;
+                baseline_marks_in_window = 0;
             }
         }
 
         if (!aggregator->empty())
-        {
-            auto granule = aggregator->getGranuleAndReset();
-            total_data_granules += data_granules_in_current;
-            if (!condition->mayBeTrueOnGranule(granule, {}))
-                skipped_data_granules += data_granules_in_current;
-        }
+            flush_window();
     }
 
     if (total_data_granules == 0)

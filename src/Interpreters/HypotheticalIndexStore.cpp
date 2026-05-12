@@ -33,6 +33,15 @@ bool HypotheticalIndexStore::add(const StorageID & table_id, const IndexDescript
                 table_id.getTableName());
         }
     }
+
+    std::erase_if(entries, [&](const Entry & e)
+    {
+        return e.index.name == index.name
+            && e.table_id.getDatabaseName() == table_id.getDatabaseName()
+            && e.table_id.getTableName() == table_id.getTableName()
+            && !sameTable(e.table_id, table_id);
+    });
+
     entries.push_back({table_id, index});
     return true;
 }
@@ -40,10 +49,22 @@ bool HypotheticalIndexStore::add(const StorageID & table_id, const IndexDescript
 bool HypotheticalIndexStore::remove(const StorageID & table_id, const String & index_name, bool if_exists)
 {
     std::lock_guard lock(mutex);
-    auto pos = std::find_if(entries.begin(), entries.end(), [&](const Entry & e)
+
+    auto by_uuid = std::find_if(entries.begin(), entries.end(), [&](const Entry & e)
     {
-        return sameTable(e.table_id, table_id) && e.index.name == index_name;
+        return e.index.name == index_name && sameTable(e.table_id, table_id);
     });
+
+    auto pos = by_uuid;
+    if (pos == entries.end())
+    {
+        pos = std::find_if(entries.begin(), entries.end(), [&](const Entry & e)
+        {
+            return e.index.name == index_name
+                && e.table_id.getDatabaseName() == table_id.getDatabaseName()
+                && e.table_id.getTableName() == table_id.getTableName();
+        });
+    }
 
     if (pos == entries.end())
     {

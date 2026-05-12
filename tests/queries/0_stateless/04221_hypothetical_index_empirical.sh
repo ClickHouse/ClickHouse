@@ -133,4 +133,18 @@ $CLICKHOUSE_CLIENT -n -q "
 " | grep -E '^\s+skip_ratio:|^\s+source:|^\s+sampled_marks:'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proof"
+
+echo "--- non-uniform marks + PK pruning ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_split;
+    CREATE TABLE t_hypo_split (a UInt64, b String, c Float64)
+    ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 16384, min_bytes_for_wide_part = 0;
+    INSERT INTO t_hypo_split SELECT number, repeat(toString(number), 10), number * 1.1 FROM numbers(1000);
+
+    CREATE HYPOTHETICAL INDEX idx_a_minmax ON t_hypo_split (a) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_split WHERE a > 500;
+" | grep -E '^\s+status:|^\s+source:'
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_split"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_emp"

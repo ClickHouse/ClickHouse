@@ -28,3 +28,6 @@
   skip_ratio:   100.0%
   source:           empirical
   sampled_marks:    50 / 100
+--- non-uniform marks + PK pruning ---
+  status:       applicable
+  source:           empirical
