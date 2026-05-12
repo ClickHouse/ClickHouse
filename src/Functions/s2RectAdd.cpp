@@ -44,21 +44,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        for (size_t index = 0; index < getNumberOfArguments(); ++index)
-        {
-            const auto * arg = arguments[index].get();
-            if (!WhichDataType(arg).isUInt64())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}. Must be UInt64",
-                    arg->getName(), index, getName());
-        }
-
-        DataTypePtr element = std::make_shared<DataTypeUInt64>();
-
-        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
+        return "(UInt64, UInt64, UInt64) -> Tuple(UInt64, UInt64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
