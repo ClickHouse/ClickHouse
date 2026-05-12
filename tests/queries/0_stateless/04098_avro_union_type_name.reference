@@ -1,0 +1,43 @@
+== DESCRIBE with union_type_name enabled ==
+id	Int32
+nullable_payload	Nullable(Tuple(x Int32))
+nullable_payload.$name	Nullable(String)
+variant_payload	Variant(Tuple(\n    y String), Tuple(\n    z Float64))
+variant_payload.$name	Nullable(String)
+
+== SELECT id, nullable_payload.$name, variant_payload.$name ==
+1	\N	TypeB
+2	TypeA	TypeC
+3	TypeA	TypeB
+4	\N	TypeC
+5	TypeA	TypeB
+
+== Filter WHERE nullable_payload.$name = 'TypeA' ==
+2	TypeA
+3	TypeA
+5	TypeA
+
+== Filter WHERE nullable_payload.$name IS NULL ==
+1	\N
+4	\N
+
+== Both value and $name for Nullable union ==
+1	\N	\N
+2	(10)	TypeA
+3	(20)	TypeA
+4	\N	\N
+5	(30)	TypeA
+
+== Both value and $name for Variant union ==
+1	('hello')	TypeB
+2	(3.14)	TypeC
+3	('world')	TypeB
+4	(2.71)	TypeC
+5	('foo')	TypeB
+
+== Explicit schema: only $name columns ==
+1	\N	TypeB
+2	TypeA	TypeC
+3	TypeA	TypeB
+4	\N	TypeC
+5	TypeA	TypeB

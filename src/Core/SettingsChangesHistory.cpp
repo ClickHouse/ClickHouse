@@ -348,6 +348,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
+            {"input_format_avro_union_type_name", false, false, "New setting"},
             {"input_format_protobuf_oneof_presence", false, false, "New setting"},
             {"iceberg_delete_data_on_drop", false, false, "New setting"},
             {"use_skip_indexes_on_data_read", true, false, "New setting"},
