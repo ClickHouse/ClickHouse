@@ -33,10 +33,9 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<SparseGramsHashes>(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & args) const override
+    String getSignatureString() const override
     {
-        SparseGramsImpl<is_utf8>::checkArguments(*this, args);
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
+        return "(Any, ...) -> Array(UInt32)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
