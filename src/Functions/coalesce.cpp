@@ -78,6 +78,11 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
+    /// Kept dynamic: coalesce strips Nullable from every non-last argument before computing
+    /// the supertype (so coalesce(Nullable(String_only_null), 'x') is String, not Nullable(String)).
+    /// The executor relies on this exact return type and would LOGICAL_ERROR on mismatch.
+    /// This is the kind of "selective leastSupertype" the DSL doesn't model — see ifNull
+    /// for a function with similar logic that's also kept dynamic.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// Skip all NULL arguments. If any argument is non-Nullable, skip all next arguments.

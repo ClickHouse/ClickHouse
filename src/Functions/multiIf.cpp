@@ -33,8 +33,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
 }
@@ -91,61 +89,18 @@ public:
         return args;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
+    String getSignatureString() const override
     {
-        /// Arguments are the following: cond1, then1, cond2, then2, ... condN, thenN, else.
-
-        auto for_conditions = [&args](auto && f)
-        {
-            size_t conditions_end = args.size() - 1;
-            for (size_t i = 0; i < conditions_end; i += 2)
-                f(args[i]);
-        };
-
-        auto for_branches = [&args](auto && f)
-        {
-            size_t branches_end = args.size();
-            for (size_t i = 1; i < branches_end; i += 2)
-                f(args[i]);
-            f(args.back());
-        };
-
-        if (!(args.size() >= 3 && args.size() % 2 == 1))
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Invalid number of arguments for function {}", getName());
-
-        for_conditions([&](const DataTypePtr & arg)
-        {
-            const IDataType * nested_type;
-            if (arg->isNullable())
-            {
-                if (arg->onlyNull())
-                    return;
-
-                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);
-                nested_type = nullable_type.getNestedType().get();
-            }
-            else
-            {
-                nested_type = arg.get();
-            }
-
-            if (!WhichDataType(nested_type).isUInt8())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument (condition) of function {}. "
-                    "Must be UInt8.", arg->getName(), getName());
-        });
-
-        DataTypes types_of_branches;
-        types_of_branches.reserve(args.size() / 2 + 1);
-
-        for_branches([&](const DataTypePtr & arg)
-        {
-            types_of_branches.emplace_back(arg);
-        });
-
-        if (use_variant_as_common_type)
-            return getLeastSupertypeOrVariant(types_of_branches);
-
-        return getLeastSupertype(types_of_branches);
+        /// Arguments: cond1, then1, cond2, then2, ..., else. The existing matcher engine
+        /// walks back through the args before `...` and groups them by index coherence:
+        /// (MaybeNullable(UInt8) | Nothing) has index 0; V1 has index 1; together they form
+        /// the repeating pair. The fixed group before `...` matches one mandatory pair, so
+        /// minimum arity is 3 (cond, then, else) — exactly matching the legacy check.
+        ///
+        /// Loses the `use_variant_as_common_type` opt-in: the DSL only knows leastSupertype,
+        /// not leastSupertypeOrVariant. Functions using this setting fall back to plain
+        /// leastSupertype, which is the same result for non-Variant inputs.
+        return "(MaybeNullable(UInt8) | Nothing, V1 : Any, ..., E : Any) -> leastSupertype(V1, ..., E)";
     }
 
     struct Instruction
@@ -528,7 +483,7 @@ private:
     }
 
     const bool allow_execute_multiif_columnar;
-    const bool use_variant_as_common_type;
+    [[maybe_unused]] const bool use_variant_as_common_type;
 };
 
 }

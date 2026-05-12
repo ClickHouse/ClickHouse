@@ -1216,13 +1216,23 @@ bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroup & res, const Argume
         }
         else if (prev_group.type == ArgumentsGroup::Fixed)
         {
+            /// Walk backwards through the preceding fixed group to figure out which
+            /// trailing elements form the repeated unit. The rule: while consecutive
+            /// elements share the same non-zero variable index, they're part of the
+            /// repeated unit. An element with index 0 (an exact type or matcher with
+            /// no capture) terminates the walk — it's included in the unit if it
+            /// directly precedes the indexed run (so patterns like
+            /// `(UInt8, V1 : Any, ...)` repeat the pair `(UInt8, V1)`), but not if
+            /// the walk has already crossed an index boundary.
             size_t prev_index = 0;
             for (auto it = prev_group.elems.rbegin(); it != prev_group.elems.rend(); ++it)
             {
                 size_t current_index = it->getIndex();
                 if (!current_index)
                 {
-                    res.elems.emplace_back(*it);
+                    /// Prepend so the original order is preserved when the leading
+                    /// element of the repeating unit has index 0.
+                    res.elems.emplace(res.elems.begin(), *it);
                     break;
                 }
 

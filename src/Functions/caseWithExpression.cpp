@@ -46,29 +46,13 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
+    String getSignatureString() const override
     {
-        if (args.empty())
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 arguments", getName());
-
-        /// We expect an even number of arguments, with the first argument being the expression,
-        /// and the last argument being the ELSE branch, with the rest being pairs of WHEN and THEN branches.
-        if (args.size() < 4 || args.size() % 2 != 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} expects an even number of arguments: (expr, when1, then1, ..., else)", getName());
-
-        /// See the comments in executeImpl() to understand why we actually have to
-        /// get the return type of a transform function.
-
-        /// Get the types of the arrays that we pass to the transform function.
-        DataTypes dst_array_types;
-
-        for (size_t i = 2; i < args.size() - 1; i += 2)
-            dst_array_types.push_back(args[i]);
-
-        // Type of the ELSE branch
-        dst_array_types.push_back(args.back());
-
-        return getLeastSupertype(dst_array_types);
+        /// Arguments: expr, when1, then1, when2, then2, ..., else.
+        /// The fixed group matches (expr, when1, then1), the ellipsis repeats (when, then),
+        /// and the trailing E is the else branch. The when-positions are matched as Any
+        /// since CASE WHEN equality semantics handles arbitrary types.
+        return "(Any, Any, V1 : Any, ..., E : Any) -> leastSupertype(V1, ..., E)";
     }
 
     /// Helper function to implement CASE WHEN equality semantics where NULL = NULL is true
