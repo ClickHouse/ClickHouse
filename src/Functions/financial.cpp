@@ -334,21 +334,6 @@ std::expected<double, SolverErrorCode> calculateIrr(std::span<T> cashflows, doub
     return solver(npv_function, npv_derivative, guess);
 }
 
-bool isCashFlowColumn(const IDataType & type)
-{
-    if (isArray(type))
-    {
-        const auto & nested = checkAndGetDataType<DataTypeArray>(type).getNestedType();
-        return isNativeInt(nested) || isNativeFloat(nested);
-    }
-    return false;
-}
-
-bool isXirrDateColumn(const IDataType & type)
-{
-    return isArray(type) && isDateOrDate32(checkAndGetDataType<DataTypeArray>(type).getNestedType());
-}
-
 // Similar dispatch is needed in two of the functions below, so we define it here
 template <typename T, typename F>
 void dispatchDate(const T * cashflow_data, const IColumn * date_data, F && f)
@@ -393,24 +378,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        auto mandatory_args = FunctionArgumentDescriptors{
-            {"cashflow",
-             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
-             nullptr,
-             "Array[Float64|Float32|Int64|Int32|Int16|Int8]"},
-            {"date", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isXirrDateColumn), nullptr, "Array[Date/Date32]"},
-        };
-
-        auto optional_args = FunctionArgumentDescriptors{
-            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
-            {"daycount", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeFloat64>();
+        return "(Array, Array, [Float], [String]) -> Float64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -511,22 +481,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        auto mandatory_args = FunctionArgumentDescriptors{
-            {"cashflow",
-             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
-             nullptr,
-             "Array[Float64|Float32|Int64|Int32|Int16|Int8]"},
-        };
-
-        auto optional_args = FunctionArgumentDescriptors{
-            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeFloat64>();
+        return "(Array, [Float]) -> Float64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -608,24 +565,9 @@ public:
     bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        auto mandatory_args = FunctionArgumentDescriptors{
-            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
-            {"cashflow",
-             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
-             nullptr,
-             "Array[Float64|Float32|Int64|Int32|Int16|Int8]"},
-            {"date", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isXirrDateColumn), nullptr, "Array[Date|Date32]"},
-        };
-
-        auto optional_args = FunctionArgumentDescriptors{
-            {"daycount", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeFloat64>();
+        return "(Float, Array, Array, [String]) -> Float64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -725,23 +667,9 @@ public:
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        auto mandatory_args = FunctionArgumentDescriptors{
-            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
-            {"cashflow",
-             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
-             nullptr,
-             "Array[Float64|Float32|Int64|Int32|Int16|Int8]"},
-        };
-
-        auto optional_args = FunctionArgumentDescriptors{
-            {"start_from_zero", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Bool"},
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeFloat64>();
+        return "(Float, Array, [Integer]) -> Float64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
