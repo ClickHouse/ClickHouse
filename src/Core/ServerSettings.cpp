@@ -851,7 +851,7 @@ Rollback lever for the lazy query-thread allocation strategy.
 
 When true (default), a query pipeline starts with `allocate(1, 1)` and raises the ceiling via `setMax` as it actually pushes parallelizable work. This prevents queries from reserving CPU slots they never use.
 
-When false, the server bypasses the lazy path: pipelines use `allocate(1, num_threads)` and the scheduler grants up to `num_threads` slots eagerly (pre-#88339 behavior). Intended as an emergency rollback lever only — use it if a specific workload regresses on the lazy strategy.
+When false, the server bypasses the lazy path: pipelines use `allocate(1, num_threads)` and the scheduler grants up to `num_threads` slots eagerly. Intended as an emergency rollback lever only -- use it if a specific workload regresses on the lazy strategy.
 
 Takes effect for new allocations only; existing queries are unaffected.
     )", 0) \

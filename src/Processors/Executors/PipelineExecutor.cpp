@@ -400,35 +400,43 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
             if (pool && spawn_count > 0)
                 pending_demand.fetch_add(spawn_count, std::memory_order_relaxed);
 
-            if (pool && pending_demand.load(std::memory_order_relaxed) > 0)
+            // Drain pending_demand under `spawn_mutex`. A thread that fails `try_lock`
+            // must not exit while `pending_demand > 0` -- otherwise its add could race
+            // with the owner's final `exchange(0)` and be left stranded after the owner
+            // unlocks. The outer loop holds the thread until either it drains the demand
+            // itself or observes the counter return to zero (meaning the owner caught it).
+            while (pool && pending_demand.load(std::memory_order_acquire) > 0)
             {
-                // Only allow one thread to spawn, if someone is already spawning threads, just
-                // skip — our spawn_count is already in pending_demand, the owner will drain it.
-                if (spawn_mutex.try_lock())
+                if (!spawn_mutex.try_lock())
                 {
-                    try
-                    {
-                        std::lock_guard lock(spawn_mutex, std::adopt_lock);
-                        size_t accumulated = pending_demand.exchange(0, std::memory_order_relaxed);
-                        if (accumulated > 0)
-                        {
-                            size_t target = std::min<size_t>(max_pipeline_threads, desired_threads + accumulated);
-                            if (target > desired_threads)
-                            {
-                                desired_threads = target;
-                                cpu_slots->setMax(target);
-                            }
-                        }
-                        spawnThreads({});
-                    }
-                    catch (...)
-                    {
-                        /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
-                        /// We should cancel execution properly before rethrow.
-                        cancel(ExecutionStatus::Exception);
-                        throw;
-                    }
+                    std::this_thread::yield();
+                    continue;
                 }
+                try
+                {
+                    std::lock_guard lock(spawn_mutex, std::adopt_lock);
+                    while (true)
+                    {
+                        size_t accumulated = pending_demand.exchange(0, std::memory_order_acq_rel);
+                        if (accumulated == 0)
+                            break;
+                        size_t target = std::min<size_t>(max_pipeline_threads, desired_threads + accumulated);
+                        if (target > desired_threads)
+                        {
+                            desired_threads = target;
+                            cpu_slots->setMax(target);
+                        }
+                    }
+                    spawnThreads({});
+                }
+                catch (...)
+                {
+                    /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+                    /// We should cancel execution properly before rethrow.
+                    cancel(ExecutionStatus::Exception);
+                    throw;
+                }
+                break;
             }
 
             /// Preemption and downscaling.
