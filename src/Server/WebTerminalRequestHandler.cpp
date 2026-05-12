@@ -49,12 +49,22 @@ String computeWebSocketAccept(const String & key)
 }
 
 /// Validate that Sec-WebSocket-Key is a base64-encoded 16-byte nonce per RFC 6455.
-/// Throws on malformed base64; the caller treats that as a handshake failure.
+/// `base64Decode` (via `Poco::Base64Decoder`) throws `DataFormatException` on
+/// malformed input, so swallow exceptions here and treat any decode failure
+/// as an invalid key. Otherwise a crafted header would escape as a `500`
+/// instead of the deterministic `400` handshake rejection the caller expects.
 bool isValidWebSocketKey(const String & key)
 {
     if (key.empty() || key.size() > 128)
         return false;
-    return base64Decode(key).size() == 16;
+    try
+    {
+        return base64Decode(key).size() == 16;
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
 /// Send all bytes to the socket, handling partial writes.
