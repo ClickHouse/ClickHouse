@@ -34,26 +34,12 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), isColumnConst, "const (U)Int*"},
-            {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        if (arguments.empty())
-            return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
-
-        auto scale = static_cast<UInt32>(arguments[0].column->get64(0));
-
-        if (arguments.size() == 1)
-            return std::make_shared<DataTypeDateTime64>(scale);
-
-        return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 1, false));
+        return
+            "() -> DateTime64(3)"
+            " OR (const scale Integer) -> DateTime64(scale)"
+            " OR (const scale Integer, const tz StringOrFixedString) -> DateTime64(scale, tz)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & type, size_t input_rows_count) const override
