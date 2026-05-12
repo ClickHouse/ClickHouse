@@ -176,9 +176,9 @@ namespace DB
             return std::make_unique<FunctionBaseRunningConcurrency>(argument_types, return_type);
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+        String getSignatureString() const override
         {
-            return std::make_shared<DataTypeUInt32>();
+            return "(DateOrDateTime, DateOrDateTime) -> UInt32";
         }
 
         size_t getNumberOfArguments() const override

@@ -51,18 +51,9 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isDeterministic() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() > 1)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
-        }
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0]))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
-                getName());
-        }
-        return std::make_shared<DataTypeUInt64>();
+        return "([StringOrFixedString]) -> UInt64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

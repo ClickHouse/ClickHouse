@@ -55,6 +55,22 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+class TypeMatcherNativeInteger : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "NativeInteger"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isNativeInteger(); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherNativeInt : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "NativeInt"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isNativeInt(); }
+    size_t getIndex() const override { return 0; }
+};
+
 class TypeMatcherStringOrFixedString : public ITypeMatcher
 {
 public:
@@ -397,6 +413,8 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherInteger>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherNumber>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherNativeUInt>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherNativeInt>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherNativeInteger>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherStringOrFixedString>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherEnum>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherNULL>(factory);

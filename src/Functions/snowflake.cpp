@@ -65,15 +65,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        FunctionArgumentDescriptors args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime), nullptr, "DateTime"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeInt64>();
-    }
+    String getSignatureString() const override { return "(DateTime) -> Int64"; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
@@ -196,15 +188,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        FunctionArgumentDescriptors args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime64), nullptr, "DateTime64"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeInt64>();
-    }
+    String getSignatureString() const override { return "(DateTime64) -> Int64"; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {

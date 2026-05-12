@@ -90,18 +90,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        validateFunctionArguments(
-            *this,
-            arguments,
-            FunctionArgumentDescriptors{
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "Hash algorithm name (e.g., 'sha256')"},
-                {"message", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "Message to be authenticated"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "Secret key for HMAC"},
-            });
-
-        return std::make_shared<DataTypeString>();
+        return "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

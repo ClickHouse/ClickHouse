@@ -91,16 +91,9 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isDeterministic() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
+    String getSignatureString() const override
     {
-        size_t number_of_arguments = data_types.size();
-        if (number_of_arguments != 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(),
-                number_of_arguments);
-        return std::make_shared<DataTypeNumber<UInt16>>();
+        return "(Any) -> UInt16";
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override

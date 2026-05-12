@@ -47,16 +47,9 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args
-        {
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-            {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "constant String"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(String | FixedString, const String) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
