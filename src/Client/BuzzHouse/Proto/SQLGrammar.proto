@@ -3272,6 +3272,7 @@ enum ColumnStat {
     STAT_TDigest = 2;
     STAT_Uniq = 3;
     STAT_CountMin = 4;
+    STAT_NullCount = 5;
 }
 
 message ColumnStatistics {
@@ -4293,6 +4294,8 @@ message SystemCommand {
         ExprSchemaTable stop_reduce_blocking_parts = 103;
         ExprSchemaTable start_reduce_blocking_parts = 104;
         string wait_blobs_cleanup = 105;
+        ExprSchemaTable pause_view = 106;
+        bool pause_views = 107;
     }
 }
 

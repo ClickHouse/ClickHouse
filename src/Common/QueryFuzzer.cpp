@@ -1218,7 +1218,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         original_table_name_to_fuzzed[original_name].insert(new_name);
 }
 
-static const Strings stat_types = {"tdigest", "countmin", "minmax", "uniq"};
+static const Strings stat_types = {"tdigest", "countmin", "minmax", "uniq", "nullcount"};
 
 void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
 {

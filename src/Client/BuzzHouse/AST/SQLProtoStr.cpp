@@ -5378,6 +5378,13 @@ CONV_FN(SystemCommand, cmd)
             ret += "START VIEW ";
             ExprSchemaTableToString(ret, cmd.start_view());
             break;
+        case CmdType::kPauseViews:
+            ret += "PAUSE VIEWS";
+            break;
+        case CmdType::kPauseView:
+            ret += "PAUSE VIEW ";
+            ExprSchemaTableToString(ret, cmd.pause_view());
+            break;
         case CmdType::kCancelView:
             ret += "CANCEL VIEW ";
             ExprSchemaTableToString(ret, cmd.cancel_view());

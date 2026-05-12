@@ -329,6 +329,7 @@ std::unordered_map<String, CHSetting> performanceSettings
             false)},
        {"join_any_take_last_row", trueOrFalseSetting},
        {"max_bytes_ratio_before_external_group_by", probRangeNoZeroSetting},
+       {"max_bytes_ratio_before_external_join", probRangeNoZeroSetting},
        {"max_bytes_ratio_before_external_sort", probRangeNoZeroSetting},
        {"max_streams_to_max_threads_ratio", probRangeSetting},
        {"merge_tree_determine_task_size_by_prewhere_columns", trueOrFalseSetting},
@@ -492,7 +493,8 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_skip_indexes_on_data_read", trueOrFalseSetting},
        {"use_statistics", trueOrFalseSetting},
        {"use_statistics_for_part_pruning", trueOrFalseSetting},
-       {"use_top_k_dynamic_filtering", trueOrFalseSetting}};
+       {"use_top_k_dynamic_filtering", trueOrFalseSetting},
+       {"use_top_k_dynamic_filtering_for_variable_length_types", trueOrFalseSetting}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
     {"add_http_cors_header", trueOrFalseSettingNoOracle},
@@ -1310,6 +1312,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"read_from_page_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     /// ClickHouse cloud setting
     {"read_through_distributed_cache", trueOrFalseSetting},
+    {"recursive_cte_max_steps_in_type_inference",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 32)); },
+         {"0", "1", "5", "10", "32"},
+         false)},
     {"regexp_dict_allow_hyperscan", trueOrFalseSetting},
     {"regexp_dict_flag_case_insensitive", trueOrFalseSettingNoOracle},
     {"regexp_dict_flag_dotall", trueOrFalseSettingNoOracle},
