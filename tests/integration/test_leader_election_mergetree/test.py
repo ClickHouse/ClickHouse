@@ -76,13 +76,15 @@ def attach_table_on_second_node(node, table_name="test_le", uuid=SHARED_UUID):
 
 
 def is_leader(node, table_name="test_le"):
-    """Check if the node considers itself the leader by attempting an insert."""
+    """Check if the node considers itself the leader by attempting an insert.
+
+    The probe value is `x = 0` and every count-based assertion in the test suite
+    filters with `x > 0`, so the probe rows are not cleaned up — `s3_plain_rewritable`
+    (the shared-metadata disk these tests require) does not support mutations, and
+    we would not be able to issue an `ALTER ... DELETE` here even on the leader.
+    """
     try:
         node.query(f"INSERT INTO {table_name} VALUES (0)")
-        # Clean up the test row
-        node.query(
-            f"ALTER TABLE {table_name} DELETE WHERE x = 0 SETTINGS mutations_sync = 1"
-        )
         return True
     except Exception as e:
         if "TABLE_IS_READ_ONLY" in str(e):
@@ -495,7 +497,10 @@ def test_concurrent_inserts_with_restarts(started_cluster):
     success_values = set(r[4] for r in successes)
     attempted_values = set(r[4] for r in records)
     leader, _followers = wait_for_leader(nodes, table_name=table)
-    rows_str = leader.query(f"SELECT x FROM {table}", timeout=30)
+    # `wait_for_leader` writes `x = 0` probes via `is_leader`; the table cannot
+    # delete them on `s3_plain_rewritable`, so exclude them here. Worker inserts
+    # always use `x >= base + 1` (base >= 10**9), so no real row is filtered out.
+    rows_str = leader.query(f"SELECT x FROM {table} WHERE x > 0", timeout=30)
     leader_visible = {int(line) for line in rows_str.strip().split("\n") if line}
     logging.info(f"  elected leader {leader.name}: sees {len(leader_visible)} rows")
 
@@ -648,13 +653,48 @@ def test_alter_rejected_under_leader_election(started_cluster):
 # override remains as defensive coverage for the deprecated `Ordinary` engine.
 
 
+def test_local_disk_rejects_leader_election(started_cluster):
+    """
+    Regression: `leader_election` on the default local-disk policy must be
+    rejected at create. The local disk is not an `S3`/`Azure` object storage
+    backend, so the active/standby contract cannot be satisfied — followers
+    have no way to see parts the leader wrote.
+    """
+    ensure_node_up(node1)
+    table = "test_local_disk_rejected"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS leader_election = 1
+            """
+        )
+    except Exception as e:
+        msg = str(e)
+        assert "leader_election" in msg and "backend" in msg, (
+            f"Expected rejection mentioning `leader_election` and the unsupported backend, got: {msg}"
+        )
+        return
+    finally:
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+    raise AssertionError(
+        "MergeTree with leader_election=1 on the default local disk policy "
+        "should have been rejected at CREATE"
+    )
+
+
 def test_local_metadata_rejects_leader_election(started_cluster):
     """
-    Regression: `leader_election` on a storage policy with node-local metadata
-    (e.g. the default local-disk policy, or a plain `s3` disk with `Local`
-    metadata) cannot satisfy the active/standby invariant — the next leader
-    after a failover would lose the previous leader's parts from its view.
-    The constructor must reject this configuration before any data is written.
+    Regression: `leader_election` on a plain `s3` disk with `metadata_type = local`
+    must be rejected at create. The object storage is shared, but the metadata is
+    per-replica — after a failover, the new leader would not see the previous
+    leader's parts in its local metadata. This is the second rejection path in
+    `StorageMergeTree`'s constructor, distinct from the unsupported-backend path
+    exercised by `test_local_disk_rejects_leader_election`.
     """
     ensure_node_up(node1)
     table = "test_local_md_rejected"
@@ -663,7 +703,7 @@ def test_local_metadata_rejects_leader_election(started_cluster):
             f"""
             CREATE TABLE {table} (x UInt64)
             ENGINE = MergeTree ORDER BY x
-            SETTINGS leader_election = 1
+            SETTINGS storage_policy = 's3_local_md', leader_election = 1
             """
         )
     except Exception as e:
@@ -678,7 +718,7 @@ def test_local_metadata_rejects_leader_election(started_cluster):
         except Exception:
             pass
     raise AssertionError(
-        "MergeTree with leader_election=1 on a node-local-metadata policy "
+        "MergeTree with leader_election=1 on an S3 disk with local metadata "
         "should have been rejected at CREATE"
     )
 

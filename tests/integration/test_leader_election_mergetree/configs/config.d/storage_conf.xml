@@ -9,6 +9,16 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </s3>
+            <!-- Plain S3 disk with node-local metadata. Only used by the regression
+                 test that verifies `leader_election` is rejected on this layout. -->
+            <s3_local_md>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <endpoint>http://minio1:9001/root/local_md/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </s3_local_md>
         </disks>
         <policies>
             <s3>
@@ -18,6 +28,13 @@
                     </main>
                 </volumes>
             </s3>
+            <s3_local_md>
+                <volumes>
+                    <main>
+                        <disk>s3_local_md</disk>
+                    </main>
+                </volumes>
+            </s3_local_md>
         </policies>
     </storage_configuration>
 </clickhouse>
