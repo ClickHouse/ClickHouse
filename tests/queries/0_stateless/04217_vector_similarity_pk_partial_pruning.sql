@@ -80,20 +80,22 @@ FROM
 
 DROP TABLE tab_pk_partial;
 
--- ORDER BY (Date, id), range on Date, vector query (partial PK within one part).
+-- ORDER BY (Date, id), range on Date, vector query, and extra non-PK filter.
 DROP TABLE IF EXISTS tab_time_tickets;
 
 CREATE TABLE tab_time_tickets(
     id Int32,
     created_date Date,
+    issue_type LowCardinality(String),
     vec Array(Float32),
     INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 2
 ) ENGINE = MergeTree ORDER BY (created_date, id) SETTINGS index_granularity = 3;
 
 INSERT INTO tab_time_tickets VALUES
-    (1, '2024-01-01', [0.0, 2.0]), (2, '2024-01-02', [0.0, 2.1]), (3, '2024-01-03', [0.0, 2.2]), (4, '2024-01-04', [0.0, 2.3]),
-    (5, '2024-01-05', [0.0, 2.4]), (6, '2024-01-06', [0.0, 2.5]), (7, '2024-01-07', [0.0, 2.6]), (8, '2024-01-08', [0.0, 2.7]),
-    (9, '2024-01-09', [1.0, 0.0]), (10, '2024-01-10', [1.1, 0.0]), (11, '2024-01-11', [1.2, 0.0]), (12, '2024-01-12', [1.3, 0.0]);
+    (1, '2024-01-15', 'network', [0.2, 1.8]), (2, '2024-02-10', 'disk', [0.1, 1.7]), (3, '2024-03-12', 'cpu', [0.0, 1.6]),
+    (4, '2024-04-18', 'deploy', [0.0, 1.5]), (5, '2024-05-11', 'network', [0.0, 1.4]), (6, '2024-06-20', 'disk', [0.0, 1.3]),
+    (7, '2024-07-08', 'oom', [0.0, 1.0]), (8, '2024-08-14', 'oom', [0.0, 1.1]), (9, '2024-09-03', 'oom', [0.0, 1.2]),
+    (10, '2024-12-22', 'linux_vm_crash', [1.0, 0.0]), (11, '2024-12-25', 'linux_vm_crash', [1.1, 0.0]), (12, '2024-12-29', 'linux_vm_crash', [1.2, 0.0]);
 
 SELECT 'time_filtered_vector_search';
 WITH [toFloat32(1.), toFloat32(0.)] AS query_vec
@@ -104,7 +106,7 @@ SELECT
         (
             SELECT id
             FROM tab_time_tickets
-            WHERE created_date >= '2024-01-09'
+            WHERE created_date >= '2024-12-22'
             ORDER BY L2Distance(vec, query_vec) ASC
             LIMIT 3
             SETTINGS use_skip_indexes = 1
@@ -115,7 +117,61 @@ SELECT
         (
             SELECT id
             FROM tab_time_tickets
-            WHERE created_date >= '2024-01-09'
+            WHERE created_date >= '2024-12-22'
+            ORDER BY L2Distance(vec, query_vec) ASC
+            LIMIT 3
+            SETTINGS use_skip_indexes = 0
+        )
+    );
+
+SELECT 'time_filtered_vector_search_with_additional_filter_linux';
+WITH [toFloat32(1.), toFloat32(0.)] AS query_vec
+SELECT
+    (
+        SELECT arraySort(groupArray(id))
+        FROM
+        (
+            SELECT id
+            FROM tab_time_tickets
+            WHERE created_date >= '2024-12-22' AND issue_type = 'linux_vm_crash'
+            ORDER BY L2Distance(vec, query_vec) ASC
+            LIMIT 3
+            SETTINGS use_skip_indexes = 1
+        )
+    ) = (
+        SELECT arraySort(groupArray(id))
+        FROM
+        (
+            SELECT id
+            FROM tab_time_tickets
+            WHERE created_date >= '2024-12-22' AND issue_type = 'linux_vm_crash'
+            ORDER BY L2Distance(vec, query_vec) ASC
+            LIMIT 3
+            SETTINGS use_skip_indexes = 0
+        )
+    );
+
+SELECT 'time_filtered_vector_search_with_additional_filter_oom';
+WITH [toFloat32(0.), toFloat32(1.)] AS query_vec
+SELECT
+    (
+        SELECT arraySort(groupArray(id))
+        FROM
+        (
+            SELECT id
+            FROM tab_time_tickets
+            WHERE created_date >= '2024-07-01' AND created_date < '2025-01-01' AND issue_type = 'oom'
+            ORDER BY L2Distance(vec, query_vec) ASC
+            LIMIT 3
+            SETTINGS use_skip_indexes = 1
+        )
+    ) = (
+        SELECT arraySort(groupArray(id))
+        FROM
+        (
+            SELECT id
+            FROM tab_time_tickets
+            WHERE created_date >= '2024-07-01' AND created_date < '2025-01-01' AND issue_type = 'oom'
             ORDER BY L2Distance(vec, query_vec) ASC
             LIMIT 3
             SETTINGS use_skip_indexes = 0

@@ -8,3 +8,7 @@ full_table_top3_sorted_ids
 [6,7,8]
 time_filtered_vector_search
 1
+time_filtered_vector_search_with_additional_filter_linux
+1
+time_filtered_vector_search_with_additional_filter_oom
+1
