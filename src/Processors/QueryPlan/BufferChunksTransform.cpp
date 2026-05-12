@@ -47,7 +47,17 @@ IProcessor::Status BufferChunksTransform::prepare()
             num_buffered_rows -= chunk.getNumRows();
             num_buffered_bytes -= chunk.bytes();
 
+            const bool virtual_row = isVirtualRow(chunk);
             output.push(std::move(chunk));
+            if (virtual_row)
+            {
+                /// Stop reading until downstream has consumed the virtual-row
+                /// marker, otherwise we would pull real chunks past the
+                /// part boundary and defeat the LIMIT/read-in-order
+                /// optimizations.
+                input.setNotNeeded();
+                return Status::PortFull;
+            }
         }
         else if (input.hasData())
         {
