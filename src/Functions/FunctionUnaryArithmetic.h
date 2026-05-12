@@ -13,7 +13,6 @@
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context_fwd.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
@@ -187,11 +186,8 @@ class FunctionUnaryArithmetic : public IFunction
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context_)
+    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context)
     {
-        if (!context_)
-            return {};
-
         if (!isTuple(type))
             return {};
 
@@ -201,12 +197,14 @@ class FunctionUnaryArithmetic : public IFunction
         if constexpr (!IsUnaryOperation<Op>::negate)
             return {};
 
-        return FunctionFactory::instance().get("tupleNegate", context_);
+        return FunctionFactory::instance().get("tupleNegate", context);
     }
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionUnaryArithmetic>(context_); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryArithmetic>(); }
+
+    FunctionUnaryArithmetic() = default;
 
     explicit FunctionUnaryArithmetic(ContextPtr context_) : context(context_) {}
 
@@ -229,10 +227,10 @@ public:
         return getReturnTypeImplStatic(arguments, context);
     }
 
-    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context_)
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
     {
         /// Special case when the function is negate, argument is tuple.
-        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context_))
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context))
         {
             ColumnsWithTypeAndName new_arguments(1);
 

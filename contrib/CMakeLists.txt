@@ -53,7 +53,6 @@ add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
-add_contrib (compiler-rt-cmake llvm-project)
 add_contrib (libllvmlibc-cmake llvm-project)
 add_contrib (llvm-project-cmake llvm-project)
 
