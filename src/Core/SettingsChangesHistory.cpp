@@ -73,6 +73,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
+            {"output_format_parquet_column_field_ids", "", "", "New setting to specify explicit Parquet `field_id` overrides per column (`Map(String, Int32)`), useful for Iceberg compatibility."},
+            {"output_format_parquet_auto_assign_field_ids", false, false, "New setting to auto-assign sequential Parquet `field_id`s to every output column, Iceberg-style."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -112,8 +114,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
-            {"output_format_parquet_column_field_ids", "", "", "New setting to specify explicit Parquet field_id overrides per column (Map(String, Int32)), useful for Iceberg compatibility."},
-            {"output_format_parquet_auto_assign_field_ids", false, false, "New setting to auto-assign sequential Parquet field_ids to every output column, Iceberg-style."},
             {"input_format_column_name_matching_mode", "match_case", "match_case", "New setting."},
             {"enable_join_fixed_hash_table_conversion", false, true, "New setting to enable converting the hash table to a flat array for joins when the key is a single integer with a small value range."},
             {"allow_experimental_ai_functions", false, false, "New setting"},
