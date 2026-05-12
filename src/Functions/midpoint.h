@@ -17,7 +17,6 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/castTypeToEither.h>
 
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 
 #include <base/TypeList.h>
@@ -455,9 +454,9 @@ class MidpointResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "midpoint";
-    static FunctionOverloadResolverPtr create(ContextPtr context_)
+    static FunctionOverloadResolverPtr create(ContextPtr context)
     {
-        return std::make_unique<MidpointResolver<SpecializedFunction>>(context_);
+        return std::make_unique<MidpointResolver<SpecializedFunction>>(context);
     }
 
     explicit MidpointResolver(ContextPtr context_)
@@ -487,14 +486,7 @@ public:
 
             if (!a0->isNullable() && !a1->isNullable())
             {
-                /// Only use the FunctionBinaryArithmetic fast-path when both argument
-                /// types are identical. Mixed types (e.g. Int64 + UInt64) can cause
-                /// the binary arithmetic's NumberTraits::ResultOfIf to produce a wider
-                /// result type (Int128) than what getLeastSupertype declared (Int64),
-                /// because getLeastSupertype may silently convert UInt64 literals that
-                /// fit into Int64. The generic FunctionMidpoint handles all type
-                /// combinations correctly by casting arguments to the result type first.
-                if (a0->equals(*a1) && isNumber(a0) && !isDecimal(a0))
+                if (isNumber(a0) && isNumber(a1) && !isDecimal(a0) && !isDecimal(a1))
                     return std::make_unique<FunctionToFunctionBaseAdaptor>(
                         SpecializedFunction::create(context), argument_types, return_type);
             }
@@ -511,7 +503,7 @@ public:
         return getLeastSupertype(types);
     }
 
-private:
+protected:
     ContextPtr context;
 };
 

@@ -4,13 +4,10 @@
 
 #if USE_AWS_S3
 #include <IO/S3Settings.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
-#if CLICKHOUSE_CLOUD
-#include <Storages/ObjectStorage/S3/Serde.h>
-#endif
-#include <Parsers/IAST_fwd.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 namespace DB
@@ -108,7 +105,6 @@ public:
     }
 
     ObjectStorageType getType() const override { return type; }
-
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return url.storage_name; }
     std::string getNamespaceType() const override { return namespace_name; }
@@ -116,7 +112,6 @@ public:
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
 
     Path getRawPath() const override { return url.key; }
-    void setRawPath(const Path & path) override { url.key = path.path; }
     const String & getRawURI() const override { return url.uri_str; }
 
     const Paths & getPaths() const override { return keys; }
