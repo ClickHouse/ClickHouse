@@ -70,6 +70,8 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/ShuffleStep.h>
+#include <Processors/QueryPlan/TopologicalSortStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
@@ -1834,6 +1836,23 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             {
                 if (expressions.has_order_by)
                     executeOrder(query_plan, input_order_info_for_order);
+                else if (query.has_shuffle)
+                {
+                    std::optional<size_t> shuffle_limit;
+                    if (query.limitLength())
+                    {
+                        const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+                        if (!lim_info.is_limit_length_negative && lim_info.limit_length > 0
+                            && lim_info.fractional_limit == 0 && lim_info.fractional_offset == 0)
+                        {
+                            if (lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
+                                shuffle_limit = static_cast<size_t>(lim_info.limit_length + lim_info.limit_offset);
+                        }
+                    }
+                    auto shuffle_step = std::make_unique<ShuffleStep>(query_plan.getCurrentHeader(), shuffle_limit);
+                    shuffle_step->setStepDescription("Shuffle for SHUFFLE");
+                    query_plan.addStep(std::move(shuffle_step));
+                }
 
                 /// pre_distinct = false, because if we have limit and distinct,
                 /// we need to merge streams to one and calculate overall distinct.
@@ -2210,6 +2229,23 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     executeMergeSorted(query_plan, "for ORDER BY, without aggregation");
                 else    /// Otherwise, just sort.
                     executeOrder(query_plan, input_order_info_for_order);
+            }
+            else if (query.has_shuffle)
+            {
+                std::optional<size_t> shuffle_limit;
+                if (query.limitLength())
+                {
+                    const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+                    if (!lim_info.is_limit_length_negative && lim_info.limit_length > 0
+                        && lim_info.fractional_limit == 0 && lim_info.fractional_offset == 0)
+                    {
+                        if (lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
+                            shuffle_limit = static_cast<size_t>(lim_info.limit_length + lim_info.limit_offset);
+                    }
+                }
+                auto shuffle_step = std::make_unique<ShuffleStep>(query_plan.getCurrentHeader(), shuffle_limit);
+                shuffle_step->setStepDescription("Shuffle for SHUFFLE");
+                query_plan.addStep(std::move(shuffle_step));
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
@@ -3231,6 +3267,25 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
+
+    /// Check for ORDER BY x DEPENDS ON deps — route to topological sort
+    if (query.orderBy() && !query.orderBy()->children.empty())
+    {
+        const auto & first_elem = query.orderBy()->children.front()->as<ASTOrderByElement &>();
+        if (first_elem.has_depends_on)
+        {
+            const String key_column_name = first_elem.children.front()->getColumnName();
+            const String deps_column_name = first_elem.getDependsOn()->getColumnName();
+            auto topo_step = std::make_unique<TopologicalSortStep>(
+                query_plan.getCurrentHeader(),
+                key_column_name,
+                deps_column_name);
+            topo_step->setStepDescription("Topological sort for ORDER BY ... DEPENDS ON");
+            query_plan.addStep(std::move(topo_step));
+            return;
+        }
+    }
+
     SortDescription output_order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 

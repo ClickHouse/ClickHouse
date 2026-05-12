@@ -28,12 +28,14 @@ SortNode::SortNode(QueryTreeNodePtr expression_,
     SortDirection sort_direction_,
     std::optional<SortDirection> nulls_sort_direction_,
     std::shared_ptr<Collator> collator_,
-    bool with_fill_)
+    bool with_fill_,
+    bool has_depends_on_)
     : IQueryTreeNode(children_size)
     , sort_direction(sort_direction_)
     , nulls_sort_direction(nulls_sort_direction_)
     , collator(std::move(collator_))
     , with_fill(with_fill_)
+    , has_depends_on(has_depends_on_)
 {
     if (expression_)
         if (auto * identifier = expression_->as<IdentifierNode>())
@@ -54,6 +56,7 @@ void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
         buffer << ", collator: " << collator->getLocale();
 
     buffer << ", with_fill: " << with_fill;
+    buffer << ", has_depends_on: " << has_depends_on;
 
     buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION";
     if (!column_name.empty())
@@ -84,6 +87,12 @@ void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
         buffer << '\n' << std::string(indent + 2, ' ') << "FILL STALENESS\n";
         getFillStaleness()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
+
+    if (hasDependsOn() && getDependsOn())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "DEPENDS ON\n";
+        getDependsOn()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 }
 
 bool SortNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
@@ -91,7 +100,8 @@ bool SortNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     const auto & rhs_typed = assert_cast<const SortNode &>(rhs);
     if (sort_direction != rhs_typed.sort_direction ||
         nulls_sort_direction != rhs_typed.nulls_sort_direction ||
-        with_fill != rhs_typed.with_fill)
+        with_fill != rhs_typed.with_fill ||
+        has_depends_on != rhs_typed.has_depends_on)
         return false;
 
     if (!collator && !rhs_typed.collator)
@@ -110,6 +120,7 @@ void SortNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
     /// use some determined value if `nulls_sort_direction` is `nullopt`
     hash_state.update(nulls_sort_direction.value_or(sort_direction));
     hash_state.update(with_fill);
+    hash_state.update(has_depends_on);
 
     if (collator)
     {
@@ -122,7 +133,7 @@ void SortNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
 
 QueryTreeNodePtr SortNode::cloneImpl() const
 {
-    return std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
+    return std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill, has_depends_on);
 }
 
 ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
@@ -149,6 +160,10 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
         result->setFillStep(getFillStep()->toAST(options));
     if (hasFillStaleness())
         result->setFillStaleness(getFillStaleness()->toAST(options));
+
+    result->has_depends_on = has_depends_on;
+    if (hasDependsOn() && getDependsOn())
+        result->setDependsOn(getDependsOn()->toAST(options));
 
     return result;
 }

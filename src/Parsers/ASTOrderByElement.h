@@ -19,6 +19,7 @@ private:
         FILL_TO,
         FILL_STEP,
         FILL_STALENESS,
+        DEPENDS_ON_EXPRESSION,
     };
 
 public:
@@ -27,20 +28,23 @@ public:
     bool nulls_direction_was_explicitly_specified = false;
 
     bool with_fill = false;
+    bool has_depends_on = false; /// True when ORDER BY col DEPENDS ON dep_col is used.
 
     /** Collation for locale-specific string comparison. If empty, then sorting done by bytes. */
-    void setCollation(ASTPtr node) { setChild(Child::COLLATION, node); }
-    void setFillFrom(ASTPtr node)  { setChild(Child::FILL_FROM, node); }
-    void setFillTo(ASTPtr node)    { setChild(Child::FILL_TO, node);   }
-    void setFillStep(ASTPtr node)  { setChild(Child::FILL_STEP, node); }
-    void setFillStaleness(ASTPtr node)  { setChild(Child::FILL_STALENESS, node); }
+    void setCollation(ASTPtr node)     { setChild(Child::COLLATION, node); }
+    void setFillFrom(ASTPtr node)      { setChild(Child::FILL_FROM, node); }
+    void setFillTo(ASTPtr node)        { setChild(Child::FILL_TO, node);   }
+    void setFillStep(ASTPtr node)      { setChild(Child::FILL_STEP, node); }
+    void setFillStaleness(ASTPtr node) { setChild(Child::FILL_STALENESS, node); }
+    void setDependsOn(ASTPtr node)     { setChild(Child::DEPENDS_ON_EXPRESSION, node); }
 
     /** Collation for locale-specific string comparison. If empty, then sorting done by bytes. */
-    ASTPtr getCollation() const { return getChild(Child::COLLATION); }
-    ASTPtr getFillFrom()  const { return getChild(Child::FILL_FROM); }
-    ASTPtr getFillTo()    const { return getChild(Child::FILL_TO);   }
-    ASTPtr getFillStep()  const { return getChild(Child::FILL_STEP); }
-    ASTPtr getFillStaleness()  const { return getChild(Child::FILL_STALENESS); }
+    ASTPtr getCollation()     const { return getChild(Child::COLLATION); }
+    ASTPtr getFillFrom()      const { return getChild(Child::FILL_FROM); }
+    ASTPtr getFillTo()        const { return getChild(Child::FILL_TO);   }
+    ASTPtr getFillStep()      const { return getChild(Child::FILL_STEP); }
+    ASTPtr getFillStaleness() const { return getChild(Child::FILL_STALENESS); }
+    ASTPtr getDependsOn()     const { return getChild(Child::DEPENDS_ON_EXPRESSION); }
 
     String getID(char) const override { return "OrderByElement"; }
 

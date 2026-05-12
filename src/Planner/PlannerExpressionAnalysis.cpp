@@ -533,6 +533,20 @@ SortAnalysisResult analyzeSort(
             before_sort_actions_outputs.push_back(action_dag_node);
             before_sort_actions_dag_output_node_names.insert(action_dag_node->result_name);
         }
+
+        /// For DEPENDS ON, also include the dependency array column in the before-sort actions.
+        if (sort_node_typed.hasDependsOn() && sort_node_typed.getDependsOn())
+        {
+            auto [deps_dag_nodes, deps_correlated] = actions_visitor.visit(before_sort_actions->dag, sort_node_typed.getDependsOn());
+            deps_correlated.assertEmpty("in ORDER BY DEPENDS ON");
+            for (auto & action_dag_node : deps_dag_nodes)
+            {
+                if (before_sort_actions_dag_output_node_names.contains(action_dag_node->result_name))
+                    continue;
+                before_sort_actions_outputs.push_back(action_dag_node);
+                before_sort_actions_dag_output_node_names.insert(action_dag_node->result_name);
+            }
+        }
     }
 
     if (has_with_fill)

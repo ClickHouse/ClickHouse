@@ -3436,6 +3436,20 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
                     fill_step_expression_projection_names_size);
         }
 
+        if (sort_node.hasDependsOn() && sort_node.getDependsOn())
+        {
+            /// Resolve the DEPENDS ON expression (Array column of dependency keys) against the current scope.
+            resolveExpressionNode(sort_node.getDependsOn(), scope,
+                false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+            /// Emit "key DEPENDS ON deps" as the projection name and skip the normal ASC/DESC suffix.
+            auto sort_column_projection_name = sort_expression_projection_names[0]
+                + " DEPENDS ON " + sort_node.getDependsOn()->formatASTForErrorMessage();
+            result_projection_names.push_back(std::move(sort_column_projection_name));
+            sort_expression_projection_names.clear();
+            continue;
+        }
+
         if (sort_node.hasFillStaleness())
         {
             fill_staleness_expression_projection_names = resolveExpressionNode(sort_node.getFillStaleness(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);

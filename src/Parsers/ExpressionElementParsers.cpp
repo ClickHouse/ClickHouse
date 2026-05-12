@@ -1657,6 +1657,7 @@ const char * ParserAlias::restricted_keywords[] =
     "BETWEEN",
     "CROSS",
     "PASTE",
+    "DEPENDS",
     "FINAL",
     "FORMAT",
     "FROM",
@@ -1683,6 +1684,7 @@ const char * ParserAlias::restricted_keywords[] =
     "SAMPLE",
     "SEMI",
     "SETTINGS",
+    "SHUFFLE",
     "UNION",
     "USING",
     "WHERE",
@@ -2318,6 +2320,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserKeyword last(Keyword::LAST);
     ParserKeyword collate(Keyword::COLLATE);
     ParserKeyword with_fill(Keyword::WITH_FILL);
+    ParserKeyword depends_on(Keyword::DEPENDS_ON);
     ParserKeyword from(Keyword::FROM);
     ParserKeyword to(Keyword::TO);
     ParserKeyword step(Keyword::STEP);
@@ -2330,11 +2333,17 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
 
     int direction = 1;
+    bool direction_explicitly_set = false;
 
     if (descending.ignore(pos, expected) || desc.ignore(pos, expected))
+    {
         direction = -1;
-    else
-        ascending.ignore(pos, expected) || asc.ignore(pos, expected);
+        direction_explicitly_set = true;
+    }
+    else if (ascending.ignore(pos, expected) || asc.ignore(pos, expected))
+    {
+        direction_explicitly_set = true;
+    }
 
     int nulls_direction = direction;
     bool nulls_direction_was_explicitly_specified = false;
@@ -2380,6 +2389,30 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
     }
 
+    /// DEPENDS ON dep_expr: topological sort dependency.
+    /// Incompatible with ASC/DESC, NULLS, COLLATE, and WITH FILL.
+    bool has_depends_on = false;
+    ASTPtr depends_on_expr;
+    if (depends_on.ignore(pos, expected))
+    {
+        if (direction_explicitly_set)
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                "DEPENDS ON cannot be combined with ASC or DESC");
+        if (nulls_direction_was_explicitly_specified)
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                "DEPENDS ON cannot be combined with NULLS FIRST or NULLS LAST");
+        if (locale_node)
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                "DEPENDS ON cannot be combined with COLLATE");
+        if (has_with_fill)
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                "DEPENDS ON cannot be combined with WITH FILL");
+
+        has_depends_on = true;
+        if (!exp_parser.parse(pos, depends_on_expr, expected))
+            return false;
+    }
+
     auto elem = make_intrusive<ASTOrderByElement>();
 
     elem->children.push_back(expr_elem);
@@ -2393,6 +2426,8 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     elem->setFillTo(fill_to);
     elem->setFillStep(fill_step);
     elem->setFillStaleness(fill_staleness);
+    elem->has_depends_on = has_depends_on;
+    elem->setDependsOn(depends_on_expr);
 
     node = elem;
 

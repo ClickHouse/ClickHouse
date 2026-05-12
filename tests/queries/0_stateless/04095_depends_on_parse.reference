@@ -1,0 +1,4 @@
+SELECT x\nFROM t\nORDER BY x DEPENDS ON deps
+SELECT x\nFROM t\nORDER BY x DEPENDS ON deps\nLIMIT 10
+SELECT *\nFROM\n(\n    SELECT\n        x,\n        d\n    FROM t\n    ORDER BY x DEPENDS ON d\n)\nORDER BY x ASC
+1

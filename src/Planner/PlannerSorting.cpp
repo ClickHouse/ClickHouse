@@ -12,6 +12,7 @@
 #include <Analyzer/SortNode.h>
 
 #include <Planner/PlannerActionsVisitor.h>
+#include <Analyzer/ListNode.h>
 
 namespace DB
 {
@@ -189,6 +190,23 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
     sort_column_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
 
     return sort_column_description;
+}
+
+std::optional<TopologicalSortInfo> extractTopologicalSortInfo(
+    const QueryTreeNodePtr & order_by_node, const PlannerContext & planner_context)
+{
+    auto & order_by_list_node = order_by_node->as<ListNode &>();
+    if (order_by_list_node.getNodes().size() != 1)
+        return std::nullopt;
+
+    const auto & sort_node = order_by_list_node.getNodes().front()->as<SortNode &>();
+    if (!sort_node.hasDependsOn())
+        return std::nullopt;
+
+    TopologicalSortInfo info;
+    info.key_column_name = calculateActionNodeName(sort_node.getExpression(), planner_context);
+    info.deps_column_name = calculateActionNodeName(sort_node.getDependsOn(), planner_context);
+    return info;
 }
 
 }

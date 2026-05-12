@@ -318,6 +318,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsMaterialized(cte_data.is_materialized);
     current_query_tree->setIsRecursiveWith(select_query_typed.recursive_with);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
+    current_query_tree->setIsShuffle(select_query_typed.has_shuffle);
     current_query_tree->setIsLimitWithTies(select_query_typed.limit_with_ties);
     current_query_tree->setIsGroupByWithTotals(select_query_typed.group_by_with_totals);
     current_query_tree->setIsGroupByWithCube(select_query_typed.group_by_with_cube);
@@ -594,6 +595,13 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_express
             sort_node->getFillStep() = buildExpression(order_by_element.getFillStep(), context);
         if (order_by_element.getFillStaleness())
             sort_node->getFillStaleness() = buildExpression(order_by_element.getFillStaleness(), context);
+
+        if (order_by_element.has_depends_on)
+        {
+            sort_node->setHasDependsOn(true);
+            if (order_by_element.getDependsOn())
+                sort_node->getDependsOn() = buildExpression(order_by_element.getDependsOn(), context);
+        }
 
         list_node->getNodes().push_back(std::move(sort_node));
     }

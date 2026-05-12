@@ -27,6 +27,8 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/ShuffleStep.h>
+#include <Processors/QueryPlan/TopologicalSortStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
@@ -912,6 +914,34 @@ void addSortingStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(sorting_step));
 }
 
+void addTopologicalSortStep(QueryPlan & query_plan, const TopologicalSortInfo & topo_info)
+{
+    auto topo_step = std::make_unique<TopologicalSortStep>(
+        query_plan.getCurrentHeader(),
+        topo_info.key_column_name,
+        topo_info.deps_column_name);
+    topo_step->setStepDescription("Topological sort for ORDER BY ... DEPENDS ON");
+    query_plan.addStep(std::move(topo_step));
+}
+
+void addShuffleStep(QueryPlan & query_plan, const QueryAnalysisResult & query_analysis_result, const QueryNode & query_node)
+{
+    std::optional<size_t> shuffle_limit;
+    if (query_node.hasLimit()
+        && !query_analysis_result.is_limit_length_negative
+        && query_analysis_result.limit_length > 0)
+    {
+        UInt64 length = query_analysis_result.limit_length;
+        UInt64 offset = query_analysis_result.limit_offset;
+        /// Pass length + offset into the reservoir so LimitStep can handle OFFSET.
+        if (length <= std::numeric_limits<UInt64>::max() - offset)
+            shuffle_limit = static_cast<size_t>(length + offset);
+    }
+    auto shuffle_step = std::make_unique<ShuffleStep>(query_plan.getCurrentHeader(), shuffle_limit);
+    shuffle_step->setStepDescription("Shuffle for SHUFFLE");
+    query_plan.addStep(std::move(shuffle_step));
+}
+
 template<size_t size>
 ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
@@ -1211,6 +1241,11 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
     /// based on the given fraction the final limit/offset processor must count the entire dataset.
     /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
 
+    /// Topological sort (ORDER BY ... DEPENDS ON) must accumulate all rows before emitting output.
+    /// A preliminary LIMIT before the sort would truncate input and produce wrong results.
+    bool has_topo_sort = query_node.hasOrderBy()
+        && extractTopologicalSortInfo(query_node.getOrderByNode(), *planner_context).has_value();
+
     bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
     bool apply_prelimit = apply_limit && query_node.hasLimit() && !query_node.isLimitWithTies() && !query_node.isGroupByWithTotals()
         && !query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree
@@ -1218,7 +1253,8 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
         && query_analysis_result.fractional_limit == 0
         && query_analysis_result.fractional_offset == 0
         && !query_node.isDistinct() && !query_node.hasLimitBy()
-        && !settings[Setting::extremes] && !has_withfill;
+        && !settings[Setting::extremes] && !has_withfill
+        && !has_topo_sort;
 
     /// `isToAggregationState` covers both `WithMergeableStateAfterAggregation` (stage 3) and
     /// `WithMergeableStateAfterAggregationAndLimit` (stage 4). OFFSET must not be applied at
@@ -1257,7 +1293,14 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         return;
 
     if (expressions_analysis_result.hasSort())
-        addSortingStep(query_plan, query_analysis_result, planner_context);
+    {
+        if (auto topo_info = extractTopologicalSortInfo(query_node.getOrderByNode(), *planner_context))
+            addTopologicalSortStep(query_plan, *topo_info);
+        else
+            addSortingStep(query_plan, query_analysis_result, planner_context);
+    }
+    else if (query_node.isShuffle())
+        addShuffleStep(query_plan, query_analysis_result, query_node);
 
     /** For DISTINCT step, pre_distinct = false, because if we have limit and distinct,
       * we need to merge streams to one and calculate overall distinct.
@@ -1309,8 +1352,14 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
     /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
 
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
+    /// Topological sort (ORDER BY ... DEPENDS ON) is an accumulating transform that must see all rows
+    /// before emitting output — pushing a preliminary LIMIT before it would truncate input and produce
+    /// an incorrect ordering.
+    const bool has_topo_sort_prelim = query_node.hasOrderBy()
+        && extractTopologicalSortInfo(query_node.getOrderByNode(), *planner_context).has_value();
     if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies()
-        && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0)
+        && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0
+        && !has_topo_sort_prelim)
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
 }
 
@@ -2385,7 +2434,16 @@ void Planner::buildPlanForQueryNode()
                 !(query_node.isGroupByWithTotals() && !query_analysis_result.aggregate_final))
                 addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge sorted streams for ORDER BY, without aggregation");
             else
-                addSortingStep(query_plan, query_analysis_result, planner_context);
+            {
+                if (auto topo_info = extractTopologicalSortInfo(query_node.getOrderByNode(), *planner_context))
+                    addTopologicalSortStep(query_plan, *topo_info);
+                else
+                    addSortingStep(query_plan, query_analysis_result, planner_context);
+            }
+        }
+        else if (query_node.isShuffle())
+        {
+            addShuffleStep(query_plan, query_analysis_result, query_node);
         }
 
         /** Optimization if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
