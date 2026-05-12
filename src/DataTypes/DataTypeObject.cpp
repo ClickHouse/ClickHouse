@@ -628,8 +628,8 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     for (const auto & argument : arguments->children)
     {
         const auto * object_type_argument = argument->as<ASTObjectTypeArgument>();
-        /// The AST may be structurally invalid (e.g. produced by the AST fuzzer), so we cannot
-        /// assume that every child is an ASTObjectTypeArgument. Validate the cast before use.
+        /// The AST may be structurally invalid, so we cannot assume that every child is an
+        /// `ASTObjectTypeArgument`. Validate the cast before use.
         if (!object_type_argument)
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in {} type arguments: {}", magic_enum::enum_name(schema_format), argument->formatForErrorMessage());
         if (object_type_argument->parameter)
@@ -639,8 +639,8 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
             if (!function || function->name != "equals")
                 throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}", magic_enum::enum_name(schema_format), object_type_argument->parameter->formatForErrorMessage());
 
-            /// `equals` may have its arguments mutated by the fuzzer; the function expects
-            /// exactly two children: an identifier and a literal.
+            /// The `equals` function expects exactly two children: an identifier and a literal.
+            /// Validate the argument list shape before indexing.
             if (!function->arguments || function->arguments->children.size() != 2)
                 throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}. Expected expression 'max_dynamic_types=N' or 'max_dynamic_paths=N'", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
 

@@ -79,8 +79,8 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (!argument || argument->name != "equals")
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Dynamic data type argument should be in a form 'max_types=N'");
 
-    /// `equals` may have its arguments mutated by the fuzzer; the function expects
-    /// exactly two children: an identifier and a literal.
+    /// The `equals` function expects exactly two children: an identifier and a literal.
+    /// Validate the argument list shape before indexing.
     if (!argument->arguments || argument->arguments->children.size() != 2)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Dynamic data type argument should be in a form 'max_types=N'");
 
