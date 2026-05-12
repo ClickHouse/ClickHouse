@@ -148,9 +148,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         {
             auto end_pos = pos;
             --end_pos;
-            /// Only process if there are tokens between column_begin_pos and end_pos
-            if (!(end_pos < column_begin_pos))
-                apply_aliais(column_begin_pos, end_pos, groupby);
+            apply_aliais(column_begin_pos, end_pos, groupby);
             if (String(pos->begin, pos->end) == "by")
                 groupby = true;
             column_begin_pos = pos;
