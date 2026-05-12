@@ -69,6 +69,9 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     String service_account;
     String metadata_service;
     String request_token_path;
+    String google_adc_client_id;
+    String google_adc_client_secret;
+    String google_adc_refresh_token;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -206,7 +209,7 @@ protected:
 
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
-    void observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency = 1) const;
+    void observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency) const;
 
     std::function<ProxyConfiguration()> per_request_configuration;
     std::function<void(const ProxyConfiguration &)> error_report;
@@ -247,11 +250,15 @@ private:
     const String service_account;
     const String metadata_service;
     const String request_token_path;
+    const String google_adc_client_id;
+    const String google_adc_client_secret;
+    const String google_adc_refresh_token;
 
     mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
+    BearerToken requestBearerTokenFromADC() const;
 };
 
 }

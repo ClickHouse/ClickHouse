@@ -863,12 +863,12 @@
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
 
+        <!-- Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). -->
+        <allow_impersonate_user>true</allow_impersonate_user>
+
         <!-- By default, for backward compatibility creating table with a specific table engine ignores grant,
              however you can change this behaviour by setting this to true -->
         <table_engines_require_grant>false</table_engines_require_grant>
-
-        <!-- Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). -->
-        <allow_impersonate_user>false</allow_impersonate_user>
 
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
@@ -1310,6 +1310,18 @@
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <flush_on_crash>false</flush_on_crash>
     </metric_log>
+
+    <!-- Histogram metric log contains periodic snapshots of histogram metrics (e.g. S3/Azure latency distributions, Keeper response times). -->
+    <histogram_metric_log>
+        <database>system</database>
+        <table>histogram_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
+    </histogram_metric_log>
 
     <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
     <error_log>

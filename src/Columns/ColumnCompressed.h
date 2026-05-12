@@ -85,7 +85,7 @@ public:
     TypeIndex getDataType() const override { throwMustBeDecompressed(); }
     Field operator[](size_t) const override { throwMustBeDecompressed(); }
     void get(size_t, Field &) const override { throwMustBeDecompressed(); }
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwMustBeDecompressed(); }
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwMustBeDecompressed(); }
     std::string_view getDataAt(size_t) const override { throwMustBeDecompressed(); }
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
@@ -128,7 +128,7 @@ public:
     void updatePermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
                         size_t, int, Permutation &, EqualRanges &) const override { throwMustBeDecompressed(); }
     ColumnPtr replicate(const Offsets &) const override { throwMustBeDecompressed(); }
-    MutableColumns scatter(size_t, const Selector &) const override { throwMustBeDecompressed(); }
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t, const Selector &) const override { throwMustBeDecompressed(); }
     void gather(ColumnGathererStream &) override { throwMustBeDecompressed(); }
     void getExtremes(Field &, Field &, size_t, size_t) const override { throwMustBeDecompressed(); }
     size_t byteSizeAt(size_t) const override { throwMustBeDecompressed(); }
@@ -137,8 +137,8 @@ public:
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeDecompressed(); }
 
     bool hasDynamicStructure() const override { throwMustBeDecompressed(); }
-    void takeDynamicStructureFromSourceColumns(const Columns &, std::optional<size_t>) override { throwMustBeDecompressed(); }
-    void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwMustBeDecompressed(); }
+    void takeExactDynamicStructureFrom(const IColumn &) override { throwMustBeDecompressed(); }
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwMustBeDecompressed(); }
     void fixDynamicStructure() override { throwMustBeDecompressed(); }
 
 protected:

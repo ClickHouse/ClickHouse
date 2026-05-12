@@ -141,28 +141,11 @@ void registerBackupEngineS3(BackupFactory & factory)
                 params.write_settings,
                 params.context,
                 params.is_internal_backup);
-            /// We assume object storage of backup files and original disk use same endpoint, bucket and credentials.
-            auto uri_for_lightweight = S3::URI{s3_uri};
-            /// We set the prefix to "" because in meta file, object key is absolute path.
-            uri_for_lightweight.key = "";
-            auto lightweight_snapshot_writer = std::make_shared<BackupWriterS3>(
-                uri_for_lightweight,
-                access_key_id,
-                secret_access_key,
-                role_arn,
-                role_session_name,
-                params.allow_s3_native_copy,
-                params.s3_storage_class,
-                params.read_settings,
-                params.write_settings,
-                params.context,
-                params.is_internal_backup);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
                 archive_params,
-                reader,
-                lightweight_snapshot_writer);
+                reader);
         }
         else if (params.open_mode == IBackup::OpenMode::READ)
         {

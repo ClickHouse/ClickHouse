@@ -34,7 +34,7 @@ public:
         CLEAR_INDEX_MARK_CACHE,
         CLEAR_INDEX_UNCOMPRESSED_CACHE,
         CLEAR_VECTOR_SIMILARITY_INDEX_CACHE,
-        CLEAR_TEXT_INDEX_DICTIONARY_CACHE,
+        CLEAR_TEXT_INDEX_TOKENS_CACHE,
         CLEAR_TEXT_INDEX_HEADER_CACHE,
         CLEAR_TEXT_INDEX_POSTINGS_CACHE,
         CLEAR_TEXT_INDEX_CACHES,
@@ -43,6 +43,7 @@ public:
         CLEAR_QUERY_CACHE,
         CLEAR_COMPILED_EXPRESSION_CACHE,
         CLEAR_ICEBERG_METADATA_CACHE,
+        CLEAR_PARQUET_METADATA_CACHE,
         CLEAR_FILESYSTEM_CACHE,
         CLEAR_DISTRIBUTED_CACHE,
         CLEAR_DISK_METADATA_CACHE,
@@ -99,6 +100,7 @@ public:
         FLUSH_LOGS,
         FLUSH_DISTRIBUTED,
         FLUSH_ASYNC_INSERT_QUEUE,
+        FLUSH_OBJECT_STORAGE_QUEUE,
         STOP_DISTRIBUTED_SENDS,
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
@@ -116,6 +118,7 @@ public:
         STOP_CLEANUP,
         START_CLEANUP,
         RESET_COVERAGE,
+        SET_COVERAGE_TEST,
         REFRESH_VIEW,
         WAIT_VIEW,
         START_VIEW,
@@ -124,6 +127,8 @@ public:
         STOP_VIEW,
         STOP_VIEWS,
         STOP_REPLICATED_VIEW,
+        PAUSE_VIEW,
+        PAUSE_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
@@ -134,6 +139,7 @@ public:
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
         RECONNECT_ZOOKEEPER,
+        WAIT_BLOBS_CLEANUP,
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
@@ -159,6 +165,8 @@ public:
     String target_function;
     String replica;
     String shard;
+    String zk_name;
+    String full_replica_zk_path;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};
@@ -184,6 +192,8 @@ public:
 
     String schema_cache_format;
 
+    String queue_path;
+
     String fail_point_name;
 
     enum class FailPointAction
@@ -195,6 +205,8 @@ public:
     FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
 
     String delta_kernel_tracing_level;
+
+    String coverage_test_name;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 

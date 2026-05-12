@@ -104,6 +104,25 @@ namespace po = boost::program_options;
 namespace fs = std::filesystem;
 
 
+/// POSIX-compliant single-quote escaping: wrap in single quotes and replace any
+/// embedded single quote with '\''. Safe against arbitrary byte content.
+static std::string shellQuote(std::string_view s)
+{
+    std::string out;
+    out.reserve(s.size() + 2);
+    out.push_back('\'');
+    for (char c : s)
+    {
+        if (c == '\'')
+            out.append("'\\''");
+        else
+            out.push_back(c);
+    }
+    out.push_back('\'');
+    return out;
+}
+
+
 static auto executeScript(const std::string & command, bool throw_on_error = false)
 {
     auto sh = ShellCommand::execute(command);
@@ -943,27 +962,27 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// If user specified --prefix, --pid-path, --config-path, --binary-path, --user, --group
         /// in install args we need to pass them to start command
         std::string maybe_prefix;
-        if (options.contains("prefix") && prefix != "/")
+        if (options.contains("prefix") && !options["prefix"].defaulted() && prefix != "/")
             maybe_prefix = " --prefix " + prefix.string();
 
         std::string maybe_pid_path;
-        if (options.contains("pid-path"))
+        if (options.contains("pid-path") && !options["pid-path"].defaulted())
             maybe_pid_path = " --pid-path " + options["pid-path"].as<std::string>();
 
         std::string maybe_config_path;
-        if (options.contains("config-path"))
+        if (options.contains("config-path") && !options["config-path"].defaulted())
             maybe_config_path = " --config-path " + options["config-path"].as<std::string>();
 
         std::string maybe_binary_path;
-        if (options.contains("binary-path"))
+        if (options.contains("binary-path") && !options["binary-path"].defaulted())
             maybe_binary_path = " --binary-path " + options["binary-path"].as<std::string>();
 
         std::string maybe_user;
-        if (options.contains("user") && user != DEFAULT_CLICKHOUSE_SERVER_USER)
+        if (options.contains("user") && !options["user"].defaulted() && user != DEFAULT_CLICKHOUSE_SERVER_USER)
             maybe_user = " --user " + user;
 
         std::string maybe_group;
-        if (options.contains("group") && group != DEFAULT_CLICKHOUSE_SERVER_GROUP)
+        if (options.contains("group") && !options["group"].defaulted() && group != DEFAULT_CLICKHOUSE_SERVER_GROUP)
             maybe_group = " --group " + group;
 
         std::string start_options = maybe_prefix + maybe_pid_path + maybe_config_path + maybe_binary_path + maybe_user + maybe_group;
@@ -977,7 +996,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 " {}{}\n"
                 "\nStart clickhouse-client with:\n"
                 " clickhouse-client{}\n\n",
-                formatWithSudo("clickhouse restart", getuid() != 0),
+                formatWithSudo("clickhouse restart"),
                 start_options,
                 maybe_password);
         }
@@ -989,7 +1008,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 " {}{}\n"
                 "\nStart clickhouse-client with:\n"
                 " clickhouse-client{}\n\n",
-                formatWithSudo("clickhouse start", getuid() != 0),
+                formatWithSudo("clickhouse start"),
                 start_options,
                 maybe_password);
         }
@@ -1051,7 +1070,7 @@ namespace
         }
 
         std::string command = fmt::format("{} --config-file {} --pid-file {} --daemon",
-            executable.string(), config.string(), pid_file.string());
+            shellQuote(executable.string()), shellQuote(config.string()), shellQuote(pid_file.string()));
 
         if (!user.empty())
         {
@@ -1059,7 +1078,8 @@ namespace
             {
                 /// Sometimes there is no sudo available like in some Docker images.
                 /// We will use clickhouse su instead.
-                command = fmt::format("{} su {}:{} {}", binary.string(), user, group, command);
+                command = fmt::format("{} su {} {}",
+                    shellQuote(binary.string()), shellQuote(user + ":" + group), command);
             }
             else
             {
@@ -1067,7 +1087,10 @@ namespace
                 /// that's why we are using it instead of the 'clickhouse su' tool.
                 /// by default, sudo resets all the ENV variables, but we should preserve
                 /// the values /etc/default/clickhouse in /etc/init.d/clickhouse file
-                command = fmt::format("sudo --preserve-env -u '{}' {}", user, command);
+                if (!group.empty())
+                    command = fmt::format("sudo --preserve-env -u {} -g {} {}", shellQuote(user), shellQuote(group), command);
+                else
+                    command = fmt::format("sudo --preserve-env -u {} {}", shellQuote(user), command);
             }
         }
 
@@ -1271,6 +1294,13 @@ int mainEntryClickHouseStart(int argc, char ** argv)
 
         std::string user = options["user"].as<std::string>();
         std::string group = options["group"].as<std::string>();
+        /// `--group` has a default for help/documentation purposes only.
+        /// It should be applied to the launched server only when the user
+        /// explicitly requested it. Otherwise `clickhouse start --user alice`
+        /// would force `-g clickhouse` (or `alice:clickhouse` on the no-sudo
+        /// path), which fails when the user is not a member of `clickhouse`.
+        if (options["group"].defaulted())
+            group.clear();
 
         fs::path prefix = options["prefix"].as<std::string>();
         fs::path binary = prefix / options["binary-path"].as<std::string>() / "clickhouse";
@@ -1403,6 +1433,10 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
 
         std::string user = options["user"].as<std::string>();
         std::string group = options["group"].as<std::string>();
+        /// See the comment in `mainEntryClickHouseStart`: only apply `--group`
+        /// when the user explicitly provided it.
+        if (options["group"].defaulted())
+            group.clear();
 
         fs::path prefix = options["prefix"].as<std::string>();
         fs::path binary = prefix / options["binary-path"].as<std::string>() / "clickhouse";

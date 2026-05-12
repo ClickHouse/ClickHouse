@@ -13,9 +13,12 @@
 #include <Storages/StorageMaterializedView.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace fs = std::filesystem;
@@ -40,6 +43,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
+    extern const int UNFINISHED;
 }
 
 
@@ -121,6 +125,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(ContextPtr)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::drop");
     waitDatabaseStarted();
     {
         std::lock_guard lock(mutex);
@@ -146,6 +151,7 @@ void DatabaseAtomic::drop(ContextPtr)
 
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::attachTable");
     assert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
     std::lock_guard lock(mutex);
@@ -182,6 +188,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::dropTable");
     waitDatabaseStarted();
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
@@ -235,6 +242,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
                                  const String & to_table_name, bool exchange, bool dictionary)
     TSA_NO_THREAD_SAFETY_ANALYSIS   /// TSA does not support conditional locking
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::renameTable");
     if (typeid(*this) != typeid(to_database))
     {
         if (typeid_cast<DatabaseOrdinary *>(&to_database))
@@ -709,6 +717,7 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
 
 void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new_name)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::renameDatabase");
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
     createDirectories();
     waitDatabaseStarted();
@@ -780,21 +789,77 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
 }
 
-void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)
+void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid, std::function<void()> throw_if_cancelled)
 {
     /// Table is in use while its shared_ptr counter is greater than 1.
     /// We cannot trigger condvar on shared_ptr destruction, so it's busy wait.
-    while (true)
+    LOG_DEBUG(log, "Waiting for detached table {} to be no longer in use", toString(uuid));
+
+    unsigned iterations = 0;
+    while (!DatabaseCatalog::instance().isShuttingDown())
     {
+        bool found = true;
+        int64_t use_count = 0;
+        bool log_slow_wait = false;
         DetachedTables not_in_use;
         {
             std::lock_guard lock{mutex};
             not_in_use = cleanupDetachedTables();
             if (!detached_tables.contains(uuid))
-                return;
+            {
+                found = false;
+            }
+            else if (iterations > 0 && iterations % 100 == 0)
+            {
+                auto it = detached_tables.find(uuid);
+                if (it != detached_tables.end() && it->second)
+                    use_count = it->second.use_count();
+                log_slow_wait = true;
+            }
         }
+        /// not_in_use destroyed here (after lock released) — StoragePtrs freed without holding mutex
+
+        if (!found)
+        {
+            LOG_DEBUG(log, "Detached table {} is no longer in use", toString(uuid));
+            return;
+        }
+
+        /// Check cancellation after verifying the table is still tracked.
+        /// This ordering avoids throwing a cancellation exception when
+        /// the wait has already completed.
+        if (throw_if_cancelled)
+            throw_if_cancelled();
+
+        if (log_slow_wait)
+            LOG_INFO(log, "Still waiting for detached table {} to be no longer in use (use_count={}, elapsed ~{}s)",
+                toString(uuid), use_count, iterations / 10);
+
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        ++iterations;
     }
+
+    /// Server is shutting down. Do one final cleanup pass — the table may have
+    /// become free just before or during shutdown.
+    bool still_tracked;
+    {
+        DetachedTables not_in_use;
+        {
+            std::lock_guard lock{mutex};
+            not_in_use = cleanupDetachedTables();
+            still_tracked = detached_tables.contains(uuid);
+        }
+    }
+
+    if (!still_tracked)
+    {
+        LOG_DEBUG(log, "Detached table {} is no longer in use (resolved during shutdown)", toString(uuid));
+        return;
+    }
+
+    throw Exception(ErrorCodes::UNFINISHED,
+        "Did not finish waiting for detached table {} to be no longer in use "
+        "because the server is shutting down", uuid);
 }
 
 void DatabaseAtomic::checkDetachedTableNotInUse(const UUID & uuid)

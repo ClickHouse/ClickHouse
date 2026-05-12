@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Common/CurrentThread.h>
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -64,6 +65,7 @@ namespace ObjectStorageQueueSetting
 namespace FailPoints
 {
     extern const char object_storage_queue_fail_in_the_middle_of_file[];
+    extern const char object_storage_queue_fail_commit_after_success[];
 }
 
 namespace ErrorCodes
@@ -128,10 +130,12 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     const auto globbed_key = reading_path.path;
+    const auto start_after = metadata->getStartAfterForListing();
     object_storage_iterator = object_storage->iterate(
         reading_path.cutGlobs(configuration->supportsPartialPathPrefix()),
         list_objects_batch_size_,
-        /*with_tags=*/ false);
+        /*with_tags=*/ false,
+        start_after);
 
     matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
     if (!matcher->ok())
@@ -984,6 +988,7 @@ String ObjectStorageQueueSource::getName() const
 
 Chunk ObjectStorageQueueSource::generate()
 {
+    auto component_guard = Coordination::setCurrentComponent("ObjectStorageQueueSource::generate");
     Chunk chunk;
     try
     {
@@ -998,7 +1003,17 @@ Chunk ObjectStorageQueueSource::generate()
     }
 
     if (!chunk && commit_once_processed)
-        commit(true);
+    {
+        try
+        {
+            commit(true);
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Failed to commit data: {}", getCurrentExceptionMessage(false));
+            throw;
+        }
+    }
 
     return chunk;
 }
@@ -1096,6 +1111,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             const auto context = getContext();
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
+                storage_id,
                 file_iterator,
                 configuration,
                 object_storage,
@@ -1240,8 +1256,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
+                    .storage_id = storage_id,
                     .size = object_metadata->size_bytes,
-                    .last_modified = object_metadata->last_modified
+                    .last_modified = object_metadata->last_modified,
                 },
                 getContext());
 
@@ -1352,6 +1369,18 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                                       || error_code == ErrorCodes::TABLE_IS_BEING_RESTARTED
                                       || error_code == ErrorCodes::TABLE_IS_READ_ONLY);
 
+    /// Count successfully processed files in a failed batch.
+    /// If the batch had multiple files, don't reduce retry counts:
+    /// the failure may have been caused by just one bad file.
+    /// The batch will be halved on the next iteration until the bad file is alone.
+    size_t processed_count = 0;
+    if (!insert_succeeded && reduce_retry_count)
+    {
+        for (const auto & [file_state, file_metadata_, exception_during_read_] : processed_files)
+            if (file_state == FileState::Processed)
+                ++processed_count;
+    }
+
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
         const auto & [file_state, file_metadata, exception_during_read] = processed_files[i];
@@ -1392,7 +1421,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     file_metadata->prepareFailedRequests(
                         requests,
                         exception_message,
-                        reduce_retry_count);
+                        reduce_retry_count && processed_count <= 1);
                 }
                 break;
             }
@@ -1416,7 +1445,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_message,
-                    reduce_retry_count);
+                    reduce_retry_count && processed_count <= 1);
                 break;
             }
             case FileState::ErrorOnRead:
@@ -1453,6 +1482,12 @@ void ObjectStorageQueueSource::preparePartitionProcessedRequests(
     }
 }
 
+void ObjectStorageQueueSource::setUncertainCommit()
+{
+    for (auto & file : processed_files)
+        file.metadata->setUncertainCommit();
+}
+
 void ObjectStorageQueueSource::finalizeCommit(
     bool insert_succeeded,
     UInt64 commit_id,
@@ -1476,6 +1511,14 @@ void ObjectStorageQueueSource::finalizeCommit(
                     {
                         file_metadata->finalizeProcessed();
                     }
+                    else if (file_metadata->wasProcessingResetWithoutFailure())
+                    {
+                        /// The file was just reset for retry (processing node removed),
+                        /// not actually marked as failed. This happens when reduce_retry_count
+                        /// is false (e.g. due to TOO_MANY_PARTS, or when batch halving is used
+                        /// to isolate a bad file).
+                        file_metadata->finalizeResetProcessing();
+                    }
                     else
                     {
                         file_metadata->finalizeFailed(exception_message);
@@ -1493,7 +1536,10 @@ void ObjectStorageQueueSource::finalizeCommit(
                             file_state, file_metadata->getPath());
                     }
 
-                    file_metadata->finalizeFailed(exception_message);
+                    if (file_metadata->wasProcessingResetWithoutFailure())
+                        file_metadata->finalizeResetProcessing();
+                    else
+                        file_metadata->finalizeFailed(exception_message);
                     break;
                 }
                 case FileState::ErrorOnRead:
@@ -1541,6 +1587,9 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         exception_message);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
+    if (requests.empty() && successful_objects.empty())
+        return;
+
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
@@ -1571,10 +1620,20 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         }
         ++try_num;
         code = zk_client->tryMulti(requests, responses);
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+            if (code == Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromMessage(
+                    Coordination::Error::ZCONNECTIONLOSS,
+                    "Simulated connection loss after successful commit");
+        });
     });
 
     if (code != Coordination::Error::ZOK)
+    {
+        if (try_num > 1)
+            setUncertainCommit();
         throw zkutil::KeeperMultiException(code, requests, responses);
+    }
 
     const auto commit_id = StorageObjectStorageQueue::generateCommitID();
     const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

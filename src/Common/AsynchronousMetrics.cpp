@@ -12,6 +12,8 @@
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
 #include <Common/Jemalloc.h>
+#include <Common/JemallocCacheArena.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
 #include <Common/logger_useful.h>
@@ -471,7 +473,7 @@ uint64_t updateJemallocEpoch()
 {
     uint64_t value = 0;
     size_t size = sizeof(value);
-    mallctl("epoch", &value, &size, &value, size);
+    je_mallctl("epoch", &value, &size, &value, size);
     return value;
 }
 
@@ -1115,7 +1117,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.
-    auto epoch = update_jemalloc_epoch ? updateJemallocEpoch() : Jemalloc::getValue<uint64_t>("epoch");
+    // When force_update is true (SYSTEM RELOAD ASYNCHRONOUS METRICS), always advance the epoch
+    // to guarantee fresh statistics. The update_jemalloc_epoch flag is false when MemoryWorker
+    // owns epoch advancement on the periodic background path, but an explicit user request
+    // should always return up-to-date values.
+    auto epoch = (update_jemalloc_epoch || force_update) ? updateJemallocEpoch() : Jemalloc::getValue<uint64_t>("epoch");
     new_values["jemalloc.epoch"]
         = {epoch,
            "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
@@ -1133,6 +1139,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
     saveJemallocProf<bool>(new_values, "active");
+    saveJemallocProf<size_t>(new_values, "lg_sample");
     saveJemallocProf<bool>(new_values, "thread_active_init");
     saveAllArenasMetric<size_t>(new_values, "pactive");
     saveAllArenasMetric<size_t>(new_values, "pdirty");
@@ -1140,6 +1147,60 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveAllArenasMetric<size_t>(new_values, "dirty_purged");
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
     saveJemallocMetricImpl<size_t>(new_values, "arenas.dirty_decay_ms", "jemalloc.arenas.dirty_decay_ms");
+
+    /// Per-arena metrics for the dedicated cache arena (mark cache, uncompressed cache).
+    if (JemallocCacheArena::isEnabled())
+    {
+        unsigned cache_arena = JemallocCacheArena::getArenaIndex();
+        saveJemallocMetricImpl<size_t>(new_values,
+            fmt::format("stats.arenas.{}.pactive", cache_arena),
+            "jemalloc.cache_arena.pactive");
+        saveJemallocMetricImpl<size_t>(new_values,
+            fmt::format("stats.arenas.{}.pdirty", cache_arena),
+            "jemalloc.cache_arena.pdirty");
+    }
+
+    /// Per-arena metrics for the dedicated MergeTree heap arena. Holds long-lived MergeTree state:
+    ///   - per-part metadata (allocations from `IMergeTreeDataPart::setColumns` /
+    ///     `setColumnsSubstreams` / `loadColumnsChecksumsIndexes` / `loadProjections` /
+    ///     `loadChecksums` and from `MergeTreeDataPartBuilder::build`),
+    ///   - per-table metadata (allocations from `MergeTreeData::setProperties`,
+    ///     `resetSerializationHints`, `updateSerializationHints`).
+    /// jemalloc reports per-arena `pactive`/`pdirty` as a count of jemalloc pages. The
+    /// `*_bytes` variants below multiply by jemalloc's compiled-in page size (read once from
+    /// `arenas.page`), not the OS page size: the two differ on platforms where jemalloc is
+    /// built with `LG_PAGE=16` (64 KiB pages — aarch64, ppc64le, riscv64) but the kernel uses
+    /// 4 KiB pages. Using `getPageSize()` would under-report by 16× there.
+    if (JemallocMergeTreeArena::isEnabled())
+    {
+        unsigned mergetree_arena = JemallocMergeTreeArena::getArenaIndex();
+        size_t mt_pactive = saveJemallocMetricImpl<size_t>(new_values,
+            fmt::format("stats.arenas.{}.pactive", mergetree_arena),
+            "jemalloc.mergetree_arena.pactive");
+        size_t mt_pdirty = saveJemallocMetricImpl<size_t>(new_values,
+            fmt::format("stats.arenas.{}.pdirty", mergetree_arena),
+            "jemalloc.mergetree_arena.pdirty");
+
+        static const Jemalloc::MibCache<size_t> jemalloc_page_size_mib{"arenas.page"};
+        const size_t page_size = jemalloc_page_size_mib.getValue();
+        new_values["jemalloc.mergetree_arena.active_bytes"] = { mt_pactive * page_size,
+            "Active bytes in the dedicated jemalloc MergeTree arena. Holds long-lived MergeTree heap "
+            "state: per-part metadata (`NamesAndTypesList`, `SerializationInfoByName`, the "
+            "`serializations` map, `column_name_to_position`, `MergeTreeDataPartChecksums` tree, the "
+            "`Poco::LRUCache<String, ColumnSize>` delegates inside each `IMergeTreeDataPart`, the "
+            "per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`, and the "
+            "`MergeTreeDataPart{Compact,Wide}` object itself) plus per-table metadata "
+            "(`StorageInMemoryMetadata` / `ColumnsDescription` / `VirtualColumnsDescription` clones "
+            "set up by `setProperties`, the `serialization_hints` aggregation, and the "
+            "`columns_descriptions_cache`). Active parts and outdated parts pending cleanup both "
+            "contribute. Disjoint from the cache arena and JIT arena. The per-part columns "
+            "`system.parts.primary_key_bytes_in_memory[_allocated]` and "
+            "`system.parts.index_granularity_bytes_in_memory[_allocated]` are subsets of this metric "
+            "(when their values are non-zero — they can also live in `PrimaryIndexCacheBytes` instead, "
+            "which is in the cache arena and not counted here)."};
+        new_values["jemalloc.mergetree_arena.dirty_bytes"] = { mt_pdirty * page_size,
+            "Dirty bytes in the MergeTree arena that are eligible for purging back to the OS."};
+    }
 #endif
 
     /// Process process memory usage according to OS
@@ -1528,7 +1589,24 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             uint64_t usage = cgroupmem_reader->readMemoryUsage();
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
-            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes (excluding page cache)." };
+            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes. "
+                "On cgroup v2 this is anon + sock + non-reclaimable kernel memory; on cgroup v1 this is RSS. "
+                "In both cases the kernel OS page cache (file-backed cache) is excluded." };
+
+            UInt64 userspace_page_cache_bytes = 0;
+            if (context && context->getPageCache())
+                userspace_page_cache_bytes = context->getPageCache()->sizeInBytes();
+
+            UInt64 cgroup_usage_without_page_cache = (usage > userspace_page_cache_bytes)
+                                                   ? (usage - userspace_page_cache_bytes)
+                                                   : 0;
+
+            new_values["CGroupMemoryUsedWithoutPageCache"] = {
+                cgroup_usage_without_page_cache,
+                "The amount of memory used in cgroup, in bytes, excluding the ClickHouse userspace page cache. "
+                "This is CGroupMemoryUsed minus the userspace page cache size. "
+                "When userspace page cache is disabled, this value equals CGroupMemoryUsed."
+            };
         }
         catch (...)
         {

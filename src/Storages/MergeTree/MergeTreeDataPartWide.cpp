@@ -9,6 +9,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
 
 
@@ -81,7 +82,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
-    const VirtualsDescriptionPtr & virtual_columns,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -92,7 +92,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
     return std::make_unique<MergeTreeDataPartWriterWide>(
         data_part_name_, logger_name_, serializations_, data_part_storage_,
         index_granularity_info_, storage_settings_, columns_list,
-        metadata_snapshot, virtual_columns, indices_to_recalc,
+        metadata_snapshot, indices_to_recalc,
         marks_file_extension_,
         default_codec_, writer_settings, std::move(computed_index_granularity),
         written_offset_substreams);
@@ -481,6 +481,10 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
 #ifndef NDEBUG
         /// Most trivial types
         if (rows_count != 0
+            /// Skip columns that are declared in metadata but not actually persisted in this part.
+            /// This can legitimately happen when concurrent ALTER ADD/DROP COLUMN and mutations
+            /// produce a part where a column is in the columns list but has no data file.
+            && size.data_uncompressed != 0
             && column.type->isValueRepresentedByNumber()
             && !column.type->haveSubtypes()
             && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
@@ -504,7 +508,7 @@ std::vector<String> MergeTreeDataPartWide::getListOfStreamsForColumn(const NameA
     NamesAndTypesList cols;
     cols.emplace_back(column);
 
-    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
+    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     /// We need to read only prefixes, so no data will be read.

@@ -18,6 +18,6 @@ $CLICKHOUSE_CLIENT --query_id=${query_id_base}_2 -q "select tuple.s from test fo
 
 $CLICKHOUSE_CLIENT -q """
 system flush logs query_log;
-select memory_usage < 500000000 from system.query_log where query_id like '%${query_id_base}%' and type='QueryFinish' and current_database = currentDatabase();
+select memory_usage < 500000000 from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id like '%${query_id_base}%' and type='QueryFinish' and current_database = currentDatabase();
 drop table test;
 """

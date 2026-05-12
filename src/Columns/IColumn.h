@@ -4,6 +4,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/typeid_cast.h>
 
@@ -85,8 +86,8 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
 struct ColumnsWithRowNumbers
 {
     /// `columns` and `row_numbers` must have same size
-    std::vector<const ColumnsInfo *, AllocatorWithMemoryTracking<const ColumnsInfo *>> columns;
-    std::vector<UInt32, AllocatorWithMemoryTracking<UInt32>> row_numbers;
+    VectorWithMemoryTracking<const ColumnsInfo *> columns;
+    VectorWithMemoryTracking<UInt32> row_numbers;
 };
 
 /// Helper throw functions so Column headers don't need to include Exception.h.
@@ -189,8 +190,8 @@ public:
         bool notFull(WriteBufferFromOwnString & buf) const;
     };
 
-    virtual DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n, const Options & options) const;
+    virtual void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
+    String getValueName(size_t n, const Options & options) const;
 
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
@@ -343,7 +344,7 @@ public:
     /// cannot be used and serializeValueIntoArena should be used instead,
     virtual std::optional<size_t> getSerializedValueSize(size_t n, const SerializationSettings *) const { return byteSizeAt(n); }
 
-    virtual void batchSerializeValueIntoMemory(std::vector<char *> & /* memories */, const SerializationSettings * settings) const;
+    virtual void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & /* memories */, const SerializationSettings * settings) const;
 
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
     virtual std::string_view serializeValueIntoArenaWithNull(
@@ -355,7 +356,7 @@ public:
 
     virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
-    virtual void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
+    virtual void batchSerializeValueIntoMemoryWithNull(VectorWithMemoryTracking<char *> & /* memories */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
     /// Calculate all the sizes of serialized data (as in the methods above) in the column and add to `sizes`.
     /// If `is_null` is not nullptr, also take null byte into account.
@@ -374,6 +375,14 @@ public:
     /// On subsequent calls of this method for sequence of column values of arbitrary types,
     ///  passed bytes to hash must identify sequence of values unambiguously.
     virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
+
+    /// Update state of hash function with values in range [begin, end).
+    /// Used for deduplication: the hash must be the same for the same INSERT data producing
+    /// the same in-memory representation. It does NOT guarantee the same hash for logically
+    /// equivalent data stored differently in memory (e.g. different dynamic/shared path layout
+    /// in ColumnObject, or different variant layout in ColumnDynamic).
+    /// Default implementation calls updateHashWithValue for each element.
+    virtual void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const;
 
     /// Get hash function value. Hash is calculated for each element.
     /// It's a fast weak hash function. Mainly need to scatter data between threads.
@@ -434,6 +443,15 @@ public:
     }
 #endif
 
+    /** Compares and returns inequal track. It extends compareAt() to return how many values are not equal.
+      * Returns -N if current N left values are less then the right comparing value.
+      * Returns N if current N right values are less then the left comparing value.
+      * Returns 0 if current left and right values are equal.
+      *
+      * The main reason for the function is compareAt() devirtualization.
+      */
+    [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const;
+
 #if USE_EMBEDDED_COMPILER
 
     [[nodiscard]] virtual bool isComparatorCompilable() const { return false; }
@@ -487,6 +505,7 @@ public:
      * should have been, we form a new array with intervals that need to be sorted
      * If there is a limit, then for the last interval we do partial sorting and all that is described above,
      * but in addition we still find all the elements equal to the largest sorted, they will also need to be sorted.
+     * `equal_ranges` is not necessarily sorted. Single-element equal ranges are usually omitted.
      */
     virtual void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const = 0;
@@ -527,7 +546,7 @@ public:
       * For default implementation, see scatterImpl.
       */
     using Selector = PaddedPODArray<UInt64>;
-    [[nodiscard]] virtual std::vector<MutablePtr> scatter(size_t num_columns, const Selector & selector) const = 0;
+    [[nodiscard]] virtual VectorWithMemoryTracking<MutablePtr> scatter(size_t num_columns, const Selector & selector) const = 0;
 
     /// Insert data from several other columns according to source mask (used in vertical merge).
     /// For now it is a helper to de-virtualize calls to insert*() functions inside gather loop
@@ -551,7 +570,7 @@ public:
     virtual size_t capacity() const { return size(); }
 
     /// Reserve memory before squashing all specified source columns into this column.
-    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns, size_t factor)
+    virtual void prepareForSquashing(const VectorWithMemoryTracking<Ptr> & source_columns, size_t factor)
     {
         size_t new_size = size();
         for (const auto & source_column : source_columns)
@@ -645,7 +664,7 @@ public:
             const Versions & versions;
         };
 
-        std::vector<Source> sources;
+        VectorWithMemoryTracking<Source> sources;
 
         /// Can be omitted in case of one source.
         const Offsets * src_col_indices = nullptr;
@@ -710,17 +729,24 @@ public:
         return res;
     }
 
-    /// Checks if column has dynamic subcolumns.
+    /// Checks if column has dynamic internal structure (like JSON or Dynamic).
     virtual bool hasDynamicStructure() const { return false; }
 
-    /// For columns with dynamic subcolumns checks if columns have equal dynamic structure.
+    /// For columns with dynamic structure checks if columns have equal dynamic structure.
     [[nodiscard]] virtual bool dynamicStructureEquals(const IColumn & rhs) const { return structureEquals(rhs); }
-    /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
-    /// and creates proper resulting dynamic structure in advance for merge of these source columns.
-    virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {}
-    /// For columns with dynamic subcolumns this method takes the exact dynamic structure from provided column.
-    virtual void takeDynamicStructureFromColumn(const ColumnPtr & /*source_column*/) {}
-    /// For columns with dynamic subcolumns fix current dynamic structure so later inserts into this column won't change it.
+
+    /// Copies the exact dynamic structure from a single source column.
+    /// Used when we need to match an existing column's structure precisely
+    /// (e.g. taking structure from the first block during write, or during deserialization).
+    virtual void takeExactDynamicStructureFrom(const IColumn & /*source*/) {}
+
+    /// Determines the optimal dynamic structure for a merge by analyzing all source columns.
+    /// May read source statistics to make structure decisions (e.g. which paths/variants to keep).
+    /// Unlike `takeExactDynamicStructureFrom`, this method actively selects the best structure.
+    /// Does NOT update statistics in the result — use `takeOrCalculateStatisticsFrom` for that.
+    virtual void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<Ptr> & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {}
+
+    /// For columns with dynamic structure fix current dynamic structure so later inserts into this column won't change it.
     virtual void fixDynamicStructure() {}
 
     /** Some columns can contain another columns inside.
@@ -801,6 +827,13 @@ public:
       */
     [[nodiscard]] String dumpStructure() const;
 
+    virtual bool hasStatistics() const { return false; }
+
+    /// Merges/takes statistics from source columns. For multiple sources, computes merged statistics.
+    /// For ColumnObject/ColumnDynamic, must be called AFTER `chooseDynamicStructureForMerge` or `takeExactDynamicStructureFrom`,
+    /// because statistics placement depends on the dynamic structure (e.g. which paths are dynamic vs shared).
+    virtual void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Ptr> & /*source_columns*/) {}
+
 protected:
     template <typename Compare, typename Sort, typename PartialSort>
     void getPermutationImpl(size_t limit, Permutation & res, Compare compare, Sort full_sort, PartialSort partial_sort) const;
@@ -831,10 +864,12 @@ protected:
 private:
     void assertTypeEquality(const IColumn & rhs) const
     {
-        /// For Sparse and Const columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
-        /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const column.
+        /// For Sparse, Const, and Replicated columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
+        /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const and Replicated columns.
         /// For the rest of column types we can compare the types directly.
-        chassert((isConst() || isSparse() || isReplicated()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
+        chassert((isConst() || isSparse() || isReplicated() || rhs.isConst() || rhs.isSparse() || rhs.isReplicated())
+            ? getDataType() == rhs.getDataType()
+            : typeid(*this) == typeid(rhs));
     }
 #endif
 };
@@ -890,7 +925,7 @@ bool isColumnNullable(const IColumn & column);
 /// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
 bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 
-/// Implement methods to devirtualize some calls of IColumn in final descendents.
+/// Implement methods to devirtualize some calls of IColumn in final descendants.
 /// `typename Parent` is needed because some columns don't inherit IColumn directly.
 /// See ColumnFixedSizeHelper for example.
 template <typename Derived, typename Parent = IColumn>
@@ -906,7 +941,7 @@ private:
     IColumnHelper(const IColumnHelper &) = default;
 
     /// Devirtualize insertFrom.
-    MutableColumns scatter(size_t num_columns, const IColumn::Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const IColumn::Selector & selector) const override;
 
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;
@@ -950,10 +985,10 @@ private:
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
-    void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemoryWithNull(VectorWithMemoryTracking<char *> & memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
-    void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const override;
 
     std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;

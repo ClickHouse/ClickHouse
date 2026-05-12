@@ -138,16 +138,13 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMongoDB>(
     {
-            .documentation =
-            {
-                    .description = "Allows get data from MongoDB collection.",
-                    .examples = {
-                        {"Fetch collection by URI", "SELECT * FROM mongodb('mongodb://root:clickhouse@localhost:27017/database', 'example_collection', 'key UInt64, data String')", ""},
-                        {"Fetch collection over TLS", "SELECT * FROM mongodb('localhost:27017', 'database', 'example_collection', 'root', 'clickhouse', 'key UInt64, data String', 'tls=true')", ""},
-                        {"Fetch collection by named collection configuration with overrides", "SELECT * FROM mongodb(mongodb_creds, collection='example_collection', structure='key UInt64, data String')", ""},
-                    },
-                    .category = FunctionDocumentation::Category::TableFunction
-            },
+        .description = "Allows get data from MongoDB collection.",
+        .examples = {
+            {"Fetch collection by URI", "SELECT * FROM mongodb('mongodb://root:clickhouse@localhost:27017/database', 'example_collection', 'key UInt64, data String')", ""},
+            {"Fetch collection over TLS", "SELECT * FROM mongodb('localhost:27017', 'database', 'example_collection', 'root', 'clickhouse', 'key UInt64, data String', 'tls=true')", ""},
+            {"Fetch collection by named collection configuration with overrides", "SELECT * FROM mongodb(mongodb_creds, collection='example_collection', structure='key UInt64, data String')", ""},
+        },
+        .category = FunctionDocumentation::Category::TableFunction
     });
 }
 

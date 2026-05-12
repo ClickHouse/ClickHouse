@@ -8,20 +8,30 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/EqualityDeleteObject.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 
+#include <Core/Field.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 
 namespace DB::Iceberg
 {
+
+String computePartitionId(const Row & partition_key_value);
+
+
 struct IcebergObjectSerializableInfo
 {
-    String data_object_file_path_key;
+    IcebergPathFromMetadata data_object_file_path_key;
     Int32 underlying_format_read_schema_id;
     Int32 schema_id_relevant_to_iterator;
     Int64 sequence_number;
     String file_format;
+    String manifest_file;
+    String partition_id;
     std::vector<Iceberg::PositionDeleteObject> position_deletes_objects;
     std::vector<Iceberg::EqualityDeleteObject> equality_deletes_objects;
+    std::optional<Int64> record_count;
+    std::optional<Int64> file_size_in_bytes;
 
     void serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const;
     void deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version);
@@ -47,9 +57,10 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     /// Full path to the data object file
     /// It is used to filter position deletes objects by data file path.
     /// It is also used to create a filter for the data object in the position delete transform.
-    explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntryPtr data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_);
+    explicit IcebergDataObjectInfo(Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_, const String & resolved_storage_path_, Int32 schema_id_relevant_to_iterator_);
 
     explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_);
+    explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_, const Iceberg::IcebergObjectSerializableInfo & info_);
 
     std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         ObjectStoragePtr object_storage,
@@ -60,9 +71,9 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
 
     std::optional<String> getFileFormat() const override { return info.file_format; }
 
-    void addPositionDeleteObject(Iceberg::ManifestFileEntryPtr position_delete_object);
+    void addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object, const String & resolved_storage_path);
 
-    void addEqualityDeleteObject(const Iceberg::ManifestFileEntryPtr & equality_delete_object);
+    void addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path);
     Iceberg::IcebergObjectSerializableInfo info;
 };
 

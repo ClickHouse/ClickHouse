@@ -99,7 +99,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
 
 void registerTableFunctionPostgreSQL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionPostgreSQL>();
+    factory.registerFunction<TableFunctionPostgreSQL>({});
 }
 
 }

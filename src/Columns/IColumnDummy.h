@@ -40,7 +40,7 @@ public:
 
     Field operator[](size_t) const override;
     void get(size_t, Field &) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
     void insert(const Field &) override;
     bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;
@@ -112,7 +112,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
     double getRatioOfDefaultRows(double) const override;
     UInt64 getNumberOfDefaultRows() const override;

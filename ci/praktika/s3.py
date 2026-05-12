@@ -125,7 +125,7 @@ class S3:
                     inferred_content_type, _ = mimetypes.guess_type(key)
 
                 if text and not content_type:
-                    extra_args["ContentType"] = "text/plain"
+                    extra_args["ContentType"] = "text/plain; charset=utf-8"
                 elif content_type:
                     extra_args["ContentType"] = content_type
                 elif inferred_content_type:
@@ -169,7 +169,7 @@ class S3:
             # boto3 not available, use AWS CLI
             cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
             if text and not content_type:
-                cmd += " --content-type text/plain"
+                cmd += ' --content-type "text/plain; charset=utf-8"'
             elif content_type:
                 cmd += f" --content-type {content_type}"
             if content_encoding:
@@ -243,7 +243,7 @@ class S3:
                 command += f" --metadata {k}={v}"
 
         if text:
-            command += " --content-type text/plain"
+            command += ' --content-type "text/plain; charset=utf-8"'
         res = cls.run_command_with_retries(command, no_strict=no_strict)
         if res:
             StorageUsage.add_uploaded(local_path)
@@ -414,7 +414,7 @@ class S3:
     ) -> str:
         if upload_to_s3:
             env = _Environment.get()
-            s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
+            s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}"
             if s3_subprefix:
                 s3_subprefix = s3_subprefix.removeprefix("/").removesuffix("/")
                 s3_path += f"/{s3_subprefix}"
@@ -451,22 +451,48 @@ class S3:
     @classmethod
     def upload_asset_streaming(cls, local_path: Path, s3_path: str):
         """
-        Uploads assets using streaming gzip to AWS S3. Detects mimetypes automatically.
+        Uploads a single asset to S3 with optional gzip compression.
+
+        Uses boto3 in-memory gzip when available (no subprocess overhead).
+        Falls back to piped `gzip | aws s3 cp` when boto3 is not available.
         """
+        import gzip as _gzip
+
         assert isinstance(local_path, Path)
         content_type, _ = mimetypes.guess_type(local_path)
         content_type = content_type or "application/octet-stream"
 
-        compressible = [".html", ".css", ".js", ".json", ".svg", ".txt"]
+        compressible = {".html", ".css", ".js", ".json", ".svg", ".txt"}
         use_gzip = local_path.suffix.lower() in compressible
 
-        if use_gzip:
-            cmd = f'gzip -8c {local_path} | aws s3 cp - s3://{s3_path} --content-type {content_type} --content-encoding gzip --cache-control "max-age=604800, public"'
-        else:
-            cmd = f'aws s3 cp {local_path} s3://{s3_path} --content-type {content_type} --cache-control "max-age=604800, public"'
+        if BOTO3_AVAILABLE and cls._get_boto3_client():
+            s3_path_clean = str(s3_path).removeprefix("s3://")
+            bucket, key = s3_path_clean.split("/", maxsplit=1)
+            extra_args = {
+                "ContentType": content_type,
+                "CacheControl": "max-age=604800, public",
+            }
+            if use_gzip:
+                data = _gzip.compress(local_path.read_bytes(), compresslevel=8)
+                extra_args["ContentEncoding"] = "gzip"
 
-        print("Execute:", cmd)
-        cls.run_command_with_retries(cmd, retries=3)
+                def _upload():
+                    cls._get_boto3_client().put_object(
+                        Bucket=bucket, Key=key, Body=data, **extra_args
+                    )
+            else:
+                def _upload():
+                    cls._get_boto3_client().upload_file(
+                        str(local_path), bucket, key, ExtraArgs=extra_args
+                    )
+
+            cls._retry_on_no_credentials(_upload)
+        else:
+            if use_gzip:
+                cmd = f'gzip -8c {local_path} | aws s3 cp - s3://{s3_path} --content-type {content_type} --content-encoding gzip --cache-control "max-age=604800, public"'
+            else:
+                cmd = f'aws s3 cp {local_path} s3://{s3_path} --content-type {content_type} --cache-control "max-age=604800, public"'
+            cls.run_command_with_retries(cmd, retries=3)
 
     @classmethod
     def copy_file_from_s3_with_version(cls, s3_path, local_path):
@@ -494,6 +520,7 @@ class S3:
 
             # Retry on transient credential failures (IMDS temporarily unreachable)
             version = cls._retry_on_no_credentials(_download)
+            StorageUsage.add_downloaded(local_path)
             print(f"Downloaded file from S3 with version {version} using boto3")
             return version
 
@@ -511,7 +538,7 @@ class S3:
         )
         metadata = json.loads(output)
         version = int(metadata.get("Metadata", {}).get("version", "0"))
-
+        StorageUsage.add_downloaded(local_path)
         print(f"Downloaded file from S3 with version {version} using AWS CLI")
         return version
 
@@ -558,7 +585,9 @@ class S3:
                     client = cls._get_boto3_client()
                     extra_args = {
                         "ContentType": (
-                            "text/plain" if text else "application/octet-stream"
+                            "text/plain; charset=utf-8"
+                            if text
+                            else "application/octet-stream"
                         ),
                         "Metadata": {"version": str(version)},
                     }
@@ -594,7 +623,7 @@ class S3:
                                 Key=key,
                                 Body=f,
                                 ContentType=(
-                                    "text/plain"
+                                    "text/plain; charset=utf-8"
                                     if text
                                     else "application/octet-stream"
                                 ),
@@ -667,8 +696,12 @@ class S3:
                     return False
 
                 # Upload with If-Match condition
-                content_type = "text/plain" if text else "application/octet-stream"
-                command = f'aws s3api put-object --bucket {bucket} --key {key} --body {local_path} --content-type {content_type} --metadata version={version} --if-match "{current_etag}"'
+                content_type = (
+                    "text/plain; charset=utf-8"
+                    if text
+                    else "application/octet-stream"
+                )
+                command = f'aws s3api put-object --bucket {bucket} --key {key} --body {local_path} --content-type "{content_type}" --metadata version={version} --if-match "{current_etag}"'
                 res = cls.run_command_with_retries(command, no_strict=no_strict)
                 if not res:
                     print("Failed to put file (precondition failed or other error)")

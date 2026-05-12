@@ -51,6 +51,11 @@ public:
         return writer ? writer->releaseCachedMarks() : PlainMarksByName{};
     }
 
+    PlainMarksByName releaseCachedIndexMarks()
+    {
+        return writer ? writer->releaseCachedIndexMarks() : PlainMarksByName{};
+    }
+
     size_t getNumberOfOpenStreams() const
     {
         return writer->getNumberOfOpenStreams();

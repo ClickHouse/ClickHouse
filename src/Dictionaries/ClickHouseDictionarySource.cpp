@@ -2,6 +2,7 @@
 #include <memory>
 #include <Client/ConnectionPool.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -144,10 +145,8 @@ bool ClickHouseDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        LOG_TRACE(log, "Invalidate query has returned: {}, previous value: {}", response, invalidate_query_response);
-        if (invalidate_query_response == response)
-            return false;
-        invalidate_query_response = response;
+        LOG_TRACE(log, "Invalidate query has returned: {}", response);
+        return invalidate_query_response.updateAndCheckModified(response);
     }
     return true;
 }
@@ -184,10 +183,10 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 
     if (configuration.is_local)
     {
-        if (!CurrentThread::getGroup())
-            io.query_scope = CurrentThread::QueryScope::create(context_copy);
-
         context_copy->setCurrentQueryId({});
+
+        if (!CurrentThread::getGroup())
+            io.query_scope = QueryScope::create(context_copy);
 
         io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
 
@@ -213,9 +212,9 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
     if (configuration.is_local)
     {
-        CurrentThread::QueryScope query_scope;
+        QueryScope query_scope;
         if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(context_copy);
+            query_scope = QueryScope::create(context_copy);
 
         BlockIO io = executeQuery(request, context_copy, QueryFlags{ .internal = true }).second;
         std::string result;

@@ -54,7 +54,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 
         DB::deserializeLogsAndApplyToStorage(storage, options["zookeeper-logs-dir"].as<std::string>(), logger);
         DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(storage.getZXID(), 1, std::make_shared<nuraft::cluster_config>());
-        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, snapshot_meta);
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, snapshot_meta, nullptr, keeper_context->getWriteSnapshotVersion());
 
         DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(1, keeper_context);
         auto snp = manager.serializeSnapshotToBuffer(snapshot);

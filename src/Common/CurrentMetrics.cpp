@@ -69,6 +69,7 @@
     M(MemoryTrackingUncorrected, "Total amount of memory (bytes) allocated by the server not corrected by RSS.") \
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
+    M(MaxAllocatedEphemeralLockSequentialNumber, "The maximum sequential number allocated for ephemeral lock znodes in ZooKeeper. Primarily influenced by the block numbers.") \
     M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
     M(ZooKeeperSessionExpired, "Number of expired global ZooKeeper sessions.") \
     M(ZooKeeperConnectionLossStartedTimestampSeconds, "Unix timestamp in seconds when ZooKeeper connection was lost, or 0 if connected successfully.") \
@@ -205,11 +206,13 @@
     M(BuildVectorSimilarityIndexThreadsScheduled, "Number of queued or active jobs in the build vector similarity index thread pool.") \
     M(DistributedIndexAnalysisThreads, "Number of threads in the thread pool for distributed index analysis.") \
     M(DistributedIndexAnalysisThreadsActive, "Number of threads in the thread pool for distributed index analysis running a task.") \
-    M(DistributedIndexAnalysisThreadsScheduled, "Number of queued or active jobs in the distributed idnex analysis thread pool.") \
+    M(DistributedIndexAnalysisThreadsScheduled, "Number of queued or active jobs in the distributed index analysis thread pool.") \
     M(ObjectStorageQueueRegisteredServers, "Number of registered servers in StorageS3(Azure)Queue")\
     M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
     M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
     M(IcebergCatalogThreadsScheduled, "Number of queued or active jobs in the IcebergCatalog thread pool.") \
+    M(IcebergSchedulePoolTask, "Number of tasks in the background schedule pool for Iceberg tables.") \
+    M(IcebergSchedulePoolSize, "Limit on number of tasks in the background schedule pool for Iceberg tables.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
@@ -272,6 +275,9 @@
     M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \
+    M(KeeperReadThreads, "Number of threads in the threadpool for keeper server reads.") \
+    M(KeeperReadThreadsActive, "Number of active threads in the threadpool for keeper server reads.") \
+    M(KeeperReadThreadsScheduled, "Number of queued or active jobs in the threadpool for keeper server reads. Meaningless metric, the actual read tasks on this thread pool are scheduled through a different mechanism.") \
     M(DistributedBytesToInsert, "Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.") \
     M(BrokenDistributedBytesToInsert, "Number of bytes for asynchronous insertion into Distributed tables that has been marked as broken. Number of bytes for every shard is summed.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
@@ -320,6 +326,8 @@
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
+    M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
+    M(ParquetMetadataCacheFiles, "Number of cached files in the Parquet metadata cache") \
     M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \
     M(AvroSchemaCacheCells, "Number of cached Avro schemas") \
     M(AvroSchemaRegistryCacheBytes, "Size of the Avro schema registry cache in bytes") \
@@ -330,8 +338,8 @@
     M(HiveMetadataFilesCacheFiles, "Number of cached files in the hive metadata cache") \
     M(VectorSimilarityIndexCacheBytes, "Size of the vector similarity index cache in bytes") \
     M(VectorSimilarityIndexCacheCells, "Number of entries in the vector similarity index cache") \
-    M(TextIndexDictionaryBlockCacheBytes, "Size of the text index dictionary block cache in bytes") \
-    M(TextIndexDictionaryBlockCacheCells, "Number of entries in the text index dictionary block cache") \
+    M(TextIndexTokensCacheBytes, "Size of the text index tokens cache in bytes") \
+    M(TextIndexTokensCacheCells, "Number of entries in the text index tokens cache") \
     M(TextIndexHeaderCacheBytes, "Size of the text index header cache in bytes") \
     M(TextIndexHeaderCacheCells, "Number of entries in text index header cache") \
     M(TextIndexPostingsCacheBytes, "Size of the text index posting lists cache in bytes") \
@@ -343,7 +351,7 @@
     M(MarkCacheBytes, "Total size of mark cache in bytes") \
     M(MarkCacheFiles, "Total number of mark files cached in the mark cache") \
     M(NamedCollection, "Number of named collections") \
-    M(PrimaryIndexCacheBytes, "Total size of primary index cache in bytes") \
+    M(PrimaryIndexCacheBytes, "Total size of primary index cache in bytes. Holds primary-key indices loaded on demand when `primary_key_lazy_load=1` and `use_primary_key_cache=1`. Allocations live in the dedicated cache jemalloc arena (`jemalloc.cache_arena.*`). NEVER overlaps with `system.parts.primary_key_bytes_in_memory[_allocated]` — a part's index lives either in this cache (counted here) or in the part itself (counted there); never both. To get total primary-index memory across all parts, sum the two.") \
     M(PrimaryIndexCacheFiles, "Total number of index files cached in the primary index cache") \
     M(PageCacheBytes, "Total size of userspace page cache in bytes") \
     M(PageCacheCells, "Total number of entries in the userspace page cache") \
@@ -360,6 +368,9 @@
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
     M(CompiledExpressionCacheBytes, "Total bytes used for the cache of JIT-compiled code") \
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled code") \
+    M(SerializationCacheBytesInMemoryAllocated, "Total size of the serialization cache in bytes including keys and overhead from empty slots") \
+    M(SerializationCacheBytesInMemory, "Total size of the serialization cache in bytes including only the values") \
+    M(SerializationCacheCount, "Total number of entries in the serialization cache") \
     M(MergeJoinBlocksCacheBytes, "Total bytes used for cached blocks in MergeJoin") \
     M(MergeJoinBlocksCacheCount, "Total cached blocks in MergeJoin") \
     M(BcryptCacheBytes, "Total size of the bcrypt authentication cache in bytes") \
@@ -492,6 +503,10 @@
     M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \
     \
     M(S3CachedCredentialsProviders, "Total number of cached credentials providers") \
+    \
+    M(MergeTreeSnapshotCommitThreads, "Number of threads used to commit snapshot") \
+    M(MergeTreeSnapshotCommitThreadsActive, "Number of active threads used to commit snapshot") \
+    M(MergeTreeSnapshotCommitThreadsScheduled, "Number of scheduled threads used to commit snapshot") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS

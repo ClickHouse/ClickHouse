@@ -109,6 +109,8 @@ def main():
             "datalakecatalog",
             "arrowflight",
             "alias",
+            "kafka",
+            "backup",
         ]
         random.shuffle(disabled_engines)
         disabled_engines_str = ",".join(
@@ -119,7 +121,9 @@ def main():
     # No PARALLEL WITH with slow sanitizers
     # If hardcoded inserts are allowed, reduce insert size, so logs don't grow as much
 
-    allow_transactions = random.randint(1, 5) == 1
+    # TODO: Enable back after the issue with `assertHasValidVersionMetadata` will be fixed:
+    # https://play.clickhouse.com/play?user=play&run=1#U0VMRUNUIGNoZWNrX3N0YXJ0X3RpbWUsIGNoZWNrX25hbWUsIHRlc3RfbmFtZSwgcmVwb3J0X3VybApGUk9NIGNoZWNrcwpXSEVSRSAxCiAgICBBTkQgY2hlY2tfc3RhcnRfdGltZSA+PSBub3coKSAtIElOVEVSVkFMIDEwIERBWQogICAgQU5EIChoZWFkX3JlZiA9ICdtYXN0ZXInIEFORCBzdGFydHNXaXRoKGhlYWRfcmVwbywgJ0NsaWNrSG91c2UvJykpCiAgICBBTkQgdGVzdF9zdGF0dXMgIT0gJ1NLSVBQRUQnCiAgICBBTkQgKHRlc3Rfc3RhdHVzIExJS0UgJ0YlJyBPUiB0ZXN0X3N0YXR1cyBMSUtFICdFJScpCiAgICBBTkQgY2hlY2tfc3RhdHVzICE9ICdzdWNjZXNzJwogICAgQU5EIGNoZWNrX25hbWUgTk9UIExJS0UgJ2xpYkZ1enplciUnCiAgICBBTkQgY2hlY2tfbmFtZSAhPSAnQ2xpY2tIb3VzZSBLZWVwZXIgSmVwc2VuJwogICAgQU5EIHRlc3RfbmFtZSBMSUtFICclYXNzZXJ0SGFzVmFsaWRWZXJzaW9uTWV0YWRhdGElJwpPUkRFUiBCWSBjaGVja19zdGFydF90aW1lIERFU0M=
+    allow_transactions = False
     disallowed_settings = [
         # Disable old analyzer always
         "enable_analyzer",
@@ -164,14 +168,38 @@ def main():
     max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 3000)
     min_string_length = random.randint(0, 100)
     max_string_length = min_string_length + (10 if allow_hardcoded_inserts else 300)
+
+    # Cap `max_depth` based on `max_nested_rows` so the worst-case nested-value
+    # product stays under ASan's allocation cap. BuzzHouse value generators
+    # for `Map` and `Array` recurse on their child types, multiplying the
+    # per-level row count at each nesting level. With `max_nested_rows` up to
+    # 105, depth 5 produces ~10^10 entries in a single value, which trips
+    # ASan's `allocation-size-too-big` guard.
+    #
+    # Worst-case nested-value product (`max_nested_rows ^ max_depth_high`):
+    #   `max_nested_rows` <=  5 -> depth up to 5   (5^5    =     3125)
+    #   `max_nested_rows` <= 20 -> depth up to 4   (20^4   =   160000)
+    #   `max_nested_rows`  > 20 -> depth up to 3   (~105^3 = ~1.2M)
+    # All bounded below ~2e6, well under ASan's ~1e9 allocation cap. Tiny
+    # `max_nested_rows` (0 or 1) keeps full depth-5 coverage for type-shape
+    # exploration; only the row-heavy branches lose the deepest levels.
+    if max_nested_rows <= 5:
+        max_depth_high = 5
+    elif max_nested_rows <= 20:
+        max_depth_high = 4
+    else:
+        max_depth_high = 3
+
     buzz_config = {
         "seed": random.randint(1, 18446744073709551615),
-        "max_depth": random.randint(2, 5),
+        "max_depth": random.randint(2, max_depth_high),
         "max_width": random.randint(2, 7),
         "max_databases": random.randint(2, 5),
         "max_tables": random.randint(3, 10),
         "max_views": random.randint(0, 10),
         "max_dictionaries": random.randint(0, 10),
+        "max_functions": random.randint(0, 8),
+        "max_policies": random.randint(0, 8),
         "max_columns": random.randint(1, 8),
         "min_nested_rows": min_nested_rows,
         "max_nested_rows": random.randint(min_nested_rows, max_nested_rows),
@@ -193,14 +221,17 @@ def main():
         "fuzz_floating_points": random.choice([True, False]),
         "enable_fault_injection_settings": random.randint(1, 4) == 1,
         "enable_force_settings": random.randint(1, 4) == 1,
+        "enable_time_settings": random.randint(1, 5) == 1,
         # Don't compare for correctness yet, false positives maybe
         "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
-        "test_with_fill": False,  # Creating too many issues
+        "test_with_fill": random.randint(1, 10) == 1,
         "compare_success_results": False,  # This can give false positives, so disable it
-        "allow_infinite_tables": False,  # Creating too many issues
+        "allow_infinite_tables": random.randint(1, 10) == 1,
         "allow_health_check": False,  # I have to test this first
+        "allow_nasty_identifiers": random.randint(1, 8) == 1,
         "enable_compatibility_settings": random.randint(1, 4) == 1,
         "enable_memory_settings": random.randint(1, 4) == 1,
+        "enable_sync_settings": random.randint(1, 4) == 1,
         "enable_backups": random.randint(1, 4) == 1,
         "enable_renames": random.randint(1, 4) == 1,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
@@ -253,6 +284,7 @@ def main():
             "ratio_of_defaults_for_sparse_serialization",
             "string_serialization_version",
             "vertical_merge_algorithm_min_bytes_to_activate",
+            "vertical_merge_optimize_ttl_delete",
         ],
     }
     with open(buzz_config_file, "w") as outfile:

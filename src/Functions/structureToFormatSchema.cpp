@@ -31,6 +31,7 @@ class FunctionStructureToFormatSchema : public IFunction
 {
 private:
     Impl impl;
+    ContextPtr context;
 
 public:
     explicit FunctionStructureToFormatSchema(Impl impl_, ContextPtr context_) : impl(impl_), context(std::move(context_))
@@ -93,6 +94,7 @@ public:
 
         String structure{arguments[0].column->getDataAt(0)};
         String message_name = arguments.size() == 2 ? std::string{arguments[1].column->getDataAt(0)} : "Message";
+
         auto columns_list = parseColumnsListFromString(structure, context);
         auto col_res = ColumnString::create();
         auto & data = assert_cast<ColumnString &>(*col_res).getChars();
@@ -114,8 +116,6 @@ public:
         return ColumnConst::create(std::move(col_res), input_rows_count);
     }
 
-private:
-    ContextPtr context;
 };
 
 
@@ -128,6 +128,7 @@ REGISTER_FUNCTION(StructureToCapnProtoSchema)
             .description=R"(
 Function that converts ClickHouse table structure to CapnProto format schema
 )",
+            .syntax = "structureToCapnProtoSchema(table_structure, message)",
             .examples{
                 {"random", "SELECT structureToCapnProtoSchema('s String, x UInt32', 'MessageName') format TSVRaw", "struct MessageName\n"
 "{\n"

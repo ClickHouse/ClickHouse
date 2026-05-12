@@ -25,10 +25,10 @@ def started_cluster():
 
 
 def wait_merged_part(table, part_name, retries=100):
-    q("OPTIMIZE TABLE {} FINAL".format(table))
     for i in range(retries):
+        q("OPTIMIZE TABLE {}".format(table))
         result = q(
-            "SELECT name FROM system.parts where table='{}' AND name='{}'".format(
+            "SELECT name FROM system.parts where table='{}' AND name='{}' AND active".format(
                 table, part_name
             )
         )

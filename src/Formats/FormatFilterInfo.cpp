@@ -1,6 +1,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
 
 #include <DataTypes/DataTypeTuple.h>
@@ -9,6 +10,8 @@
 #include <Columns/IColumn.h>
 #include <Core/TypeId.h>
 
+#include <Interpreters/Context.h>
+
 namespace DB
 {
 
@@ -16,6 +19,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_query_condition_cache;
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
@@ -60,6 +68,13 @@ FormatFilterInfo::FormatFilterInfo(
     , prewhere_info(std::move(prewhere_info_))
     , column_mapper(column_mapper_)
 {
+    bool use_query_condition_cache = context_->getSettingsRef()[Setting::use_query_condition_cache];
+    if (use_query_condition_cache && filter_actions_dag)
+    {
+        const auto & outputs = filter_actions_dag->getOutputs();
+        if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
+            condition_hash = filter_actions_dag->getHash();
+    }
 }
 
 FormatFilterInfo::FormatFilterInfo() = default;
@@ -71,47 +86,7 @@ bool FormatFilterInfo::hasFilter() const
 }
 
 
-void FormatFilterInfo::initKeyCondition(const Block & keys)
-{
-    if (!filter_actions_dag)
-        return;
-
-    auto ctx = context.lock();
-    if (!ctx)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
-
-    if (prewhere_info || row_level_filter)
-    {
-        auto add_columns = [&](const ActionsDAG & dag)
-        {
-            for (const auto & col : dag.getRequiredColumns())
-            {
-                if (!keys.has(col.name) && !additional_columns.has(col.name))
-                    additional_columns.insert({col.type->createColumn(), col.type, col.name});
-            }
-        };
-
-        if (row_level_filter)
-            add_columns(row_level_filter->actions);
-        if (prewhere_info)
-            add_columns(prewhere_info->prewhere_actions);
-    }
-
-    ColumnsWithTypeAndName columns = keys.getColumnsWithTypeAndName();
-    for (const auto & col : additional_columns)
-        columns.push_back(col);
-    Names names;
-    names.reserve(columns.size());
-    for (const auto & col : columns)
-        names.push_back(col.name);
-
-    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), ctx);
-    key_condition = std::make_shared<const KeyCondition>(
-        inverted_dag, ctx, names,
-        std::make_shared<ExpressionActions>(ActionsDAG(columns)));
-}
-
-void FormatFilterInfo::initOnce(std::function<void()> f)
+void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
 {
     std::call_once(
         init_flag,
@@ -122,7 +97,42 @@ void FormatFilterInfo::initOnce(std::function<void()> f)
 
             try
             {
-                f();
+                if (!filter_actions_dag)
+                    return;
+
+                auto ctx = context.lock();
+                if (!ctx)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
+
+                if (prewhere_info || row_level_filter)
+                {
+                    auto add_columns = [&](const ActionsDAG & dag)
+                    {
+                        for (const auto & col : dag.getRequiredColumns())
+                        {
+                            if (!keys.has(col.name) && !additional_columns.has(col.name))
+                                additional_columns.insert({col.type->createColumn(), col.type, col.name});
+                        }
+                    };
+
+                    if (row_level_filter)
+                        add_columns(row_level_filter->actions);
+                    if (prewhere_info)
+                        add_columns(prewhere_info->prewhere_actions);
+                }
+
+                ColumnsWithTypeAndName columns = keys.getColumnsWithTypeAndName();
+                for (const auto & col : additional_columns)
+                    columns.push_back(col);
+                Names names;
+                names.reserve(columns.size());
+                for (const auto & col : columns)
+                    names.push_back(col.name);
+
+                ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), ctx);
+                key_condition = std::make_shared<const KeyCondition>(
+                    inverted_dag, ctx, names,
+                    std::make_shared<ExpressionActions>(ActionsDAG(columns)));
             }
             catch (...)
             {

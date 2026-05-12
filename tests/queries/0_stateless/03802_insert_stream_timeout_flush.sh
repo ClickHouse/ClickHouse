@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-async-insert
+# Tags: no-async-insert, no-fasttest
+# no-fasttest: Too slow for fast test (~14s), covered by regular stateless runs.
 # no-async-insert: Test expects new part for each time interval
 
 
@@ -37,13 +38,15 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, part_log;"
 
 parts_count=$(${CLICKHOUSE_CLIENT} --query "
 SELECT count(*) 
-FROM system.part_log 
-WHERE table = 'test_insert_timeout' 
+FROM system.part_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND table = 'test_insert_timeout'
   AND event_type = 'NewPart'
   AND query_id = (
-        SELECT argMax(query_id, event_time) 
-        FROM system.query_log 
-        WHERE query LIKE '%INSERT INTO test_insert_timeout%' 
+        SELECT argMax(query_id, event_time)
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+          AND query LIKE '%INSERT INTO test_insert_timeout%'
           AND current_database = currentDatabase()
     )
 ")

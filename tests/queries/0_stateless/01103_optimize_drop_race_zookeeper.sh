@@ -27,12 +27,14 @@ function thread2()
 
 function thread3()
 {
+    local i=0
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         $CLICKHOUSE_CLIENT -n -q "DROP TABLE IF EXISTS concurrent_optimize_table;
             CREATE TABLE concurrent_optimize_table (a UInt8, b Int16, c Float32, d String, e Array(UInt8), f Nullable(UUID), g Tuple(UInt8, UInt16))
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/concurrent_optimize_table', '1') ORDER BY a PARTITION BY b % 10
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/concurrent_optimize_table', '${1}_${i}') ORDER BY a PARTITION BY b % 10
             SETTINGS old_parts_lifetime = 1, cleanup_delay_period = 0, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration=0;";
+        i=$((i+1))
         sleep 0.$RANDOM;
         sleep 0.$RANDOM;
         sleep 0.$RANDOM;
@@ -44,19 +46,19 @@ TIMEOUT=15
 
 thread1 2> /dev/null &
 thread2 2> /dev/null &
-thread3 2> /dev/null &
+thread3 1 2> /dev/null &
 
 thread1 2> /dev/null &
 thread2 2> /dev/null &
-thread3 2> /dev/null &
+thread3 2 2> /dev/null &
 
 thread1 2> /dev/null &
 thread2 2> /dev/null &
-thread3 2> /dev/null &
+thread3 3 2> /dev/null &
 
 thread1 2> /dev/null &
 thread2 2> /dev/null &
-thread3 2> /dev/null &
+thread3 4 2> /dev/null &
 
 wait
 

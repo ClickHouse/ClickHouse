@@ -15,7 +15,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
-#include <boost/algorithm/string.hpp>
+#include <boost/program_options/parsers.hpp>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -122,13 +122,13 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
     auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args[0], "script_name_with_arguments_value");
-
-    VectorWithMemoryTracking<String> script_name_with_arguments;
-    boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c){ return c == ' '; });
+    auto script_name_with_arguments = boost::program_options::split_unix(script_name_with_arguments_value);
+    if (script_name_with_arguments.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Script name cannot be empty");
 
     script_name = std::move(script_name_with_arguments[0]);
     script_name_with_arguments.erase(script_name_with_arguments.begin());
-    arguments = std::move(script_name_with_arguments);
+    arguments.assign(script_name_with_arguments.begin(), script_name_with_arguments.end());
     format = checkAndGetLiteralArgument<String>(args[1], "format");
     structure = checkAndGetLiteralArgument<String>(args[2], "structure");
 
@@ -191,7 +191,7 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
 
 void registerTableFunctionExecutable(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionExecutable>();
+    factory.registerFunction<TableFunctionExecutable>({});
 }
 
 }

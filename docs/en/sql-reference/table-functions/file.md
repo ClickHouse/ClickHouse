@@ -25,15 +25,39 @@ The `file` function can be used in `SELECT` and `INSERT` queries to read from or
 file([path_to_archive ::] path [,format] [,structure] [,compression])
 ```
 
+For `SELECT` queries, `path` can also be an expression that returns an `Array(String)`:
+
+```sql
+file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
+```
+
 ## Arguments {#arguments}
 
 | Parameter         | Description                                                                                                                                                                                                                                                                                                   |
 |-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `path`            | The relative path to the file from [user_files_path](operations/server-configuration-parameters/settings.md#user_files_path). Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers). |
+| `path`            | The relative path to the file from [user_files_path](operations/server-configuration-parameters/settings.md#user_files_path), or an `Array(String)` of paths in `SELECT` queries. Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers). |
 | `path_to_archive` | The relative path to a zip/tar/7z archive. Supports the same globs as `path`.                                                                                                                                                                                                                                 |
 | `format`          | The [format](/interfaces/formats) of the file.                                                                                                                                                                                                                                                                |
 | `structure`       | Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                |
 | `compression`     | The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.                                                                                                       |
+
+:::tip
+When the `structure` argument is omitted, ClickHouse infers the schema from the format itself.
+Different formats produce different default column names and types.
+To see the schema for a specific format, use [`DESC`](/sql-reference/statements/describe-table) with the [`format`](/sql-reference/table-functions/format) table function.
+
+For example:
+
+```sql
+DESC format(LineAsString, 'Hello\nWorld')
+```
+
+```response
+┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ line │ String │              │                    │         │                  │                │
+└──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+:::
 
 ## Returned value {#returned_value}
 
@@ -220,14 +244,14 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 
 ## use_hive_partitioning setting {#hive-style-partitioning}
 
-When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path.
 
 **Example**
 
 Use virtual column, created with Hive-style partitioning
 
 ```sql
-SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE _date > '2020-01-01' AND _country = 'Netherlands' AND _code = 42;
+SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
 ## Settings {#settings}

@@ -123,6 +123,15 @@ function configure
 
     cp -al db0/ right/db/
     cp -R coordination0 right/coordination
+
+    # Symlink user_files from the repository into both servers' user_files directories
+    if [ -d "$script_dir/../../../../tests/performance/user_files" ]; then
+        for f in "$script_dir/../../../../tests/performance/user_files"/*; do
+            [ -e "$f" ] || continue
+            ln -sf "$(readlink -f "$f")" left/db/user_files/
+            ln -sf "$(readlink -f "$f")" right/db/user_files/
+        done
+    fi
 }
 
 function restart
