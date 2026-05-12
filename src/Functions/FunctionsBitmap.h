@@ -275,26 +275,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 3; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type && bitmap_type->getFunctionName() == "groupBitmap"))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be a bitmap but it has type {}.",
-                            getName(), arguments[0]->getName());
-
-        for (size_t i = 1; i < 3; ++i)
-        {
-            WhichDataType which(arguments[i].get());
-            if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "The second and third arguments for function {} must be one "
-                                "of [UInt8, UInt16, UInt32, UInt64] but one of them has type {}.",
-                                getName(), arguments[1]->getName());
-            }
-        }
-        return arguments[0];
+        return "(B : AggregateFunction('groupBitmap', Any), NativeUInt, NativeUInt) -> B";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -451,37 +434,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 3; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type && bitmap_type->getFunctionName() == "groupBitmap"))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be a bitmap but it has type {}.",
-                            getName(), arguments[0]->getName());
-        for (size_t i = 0; i < 2; ++i)
-        {
-            const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i + 1].get());
-
-            bool has_error = false;
-            if (array_type)
-            {
-                auto nested_type = array_type->getNestedType();
-                WhichDataType which(nested_type);
-                if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
-                    has_error = true;
-            }
-            else
-            {
-                has_error = true;
-            }
-
-            if (has_error)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "The second and third arguments for function {} "
-                                "must be an one of [Array(UInt8), Array(UInt16), Array(UInt32), Array(UInt64)] "
-                                "but one of them has type {}.", getName(), arguments[i + 1]->getName());
-        }
-        return arguments[0];
+        return "(B : AggregateFunction('groupBitmap', Any), Array(NativeUInt), Array(NativeUInt)) -> B";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -628,14 +583,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type && bitmap_type->getFunctionName() == "groupBitmap"))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be a bitmap but it has type {}.",
-                            getName(), arguments[0]->getName());
-        return std::make_shared<DataTypeNumber<ToType>>();
+        return "(AggregateFunction('groupBitmap', Any)) -> " + DataTypeNumber<ToType>{}.getName();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -802,29 +752,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type0 && bitmap_type0->getFunctionName() == "groupBitmap"))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be a bitmap but it has type {}",
-                            getName(), arguments[0]->getName());
-
-        WhichDataType first_aggregate_argument(bitmap_type0->getArgumentsDataTypes()[0]);
-        if (!first_aggregate_argument.isNativeInt() && !first_aggregate_argument.isNativeUInt())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be a bitmap of an integer but it is a bitmap of {}",
-                getName(),
-                bitmap_type0->getArgumentsDataTypes()[0]->getName());
-
-        WhichDataType which(arguments[1].get());
-        if (!which.isNativeInt() && !which.isNativeUInt())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Second argument for function {} must be an native integer type but it has type {}",
-                            getName(), arguments[1]->getName());
-
-        return std::make_shared<DataTypeNumber<UInt8>>();
+        return "(AggregateFunction('groupBitmap', NativeInteger), NativeInteger) -> UInt8";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -916,27 +846,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type0 && bitmap_type0->getFunctionName() == "groupBitmap"))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be a bitmap but it has type {}",
-                            getName(), arguments[0]->getName());
-
-        const auto * bitmap_type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
-        if (!(bitmap_type1 && bitmap_type1->getFunctionName() == "groupBitmap"))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Second argument for function {} must be a bitmap but it has type {}",
-                            getName(), arguments[1]->getName());
-
-        if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "The nested type in bitmaps must be the same, but one is {}, and the other is {}",
-                            bitmap_type0->getArgumentsDataTypes()[0]->getName(),
-                            bitmap_type1->getArgumentsDataTypes()[0]->getName());
-
-        return std::make_shared<DataTypeNumber<ToType>>();
+        return "(AggregateFunction('groupBitmap', T : Any), AggregateFunction('groupBitmap', T)) -> "
+            + DataTypeNumber<ToType>{}.getName();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -1066,27 +979,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type0 && bitmap_type0->getFunctionName() == "groupBitmap"))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be a bitmap but it has type {}",
-                            getName(), arguments[0]->getName());
-
-        const auto * bitmap_type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
-        if (!(bitmap_type1 && bitmap_type1->getFunctionName() == "groupBitmap"))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Second argument for function {} must be a bitmap but it has type {}",
-                            getName(), arguments[1]->getName());
-
-        if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "The nested type in bitmaps must be the same, but one is {}, and the other is {}",
-                            bitmap_type0->getArgumentsDataTypes()[0]->getName(),
-                            bitmap_type1->getArgumentsDataTypes()[0]->getName());
-
-        return arguments[0];
+        return "(B : AggregateFunction('groupBitmap', T : Any), AggregateFunction('groupBitmap', T)) -> B";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
