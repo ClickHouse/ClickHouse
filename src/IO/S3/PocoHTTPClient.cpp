@@ -766,6 +766,11 @@ void PocoHTTPClient::makeRequestInternalImpl(
         account_error();
         throw;
     }
+    catch (const std::ios_base::failure & e) // convert iostream errors to retriable network connection exceptions
+    {
+        LOG_DEBUG(log, "Failed to make request to: {}: will be retried, std::ios_base::failure: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
+        exception_handler(Aws::Client::CoreErrors::NETWORK_CONNECTION);
+    }
     catch (...) // DB::Exception and all other exceptions
     {
         LOG_DEBUG(log, "Failed to make request to: {}: Unknown exception: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
