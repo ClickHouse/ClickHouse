@@ -20,17 +20,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
-bool isArrayOfStrings(const IDataType & type)
-{
-    const auto * array_type = typeid_cast<const DataTypeArray *>(&type);
-    return (array_type && isString(array_type->getNestedType()));
-}
-
-}
-
 class FunctionAiClassify final : public FunctionBaseAI
 {
 public:
@@ -44,19 +33,11 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"collection", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
-            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
-            {"categories", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArrayOfStrings), &isColumnConst, "const Array(String)"},
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"temperature", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), &isColumnConst, "const Number"},
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return wrapReturnTypeForNullablePrompt(arguments, prompt_arg_index, std::make_shared<DataTypeString>());
+        return
+            "(const String, Nullable(String), const Array(String), [const Number]) -> Nullable(String)"
+            " OR (const String, String, const Array(String), [const Number]) -> String";
     }
 
 private:
