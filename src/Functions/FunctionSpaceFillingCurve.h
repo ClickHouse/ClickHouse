@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionHelpers.h>
 
 

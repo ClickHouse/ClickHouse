@@ -39,7 +39,7 @@ namespace ErrorCodes
 
 static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "table", "schema", "background_reconnect",
-    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority", "sslmode"};
+    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority"};
 
 #if USE_LIBPQXX
 
@@ -138,7 +138,9 @@ bool PostgreSQLDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        return invalidate_query_response.updateAndCheckModified(response);
+        if (response == invalidate_query_response)
+            return false;
+        invalidate_query_response = response;
     }
     return true;
 }
