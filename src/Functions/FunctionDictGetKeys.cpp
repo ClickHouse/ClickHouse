@@ -273,8 +273,6 @@ private:
         const size_t num_streams = pipe.numOutputPorts();
         auto processors = pipe.getProcessorsPtr();
 
-        processors->reserve(processors->size() + num_streams);
-
         std::vector<std::shared_ptr<DictGetKeysMatchingRowsSink>> sinks;
         sinks.reserve(num_streams);
 
