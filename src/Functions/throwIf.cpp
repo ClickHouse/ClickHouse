@@ -20,8 +20,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO;
 }
 
@@ -45,33 +43,15 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const size_t number_of_arguments = arguments.size();
-
-        if (number_of_arguments < 1 || number_of_arguments > (allow_custom_error_code_argument ? 3 : 2))
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be {}",
-                getName(), number_of_arguments, allow_custom_error_code_argument ? "1 or 2 or 3" : "1 or 2");
-
-        if (!isNativeNumber(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument of function {} must be a number (passed: {})", getName(), arguments[0]->getName());
-
-        if (number_of_arguments > 1 && !isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument of function {} must be a string (passed: {})", getName(), arguments[1]->getName());
-
-        if (allow_custom_error_code_argument && number_of_arguments > 2)
-        {
-            WhichDataType which(arguments[2]);
-            if (!(which.isInt8() || which.isInt16() || which.isInt32()))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Third argument of function {} must be Int8, Int16 or Int32 (passed: {})", getName(), arguments[2]->getName());
-        }
-
-
-        return std::make_shared<DataTypeUInt8>();
+        /// The third argument's presence depends on a setting
+        /// (allow_custom_error_code_in_throwif); the signature always allows it and the
+        /// executor falls back to the default error code when the setting is off.
+        return
+            "(NativeNumber) -> UInt8"
+            " OR (NativeNumber, const String) -> UInt8"
+            " OR (NativeNumber, const String, const Int8 | Int16 | Int32) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
