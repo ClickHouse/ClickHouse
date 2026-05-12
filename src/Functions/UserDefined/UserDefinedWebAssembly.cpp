@@ -853,12 +853,16 @@ private:
         size_t batch_start = 0;
         size_t batch_bytes = 0;
 
+        // Buffers format handles const columns natively; RowBinary/MsgPack need them materialized.
+        const bool buffers_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>() == "Buffers";
+        const bool preserve_const = buffers_format;
+
         auto flush_batch = [&](size_t end_idx)
         {
             if (end_idx <= batch_start)
                 return;
             size_t batch_size = end_idx - batch_start;
-            auto block = getArgumentsBlock(arguments, batch_start, batch_size);
+            auto block = getArgumentsBlock(arguments, batch_start, batch_size, preserve_const);
             auto stop_token = interrupt_source.get_token();
             auto col = user_defined_function->executeOnBlock(compartment, block, context, batch_size, stop_token);
 
@@ -898,13 +902,16 @@ private:
         return result_column;
     }
 
-    Block getArgumentsBlock(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t length) const
+    Block getArgumentsBlock(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t length, bool preserve_const) const
     {
         const auto & declared_arguments = user_defined_function->getArguments();
         Block arguments_block;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            ColumnPtr column = arguments[i].column->convertToFullColumnIfConst()->cut(start_idx, length);
+            ColumnPtr column = arguments[i].column;
+            if (!preserve_const)
+                column = column->convertToFullColumnIfConst();
+            column = column->cut(start_idx, length);
             String column_name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
             /// Cast to the declared type so serialization uses the correct width.
             /// Without this, e.g. Int8 passed to an Int32 parameter would be serialized
