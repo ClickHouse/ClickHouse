@@ -3,13 +3,6 @@ SET serialize_query_plan = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
--- TODO: remove once the remote-plan path stops polluting the shared `MaterializedCTE::plan`
--- with a `build_logical_plan = true` version. With `parallel_replicas_local_plan = 0`,
--- `createRemotePlanForParallelReplicas` runs the planner first and writes a
--- `ReadFromTableFunctionStep`-containing CTE plan into the shared `MaterializedCTE`; the
--- initiator's outer planner then reuses it and trips
--- `ReadFromTableFunctionStep::initializePipeline` (NOT_IMPLEMENTED).
-SET parallel_replicas_local_plan = 1;
 
 DROP TABLE IF EXISTS pr_cte_04227;
 CREATE TABLE pr_cte_04227 (x UInt8) ENGINE = MergeTree ORDER BY x;
