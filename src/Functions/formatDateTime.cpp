@@ -42,7 +42,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
@@ -946,49 +945,17 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
         if constexpr (support_integer == SupportInteger::Yes)
-        {
-            if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3",
-                    getName(), arguments.size());
-            if (arguments.size() == 1 && !isInteger(arguments[0].type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {} when arguments size is 1. Should be integer",
-                    arguments[0].type->getName(), getName());
-            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDate32(arguments[0].type) || isDateTime64(arguments[0].type)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of first argument of function {} when arguments size is 2 or 3. "
-                                "Should be a integer or a date with time",
-                                arguments[0].type->getName(), getName());
-        }
+            return
+                "(Integer) -> DateTime"
+                " OR (Integer | Date | Date32 | DateTime | DateTime64, String) -> String"
+                " OR (Integer | Date | Date32 | DateTime | DateTime64, String, String) -> String";
         else
-        {
-            if (arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                    getName(), arguments.size());
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}. Should be a date or a date with time",
-                    arguments[0].type->getName(), getName());
-        }
-
-        if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}. Must be String.",
-                arguments[1].type->getName(), getName());
-
-        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of third argument of function {}. Must be String.",
-                arguments[2].type->getName(), getName());
-
-        if (arguments.size() == 1)
-            return std::make_shared<DataTypeDateTime>();
-        return std::make_shared<DataTypeString>();
+            return
+                "(Date | Date32 | DateTime | DateTime64, String) -> String"
+                " OR (Date | Date32 | DateTime | DateTime64, String, String) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
