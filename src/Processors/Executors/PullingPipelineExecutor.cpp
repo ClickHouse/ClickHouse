@@ -5,6 +5,7 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
+#include <Interpreters/ProcessList.h>
 
 namespace DB
 {
@@ -130,6 +131,27 @@ Block PullingPipelineExecutor::getExtremesBlock()
 ProfileInfo & PullingPipelineExecutor::getProfileInfo()
 {
     return pulling_format->getProfileInfo();
+}
+
+PipelineExecutor::ExecutionStatus PullingPipelineExecutor::getExecutionStatus() const
+{
+    if (!executor)
+        return PipelineExecutor::ExecutionStatus::NotStarted;
+
+    auto status = executor->getExecutionStatus();
+
+    /// `PipelineExecutor::cancel(CancelledByTimeout)` only transitions `Executing` → `CancelledByTimeout`,
+    /// so if the soft timeout fires before the very first `executeStep`, the executor's status remains
+    /// `NotStarted` even though cancellation already happened. Consult the `QueryStatus` to surface that.
+    if (status == PipelineExecutor::ExecutionStatus::NotStarted && pipeline.process_list_element)
+    {
+        if (pipeline.process_list_element->isKilled())
+            return PipelineExecutor::ExecutionStatus::CancelledByUser;
+        if (!pipeline.process_list_element->checkTimeLimitSoft())
+            return PipelineExecutor::ExecutionStatus::CancelledByTimeout;
+    }
+
+    return status;
 }
 
 }

@@ -7,7 +7,6 @@
 #include <boost/noncopyable.hpp>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
@@ -72,6 +71,7 @@ namespace ErrorCodes
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace FailPoints
@@ -239,17 +239,22 @@ static inline void updateBlockData(Block & old_block, const Block & new_block)
     }
 }
 
-static bool pullMutationBlock(PullingPipelineExecutor & executor, Block & block, const QueryStatusPtr & process_list_element)
+static bool pullMutationBlock(PullingPipelineExecutor & executor, Block & block)
 {
     if (executor.pull(block))
         return true;
 
     /// `pull` returns `false` either on normal end-of-stream or on cancellation (including soft timeout
-    /// with `timeout_overflow_mode = 'break'`). In the cancellation case the pipeline may not have produced
-    /// all expected blocks, so a partial result must not be applied to a `Memory` table.
-    /// `checkTimeLimit` throws on `timeout_overflow_mode = 'throw'` and returns `false` on `'break'`.
-    if (process_list_element && !process_list_element->checkTimeLimit())
+    /// with `timeout_overflow_mode = 'break'`). On cancellation the pipeline may not have produced all
+    /// expected blocks, and a partial result must not be applied to a `Memory` table.
+    /// We rely on the executor's status to distinguish the two cases: gating the throw on the cancellation
+    /// status avoids a false `TIMEOUT_EXCEEDED` when the timeout flips between the last produced block and
+    /// the final `pull` that observes the normal end-of-stream.
+    const auto status = executor.getExecutionStatus();
+    if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
+    if (status == PipelineExecutor::ExecutionStatus::CancelledByUser)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
 
     return false;
 }
@@ -276,11 +281,10 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
-    auto process_list_element = new_context->getProcessListElementSafe();
 
     Blocks out;
     Block block;
-    while (pullMutationBlock(executor, block, process_list_element))
+    while (pullMutationBlock(executor, block))
     {
         if ((*memory_settings)[MemorySetting::compress])
             for (auto & elem : block)
