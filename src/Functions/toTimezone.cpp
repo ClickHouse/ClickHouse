@@ -18,12 +18,6 @@ namespace Setting
     extern const SettingsBool allow_nonconst_timezone_arguments;
 }
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
 namespace
 {
 class ExecutableFunctionToTimeZone : public IExecutableFunction
@@ -97,25 +91,11 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(), arguments.size());
-
-        const auto which_type = WhichDataType(arguments[0].type);
-        if (!which_type.isDateTime() && !which_type.isDateTime64())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
-                "Should be DateTime or DateTime64", arguments[0].type->getName(), getName());
-
-        String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
-
-        if (which_type.isDateTime())
-            return std::make_shared<DataTypeDateTime>(time_zone_name);
-
-        const auto * date_time64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
-        return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), time_zone_name);
+        return
+            "(DateTime, const tz StringOrFixedString) -> DateTime(tz)"
+            " OR (T : DateTime64, const tz StringOrFixedString) -> DateTime64(scaleOf(T), tz)";
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override

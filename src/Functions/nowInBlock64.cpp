@@ -36,6 +36,8 @@ public:
 
     String getSignatureString() const override
     {
+        /// Note: when scale is provided as a constant argument, the DSL uses the
+        /// runtime value of the constant column to construct DateTime64(scale).
         return
             "() -> DateTime64(3)"
             " OR (const scale Integer) -> DateTime64(scale)"
