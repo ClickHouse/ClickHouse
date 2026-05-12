@@ -1264,11 +1264,12 @@ ExpressionActionsPtr MergeTreeData::getMinMaxExpr(
     return std::make_shared<ExpressionActions>(ActionsDAG(getMinMaxColumns(partition_key, data_settings)), expr_settings);
 }
 
-NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings)
+NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to)
 {
     NamesAndTypesList columns;
 
-    const auto level = (*data_settings)[MergeTreeSetting::part_minmax_index_columns];
+    const MergeTreePartMinMaxIndexColumns setting_level = (*data_settings)[MergeTreeSetting::part_minmax_index_columns];
+    const auto level = std::min(setting_level, up_to);
 
     if (level >= MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY && !partition_key.column_names.empty())
         columns = partition_key.expression->getRequiredColumnsWithTypes();
@@ -1280,6 +1281,11 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
     }
 
     return columns;
+}
+
+NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings)
+{
+    return getMinMaxColumns(partition_key, data_settings, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET);
 }
 
 ExpressionActionsPtr

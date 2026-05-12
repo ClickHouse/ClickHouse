@@ -67,6 +67,7 @@ using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
 struct MergeTreeSettings;
 struct WriteSettings;
+enum class MergeTreePartMinMaxIndexColumns : uint8_t;
 
 class MarkCache;
 using MarkCachePtr = std::shared_ptr<MarkCache>;
@@ -1255,6 +1256,7 @@ public:
                                               const MergeTreeSettingsPtr & data_settings,
                                               const ExpressionActionsSettings & expr_settings);
     /// Get the columns covered by the part-level min-max index.
+    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
     static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
 
     ExpressionActionsPtr
