@@ -21,18 +21,20 @@ ISource::ISource(SharedHeader header, bool enable_auto_progress)
 
 void ISource::cancel(CancelReason reason) noexcept
 {
-    /// `PartialResult` means the consumer has enough data and only wants ingress to stop.
-    /// Most sources do not have meaningful `PartialResult` handling and their `onCancel`
-    /// is intended for hard cancellation (user cancel, timeout, exception). Triggering
-    /// `onCancel` on the success path can cause unintended side effects, e.g.
-    /// `SQLiteSource::onCancel` calls `sqlite3_interrupt`. Sources that need to react to
-    /// `PartialResult` (notably `RemoteSource`, which drains remaining packets to collect
-    /// final progress) override `cancel` directly.
-    if (reason == CancelReason::PartialResult)
-        return;
-
     bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
     if (already_cancelled)
+        return;
+
+    /// `PartialResult` means the consumer has enough data and only wants ingress to stop.
+    /// We still set `is_cancelled` above so `prepare` returns `Finished` and the source
+    /// stops generating new data (required for `partial_result_on_first_cancel`, where
+    /// SIGINT triggers `graph->cancel(PartialResult)` and the source must respond).
+    /// We skip `onCancel` for `PartialResult` because most sources' `onCancel` is intended
+    /// for hard cancellation (user cancel, timeout, exception) and has unintended side
+    /// effects — e.g. `SQLiteSource::onCancel` calls `sqlite3_interrupt`. Sources that
+    /// need to react to `PartialResult` (notably `RemoteSource`, which drains remaining
+    /// packets to collect final progress) override `cancel` directly.
+    if (reason == CancelReason::PartialResult)
         return;
 
     onCancel();
