@@ -28,7 +28,7 @@ public:
         return res;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return getTransactionIDDataType(); }
+    String getSignatureString() const override { return "() -> Tuple(UInt64, UInt64, UUID)"; }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionID>(context); }
     explicit FunctionTransactionID(ContextPtr context) : FunctionConstantBase(getValue(context->getCurrentTransaction()), context->isDistributed()) {}
