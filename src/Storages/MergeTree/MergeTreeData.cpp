@@ -97,6 +97,8 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Increment.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
@@ -1209,6 +1211,12 @@ void MergeTreeData::setProperties(
     bool attach,
     ContextPtr local_context)
 {
+    /// Route the table-level metadata clones produced here (the new `StorageInMemoryMetadata`
+    /// stored in `metadata.set(...)`, the cloned `ColumnsDescription`, `VirtualColumnsDescription`,
+    /// and key/index AST trees, plus any expressions built by `checkProperties`) into the
+    /// dedicated MergeTree arena. This state lives as long as the table object itself.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     checkProperties(
         new_metadata,
         old_metadata,
@@ -1929,6 +1937,9 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
     const DiskPtr & part_disk_ptr = state.loading_info->disk;
     LOG_TRACE(log, "Loading unexpected part {} from disk {}", part_name, part_disk_ptr->getName());
 
+    /// Same rationale as `loadDataPart`: the volume / storage objects live for the part's lifetime.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     LoadPartResult res;
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
     auto data_part_storage = std::make_shared<DataPartStorageOnDiskFull>(single_disk_volume, relative_data_path, part_name);
@@ -1971,6 +1982,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::loadDataPart");
     LOG_TRACE(log, "Loading {} part {} from disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
+
+    /// Route the per-part `SingleDiskVolume` and `DataPartStorageOnDiskFull` clones below into
+    /// the MergeTree arena — both are stored on the resulting `IMergeTreeDataPart` and share its
+    /// lifetime. Without this scope they would land in the default arena, slipping past the
+    /// per-part guards in `MergeTreeDataPartBuilder::build` / `loadColumnsChecksumsIndexes`.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     LoadPartResult res;
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
@@ -4224,10 +4241,113 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 "ADD PROJECTION is not supported in {} with deduplicate_merge_projection_mode = throw. "
                 "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                 getName());
+
+        if (old_metadata.hasUniqueKey())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "ADD PROJECTION is not supported on tables with UNIQUE KEY");
+    }
+
+    /// Reject DROP/RENAME/MODIFY of UK columns and MODIFY ORDER BY. Must run
+    /// before `columns_alter_type_forbidden` so error 524 with the UK message
+    /// fires instead of error 47 from the sort-key re-check.
+    if (old_metadata.hasUniqueKey())
+    {
+        const auto & uk_columns = old_metadata.unique_key.column_names;
+        NameSet uk_set(uk_columns.begin(), uk_columns.end());
+
+        auto uk_list_str = [&uk_columns]()
+        {
+            String s;
+            for (size_t i = 0; i < uk_columns.size(); ++i)
+            {
+                if (i > 0)
+                    s += ", ";
+                s += backQuoteIfNeed(uk_columns[i]);
+            }
+            return s;
+        };
+
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::MODIFY_ORDER_BY)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "MODIFY ORDER BY is not supported on tables with UNIQUE KEY. "
+                    "The dense-index SSTs produced at write time depend on the sort order.");
+
+            const bool affects_column =
+                command.type == AlterCommand::DROP_COLUMN
+                || command.type == AlterCommand::RENAME_COLUMN
+                || command.type == AlterCommand::MODIFY_COLUMN;
+
+            if (!affects_column)
+                continue;
+
+            if (!uk_set.contains(command.column_name))
+                continue;
+
+            const char * action_str = (command.type == AlterCommand::DROP_COLUMN) ? "DROP"
+                : (command.type == AlterCommand::RENAME_COLUMN) ? "RENAME"
+                : "MODIFY";
+
+            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "ALTER {} COLUMN {} is forbidden: the column is part of the table's "
+                "UNIQUE KEY ({}). Drop the UNIQUE KEY first (not supported in the "
+                "current phase) or pick a different column.",
+                action_str,
+                backQuoteIfNeed(command.column_name),
+                uk_list_str());
+        }
     }
 
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
+
+    /// UNIQUE KEY tables must remain on a local-only storage policy. Mirror the
+    /// CREATE-time check from registerStorageMergeTree.cpp here so ALTER ...
+    /// MODIFY/RESET SETTING storage_policy|disk cannot bypass the gate. Runs on
+    /// the post-apply new_metadata so a MODIFY_SETTING that injects
+    /// settings_changes into a previously-empty old_metadata is also covered.
+    if (old_metadata.hasUniqueKey())
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::RESET_SETTING
+                && (command.settings_resets.contains("storage_policy")
+                    || command.settings_resets.contains("disk")))
+            {
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... RESET SETTING storage_policy|disk is not supported "
+                    "on tables with UNIQUE KEY: the table must remain on a local-only "
+                    "storage policy.");
+            }
+        }
+
+        if (new_metadata.settings_changes)
+        {
+            const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            for (const auto & changed : new_changes)
+            {
+                StoragePolicyPtr new_policy;
+                if (changed.name == "storage_policy")
+                    new_policy = local_context->getStoragePolicy(changed.value.safeGet<String>());
+                else if (changed.name == "disk")
+                    new_policy = local_context->getStoragePolicyFromDisk(changed.value.safeGet<String>());
+                else
+                    continue;
+
+                for (const auto & disk : new_policy->getDisks())
+                {
+                    const auto & desc = disk->getDataSourceDescription();
+                    if (desc.type != DataSourceType::Local)
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "UNIQUE KEY on non-local disks is not yet supported "
+                            "(disk `{}` has source type `{}`). "
+                            "UNIQUE KEY tables must currently reside on a local-only storage policy.",
+                            disk->getName(), desc.toString());
+                }
+            }
+        }
+    }
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
@@ -4747,6 +4867,39 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
 
+    /// Reject mutations that bypass UK dedup: DELETE/UPDATE rewrite rows;
+    /// MATERIALIZE COLUMN / CLEAR COLUMN (the latter serialized as
+    /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes.
+    if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
+    {
+        const auto & uk_column_names = uk_metadata->getUniqueKeyColumns();
+        auto is_uk_column = [&](const String & column)
+        {
+            return std::find(uk_column_names.begin(), uk_column_names.end(), column) != uk_column_names.end();
+        };
+
+        for (const auto & command : commands)
+        {
+            if (command.type == MutationCommand::DELETE || command.type == MutationCommand::UPDATE)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER DELETE / ALTER UPDATE is not supported on tables with UNIQUE KEY");
+
+            if (command.type == MutationCommand::MATERIALIZE_COLUMN && is_uk_column(command.column_name))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported: the column is part of the UNIQUE KEY, "
+                    "and MATERIALIZE would rewrite stored values without going through UNIQUE KEY dedup, "
+                    "producing duplicate live keys. UNIQUE KEY columns: ({}).",
+                    command.column_name, fmt::join(uk_column_names, ", "));
+
+            if (command.type == MutationCommand::DROP_COLUMN && command.clear && is_uk_column(command.column_name))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... CLEAR COLUMN `{}` is not supported: the column is part of the UNIQUE KEY, "
+                    "and CLEAR would rewrite stored values without going through UNIQUE KEY dedup, "
+                    "producing duplicate live keys. UNIQUE KEY columns: ({}).",
+                    command.column_name, fmt::join(uk_column_names, ", "));
+        }
+    }
+
     const auto index_mode = (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
     if (index_mode == AlterColumnSecondaryIndexMode::THROW && getInMemoryMetadataPtr(getContext(), false)->hasSecondaryIndices())
     {
@@ -4877,6 +5030,11 @@ void MergeTreeData::changeSettings(
             = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
 
         storage_settings.set(std::move(copy));
+
+        /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
+        /// `setInMemoryMetadata`) into the dedicated MergeTree arena.
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
         StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(getContext(), false);
         new_metadata.setSettingsChanges(new_settings);
 
@@ -6604,6 +6762,13 @@ Pipe MergeTreeData::alterPartition(
     const PartitionCommands & commands,
     ContextPtr query_context)
 {
+    /// Reject all ALTER ... PARTITION ... operations on UNIQUE KEY tables.
+    /// Each command interacts with the dense-index sidecar and bitmap state
+    /// in ways that require UK-aware semantics not yet implemented.
+    if (metadata_snapshot && metadata_snapshot->hasUniqueKey() && !commands.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
+
     /// Wait for loading of outdated parts
     /// because partition commands (DROP, MOVE, etc.)
     /// must be applied to all parts on disk.
@@ -7053,6 +7218,9 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
 {
+    /// Same rationale as `loadDataPart`: the `SingleDiskVolume` below lives for the part's lifetime.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     MutableDataPartPtr part;
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
@@ -7966,6 +8134,9 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     LOG_DEBUG(log, "Checking {} parts", renamed_parts.old_and_new_names.size());
     MutableDataPartsVector loaded_parts;
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
+
+    /// Same rationale as `loadDataPart`: the per-part `SingleDiskVolume` below lives for the part's lifetime.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     for (const auto & [part_name, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
@@ -9997,6 +10168,15 @@ MergeTreeData::MergingParams MergeTreeData::getMergingParamsForPatchParts()
 
 std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdate() const
 {
+    /// Lightweight updates rewrite stored row bytes via patch parts, bypassing
+    /// MergeTreeSinkUniqueKeyCommit::run. Allowing them on UNIQUE KEY tables
+    /// would produce duplicate live keys. Reject here so the rewrite path in
+    /// InterpreterAlterQuery::tryRewriteToLightweightUpdate falls back through
+    /// the heavy path, which is rejected by checkMutationIsPossible.
+    if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
+        return std::unexpected(PreformattedMessage::create(
+            "Lightweight updates are not supported on tables with UNIQUE KEY"));
+
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         return std::unexpected(PreformattedMessage::create(
             "Lightweight updates are supported only for tables with custom partitioning"));
@@ -10361,6 +10541,10 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
 
 void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 {
+    /// `serialization_hints` is a per-table aggregation of the active parts' `SerializationInfoByName`
+    /// — same lifetime profile as the per-part metadata. Route into the parts arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     SerializationInfo::Settings settings
     {
         (*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
@@ -10385,6 +10569,10 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 template <typename AddedParts, typename RemovedParts>
 void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & /*lock*/)
 {
+    /// Same rationale as `resetSerializationHints`: incremental updates to the per-table hints
+    /// belong in the parts arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     const auto & storage_columns = metadata_snapshot->getColumns();
 
