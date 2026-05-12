@@ -60,7 +60,7 @@ SELECT count() FROM (
 SELECT *
 FROM (SELECT 1 AS a, 2 AS b, 3 AS c) AS t1
 JOIN (SELECT 4 AS c, 5 AS b, 1 AS a) AS t2
-ON t2.a = t1.a AND ( t1.b != t2.b OR t1.c != t2.c )
+ON t2.a = t1.a AND ( t1.b > 0 OR t2.b > 0 )
 LIMIT 1;
 
 DROP TABLE t1;
