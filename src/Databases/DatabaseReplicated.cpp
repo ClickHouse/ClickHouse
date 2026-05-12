@@ -1877,7 +1877,8 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
     const ZooKeeperPtr & zookeeper,
     const FilterByNameFunction & filter_by_table_name,
     size_t max_retries,
-    UInt32 & max_log_ptr) const
+    UInt32 & max_log_ptr,
+    int64_t expected_max_log_ptr_czxid) const
 {
     std::map<String, String> table_name_to_metadata;
 
@@ -1902,6 +1903,23 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
             ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
             "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
             "(max_log_ptr node missing at snapshot start)");
+    }
+
+    /// If the caller pre-observed a specific identity (typically `getTablesForBackup` that reads
+    /// `/max_log_ptr` to fix `snapshot_version` before this call), reject mismatches at function
+    /// entry. Without this, a `DROP`+recreate that happens between the caller's read and the
+    /// function-entry stat read above would advance both the value and the `czxid` to the new
+    /// database; subsequent in-function identity checks would then compare new-to-new and pass,
+    /// silently substituting the recreated database's metadata for the dropped one. The internal
+    /// `max_log_ptr > new_max_log_ptr` rollback check only catches recreates where the new
+    /// database has not yet advanced past the caller's pointer, so this entry-time identity
+    /// check is required to close the remaining race window.
+    if (expected_max_log_ptr_czxid != 0 && initial_max_log_ptr_stat.czxid != expected_max_log_ptr_czxid)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+            "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+            "(Keeper path identity changed between caller's read and snapshot start)");
     }
 
     if (zookeeper->isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST) &&
@@ -2558,7 +2576,17 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
     /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
     auto zookeeper = getZooKeeper();
-    UInt32 snapshot_version = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
+
+    /// Read `/max_log_ptr` together with its `Stat` so we can pin the database identity
+    /// (`czxid` of the node) at this point. The expected `czxid` is forwarded to
+    /// `getConsistentMetadataSnapshotImpl`, which rejects the snapshot if it observes a
+    /// different identity at function entry. Without this, a `DROP`+recreate that lands
+    /// between this read and `getConsistentMetadataSnapshotImpl`'s own initial read can
+    /// advance both the value and the `czxid` to the new database, after which all
+    /// in-function checks compare new-to-new and silently substitute the wrong instance.
+    Coordination::Stat snapshot_version_stat;
+    String snapshot_version_str = zookeeper->get(zookeeper_path + "/max_log_ptr", &snapshot_version_stat);
+    UInt32 snapshot_version = parse<UInt32>(snapshot_version_str);
 
     /// Test-only: deterministically reproduce the DROP+RECREATE race that originally
     /// surfaced as a `chassert(max_log_ptr == new_max_log_ptr)` LOGICAL_ERROR. The test
@@ -2569,7 +2597,8 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     /// monotonicity guard, instead of firing the pre-fix chassert / retry-exhaustion path.
     FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_after_reading_log_pointer);
 
-    auto snapshot = getConsistentMetadataSnapshotImpl(zookeeper, filter, /* max_retries= */ 20, snapshot_version);
+    auto snapshot = getConsistentMetadataSnapshotImpl(
+        zookeeper, filter, /* max_retries= */ 20, snapshot_version, snapshot_version_stat.czxid);
 
     std::vector<std::pair<ASTPtr, StoragePtr>> res;
     for (const auto & [table_name, metadata] : snapshot)

@@ -200,8 +200,15 @@ private:
 
     std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const;
 
+    /// `expected_max_log_ptr_czxid` lets the caller pin the database identity it
+    /// observed before this call: if it is non-zero, the snapshot is aborted with
+    /// `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` when the `czxid` of `/max_log_ptr`
+    /// at function entry differs (the database was dropped and recreated at the same
+    /// Keeper path between the caller's read and the snapshot). Pass `0` from
+    /// callers that have not pre-observed an identity.
     std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
-                                                               size_t max_retries, UInt32 & max_log_ptr) const;
+                                                               size_t max_retries, UInt32 & max_log_ptr,
+                                                               int64_t expected_max_log_ptr_czxid = 0) const;
 
     static ASTPtr parseQueryFromMetadata(
         ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description);
