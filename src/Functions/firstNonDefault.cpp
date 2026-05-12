@@ -52,20 +52,11 @@ public:
         return args;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at least one argument", getName());
-        size_t max_args = 1024;
-        if (arguments.size() > max_args)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at most {} arguments, got {}", getName(), max_args, arguments.size());
-
-        if (arguments.size() == 1)
-            return arguments[0];
-
-        return getLeastSupertype(arguments);
+        /// Variadic over T1..Tn; the type-function ellipsis needs the variable index to
+        /// build the group-to-repeat, hence the explicit `T1` rather than bare `T`.
+        return "(T1, ...) -> leastSupertype(T1, ...)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

@@ -87,6 +87,22 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+class TypeMatcherEnum8 : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Enum8"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isEnum8(); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherEnum16 : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Enum16"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isEnum16(); }
+    size_t getIndex() const override { return 0; }
+};
+
 class TypeMatcherNULL : public ITypeMatcher
 {
 public:
@@ -433,6 +449,8 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherNativeInteger>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherStringOrFixedString>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherEnum>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherEnum8>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherEnum16>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherNULL>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherRepresentedByNumber>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherSet>(factory);

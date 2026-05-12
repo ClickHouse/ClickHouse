@@ -42,13 +42,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
+    String getSignatureString() const override
     {
-        if (!isNumber(removeNullable(types.at(0))) && !isNothing(removeNullable(types.at(0))))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must have simple numeric type, possibly Nullable or Null", name);
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(MaybeNullable(Number | Nothing)) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
