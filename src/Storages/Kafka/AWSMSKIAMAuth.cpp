@@ -180,6 +180,14 @@ void setupAuthentication(
         context_holder->provider = provider;
         context_holder->region = effective_region;
     }
+    else if (!boost::iequals(context_holder->region, effective_region))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "AWS MSK IAM: cached OAuth context uses region '{}' but broker list '{}' resolves to region '{}'. "
+            "Consumer and producer must connect to MSK clusters in the same AWS region.",
+            context_holder->region, broker_list, effective_region);
+    }
 
     kafka_config.set_oauthbearer_token_refresh_callback(
         [context = context_holder](cppkafka::KafkaHandleBase & handle, const std::string* /* oauthbearer_config */)

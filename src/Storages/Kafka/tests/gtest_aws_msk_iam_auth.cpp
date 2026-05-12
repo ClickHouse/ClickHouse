@@ -133,6 +133,48 @@ TEST(AWSMSKIAMAuth, SetupRewritesPresetAWSMSKIAMToOAUTHBEARER)
     }
 }
 
+TEST(AWSMSKIAMAuth, SetupThrowsOnRegionMismatchWithCachedContext)
+{
+    // Simulate consumer context cached for us-east-1, then producer attempts eu-west-1.
+    // setupAuthentication must reject the mismatch rather than silently signing tokens
+    // for the wrong region.
+    auto cached_ctx = std::make_shared<OAuthBearerTokenRefreshContext>();
+    cached_ctx->region = "us-east-1";
+
+    cppkafka::Configuration cfg;
+    auto config = emptyConfig();
+    std::shared_ptr<OAuthBearerTokenRefreshContext> ctx = cached_ctx;
+
+    EXPECT_THROW(
+        setupAuthentication(cfg, *config, "eu-west-1", "", nullptr, ctx),
+        DB::Exception);
+}
+
+TEST(AWSMSKIAMAuth, SetupAcceptsSameRegionWithCachedContext)
+{
+    // Reusing a cached context for the same region must not throw.
+    auto cached_ctx = std::make_shared<OAuthBearerTokenRefreshContext>();
+    cached_ctx->region = "us-east-1";
+
+    cppkafka::Configuration cfg;
+    auto config = emptyConfig();
+    std::shared_ptr<OAuthBearerTokenRefreshContext> ctx = cached_ctx;
+
+    try
+    {
+        setupAuthentication(cfg, *config, "us-east-1", "", nullptr, ctx);
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_NE(e.code(), DB::ErrorCodes::BAD_ARGUMENTS)
+            << "Same-region reuse must not throw BAD_ARGUMENTS; got: " << e.message();
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        // Ok: non-region exceptions (e.g. missing AWS credentials) are acceptable here.
+    }
+}
+
 TEST(AWSMSKIAMAuth, SetupFailsWhenRegionCannotBeInferred)
 {
     cppkafka::Configuration cfg;
