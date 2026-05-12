@@ -307,8 +307,8 @@ public:
             args += "Float | NativeUInt";
         }
         return
-            "(" + args + ") -> typeFromString('" + return_type + "')"
-            " OR (" + args + ", Any) -> typeFromString('" + return_type + "')";
+            "(" + args + ") -> " + return_type
+            + " OR (" + args + ", Any) -> " + return_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override

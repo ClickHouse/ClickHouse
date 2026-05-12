@@ -182,9 +182,9 @@ namespace DB
         {
             const String to = ToDataType{}.getName();
             if constexpr (nullOnErrors)
-                return "(StringOrFixedString) -> Nullable(typeFromString('" + to + "'))";
+                return "(StringOrFixedString) -> Nullable(" + to + ")";
             else
-                return "(StringOrFixedString) -> typeFromString('" + to + "')";
+                return "(StringOrFixedString) -> " + to;
         }
 
         size_t getNumberOfArguments() const override
