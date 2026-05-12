@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
 
 #include <stack>
@@ -177,9 +178,32 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                                     {
                                         if (frame.mapped_children[i] == nullptr)
                                         {
-                                            all_children_matched = children[i]->column && isColumnConst(*children[i]->column)
-                                                && children[i]->result_type->equals(*frame.node->children[i]->result_type)
-                                                && assert_cast<const ColumnConst &>(*children[i]->column).getField() == assert_cast<const ColumnConst &>(*frame.node->children[i]->column).getField();
+                                            const auto * inner_col = children[i]->column.get();
+                                            const auto * outer_col = frame.node->children[i]->column.get();
+                                            if (!inner_col || !isColumnConst(*inner_col)
+                                                || !children[i]->result_type->equals(*frame.node->children[i]->result_type))
+                                            {
+                                                all_children_matched = false;
+                                            }
+                                            else if (const auto * inner_set = typeid_cast<const ColumnSet *>(
+                                                         &assert_cast<const ColumnConst &>(*inner_col).getDataColumn()))
+                                            {
+                                                /// ColumnSet::operator[] returns an empty Field{} regardless of set
+                                                /// contents, so getField() cannot distinguish different IN-clause sets.
+                                                /// Compare by content hash instead (computed order-independently in
+                                                /// FutureSetFromTuple constructor).
+                                                const auto * outer_set = outer_col ? typeid_cast<const ColumnSet *>(
+                                                    &assert_cast<const ColumnConst &>(*outer_col).getDataColumn()) : nullptr;
+                                                all_children_matched = outer_set
+                                                    && inner_set->getData()->getContentHash()
+                                                        == outer_set->getData()->getContentHash();
+                                            }
+                                            else
+                                            {
+                                                all_children_matched =
+                                                    assert_cast<const ColumnConst &>(*inner_col).getField()
+                                                    == assert_cast<const ColumnConst &>(*outer_col).getField();
+                                            }
                                         }
                                         else
                                             all_children_matched = frame.mapped_children[i] == children[i];
