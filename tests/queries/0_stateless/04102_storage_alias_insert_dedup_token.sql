@@ -12,6 +12,7 @@ CREATE TABLE dedup_alias_table ENGINE = Alias('dedup_alias_target');
 
 SET max_block_size = 2;
 SET max_insert_block_size = 2;
+SET max_insert_threads = 3;
 SET min_insert_block_size_rows = 0;
 SET min_insert_block_size_bytes = 0;
 
