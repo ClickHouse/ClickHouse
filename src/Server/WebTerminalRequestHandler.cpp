@@ -61,7 +61,7 @@ bool isValidWebSocketKey(const String & key)
     {
         return base64Decode(key).size() == 16;
     }
-    catch (...)
+    catch (...) /// Ok: malformed base64 is just an invalid key; the caller maps it to a 400 handshake rejection.
     {
         return false;
     }
