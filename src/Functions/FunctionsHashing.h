@@ -1676,25 +1676,11 @@ public:
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
     bool useDefaultImplementationForVariant() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto arg_count = arguments.size();
-        if (arg_count != 1 && arg_count != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
-                "passed {}, should be 1 or 2.", getName(), arg_count);
-
-        const auto * first_arg = arguments.front().get();
-        if (!WhichDataType(first_arg).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", first_arg->getName(), getName());
-
-        if (arg_count == 2)
-        {
-            const auto & second_arg = arguments.back();
-            if (!isInteger(second_arg))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", second_arg->getName(), getName());
-        }
-
-        return std::make_shared<DataTypeUInt64>();
+        return
+            "(String) -> UInt64"
+            " OR (String, Integer) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
