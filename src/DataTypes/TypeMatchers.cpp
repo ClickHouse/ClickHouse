@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeSet.h>
 
 #include <Common/typeid_cast.h>
@@ -320,6 +321,33 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+class TypeMatcherLowCardinalityOf : public ITypeMatcher
+{
+private:
+    TypeMatcherPtr child_matcher;
+public:
+    explicit TypeMatcherLowCardinalityOf(const TypeMatchers & child_matchers)
+    {
+        if (child_matchers.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality type matcher requires single argument");
+        child_matcher = child_matchers[0];
+    }
+
+    std::string toString() const override { return "LowCardinality(" + child_matcher->toString() + ")"; }
+
+    bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string & out_reason) const override
+    {
+        if (!type->lowCardinality())
+        {
+            out_reason = "expected LowCardinality, got " + type->getName();
+            return false;
+        }
+        return child_matcher->match(removeLowCardinality(type), variables, iteration, arg_num, out_reason);
+    }
+
+    size_t getIndex() const override { return child_matcher->getIndex(); }
+};
+
 class TypeMatcherJSON : public ITypeMatcher
 {
 public:
@@ -544,7 +572,14 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherMap>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDate>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDate32>(factory);
-    registerTypeMatcherWithNoArguments<TypeMatcherLowCardinality>(factory);
+    /// LowCardinality has both a 0-arg form (matches any LowCardinality type) and a
+    /// 1-arg form LowCardinality(X) (matches LowCardinality whose inner type matches X).
+    factory.registerElement("LowCardinality", [](const TypeMatchers & children) -> TypeMatcherPtr
+    {
+        if (children.empty())
+            return std::make_shared<TypeMatcherLowCardinality>();
+        return std::make_shared<TypeMatcherLowCardinalityOf>(children);
+    });
     registerTypeMatcherWithNoArguments<TypeMatcherJSON>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDynamic>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDateTime>(factory);

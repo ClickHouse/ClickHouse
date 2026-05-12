@@ -120,11 +120,6 @@ UnpackedPartSegments unpackPartName(std::string_view data)
     return unpacked;
 }
 
-bool isAnyStringType(const IDataType & data_type)
-{
-    return isStringOrFixedString(removeLowCardinality(data_type.getPtr()));
-}
-
 class FunctionMergeTreePartCoverage : public IFunction
 {
     static MergeTreePartInfo constructCoveringPart(const ColumnPtr & covering_column, size_t row_number)
@@ -146,14 +141,10 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        validateFunctionArguments(*this, arguments, FunctionArgumentDescriptors{
-            {"nested_part", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"},
-            {"covering_part", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"}
-        });
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(StringOrFixedString | LowCardinality(StringOrFixedString), "
+               "StringOrFixedString | LowCardinality(StringOrFixedString)) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -185,33 +176,12 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        validateFunctionArguments(*this, arguments, FunctionArgumentDescriptors{
-            {"part_name", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"}
-        });
-
-        DataTypes types = {
-            std::make_shared<DataTypeString>(),
-            std::make_shared<DataTypeString>(),
-            std::make_shared<DataTypeString>(),
-            std::make_shared<DataTypeInt64>(),
-            std::make_shared<DataTypeInt64>(),
-            std::make_shared<DataTypeInt64>(),
-            std::make_shared<DataTypeInt64>(),
-        };
-
-        Names names = {
-            "partition_id",
-            "prefix",
-            "suffix",
-            "min_block",
-            "max_block",
-            "level",
-            "mutation",
-        };
-
-        return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
+        return
+            "(StringOrFixedString | LowCardinality(StringOrFixedString)) -> "
+            "Tuple(partition_id String, prefix String, suffix String, "
+            "min_block Int64, max_block Int64, level Int64, mutation Int64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
