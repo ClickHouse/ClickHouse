@@ -18,7 +18,7 @@
             f64_1 Float64, f64_2 Float64, f64_3 Float64, f64_4 Float64, f64_5 Float64
         )
         ENGINE = MergeTree ORDER BY ()
-        SETTINGS add_minmax_index_for_numeric_columns = 1, default_compression_codec = 'NONE', non_replicated_deduplication_window = 0, ratio_of_defaults_for_sparse_serialization = 1.0, parts_to_delay_insert = 50000, parts_to_throw_insert = 50000
+        SETTINGS optimize_row_order_if_no_order_by = 0, add_minmax_index_for_numeric_columns = 1, default_compression_codec = 'NONE', non_replicated_deduplication_window = 0, ratio_of_defaults_for_sparse_serialization = 1.0, parts_to_delay_insert = 50000, parts_to_throw_insert = 50000
     </create_query>
     <create_query>SYSTEM STOP MERGES minmax_insert</create_query>
 

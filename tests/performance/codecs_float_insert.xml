@@ -43,7 +43,7 @@
     <create_query>
         CREATE TABLE codec_{seq_type}_{type}_{codec} (n {type} CODEC({codec}))
         ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
-        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;
+        SETTINGS optimize_row_order_if_no_order_by = 0, parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;
     </create_query>
     <create_query>system stop merges</create_query>
 
