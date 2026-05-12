@@ -1,6 +1,6 @@
 -- columns exist with the expected types
-higher_order	Nullable(UInt8)
 deterministic	Nullable(UInt8)
+higher_order	Nullable(UInt8)
 -- deterministic non-higher-order function
 plus	1	0
 -- non-deterministic function
