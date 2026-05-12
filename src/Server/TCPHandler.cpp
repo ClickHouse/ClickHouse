@@ -500,11 +500,9 @@ void TCPHandler::runImpl()
             }
 
             /// If we need to shut down, or client disconnects.
-            if (!tcp_server.isOpen() || server.isCancelled() || in->isCanceled() || in->eof())
+            if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
             {
-                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, in_canceled: {}, eof: {})",
-                    tcp_server.isOpen(), server.isCancelled(), in->isCanceled(),
-                    !in->isCanceled() && in->eof());
+                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
                 return;
             }
         }
@@ -672,7 +670,7 @@ void TCPHandler::runImpl()
                 if (context != query_state->query_context)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
 
-                auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
+                auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
 
                 std::lock_guard lock(*callback_mutex);
 
@@ -969,27 +967,6 @@ void TCPHandler::runImpl()
 
             if (exception_code == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
             {
-                query_state->cancelOut(out);
-                return;
-            }
-
-            /// If the exception happened during initial query parsing (before
-            /// `query_context` was created at the end of `processQuery`), the
-            /// input buffer is in an unknown state: the failing read may have
-            /// consumed only part of the packet, leaving trailing bytes that
-            /// will be misinterpreted as the next packet on this connection.
-            /// The only safe option is to close the connection.
-            if (!query_state->query_context)
-            {
-                try
-                {
-                    std::lock_guard lock(*callback_mutex);
-                    sendException(*exception, send_exception_with_stack_trace);
-                }
-                catch (...) // NOLINT(bugprone-empty-catch)
-                {
-                    /// Ok: failed to send the exception, but we're closing anyway.
-                }
                 query_state->cancelOut(out);
                 return;
             }
@@ -1306,8 +1283,9 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
 
-        squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
-        auto result_chunk = Squashing::squash(squashing.generate(/*flush_if_enough_size*/ true), squashing.getHeader());
+        auto result_chunk = Squashing::squash(
+            squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}, /*flush_if_enough_size*/ true),
+            squashing.getHeader());
 
         {
             std::lock_guard lock(*callback_mutex);
@@ -1475,14 +1453,12 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
-                bool stop_read_return_partial_result = false;
                 {
                     std::lock_guard lock(*callback_mutex);
                     receivePacketsExpectCancel(state);
-                    stop_read_return_partial_result = state.stop_read_return_partial_result;
                 }
 
-                if (stop_read_return_partial_result)
+                if (state.stop_read_return_partial_result)
                 {
                     executor.cancelReading();
                 }
@@ -1634,7 +1610,7 @@ void TCPHandler::sendReadTaskRequest()
 void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRangesAnnouncement announcement)
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
-    announcement.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
+    announcement.serialize(*out, client_parallel_replicas_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1644,7 +1620,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRang
 void TCPHandler::sendMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
-    request.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
+    request.serialize(*out, client_parallel_replicas_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -2251,18 +2227,6 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     {
         client_info.read(*in, client_tcp_protocol_version);
 
-        /// Validate query_kind: only INITIAL_QUERY and SECONDARY_QUERY are valid
-        /// in a Query packet. NO_QUERY and any other value would bypass the
-        /// INITIAL_QUERY check in settings constraint enforcement, falling into
-        /// the lenient clamp path. NO_QUERY also causes ClientInfo::read to
-        /// skip parsing the remaining fields, leaving them uninitialized.
-        if (client_info.query_kind != ClientInfo::QueryKind::INITIAL_QUERY
-            && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Unexpected query kind in Query packet: {}",
-                static_cast<int>(client_info.query_kind));
-
         correctQueryClientInfo(session->getClientInfo(), client_info);
         const auto & config_ref = Context::getGlobalContextInstance()->getServerSettings();
         if (config_ref[ServerSetting::validate_tcp_client_information])
@@ -2293,19 +2257,9 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     }
 
     readVarUInt(stage, *in);
-    if (stage >= QueryProcessingStage::MAX && stage != QueryProcessingStage::QueryPlan)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Unknown query processing stage: {}",
-            stage);
     state->stage = QueryProcessingStage::Enum(stage);
 
     readVarUInt(compression, *in);
-    if (compression > 1)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Unknown compression state: {}",
-            compression);
     state->compression = static_cast<Protocol::Compression>(compression);
     last_block_in.compression = state->compression;
 
@@ -2591,7 +2545,7 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
             storage = temporary_table.getTable();
             state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
         }
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr(state.query_context, false);
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         /// The data will be written directly to the table.
         QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
         PushingPipelineExecutor executor(temporary_table_out);
