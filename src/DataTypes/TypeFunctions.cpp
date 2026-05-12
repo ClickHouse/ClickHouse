@@ -332,6 +332,25 @@ public:
     std::string name() const override { return "LowCardinality"; }
 };
 
+/// Extract the underlying dictionary type of a LowCardinality(T). Used by lowCardinalityKeys.
+class TypeFunctionDictionaryTypeOf : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function dictionaryTypeOf");
+        const auto * lc = typeid_cast<const DataTypeLowCardinality *>(args.front().type().get());
+        if (!lc)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Type function dictionaryTypeOf expects a LowCardinality argument, got {}",
+                args.front().type()->getName());
+        return Value(lc->getDictionaryType());
+    }
+
+    std::string name() const override { return "dictionaryTypeOf"; }
+};
+
 
 class TypeFunctionTuplesHaveSameSize : public ITypeFunction
 {
@@ -382,6 +401,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionTypeFromString>();
     factory.registerElement<TypeFunctionNullable>();
     factory.registerElement<TypeFunctionLowCardinality>();
+    factory.registerElement<TypeFunctionDictionaryTypeOf>();
 
     /// Predicates.
     factory.registerElement<TypeFunctionTuplesHaveSameSize>();

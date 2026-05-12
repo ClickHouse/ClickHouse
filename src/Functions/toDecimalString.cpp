@@ -36,16 +36,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args = {
-            {"Value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, {});
-
-        return std::make_shared<DataTypeString>();
+        return "(Number, const NativeInteger) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
