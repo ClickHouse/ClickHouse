@@ -36,6 +36,9 @@
 #include <mutex>
 #include <string>
 #include <utility>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 #include <base/isSharedPtrUnique.h>
 #include <boost/range/adaptor/map.hpp>
@@ -389,6 +392,17 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         auto db_and_table = tryGetByUUID(table_id.uuid);
         if (!db_and_table.first || !db_and_table.second)
         {
+            if (db_and_table.first && !db_and_table.second)
+            {
+                /// UUID is used by a database, not a table: the user specified a table UUID that collides with a database UUID.
+                if (exception)
+                    exception->emplace(Exception(
+                        ErrorCodes::TABLE_ALREADY_EXISTS,
+                        "Table UUID {} is already used by database {}",
+                        table_id.uuid,
+                        db_and_table.first->getDatabaseName()));
+                return {};
+            }
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
             {
@@ -725,14 +739,23 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
         referential_dependencies.addDependencies(StorageID{new_name, table_name}, removed_ref_deps);
         loading_dependencies.addDependencies(StorageID{new_name, table_name}, removed_loading_deps);
 
+        /// `view_dependencies` is rewired in both directions: the table being renamed
+        /// may be a materialized view (incoming edges from its source) and/or a source
+        /// of materialized views (outgoing edges to its dependent MVs). Both sides must
+        /// be re-keyed under `new_name`, otherwise lookups by the new name fail and
+        /// inserts into the renamed source no longer reach its MVs.
         auto tables_from = view_dependencies.getDependents(StorageID{old_name, table_name});
-        if (!tables_from.empty())
+        for (const auto & the_table_from : tables_from)
         {
-            assert(tables_from.size() == 1);
-            const auto & the_table_from = *tables_from.begin();
-
             view_dependencies.removeDependency(the_table_from, StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
             view_dependencies.addDependency(the_table_from, StorageID{new_name, table_name});
+        }
+
+        auto views_from = view_dependencies.getDependencies(StorageID{old_name, table_name});
+        for (const auto & view : views_from)
+        {
+            view_dependencies.removeDependency(StorageID{old_name, table_name}, view, /* remove_isolated_tables= */ true);
+            view_dependencies.addDependency(StorageID{new_name, table_name}, view);
         }
     }
 }
@@ -1023,6 +1046,24 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
     return view_dependencies.getDependencies(source_table_id);
 }
 
+std::vector<StorageID> DatabaseCatalog::takeSourceViewDependencies(const StorageID & source_table_id)
+{
+    std::lock_guard lock{databases_mutex};
+    auto views = view_dependencies.getDependencies(source_table_id);
+    for (const auto & view : views)
+        view_dependencies.removeDependency(source_table_id, view, /* remove_isolated_tables= */ true);
+    return views;
+}
+
+void DatabaseCatalog::addSourceViewDependencies(const StorageID & source_table_id, const std::vector<StorageID> & view_ids)
+{
+    if (view_ids.empty())
+        return;
+    std::lock_guard lock{databases_mutex};
+    for (const auto & view_id : view_ids)
+        view_dependencies.addDependency(source_table_id, view_id);
+}
+
 std::vector<StorageID> DatabaseCatalog::getReadyDependentViews(const StorageID & source_table_id, const ContextPtr & query_context) const
 {
     /// During server startup, not all dependent views may be registered yet.
@@ -1112,6 +1153,13 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context) const
 {
+#if CLICKHOUSE_CLOUD
+    if (SharedDatabaseCatalog::initialized())
+    {
+        if (auto res = SharedDatabaseCatalog::instance().tryGetStorageFromIntentions(table_id, local_context))
+            return res;
+    }
+#endif
     std::optional<Exception> exc;
     auto table = local_context->hasQueryContext() ?
         local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }).second :
@@ -1637,7 +1685,7 @@ void DatabaseCatalog::addDependencies(
     const std::vector<StorageID> & new_loading_dependencies,
     const std::vector<StorageID> & new_view_dependencies)
 {
-    if (new_referential_dependencies.empty() && new_loading_dependencies.empty())
+    if (new_referential_dependencies.empty() && new_loading_dependencies.empty() && new_view_dependencies.empty())
         return;
     std::lock_guard lock{databases_mutex};
     if (!new_referential_dependencies.empty())
@@ -1723,11 +1771,8 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
     if (is_mv)
     {
         auto tables_from = view_dependencies.getDependents(table_id);
-        if (!tables_from.empty())
+        for (const auto & the_table_from : tables_from)
         {
-            assert(tables_from.size() == 1);
-            const auto & the_table_from = *tables_from.begin();
-
             view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
             old_view_dependencies.push_back(the_table_from);
         }
@@ -1752,18 +1797,13 @@ void DatabaseCatalog::updateDependencies(
         referential_dependencies.addDependencies(table_id, new_referential_dependencies);
     if (!new_loading_dependencies.empty())
         loading_dependencies.addDependencies(table_id, new_loading_dependencies);
+    auto tables_from = view_dependencies.getDependents(table_id);
+    for (const auto & the_table_from : tables_from)
+        view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
     if (!new_view_dependencies.empty())
     {
         assert(new_view_dependencies.size() == 1);
-        auto tables_from = view_dependencies.getDependents(table_id);
-        if (!tables_from.empty())
-        {
-            assert(tables_from.size() == 1);
-            const auto & the_table_from = *tables_from.begin();
-
-            view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
-            view_dependencies.addDependency(StorageID{*new_view_dependencies.begin()}, table_id);
-        }
+        view_dependencies.addDependency(StorageID{*new_view_dependencies.begin()}, table_id);
     }
 }
 

@@ -85,13 +85,15 @@ UserDefinedWebAssemblyFunction::UserDefinedWebAssemblyFunction(
     const Strings & argument_names_,
     const DataTypes & arguments_,
     const DataTypePtr & result_type_,
-    WebAssemblyFunctionSettings function_settings_)
+    WebAssemblyFunctionSettings function_settings_,
+    bool is_deterministic_)
     : function_name(function_name_)
     , argument_names(argument_names_)
     , arguments(arguments_)
     , result_type(result_type_)
     , wasm_module(wasm_module_)
     , settings(std::move(function_settings_))
+    , is_deterministic(is_deterministic_)
 {
 }
 
@@ -147,6 +149,18 @@ static std::optional<WasmValKind> wasmKindForDataType(const IDataType * type)
         return false;
     });
     return kind;
+}
+
+/// Returns true when `from` can be implicitly coerced to `to`.
+/// Allowed: same kind; i32→i64; any int→any float; f32→f64.
+static bool canCoerce(WasmValKind from, WasmValKind to)
+{
+    if (from == to) return true;
+    if (from == WasmValKind::I32 && to == WasmValKind::I64) return true;
+    if (from == WasmValKind::F32 && to == WasmValKind::F64) return true;
+    const bool from_int = from == WasmValKind::I32 || from == WasmValKind::I64;
+    if (from_int && (to == WasmValKind::F32 || to == WasmValKind::F64)) return true;
+    return false;
 }
 
 
@@ -424,16 +438,17 @@ std::unique_ptr<UserDefinedWebAssemblyFunction> UserDefinedWebAssemblyFunction::
     const DataTypes & arguments_,
     const DataTypePtr & result_type_,
     WasmAbiVersion abi_type,
-    WebAssemblyFunctionSettings function_settings)
+    WebAssemblyFunctionSettings function_settings,
+    bool is_deterministic_)
 {
     switch (abi_type)
     {
         case WasmAbiVersion::RowDirect:
             return std::make_unique<UserDefinedWebAssemblyFunctionSimple>(
-                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings));
+                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
         case WasmAbiVersion::BufferedV1:
             return std::make_unique<UserDefinedWebAssemblyFunctionBufferedV1>(
-                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings));
+                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -523,7 +538,7 @@ public:
 
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 
@@ -542,12 +557,10 @@ public:
             if (arguments[i]->equals(*expected_arguments[i]))
                 continue;
 
-            /// Allow implicit coercion between types that map to the same WASM kind
-            /// (e.g. Int8/UInt8/Int16/UInt16/Int32 all map to i32, so they are interchangeable).
-            /// Pairs with different WASM kinds (e.g. Float64 vs Int32) are rejected.
+            /// Allow implicit coercions: same kind, i32→i64, any int→any float, f32→f64.
             auto actual_kind = wasmKindForDataType(arguments[i].get());
             auto expected_kind = wasmKindForDataType(expected_arguments[i].get());
-            if (actual_kind && expected_kind && *actual_kind == *expected_kind)
+            if (actual_kind && expected_kind && canCoerce(*actual_kind, *expected_kind))
                 continue;
 
             auto get_type_names = std::views::transform([](const auto & arg) { return arg->getName(); });
@@ -560,10 +573,15 @@ public:
         return user_defined_function->getResultType();
     }
 
-    bool useDefaultImplementationForConstants() const override { return false; }
+    /// When the function is deterministic, returning true here causes the framework to
+    /// call executeImpl with a single-row block and wrap the result in ColumnConst.
+    /// That ColumnConst is then recognised by the Analyzer's constant-folding check
+    /// (isColumnConst(*column) in resolveFunction.cpp). Without this, executeImpl
+    /// returns a plain ColumnVector which the Analyzer does not fold.
+    bool useDefaultImplementationForConstants() const override { return user_defined_function->getIsDeterministic(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
 
-    bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return user_defined_function->getIsDeterministic(); }
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
@@ -573,8 +591,13 @@ public:
         return execute(compartment_ptr, arguments, input_rows_count);
     }
 
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Deterministic functions must actually run during dry-run so the Analyzer can constant-fold them.
+        /// Non-deterministic functions return defaults to avoid WASM execution at query-analysis time.
+        if (user_defined_function->getIsDeterministic())
+            return executeImpl(arguments, result_type, input_rows_count);
+
         MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
         result_column->insertManyDefaults(input_rows_count);
         return result_column;
@@ -681,14 +704,15 @@ UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query
         function_def.argument_types,
         function_def.result_type,
         function_def.abi_version,
-        function_def.settings);
+        function_def.settings,
+        function_def.is_deterministic);
 
     std::unique_lock lock(registry_mutex);
-    registry[function_def.function_name] = wasm_func;
+    registry[function_def.function_name] = RegistryEntry{wasm_func, create_function_query};
     return wasm_func;
 }
 
-bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name)
+bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name) const
 {
     std::shared_lock lock(registry_mutex);
     return registry.contains(function_name);
@@ -708,7 +732,7 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const Str
                 function_name,
                 fmt::join(registry | std::views::transform([](const auto & pair) { return pair.first; }), ", "));
         }
-        wasm_func = it->second;
+        wasm_func = it->second.function;
     }
 
     auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
@@ -719,6 +743,16 @@ bool UserDefinedWebAssemblyFunctionFactory::dropIfExists(const String & function
 {
     std::unique_lock lock(registry_mutex);
     return registry.erase(function_name) > 0;
+}
+
+std::vector<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> UserDefinedWebAssemblyFunctionFactory::getAllFunctions() const
+{
+    std::shared_lock lock(registry_mutex);
+    std::vector<RegisteredFunction> result;
+    result.reserve(registry.size());
+    for (const auto & [sql_name, entry] : registry)
+        result.push_back(RegisteredFunction{sql_name, entry.function, entry.create_query});
+    return result;
 }
 
 UserDefinedWebAssemblyFunctionFactory & UserDefinedWebAssemblyFunctionFactory::instance()

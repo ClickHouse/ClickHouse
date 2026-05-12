@@ -52,6 +52,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
@@ -1284,7 +1285,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             }
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
-            create.as_table_function = nullptr;
+            create.reset(create.as_table_function);
             setNullTableEngine(*create.storage);
         }
         return;
@@ -2018,7 +2019,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
         /// and old storage instance still exists it will throw exception.
         if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-            database->waitDetachedTableNotInUse(create.uuid);
+        {
+            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+            database->waitDetachedTableNotInUse(create.uuid, [&]()
+            {
+                if (query_status)
+                    query_status->throwIfKilled();
+            });
+        }
         else
             database->checkDetachedTableNotInUse(create.uuid);
     }
@@ -2388,8 +2396,8 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         command_list->children.push_back(command);
 
         auto query = make_intrusive<ASTAlterQuery>();
-        query->database = create.database;
-        query->table = create.table;
+        query->setDatabase(create.getDatabase());
+        query->setTable(create.getTable());
         query->uuid = create.uuid;
         auto * alter = query->as<ASTAlterQuery>();
 
@@ -2688,7 +2696,14 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     if (create.uuid != UUIDHelpers::Nil)
     {
         if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-            database->waitDetachedTableNotInUse(create.uuid);
+        {
+            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+            database->waitDetachedTableNotInUse(create.uuid, [&]()
+            {
+                if (query_status)
+                    query_status->throwIfKilled();
+            });
+        }
         else
             database->checkDetachedTableNotInUse(create.uuid);
     }

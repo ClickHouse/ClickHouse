@@ -20,6 +20,8 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
@@ -51,6 +53,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
+#include <Storages/MergeTree/OverlappingPartCovering.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
@@ -1824,8 +1827,23 @@ void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(
             if (disk->existsDirectory(fs::path(path) / part_name))
                 found = true;
 
+        /// It is OK if the exact covered part is absent locally when an active
+        /// local part already covers it.
+        if (!found && getActiveContainingPart(part_name))
+            found = true;
+
         if (!found)
             found = std::find(parts_to_fetch.begin(), parts_to_fetch.end(), part_name) != parts_to_fetch.end();
+
+        /// A covered `ZooKeeper` part can be missing from disk after a local `Active`
+        /// part has superseded it. This does not need a fetch and should not trigger
+        /// the false-positive `part is lost forever` path.
+        if (!found)
+        {
+            auto local_covering_part = getActiveContainingPart(part_name);
+            if (local_covering_part && local_covering_part->name != part_name)
+                found = true;
+        }
 
         if (!found)
         {
@@ -1900,17 +1918,42 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 
     waitForUnexpectedPartsToBeLoaded();
 
-    ActiveDataPartSet set_of_empty_unexpected_parts(format_version);
+    /// Two empty unexpected parts on disk can have block ranges that intersect without one fully
+    /// containing the other (for example, `all_0_5_2` and `all_2_11_3`). The `uncovered` flag is
+    /// computed in `MergeTreeData::loadDataParts` as "no other unexpected part contains me", but
+    /// containment is strict — two parts can both be uncovered and still share blocks. Adding the
+    /// second one to a plain `ActiveDataPartSet` aborts startup with `LOGICAL_ERROR` (STID
+    /// `2352-49be`).
+    ///
+    /// Use `OverlappingPartCovering`: it stores the non-overlapping markers in a fast lookup
+    /// structure and keeps the rest in an auxiliary list, but `getContainingPart` consults both,
+    /// so an unexpected part that is covered only by an overlapping marker is still classified as
+    /// covered downstream. This avoids the related `TOO_MANY_UNEXPECTED_DATA_PARTS` regression
+    /// that a naive "skip the second marker" fix would introduce.
+    OverlappingPartCovering set_of_empty_unexpected_parts(format_version);
     for (const auto & load_state : unexpected_data_parts)
     {
         if (load_state.is_broken || load_state.part->rows_count || !load_state.uncovered)
             continue;
 
-        set_of_empty_unexpected_parts.add(load_state.part->name);
+        String overlapping_reason;
+        set_of_empty_unexpected_parts.add(load_state.part->info, load_state.part->name, &overlapping_reason);
+        if (!overlapping_reason.empty())
+            LOG_WARNING(
+                log,
+                "Empty unexpected part {} overlaps another empty unexpected part without containment: {}; "
+                "keeping it as a covering candidate via the auxiliary index",
+                load_state.part->name,
+                overlapping_reason);
     }
     if (auto empty_count = set_of_empty_unexpected_parts.size())
+    {
         LOG_WARNING(log, "Found {} empty unexpected parts (probably some dropped parts were not cleaned up before restart): [{}]",
                  empty_count, fmt::join(set_of_empty_unexpected_parts.getParts(), ", "));
+        if (auto overlapping_parts = set_of_empty_unexpected_parts.getOverlappingParts(); !overlapping_parts.empty())
+            LOG_WARNING(log, "Of those, {} have block ranges that intersect another empty unexpected part without containment: [{}]",
+                     overlapping_parts.size(), fmt::join(overlapping_parts, ", "));
+    }
 
     /** To check the adequacy, for the parts that are in the FS, but not in ZK, we will only consider not the most recent parts.
       * Because unexpected new parts usually arise only because they did not have time to enroll in ZK with a rough restart of the server.
@@ -1940,7 +1983,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
             continue;
         }
 
-        String covering_empty_part = set_of_empty_unexpected_parts.getContainingPart(load_state.part->name);
+        String covering_empty_part = set_of_empty_unexpected_parts.getContainingPart(load_state.part->info);
         if (!covering_empty_part.empty())
         {
             LOG_INFO(log, "Unexpected part {} is covered by empty part {}, assuming it has been dropped just before restart",
@@ -2343,6 +2386,10 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             rename_parts.rollBackAll();
             continue;
         }
+
+        /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` and
+        /// the resulting attached `IMergeTreeDataPart` live for the part's lifetime.
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
         const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
         auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_dir, getReadSettings())
@@ -8441,11 +8488,6 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
     chassert(!pipeline.completed());
     pipeline.complete(std::move(sink));
     return pipeline;
-}
-
-bool StorageReplicatedMergeTree::hasLightweightDeletedMask() const
-{
-    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
 }
 
 size_t StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()

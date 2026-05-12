@@ -1,3 +1,5 @@
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
+
 create table lhs(a UInt64) Engine=MergeTree order by ();
 create table rhs(a UInt64) Engine=MergeTree order by ();
 
@@ -75,4 +77,3 @@ from (
   explain actions=1 select * from lhs t0 join rhs t1 on t0.a = t1.a where t1.a < 10000 settings query_plan_join_swap_table = false, query_plan_optimize_join_order_limit = 10
 )
 where explain ilike '%Algorithm%';
-
