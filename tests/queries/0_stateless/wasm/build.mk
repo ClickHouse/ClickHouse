@@ -33,4 +33,6 @@ $(OUT_FOLDER)/%.wasm: $(OUT_FOLDER)/%.o
 	fi
 
 $(OUT_FOLDER)/as_%.wasm: as_%.ts
-	$(ASSEMBLYSCRIPT_COMPILER) $< --runtime incremental --exportRuntime -o $@
+	$(ASSEMBLYSCRIPT_COMPILER) $< --runtime incremental --exportRuntime --enable simd --disableWarning 112 -o $@
+# WARNING AS112: Exchange of 'v128' values is not supported by all embeddings
+# We support 128-bit integers, so allow export function with v128 in signature

@@ -43,3 +43,23 @@ export function str_length(s: string): u32 {
 export function concat3(a: string, b: string, c: string): string {
   return a + "|" + b + "|" + c;
 }
+
+// SQL: add128(a UInt128, b UInt128) RETURNS UInt128
+//      ClickHouse Int128/UInt128 are bit-cast to/from AS v128 across the ABI boundary
+//      (lane 0 = low 64 bits, lane 1 = high 64 bits — matches little-endian layout).
+//      True 128-bit addition: lane SIMD adds don't propagate carry between lanes,
+//      so we extract / add-with-carry / replace by hand. Covers both v128 args and
+//      v128 return, including carry from the low half into the high half.
+export function add128(a: v128, b: v128): v128 {
+  const a_lo = v128.extract_lane<u64>(a, 0);
+  const a_hi = v128.extract_lane<u64>(a, 1);
+  const b_lo = v128.extract_lane<u64>(b, 0);
+  const b_hi = v128.extract_lane<u64>(b, 1);
+  const lo: u64 = a_lo + b_lo;
+  const carry: u64 = lo < a_lo ? 1 : 0;
+  const hi: u64 = a_hi + b_hi + carry;
+  let r = v128.splat<u64>(0);
+  r = v128.replace_lane<u64>(r, 0, lo);
+  r = v128.replace_lane<u64>(r, 1, hi);
+  return r;
+}

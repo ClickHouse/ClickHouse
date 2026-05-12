@@ -225,19 +225,12 @@ public:
             new_function_name, {payload_size, class_id}, stop_token);
     }
 
-    /// `__pin(ptr)`. Roots `ptr` against the AS GC until matching `unpinObject`.
-    /// Needed when the host holds a freshly-allocated object across further `__new`
-    /// calls (e.g. while allocating sibling arguments): the AS runtime cannot see the
-    /// pointer in host memory and may otherwise collect it.
-    void pinObject(WasmPtr ptr) const
+    void pinObject(WasmPtr ptr)
     {
         compartment->invoke<WasmPtr>(pin_function_name, {ptr}, stop_token);
     }
 
-    /// `__unpin(ptr)`. Releases the pin set by `pinObject`. Used in cleanup paths,
-    /// so this swallows exceptions — losing the original error here would mask any
-    /// failure of the user function itself.
-    void unpinObject(WasmPtr ptr) const noexcept
+    void unpinObject(WasmPtr ptr)
     {
         compartment->invoke<void>(unpin_function_name, {ptr}, stop_token);
     }
@@ -444,11 +437,10 @@ public:
 
         for (size_t row_idx = 0; row_idx < num_rows; ++row_idx)
         {
+            for (WasmPtr ptr : pinned_string_args)
+                as_rt.unpinObject(ptr);
+
             pinned_string_args.clear();
-            SCOPE_EXIT({
-                for (WasmPtr ptr : pinned_string_args)
-                    as_rt.unpinObject(ptr);
-            });
 
             for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
             {
@@ -494,10 +486,9 @@ public:
                         case WasmValKind::I64: return compartment->invoke<int64_t>(function_name, wasm_args, stop_token);
                         case WasmValKind::F32: return compartment->invoke<float>(function_name, wasm_args, stop_token);
                         case WasmValKind::F64: return compartment->invoke<double>(function_name, wasm_args, stop_token);
-                        default:
-                            throw Exception(ErrorCodes::WASM_ERROR,
-                                "Unsupported AssemblyScript return kind {}", toString(*ret_kind));
+                        case WasmValKind::V128: return compartment->invoke<Int128>(function_name, wasm_args, stop_token);
                     }
+                    UNREACHABLE();
                 }();
 
                 if (!tryExecuteForNumericTypes(set_numeric_result, ret_val))

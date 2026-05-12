@@ -12,6 +12,7 @@ DROP FUNCTION IF EXISTS as_greet;
 DROP FUNCTION IF EXISTS as_str_repeat;
 DROP FUNCTION IF EXISTS as_str_length;
 DROP FUNCTION IF EXISTS as_concat3;
+DROP FUNCTION IF EXISTS as_add128;
 DELETE FROM system.webassembly_modules WHERE name = 'as_example';
 EOF
 
@@ -50,6 +51,11 @@ CREATE OR REPLACE FUNCTION as_concat3
     FROM 'as_example' :: 'concat3'
     ARGUMENTS (a String, b String, c String) RETURNS String;
 
+CREATE OR REPLACE FUNCTION as_add128
+    LANGUAGE WASM ABI ASSEMBLYSCRIPT
+    FROM 'as_example' :: 'add128'
+    ARGUMENTS (a UInt128, b UInt128) RETURNS UInt128;
+
 SELECT '== numeric ==';
 SELECT as_add(1::UInt32, 2::UInt32);
 SELECT sum(as_add(number::UInt32, (number*2)::UInt32)) FROM numbers(10);
@@ -79,11 +85,22 @@ FROM numbers(2000);
 SELECT count(DISTINCT as_concat3(toString(number), toString(number * 7), toString(number * 13)))
 FROM numbers(500);
 
+SELECT '== v128 ==';
+SELECT as_add128(toUInt128(1), toUInt128(2));
+-- Carry from low into high: (2^64 - 1) + 1 == 2^64.
+SELECT as_add128(toUInt128(toUInt64(-1)), toUInt128(1));
+-- Wrap at 2^128: max UInt128 + 1 == 0.
+SELECT as_add128(toUInt128('340282366920938463463374607431768211455'), toUInt128(1));
+-- Two high-half operands sum cleanly into the high lane.
+SELECT as_add128(toUInt128('18446744073709551616') /* 2^64 */, toUInt128('18446744073709551616'));
+SELECT sum(as_add128(toUInt128(number), toUInt128(number))) FROM numbers(100);
+
 DROP FUNCTION as_add;
 DROP FUNCTION as_double;
 DROP FUNCTION as_greet;
 DROP FUNCTION as_str_repeat;
 DROP FUNCTION as_str_length;
 DROP FUNCTION as_concat3;
+DROP FUNCTION as_add128;
 DELETE FROM system.webassembly_modules WHERE name = 'as_example';
 EOF
