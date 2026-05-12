@@ -310,15 +310,12 @@ void ColumnDynamic::get(size_t n, Field & res) const
     type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
 
-void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnDynamic::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & variant_col = getVariantColumn();
     /// Check if value is not in shared variant.
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
-    {
-        variant_col.getValueNameImpl(name_buf, n, options);
-        return;
-    }
+        return variant_col.getValueNameAndTypeImpl(name_buf, n, options);
 
     /// We should deserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
@@ -327,7 +324,7 @@ void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t
     auto type = decodeDataType(buf);
     const auto col = type->createColumn();
     type->getDefaultSerialization()->deserializeBinary(*col, buf, getFormatSettings());
-    col->getValueNameImpl(name_buf, 0, options);
+    return col->getValueNameAndTypeImpl(name_buf, 0, options);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -856,6 +853,11 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
 
     hash.update(variant_info.variant_names[discr]);
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
+}
+
+void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    variant_column_ptr->updateHashWithValueRange(begin, end, hash);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

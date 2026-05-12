@@ -4,6 +4,7 @@
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -176,7 +177,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
 
         /// If we need to read a subcolumn from variant column, create an empty variant column, fill it and extract subcolumn.
         auto variant_type = DataTypeFactory::instance().get(dynamic_element_name);
-        auto result_type = makeNullableOrLowCardinalityNullableSafe(variant_type);
+        auto result_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(variant_type);
         MutableColumnPtr variant_column = nested_subcolumn.empty() || is_null_map_subcolumn ? result_column->assumeMutable() : result_type->createColumn();
         variant_column->reserve(variant_column->size() + limit);
         MutableColumnPtr non_nullable_variant_column = variant_column->assumeMutable();

@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -106,7 +107,7 @@ public:
             {
                 DataTypePtr element_type = tuple->getElements()[index.value()];
 
-                if (is_input_type_nullable && element_type->canBeInsideNullable())
+                if (is_input_type_nullable && canExtractedSubcolumnsBeInsideNullable(element_type))
                     element_type = std::make_shared<DataTypeNullable>(element_type);
 
                 return wrapInArrays(std::move(element_type), count_arrays);
@@ -217,7 +218,7 @@ public:
                     ColumnPtr merged_null_map = mergeNullMaps(null_map_column, res_nullable->getNullMapColumnPtr());
                     res = ColumnNullable::create(res_nullable->getNestedColumnPtr(), merged_null_map);
                 }
-                else if (element_type->canBeInsideNullable())
+                else if (canExtractedSubcolumnsBeInsideNullable(element_type))
                 {
                     res = ColumnNullable::create(res, null_map_column);
                 }

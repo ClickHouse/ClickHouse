@@ -28,7 +28,11 @@ class FunctionH3GetUnidirectionalEdge : public IFunction
 public:
     static constexpr auto name = "h3GetUnidirectionalEdge";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetUnidirectionalEdge>(); }
+    H3Validator validator;
+
+    explicit FunctionH3GetUnidirectionalEdge(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetUnidirectionalEdge>(context); }
 
     std::string getName() const override { return name; }
 
@@ -96,11 +100,10 @@ public:
         {
             const UInt64 origin = data_hindex_origin[row];
             const UInt64 dest = data_hindex_dest[row];
+            UInt64 res = 0;
 
-            validateH3Cell(origin);
-            validateH3Cell(dest);
-
-            UInt64 res = getUnidirectionalEdge(origin, dest);
+            if (validator.validateCell(origin) && validator.validateCell(dest))
+                res = getUnidirectionalEdge(origin, dest);
             dst_data[row] = res;
         }
 

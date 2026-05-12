@@ -788,7 +788,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Names column_names_to_read = column_names_as_aliases.empty() ? std::move(real_column_names) : std::move(column_names_as_aliases);
 
-            std::erase_if(column_names_to_read, [existing_columns = nested_storage_snapshot->getAllColumnsDescription()](const auto & column_name){ return !existing_columns.has(column_name) && !existing_columns.hasSubcolumn(column_name); });
+            std::erase_if(column_names_to_read, [existing_columns = nested_storage_snapshot->getAllColumnsDescription()](const auto & column_name){ return !existing_columns.has(column_name) && !existing_columns.hasSubcolumn(GetColumnsOptions::All, column_name); });
 
             auto child = createPlanForTable(
                 nested_storage_snapshot,
@@ -1388,10 +1388,9 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     std::function<bool(const String&,const String&)> table_filter;
     if (filter_actions_dag && (filter_by_database_virtual_column || filter_by_table_virtual_column))
     {
-        auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
         Block sample_block = {
-            ColumnWithTypeAndName(lc_string_type, "_database"),
-            ColumnWithTypeAndName(lc_string_type, "_table")
+            ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_database"),
+            ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_table")
         };
         // Extract predicate part, that could be evaluated only with _database and _table columns
         auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block, query_context);
@@ -1399,15 +1398,15 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
             auto filter_column_name = filter_expression->getActionsDAG().getOutputs().at(0)->result_name;
-            table_filter = [filter=std::move(filter_expression), column_name=std::move(filter_column_name), lc_string_type] (const auto& database_name, const auto& table_name)
+            table_filter = [filter=std::move(filter_expression), column_name=std::move(filter_column_name)] (const auto& database_name, const auto& table_name)
             {
-                MutableColumnPtr database_column = lc_string_type->createColumn();
-                MutableColumnPtr table_column = lc_string_type->createColumn();
+                MutableColumnPtr database_column = ColumnString::create();
+                MutableColumnPtr table_column = ColumnString::create();
                 database_column->insert(database_name);
                 table_column->insert(table_name);
                 Block block{
-                    ColumnWithTypeAndName(std::move(database_column), lc_string_type, "_database"),
-                    ColumnWithTypeAndName(std::move(table_column), lc_string_type, "_table")
+                    ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "_database"),
+                    ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "_table")
                 };
                 filter->execute(block);
                 // Valid only when block has exactly one row.

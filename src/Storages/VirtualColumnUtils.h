@@ -15,10 +15,6 @@ class Block;
 class Chunk;
 class NamesAndTypesList;
 
-class ExpressionActions;
-class IMergeTreeDataPart;
-using DataPartsVector = std::vector<std::shared_ptr<const IMergeTreeDataPart>>;
-
 namespace VirtualColumnUtils
 {
 
@@ -44,6 +40,11 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 
 /// Builds sets used by ActionsDAG inplace.
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
+
+/// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
+/// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
+/// Those sets need external tables set up by ReadFromRemote before they can be built.
+void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Builds ordered sets used by ActionsDAG inplace.
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
@@ -144,12 +145,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
 /// Find hive partitioning part inside path
 /// /a/b/c/d=e/f=g/h.i => d=e/f=g
 std::string_view findHivePartitioningInPath(const String & path);
-
-/// Filter data parts by part_name using a precomputed filter expression.
-/// Returns all parts if virtual_columns_filter is null.
-DataPartsVector filterDataPartsWithExpression(
-    const DataPartsVector & data_parts,
-    const std::shared_ptr<ExpressionActions> & virtual_columns_filter);
 
 }
 

@@ -200,10 +200,9 @@ struct DictionaryBlockBase
 struct DictionaryBlock : public DictionaryBlockBase
 {
     DictionaryBlock() = default;
-    DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_);
+    DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_);
 
     std::vector<TokenPostingsInfo> token_infos;
-    UInt64 tokens_format = 0;
 };
 
 struct DictionarySparseIndex : public DictionaryBlockBase
@@ -420,6 +419,7 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     PostingListCodecPtr getPostingListCodec() const { return posting_list_codec.get(); }
+    static DataTypePtr getNestedDataType(const DataTypePtr & data_type);
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenizer> tokenizer;
