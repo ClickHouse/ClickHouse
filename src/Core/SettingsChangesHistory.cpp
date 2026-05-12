@@ -1186,7 +1186,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
-
+            {"add_minmax_index_for_block_number_column", false, false, "New setting."},
+            {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
