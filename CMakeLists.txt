@@ -705,6 +705,11 @@ if (NATIVE_BUILD_TARGETS
             "-DCMAKE_BUILD_TYPE=Release"
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
+            # H3 is provided by the Rust h3o crate; with Rust disabled, the H3
+            # check at the top level would fatal-error. The native helper build
+            # only builds host tools (protoc, grpc_cpp_plugin, pre_compressor)
+            # that do not need H3, so disable it here.
+            "-DENABLE_H3=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
             "-DUSE_BINARY_HASH=${USE_BINARY_HASH}"
         ${PROJECT_SOURCE_DIR}
