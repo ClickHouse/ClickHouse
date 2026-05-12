@@ -184,20 +184,9 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() < 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Wrong argument count for function {}",
-                getName());
-
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected a string",
-                arguments[0]->getName(),
-                getName());
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(const String, Any, ...) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
