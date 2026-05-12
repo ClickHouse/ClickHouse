@@ -815,35 +815,43 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
 void RemoteQueryExecutor::finish()
 {
-    LockAndBlocker guard(was_cancelled_mutex);
+    /// Acquire the cancel mutex only for the state check and `tryCancel`, then release
+    /// it before entering the (potentially long) blocking drain loop. Holding the mutex
+    /// across the loop would cause a concurrent hard cancel (`cancel`, which also takes
+    /// the same mutex) to wait until the drain naturally completes, defeating the
+    /// purpose of the `abortDrain` preemption signal.
+    {
+        LockAndBlocker guard(was_cancelled_mutex);
 
-    /** If one of:
-      * - nothing started to do;
-      * - received all packets before EndOfStream;
-      * - received exception from one replica;
-      * - received an unknown packet from one replica;
-      * - the executor was already cancelled (e.g. by `cancel`) — draining is not safe
-      *   here because the caller asked for a fast cancel; only `PartialResult` callers
-      *   that explicitly want to drain progress should hit `finish` first, which they do
-      *   in `RemoteSource::onCancel` before any `cancel` has set `was_cancelled`;
-      * then you do not need to read anything.
-      */
-    if (!isQueryPending() || hasThrownException() || was_cancelled)
-        return;
+        /** If one of:
+          * - nothing started to do;
+          * - received all packets before EndOfStream;
+          * - received exception from one replica;
+          * - received an unknown packet from one replica;
+          * - the executor was already cancelled (e.g. by `cancel`) — draining is not safe
+          *   here because the caller asked for a fast cancel; only `PartialResult` callers
+          *   that explicitly want to drain progress should hit `finish` first, which they do
+          *   in `RemoteSource::onCancel` before any `cancel` has set `was_cancelled`;
+          * then you do not need to read anything.
+          */
+        if (!isQueryPending() || hasThrownException() || was_cancelled)
+            return;
 
-    /// To make sure finish is only called once
+        /** If you have not read all the data yet, but they are no longer needed.
+          * This may be due to the fact that the data is sufficient (for example, when using LIMIT).
+          */
+
+        /// Send the request to abort the execution of the request, if not already sent.
+        tryCancel("Cancelling query because enough data has been read");
+
+        /// If connections weren't created yet, query wasn't sent or was already finished, nothing to do.
+        if (!connections || !sent_query || finished)
+            return;
+    }
+
+    /// To make sure finish is only called once: `finished` is atomic; we set it on
+    /// exit so subsequent `finish` calls return early via `!isQueryPending()`.
     SCOPE_EXIT({ finished = true; });
-
-    /** If you have not read all the data yet, but they are no longer needed.
-      * This may be due to the fact that the data is sufficient (for example, when using LIMIT).
-      */
-
-    /// Send the request to abort the execution of the request, if not already sent.
-    tryCancel("Cancelling query because enough data has been read");
-
-    /// If connections weren't created yet, query wasn't sent or was already finished, nothing to do.
-    if (!connections || !sent_query || finished)
-        return;
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling `drain` because we want to process `Log`, `ProfileEvents`
@@ -859,10 +867,11 @@ void RemoteQueryExecutor::finish()
     /// flips `finished` when `!hasActiveConnections`.
     while (connections->hasActiveConnections())
     {
-        /// Allow a concurrent hard cancel (via `abortDrain`) to interrupt the drain loop.
-        /// Without this, a long drain (e.g. slow remote) would block user/timeout cancellation
-        /// until all replicas finish, since `cancel` cannot acquire `was_cancelled_mutex`
-        /// while we are holding it here.
+        /// Allow a concurrent hard cancel (via `abortDrain`) to interrupt the drain loop
+        /// between packets. Since `was_cancelled_mutex` is released above before entering
+        /// this loop, the hard-cancel caller can also acquire the mutex (and trigger
+        /// `connections->sendCancel`, prompting replicas to respond with `EndOfStream`)
+        /// without waiting for the drain to complete.
         if (drain_should_stop.load(std::memory_order_acquire))
             break;
 
