@@ -93,4 +93,15 @@ Block VirtualColumnsDescription::getSampleBlock(VirtualsKind kind, VirtualsMater
     return result;
 }
 
+ColumnsDescription VirtualColumnsDescription::toColumnsDescription(VirtualsKind kind, VirtualsMaterializationPlace place) const
+{
+    ColumnsDescription result;
+    for (const auto & desc : container)
+        if (static_cast<UInt8>(desc.kind) & static_cast<UInt8>(kind))
+            if (static_cast<UInt8>(desc.place) & static_cast<UInt8>(place))
+                result.add(static_cast<const ColumnDescription &>(desc));
+
+    return result;
+}
+
 }

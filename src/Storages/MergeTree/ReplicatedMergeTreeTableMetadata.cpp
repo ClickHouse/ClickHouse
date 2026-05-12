@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/IndicesDescription.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTExpressionList.h>
@@ -666,6 +667,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     /// duplicates if an explicit index already exists.
     for (const auto & column : new_metadata.columns)
         new_metadata.addImplicitIndicesForColumn(column, context);
+    new_metadata.addImplicitIndicesForVirtualColumns(context);
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
         new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
