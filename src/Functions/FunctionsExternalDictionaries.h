@@ -1155,15 +1155,9 @@ private:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type of first argument of function {}. Expected String. Actual type {}",
-                getName(),
-                arguments[0]->getName());
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(const String, Any, Any) -> UInt8";
     }
 
     bool isDeterministic() const override { return false; }
