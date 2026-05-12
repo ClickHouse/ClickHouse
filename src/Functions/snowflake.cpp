@@ -116,21 +116,18 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInt64), nullptr, "Int64"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        String timezone;
-        if (arguments.size() == 2)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
-
-        return std::make_shared<DataTypeDateTime>(timezone);
+        /// Try the const-tz alternative first to capture the tz value into the return type;
+        /// fall back to the no-tz form. When the flag is on, the fallback accepts a non-const
+        /// String too (the tz value is unknown at planning, so the result is a tz-less DateTime).
+        if (allow_nonconst_timezone_arguments)
+            return
+                "(Int64, const tz String) -> DateTime(tz)"
+                " OR (Int64, [String]) -> DateTime";
+        return
+            "(Int64, const tz String) -> DateTime(tz)"
+            " OR (Int64) -> DateTime";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -256,21 +253,15 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInt64), nullptr, "Int64"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        String timezone;
-        if (arguments.size() == 2)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
-
-        return std::make_shared<DataTypeDateTime64>(3, timezone);
+        if (allow_nonconst_timezone_arguments)
+            return
+                "(Int64, const tz String) -> DateTime64(3, tz)"
+                " OR (Int64, [String]) -> DateTime64(3)";
+        return
+            "(Int64, const tz String) -> DateTime64(3, tz)"
+            " OR (Int64) -> DateTime64(3)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
