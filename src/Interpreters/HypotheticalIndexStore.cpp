@@ -10,9 +10,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// Matches by UUID when both sides have one (stable across rename, distinguishes
-/// drop-and-recreate). Falls back to (database, table) names for legacy
-/// Ordinary databases where the table has no UUID.
+/// UUID-strict when both sides have one, name-based otherwise (Ordinary databases).
 bool HypotheticalIndexStore::sameTable(const StorageID & a, const StorageID & b)
 {
     if (a.uuid != UUIDHelpers::Nil && b.uuid != UUIDHelpers::Nil)
@@ -38,10 +36,7 @@ bool HypotheticalIndexStore::add(const StorageID & table_id, const IndexDescript
         }
     }
 
-    /// Drop any stale entry for the same `(database, table, name)` whose UUID
-    /// no longer matches — left behind by `DROP TABLE; CREATE TABLE` on the
-    /// same name (the new table gets a fresh UUID, so `sameTable` returns
-    /// false and the old entry would otherwise linger forever).
+    /// Purge stale entries from a previous UUID (DROP TABLE; CREATE TABLE).
     std::erase_if(entries, [&](const Entry & e)
     {
         return e.index.name == index.name
@@ -58,10 +53,7 @@ bool HypotheticalIndexStore::remove(const StorageID & table_id, const String & i
 {
     std::lock_guard lock(mutex);
 
-    /// Prefer a UUID-strict match (handles `ALTER RENAME` correctly), but fall
-    /// back to a `(database, table)` name match so a stale entry left over from
-    /// `DROP TABLE; CREATE TABLE` on the same name can still be removed by the
-    /// user — the new table has a different UUID, so `sameTable` would miss it.
+    /// UUID match first (handles RENAME), then name fallback (DROP/CREATE leftover).
     auto by_uuid = std::find_if(entries.begin(), entries.end(), [&](const Entry & e)
     {
         return e.index.name == index_name && sameTable(e.table_id, table_id);

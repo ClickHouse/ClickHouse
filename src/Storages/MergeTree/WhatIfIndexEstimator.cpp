@@ -179,9 +179,7 @@ bool tryEstimateEmpirical(
     if (index_columns.empty())
         return false;
 
-    /// Counted in data granules (= data marks) so the result is in the same unit as
-    /// baseline_marks / sampled_marks. Each index granule covers `skip_index_granularity`
-    /// data granules; an index granule that's kept means all its data granules are kept.
+    /// Counted in data granules so the result is in the same unit as `baseline_marks`.
     UInt64 total_data_granules = 0;
     UInt64 skipped_data_granules = 0;
     Stopwatch watch;
@@ -196,13 +194,8 @@ bool tryEstimateEmpirical(
         if (mark_ranges.empty())
             continue;
 
-        /// `MergeTreeSequentialSource` tracks `current_mark` internally starting at 0
-        /// and uses it to size each read from `index_granularity->getMarkRows(current_mark)`.
-        /// When `mark_ranges` doesn't start at mark 0 (e.g. after PK pruning), the source's
-        /// internal counter no longer matches the reader's actual position, and on parts
-        /// with non-uniform mark sizes the reader returns more rows than the source asked
-        /// for — tripping a `LOGICAL_ERROR`. Read the whole part instead, then filter the
-        /// per-mark accounting in this loop so only baseline marks contribute to the ratio.
+        /// Read the whole part: `MergeTreeSequentialSource` sizes reads from mark 0, so
+        /// passing pruned ranges trips a `LOGICAL_ERROR` when marks are non-uniform.
         std::vector<bool> in_baseline(part->getMarksCount(), false);
         for (const auto & range : mark_ranges)
             for (size_t m = range.begin; m < range.end && m < in_baseline.size(); ++m)
@@ -227,11 +220,8 @@ bool tryEstimateEmpirical(
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
-        /// Sequential source produces one block per data granule. Each index granule
-        /// covers `skip_index_granularity` data granules (by absolute mark position).
-        /// All data granules feed the aggregator — the index that would actually be
-        /// built in production sees the whole window — but only baseline marks count
-        /// toward kept/skipped.
+        /// Feed every granule to the aggregator (matches what a real index would see),
+        /// but only count baseline marks in kept/skipped.
         auto aggregator = index_helper->createIndexAggregator();
         size_t mark_idx = 0;
         size_t data_granules_in_window = 0;
