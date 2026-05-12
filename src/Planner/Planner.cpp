@@ -2439,7 +2439,11 @@ void Planner::buildPlanForQueryNode()
             addWithFillStepIfNeeded(query_plan, query_analysis_result, expression_analysis_result.getSort(), planner_context, query_node, select_query_options, useful_sets);
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
-        const bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+        /// `isToAggregationState` covers both `WithMergeableStateAfterAggregation` (stage 3) and
+        /// `WithMergeableStateAfterAggregationAndLimit` (stage 4). OFFSET must not be applied at
+        /// either stage because OFFSET means skipping rows from the entire query result, not from each
+        /// shard individually.
+        const bool apply_offset = !query_processing_info.isToAggregationState();
         bool shuffle_limit_applied = false;
         if (query_node.isShuffle())
         {
@@ -2459,12 +2463,6 @@ void Planner::buildPlanForQueryNode()
 
             addShuffleStep(query_plan, shuffle_limit, select_query_options.max_step_description_length);
         }
-
-        /// `isToAggregationState` covers both `WithMergeableStateAfterAggregation` (stage 3) and
-        /// `WithMergeableStateAfterAggregationAndLimit` (stage 4). OFFSET must not be applied at
-        /// either stage because OFFSET means skipping rows from the entire query result, not from each
-        /// shard individually.
-        const bool apply_offset = !query_processing_info.isToAggregationState();
         if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
 
