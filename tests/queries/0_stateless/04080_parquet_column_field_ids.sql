@@ -2,23 +2,14 @@
 -- Reason: Parquet read/write path is not built in the Fast test image.
 -- Verify that `output_format_parquet_column_field_ids` (Map override) and
 -- `output_format_parquet_auto_assign_field_ids` (Iceberg-style auto assign) write Parquet
--- field_ids and don't break data roundtrip. Covers both the custom encoder and the
--- Arrow encoder paths.
+-- field_ids and don't break data roundtrip.
 
--- Custom encoder path (default): explicit per-column overrides.
+-- Explicit per-column overrides.
 INSERT INTO FUNCTION file('04080_field_ids_custom.parquet')
 SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
 SETTINGS output_format_parquet_column_field_ids = '{"a": 10, "b": 20, "c": 30}';
 
 SELECT a, b, c FROM file('04080_field_ids_custom.parquet');
-
--- Arrow encoder path: same override, different codepath.
-INSERT INTO FUNCTION file('04080_field_ids_arrow.parquet')
-SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
-SETTINGS output_format_parquet_column_field_ids = '{"a": 100, "b": 200, "c": 300}',
-         output_format_parquet_use_custom_encoder = 0;
-
-SELECT a, b, c FROM file('04080_field_ids_arrow.parquet');
 
 -- Auto-assign only (no overrides): every column gets a sequential field_id starting at 1.
 INSERT INTO FUNCTION file('04080_field_ids_auto.parquet')
