@@ -247,25 +247,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        const auto model_name_argument_type = WhichDataType(arguments[0].type);
-        if (!model_name_argument_type.isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function {} first argument type should be String. Actual {}",
-                getName(),
-                arguments[0].type->getName());
-
-        const auto input_text_argument_type = WhichDataType(arguments[1].type);
-        if (!input_text_argument_type.isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function {} second argument type should be String. Actual {}",
-                getName(),
-                arguments[1].type->getName());
-
-        return std::make_shared<DataTypeUInt32>();
+        return "(StringOrFixedString, StringOrFixedString) -> UInt32";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
