@@ -389,6 +389,24 @@ public:
 };
 
 
+/// removeNullable(T) → unwraps an outer Nullable, leaving non-Nullable types unchanged.
+/// Used by functions like coalesce that strip Nullable from intermediate arguments before
+/// computing a common supertype.
+class TypeFunctionRemoveNullable : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function removeNullable");
+
+        return Value(removeNullable(args.front().type()));
+    }
+
+    std::string name() const override { return "removeNullable"; }
+};
+
+
 /// IntervalType('week') → DataTypeInterval(Kind::Week). Used by functions that take a
 /// constant string naming an interval unit and return an Interval-typed value, such as
 /// `toInterval(value, 'day')`.
@@ -465,6 +483,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionDictionaryTypeOf>();
     factory.registerElement<TypeFunctionIntervalType>();
     factory.registerElement<TypeFunctionAggregateFunctionType>();
+    factory.registerElement<TypeFunctionRemoveNullable>();
 
     /// Predicates.
     factory.registerElement<TypeFunctionTuplesHaveSameSize>();
