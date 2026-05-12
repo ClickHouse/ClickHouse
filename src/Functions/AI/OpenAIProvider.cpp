@@ -210,6 +210,11 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     if (!data_arr)
         throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER, "AI embedding response is missing 'data' array");
 
+    if (data_arr->size() != ai_embedding_request.inputs.size())
+        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "AI embedding response 'data' has {} entries but {} were requested",
+            data_arr->size(), ai_embedding_request.inputs.size());
+
     for (unsigned i = 0; i < data_arr->size(); ++i)
     {
         auto item = data_arr->getObject(i);

@@ -48,7 +48,7 @@ CREATE NAMED COLLECTION ai_no_provider AS
     api_key = 'fake-key';
 
 SELECT '-- Named collection missing provider';
-SELECT aiGenerate('ai_no_provider', x) FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('ai_no_provider', 'hi'); -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_provider;
 
@@ -59,7 +59,7 @@ CREATE NAMED COLLECTION ai_no_endpoint AS
     api_key = 'fake-key';
 
 SELECT '-- Named collection missing endpoint';
-SELECT aiGenerate('ai_no_endpoint', x) FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('ai_no_endpoint', 'hi'); -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_endpoint;
 
@@ -70,7 +70,7 @@ CREATE NAMED COLLECTION ai_no_model AS
     api_key = 'fake-key';
 
 SELECT '-- Named collection missing model';
-SELECT aiGenerate('ai_no_model', x) FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('ai_no_model', 'hi'); -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_model;
 
@@ -81,7 +81,7 @@ CREATE NAMED COLLECTION ai_no_api_key AS
     model = 'test-model';
 
 SELECT '-- Named collection missing api_key';
-SELECT aiGenerate('ai_no_api_key', x) FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('ai_no_api_key', 'hi'); -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_api_key;
 
@@ -150,7 +150,7 @@ CREATE NAMED COLLECTION ai_bad_provider AS
     api_key = 'fake-key';
 
 SELECT '-- Unknown provider name';
-SELECT aiGenerate('ai_bad_provider', x) FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('ai_bad_provider', 'hi'); -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_bad_provider;
 
@@ -303,16 +303,16 @@ SELECT '-- aiExtract: JSON schema mode accepted';
 SELECT count() FROM (SELECT aiExtract('ai_credentials', x, '{"topic":"main topic","sentiment":"pos/neg"}') AS result FROM tab);
 
 SELECT '-- aiExtract: malformed JSON schema';
-SELECT aiExtract('ai_credentials', x, '{invalid') FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiExtract('ai_credentials', 'hi', '{invalid'); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiExtract: JSON schema with non-string value';
-SELECT aiExtract('ai_credentials', x, '{"a":null}') FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiExtract('ai_credentials', 'hi', '{"a":null}'); -- { serverError BAD_ARGUMENTS }
 
 -- Leading whitespace before the `{` must still be routed to schema mode, otherwise a malformed
 -- JSON would be silently accepted as a free-text instruction.
 SELECT '-- aiExtract: schema mode detection ignores leading whitespace';
-SELECT aiExtract('ai_credentials', x, '   {invalid') FROM tab; -- { serverError BAD_ARGUMENTS }
-SELECT aiExtract('ai_credentials', x, '\n\t {invalid') FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiExtract('ai_credentials', 'hi', '   {invalid'); -- { serverError BAD_ARGUMENTS }
+SELECT aiExtract('ai_credentials', 'hi', '\n\t {invalid'); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiExtract: with temperature';
 SELECT count() FROM (SELECT aiExtract('ai_credentials', x, 'main topic', 0.0) AS result FROM tab);

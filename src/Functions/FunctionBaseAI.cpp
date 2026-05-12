@@ -103,6 +103,8 @@ FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection
     if (config.api_key.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'api_key'", config.collection_name);
 
+    context->getRemoteHostFilter().checkURL(Poco::URI(config.endpoint));
+
     return config;
 }
 
@@ -144,6 +146,9 @@ float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & argument
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    if (input_rows_count == 0)
+        return result_type->createColumn();
+
     checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
 
     /// A Nullable prompt can arrive as `ColumnNullable` or as `ColumnConst(ColumnNullable)` (e.g. `NULL::Nullable(String)`).
@@ -158,7 +163,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     }
 
     auto config = resolveConfig(arguments);
-    getContext()->getRemoteHostFilter().checkURL(Poco::URI(config.endpoint));
     auto provider = createAIProvider(config.provider, config.endpoint, config.api_key, config.api_version);
     float temperature = resolveTemperature(arguments, config);
 

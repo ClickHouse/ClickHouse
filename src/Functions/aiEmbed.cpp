@@ -24,8 +24,7 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 
-#include <thread>
-#include <unordered_map>
+#include <thread> /// thread::sleep for retry backoff
 
 namespace ProfileEvents
 {
@@ -91,7 +90,7 @@ public:
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    /// Handle Nullable cols explicitly, since setting this to true may call functions with arbitrary input values
+    /// Handle Nullable cols explicitly, since setting this to true may call func with arbitrary input values
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return false; }
 
@@ -115,7 +114,6 @@ public:
             return result_type->createColumn();
 
         auto nc = FunctionBaseAI::resolveAINamedCollection(getContext(), arguments[0].column);
-        getContext()->getRemoteHostFilter().checkURL(Poco::URI(nc.endpoint));
 
         UInt64 dimensions = 0;
         if (arguments.size() > 2)
@@ -156,38 +154,38 @@ public:
             ? text_nullable->getNestedColumn()
             : *arguments[text_arg_index].column;
 
-        /// Deduplicate identical texts within the batch: each unique text is sent once and the result is reused for every row that had it.
-        std::unordered_map<String, std::vector<size_t>> dedup_map;
+        /// Collect the indices of rows that actually need an HTTP call: non-null and non-empty.
+        /// Null rows -> NULL via the null map; empty-string rows map to `[]`
+        std::vector<size_t> live_rows;
+        live_rows.reserve(input_rows_count);
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (text_nullable && text_nullable->getNullMapData()[i])
                 continue;
-            String text(text_data_column.getDataAt(i));
-            if (!text.empty())
-                dedup_map[std::move(text)].push_back(i);
+            if (text_data_column.getDataAt(i).empty())
+                continue;
+            live_rows.push_back(i);
         }
 
-        std::vector<String> unique_texts;
-        unique_texts.reserve(dedup_map.size());
-        for (const auto & [text, _] : dedup_map)
-            unique_texts.push_back(text);
-
-        std::unordered_map<String, std::vector<Float32>> results;
+        std::vector<std::vector<Float32>> embeddings(input_rows_count);
 
         UInt64 total_api_calls = 0;
         UInt64 total_input_tokens = 0;
 
-        for (size_t batch_start = 0; batch_start < unique_texts.size(); batch_start += max_batch_size)
+        for (size_t batch_start = 0; batch_start < live_rows.size(); batch_start += max_batch_size)
         {
             if (quota.checkQuotas())
                 break;
 
-            size_t batch_end = std::min(batch_start + max_batch_size, unique_texts.size());
+            size_t batch_end = std::min(batch_start + max_batch_size, live_rows.size());
 
             AIEmbeddingRequest ai_embedding_request;
             ai_embedding_request.model = nc.model;
             ai_embedding_request.dimensions = dimensions;
-            ai_embedding_request.inputs.assign(unique_texts.begin() + batch_start, unique_texts.begin() + batch_end);
+            ai_embedding_request.inputs.reserve(batch_end - batch_start);
+
+            for (size_t k = batch_start; k < batch_end; ++k)
+                ai_embedding_request.inputs.emplace_back(text_data_column.getDataAt(live_rows[k]));
 
             for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
             {
@@ -198,11 +196,10 @@ public:
                     total_input_tokens += ai_embedding_response.input_tokens;
                     quota.recordResponse(ai_embedding_response.input_tokens, 0);
 
-                    for (size_t i = 0; i < ai_embedding_request.inputs.size(); ++i)
-                    {
-                        if (i < ai_embedding_response.embeddings.size())
-                            results[ai_embedding_request.inputs[i]] = std::move(ai_embedding_response.embeddings[i]);
-                    }
+                    chassert(ai_embedding_response.embeddings.size() == ai_embedding_request.inputs.size(),
+                        "Number of inputs does not match number of output embeddings");
+                    for (size_t k = 0; k < ai_embedding_response.embeddings.size(); ++k)
+                        embeddings[live_rows[batch_start + k]] = std::move(ai_embedding_response.embeddings[k]);
                     break;
                 }
                 catch (const Exception & e)
@@ -213,14 +210,14 @@ public:
                         continue;
                     }
 
-                    if (!throw_on_error) /// just skip to next batch, this batch's results will be filled with default vals
+                    if (!throw_on_error) /// just skip to next batch, this batch's rows are left with empty embeddings
                         break;
 
                     throw;
                 }
                 catch (...) /// Handle non-DB exceptions (e.g. Poco network/JSON errors) for throw_on_error semantics
                 {
-                    if (!throw_on_error) /// just skip to next batch, this batch's results will be filled with default vals
+                    if (!throw_on_error) /// just skip to next batch, this batch's rows are left with empty embeddings
                         break;
 
                     throw;
@@ -228,31 +225,26 @@ public:
             }
         }
 
-        auto data_col = ColumnVector<Float32>::create();
+        auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
         auto offsets_col = ColumnArray::ColumnOffsets::create();
         auto & data_vec = data_col->getData();
         auto & offsets_vec = offsets_col->getData();
         offsets_vec.reserve(input_rows_count);
 
+        /// If dimensions is set we can reserve, otherwise we don't know what the dimension will be
+        if (dimensions > 0)
+            data_vec.reserve(live_rows.size() * dimensions);
+
         UInt64 rows_processed = 0;
         UInt64 rows_skipped = 0;
         UInt64 current_offset = 0;
 
-        std::vector<const std::vector<Float32> *> row_to_embedding(input_rows_count, nullptr);
-        for (const auto & [text, rows] : dedup_map)
-        {
-            auto it = results.find(text);
-            if (it == results.end() || it->second.empty())
-                continue;
-            for (size_t row : rows)
-                row_to_embedding[row] = &it->second;
-        }
-
+        /// Match embeddings back to input rows
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            if (row_to_embedding[i])
+            const auto & vec = embeddings[i];
+            if (!vec.empty())
             {
-                const auto & vec = *row_to_embedding[i];
                 data_vec.insert(data_vec.end(), vec.begin(), vec.end());
                 current_offset += vec.size();
                 ++rows_processed;
@@ -276,9 +268,9 @@ public:
             if (text_nullable)
             {
                 auto & null_map_data = null_map_col->getData();
-                const auto & src_null_map = text_nullable->getNullMapData();
+                const auto & null_map_src = text_nullable->getNullMapData();
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    null_map_data[i] = src_null_map[i];
+                    null_map_data[i] = null_map_src[i];
             }
             return ColumnNullable::create(std::move(array_col), std::move(null_map_col));
         }
@@ -301,9 +293,9 @@ REGISTER_FUNCTION(AiEmbed)
 Generates an embedding vector for the given text using the configured AI provider.
 
 The function sends the text to the configured embedding endpoint and returns the resulting vector as `Array(Float32)`.
-Identical texts within a query are deduplicated and sent to the provider once. Unique texts are grouped into
-batches of up to [`ai_function_embedding_max_batch_size`](/operations/settings/settings#ai_function_embedding_max_batch_size)
-entries per HTTP request.
+Within a single block of rows, inputs are grouped into batches of up to
+[`ai_function_embedding_max_batch_size`](/operations/settings/settings#ai_function_embedding_max_batch_size)
+entries per HTTP request to reduce per-call overhead.
 
 The first argument is a named collection that specifies the provider, model, endpoint, and API key.
 The optional `dimensions` argument, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
