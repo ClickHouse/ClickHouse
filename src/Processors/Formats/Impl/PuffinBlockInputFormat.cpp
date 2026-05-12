@@ -285,7 +285,7 @@ Chunk PuffinInputFormat::read()
     ColumnArray::Offset rows_offset = 0;
     const auto & blob = footer.blobs[blob_index++];
 
-    if (blob.type.find("deletion-vector") == String::npos)
+    if (blob.type != "deletion-vector")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse supports only deletion vector blobs. Datasketches deletion vectors are not supported");
 
     auto blob_buf = readBlobBytes(blob, *in, footer.data);
