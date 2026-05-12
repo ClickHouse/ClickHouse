@@ -149,7 +149,7 @@ public:
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
+    String getSignatureString() const override { return "(String, Any, ...) -> String"; }
 
 private:
     const char * function_name;

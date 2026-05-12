@@ -62,6 +62,23 @@ public:
     std::string name() const override { return "Array"; }
 };
 
+class TypeFunctionTuple : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function Tuple requires at least one element");
+        DataTypes elems;
+        elems.reserve(args.size());
+        for (const Value & arg : args)
+            elems.emplace_back(arg.type());
+        return Value(DataTypePtr(std::make_shared<DataTypeTuple>(elems)));
+    }
+
+    std::string name() const override { return "Tuple"; }
+};
+
 class TypeFunctionFixedString : public ITypeFunction
 {
 public:
@@ -301,6 +318,7 @@ void registerTypeFunctions()
 
     factory.registerElement<TypeFunctionLeastSupertype>();
     factory.registerElement<TypeFunctionArray>();
+    factory.registerElement<TypeFunctionTuple>();
     factory.registerElement<TypeFunctionFixedString>();
     factory.registerElement<TypeFunctionDateTime>();
     factory.registerElement<TypeFunctionDateTime64>();
