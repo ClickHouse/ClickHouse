@@ -33,9 +33,9 @@ public:
         return false;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt8>();
+        return "(Any) -> UInt8";
     }
 
     size_t getNumberOfArguments() const override

@@ -34,19 +34,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0].type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                arguments[0].type->getName(),
-                getName());
-
         if constexpr (std::is_same_v<ResultType, UInt16>)
-            return std::make_shared<DataTypeUInt16>();
+            return "(String) -> UInt16";
         else if constexpr (std::is_same_v<ResultType, Float64>)
-            return std::make_shared<DataTypeFloat64>();
+            return "(String) -> Float64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

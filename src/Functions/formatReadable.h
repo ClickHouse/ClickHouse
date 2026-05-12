@@ -47,14 +47,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const IDataType & type = *arguments[0];
-
-        if (!isNumber(type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} because it's not a numeric type", type.getName());
-
-        return std::make_shared<DataTypeString>();
+        return "(Number) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
