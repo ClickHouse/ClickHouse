@@ -204,15 +204,13 @@ try
     {
         prof_active = read_mallctl("prof.active", std::type_identity<bool>{});
         lg_sample = read_mallctl("prof.lg_sample", std::type_identity<size_t>{});
-        try
-        {
-            thread_active_init = Jemalloc::getThreadProfileInitMib().getValue();
-        }
-        catch (...)
-        {
-            tryLogCurrentException("KeeperJemallocStatusHandler", "Failed to read prof.thread_active_init");
+        /// MibCache::tryGetValue rather than getValue: surface mallctl absence as a JSON `errors`
+        /// entry instead of asserting in debug builds (jemalloc may be built without prof.*).
+        bool tai = false;
+        if (Jemalloc::getThreadProfileInitMib().tryGetValue(tai))
+            thread_active_init = tai;
+        else
             errors.add("prof.thread_active_init");
-        }
     }
     else if (prof_enabled.has_value())
     {

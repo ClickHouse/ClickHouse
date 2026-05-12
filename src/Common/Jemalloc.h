@@ -90,30 +90,53 @@ void verifySetup(
 
 /// Each mallctl call consists of string name lookup which can be expensive.
 /// This can be avoided by translating name to "Management Information Base" (MIB)
-/// and using it in mallctlbymib calls
+/// and using it in mallctlbymib calls.
+///
+/// The name-to-MIB translation can fail when the mallctl is not compiled into the
+/// running jemalloc (e.g. `prof.*` on builds without `JEMALLOC_PROF`). When that
+/// happens, `getValue` asserts; callers that must tolerate the absence (HTTP
+/// status handlers, optional metrics) use `tryGetValue` instead.
 template <typename T>
 struct MibCache
 {
     explicit MibCache(const char * name)
     {
-        je_mallctlnametomib(name, mib, &mib_length);
+        valid = (je_mallctlnametomib(name, mib, &mib_length) == 0);
     }
+
+    bool isValid() const { return valid; }
 
     void setValue(T value) const
     {
+        if (!valid)
+            return;
         je_mallctlbymib(mib, mib_length, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
     }
 
+    /// Read the value via the cached MIB. Returns false if either the name translation failed
+    /// at construction or the read itself failed; in both cases `out` is left untouched.
+    bool tryGetValue(T & out) const
+    {
+        if (!valid)
+            return false;
+        size_t value_size = sizeof(T);
+        return je_mallctlbymib(mib, mib_length, &out, &value_size, nullptr, 0) == 0;
+    }
+
+    /// Strict variant: asserts that the read succeeded. Mirrors `Jemalloc::getValue`.
+    /// Use `tryGetValue` when the mallctl may be absent.
     T getValue() const
     {
         T value{};
-        size_t value_size = sizeof(T);
-        je_mallctlbymib(mib, mib_length, &value, &value_size, nullptr, 0);
+        [[maybe_unused]] const bool ok = tryGetValue(value);
+        chassert(ok, "Failed to read jemalloc value via MIB");
         return value;
     }
 
     void run() const
     {
+        if (!valid)
+            return;
         je_mallctlbymib(mib, mib_length, nullptr, nullptr, nullptr, 0);
     }
 
@@ -121,6 +144,7 @@ private:
     static constexpr size_t max_mib_length = 4;
     size_t mib[max_mib_length];
     size_t mib_length = max_mib_length;
+    bool valid = false;
 };
 
 const MibCache<bool> & getThreadProfileActiveMib();
