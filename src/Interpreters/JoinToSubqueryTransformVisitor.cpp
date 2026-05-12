@@ -222,6 +222,39 @@ private:
                         IASTColumnsTransformer::transform(transformer, columns);
                 }
             }
+            else if (const auto * qualified_columns_regexp_matcher = child->as<ASTQualifiedColumnsRegexpMatcher>())
+            {
+                has_asterisks = true;
+
+                if (!qualified_columns_regexp_matcher->qualifier)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified COLUMNS matcher must have a qualifier");
+
+                auto & identifier = qualified_columns_regexp_matcher->qualifier->as<ASTIdentifier &>();
+
+                String pattern = qualified_columns_regexp_matcher->getPattern();
+                re2::RE2 regexp(pattern, re2::RE2::Quiet);
+                if (!regexp.ok())
+                    throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                        "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
+
+                data.addTableColumns(
+                    identifier.name(),
+                    columns,
+                    [&](const String & column_name) { return re2::RE2::PartialMatch(column_name, regexp); });
+
+                if (qualified_columns_regexp_matcher->transformers)
+                {
+                    for (const auto & transformer : qualified_columns_regexp_matcher->transformers->children)
+                    {
+                        if (transformer->as<ASTColumnsApplyTransformer>() ||
+                            transformer->as<ASTColumnsExceptTransformer>() ||
+                            transformer->as<ASTColumnsReplaceTransformer>())
+                            IASTColumnsTransformer::transform(transformer, columns);
+                        else
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified COLUMNS matcher must only have children of IASTColumnsTransformer type");
+                    }
+                }
+            }
             else
                 data.new_select_expression_list->children.push_back(child);
 
