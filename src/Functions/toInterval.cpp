@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <array>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -22,12 +23,16 @@ namespace ErrorCodes
 namespace
 {
 
+constexpr size_t num_interval_kinds = static_cast<size_t>(IntervalKind::Kind::Year) + 1;
+using IntervalFunctionResolvers = std::array<FunctionOverloadResolverPtr, num_interval_kinds>;
+
 class FunctionToInterval : public IFunction
 {
 public:
     static constexpr auto name = "toInterval";
 
-    FunctionToInterval(ContextPtr context_, IntervalKind kind_) : context(context_), kind(kind_) {}
+    FunctionToInterval(IntervalFunctionResolvers to_interval_functions_, IntervalKind kind_)
+        : to_interval_functions(std::move(to_interval_functions_)), kind(kind_) {}
 
     String getName() const override { return name; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -52,14 +57,12 @@ public:
         ColumnsWithTypeAndName temp_columns(1);
         temp_columns[0] = arguments[0];
 
-        const char * to_interval_function_name = kind.toNameOfFunctionToIntervalDataType();
-        auto to_interval_function = FunctionFactory::instance().get(to_interval_function_name, context);
-
+        const auto & to_interval_function = to_interval_functions[static_cast<size_t>(kind.kind)];
         return to_interval_function->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry run = */ false);
     }
 
 private:
-    ContextPtr context;
+    IntervalFunctionResolvers to_interval_functions;
     IntervalKind kind;
 };
 
@@ -68,7 +71,15 @@ class FunctionToIntervalOverloadResolver : public IFunctionOverloadResolver
 public:
     static constexpr auto name = "toInterval";
 
-    explicit FunctionToIntervalOverloadResolver(ContextPtr context_) : context(context_) {}
+    explicit FunctionToIntervalOverloadResolver(ContextPtr context)
+    {
+        auto & factory = FunctionFactory::instance();
+        for (size_t i = 0; i < num_interval_kinds; ++i)
+        {
+            IntervalKind ik(static_cast<IntervalKind::Kind>(i));
+            to_interval_functions[i] = factory.get(ik.toNameOfFunctionToIntervalDataType(), context);
+        }
+    }
 
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<FunctionToIntervalOverloadResolver>(context); }
 
@@ -116,7 +127,7 @@ public:
         if (!IntervalKind::tryParseString(interval_kind, kind.kind))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like an interval unit in {}", interval_kind, getName());
 
-        auto function = std::make_shared<FunctionToInterval>(context, kind);
+        auto function = std::make_shared<FunctionToInterval>(to_interval_functions, kind);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -126,7 +137,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    IntervalFunctionResolvers to_interval_functions;
 };
 
 }

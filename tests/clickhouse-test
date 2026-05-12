@@ -987,7 +987,11 @@ def get_stacktraces_from_clickhouse(args):
     return shell_get_output(msg)
 
 def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[str]]:
-    ps = shell_get_output("ps -eo pid,ppid,pgid,command").splitlines()[1:]
+    # -ww disables line-width truncation of the command column.  Without it,
+    # ps cuts the cmdline at 80 chars when stdout is not a TTY, which can hide
+    # the "clickhouse-server" substring when the binary lives deep in the
+    # filesystem (e.g. /home/ubuntu/actions-runner/_work/.../ci/tmp/...).
+    ps = shell_get_output("ps -ww -eo pid,ppid,pgid,command").splitlines()[1:]
     ps = [p.split(None, 3) for p in ps]
     ps = [[int(p[0]), int(p[1]), int(p[2]), p[3]] for p in ps]
 
@@ -1006,7 +1010,7 @@ def get_all_server_pids():
     return [p[0] for p in pgrep(pgid=pgid, command="clickhouse-server")]
 
 
-def is_asan_build():
+def is_asan_build(args):
     """Check if the server is an ASan build — gdb disables LeakSanitizer detections."""
     try:
         result = clickhouse_execute(
@@ -1019,14 +1023,14 @@ def is_asan_build():
         return bool(os.environ.get("ASAN_OPTIONS"))
 
 
-def print_stacktraces() -> None:
+def print_stacktraces(args) -> None:
     server_pid = get_server_pid()
 
     bt = None
 
     # Collect gdb stacktraces from all server processes (main + replicas).
     # Skip gdb under ASan — it disables LeakSanitizer detections.
-    if not is_asan_build():
+    if not is_asan_build(args):
         all_pids = get_all_server_pids()
         if all_pids:
             parts = []
@@ -1052,8 +1056,8 @@ def print_stacktraces() -> None:
 
     print(
         colored(
-            f"\nUnable to locate ClickHouse server process listening at TCP port "
-            f"{args.tcp_port}. It must have crashed or exited prematurely!",
+            f"\nUnable to locate any ClickHouse server process. "
+            f"It must have crashed or exited prematurely!",
             args,
             "red",
             attrs=["bold"],
@@ -1062,22 +1066,15 @@ def print_stacktraces() -> None:
 
 
 def get_server_pid():
-    # lsof does not work in stress tests for some reason
-    cmd_lsof = f"lsof -i tcp:{args.tcp_port} -s tcp:LISTEN -Fp | sed 's/^p//p;d'"
-    cmd_pidof = "pidof -s clickhouse-server"
-
-    commands = [cmd_lsof, cmd_pidof]
-    output = None
-
-    for cmd in commands:
-        try:
-            output = shell_get_output(cmd)
-            if output:
-                return int(output)
-        except Exception as e:
-            print(f"Cannot get server pid with {cmd}, got {output}: {e}")
-
-    return None  # most likely server is dead
+    # Use the portable pgrep helper (built on `ps -eo pid,ppid,pgid,command`)
+    # so this works on both Linux and macOS — `pidof` does not exist on
+    # macOS, and `lsof -i tcp:PORT` would require knowing the port (only
+    # available on `args`, which is undefined in multiprocessing children
+    # spawned with the `spawn` start method).
+    procs = pgrep(command="clickhouse-server")
+    if not procs:
+        return None  # most likely server is dead
+    return procs[0][0]
 
 
 def colored(text, args, color=None, on_color=None, attrs=None):
@@ -4002,7 +3999,7 @@ class GlobalTimeout(Exception):
     pass
 
 
-def run_diagnose_from_artifacts(args, server_died):
+def run_diagnose_from_artifacts(args, stop_testing):
     """Read saved randomized settings artifacts and run diagnosis for each entry."""
     entries = load_random_settings_artifacts(args)
     if not entries:
@@ -4029,7 +4026,7 @@ def run_diagnose_from_artifacts(args, server_died):
     results_path = get_random_settings_diagnostics_results_path(args)
     # Non-zero exit code is reserved for unexpected script termination
     # (e.g. uncaught exception in the diagnosis machinery). Environmental
-    # conditions like server_died are not script failures — they are
+    # conditions like stop_testing are not script failures — they are
     # already surfaced by the main test stage, so the diagnostics stage
     # should exit cleanly when interrupted by them.
     exit_code = 0
@@ -4040,9 +4037,9 @@ def run_diagnose_from_artifacts(args, server_died):
             settings = entry.get("settings", {})
             mt_settings = entry.get("merge_tree_settings", {})
 
-            # Server died — stop diagnosing further tests but exit cleanly:
-            # the main test stage has already reported the server failure.
-            if server_died.is_set():
+            # Testing stopped — stop diagnosing further tests but exit cleanly:
+            # the main test stage has already reported the failure.
+            if stop_testing.is_set():
                 break
 
             # Find the test case file across suites
@@ -4151,7 +4148,7 @@ def run_tests_array(
         is_concurrent,
         args,
         exit_code,
-        server_died,
+        stop_testing,
         workers_to_shed,
         restarted_tests,
         process_index,
@@ -4227,7 +4224,7 @@ def run_tests_array(
         else:
             break
 
-        if server_died.is_set():
+        if stop_testing.is_set():
             stop_tests()
             raise ServerDied("Server died")
 
@@ -4312,14 +4309,16 @@ def run_tests_array(
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
+                    print_stacktraces(args)
                     stop_tests()
-                    server_died.set()
+                    stop_testing.set()
                     raise ServerDied("Server died")
                 if args.max_failures > 0:
                     with total_failures_shared.get_lock():
                         total_failures_shared.value += 1
                         if total_failures_shared.value >= args.max_failures:
                             stop_tests()
+                            stop_testing.set()
                             raise ServerDied(f"Reached --max-failures limit ({args.max_failures})")
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
@@ -4331,6 +4330,7 @@ def run_tests_array(
 
         if failures_chain >= args.max_failures_chain:
             stop_tests()
+            stop_testing.set()
             raise ServerDied("Max failures chain")
 
     if failures_total > 0:
@@ -4650,7 +4650,7 @@ def do_run_tests(
     args,
     exit_code,
     restarted_tests,
-    server_died,
+    stop_testing,
     runner_process_killed,
 ):
     print(
@@ -4715,7 +4715,7 @@ def do_run_tests(
                         True,
                         args,
                         exit_code,
-                        server_died,
+                        stop_testing,
                         workers_to_shed,
                         restarted_tests,
                         i,  # process index
@@ -4769,10 +4769,11 @@ def do_run_tests(
             if args.hung_check:
                 if not check_server_liveness(args):
                     print("Hung check failed: server is not responding")
-                    server_died.set()
+                    print_stacktraces(args)
+                    stop_testing.set()
 
-            if server_died.is_set():
-                print("Server died, terminating all processes...")
+            if stop_testing.is_set():
+                print("Stopping tests, terminating all processes...")
                 # Wait briefly for test results to be written
                 sleep(5)
                 for p in processes:
@@ -4810,7 +4811,7 @@ def do_run_tests(
                 False,
                 args,
                 exit_code,
-                server_died,
+                stop_testing,
                 multiprocessing.Value('i', 0),  # sequential runner is never shed
                 restarted_tests,
                 jobs + 1,
@@ -5061,7 +5062,7 @@ def try_get_skip_list(base_dir, name, remove_comment=True):
 
 def main(args):
     exit_code = multiprocessing.Value("i", 0)
-    server_died = multiprocessing.Event()
+    stop_testing = multiprocessing.Event()
     runner_process_killed = multiprocessing.Event()
     multiprocessing_manager = multiprocessing.Manager()
     restarted_tests = multiprocessing_manager.list()
@@ -5073,7 +5074,7 @@ def main(args):
             print(msg)
             pid = get_server_pid()
             print("Got server pid", pid)
-            print_stacktraces()
+            print_stacktraces(args)
         raise TestException(msg)
 
     if args.cloud:
@@ -5207,7 +5208,7 @@ def main(args):
             create_common_database(args, "test")
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
-        server_died.set()
+        stop_testing.set()
         raise
 
     if (
@@ -5371,7 +5372,7 @@ ORDER BY (test_name, callee_offset)
         cloud_skip_errors_list += ["Cannot attach table with UUID"]
 
     if args.diagnose_random_settings:
-        diag_exit_code = run_diagnose_from_artifacts(args, server_died)
+        diag_exit_code = run_diagnose_from_artifacts(args, stop_testing)
         # Exit immediately: post-run checks below (hung check, coverage export,
         # log stats, etc.) assume a completed test run and would surface spurious
         # failures in diagnose mode. Any real diagnostics error is already in
@@ -5385,7 +5386,7 @@ ORDER BY (test_name, callee_offset)
             pass
 
         for suite in sorted(os.listdir(base_dir), key=suite_key_func):
-            if server_died.is_set():
+            if stop_testing.is_set():
                 break
 
             test_suite = TestSuite.read_test_suite(args, suite)
@@ -5403,11 +5404,11 @@ ORDER BY (test_name, callee_offset)
                 args,
                 exit_code,
                 restarted_tests,
-                server_died,
+                stop_testing,
                 runner_process_killed,
             )
 
-    if server_died.is_set():
+    if stop_testing.is_set():
         exit_code.value = 1
 
     if runner_process_killed.is_set():
@@ -5476,7 +5477,7 @@ ORDER BY (test_name, callee_offset)
             print(processlist.decode())
             print(get_transactions_list(args))
 
-            print_stacktraces()
+            print_stacktraces(args)
             exit_code.value = 1
         elif not hung_check_failed:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
