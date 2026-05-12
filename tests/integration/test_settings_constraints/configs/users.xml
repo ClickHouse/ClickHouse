@@ -35,6 +35,17 @@
         <no_dll_profile>
             <allow_ddl>0</allow_ddl>
         </no_dll_profile>
+
+        <!-- Same constraint as <merge_tree_enable_block_number_column> above, but declared
+             via the alias name. Used to exercise the reverse direction (constraint on alias,
+             query via canonical) of MergeTreeSettings alias resolution. -->
+        <alias_constraint_profile>
+            <constraints>
+                <merge_tree_allow_experimental_block_number_column>
+                    <const/>
+                </merge_tree_allow_experimental_block_number_column>
+            </constraints>
+        </alias_constraint_profile>
     </profiles>
 
     <users>
@@ -62,6 +73,14 @@
             <profile>no_dll_profile</profile>
             <quota>default</quota>
         </no_dll_user>
+        <alias_constraint_user>
+            <password></password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>alias_constraint_profile</profile>
+            <quota>default</quota>
+        </alias_constraint_user>
     </users>
 
     <quotas>

@@ -227,37 +227,37 @@ def test_disallowed_constraint_merge_tree(started_cluster):
 
 def test_merge_tree_setting_constraint_via_alias(started_cluster):
     """The MergeTreeSettings overload of checkImpl must resolve aliases before
-    looking up the constraint. Otherwise a user can bypass a constraint that was
-    set on the canonical name by writing to the alias instead.
+    looking up the constraint, in both directions: the constraint may be declared
+    on the canonical name or on the alias, and the query may name either side.
+    All four combinations must hit the same constraint.
 
-    `enable_block_number_column` has the alias `allow_experimental_block_number_column`;
-    the constraint in users.xml is declared on the canonical name with <const/>.
-    Both names must be blocked."""
+    enable_block_number_column has the alias allow_experimental_block_number_column.
+    The default profile declares the constraint on the canonical name; the
+    alias_constraint_profile declares it on the alias name.
+    Without the upfront resolveName, querying via an alias against a constraint
+    declared on the canonical name silently bypasses the constraint."""
 
     instance.query("DROP TABLE IF EXISTS test_alias_constraint")
     instance.query(
         "CREATE TABLE test_alias_constraint (x Int) ENGINE=MergeTree ORDER BY x"
     )
 
-    # Canonical name: must be blocked.
-    assert "Setting enable_block_number_column should not be changed" in instance.query_and_get_error(
-        "ALTER TABLE test_alias_constraint MODIFY SETTING enable_block_number_column=1"
-    )
+    # default user: constraint declared on canonical name.
+    for setting in ("enable_block_number_column", "allow_experimental_block_number_column"):
+        assert "should not be changed" in instance.query_and_get_error(
+            f"ALTER TABLE test_alias_constraint MODIFY SETTING {setting}=1"
+        )
+        assert "should not be changed" in instance.query_and_get_error(
+            "CREATE TABLE test_alias_constraint_create (x Int) ENGINE=MergeTree ORDER BY x "
+            f"SETTINGS {setting}=1"
+        )
 
-    # Alias: must also be blocked. Without the fix the alias bypasses the constraint.
-    assert "should not be changed" in instance.query_and_get_error(
-        "ALTER TABLE test_alias_constraint MODIFY SETTING allow_experimental_block_number_column=1"
-    )
-
-    # Also reject at CREATE time via SETTINGS clause.
-    assert "should not be changed" in instance.query_and_get_error(
-        "CREATE TABLE test_alias_constraint_create (x Int) ENGINE=MergeTree ORDER BY x "
-        "SETTINGS enable_block_number_column=1"
-    )
-    assert "should not be changed" in instance.query_and_get_error(
-        "CREATE TABLE test_alias_constraint_create (x Int) ENGINE=MergeTree ORDER BY x "
-        "SETTINGS allow_experimental_block_number_column=1"
-    )
+    # alias_constraint_user: constraint declared on alias name.
+    for setting in ("enable_block_number_column", "allow_experimental_block_number_column"):
+        assert "should not be changed" in instance.query_and_get_error(
+            f"ALTER TABLE test_alias_constraint MODIFY SETTING {setting}=1",
+            user="alias_constraint_user",
+        )
 
     instance.query("DROP TABLE IF EXISTS test_alias_constraint")
 
