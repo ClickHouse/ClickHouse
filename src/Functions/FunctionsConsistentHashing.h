@@ -40,21 +40,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isInteger(arguments[0]) && !isIPv4(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the first argument of function {}",
-                arguments[0]->getName(), getName());
-
-        if (arguments[0]->getSizeOfValueInMemory() > sizeof(HashType))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} accepts {}-bit integers at most, got {}",
-                    getName(), sizeof(HashType) * 8, arguments[0]->getName());
-
-        if (!isInteger(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the second argument of function {}",
-                arguments[1]->getName(), getName());
-
-        return std::make_shared<DataTypeNumber<ResultType>>();
+        /// executeImpl only supports NativeInteger/IPv4 for the hash value; the second arg
+        /// (number of buckets) is any integer but must be constant.
+        const String ret = DataTypeNumber<typename Impl::ResultType>{}.getName();
+        return "(NativeInteger | IPv4, const Integer) -> " + ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
