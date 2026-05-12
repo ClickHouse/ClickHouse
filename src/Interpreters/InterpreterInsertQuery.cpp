@@ -2,9 +2,11 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
+#include <Common/MemoryTracker.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
 #include <Core/DeduplicateInsert.h>
@@ -69,6 +71,8 @@ namespace Setting
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
+    extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
     extern const SettingsBool use_strict_insert_block_limits;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
@@ -84,6 +88,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_insert_select_local_pipeline;
+    extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
@@ -128,8 +133,12 @@ InterpreterInsertQuery::InterpreterInsertQuery(
         quota->checkExceeded(QuotaType::WRITTEN_BYTES);
 
     const Settings & settings = getContext()->getSettingsRef();
-    max_threads = std::max<size_t>(1, settings[Setting::max_threads]);
-    max_insert_threads = std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads);
+    max_threads = getMaxThreadsForAvailableMemory(
+        std::max<size_t>(1, settings[Setting::max_threads]),
+        settings[Setting::max_threads_min_free_memory_per_thread]);
+    max_insert_threads = getMaxThreadsForAvailableMemory(
+        std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads),
+        settings[Setting::max_insert_threads_min_free_memory_per_thread]);
 }
 
 StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
@@ -477,10 +486,14 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         pipeline.addSimpleTransform(
             [&](const SharedHeader & in_header) -> ProcessorPtr
             {
+                size_t min_block_size_bytes = table->prefersLargeBlocks() ? context->getSettingsRef()[Setting::min_insert_block_size_bytes] : 0ULL;
+                /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
+                if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+                    min_block_size_bytes = std::min<size_t>(min_block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
                 return std::make_shared<PlanSquashingTransform>(
                     in_header,
                     table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
+                    min_block_size_bytes,
                     settings[Setting::max_insert_block_size],
                     settings[Setting::max_insert_block_size_bytes],
                     squash_with_strict_limits);
@@ -559,14 +572,22 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
 
         Settings new_settings = select_context->getSettingsCopy();
 
-        new_settings[Setting::max_threads] = std::max<UInt64>(1, settings[Setting::max_insert_threads]);
+        new_settings[Setting::max_threads] = getMaxThreadsForAvailableMemory(
+            std::max<UInt64>(1, settings[Setting::max_insert_threads]),
+            settings[Setting::max_insert_threads_min_free_memory_per_thread]);
 
         if (prefer_large_blocks)
         {
             if (settings[Setting::min_insert_block_size_rows])
                 new_settings[Setting::max_block_size] = settings[Setting::min_insert_block_size_rows];
             if (settings[Setting::min_insert_block_size_bytes])
-                new_settings[Setting::preferred_block_size_bytes] = settings[Setting::min_insert_block_size_bytes];
+            {
+                size_t block_size_bytes = settings[Setting::min_insert_block_size_bytes];
+                /// On low-memory systems, cap the input format block size.
+                if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+                    block_size_bytes = std::min<size_t>(block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
+                new_settings[Setting::preferred_block_size_bytes] = block_size_bytes;
+            }
         }
 
         auto context_for_trivial_select = Context::createCopy(select_context);
@@ -711,7 +732,8 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 
     LOG_TRACE(logger, "Building distributed insert select pipeline with parallel replicas: table={}", query.getTable());
 
-    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline])
+    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline]
+        && settings[Setting::parallel_replicas_prefer_local_replica])
     {
         auto [local_pipeline, coordinator] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
         return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context, std::move(local_pipeline), coordinator);
@@ -779,10 +801,14 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     if (shouldAddSquashingForStorage(table, context) && !no_squash)
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
+        size_t min_block_size_bytes = table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL;
+        /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
+        if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+            min_block_size_bytes = std::min<size_t>(min_block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
         auto planing = std::make_shared<PlanSquashingTransform>(
             chain.getInputSharedHeader(),
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
+            min_block_size_bytes,
             settings[Setting::max_insert_block_size],
             settings[Setting::max_insert_block_size_bytes],
             squash_with_strict_limits);
@@ -807,7 +833,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     QueryPipeline pipeline = QueryPipeline(std::move(chain));
 
-    pipeline.setNumThreads(max_threads);
+    /// When materialized views are attached, their inner SELECT queries benefit
+    /// from full parallelism, so we use max_threads. Without MVs the insert
+    /// pipeline is 1-wide and requesting max_threads would only waste
+    /// ConcurrencyControl slots and spawn unnecessary threads (see #102947).
+    pipeline.setNumThreads(insert_dependencies->isViewsInvolved() ? max_threads : max_insert_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
     if (query.hasInlinedData() && !async_insert)
@@ -971,7 +1001,7 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     StoragePtr table = getTable(query);
-    setInsertContextValues(table);
+    setInsertContextValues(context, query, table);
     if (context->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
@@ -1075,14 +1105,12 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
     extendQueryLogElemImpl(elem, context_);
 }
 
-void InterpreterInsertQuery::setInsertContextValues(StoragePtr table)
+void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table)
 {
-    auto const & insert_query = query_ptr->as<ASTInsertQuery &>();
-
     std::optional<Names> insert_columns;
     if (insert_query.columns)
     {
-        const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(getContext(), false), insert_query.columns);
+        const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(context_, false), insert_query.columns);
         Names names;
         names.reserve(columns_ast->children.size());
         for (const auto & identifier : columns_ast->children)
@@ -1094,7 +1122,7 @@ void InterpreterInsertQuery::setInsertContextValues(StoragePtr table)
         insert_columns = std::move(names);
     }
 
-    getContext()->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(table->getInMemoryMetadataPtr(getContext(), false)->columns));
+    context_->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(table->getInMemoryMetadataPtr(context_, false)->columns));
 }
 
 void registerInterpreterInsertQuery(InterpreterFactory & factory)

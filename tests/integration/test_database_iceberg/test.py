@@ -28,7 +28,7 @@ from pyiceberg.types import (
     TimestamptzType
 )
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
