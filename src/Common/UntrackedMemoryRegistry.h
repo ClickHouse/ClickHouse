@@ -10,8 +10,6 @@
 namespace DB
 {
 
-class UntrackedMemoryRegistry;
-
 class UntrackedMemoryCounter
 {
 public:
