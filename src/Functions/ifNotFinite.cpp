@@ -16,7 +16,11 @@ class FunctionIfNotFinite : public IFunction
 public:
     static constexpr auto name = "ifNotFinite";
 
-    explicit FunctionIfNotFinite(ContextPtr context_) : context(context_) {}
+    explicit FunctionIfNotFinite(ContextPtr context)
+        : is_finite(FunctionFactory::instance().get("isFinite", context))
+        , if_function(FunctionFactory::instance().get("if", context))
+    {
+    }
 
     static FunctionPtr create(ContextPtr context)
     {
@@ -36,30 +40,31 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto is_finite_type = FunctionFactory::instance().get("isFinite", context)->build({arguments[0]})->getResultType();
-        auto if_type = FunctionFactory::instance().get("if", context)->build({{nullptr, is_finite_type, ""}, arguments[0], arguments[1]})->getResultType();
+        auto is_finite_type = is_finite->build({arguments[0]})->getResultType();
+        auto if_type = if_function->build({{nullptr, is_finite_type, ""}, arguments[0], arguments[1]})->getResultType();
         return if_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName is_finite_columns{arguments[0]};
-        auto is_finite = FunctionFactory::instance().get("isFinite", context)->build(is_finite_columns);
-        auto res = is_finite->execute(is_finite_columns, is_finite->getResultType(), input_rows_count, /* dry_run = */ false);
+        auto is_finite_func = is_finite->build(is_finite_columns);
+        auto res = is_finite_func->execute(is_finite_columns, is_finite_func->getResultType(), input_rows_count, /* dry_run = */ false);
 
         ColumnsWithTypeAndName if_columns
         {
-            {res, is_finite->getResultType(), ""},
+            {res, is_finite_func->getResultType(), ""},
             arguments[0],
             arguments[1],
         };
 
-        auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
+        auto func_if = if_function->build(if_columns);
         return func_if->execute(if_columns, result_type, input_rows_count, /* dry_run = */ false);
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr is_finite;
+    FunctionOverloadResolverPtr if_function;
 };
 
 }
