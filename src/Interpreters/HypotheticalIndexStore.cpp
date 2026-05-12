@@ -37,6 +37,19 @@ bool HypotheticalIndexStore::add(const StorageID & table_id, const IndexDescript
                 table_id.getTableName());
         }
     }
+
+    /// Drop any stale entry for the same `(database, table, name)` whose UUID
+    /// no longer matches — left behind by `DROP TABLE; CREATE TABLE` on the
+    /// same name (the new table gets a fresh UUID, so `sameTable` returns
+    /// false and the old entry would otherwise linger forever).
+    std::erase_if(entries, [&](const Entry & e)
+    {
+        return e.index.name == index.name
+            && e.table_id.getDatabaseName() == table_id.getDatabaseName()
+            && e.table_id.getTableName() == table_id.getTableName()
+            && !sameTable(e.table_id, table_id);
+    });
+
     entries.push_back({table_id, index});
     return true;
 }
@@ -44,10 +57,26 @@ bool HypotheticalIndexStore::add(const StorageID & table_id, const IndexDescript
 bool HypotheticalIndexStore::remove(const StorageID & table_id, const String & index_name, bool if_exists)
 {
     std::lock_guard lock(mutex);
-    auto pos = std::find_if(entries.begin(), entries.end(), [&](const Entry & e)
+
+    /// Prefer a UUID-strict match (handles `ALTER RENAME` correctly), but fall
+    /// back to a `(database, table)` name match so a stale entry left over from
+    /// `DROP TABLE; CREATE TABLE` on the same name can still be removed by the
+    /// user — the new table has a different UUID, so `sameTable` would miss it.
+    auto by_uuid = std::find_if(entries.begin(), entries.end(), [&](const Entry & e)
     {
-        return sameTable(e.table_id, table_id) && e.index.name == index_name;
+        return e.index.name == index_name && sameTable(e.table_id, table_id);
     });
+
+    auto pos = by_uuid;
+    if (pos == entries.end())
+    {
+        pos = std::find_if(entries.begin(), entries.end(), [&](const Entry & e)
+        {
+            return e.index.name == index_name
+                && e.table_id.getDatabaseName() == table_id.getDatabaseName()
+                && e.table_id.getTableName() == table_id.getTableName();
+        });
+    }
 
     if (pos == entries.end())
     {

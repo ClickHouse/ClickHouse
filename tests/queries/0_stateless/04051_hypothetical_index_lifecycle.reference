@@ -4,6 +4,11 @@
 With idx_b (minmax, hypothetical):
 --- drop/recreate: new table does NOT see old index ---
 (none):
+--- drop/recreate: stale entry is removable by name ---
+1
+0
+--- drop/recreate: re-creating the index purges the stale entry ---
+1
 --- IF NOT EXISTS is silent on duplicate ---
 1
 --- DROP IF EXISTS is silent on missing ---

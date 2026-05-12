@@ -37,6 +37,36 @@ $CLICKHOUSE_CLIENT -n -q "
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_lc"
 
 # =========================================================
+# After DROP/CREATE on the same name, a stale entry from the old UUID
+# must still be removable via DROP HYPOTHETICAL INDEX, and re-creating
+# the index on the new table must purge it so it doesn't pile up.
+# =========================================================
+echo "--- drop/recreate: stale entry is removable by name ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_stale;
+    CREATE TABLE t_hypo_stale (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_stale (b) TYPE minmax GRANULARITY 1;
+    DROP TABLE t_hypo_stale;
+    CREATE TABLE t_hypo_stale (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_stale';
+    DROP HYPOTHETICAL INDEX idx_b ON t_hypo_stale;
+    SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_stale';
+" | grep -E '^[0-9]+$'
+
+echo "--- drop/recreate: re-creating the index purges the stale entry ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_stale;
+    CREATE TABLE t_hypo_stale (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_stale (b) TYPE minmax GRANULARITY 1;
+    DROP TABLE t_hypo_stale;
+    CREATE TABLE t_hypo_stale (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_stale (b) TYPE minmax GRANULARITY 1;
+    SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_stale';
+" | grep -E '^[0-9]+$'
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_stale"
+
+# =========================================================
 # IF NOT EXISTS is silent on duplicate; second CREATE with no IF errors.
 # =========================================================
 echo "--- IF NOT EXISTS is silent on duplicate ---"
