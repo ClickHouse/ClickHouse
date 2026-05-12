@@ -280,6 +280,14 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+class TypeMatcherLowCardinality : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "LowCardinality"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->lowCardinality(); }
+    size_t getIndex() const override { return 0; }
+};
+
 class TypeMatcherJSON : public ITypeMatcher
 {
 public:
@@ -468,6 +476,7 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherMap>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDate>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDate32>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherLowCardinality>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherJSON>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDynamic>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDateTime>(factory);
