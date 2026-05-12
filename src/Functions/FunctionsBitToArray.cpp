@@ -48,15 +48,7 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypePtr & type = arguments[0];
-
-        if (!isInteger(type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as bitmask string", type->getName());
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignatureString() const override { return "(Integer) -> String"; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
@@ -147,14 +139,7 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isInteger(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeArray>(arguments[0]);
-    }
+    String getSignatureString() const override { return "(T : Integer) -> Array(T)"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -231,16 +216,7 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isInteger(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal type {} of argument of function {}",
-                            getName(),
-                            arguments[0]->getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-    }
+    String getSignatureString() const override { return "(Integer) -> Array(UInt64)"; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
