@@ -1,6 +1,7 @@
 #include <chrono>
 #include <variant>
 #include <Columns/ColumnTuple.h>
+#include <Common/SipHash.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -140,6 +141,33 @@ FutureSetFromTuple::FutureSetFromTuple(
     {
         auto name = type->getName();
         hash = CityHash_v1_0_2::CityHash128WithSeed(name.data(), name.size(), hash);
+    }
+
+    /// Compute a content-based hash that is independent of both element order and the analyzer
+    /// path (old vs new) that produced this FutureSetFromTuple. This is used by the aggregate
+    /// projection matcher (actionsDAGUtils.cpp) to distinguish different IN-clause sets.
+    ///
+    /// We sort the rows before hashing so that IN ('a','b') and IN ('b','a') are considered
+    /// the same set — matching the semantics of the IN operator.
+    {
+        IColumn::Permutation perm;
+        EqualRanges ranges;
+        if (!columns.empty())
+        {
+            columns[0]->getPermutation(IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Stable, 0, 1, perm);
+            ranges.push_back({0, num_rows});
+            for (size_t i = 1; i < columns.size(); ++i)
+                columns[i]->updatePermutation(IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Stable, 0, 1, perm, ranges);
+        }
+
+        SipHash siphasher;
+        for (size_t i = 0; i < block.size(); ++i)
+        {
+            const auto type_name = block[i].type->getName();
+            siphasher.update(type_name.data(), type_name.size());
+            columns[i]->permute(perm, 0)->updateHashFast(siphasher);
+        }
+        content_hash = getSipHash128AsPair(siphasher);
     }
 }
 

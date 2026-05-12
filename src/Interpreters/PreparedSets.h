@@ -62,6 +62,9 @@ public:
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
 
+    /// Hash based on the actual set element data, independent of how the set was specified.
+    virtual Hash getContentHash() const = 0;
+
     virtual ASTPtr getSourceAST() const = 0;
 };
 
@@ -78,6 +81,7 @@ public:
     DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
     Hash getHash() const override;
+    Hash getContentHash() const override { return getHash(); }
     ASTPtr getSourceAST() const override { return ast; }
 
     const std::optional<StorageID> & getStorageID() const { return storage_id; }
@@ -102,10 +106,12 @@ public:
 
     DataTypes getTypes() const override;
     Hash getHash() const override;
+    Hash getContentHash() const override { return content_hash; }
     ASTPtr getSourceAST() const override { return ast; }
     Columns getKeyColumns();
 private:
     Hash hash;
+    Hash content_hash{};
     ASTPtr ast;
     SetPtr set;
     SetKeyColumns set_key_columns;
@@ -157,6 +163,7 @@ public:
     SetPtr get() const override;
     DataTypes getTypes() const override;
     Hash getHash() const override;
+    Hash getContentHash() const override { return getHash(); }
     ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
