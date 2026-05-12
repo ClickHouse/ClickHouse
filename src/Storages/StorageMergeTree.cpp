@@ -577,10 +577,20 @@ void StorageMergeTree::drop()
     /// even a current leader may execute `dropAllData` while no longer holding the lease.
     /// This matches the `ReplicatedMergeTree` model: `DROP TABLE` removes local metadata
     /// only, and shared data must be cleaned up out-of-band by the operator.
-    bool skip_data_cleanup = leader_election_ptr != nullptr;
+    ///
+    /// The decision is keyed on the persisted setting rather than `leader_election_ptr`
+    /// because `dropTableFinally` may invoke this method on a partially-dropped table
+    /// reconstructed via `createTableFromAST` (server-restart recovery path), where
+    /// `startup` was never called and `leader_election_ptr` is therefore null.
+    bool skip_data_cleanup = (*getSettings())[MergeTreeSetting::leader_election];
     shutdown(true);
     if (!skip_data_cleanup)
         dropAllData();
+}
+
+bool StorageMergeTree::dropSkipsDataDirectoryCleanup() const
+{
+    return (*getSettings())[MergeTreeSetting::leader_election];
 }
 
 void StorageMergeTree::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const

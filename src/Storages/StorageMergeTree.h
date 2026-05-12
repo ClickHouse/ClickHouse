@@ -108,6 +108,13 @@ public:
     void drop() override;
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
+    /// Under `leader_election`, table data lives on shared object storage that is
+    /// not owned exclusively by this node. After this storage's own `drop()` skips
+    /// cleanup, `DatabaseCatalog::dropTableFinally` must also skip its per-disk
+    /// recursive removal — otherwise the second node to drop the table retries
+    /// forever against keys the first node already deleted.
+    bool dropSkipsDataDirectoryCleanup() const override;
+
     /// `MergeTreeData::rename` moves the data directory on every disk in the storage policy.
     /// Under `leader_election`, the data directory is shared between nodes and the lease
     /// path is captured at startup — neither the followers' lease path nor their in-memory

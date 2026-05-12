@@ -651,6 +651,14 @@ public:
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
 
+    /// Returns true if `DatabaseCatalog::dropTableFinally` should skip the per-disk
+    /// `removeRecursive(getStoreDirPath(uuid))` loop after `drop()` returns. Storages
+    /// whose data lives on shared object storage and is managed externally (for
+    /// example, `MergeTree` with `leader_election = 1`) override this to true so that
+    /// only one node attempts to clean up the shared prefix and the other nodes do
+    /// not retry forever against keys the first node already deleted.
+    virtual bool dropSkipsDataDirectoryCleanup() const { return false; }
+
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 

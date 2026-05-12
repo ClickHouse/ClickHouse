@@ -1631,16 +1631,33 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         return is_disk_eligible;
     };
 
-    /// Even if table is not loaded, try remove its data from disks.
-    for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+    /// Storages whose data lives on shared object storage (for example, `MergeTree`
+    /// with `leader_election = 1`) manage cleanup externally. Their own `drop()` has
+    /// already skipped local cleanup; iterating disks here would have us retry the
+    /// `removeRecursive` against a prefix that the leader has already deleted, and
+    /// the per-table dropper retries indefinitely on every failure — hanging
+    /// `DROP TABLE ... SYNC` on every node except the one that actually owned the
+    /// data when it was dropped.
+    bool skip_disk_cleanup = table.table && table.table->dropSkipsDataDirectoryCleanup();
+    if (skip_disk_cleanup)
     {
-        String data_path = getStoreDirPath(table.table_id.uuid);
-        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
-        if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
-            continue;
+        LOG_INFO(log,
+            "Skipping per-disk data cleanup of dropped table {}: storage manages its data externally",
+            table.table_id.getNameForLogs());
+    }
+    else
+    {
+        /// Even if table is not loaded, try remove its data from disks.
+        for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+        {
+            String data_path = getStoreDirPath(table.table_id.uuid);
+            auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
+            if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
+                continue;
 
-        LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
-        disk->removeRecursive(data_path);
+            LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
+            disk->removeRecursive(data_path);
+        }
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
