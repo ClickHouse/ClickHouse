@@ -1,15 +1,3 @@
--- Regression test: PREWHERE with IN subquery on a primary key column must use
--- primary key analysis for granule pruning, same as WHERE.
---
--- The bug: buildSetsForDAG() for PREWHERE calls buildSetInplace() which creates
--- the set without storing explicit set elements. When KeyCondition later calls
--- buildOrderedSetInplace(), it sees the set is already created, checks
--- hasExplicitSetElements() -> false, and returns nullptr. The IN condition is
--- then excluded from primary key analysis, so all granules are read.
---
--- With WHERE the set is not pre-built, so buildOrderedSetInplace() builds it
--- from scratch with fillSetElements() and the IN condition works for index.
-
 DROP TABLE IF EXISTS data;
 DROP TABLE IF EXISTS ids;
 
@@ -24,12 +12,12 @@ ENGINE = MergeTree ORDER BY id;
 -- (index_granularity, max_insert_threads, min_bytes_for_wide_part, ...),
 -- so this test does not pin it. It compares PREWHERE vs WHERE instead.
 INSERT INTO data SELECT number % 100, toDateTime('2020-01-01') + intDiv(number, 100), number FROM numbers(819200);
-
 SYSTEM STOP MERGES data;
-
 INSERT INTO ids VALUES (1);
-
+SYSTEM STOP MERGES ids;
 CREATE TEMPORARY TABLE start_ts AS (SELECT now() AS ts);
+
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 
 -- WHERE variant: uses primary key analysis via buildOrderedSetInplace() that
 -- builds the subquery set from scratch with explicit elements.
