@@ -132,7 +132,7 @@ CGROUP_VERSION = detect_cgroup_version()
 
 BASH = "/bin/bash"
 
-def shell_get_output(cmd: str) -> str:
+def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
     try:
         res = subprocess.run(
             cmd,
@@ -144,6 +144,7 @@ def shell_get_output(cmd: str) -> str:
             encoding="utf-8",
             errors="replace",
             check=True,
+            timeout=timeout,
         )
         return res.stdout.strip()
     except Exception as e:
@@ -942,7 +943,14 @@ def get_transactions_list(args):
 
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(pid):
-    return shell_get_output(f"gdb -batch -ex 'thread apply all backtrace' -p {pid}")
+    # 30s ceiling: `thread apply all backtrace` should finish in seconds even
+    # on a debug build with many threads; anything beyond that means gdb
+    # itself is wedged (e.g. signal-handler deadlock on the inferior).
+    # Killing gdb leaves the server process untouched.
+    return shell_get_output(
+        f"gdb -batch -ex 'thread apply all backtrace' -p {pid}",
+        timeout=30,
+    )
 
 
 # collect server stacktraces from system.stack_trace table
