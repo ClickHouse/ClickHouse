@@ -280,39 +280,11 @@ public:
         return name == "obfuscateQueryWithSeed";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
         if (name == "obfuscateQueryWithSeed")
-        {
-            if (arguments.size() != 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Function {} requires exactly 2 arguments", getName());
-        }
-        else
-        {
-            if (arguments.empty())
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Function {} requires at least 1 argument", getName());
-
-            if (arguments.size() > 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Function {} requires at most 2 arguments", getName());
-        }
-
-        // First argument must be string
-        if (!isString(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "First argument of function {} must be String", getName());
-
-        // For both `obfuscateQuery` and `obfuscateQueryWithSeed`, second argument must be integer or String.
-        if (arguments.size() == 2)
-        {
-            if (!isInteger(arguments[1].type) && !isString(arguments[1].type))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                    "Second argument of function {} must be an integer type or String", getName());
-        }
-
-        return std::make_shared<DataTypeString>();
+            return "(String, Integer | String) -> String";
+        return "(String, [Integer | String]) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
