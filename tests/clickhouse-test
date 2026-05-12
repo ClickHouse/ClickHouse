@@ -1012,10 +1012,15 @@ def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[
     return ps
 
 def get_all_server_pids():
-    """Get PIDs of clickhouse-server processes belonging to the current process group.
+    """Get PIDs of all clickhouse-server processes visible to the current user.
+
+    No pgid scoping: in every real scenario where this helper is useful the
+    server lives outside `clickhouse-test`'s process group (CI harnesses,
+    Docker, systemd, and the `ClickHouseService` test fixture all spawn the
+    server with `start_new_session=True` or equivalent).  A pgid filter
+    silently filters out everything we are meant to find.
     """
-    pgid = os.getpgrp()
-    return [p[0] for p in pgrep(pgid=pgid, command="clickhouse-server")]
+    return [p[0] for p in pgrep(command="clickhouse-server")]
 
 
 def is_asan_build(args):
