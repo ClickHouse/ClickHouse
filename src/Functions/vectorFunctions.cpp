@@ -1644,7 +1644,7 @@ REGISTER_FUNCTION(VectorFunctions)
 {
     /// tuplePlus documentation
     FunctionDocumentation::Description description_tuplePlus = R"(
-Calculates the element-wise sum of two or more tuples of the same size. Equivalent to applying `+` element-wise and folding left.
+Calculates the element-wise sum of two or more tuples of the same size.
 )";
     FunctionDocumentation::Syntax syntax_tuplePlus = "tuplePlus(t1, t2[, tN, ...])";
     FunctionDocumentation::Arguments arguments_tuplePlus = {
