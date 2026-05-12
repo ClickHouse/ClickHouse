@@ -326,10 +326,15 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
+    /// Resolve aliases upfront, mirroring the Settings overload above. Otherwise a user can
+    /// bypass a constraint declared on the canonical setting name by writing to an alias,
+    /// because the constraint lookup is a plain hashmap lookup on the (still un-resolved) name.
+    std::string_view setting_name = MergeTreeSettings::resolveName(change.name);
+
     Field new_value = getNewValueToCheck(current_settings, change, /*ignore_unchanged_settings=*/false, reaction == THROW_ON_VIOLATION);
     if (new_value.isNull())
         return false;
-    return getMergeTreeChecker(change.name).check(change, new_value, reaction, SettingSource::QUERY);
+    return getMergeTreeChecker(setting_name).check(change, new_value, reaction, SettingSource::QUERY);
 }
 
 bool SettingsConstraints::Checker::check(SettingChange & change,

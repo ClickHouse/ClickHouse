@@ -16,6 +16,9 @@
                     <max>200000</max>
                     <disallowed>5000</disallowed>
                 </merge_tree_max_parts_in_total>
+                <merge_tree_enable_block_number_column>
+                    <const/>
+                </merge_tree_enable_block_number_column>
                <force_index_by_date>
                    <readonly/>
                </force_index_by_date>

@@ -225,6 +225,43 @@ def test_disallowed_constraint_merge_tree(started_cluster):
     instance.query("DROP TABLE IF EXISTS test")
 
 
+def test_merge_tree_setting_constraint_via_alias(started_cluster):
+    """The MergeTreeSettings overload of checkImpl must resolve aliases before
+    looking up the constraint. Otherwise a user can bypass a constraint that was
+    set on the canonical name by writing to the alias instead.
+
+    `enable_block_number_column` has the alias `allow_experimental_block_number_column`;
+    the constraint in users.xml is declared on the canonical name with <const/>.
+    Both names must be blocked."""
+
+    instance.query("DROP TABLE IF EXISTS test_alias_constraint")
+    instance.query(
+        "CREATE TABLE test_alias_constraint (x Int) ENGINE=MergeTree ORDER BY x"
+    )
+
+    # Canonical name: must be blocked.
+    assert "Setting enable_block_number_column should not be changed" in instance.query_and_get_error(
+        "ALTER TABLE test_alias_constraint MODIFY SETTING enable_block_number_column=1"
+    )
+
+    # Alias: must also be blocked. Without the fix the alias bypasses the constraint.
+    assert "should not be changed" in instance.query_and_get_error(
+        "ALTER TABLE test_alias_constraint MODIFY SETTING allow_experimental_block_number_column=1"
+    )
+
+    # Also reject at CREATE time via SETTINGS clause.
+    assert "should not be changed" in instance.query_and_get_error(
+        "CREATE TABLE test_alias_constraint_create (x Int) ENGINE=MergeTree ORDER BY x "
+        "SETTINGS enable_block_number_column=1"
+    )
+    assert "should not be changed" in instance.query_and_get_error(
+        "CREATE TABLE test_alias_constraint_create (x Int) ENGINE=MergeTree ORDER BY x "
+        "SETTINGS allow_experimental_block_number_column=1"
+    )
+
+    instance.query("DROP TABLE IF EXISTS test_alias_constraint")
+
+
 def test_create_table_query_setting_constraints(started_cluster):
     """Test that query-level settings passed in CREATE TABLE's engine SETTINGS clause
     are validated against setting constraints (not bypassing them)."""
