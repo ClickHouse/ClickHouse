@@ -108,3 +108,5 @@ FROM system.one
 (inf,inf)
 -- tupleDivide: division by zero in a middle fold step propagates inf to the final result
 (inf,inf)
+-- Nested variadic operators: outer operator validates against inner result tuple size
+(48,60,72)

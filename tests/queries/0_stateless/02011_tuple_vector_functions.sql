@@ -173,3 +173,7 @@ SELECT '-- tupleDivide: division by zero in a later fold step yields inf';
 SELECT tupleDivide((1.0, 2.0), (1.0, 1.0), (0.0, 0.0));
 SELECT '-- tupleDivide: division by zero in a middle fold step propagates inf to the final result';
 SELECT tupleDivide((1.0, 2.0), (1.0, 1.0), (0.0, 0.0), (5.0, 5.0));
+
+SELECT '-- Nested variadic operators: outer operator validates against inner result tuple size';
+SELECT tupleMultiply(tuplePlus((1, 2, 3), (4, 5, 6), (7, 8, 9)), tuplePlus((1, 1, 1), (1, 1, 1), (2, 2, 2)));
+SELECT tuplePlus(tuplePlus((1, 2, 3), (4, 5, 6), (7, 8, 9)), tuplePlus((1, 2, 3, 4), (5, 6, 7, 8), (9, 10, 11, 12))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
