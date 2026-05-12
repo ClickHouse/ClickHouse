@@ -87,71 +87,79 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"left_tuple", &isTuple, nullptr, "Tuple"},
-            {"right_tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        size_t tuple_size = checkAndGetTuplesSize(arguments[0].type, arguments[1].type, getName());
-
-        const auto & left_types = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get())->getElements();
-        const auto & right_types = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get())->getElements();
-
-        Columns left_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
-        Columns right_elements = arguments[1].column ? getTupleElements(*arguments[1].column) : Columns();
+        if (arguments.size() < 2)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                "Function {} requires at least 2 arguments", getName());
+        for (size_t i = 1; i < arguments.size(); ++i)
+            checkAndGetTuplesSize(arguments[0].type, arguments[i].type, getName());
 
         auto func = FunctionFactory::instance().get(FuncName::name, context);
-        DataTypes types(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
+
+        const auto * first_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+        Columns current_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
+        DataTypes current_types = first_tuple->getElements();
+        size_t tuple_size = current_types.size();
+
+        for (size_t i = 1; i < arguments.size(); ++i)
         {
-            try
+            const auto & right_types = checkAndGetDataType<DataTypeTuple>(arguments[i].type.get())->getElements();
+            Columns right_elements = arguments[i].column ? getTupleElements(*arguments[i].column) : Columns();
+
+            for (size_t j = 0; j < tuple_size; ++j)
             {
-                ColumnWithTypeAndName left{left_elements.empty() ? nullptr : left_elements[i], left_types[i], {}};
-                ColumnWithTypeAndName right{right_elements.empty() ? nullptr : right_elements[i], right_types[i], {}};
-                auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
-                types[i] = elem_func->getResultType();
+                try
+                {
+                    ColumnWithTypeAndName left{current_elements.empty() ? nullptr : current_elements[j], current_types[j], {}};
+                    ColumnWithTypeAndName right{right_elements.empty() ? nullptr : right_elements[j], right_types[j], {}};
+                    auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
+                    current_types[j] = elem_func->getResultType();
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("While executing function {} for argument {} of tuple element {}", getName(), i, j);
+                    throw;
+                }
             }
-            catch (Exception & e)
-            {
-                e.addMessage("While executing function {} for tuple element {}", getName(), i);
-                throw;
-            }
+            current_elements = {};
         }
 
-        return std::make_shared<DataTypeTuple>(types);
+        return std::make_shared<DataTypeTuple>(std::move(current_types));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
-        const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
-        const auto & left_types = left_tuple->getElements();
-        const auto & right_types = right_tuple->getElements();
-        auto left_elements = getTupleElements(*arguments[0].column);
-        auto right_elements = getTupleElements(*arguments[1].column);
+        const auto * first_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+        Columns current_elements = getTupleElements(*arguments[0].column);
+        DataTypes current_types = first_tuple->getElements();
 
-        size_t tuple_size = left_elements.size();
+        size_t tuple_size = current_elements.size();
         if (tuple_size == 0)
             return ColumnTuple::create(input_rows_count);
 
         auto func = FunctionFactory::instance().get(FuncName::name, context);
-        Columns columns(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
+
+        for (size_t i = 1; i < arguments.size(); ++i)
         {
-            ColumnWithTypeAndName left{left_elements[i], left_types[i], {}};
-            ColumnWithTypeAndName right{right_elements[i], right_types[i], {}};
-            auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
-            columns[i] = elem_func->execute({left, right}, elem_func->getResultType(), input_rows_count, /* dry_run = */ false)
-                                  ->convertToFullColumnIfConst();
+            const auto & right_types = checkAndGetDataType<DataTypeTuple>(arguments[i].type.get())->getElements();
+            Columns right_elements = getTupleElements(*arguments[i].column);
+
+            for (size_t j = 0; j < tuple_size; ++j)
+            {
+                ColumnWithTypeAndName left{current_elements[j], current_types[j], {}};
+                ColumnWithTypeAndName right{right_elements[j], right_types[j], {}};
+                auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
+                current_types[j] = elem_func->getResultType();
+                current_elements[j] = elem_func->execute({left, right}, current_types[j], input_rows_count, /* dry_run = */ false)
+                                                ->convertToFullColumnIfConst();
+            }
         }
 
-        return ColumnTuple::create(columns);
+        return ColumnTuple::create(current_elements);
     }
 };
 
