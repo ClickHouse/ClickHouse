@@ -462,6 +462,38 @@ public:
 };
 
 
+class TypeMatcherNullable : public ITypeMatcher
+{
+private:
+    TypeMatcherPtr child_matcher;
+public:
+    explicit TypeMatcherNullable(const TypeMatchers & child_matchers)
+    {
+        if (child_matchers.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Nullable type matcher requires single argument");
+
+        child_matcher = child_matchers[0];
+    }
+
+    std::string toString() const override { return "Nullable(" + child_matcher->toString() + ")"; }
+
+    bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string & out_reason) const override
+    {
+        if (!type->isNullable())
+        {
+            out_reason = "expected Nullable type, got " + type->getName();
+            return false;
+        }
+        return child_matcher->match(removeNullable(type), variables, iteration, arg_num, out_reason);
+    }
+
+    size_t getIndex() const override
+    {
+        return child_matcher->getIndex();
+    }
+};
+
+
 template <typename TypeMatcher>
 void registerTypeMatcherWithNoArguments(TypeMatcherFactory & factory)
 {
@@ -523,6 +555,7 @@ void registerTypeMatchers()
     factory.registerElement("Array", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherArray>(children); });
     factory.registerElement("Tuple", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherTuple>(children); });
     factory.registerElement("MaybeNullable", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherMaybeNullable>(children); });
+    factory.registerElement("Nullable", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherNullable>(children); });
 }
 
 }

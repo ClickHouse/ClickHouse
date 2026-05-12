@@ -38,11 +38,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        auto is_finite_type = is_finite->build({arguments[0]})->getResultType();
-        auto if_type = if_function->build({{nullptr, is_finite_type, ""}, arguments[0], arguments[1]})->getResultType();
-        return if_type;
+        return "(T1 : Any, T2 : Any) -> leastSupertype(T1, T2)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

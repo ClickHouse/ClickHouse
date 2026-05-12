@@ -50,38 +50,11 @@ public:
         return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        for (size_t i = 0; i < 4; ++i)
-        {
-            if (!isUInt(arguments[i].type))
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The {}th Argument of function {} must be an unsigned integer.",
-                    i + 1,
-                    getName());
-            }
-        }
-
-        if (!isFloat(arguments[4].type))
-        {
-            throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The fifth argument {} of function {} should be a float,",
-                arguments[4].type->getName(),
-                getName()};
-        }
-
-        /// There is an additional check for constancy in ExecuteImpl
-        if (!isString(arguments[5].type) || !arguments[5].column)
-        {
-            throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The sixth argument {} of function {} should be a constant string",
-                arguments[5].type->getName(),
-                getName()};
-        }
-
-        return getReturnType();
+        return "(NativeUInt, NativeUInt, NativeUInt, NativeUInt, Float, const String) -> "
+               "Tuple(z_statistic Float64, p_value Float64, "
+               "confidence_interval_low Float64, confidence_interval_high Float64)";
     }
 
 
