@@ -16,7 +16,7 @@
 
 # 2026 Changelog
 
-### <a id="263"></a> ClickHouse release 26.3 LTS, 2026-03-26. [Presentation](https://presentations.clickhouse.com/), Video (TODO)
+### <a id="263"></a> ClickHouse release 26.3 LTS, 2026-03-26. [Presentation](https://presentations.clickhouse.com/), [Video](https://www.youtube.com/watch?v=_bY0ucNB1lQ)
 
 #### Backward Incompatible Change
 * Remove the `hypothesis` skip index type. It was an obscure, experimental feature with limited practical use. Creating tables with `INDEX ... TYPE hypothesis` will now produce an error. [#96874](https://github.com/ClickHouse/ClickHouse/pull/96874) ([Alexey Milovidov](https://github.com/alexey-milovidov)).

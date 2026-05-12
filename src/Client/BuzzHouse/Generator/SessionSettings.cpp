@@ -36,7 +36,7 @@ static const auto setSetting = CHSetting(
 
 std::unordered_map<String, CHSetting> hotSettings;
 
-static String settingCombinations(RandomGenerator & rg, DB::Strings && choices)
+String settingCombinations(RandomGenerator & rg, DB::Strings && choices)
 {
     String res;
 

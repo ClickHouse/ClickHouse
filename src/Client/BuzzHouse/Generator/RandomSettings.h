@@ -100,6 +100,7 @@ extern std::vector<SystemTable> systemTables;
 
 extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;
 
+String settingCombinations(RandomGenerator & rg, DB::Strings && choices);
 String generateNextCodecString(RandomGenerator & rg);
 String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc);
 String getNextIcebergExpireTimestamp(RandomGenerator & rg, FuzzConfig & fc);

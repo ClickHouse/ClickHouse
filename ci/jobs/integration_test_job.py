@@ -706,9 +706,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if is_targeted_check:
         assert not args.test, "--test not supposed to be used for targeted check ???"
         targeter = Targeting(info=info)
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info(
-            clickhouse_path
-        )
+        tests, results_with_info = targeter.get_all_relevant_tests_with_info()
         # no subtask level for integration tests - cannot add this info to the report now
         # results.append(results_with_info)
         if not tests:

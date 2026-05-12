@@ -729,7 +729,11 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
             }
         }
 
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getOffsetsPtr(), col.getOffsetsPtr()->size() - prev_size);
+        /// Don't cache offsets calculated from a temporary column (when insert_only_rows_in_current_range_from_substreams_cache is set).
+        /// Such offsets are relative to the temporary column's variant sizes (starting from 0) and would be incorrect
+        /// for other readers that have accumulated data from previous read ranges.
+        if (!settings.insert_only_rows_in_current_range_from_substreams_cache)
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getOffsetsPtr(), col.getOffsetsPtr()->size() - prev_size);
     }
     settings.path.pop_back();
 

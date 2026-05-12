@@ -1,19 +1,13 @@
 -- Tags: no-fasttest
 
-SET allow_statistics = 1;
-SET use_statistics = 1;
-SET log_queries = 1;
-SET log_query_settings = 1;
-SET mutations_sync = 2;
-SET max_execution_time = 60;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET enable_analyzer = 1;
+SET use_statistics = 1;
+
 -- Statistics loading happens inside optimizePrewhere(), which requires
 -- the Filter→ReadFromMergeTree pattern. query_plan_merge_expressions = 0
 -- inserts an intermediate Expression step that breaks this pattern.
 SET query_plan_merge_expressions = 1;
-
--- test rely on local execution, - force parallel replicas to genearate local plan
-SET parallel_replicas_local_plan=1;
 
 DROP TABLE IF EXISTS sc_core SYNC;
 

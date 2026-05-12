@@ -1329,14 +1329,32 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         std::optional<std::string> impl_read_stop_reason;
         if (state.read_type != ReadType::CACHED)
         {
+            object_size = state.buf->getRemoteFileSize();
+
 #if USE_AWS_S3
             if (const auto * s3_buf = dynamic_cast<const ReadBufferFromS3 *>(state.buf.get()))
             {
                 impl_read_until_position = s3_buf->getReadUntilPosition();
                 impl_read_stop_reason = s3_buf->getStopReason();
-                object_size = s3_buf->getObjectSizeFromS3();
             }
 #endif
+        }
+
+        if (object_size.has_value() && *object_size == offset)
+        {
+            /// The remote object is smaller than file_size_ indicated, e.g. the object was
+            /// overwritten with shorter content between listing and reading.
+            /// Treat this as a legitimate EOF rather than a logic error.
+            LOG_WARNING(
+                log,
+                "Remote object is smaller than expected: read {} bytes but expected to read until position {}. "
+                "Actual object size: {}, expected size: {}, stop reason: {}. Treating as EOF.",
+                offset, info.read_until_position, *object_size, file_size_,
+                impl_read_stop_reason ? *impl_read_stop_reason : "None");
+            if (file_segment.isDownloader())
+                file_segment.setDownloadFinishedWithoutContinuation();
+            info.read_until_position = offset;
+            return 0;
         }
 
         throw Exception(
