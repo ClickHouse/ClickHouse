@@ -337,7 +337,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
 }
 
 
-static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & database_name)
+namespace
+{
+
+DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & database_name)
 {
     DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     if (!system_database)
@@ -349,7 +352,7 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
     return system_database;
 }
 
-static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
+DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
     auto overlay = std::make_shared<DatabaseOverlay>(name_, context);
 
@@ -373,6 +376,8 @@ static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, Co
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
     overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
     return overlay;
+}
+
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
@@ -552,11 +557,16 @@ std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
 }
 
 
-static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
+namespace
+{
+
+ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
     std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
+}
+
 }
 
 

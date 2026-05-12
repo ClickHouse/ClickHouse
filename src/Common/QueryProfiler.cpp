@@ -247,6 +247,9 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
     if (!hasPHDRCache())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache, that is not available for TSan build");
 
+    /// `sigaction` is `#define sigaction __sigaction` on some platforms, and
+    /// `sigemptyset` / `sigaddset` are similarly macro-defined in <signal.h>,
+    /// so all three trigger `-Wdisabled-macro-expansion`.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     struct sigaction sa{};
