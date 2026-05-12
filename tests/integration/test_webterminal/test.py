@@ -22,6 +22,15 @@ instance = cluster.add_instance(
     "node",
     main_configs=["configs/webterminal.xml"],
 )
+# A second instance exercises the same endpoint behind an explicit
+# `http_handlers` block (no `defaults`). This guards against regressions
+# in the config-mode validator that, prior to this fix, only accepted
+# `/js/uplot.js` and `/js/lz-string.js` for `handler_type = "js"` and so
+# silently broke `/webterminal` for operators using explicit handler rules.
+instance_http_handlers = cluster.add_instance(
+    "node_http_handlers",
+    main_configs=["configs/webterminal_http_handlers.xml"],
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -180,6 +189,36 @@ def test_invalid_auth_rejects_session():
         assert opcode == 0x08, f"Unexpected opcode={opcode:#x} after invalid auth"
     finally:
         sock.close()
+
+
+def test_http_handlers_config_serves_webterminal_assets():
+    """An explicit `http_handlers` block must be able to expose `/webterminal`
+    together with the embedded xterm.js / xterm.css / addon assets.
+
+    Before the fix, `handler_type = "js"` only accepted `/js/uplot.js` and
+    `/js/lz-string.js`, so a deployment without the `<defaults/>` block
+    could not serve the assets `webterminal.html` references and the
+    terminal silently failed to initialize in the browser.
+    """
+    response = instance_http_handlers.http_request("webterminal", method="GET")
+    assert response.status_code == 200, response.text
+    assert b"xterm.min.js" in response.content
+
+    # All assets referenced by `webterminal.html` must be reachable through
+    # the same handler chain.
+    js_assets = [
+        ("js/xterm.min.js", "application/javascript"),
+        ("js/xterm.min.css", "text/css"),
+        ("js/addon-fit.min.js", "application/javascript"),
+        ("js/addon-web-links.min.js", "application/javascript"),
+    ]
+    for path, expected_ct in js_assets:
+        asset_response = instance_http_handlers.http_request(path, method="GET")
+        assert asset_response.status_code == 200, f"{path} returned {asset_response.status_code}"
+        content_type = asset_response.headers.get("content-type", "")
+        assert expected_ct in content_type, f"{path}: unexpected content-type {content_type!r}"
+        assert asset_response.content, f"{path}: empty body"
+
 
 
 def test_non_auth_first_message_rejected():
