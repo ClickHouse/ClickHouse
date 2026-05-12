@@ -196,8 +196,19 @@ bool tryEstimateEmpirical(
         if (mark_ranges.empty())
             continue;
 
+        /// `MergeTreeSequentialSource` tracks `current_mark` internally starting at 0
+        /// and uses it to size each read from `index_granularity->getMarkRows(current_mark)`.
+        /// When `mark_ranges` doesn't start at mark 0 (e.g. after PK pruning), the source's
+        /// internal counter no longer matches the reader's actual position, and on parts
+        /// with non-uniform mark sizes the reader returns more rows than the source asked
+        /// for — tripping a `LOGICAL_ERROR`. Read the whole part instead, then filter the
+        /// per-mark accounting in this loop so only baseline marks contribute to the ratio.
+        std::vector<bool> in_baseline(part->getMarksCount(), false);
+        for (const auto & range : mark_ranges)
+            for (size_t m = range.begin; m < range.end && m < in_baseline.size(); ++m)
+                in_baseline[m] = true;
+
         RangesInDataPart part_for_read(part);
-        part_for_read.ranges = mark_ranges;
 
         Pipe pipe = createMergeTreeSequentialSource(
             MergeTreeSequentialSourceType::Merge,
@@ -207,7 +218,7 @@ bool tryEstimateEmpirical(
             std::make_shared<AlterConversions>(),
             nullptr,
             index_columns,
-            mark_ranges,
+            std::nullopt,
             std::make_shared<std::atomic<size_t>>(0),
             false,
             false,
@@ -216,10 +227,25 @@ bool tryEstimateEmpirical(
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
-        /// Sequential source produces one block per data granule;
-        /// accumulate skip_index_granularity blocks per index granule
+        /// Sequential source produces one block per data granule. Each index granule
+        /// covers `skip_index_granularity` data granules (by absolute mark position).
+        /// All data granules feed the aggregator — the index that would actually be
+        /// built in production sees the whole window — but only baseline marks count
+        /// toward kept/skipped.
         auto aggregator = index_helper->createIndexAggregator();
-        size_t data_granules_in_current = 0;
+        size_t mark_idx = 0;
+        size_t data_granules_in_window = 0;
+        size_t baseline_marks_in_window = 0;
+
+        auto flush_window = [&]
+        {
+            if (baseline_marks_in_window == 0)
+                return;
+            auto granule = aggregator->getGranuleAndReset();
+            total_data_granules += baseline_marks_in_window;
+            if (!condition->mayBeTrueOnGranule(granule, {}))
+                skipped_data_granules += baseline_marks_in_window;
+        };
 
         Block block;
         while (executor.pull(block))
@@ -229,27 +255,22 @@ bool tryEstimateEmpirical(
 
             size_t pos = 0;
             aggregator->update(block, &pos, block.rows());
-            ++data_granules_in_current;
+            ++data_granules_in_window;
+            if (mark_idx < in_baseline.size() && in_baseline[mark_idx])
+                ++baseline_marks_in_window;
+            ++mark_idx;
 
-            if (data_granules_in_current >= skip_index_granularity)
+            if (data_granules_in_window >= skip_index_granularity)
             {
-                auto granule = aggregator->getGranuleAndReset();
-                total_data_granules += data_granules_in_current;
-                if (!condition->mayBeTrueOnGranule(granule, {}))
-                    skipped_data_granules += data_granules_in_current;
-
+                flush_window();
                 aggregator = index_helper->createIndexAggregator();
-                data_granules_in_current = 0;
+                data_granules_in_window = 0;
+                baseline_marks_in_window = 0;
             }
         }
 
         if (!aggregator->empty())
-        {
-            auto granule = aggregator->getGranuleAndReset();
-            total_data_granules += data_granules_in_current;
-            if (!condition->mayBeTrueOnGranule(granule, {}))
-                skipped_data_granules += data_granules_in_current;
-        }
+            flush_window();
     }
 
     if (total_data_granules == 0)
