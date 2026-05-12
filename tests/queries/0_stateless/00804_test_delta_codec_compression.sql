@@ -1,5 +1,6 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-flaky-check
 -- add_minmax_index_for_numeric_columns=0: Different part size on disk
+-- no-flaky-check: heavy inserts of millions of rows can time out under random settings in debug builds
 
 SET send_logs_level = 'fatal';
 SET joined_subquery_requires_alias = 0;
