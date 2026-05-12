@@ -2081,12 +2081,10 @@ void ReadFromMergeTree::buildIndexes(
         MergeTreeIndexConditionPtr condition;
         if (index_helper->isVectorSimilarityIndex())
         {
-#if USE_USEARCH
-            if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
-                condition = vector_similarity_index->createIndexCondition(filter_dag.predicate, query_context, vector_search_parameters);
-#endif
-            if (!condition)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
+            /// All vector similarity index types implement the virtual overload of createIndexCondition
+            /// that accepts VectorSearchParameters. Call it via polymorphism so that new index types
+            /// (e.g. vector_similarity_scann) work without modifying this file.
+            condition = index_helper->createIndexCondition(filter_dag.predicate, query_context, vector_search_parameters);
         }
         else
         {

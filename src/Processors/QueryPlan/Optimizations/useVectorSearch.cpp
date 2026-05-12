@@ -211,7 +211,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     bool has_vector_similarity_index = false;
     for (const auto & index : indexes)
     {
-        if (index.type != "vector_similarity")
+        if (index.type != "vector_similarity" && index.type != "vector_similarity_scann")
             continue;
 
         chassert(index.expression);
@@ -362,6 +362,7 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     ActionsDAG & expression = expression_step->getExpression();
 
     bool optimize_plan = !settings.vector_search_with_rescoring;
+
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
@@ -381,7 +382,9 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
         if (optimize_plan)
         {
             auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
-            analyzed_result = analyzed_result ? analyzed_result : read_from_mergetree_step->selectRangesToRead();
+
+            if (!analyzed_result)
+                analyzed_result = read_from_mergetree_step->selectRangesToRead();
 
             /// Only if full parts were candidates and vector index was used to fetch
             /// distances, we can proceed with the optimization.
