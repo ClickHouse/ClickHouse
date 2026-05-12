@@ -182,6 +182,38 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+class TypeMatcherDecimal32 : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Decimal32"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDecimal32(); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherDecimal64 : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Decimal64"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDecimal64(); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherDecimal128 : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Decimal128"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDecimal128(); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherDecimal256 : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Decimal256"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDecimal256(); }
+    size_t getIndex() const override { return 0; }
+};
+
 class TypeMatcherUUID : public ITypeMatcher
 {
 public:
@@ -468,6 +500,10 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherFloat>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherNativeNumber>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDecimal>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherDecimal32>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherDecimal64>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherDecimal128>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherDecimal256>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherUUID>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherIPv4>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherIPv6>(factory);
