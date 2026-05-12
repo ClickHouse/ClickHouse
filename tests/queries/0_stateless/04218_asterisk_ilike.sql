@@ -9,4 +9,5 @@ SELECT * ILIKE 'metric_%' FROM (SELECT 1 AS metric_value, 2 AS `metric%value`, 3
 SELECT * ILIKE 'metric\\_%' FROM (SELECT 1 AS metric_value, 2 AS `metric%value`, 3 AS metricXvalue);
 SELECT * ILIKE 'metric\\%%' FROM (SELECT 1 AS `metric%value`, 2 AS metric_value, 3 AS `METRIC%`);
 SELECT * ILIKE 'foo%' EXCEPT (foo_extra) FROM (SELECT 1 AS foo, 2 AS foo_extra, 3 AS bar);
+SELECT a.* ILIKE '%id' FROM (SELECT 1 AS UserID, 'a' AS test) AS a LEFT JOIN (SELECT 1 AS id, 'b' AS test) AS b ON b.id = a.UserID LEFT JOIN (SELECT 1 AS id, 'c' AS test) AS c ON c.id = a.UserID SETTINGS enable_analyzer = 0;
 SELECT * ILIKE 'missing%' FROM (SELECT 1 AS foo); -- { serverError EMPTY_LIST_OF_COLUMNS_QUERIED }
