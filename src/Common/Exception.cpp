@@ -136,7 +136,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
 }
 
 Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
-    : Poco::Exception(std::move(msg_masked.msg), code)
+    : Poco::Exception(msg_masked.msg, code)
     , remote(remote_)
 {
     if (terminate_on_any_exception)
@@ -208,7 +208,7 @@ std::string getExceptionStackTraceString(std::exception_ptr e)
     {
         return getExceptionStackTraceString(exception);
     }
-    catch (...) // Ok: no stack trace available for non-std exceptions
+    catch (...)
     {
         return {};
     }
@@ -400,7 +400,7 @@ static void getNotEnoughMemoryMessage(std::string & msg)
                 num_maps, max_map_count);
         }
     }
-    catch (...) // Ok: cannot obtain additional info about memory usage
+    catch (...)
     {
         msg += "\nCannot obtain additional info about memory usage.";
     }
@@ -488,7 +488,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
+        catch (...) {} // NOLINT(bugprone-empty-catch)
     }
     catch (const std::exception & e)
     {
@@ -506,7 +506,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
+        catch (...) {} // NOLINT(bugprone-empty-catch)
 
         if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
         {
@@ -521,10 +521,10 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
 
                 abortOnFailedAssertion(stream.str());
             }
-            catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
+            catch (...) {} // NOLINT(bugprone-empty-catch)
         }
     }
-    catch (...) // Ok: unknown exception type, format what we can
+    catch (...)
     {
         try
         {
@@ -538,7 +538,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
+        catch (...) {} // NOLINT(bugprone-empty-catch)
     }
 
     return PreformattedMessage{stream.str(), message_format_string, message_format_string_args};
@@ -563,7 +563,7 @@ int getCurrentExceptionCode()
     {
         return ErrorCodes::STD_EXCEPTION;
     }
-    catch (...) // Ok: return error code for unknown exception types
+    catch (...)
     {
         return ErrorCodes::UNKNOWN_EXCEPTION;
     }
@@ -587,7 +587,7 @@ int getExceptionErrorCode(std::exception_ptr e)
     {
         return ErrorCodes::STD_EXCEPTION;
     }
-    catch (...) // Ok: return error code for unknown exception types
+    catch (...)
     {
         return ErrorCodes::UNKNOWN_EXCEPTION;
     }
@@ -664,7 +664,7 @@ PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with
         if (with_stacktrace && !has_embedded_stack_trace)
             stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTraceString();
     }
-    catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
+    catch (...) {} // NOLINT(bugprone-empty-catch)
 
     return PreformattedMessage{stream.str(), e.tryGetMessageFormatString(), e.getMessageFormatStringArgs()};
 }
@@ -701,7 +701,7 @@ bool ExecutionStatus::tryDeserializeText(const std::string & data)
     {
         deserializeText(data);
     }
-    catch (...) // Ok: tryDeserializeText is a try-pattern, failure is expected
+    catch (...)
     {
         return false;
     }
