@@ -35,28 +35,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 5; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"longitute_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
-            {"latitude_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
-            {"longitute_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
-            {"latitude_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
-            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "UInt8"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        if (!(arguments[0].type->equals(*arguments[1].type) &&
-              arguments[0].type->equals(*arguments[2].type) &&
-              arguments[0].type->equals(*arguments[3].type)))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal type of argument of {} all coordinate arguments must have the same type, "
-                            "instead they are:{}, {}, {}, {}.", getName(), arguments[0].type->getName(),
-                            arguments[1].type->getName(), arguments[2].type->getName(), arguments[3].type->getName());
-        }
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        /// Enforce same exact Float type across the 4 coordinate args via type variables.
+        return "(T : Float, T : Float, T : Float, T : Float, UInt8) -> Array(String)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
