@@ -23,6 +23,9 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/Cache/OvercommitFileCachePriority.h>
+#endif
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/hex.h>
@@ -66,6 +69,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 boundary_alignment;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
+    extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
@@ -1539,6 +1543,91 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
     /// Verify cache usage is within new limits.
     ASSERT_LE(cache->getUsedCacheSize(), 8);
     ASSERT_LE(cache->getFileSegmentsNum(), 6);
+}
+
+TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
+{
+    /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/104307
+    ///
+    /// `freeSpaceRatioKeepingThreadFunc` calls `SLRUFileCachePriority::collectEvictionInfo`
+    /// with `is_total_space_cleanup=true`. With `keep_free_space_elements_ratio = 1.0`
+    /// (or any value high enough that the desired element count is below the current count)
+    /// the function used to chassert that we are evicting at least one element/byte from the
+    /// probationary queue. This is wrong when entries have all been promoted to the protected
+    /// queue and the probationary queue is empty: the function must still be able to evict
+    /// from the protected queue. Without the fix, the chassert aborts the server in
+    /// debug/sanitizer builds.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
+
+    auto write_file = [](const std::string & filename, const std::string & s)
+    {
+        std::string file_path = fs::current_path() / filename;
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(s.data(), s.size());
+        wb->next();
+        wb->finalize();
+        return file_path;
+    };
+
+    /// Create SLRU cache: max_size=30, max_elements=6, ratio=0.5 -- protected = 15/3, probationary = 15/3.
+    /// Crucially, set `keep_free_space_elements_ratio = 1.0` so the background-keeping thread
+    /// targets `desired_elements_num = 0` and tries to evict every element from total cache.
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path2;
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 6;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::keep_free_space_elements_ratio] = 1.0;
+
+    auto cache = std::make_shared<DB::FileCache>("slru_free_space_104307", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+
+    auto read_and_check = [&](const std::string & file, const FileCacheKey & key, const std::string & expect_result)
+    {
+        auto read_buffer_creator = [&]()
+        {
+            return createReadBufferFromFileBase(file, read_settings, std::nullopt, std::nullopt);
+        };
+        auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+            file, key, cache, user, read_buffer_creator, read_settings,
+            "test", expect_result.size(), false, false, std::nullopt, nullptr);
+        WriteBufferFromOwnString result;
+        copyData(*cached_buffer, result);
+        ASSERT_EQ(result.str(), expect_result);
+    };
+
+    /// Read file1 twice -> 15 bytes / 3 segments in protected, probationary stays empty.
+    /// This is the exact precondition that used to trigger the chassert.
+    std::string data1(15, '*');
+    auto file1 = write_file("test_free_space_104307", data1);
+    auto key1 = DB::FileCacheKey::fromPath(file1);
+    read_and_check(file1, key1, data1);
+    read_and_check(file1, key1, data1);
+
+    assertProbationary(cache->dumpQueue(), Ranges{});
+    assertProtected(cache->dumpQueue(), { Range(0, 4), Range(5, 9), Range(10, 14) });
+
+    /// Without the fix, this call (or the background scheduling that immediately follows
+    /// `cache->initialize()` with the same precondition) aborts via
+    /// `chassert(evict_size_from_probationary || evict_elements_from_probationary)`.
+    /// With the fix, the function evicts from the protected queue and returns cleanly.
+    ASSERT_NO_THROW(cache->freeSpaceRatioKeepingThreadFunc());
+
+    /// And the eviction thread should make progress -- with `keep_free_space_elements_ratio = 1.0`
+    /// and a `keep_free_space_remove_batch` of 10 by default, all 3 protected entries fit in one batch.
+    ASSERT_EQ(cache->getFileSegmentsNum(), 0);
+    ASSERT_EQ(cache->getUsedCacheSize(), 0);
 }
 
 TEST_F(FileCacheTest, FileCacheGetOrSet)

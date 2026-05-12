@@ -311,7 +311,7 @@ CREATE TABLE system.functions
     `case_insensitive` UInt8,
     `alias_to` String,
     `create_query` String,
-    `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2),
+    `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2, 'WasmUserDefined' = 3),
     `description` String,
     `syntax` String,
     `arguments` String,
@@ -609,6 +609,7 @@ CREATE TABLE system.parts_columns
     `estimates.min` Nullable(String),
     `estimates.max` Nullable(String),
     `estimates.cardinality` Nullable(UInt64),
+    `estimates.null_count` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),
@@ -1094,7 +1095,8 @@ CREATE TABLE system.stack_trace
     `thread_name` String,
     `thread_id` UInt64,
     `query_id` String,
-    `trace` Array(UInt64)
+    `trace` Array(UInt64),
+    `untracked_memory` Int64
 )
 ENGINE = SystemStackTrace
 COMMENT 'Allows to obtain an unsymbolized stacktrace from all the threads of the server process.'
@@ -1158,6 +1160,7 @@ CREATE TABLE system.tables
     `sorting_key` String,
     `primary_key` String,
     `sampling_key` String,
+    `unique_key` String,
     `storage_policy` String,
     `total_rows` Nullable(UInt64),
     `total_bytes` Nullable(UInt64),
