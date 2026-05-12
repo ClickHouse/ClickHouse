@@ -126,6 +126,7 @@ protected:
             if (!object_storage->isIcebergStorage())
                 return;
 
+#if USE_AVRO
             /// Checkpoints to revert to pre-row state in case any per-column inserts throw midway.
             std::vector<ColumnCheckpointPtr> checkpoints(col_ptrs.size());
             for (size_t i = 0; i < col_ptrs.size(); ++i)
@@ -190,6 +191,7 @@ protected:
                     col_ptrs[i]->rollback(*checkpoints[i]);
                 tryLogCurrentException(getLogger("SystemIcebergFiles"), fmt::format("Ignoring broken table {}", object_storage->getStorageID().getFullTableName()));
             }
+#endif
         };
 
 
@@ -238,7 +240,6 @@ protected:
                         add_file_records(current_table_iterator, object_storage_table);
                 }
             }
-
             current_table_iterator->next();
         }
 
@@ -256,7 +257,7 @@ protected:
 
 private:
     ContextPtr context;
-    const size_t max_block_size;
+    [[maybe_unused]] const size_t max_block_size;
     ExpressionActionsPtr virtual_columns_filter;
     DB::Databases databases;
     DB::Databases::const_iterator current_database_iterator;
