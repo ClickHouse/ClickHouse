@@ -173,9 +173,14 @@ struct Options
 
     /// Per-iteration `max_execution_time`. The `CancellationChecker` flips
     /// `QueryStatus::is_killed` once this many seconds elapse inside a single function
-    /// execution. An iteration that takes more than `2 * iteration_timeout_seconds` to
-    /// terminate is reported as `P_TIMEOUT_NOT_HONORED`. Accepts fractional seconds.
-    double iteration_timeout_seconds = 30;
+    /// execution. Accepts fractional seconds.
+    double iteration_timeout_seconds = 15;
+
+    /// Wall-clock threshold above which an iteration is reported as `P_TIMEOUT_NOT_HONORED`.
+    /// Independent from `iteration_timeout_seconds` so the slack between the timeout firing
+    /// and the function actually noticing can be tuned without changing the timeout itself.
+    /// Accepts fractional seconds.
+    double iteration_too_slow_seconds = 20;
 
     size_t rows_per_batch = 32;
 
@@ -216,7 +221,8 @@ struct Options
         desc.add_options()
             ("threads", po::value<int>(&num_threads)->default_value(num_threads), "how many instances of the test to run in parallel, -1 for num cores")
             ("duration", po::value<int>(&duration_seconds)->default_value(duration_seconds), "run for this many seconds, -1 to run forever")
-            ("iteration-timeout", po::value<double>(&iteration_timeout_seconds)->default_value(iteration_timeout_seconds), "per-iteration max_execution_time in seconds (fractional allowed); iterations that take more than 2x this are reported as timeout_not_honored")
+            ("iteration-timeout", po::value<double>(&iteration_timeout_seconds)->default_value(iteration_timeout_seconds), "per-iteration max_execution_time in seconds (fractional allowed)")
+            ("iteration-too-slow", po::value<double>(&iteration_too_slow_seconds)->default_value(iteration_too_slow_seconds), "iterations that take longer than this many seconds are reported as timeout_not_honored (fractional allowed)")
             ("rows-per-batch", po::value<size_t>(&rows_per_batch)->default_value(rows_per_batch), "number of rows to feed into a function at once")
             ("avoid-nondefault-null", po::value<bool>(&avoid_nondefault_null)->default_value(avoid_nondefault_null), "avoid using Nullable values where the null_map says the value is NULL, but the nested column has nondefault value; if a function returns such value, fix it up before passing it to other functions; this makes the test unrealistic, we should ideally fix all cases where this breaks functions and disable this option")
             ("avoid-reusing-overload-resolver", po::value<bool>(&avoid_reusing_overload_resolver)->default_value(avoid_reusing_overload_resolver), "create a new instance of IFunctionOverloadResolver for every overload resolution")
@@ -1042,7 +1048,8 @@ String reportResults(const std::vector<FunctionStats> & function_stats, size_t s
     for (const auto & [category, errors] : unignored_errors)
     {
         if (category == problemInfo(P_TIMEOUT_NOT_HONORED).first)
-            failure_details += fmt::format("\n{} (max_execution_time={}s):\n", category, options.iteration_timeout_seconds);
+            failure_details += fmt::format("\n{} (max_execution_time={}s, too-slow threshold={}s):\n",
+                category, options.iteration_timeout_seconds, options.iteration_too_slow_seconds);
         else
             failure_details += fmt::format("\n{}:\n", category);
         for (const auto & error : errors)
@@ -1248,12 +1255,12 @@ struct FunctionsStressTestThread
         /// Per-iteration `max_execution_time`. Picked up by `ProcessList::insert` below and
         /// tracked by the `CancellationChecker` singleton; when it expires,
         /// `QueryStatus::is_killed` flips to true and `CurrentThread::isQueryCanceled()`
-        /// starts returning true on this thread. An iteration that takes more than
-        /// `2 * options.iteration_timeout_seconds` to terminate (no matter how: success,
-        /// MLE, cancellation, etc.) is reported as `P_TIMEOUT_NOT_HONORED`. The remedy
-        /// depends on the function: poll `CurrentThread::isQueryCanceled` between iterations,
-        /// make the per-iteration work cheaper, or reject the offending input shape inside
-        /// the function itself.
+        /// starts returning true on this thread. An iteration whose wall-clock duration
+        /// exceeds `options.iteration_too_slow_seconds` (no matter how it terminated:
+        /// success, MLE, cancellation, etc.) is reported as `P_TIMEOUT_NOT_HONORED`. The
+        /// remedy depends on the function: poll `CurrentThread::isQueryCanceled` between
+        /// iterations, make the per-iteration work cheaper, or reject the offending input
+        /// shape inside the function itself.
         context->setSetting("max_execution_time", options.iteration_timeout_seconds);
         thread_group = std::make_shared<ThreadGroup>(context, 0, [&] { logCurrentOperation(); });
         CurrentThread::attachToGroup(thread_group);
@@ -1393,13 +1400,13 @@ struct FunctionsStressTestThread
             Int64 ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - operation.iteration_start_time).count();
             stats.add(S_TIME_TOTAL_NS, ns);
 
-            /// If the iteration ran more than twice `max_execution_time`, the function
+            /// If the iteration ran longer than `iteration_too_slow_seconds`, the function
             /// ignored cancellation: either it never checks `CurrentThread::isQueryCanceled`
-            /// or it kept running long after `QueryStatus::is_killed` was set. Independent of
-            /// how the iteration terminated (success, MLE, cancelled, etc.).
-            const Int64 timeout_not_honored_threshold_ns
-                = static_cast<Int64>(2 * options.iteration_timeout_seconds * 1e9);
-            if (ns >= timeout_not_honored_threshold_ns && !stats.hasProblem(P_TIMEOUT_NOT_HONORED))
+            /// or it kept running long after `QueryStatus::is_killed` was set. Independent
+            /// of how the iteration terminated (success, MLE, cancelled, etc.).
+            const Int64 too_slow_threshold_ns
+                = static_cast<Int64>(options.iteration_too_slow_seconds * 1e9);
+            if (ns >= too_slow_threshold_ns && !stats.hasProblem(P_TIMEOUT_NOT_HONORED))
                 stats.reportProblem(P_TIMEOUT_NOT_HONORED,
                     fmt::format("iteration ran for {:.3}s: {}",
                                 static_cast<double>(ns) / 1e9, operation.describe()));
@@ -2322,8 +2329,9 @@ TEST(FunctionsStress, stress)
     absl::SetMinLogLevel(absl::LogSeverityAtLeast::kFatal);
 
 
-    LOG_INFO(logger, "Will run in {} threads on {} functions for {} seconds, iteration timeout {}s",
-        threads.size(), testable_functions.size(), options.duration_seconds, options.iteration_timeout_seconds);
+    LOG_INFO(logger, "Will run in {} threads on {} functions for {} seconds, iteration timeout {}s, too-slow threshold {}s",
+        threads.size(), testable_functions.size(),
+        options.duration_seconds, options.iteration_timeout_seconds, options.iteration_too_slow_seconds);
 
     for (size_t i = 0; i < threads.size(); ++i)
     {
