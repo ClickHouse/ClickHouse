@@ -4,6 +4,9 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -11,7 +14,6 @@
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
-
 #include <Common/typeid_cast.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -87,6 +89,73 @@ public:
     }
 
     std::string name() const override { return "DateTime"; }
+};
+
+/// Creates DateTime64 with specified scale and optional time zone.
+class TypeFunctionDateTime64 : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.empty() || args.size() > 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function DateTime64");
+        const UInt64 scale = args[0].field().safeGet<UInt64>();
+        if (args.size() == 1)
+            return Value(DataTypePtr(std::make_shared<DataTypeDateTime64>(scale)));
+        return Value(DataTypePtr(std::make_shared<DataTypeDateTime64>(scale, args[1].field().safeGet<String>())));
+    }
+
+    std::string name() const override { return "DateTime64"; }
+};
+
+/// Creates Time64 with specified scale.
+class TypeFunctionTime64 : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function Time64");
+        return Value(DataTypePtr(std::make_shared<DataTypeTime64>(args.front().field().safeGet<UInt64>())));
+    }
+
+    std::string name() const override { return "Time64"; }
+};
+
+/// Extracts the scale of a DateTime64 / Time64, or DataTypeDateTime64::default_scale if the
+/// argument has no scale (Date, Date32, DateTime, ...).
+class TypeFunctionScaleOf : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function scaleOf");
+        const DataTypePtr & type = args.front().type();
+        if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+            return Value(Field(static_cast<UInt64>(dt64->getScale())));
+        if (const auto * t64 = typeid_cast<const DataTypeTime64 *>(type.get()))
+            return Value(Field(static_cast<UInt64>(t64->getScale())));
+        return Value(Field(static_cast<UInt64>(DataTypeDateTime64::default_scale)));
+    }
+
+    std::string name() const override { return "scaleOf"; }
+};
+
+/// max(a, b) over UInt64 constants.
+class TypeFunctionMax : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function max");
+        const UInt64 a = args[0].field().safeGet<UInt64>();
+        const UInt64 b = args[1].field().safeGet<UInt64>();
+        return Value(Field(std::max(a, b)));
+    }
+
+    std::string name() const override { return "max"; }
 };
 
 class TypeFunctionTypeFromString : public ITypeFunction
@@ -234,6 +303,10 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionArray>();
     factory.registerElement<TypeFunctionFixedString>();
     factory.registerElement<TypeFunctionDateTime>();
+    factory.registerElement<TypeFunctionDateTime64>();
+    factory.registerElement<TypeFunctionTime64>();
+    factory.registerElement<TypeFunctionScaleOf>();
+    factory.registerElement<TypeFunctionMax>();
     factory.registerElement<TypeFunctionDifference>();
     factory.registerElement<TypeFunctionTypeFromString>();
     factory.registerElement<TypeFunctionNullable>();

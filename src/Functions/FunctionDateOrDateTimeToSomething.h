@@ -19,74 +19,53 @@ public:
 
     String getSignatureString() const override
     {
-        /// For DateTime/DateTime64/Time64 returns we need to construct the type with a
-        /// timezone or computed scale; that logic doesn't fit a static signature, so we keep
-        /// the legacy getReturnTypeImpl path for those.
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>
-                   || std::is_same_v<ToDataType, DataTypeDateTime64>
-                   || std::is_same_v<ToDataType, DataTypeTime64>)
-            return {};
-        else
-            return "(DateOrDateTime, [String]) -> " + ToDataType{}.getName();
-    }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        /// Defer to signature-based dispatch when getSignatureString returns non-empty.
-        if (!this->getSignatureString().empty())
-            return IFunction::getReturnTypeImpl(arguments);
-
-        constexpr bool result_is_date_or_date32 = (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>);
-        this->checkArguments(arguments, result_is_date_or_date32);
-
-        /// For DateTime results, if time zone is specified, attach it to type.
-        /// If the time zone is specified but empty, throw an exception.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false);
-            /// only validate the time_zone part if the number of arguments is 2. This is mainly
-            /// to accommodate functions like toStartOfDay(today()), toStartOfDay(yesterday()) etc.
-            if (arguments.size() == 2 && time_zone.empty())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function {} supports a 2nd argument (optional) that must be a valid time zone",
-                    this->getName());
-            return std::make_shared<ToDataType>(time_zone);
+            /// Timezone is optional and, when present, attached to the return type.
+            return "(DateOrDateTime) -> DateTime"
+                   " OR (DateOrDateTime, const tz String) -> DateTime(tz)";
         }
-
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+        else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
-            Int64 scale = DataTypeDateTime64::default_scale;
-            if (const auto * dt64 =  checkAndGetDataType<DataTypeDateTime64>(arguments[0].type.get()))
-                scale = dt64->getScale();
-            auto source_scale = scale;
-
+            /// Scale is the source scale (default 3 for non-DateTime64 sources), possibly
+            /// bumped up by transforms that operate at finer-than-source precision.
+            String min_scale;
             if constexpr (std::is_same_v<ToStartOfMillisecondImpl, Transform>)
-                scale = std::max(source_scale, static_cast<Int64>(3));
+                min_scale = "3";
             else if constexpr (std::is_same_v<ToStartOfMicrosecondImpl, Transform>)
-                scale = std::max(source_scale, static_cast<Int64>(6));
+                min_scale = "6";
             else if constexpr (std::is_same_v<ToStartOfNanosecondImpl, Transform>)
-                scale = std::max(source_scale, static_cast<Int64>(9));
+                min_scale = "9";
 
-            return std::make_shared<ToDataType>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
+            const String scale_expr = min_scale.empty()
+                ? "scaleOf(T)"
+                : "max(scaleOf(T), " + min_scale + ")";
+
+            return "(T : DateOrDateTime) -> DateTime64(" + scale_expr + ")"
+                   " OR (T : DateOrDateTime, const tz String) -> DateTime64(" + scale_expr + ", tz)";
         }
         else if constexpr (std::is_same_v<ToDataType, DataTypeTime64>)
         {
-            Int64 scale = DataTypeTime64::default_scale;
-            if (const auto * dt64 =  checkAndGetDataType<DataTypeTime64>(arguments[0].type.get()))
-                scale = dt64->getScale();
-            auto source_scale = scale;
-
+            String min_scale;
             if constexpr (std::is_same_v<ToStartOfMillisecondImpl, Transform>)
-                scale = std::max(source_scale, static_cast<Int64>(3));
+                min_scale = "3";
             else if constexpr (std::is_same_v<ToStartOfMicrosecondImpl, Transform>)
-                scale = std::max(source_scale, static_cast<Int64>(6));
+                min_scale = "6";
             else if constexpr (std::is_same_v<ToStartOfNanosecondImpl, Transform>)
-                scale = std::max(source_scale, static_cast<Int64>(9));
+                min_scale = "9";
 
-            return std::make_shared<ToDataType>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
+            const String scale_expr = min_scale.empty()
+                ? "scaleOf(T)"
+                : "max(scaleOf(T), " + min_scale + ")";
+
+            /// DataTypeTime64 doesn't carry a timezone of its own, but the 2nd arg is still accepted.
+            return "(T : DateOrDateTime) -> Time64(" + scale_expr + ")"
+                   " OR (T : DateOrDateTime, const tz String) -> Time64(" + scale_expr + ")";
         }
         else
-            return std::make_shared<ToDataType>();
+        {
+            return "(DateOrDateTime, [String]) -> " + ToDataType{}.getName();
+        }
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

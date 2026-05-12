@@ -169,3 +169,48 @@ GTEST_TEST(FunctionSignature, MaybeNullableUnwrap)
     EXPECT_EQ(checkSignature("(MaybeNullable(U)) -> U", {makeColumn("UInt32")}), "UInt32");
     EXPECT_EQ(checkSignature("(MaybeNullable(U)) -> U", {makeColumn("Nullable(UInt32)")}), "UInt32");
 }
+
+GTEST_TEST(FunctionSignature, NumericLiteral)
+{
+    /// Numeric literals can appear in return-type expressions as constant Field arguments.
+    EXPECT_EQ(checkSignature("(String) -> FixedString(7)", {makeColumn("String")}), "FixedString(7)");
+}
+
+GTEST_TEST(FunctionSignature, DateTimeWithOptionalTimezone)
+{
+    String sig =
+        "(DateOrDateTime) -> DateTime"
+        " OR (DateOrDateTime, const tz String) -> DateTime(tz)";
+
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Date")}), "DateTime");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("DateTime")}), "DateTime");
+    EXPECT_EQ(
+        checkSignature(sig, {makeColumn("DateTime"), makeConstColumn("String", Field(String("UTC")))}),
+        "DateTime('UTC')");
+}
+
+GTEST_TEST(FunctionSignature, DateTime64ScaleFromSource)
+{
+    /// scaleOf(T) returns the source DateTime64 scale (or default 3 for non-DateTime64).
+    String sig =
+        "(T : DateOrDateTime) -> DateTime64(scaleOf(T))"
+        " OR (T : DateOrDateTime, const tz String) -> DateTime64(scaleOf(T), tz)";
+
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Date")}), "DateTime64(3)");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("DateTime")}), "DateTime64(3)");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("DateTime64(7)")}), "DateTime64(7)");
+    EXPECT_EQ(
+        checkSignature(sig, {makeColumn("DateTime64(2)"), makeConstColumn("String", Field(String("UTC")))}),
+        "DateTime64(2, 'UTC')");
+}
+
+GTEST_TEST(FunctionSignature, DateTime64SubsecondMinScale)
+{
+    /// max(scaleOf(T), 6) — used by toStartOfMicrosecond etc.
+    String sig =
+        "(T : DateOrDateTime) -> DateTime64(max(scaleOf(T), 6))"
+        " OR (T : DateOrDateTime, const tz String) -> DateTime64(max(scaleOf(T), 6), tz)";
+
+    EXPECT_EQ(checkSignature(sig, {makeColumn("DateTime64(2)")}), "DateTime64(6)");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("DateTime64(9)")}), "DateTime64(9)");
+}

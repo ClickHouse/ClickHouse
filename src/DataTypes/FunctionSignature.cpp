@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -900,6 +901,20 @@ bool typeFamilyExists(const std::string & family_name)
 
 bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
 {
+    /// Integer literal — used inside return-type expressions to pass numeric arguments
+    /// to type functions, e.g. `DateTime64(max(scaleOf(T), 3))`.
+    if (pos->type == TokenType::Number)
+    {
+        ReadBufferFromMemory buf(pos->begin, pos->end - pos->begin);
+        UInt64 value = 0;
+        if (tryReadIntText(value, buf) && buf.eof())
+        {
+            res = std::make_shared<ConstantTypeExpression>(Value(Field(value)));
+            ++pos;
+            return true;
+        }
+    }
+
     TokenIterator begin = pos;
     std::string name;
     TypeExpressions children;
