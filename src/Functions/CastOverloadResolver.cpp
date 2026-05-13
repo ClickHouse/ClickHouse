@@ -147,6 +147,14 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
+    /// Documentation-only — the result type is parsed from the const-string
+    /// type-name argument (and may be wrapped in `Nullable` for the
+    /// `accurateCastOrNull` variant or when `cast_keep_nullable` is set).
+    String getSignatureString() const override
+    {
+        return "(Any, const String) -> Any";
+    }
+
     explicit CastOverloadResolverImpl(ContextPtr context_, CastType cast_type_, bool internal_, std::optional<CastDiagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
         : WithContext(context_)
         , cast_type(cast_type_)
