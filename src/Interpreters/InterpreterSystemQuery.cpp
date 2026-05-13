@@ -27,6 +27,7 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -86,6 +87,10 @@
 
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
+#endif
+
+#if USE_AVRO
+#include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
 #endif
 
 #if USE_AWS_S3
@@ -437,6 +442,14 @@ BlockIO InterpreterSystemQuery::execute()
 #if USE_AVRO
             getContext()->checkAccess(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
             system_context->clearIcebergMetadataFilesCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
+#endif
+        case Type::CLEAR_AVRO_SCHEMA_CACHE:
+#if USE_AVRO
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_AVRO_SCHEMA_CACHE);
+            clearConfluentSchemaRegistryCache();
             break;
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
@@ -1308,7 +1321,14 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         database->detachTable(system_context, replica_table_id.table_name);
     }
     table.reset();
-    database->waitDetachedTableNotInUse(replica_table_id.uuid);
+    {
+        QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+        database->waitDetachedTableNotInUse(replica_table_id.uuid, [&]()
+        {
+            if (query_status)
+                query_status->throwIfKilled();
+        });
+    }
 
     /// Attach actions
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
@@ -2282,6 +2302,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_AVRO_SCHEMA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
