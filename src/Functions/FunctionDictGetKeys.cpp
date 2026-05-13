@@ -86,6 +86,14 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
+    /// Documentation-only — the result type is `Array(K)` where `K` is the
+    /// dictionary's key type (or `Array(Tuple(K1, K2, ...))` for composite
+    /// keys), looked up from the const-string dictionary name and attribute.
+    String getSignatureString() const override
+    {
+        return "(const String, const String, Any) -> Array";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto * dict_name_const_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
