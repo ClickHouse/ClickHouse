@@ -769,6 +769,11 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    String getSignatureString() const override
+    {
+        return "(X : Number, Array(B : Number)) -> leastSupertype(X, B)";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypePtr & type_x = arguments[0];
