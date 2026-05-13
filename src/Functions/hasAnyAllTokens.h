@@ -102,6 +102,17 @@ public:
     bool isVariadic() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
+    /// `hasAnyTokens(haystack, needles[, tokenizer])` — haystack is a string
+    /// or an array of strings; needles is a const string or const array of
+    /// strings; optional const tokenizer name. Result is `UInt8`; wrapped in
+    /// `Nullable` when the haystack is `Nullable`. The runtime additionally
+    /// enforces the constancy of `needles` and `tokenizer`.
+    String getSignatureString() const override
+    {
+        return "(N : MaybeNullable(StringOrFixedString | Array(StringOrFixedString)), "
+               "Any, [const String]) -> selectIf(anyNullable(N), Nullable(UInt8), UInt8)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override;
