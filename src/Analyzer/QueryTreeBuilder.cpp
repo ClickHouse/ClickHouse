@@ -1305,10 +1305,7 @@ QueryTreeNodePtr QueryTreeBuilder::setSecondArgumentAsParameter(const ASTFunctio
     auto function_node = std::make_shared<FunctionNode>(function->name);
     function_node->setNullsAction(function->getNullsAction());
 
-    /// Preserve any existing parameters (e.g. the optional limit in
-    /// `groupConcat(delim, limit)`), then let the second argument override
-    /// the delimiter at parameter position 0 — the two-argument spelling
-    /// of the delimiter wins over the one passed via parameters.
+    /// Keep existing parameters (e.g. the optional limit); the second argument overrides the delimiter at slot 0.
     auto & parameters = function_node->getParameters().getNodes();
     if (function->parameters)
     {
