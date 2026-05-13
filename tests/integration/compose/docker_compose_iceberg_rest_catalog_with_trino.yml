@@ -1,0 +1,75 @@
+services:
+  rest:
+    # apache/iceberg-rest-fixture 1.10.1 ships with iceberg-java 1.10 which supports
+    # parsing v3 `geometry`/`geography` schema types.
+    image: apache/iceberg-rest-fixture:1.10.1
+    ports:
+      - "${ICEBERG_REST_CATALOG_PORT}:8181"
+    environment:
+      - AWS_ACCESS_KEY_ID=minio
+      - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
+      - AWS_REGION=us-east-1
+      - CATALOG_WAREHOUSE=s3://warehouse-rest/
+      - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
+      - CATALOG_S3_ENDPOINT=http://minio:9000
+      - CATALOG_S3_PATH__STYLE__ACCESS=true
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8181"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    stop_grace_period: 5s
+    cpus: 3
+  minio:
+    image: minio/minio:RELEASE.2024-07-31T05-46-26Z
+    environment:
+      - MINIO_ROOT_USER=minio
+      - MINIO_ROOT_PASSWORD=ClickHouse_Minio_P@ssw0rd
+      - MINIO_DOMAIN=minio
+    networks:
+      default:
+        aliases:
+          - warehouse-rest.minio
+    ports:
+      - 9001
+      - 9000
+    command: ["server", "/data", "--console-address", ":9001"]
+    stop_grace_period: 5s
+    cpus: 3
+  mc:
+    depends_on:
+      - minio
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    environment:
+      - AWS_ACCESS_KEY_ID=minio
+      - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
+      - AWS_REGION=us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc config host add minio http://minio:9000 minio ClickHouse_Minio_P@ssw0rd) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc rm -r --force minio/warehouse-rest;
+      /usr/bin/mc mb minio/warehouse-rest --ignore-existing;
+      /usr/bin/mc policy set public minio/warehouse-rest;
+      tail -f /dev/null
+      "
+    stop_grace_period: 5s
+    cpus: 3
+  trino:
+    # Trino >= 458 understands Iceberg v3 geometry/geography column types.
+    image: trinodb/trino:474
+    depends_on:
+      rest:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    volumes:
+      - ./trino_config/iceberg.properties:/etc/trino/catalog/iceberg.properties:ro
+    healthcheck:
+      test: ["CMD", "/usr/lib/trino/bin/health-check"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    stop_grace_period: 10s
+    cpus: 3
