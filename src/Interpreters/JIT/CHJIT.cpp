@@ -340,6 +340,12 @@ public:
     llvm::JITSymbol findSymbol(const std::string & Name) override
     {
         auto address_it = symbol_name_to_symbol_address.find(Name);
+        if (address_it == symbol_name_to_symbol_address.end() && Name.size() > 1 && Name[0] == '_')
+        {
+            /// On macOS, llvm::Mangler::getNameWithPrefix prepends '_' to C symbol names,
+            /// but registerSymbol() stores them unmangled. Retry the lookup without the prefix.
+            address_it = symbol_name_to_symbol_address.find(Name.substr(1));
+        }
         if (address_it == symbol_name_to_symbol_address.end())
             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Could not find symbol {}", Name);
 
