@@ -1341,16 +1341,19 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         size_t granules_dropped = 0;
     };
 
-    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag)
+    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt)
     {
         /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
         /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
         size_t condition_hash = dag->getHash();
 
-        /// Mirror the salting done by `updateQueryConditionCache` on the write path: when the read
-        /// goes through a TopK filter, the cached granule decisions are valid only for the same
-        /// TopK plan, so the cache key must be partitioned by the TopK parameters.
-        if (top_k_filter_info)
+        /// Mirror the salting done by `updateQueryConditionCache` on the WHERE write path: when the
+        /// read goes through a TopK filter, the cached granule decisions are valid only for the same
+        /// TopK plan, so the WHERE cache key must be partitioned by the TopK parameters. The PREWHERE
+        /// write path in `MergeTreeSelectProcessor::read` does not (yet) apply this salt, so we must
+        /// not apply it on the PREWHERE read path either — otherwise the keys diverge and the lookup
+        /// always misses.
+        if (apply_top_k_salt && top_k_filter_info)
             boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
 
         Stats stats;
@@ -1445,7 +1448,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         {
             if (outputs->result_name == prewhere_info->prewhere_column_name)
             {
-                auto stats = drop_mark_ranges(outputs);
+                auto stats = drop_mark_ranges(outputs, /*apply_top_k_salt=*/ false);
                 LOG_DEBUG(log,
                         "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
                         stats.granules_dropped,
@@ -1459,7 +1462,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
-        auto stats = drop_mark_ranges(output);
+        auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/ true);
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
                 stats.granules_dropped,
