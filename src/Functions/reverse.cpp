@@ -43,6 +43,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// `FunctionReverse` covers String/FixedString/Tuple inputs — the
+    /// `ReverseOverloadResolver` routes Array(...) inputs to `arrayReverse`
+    /// before this class is built, so Array is not part of this signature.
+    String getSignatureString() const override
+    {
+        return "(S : StringOrFixedString) -> S OR (T : Tuple(Any, ...)) -> reverseTuple(T)";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0]) && !isArray(arguments[0]) && !isTuple(arguments[0]))

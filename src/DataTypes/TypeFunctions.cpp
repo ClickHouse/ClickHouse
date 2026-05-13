@@ -797,6 +797,38 @@ public:
     std::string name() const override { return "anyNullable"; }
 };
 
+/// `reverseTuple(T)` — flips the element order of a Tuple, preserving names if
+/// the tuple is named. Used by `reverse` to compute the result type when the
+/// input is a Tuple. Throws if the input is not a Tuple.
+class TypeFunctionReverseTuple : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function reverseTuple takes 1 argument");
+
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(args.front().type().get());
+        if (!tuple_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "reverseTuple requires Tuple(...), got {}", args.front().type()->getName());
+
+        const auto & elems = tuple_type->getElements();
+        DataTypes reversed_elems(elems.rbegin(), elems.rend());
+
+        if (tuple_type->hasExplicitNames())
+        {
+            const auto & names = tuple_type->getElementNames();
+            Strings reversed_names(names.rbegin(), names.rend());
+            return Value(DataTypePtr(std::make_shared<DataTypeTuple>(reversed_elems, reversed_names)));
+        }
+
+        return Value(DataTypePtr(std::make_shared<DataTypeTuple>(reversed_elems)));
+    }
+
+    std::string name() const override { return "reverseTuple"; }
+};
+
 
 /// `isFloat32OrSmaller(T)` — `1` if `T` is a floating-point type at most 32 bits
 /// wide (i.e. `BFloat16` or `Float32`), otherwise `0`. The `Float64`-promotion
@@ -973,6 +1005,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionAnyFloat64>();
     factory.registerElement<TypeFunctionAnyBool>();
     factory.registerElement<TypeFunctionAnyNullable>();
+    factory.registerElement<TypeFunctionReverseTuple>();
     factory.registerElement<TypeFunctionAnyInteger>();
     factory.registerElement<TypeFunctionSelectIf>();
     factory.registerElement<TypeFunctionIsFloat32OrSmaller>();
