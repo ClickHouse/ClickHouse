@@ -368,7 +368,7 @@ void clear(T * buf)
 }
 
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
 void), transposeImpl, MULTITARGET_FUNCTION_BODY((const T * src, char * dst, UInt32 num_bits, UInt32 tail) /// NOLINT
@@ -411,18 +411,13 @@ ALWAYS_INLINE void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 
         transposeImpl_x86_64_v4<T, full>(src, dst, num_bits, tail);
         return;
     }
-    if (isArchSupported(TargetArch::x86_64_v3))
-    {
-        transposeImpl_x86_64_v3<T, full>(src, dst, num_bits, tail);
-        return;
-    }
 #endif
     {
         transposeImpl<T, full>(src, dst, num_bits, tail);
     }
 }
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
 void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * buf, UInt32 num_bits, UInt32 tail) /// NOLINT
@@ -460,11 +455,6 @@ ALWAYS_INLINE void reverseTranspose(const char * src, T * buf, UInt32 num_bits, 
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         reverseTransposeImpl_x86_64_v4<T, full>(src, buf, num_bits, tail);
-        return;
-    }
-    if (isArchSupported(TargetArch::x86_64_v3))
-    {
-        reverseTransposeImpl_x86_64_v3<T, full>(src, buf, num_bits, tail);
         return;
     }
 #endif

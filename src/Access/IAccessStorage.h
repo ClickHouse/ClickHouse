@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 #include <boost/noncopyable.hpp>
@@ -179,6 +180,10 @@ public:
     std::vector<UUID> insertOrReplace(const std::vector<AccessEntityPtr> & multiple_entities);
 
     /// Removes an entity from the storage. Throws an exception if couldn't remove.
+    /// After a successful removal, references to the removed entity are stripped from
+    /// any other access entities that referenced it (e.g. a user's `DEFAULT ROLE` list,
+    /// a settings profile's `TO` list, a row policy's grantees, etc.). Affected entities
+    /// are re-serialized so the cleanup is persisted on disk.
     bool remove(const UUID & id, bool throw_if_not_exists = true);
     std::vector<UUID> remove(const std::vector<UUID> & ids, bool throw_if_not_exists = true);
 
@@ -255,6 +260,11 @@ protected:
     virtual bool isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const;
     static UUID generateRandomID();
     LoggerPtr getLogger() const;
+    /// Iterates over all access entities in this storage and strips any reference to
+    /// the given (already removed) IDs. Failures for individual entities are logged
+    /// and swallowed so a single broken or read-only entity cannot block the cascade.
+    /// Called automatically after a successful `remove`.
+    void removeReferencesToRemovedIDs(const std::unordered_set<UUID> & removed_ids);
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
     static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, LoggerPtr log_);
     virtual bool acquireReplicatedRestore(RestorerFromBackup &) const { return false; }

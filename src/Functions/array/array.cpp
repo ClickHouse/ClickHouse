@@ -149,6 +149,12 @@ private:
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             const size_t base = row_i * columns.size();
+            /// At x86-64-v3 the loop and SLP vectorizers widen the per-column scatter into AVX2 gathers / packed stores
+            /// for typical small `columns.size()` (1-4), which regresses array literal construction by 10-20% vs scalar
+            /// stores. Disabling unrolling and vectorization keeps the simple per-element copy.
+#if defined(__clang__) && defined(__AVX2__)
+#pragma clang loop unroll(disable) vectorize(disable)
+#endif
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
                 out_container[base + col_i] = (*containers[col_i])[row_i];
         }

@@ -97,7 +97,7 @@ Tools:
 - Fetch inline review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh list-pr-review-threads --pr {pr_number} --repo {repo_name}`.
   The command returns JSON; each thread carries its node `id`, `isResolved`, `path`, `line`, and
-  `comments.nodes` with author, body, and `databaseId`.
+  `comments.nodes` with author, body, `databaseId`, and `createdAt`.
 - Fetch top-level conversation with:
   `{GH_PREFIX} gh api '/repos/{repo_name}/issues/{pr_number}/comments' --paginate`.
 - Reply on an existing thread with:
@@ -126,8 +126,8 @@ Procedure:
    and line, not by trusting the author's reply.
 6. For existing live threads, summarize the issue by default instead of replying on the thread. Reply
    only when the thread is marked as resolved, someone replied saying it is not an issue and you
-   believe it still is, or your last comment is older than two days. When replying, restate the concern
-   with the relevant code and explain why the previous answer does not resolve it.
+   believe it still is, or your last comment's `createdAt` is older than two days. When replying,
+   restate the concern with the relevant code and explain why the previous answer does not resolve it.
 7. Resolve or re-open only threads you created yourself: that means threads where the first comment in
    `comments.nodes` was authored by `clickhouse-gh[bot]`. If a bot-authored thread is open and the issue
    no longer holds in the current code, resolve it. If a bot-authored thread was resolved but the

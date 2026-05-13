@@ -75,6 +75,12 @@ struct DivideIntegralImpl
     using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    /// No mainstream ISA (x86 SSE/AVX/AVX-512, ARM NEON/SVE/SVE2) has SIMD
+    /// integer division. Auto-vectorization wraps each scalar div in
+    /// extract/insert making the loop ~3x larger and slower.
+    /// Example: DivideIntegralOrZeroImpl<UInt32, UInt64> Vector went from
+    /// 384 B (x86-64-v2) to 1088 B (x86-64-v3) before this flag was added.
+    static constexpr bool no_vectorize = true;
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)
@@ -142,6 +148,10 @@ struct ModuloImpl
 
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    /// Integer modulo uses the same `div` instruction as integer division — no
+    /// SIMD benefit, only code bloat.  But the float path (a - trunc(a/b)*b)
+    /// vectorizes well (divpd/roundpd are 2x throughput of divsd/roundsd).
+    static constexpr bool no_vectorize = !is_floating_point<typename NumberTraits::ResultOfModulo<A, B>::Type>;
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)

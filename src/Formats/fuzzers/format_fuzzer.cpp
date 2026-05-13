@@ -1,5 +1,7 @@
 #include <base/types.h>
 
+#include <Core/Settings.h>
+
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
@@ -18,6 +20,8 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
+
+#include <iostream>
 
 using namespace DB;
 
@@ -52,11 +56,67 @@ static std::string getFormatNameFromEnv()
     return "";
 }
 
+// Helper function to parse settings from command line arguments
+std::map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv)
+{
+    std::map<std::string, std::string> settings;
+    bool ignore_remaining = false;
+
+    for (int i = 1; i < argc; ++i)
+    {
+        std::string arg{argv[i]};
+
+        if (!ignore_remaining)
+        {
+            // Check for -ignore_remaining_args
+            if (arg.starts_with("-ignore_remaining_args"))
+            {
+                ignore_remaining = true;
+                continue;
+            }
+        }
+        else
+        {
+            // Parse settings after -ignore_remaining_args
+            size_t eq_pos = arg.find('=');
+            if (eq_pos != std::string::npos)
+            {
+                // Skip leading dashes to get the setting name
+                size_t key_start = 0;
+                while (key_start < arg.length() && arg[key_start] == '-')
+                    ++key_start;
+
+                std::string key = arg.substr(key_start, eq_pos - key_start);
+                std::string value = arg.substr(eq_pos + 1);
+                settings[key] = value;
+            }
+        }
+    }
+
+    return settings;
+}
+
 extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv)
 {
     // If it's a merge coordinator don't initialize anything
     if (isMerge(*argc, *argv))
         return 0;
+
+    getContext()->makeGlobalContext();
+
+    Settings settings;
+    for (const auto & [key, value] : parseSettingsFromArgs(*argc, *argv))
+    {
+        try
+        {
+            settings.set(key, value);
+        }
+        catch (const std::exception & e)
+        {
+            std::cerr << "Warning: Failed to set setting '" << key << "' to '" << value << "': " << e.what() << std::endl;
+        }
+    }
+    getContext()->setSettings(settings);
 
     env_format_name = getFormatNameFromEnv();
 

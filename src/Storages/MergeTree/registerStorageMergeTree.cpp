@@ -809,7 +809,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
         }
 
-        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
+        /// We use the local (query) context here so that user-level settings profiles can control
+        /// access to dynamic disk features such as `from_env`, `include`, and `from_zk`
+        /// (settings `dynamic_disk_allow_from_env`, `dynamic_disk_allow_include`, `dynamic_disk_allow_from_zk`).
+        /// When loading from existing metadata (`FORCE_ATTACH` / `FORCE_RESTORE`, e.g. server
+        /// restart or `UNDROP TABLE`), security checks inside `getDiskConfigurationFromAST` are
+        /// intentionally skipped because the disk configuration was already validated when the
+        /// table was originally created.
+        /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
+        /// still be subject to these checks.
+        storage_settings->loadFromQuery(*args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode));
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)

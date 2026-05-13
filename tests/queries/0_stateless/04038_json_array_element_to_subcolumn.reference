@@ -1,0 +1,115 @@
+basic
+1	1
+10	10
+multi
+q
+y
+oob
+\N
+\N
+variable_index
+1	1
+2	2
+3	3
+1	10
+2	20
+3	\N
+explain_optimized
+QUERY id: 0
+  PROJECTION COLUMNS
+    tupleElement(arrayElement(json.a, 1), \'b\') Dynamic
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: _CAST, function_type: ordinary, result_type: Dynamic
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: arrayElement, function_type: ordinary, result_type: Dynamic(max_types=16)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: json.a.:`Array(JSON)`.b, result_type: Array(Dynamic(max_types=16)), source_id: 7
+                  CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+            CONSTANT id: 9, constant_value: \'Dynamic\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_json_arr
+  SETTINGS optimize_functions_to_subcolumns=1
+explain_not_optimized
+QUERY id: 0
+  PROJECTION COLUMNS
+    tupleElement(arrayElement(json.a, 1), \'b\') Dynamic
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: tupleElement, function_type: ordinary, result_type: Dynamic
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: arrayElement, function_type: ordinary, result_type: Dynamic
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: json.a, result_type: Dynamic, source_id: 7
+                  CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+            CONSTANT id: 9, constant_value: \'b\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_json_arr
+  SETTINGS optimize_functions_to_subcolumns=0
+nested_path
+100
+200
+deep_field
+42
+99
+mixed_usage
+QUERY id: 0
+  PROJECTION COLUMNS
+    tupleElement(arrayElement(json.a, 1), \'b\') Dynamic
+    json.a Dynamic
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: tupleElement, function_type: ordinary, result_type: Dynamic
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: arrayElement, function_type: ordinary, result_type: Dynamic
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: json.a, result_type: Dynamic, source_id: 7
+                  CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+            CONSTANT id: 9, constant_value: \'b\', constant_value_type: String
+      COLUMN id: 10, column_name: json.a, result_type: Dynamic, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_json_arr
+  SETTINGS optimize_functions_to_subcolumns=1
+multiple_opt
+1	y
+10	q
+tuple_json
+1
+2
+dotted_keys
+10
+20
+negative_index
+20
+3
+where_clause
+1
+final_blocked
+QUERY id: 0
+  PROJECTION COLUMNS
+    tupleElement(arrayElement(json.a, 1), \'b\') Dynamic
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: tupleElement, function_type: ordinary, result_type: Dynamic
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: arrayElement, function_type: ordinary, result_type: Dynamic
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: json.a, result_type: Dynamic, source_id: 7
+                  CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+            CONSTANT id: 9, constant_value: \'b\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_json_final, final: 1
+  SETTINGS optimize_functions_to_subcolumns=1
+empty_array
+\N
+\N
+multi_json_cols
+1	100

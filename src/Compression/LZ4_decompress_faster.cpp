@@ -32,7 +32,17 @@ ALWAYS_INLINE UInt16 LZ4_readLE16(const void * mem_ptr)
 template <size_t block_size>
 ALWAYS_INLINE void copyFromOutput(UInt8 * dst, UInt8 * src)
 {
-    __builtin_memcpy(dst, src, block_size);
+    /// Match copies may overlap (src points into the already-decoded output).
+    /// When offset < 32, a 256-bit load reads bytes just written in the same
+    /// cache line, causing store-forwarding stalls.  Two 128-bit copies halve
+    /// the stall window.
+    if constexpr (block_size == 32)
+    {
+        __builtin_memcpy(dst, src, 16);
+        __builtin_memcpy(dst + 16, src + 16, 16);
+    }
+    else
+        __builtin_memcpy(dst, src, block_size);
 }
 
 template <size_t block_size>
@@ -57,11 +67,19 @@ ALWAYS_INLINE void wildCopyFromOutput(UInt8 * dst, const UInt8 * src, size_t siz
 {
     /// Unrolling with clang is doing >10% performance degrade on x86.
     /// On ARM (Graviton 4) the pragma has no measurable effect.
+    ///
+    /// Same store-forwarding concern as `copyFromOutput`.
     size_t i = 0;
     #pragma nounroll
     do
     {
-        __builtin_memcpy(dst, src, block_size);
+        if constexpr (block_size == 32)
+        {
+            __builtin_memcpy(dst, src, 16);
+            __builtin_memcpy(dst + 16, src + 16, 16);
+        }
+        else
+            __builtin_memcpy(dst, src, block_size);
         dst += block_size;
         src += block_size;
         i += block_size;

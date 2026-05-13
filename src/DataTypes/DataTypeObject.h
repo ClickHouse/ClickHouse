@@ -45,6 +45,8 @@ public:
 
     Field getDefault() const override { return Object(); }
 
+    void insertDefaultInto(IColumn & column) const override;
+
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }

@@ -111,7 +111,12 @@ struct IntegerRoundingComputation
         {
             case RoundingMode::Trunc:
             {
-                return x / scale * scale;
+                /// `x - x % scale` instead of `x / scale * scale`. For wide integer types
+                /// (`Decimal128`/`Decimal256`) the compiler emits a single divmod helper call
+                /// (`__udivmodti4`) that returns both quotient and remainder, so we can
+                /// compute the truncated value with a subtraction and skip the multi-word
+                /// `imul scale` that the textbook formulation would otherwise require.
+                return x - x % scale;
             }
             case RoundingMode::Floor:
             {

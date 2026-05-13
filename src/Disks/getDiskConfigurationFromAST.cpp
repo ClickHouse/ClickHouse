@@ -3,7 +3,9 @@
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Disks/DiskFactory.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -23,6 +25,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
+}
+
+namespace Setting
+{
+    extern const SettingsBool dynamic_disk_allow_from_env;
+    extern const SettingsBool dynamic_disk_allow_include;
+    extern const SettingsBool dynamic_disk_allow_from_zk;
 }
 
 [[noreturn]] static void throwBadConfiguration(const std::string & message = "")
@@ -33,7 +43,7 @@ namespace ErrorCodes
         message.empty() ? "" : ": " + message);
 }
 
-Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context)
+Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     if (disk_args.empty())
         throwBadConfiguration("expected non-empty list of arguments");
@@ -41,6 +51,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     Poco::AutoPtr<Poco::XML::Document> xml_document(new Poco::XML::Document());
     Poco::AutoPtr<Poco::XML::Element> root(xml_document->createElement("disk"));
     xml_document->appendChild(root);
+
+    const auto & settings = context->getSettingsRef();
 
     for (const auto & arg : disk_args)
     {
@@ -71,16 +83,28 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         auto value_str = convertFieldToString(value->as<ASTLiteral>()->value);
         if (key == "include")
         {
+            if (!is_loading_from_existing_metadata && !settings[Setting::dynamic_disk_allow_include])
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Using `include` in dynamic disk configuration is disabled by the setting `dynamic_disk_allow_include`");
             key_element->setAttribute("incl", value_str);
         }
         else if (startsWith(value_str, "from_env"))
         {
+            if (!is_loading_from_existing_metadata && !settings[Setting::dynamic_disk_allow_from_env])
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Using `from_env` in dynamic disk configuration is disabled by the setting `dynamic_disk_allow_from_env`");
             value_str = value_str.substr(std::strlen("from_env"));
             boost::trim(value_str);
             key_element->setAttribute("from_env", value_str);
         }
         else if (startsWith(value_str, "from_zk"))
         {
+            if (!is_loading_from_existing_metadata && !settings[Setting::dynamic_disk_allow_from_zk])
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Using `from_zk` in dynamic disk configuration is disabled by the setting `dynamic_disk_allow_from_zk`");
             value_str = value_str.substr(std::strlen("from_zk"));
             boost::trim(value_str);
             key_element->setAttribute("from_zk", value_str);

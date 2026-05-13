@@ -253,6 +253,30 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
     return {module, module_hash};
 }
 
+void WasmModuleManager::deleteModuleIfExists(std::function<bool(std::string_view)> name_match)
+{
+    UniqueLock lock(modules_mutex);
+
+    for (auto it = modules.begin(); it != modules.end();)
+    {
+        if (!name_match(it->first))
+        {
+            ++it;
+            continue;
+        }
+
+        if (!it->second.ptr.expired())
+            throw Exception(
+                ErrorCodes::CANNOT_DROP_FUNCTION,
+                "Cannot delete WebAssembly module '{}' while it is in use. "
+                "Drop all functions referring to it first",
+                it->first);
+
+        user_scripts_disk->removeFileIfExists(getFilePath(it->first));
+        it = modules.erase(it);
+    }
+}
+
 void WasmModuleManager::deleteModuleIfExists(std::string_view module_name)
 {
     UniqueLock lock(modules_mutex);

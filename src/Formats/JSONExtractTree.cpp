@@ -1822,7 +1822,12 @@ public:
     {
         if (element.isNull() && format_settings.null_as_default)
         {
-            column.insertDefault();
+            auto & column_object = assert_cast<ColumnObject &>(column);
+            for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
+                typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
+            for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
+                dynamic_column->insertDefault();
+            column_object.getSharedDataColumn().insertDefault();
             return true;
         }
 

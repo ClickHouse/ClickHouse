@@ -6,16 +6,15 @@
 namespace DB
 {
 
-#define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
-DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
-DECLARE_X86_64_V3_SPECIFIC_CODE(__VA_ARGS__)
-
-DECLARE_SEVERAL_IMPLEMENTATIONS(
-
 class FunctionGenerateUUIDv4 : public IFunction
 {
 public:
     static constexpr auto name = "generateUUIDv4";
+
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionGenerateUUIDv4>();
+    }
 
     String getName() const override { return name; }
 
@@ -58,37 +57,6 @@ public:
 
         return col_res;
     }
-};
-
-) // DECLARE_SEVERAL_IMPLEMENTATIONS
-#undef DECLARE_SEVERAL_IMPLEMENTATIONS
-
-class FunctionGenerateUUIDv4 : public TargetSpecific::Default::FunctionGenerateUUIDv4
-{
-public:
-    explicit FunctionGenerateUUIDv4(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionGenerateUUIDv4>();
-
-#if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::x86_64_v3,
-            TargetSpecific::x86_64_v3::FunctionGenerateUUIDv4>();
-#endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionGenerateUUIDv4>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
 };
 
 REGISTER_FUNCTION(GenerateUUIDv4)

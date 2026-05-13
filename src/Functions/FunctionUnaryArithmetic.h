@@ -43,7 +43,7 @@ struct UnaryOperationImpl
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ArrayA & a, ArrayC & c) /// NOLINT
     {
         size_t size = a.size();
@@ -57,12 +57,6 @@ struct UnaryOperationImpl
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorImpl_x86_64_v4(a, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            vectorImpl_x86_64_v3(a, c);
             return;
         }
 #endif
@@ -80,7 +74,7 @@ struct UnaryOperationImpl
 template <typename Op>
 struct FixedStringUnaryOperationImpl
 {
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ColumnFixedString::Chars & a, /// NOLINT
         ColumnFixedString::Chars & c)
     {
@@ -98,12 +92,6 @@ struct FixedStringUnaryOperationImpl
             vectorImpl_x86_64_v4(a, c);
             return;
         }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            vectorImpl_x86_64_v3(a, c);
-            return;
-        }
 #endif
 
         vectorImpl(a, c);
@@ -113,7 +101,7 @@ struct FixedStringUnaryOperationImpl
 template <typename Op>
 struct StringUnaryOperationReduceImpl
 {
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
         MULTITARGET_FUNCTION_HEADER(static UInt64 NO_INLINE),
         vectorImpl,
         MULTITARGET_FUNCTION_BODY((const UInt8 * start, const UInt8 * end) /// NOLINT
@@ -130,11 +118,6 @@ struct StringUnaryOperationReduceImpl
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             return vectorImpl_x86_64_v4(start, end);
-        }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            return vectorImpl_x86_64_v3(start, end);
         }
 #endif
 

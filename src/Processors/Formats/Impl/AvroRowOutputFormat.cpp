@@ -1,43 +1,37 @@
 #include <Processors/Formats/Impl/AvroRowOutputFormat.h>
 #if USE_AVRO
 
-#include <Core/Field.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-
-#include <Formats/FormatFactory.h>
-
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeMap.h>
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnMap.h>
-
-#include <Common/re2.h>
-
+#include <Columns/ColumnsNumber.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Formats/FormatFactory.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
 #include <Processors/Port.h>
-
+#include <boost/algorithm/string.hpp>
 #include <DataFile.hh>
 #include <Encoder.hh>
 #include <Node.hh>
 #include <Schema.hh>
-
-#include <boost/algorithm/string.hpp>
+#include <Common/re2.h>
 
 namespace DB
 {
@@ -509,7 +503,6 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for Avro output", data_type->getName());
 }
 
-
 AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits> traits_, const FormatSettings & settings_)
     : traits(std::move(traits_)), settings(settings_)
 {
@@ -617,6 +610,42 @@ void AvroRowOutputFormat::resetFormatterImpl()
     file_writer_ptr.reset();
 }
 
+AvroConfluentRowOutputFormat::AvroConfluentRowOutputFormat(
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
+    : IRowOutputFormat(header_, out_)
+    , settings(settings_)
+    , serializer(header_->getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings), settings)
+    , schema_registry(getConfluentSchemaRegistry(settings_))
+    , output_stream(std::make_unique<OutputStreamWriteBufferAdapter>(out_))
+    , encoder(avro::binaryEncoder())
+{
+    if (settings.avro.output_confluent_subject.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "output_format_avro_confluent_subject must be set for AvroConfluent output format");
+}
+
+AvroConfluentRowOutputFormat::~AvroConfluentRowOutputFormat() = default;
+
+void AvroConfluentRowOutputFormat::write(const Columns & columns, size_t row_num)
+{
+    if (!schema_registered)
+    {
+        schema_id = schema_registry->registerSchema(settings.avro.output_confluent_subject, serializer.getSchema(), settings.avro.schema_registry_timeouts);
+        schema_registered = true;
+    }
+
+    /// Write the Confluent wire format header for each row:
+    /// [magic byte 0x00] [schema_id 4 bytes big-endian]
+    writeBinaryBigEndian(static_cast<uint8_t>(0x00), out);
+    writeBinaryBigEndian(schema_id, out);
+
+    /// Re-init the encoder so it picks up the current buffer position
+    /// (after the 5-byte header we just wrote).
+    encoder->init(*output_stream);
+    serializer.serializeRow(columns, row_num, *encoder);
+    encoder->flush();
+}
+
 void registerOutputFormatAvro(FormatFactory & factory)
 {
     factory.registerOutputFormat("Avro", [](
@@ -630,6 +659,17 @@ void registerOutputFormatAvro(FormatFactory & factory)
     factory.markFormatHasNoAppendSupport("Avro");
     factory.markOutputFormatNotTTYFriendly("Avro");
     factory.setContentType("Avro", "application/octet-stream");
+
+    factory.registerOutputFormat("AvroConfluent", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
+    {
+        return std::make_shared<AvroConfluentRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+    });
+    factory.markOutputFormatNotTTYFriendly("AvroConfluent");
+    factory.setContentType("AvroConfluent", "application/octet-stream");
 }
 
 }

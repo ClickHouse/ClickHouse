@@ -84,6 +84,11 @@ bool IParserKQLFunction::directMapping(
             out.append(*argument);
         }
 
+        if (out.size() > DBMS_DEFAULT_MAX_QUERY_SIZE)
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                "KQL expression size {} exceeds maximum allowed size {}",
+                out.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
+
         if (pos->type == TokenType::ClosingRoundBracket)
         {
             if (!argument_count_interval.IsWithinBounds(argument_count))
@@ -204,12 +209,21 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
                     while (isValidKQLPos(pos) && pos->type != TokenType::ClosingSquareBracket)
                     {
                         array_index += getExpression(pos);
+                        if (array_index.size() > DBMS_DEFAULT_MAX_QUERY_SIZE)
+                            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                                "KQL array index expression size {} exceeds maximum allowed size {}",
+                                array_index.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
                         ++pos;
                     }
                     token = fmt::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
                 }
                 else
                     token = String(pos->begin, pos->end);
+
+                if (token.size() > DBMS_DEFAULT_MAX_QUERY_SIZE)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "KQL expression size {} exceeds maximum allowed size {}",
+                        token.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
 
                 tokens.push_back(token);
             }
@@ -229,7 +243,13 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
 
     String converted_arg;
     for (const auto & token : tokens)
+    {
         converted_arg.append((converted_arg.empty() ? "" : " ") + token);
+        if (converted_arg.size() > DBMS_DEFAULT_MAX_QUERY_SIZE)
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                "KQL expression size {} exceeds maximum allowed size {}",
+                converted_arg.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
+    }
 
     return converted_arg;
 }
@@ -291,13 +311,13 @@ String IParserKQLFunction::getKQLFunctionName(IParser::Pos & pos)
 }
 
 String IParserKQLFunction::kqlCallToExpression(
-    const std::string_view function_name, const std::initializer_list<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks)
+    const std::string_view function_name, const std::initializer_list<const std::string_view> params, const IParser::Pos & parent_pos)
 {
-    return kqlCallToExpression(function_name, std::span(params), max_depth, max_backtracks);
+    return kqlCallToExpression(function_name, std::span(params), parent_pos);
 }
 
 String IParserKQLFunction::kqlCallToExpression(
-    const std::string_view function_name, const std::span<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks)
+    const std::string_view function_name, const std::span<const std::string_view> params, const IParser::Pos & parent_pos)
 {
     const auto params_str = std::accumulate(
         std::cbegin(params),
@@ -314,7 +334,7 @@ String IParserKQLFunction::kqlCallToExpression(
 
     const auto kql_call = fmt::format("{}({})", function_name, params_str);
     Tokens call_tokens(kql_call.data(), kql_call.data() + kql_call.length(), 0, true);
-    IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
+    IParser::Pos tokens_pos(call_tokens, parent_pos);
     return DB::IParserKQLFunction::getExpression(tokens_pos);
 }
 

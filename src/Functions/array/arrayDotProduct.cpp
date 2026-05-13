@@ -23,8 +23,8 @@ extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 /// Auto-vectorized dot product kernel.
 /// Uses manual unrolling with independent accumulators to break FP dependency chains,
 /// enabling the compiler to generate FMA instructions across all SIMD targets.
-/// Generates x86_64_v4 (AVX-512), x86_64_v3 (AVX2), and default (SSE2/NEON) variants.
-MULTITARGET_FUNCTION_X86_V4_V3(
+/// Generates x86_64_v4 (AVX-512) and default (SSE2/NEON/AVX2) variants.
+MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(template <typename ResultType> static ResultType NO_SANITIZE_UNDEFINED NO_INLINE),
     dotProductImpl,
     MULTITARGET_FUNCTION_BODY((const ResultType * __restrict data_x, const ResultType * __restrict data_y, size_t count) {
@@ -284,8 +284,6 @@ private:
 #if USE_MULTITARGET_CODE
                 if (isArchSupported(TargetArch::x86_64_v4))
                     result_data[row] = dotProductImpl_x86_64_v4<ResultType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
-                else if (isArchSupported(TargetArch::x86_64_v3))
-                    result_data[row] = dotProductImpl_x86_64_v3<ResultType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
                 else
 #endif
                     result_data[row] = dotProductImpl<ResultType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
@@ -371,8 +369,6 @@ private:
 #if USE_MULTITARGET_CODE
                 if (isArchSupported(TargetArch::x86_64_v4))
                     result[row] = dotProductImpl_x86_64_v4<ResultType>(data_x.data(), data_y.data() + current_offset, array_size);
-                else if (isArchSupported(TargetArch::x86_64_v3))
-                    result[row] = dotProductImpl_x86_64_v3<ResultType>(data_x.data(), data_y.data() + current_offset, array_size);
                 else
 #endif
                     result[row] = dotProductImpl<ResultType>(data_x.data(), data_y.data() + current_offset, array_size);

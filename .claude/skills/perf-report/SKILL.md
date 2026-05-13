@@ -44,12 +44,12 @@ Do NOT summarize, collapse, or hide entries. Do NOT dismiss anything as "noise" 
 
 ### 3. Cross-reference with master history
 
-For every test that shows as slower or faster above 1.10x, check the public CI database to determine if this is a known flaky test or a genuine change introduced by the PR.
+**This step is MANDATORY.** For every test that shows as slower or faster above 1.10x, check the public CI database to determine if this is a known flaky test or a genuine change introduced by the PR. Do NOT skip this step or use alternative approaches (like manually fetching perf reports from other PRs).
 
-Query the public CI database:
+Query the `default.checks` table on `play.clickhouse.com` with `user=explorer`:
 
 ```bash
-clickhouse client --host play.clickhouse.com --user explorer --secure -q "
+clickhouse client --format PrettyCompactNoEscapes --host play.clickhouse.com --user explorer --secure --query "
 SELECT
     replaceRegexpOne(test_name, '::(new|old)$', '') AS test,
     countIf(test_status = 'slower') AS slower_count,
@@ -58,22 +58,25 @@ SELECT
     count() AS total_runs
 FROM default.checks
 WHERE pull_request_number = 0
-  AND check_name LIKE '%Performance%amd%'  -- or arm
+  AND check_name LIKE '%Performance%amd%'
   AND check_start_time >= now() - INTERVAL 30 DAY
   AND test_name IN (
-    'test_name #N::new',
-    ...
+    'norm_distance #2::new',
+    'array_sort #0::new'
   )
 GROUP BY test
 ORDER BY slower_count DESC, test
 "
 ```
 
-**Important:**
-- `pull_request_number = 0` means master commits
-- Test names in the DB have `::new` and `::old` suffixes — query with `::new`
-- Use `%amd%` for AMD results and `%arm%` for ARM results
-- Query both architectures separately
+Run **one query per architecture** — use `'%Performance%amd%'` for x86 and `'%Performance%arm%'` for ARM.
+
+**Critical details:**
+- **Host:** `play.clickhouse.com`, **user:** `explorer` (NOT `play`)
+- **Table:** `default.checks` (NOT `perftest` or other tables)
+- `pull_request_number = 0` filters to master-only commits (no PR noise)
+- Test names in the DB have `::new` and `::old` suffixes — always query with `::new`
+- Include ALL changed tests in a single IN clause to minimize round-trips
 
 ### 4. Classify each change
 
