@@ -34,44 +34,16 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DB::DataTypes & arguments) const override
+    /// `mortonEncode`/`hilbertEncode` accept either (a) one or more `NativeUInt`s
+    /// (encoded as a single space-filling-curve key), or (b) a leading `Tuple`
+    /// followed by one or more `NativeUInt` "mask" arguments — one per tuple
+    /// element. The arity equality between tuple size and trailing-arg count is
+    /// still enforced separately at execute time; the matcher cannot express
+    /// that dependency.
+    String getSignatureString() const override
     {
-        size_t vector_start_index = 0;
-        if (arguments.empty())
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                            "At least one UInt argument is required for function {}",
-                            getName());
-        if (WhichDataType(arguments[0]).isTuple())
-        {
-            vector_start_index = 1;
-            const auto * type_tuple = typeid_cast<const DataTypeTuple *>(arguments[0].get());
-            auto tuple_size = type_tuple->getElements().size();
-            if (tuple_size == 0)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Empty tuple is not allowed for function {}",
-                                getName());
-            if (tuple_size != (arguments.size() - 1))
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                                "Illegal argument {} for function {}, tuple size should be equal to number of UInt arguments",
-                                arguments[0]->getName(), getName());
-            for (size_t i = 0; i < tuple_size; i++)
-            {
-                if (!WhichDataType(type_tuple->getElement(i)).isNativeUInt())
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                    "Illegal type {} of argument in tuple for function {}, should be a native UInt",
-                                    type_tuple->getElement(i)->getName(), getName());
-            }
-        }
-
-        for (size_t i = vector_start_index; i < arguments.size(); i++)
-        {
-            const auto & arg = arguments[i];
-            if (!WhichDataType(arg).isNativeUInt())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of argument for function {}, should be a native UInt",
-                                arg->getName(), getName());
-        }
-        return std::make_shared<DataTypeUInt64>();
+        return "(NativeUInt, ...) -> UInt64"
+               " OR (Tuple, NativeUInt, ...) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
