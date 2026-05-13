@@ -188,11 +188,6 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE;
     }
 
-    bool updateMetadata(const String &, const String &, const String &, Poco::JSON::Object::Ptr) const override
-    {
-        return true;
-    }
-
     String getTenantId() const { return tenant_id; }
 
 protected:
