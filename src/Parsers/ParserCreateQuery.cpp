@@ -599,7 +599,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_sample_by(Keyword::SAMPLE_BY);
     ParserKeyword s_ttl(Keyword::TTL);
     ParserKeyword s_settings(Keyword::SETTINGS);
-    ParserKeyword s_unique_key(Keyword::UNIQUE_KEY);
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
@@ -614,7 +613,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr order_by;
     ASTPtr sample_by;
     ASTPtr ttl_table;
-    ASTPtr unique_key;
     ASTPtr settings;
 
     bool storage_like = false;
@@ -654,16 +652,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!order_by && s_order_by.ignore(pos, expected))
         {
             if (order_by_p.parse(pos, order_by, expected))
-            {
-                storage_like = true;
-                continue;
-            }
-            return false;
-        }
-
-        if (!unique_key && s_unique_key.ignore(pos, expected))
-        {
-            if (expression_p.parse(pos, unique_key, expected))
             {
                 storage_like = true;
                 continue;
@@ -729,7 +717,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
     storage->set(storage->ttl_table, ttl_table);
-    storage->set(storage->unique_key, unique_key);
     storage->set(storage->settings, settings);
 
     node = storage;

@@ -18,9 +18,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_ddl;
-    extern const SettingsBool dynamic_disk_allow_from_env;
-    extern const SettingsBool dynamic_disk_allow_include;
-    extern const SettingsBool dynamic_disk_allow_from_zk;
     extern const SettingsUInt64 readonly;
 }
 
