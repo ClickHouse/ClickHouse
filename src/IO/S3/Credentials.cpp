@@ -2,7 +2,11 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
+#include <IO/S3/getAvailabilityZone.h>
 #include <Common/Exception.h>
+#include <base/EnumReflection.h>
+#include <boost/algorithm/string/join.hpp>
+#include <Server/CloudPlacementInfo.h>
 
 namespace DB
 {
@@ -14,11 +18,11 @@ namespace ErrorCodes
 
 namespace S3
 {
-    std::string tryGetRunningAvailabilityZone()
+    std::string tryGetRunningAvailabilityZone(AZFacilities az_facility)
     {
         try
         {
-            return getRunningAvailabilityZone();
+            return getRunningAvailabilityZone(az_facility);
         }
         catch (...)
         {
@@ -27,6 +31,7 @@ namespace S3
         }
     }
 }
+
 }
 
 #if USE_AWS_S3
@@ -385,16 +390,52 @@ std::shared_ptr<AWSEC2MetadataClient> createEC2MetadataClient(const Aws::Client:
     return std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
 }
 
-String AWSEC2MetadataClient::getAvailabilityZoneOrException()
+namespace
 {
-    Poco::URI uri(getAWSMetadataEndpoint() + EC2_AVAILABILITY_ZONE_RESOURCE);
+
+String getAvailabilityZoneOrException(bool is_zone_id)
+{
+    auto logger = getLogger("AWSEC2MetadataClient");
+    String token_str;
+    static std::mutex t_mutex;
+
+    /// IMDSv2
+    {
+        /// Let's serialize token retrieval as we do in AWSEC2MetadataClient::getEC2MetadataToken
+        std::lock_guard<std::mutex> lock(t_mutex);
+
+        Poco::URI token_uri(getAWSMetadataEndpoint() + AWSEC2MetadataClient::EC2_IMDS_TOKEN_RESOURCE);
+        Poco::Net::HTTPClientSession token_session(token_uri.getHost(), token_uri.getPort());
+        token_session.setTimeout(Poco::Timespan(AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS, 0));
+
+        Poco::Net::HTTPRequest token_request(Poco::Net::HTTPRequest::HTTP_PUT, token_uri.getPath(), Poco::Net::HTTPMessage::HTTP_1_1);
+        token_request.set(AWSEC2MetadataClient::EC2_IMDS_TOKEN_TTL_HEADER, AWSEC2MetadataClient::EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE);
+        token_request.setContentLength(0);
+
+        token_session.sendRequest(token_request);
+
+        Poco::Net::HTTPResponse token_response;
+        std::istream & token_rs = token_session.receiveResponse(token_response);
+        if (token_response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
+            Poco::StreamCopier::copyToString(token_rs, token_str);
+        else
+            LOG_WARNING(
+                logger,
+                "Failed to get AWS availability zone token. HTTP response code: {}. Falling back to token-less flow IMDSv1",
+                token_response.getStatus());
+    }
+
+    Poco::URI uri(getAWSMetadataEndpoint() + (is_zone_id ? AWSEC2MetadataClient::EC2_AVAILABILITY_ZONE_ID_RESOURCE : AWSEC2MetadataClient::EC2_AVAILABILITY_ZONE_RESOURCE));
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
     session.setTimeout(Poco::Timespan(AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS, 0));
 
-    Poco::Net::HTTPResponse response;
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
+
+    if (!token_str.empty())
+        request.set(AWSEC2MetadataClient::EC2_IMDS_TOKEN_HEADER, token_str);
     session.sendRequest(request);
 
+    Poco::Net::HTTPResponse response;
     std::istream & rs = session.receiveResponse(response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::AWS_ERROR, "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
@@ -402,6 +443,19 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException()
     Poco::StreamCopier::copyToString(rs, response_data);
     return response_data;
 }
+}
+
+
+String AWSEC2MetadataClient::getAWSZoneID()
+{
+    return getAvailabilityZoneOrException(true);
+}
+
+String AWSEC2MetadataClient::getAWSZoneName()
+{
+    return getAvailabilityZoneOrException(false);
+}
+
 
 String getGCPAvailabilityZoneOrException()
 {
@@ -427,25 +481,58 @@ String getGCPAvailabilityZoneOrException()
     return zone_info[3];
 }
 
-String getRunningAvailabilityZone()
+
+String getRunningAvailabilityZone(AZFacilities az_facility)
 {
     LOG_INFO(getLogger("Application"), "Trying to detect the availability zone.");
-    try
+
+    using AZGetter = std::function<String()>;
+
+    std::vector<std::pair<bool /* used if AWS_ZONE_NAME_THEN_GCP_ZONE */, AZGetter>> az_getters =
     {
-        return AWSEC2MetadataClient::getAvailabilityZoneOrException();
+        /// mimics original behavior Placement logic relies on
+        ///   skip AWS_ZONE_ID (in favour of AWS_ZONE_NAME) and CLICKHOUSE
+        {false, [](){return AWSEC2MetadataClient::getAWSZoneID();}},                          /// AWS_ZONE_ID
+        {true,  [](){return AWSEC2MetadataClient::getAWSZoneName();}},                        /// AWS_ZONE_NAME
+        {true,  getGCPAvailabilityZoneOrException},                                           /// GCP_ZONE
+        {false, [](){return PlacementInfo::PlacementInfo::instance().getAvailabilityZone();}} /// CLICKHOUSE
+    };
+
+    if (az_facility == AZFacilities::AWS_ZONE_NAME_THEN_GCP_ZONE)
+    {
+        std::vector<std::string> ex_msgs;
+
+        /// it is expected that some facilities do not work, we are prepared for exceptions
+        for (auto & getter : az_getters)
+        {
+            try
+            {
+                if (getter.first)
+                    return getter.second();
+            }
+            catch (...)
+            {
+                auto ex_msg = getExceptionMessage(std::current_exception(), false);
+                LOG_INFO(getLogger("Application"), "Trying to detect the availability zone via {}. Error: {}",
+                    magic_enum::enum_name(az_facility), ex_msg);
+                ex_msgs.push_back(ex_msg);
+            }
+        }
+        throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Failed to find the availability zone. Errors: {}", boost::algorithm::join(ex_msgs, ", "));
     }
-    catch (...)
+    else
     {
-        auto aws_ex_msg = getExceptionMessage(std::current_exception(), false);
         try
         {
-            return getGCPAvailabilityZoneOrException();
+            auto getter_index = magic_enum::enum_integer(az_facility) - 1;
+            return az_getters[getter_index].second();
         }
         catch (...)
         {
-            auto gcp_ex_msg = getExceptionMessage(std::current_exception(), false);
+            auto ex_msg = getExceptionMessage(std::current_exception(), false);
             throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex_msg, gcp_ex_msg);
+                "Failed to find the availability zone via {}. Error: {}", magic_enum::enum_name(az_facility), ex_msg);
         }
     }
 }
@@ -1227,8 +1314,11 @@ namespace DB
 namespace S3
 {
 
-std::string getRunningAvailabilityZone()
+std::string getRunningAvailabilityZone(AZFacilities az_facility)
 {
+    if (az_facility == AZFacilities::CLICKHOUSE)
+        return PlacementInfo::PlacementInfo::instance().getAvailabilityZone();
+
     throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Does not support availability zone detection for non-cloud environment");
 }
 

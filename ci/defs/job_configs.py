@@ -86,7 +86,9 @@ common_ft_job_config = Job.Config(
     # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
     # --cap-add=SYS_PTRACE and --privileged for gdb in docker
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
-    run_in_docker=f"clickhouse/stateless-test+--memory={LIMITED_MEM}+--cgroupns=host+--cap-add=SYS_PTRACE+--privileged+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse:mode=1777+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log+root",
+    # --ulimit nofile is raised so that azurite-rs (the in-process Azure Blob
+    # Storage emulator) does not run out of file descriptors under parallel load
+    run_in_docker=f"clickhouse/stateless-test+--memory={LIMITED_MEM}+--cgroupns=host+--cap-add=SYS_PTRACE+--privileged+--security-opt seccomp=unconfined+--ulimit nofile=1048576:1048576+--tmpfs /tmp/clickhouse:mode=1777+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log+root",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/functional_tests.py",
@@ -148,13 +150,18 @@ common_integration_test_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
             "./ci/jobs/scripts/integration_tests_configs.py",
+            "./ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
+            "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
             "./tests/integration/",
             "./ci/docker/integration",
             "./ci/jobs/scripts/docker_in_docker.sh",
         ],
     ),
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
-    post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
+    post_hooks=[
+        "python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py",
+        "python3 ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
+    ],
 )
 
 
@@ -166,29 +173,16 @@ class JobConfigs:
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
-    pr_body = Job.Config(
-        name=JobNames.PR_BODY,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/pr_formatter_job.py",
-        allow_failure=True,
-        enable_gh_auth=True,
-    )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/copilot_review_job.py --pre",
-    )
-    ci_results_review = Job.Config(
-        name=JobNames.CI_RESULTS_REVIEW,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/copilot_review_job.py --post",
         allow_failure=True,
-        enable_gh_auth=True,
     )
     ci_tests = Job.Config(
         name=JobNames.CI_TESTS,
         runs_on=RunnerLabels.ARM_LARGE,
-        command="python3 ./ci/jobs/ci_tests_job.py --skip test_cleanup_kills_orphaned_test_process",
+        command="python3 ./ci/jobs/ci_tests_job.py",
         timeout=1200,
         run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
         digest_config=Job.CacheDigestConfig(include_paths=["./ci"]),
@@ -549,7 +543,7 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/functional_tests.py --options BugfixValidation",
         # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
-        run_in_docker="clickhouse/stateless-test+--network=host+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse:mode=1777",
+        run_in_docker="clickhouse/stateless-test+--network=host+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--ulimit nofile=1048576:1048576+--tmpfs /tmp/clickhouse:mode=1777",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/functional_tests.py",
