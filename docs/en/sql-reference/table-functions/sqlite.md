@@ -28,9 +28,8 @@ sqlite('db_path', 'table_name')
 
 ## Example {#example}
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 ```
 

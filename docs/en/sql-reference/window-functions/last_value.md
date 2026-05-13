@@ -40,9 +40,8 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 In this example the `last_value` function is used to find the lowest paid footballer from a fictional dataset of salaries of Premier League football players.
 
-Query:
 
-```sql
+```sql title="Query"
 DROP TABLE IF EXISTS salaries;
 CREATE TABLE salaries
 (

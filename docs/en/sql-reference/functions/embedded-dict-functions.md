@@ -60,9 +60,8 @@ regionToName(id\[, lang\])
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT regionToName(number::UInt32,'en') FROM numbers(0,5);
 ```
 
@@ -100,9 +99,8 @@ regionToCity(id [, geobase])
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT regionToName(number::UInt32, 'en'), regionToCity(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
@@ -148,9 +146,8 @@ regionToArea(id [, geobase])
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
@@ -200,9 +197,8 @@ regionToDistrict(id [, geobase])
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
@@ -252,9 +248,8 @@ regionToCountry(id [, geobase])
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT regionToName(number::UInt32, 'en'), regionToCountry(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
@@ -300,9 +295,8 @@ regionToContinent(id [, geobase])
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT regionToName(number::UInt32, 'en'), regionToContinent(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
@@ -348,9 +342,8 @@ regionToTopContinent(id[, geobase])
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT regionToName(number::UInt32, 'en'), regionToTopContinent(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
@@ -396,9 +389,8 @@ regionToPopulation(id[, geobase])
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT regionToName(number::UInt32, 'en'), regionToPopulation(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
@@ -449,9 +441,8 @@ The relationship is reflexive – any region also belongs to itself.
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT regionToName(n1.number::UInt32, 'en') || (regionIn(n1.number::UInt32, n2.number::UInt32) ? ' is in ' : ' is not in ') || regionToName(n2.number::UInt32, 'en') FROM numbers(1,2) AS n1 CROSS JOIN numbers(1,5) AS n2;
 ```
 
@@ -491,9 +482,8 @@ regionHierarchy(id\[, geobase\])
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT regionHierarchy(number::UInt32) AS arr, arrayMap(id -> regionToName(id, 'en'), arr) FROM numbers(5);
 ```
 

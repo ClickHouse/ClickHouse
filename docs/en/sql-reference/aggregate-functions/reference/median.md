@@ -37,9 +37,8 @@ Input table:
 └─────┘
 ```
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT medianDeterministic(val, 1) FROM t;
 ```
 

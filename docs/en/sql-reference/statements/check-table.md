@@ -76,9 +76,8 @@ FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
 ```
 
-Output:
 
-```text
+```text title="Response"
 ┌─part_path────┬─is_passed─┬─message─┐
 │ 201003_7_7_0 │         1 │         │
 │ 201003_3_3_0 │         1 │         │
@@ -93,9 +92,8 @@ FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
 ```
 
-Output:
 
-```text
+```text title="Response"
 ┌─part_path────┬─is_passed─┬─message─┐
 │ 201003_7_7_0 │         1 │         │
 └──────────────┴───────────┴─────────┘
@@ -129,9 +127,8 @@ FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
 
 
-Output:
 
-```text
+```text title="Response"
 ┌─part_path────┬─is_passed─┬─message──────────────────────────────────┐
 │ 201003_7_7_0 │         1 │                                          │
 │ 201003_3_3_0 │         1 │ Checksums recounted and written to disk. │

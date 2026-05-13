@@ -35,9 +35,8 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE salaries
 (
     `team` String,

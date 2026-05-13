@@ -94,9 +94,8 @@ Input table:
 └───┴──────┘
 ```
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 ```
 
@@ -128,9 +127,8 @@ Input table:
 └───┴──────┘
 ```
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 ```
 
@@ -164,9 +162,8 @@ Input table:
 └───┴───────────────┘
 ```
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 ```
 
@@ -200,9 +197,8 @@ Input table:
 └───┴─────┘
 ```
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 ```
 
@@ -234,9 +230,8 @@ Example with [Tuple](../../../sql-reference/data-types/tuple.md):
 └───┴─────────┘
 ```
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 ```
 

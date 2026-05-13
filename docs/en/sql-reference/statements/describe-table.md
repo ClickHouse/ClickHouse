@@ -32,9 +32,8 @@ To show internal subcolumns of other data types, use the [describe_include_subco
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE describe_example (
     id UInt64, text String DEFAULT 'unknown' CODEC(ZSTD),
     user Tuple (name String, age UInt8)

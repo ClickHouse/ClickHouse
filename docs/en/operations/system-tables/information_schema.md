@@ -76,9 +76,8 @@ Columns:
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT table_catalog,
        table_schema,
        table_name,
@@ -157,9 +156,8 @@ Columns:
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT catalog_name,
        schema_name,
        schema_owner,
@@ -210,9 +208,8 @@ Columns:
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT table_catalog, 
        table_schema, 
        table_name, 
@@ -262,9 +259,8 @@ Columns:
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE VIEW v (n Nullable(Int32), f Float64) AS SELECT n, f FROM t;
 CREATE MATERIALIZED VIEW mv ENGINE = Null AS SELECT * FROM system.one;
 SELECT table_catalog,

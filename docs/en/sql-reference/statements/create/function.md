@@ -26,9 +26,8 @@ If any restriction is violated then an exception is raised.
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
 SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
 ```

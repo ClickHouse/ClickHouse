@@ -34,9 +34,8 @@ cannot be performed, it returns [NULL](/operations/settings/formats#input_format
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT '1' IN (SELECT 1);
 ```
 

@@ -71,9 +71,8 @@ Values of type `Tuple()` can be cast to values of type `Map()` using function [C
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map;
 ```
 
@@ -91,9 +90,8 @@ To avoid reading the entire map, you can use subcolumns `keys` and `values` in s
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE = Memory;
 INSERT INTO tab VALUES (map('key1', 1, 'key2', 2, 'key3', 3));
 

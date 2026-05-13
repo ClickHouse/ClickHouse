@@ -364,9 +364,8 @@ Input table:
 
 Find out how far the user `user_id` could get through the chain in a period in January-February of 2019.
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT
     level,
     count() AS c
@@ -464,9 +463,8 @@ INSERT INTO retention_test SELECT '2020-01-03', number FROM numbers(15);
 
 Input table:
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM retention_test
 ```
 
@@ -513,9 +511,8 @@ Result:
 
 **2.** Group users by unique ID `uid` using the `retention` function.
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT
     uid,
     retention(date = '2020-01-01', date = '2020-01-02', date = '2020-01-03') AS r
@@ -549,9 +546,8 @@ Result:
 
 **3.** Calculate the total number of site visits per day.
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT
     sum(r[1]) AS r1,
     sum(r[2]) AS r2,
@@ -621,9 +617,8 @@ This function behaves the same as [sumMap](/sql-reference/aggregate-functions/re
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE sum_map
 (
     `date` Date,
@@ -673,9 +668,8 @@ This function behaves the same as [sumMap](/sql-reference/aggregate-functions/re
 
 In this example we create a table `sum_map`, insert some data into it and then use both `sumMapFilteredWithOverflow` and `sumMapFiltered` and the `toTypeName` function for comparison of the result. Where `requests` was of type `UInt8` in the created table, `sumMapFiltered` has promoted the type of the summed values to `UInt64` to avoid overflow whereas `sumMapFilteredWithOverflow` has kept the type as `UInt8` which is not large enough to store the result - i.e. overflow has occurred.
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE sum_map
 (
     `date` Date,

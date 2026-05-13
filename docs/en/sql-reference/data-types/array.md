@@ -82,9 +82,8 @@ It is possible to find the size of an array by using the `size0` subcolumn witho
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE t_arr (`arr` Array(Array(Array(UInt32)))) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_arr VALUES ([[[12, 13, 0, 1],[12]]]);

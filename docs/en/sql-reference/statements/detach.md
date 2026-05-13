@@ -32,9 +32,8 @@ The `SYNC` modifier executes the action without delay.
 
 Creating a table:
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE test ENGINE = MergeTree ORDER BY () AS SELECT * FROM numbers(10);
 SELECT * FROM test;
 ```
@@ -58,9 +57,8 @@ Result:
 
 Detaching the table:
 
-Query:
 
-```sql
+```sql title="Query"
 DETACH TABLE test;
 SELECT * FROM test;
 ```

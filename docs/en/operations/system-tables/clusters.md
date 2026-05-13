@@ -44,9 +44,8 @@ Contains information about clusters available in the config file and the servers
 
 ## Example {#example}
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM system.clusters LIMIT 2 FORMAT Vertical;
 ```
 

@@ -92,9 +92,8 @@ There can be other clauses after the `ENGINE` clause in the query. See detailed 
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
 SELECT x, toTypeName(x) FROM t1;
 ```
@@ -738,9 +737,8 @@ This means the correct clause order is:
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
 SELECT name, comment FROM system.tables WHERE name = 't1';
 ```

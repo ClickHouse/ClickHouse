@@ -57,9 +57,8 @@ Input table:
 
 Example of using a `Tuple`-type column as the `untuple` function parameter:
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT untuple(v6) FROM kv;
 ```
 
@@ -77,9 +76,8 @@ Result:
 
 Example of using an `EXCEPT` expression:
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT untuple((* EXCEPT (v2, v3),)) FROM kv;
 ```
 

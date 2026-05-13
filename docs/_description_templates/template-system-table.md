@@ -8,9 +8,8 @@ Columns:
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM system.table_name
 ```
 

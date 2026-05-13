@@ -44,9 +44,8 @@ This table contains profiling on processors level (that you can find in [`EXPLAI
 
 ## Example {#example}
 
-Query:
 
-```sql
+```sql title="Query"
 EXPLAIN PIPELINE
 SELECT sleep(1)
 ┌─explain─────────────────────────┐

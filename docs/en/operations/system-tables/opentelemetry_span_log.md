@@ -38,9 +38,8 @@ Contains information about [trace spans](https://opentracing.io/docs/overview/sp
 
 ## Example {#example}
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM system.opentelemetry_span_log LIMIT 1 FORMAT Vertical;
 ```
 

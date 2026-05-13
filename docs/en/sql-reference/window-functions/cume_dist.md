@@ -33,9 +33,8 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 The following example calculates the cumulative distribution of salaries within a team:
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE salaries
 (
     `team` String,

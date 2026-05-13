@@ -36,9 +36,8 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 In this example the `nth-value` function is used to find the third-highest salary from a fictional dataset of salaries of Premier League football players.
 
-Query:
 
-```sql
+```sql title="Query"
 DROP TABLE IF EXISTS salaries;
 CREATE TABLE salaries
 (

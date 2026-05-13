@@ -46,9 +46,8 @@ Input table:
 ```text
 ```
 
-Query:
 
-```sql
+```sql title="Query"
 ```
 
 Result:

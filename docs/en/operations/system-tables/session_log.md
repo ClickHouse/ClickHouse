@@ -44,9 +44,8 @@ Contains information about all successful and failed login and logout events.
 
 ## Example {#example}
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM system.session_log LIMIT 1 FORMAT Vertical;
 ```
 

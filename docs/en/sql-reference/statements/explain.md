@@ -121,9 +121,8 @@ Examples:
 EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
 
-Output:
 
-```sql
+```sql title="Response"
 SELECT *
 FROM system.numbers AS a, system.numbers AS b, system.numbers AS c
 WHERE (a.number = b.number) AND (b.number = c.number)
@@ -135,9 +134,8 @@ With `run_query_tree_passes`:
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
 
-Output:
 
-```sql
+```sql title="Response"
 SELECT
     __table1.number AS `a.number`,
     __table2.number AS `b.number`,
@@ -643,9 +641,8 @@ INSERT INTO ttt SELECT number FROM numbers(128);
 OPTIMIZE TABLE ttt;
 ```
 
-Query:
 
-```sql
+```sql title="Query"
 EXPLAIN ESTIMATE SELECT * FROM ttt;
 ```
 

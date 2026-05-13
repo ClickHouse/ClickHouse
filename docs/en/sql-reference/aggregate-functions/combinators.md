@@ -83,9 +83,8 @@ The value of an aggregate function with the `SimpleAggregateFunction(...)` type.
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 ```
 
@@ -156,9 +155,8 @@ Type depends on the aggregate function used.
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 ```
 
@@ -172,9 +170,8 @@ Result:
 
 Also `-OrDefault` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT avgOrDefaultIf(x, x > 10)
 FROM
 (
@@ -219,9 +216,8 @@ Type: `Nullable(aggregate function return type)`.
 
 Add `-orNull` to the end of aggregate function.
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
 ```
 
@@ -235,9 +231,8 @@ Result:
 
 Also `-OrNull` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT avgOrNullIf(x, x > 10)
 FROM
 (

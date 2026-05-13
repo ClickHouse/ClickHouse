@@ -32,9 +32,8 @@ If `username` and `password` are not specified, it means that authentication is 
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM arrowFlight('127.0.0.1:9005', 'sample_dataset') ORDER BY id;
 ```
 

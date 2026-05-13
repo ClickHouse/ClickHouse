@@ -19,9 +19,8 @@ ClickHouse supports data types for representing geographical objects — locatio
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE geo_point (p Point) ENGINE = Memory();
 INSERT INTO geo_point VALUES((10, 10));
 SELECT p, toTypeName(p) FROM geo_point;
@@ -40,9 +39,8 @@ Result:
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE geo_ring (r Ring) ENGINE = Memory();
 INSERT INTO geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
 SELECT r, toTypeName(r) FROM geo_ring;
@@ -61,9 +59,8 @@ Result:
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE geo_linestring (l LineString) ENGINE = Memory();
 INSERT INTO geo_linestring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
 SELECT l, toTypeName(l) FROM geo_linestring;
@@ -82,9 +79,8 @@ Result:
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE geo_multilinestring (l MultiLineString) ENGINE = Memory();
 INSERT INTO geo_multilinestring VALUES([[(0, 0), (10, 0), (10, 10), (0, 10)], [(1, 1), (2, 2), (3, 3)]]);
 SELECT l, toTypeName(l) FROM geo_multilinestring;

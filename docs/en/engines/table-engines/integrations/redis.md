@@ -88,9 +88,8 @@ Insert:
 INSERT INTO redis_table VALUES('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
 ```
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT COUNT(*) FROM redis_table;
 ```
 

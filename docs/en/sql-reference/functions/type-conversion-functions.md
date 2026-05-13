@@ -79,9 +79,8 @@ Conversion between numeric types uses the same rules as assignments between diff
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT
     now() AS ts,
     time_zone,

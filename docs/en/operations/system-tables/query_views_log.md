@@ -59,9 +59,8 @@ You can use the [log_queries_probability](/operations/settings/settings#log_quer
 
 ## Example {#example}
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM system.query_views_log LIMIT 1 \G;
 ```
 

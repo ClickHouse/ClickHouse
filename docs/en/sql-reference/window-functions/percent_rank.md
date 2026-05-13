@@ -29,9 +29,8 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 CREATE TABLE salaries
 (
     `team` String,

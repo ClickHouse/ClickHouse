@@ -38,9 +38,8 @@ Input table:
 └────┴──────────┴──────┘
 ```
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT * FROM view(SELECT name FROM months);
 ```
 

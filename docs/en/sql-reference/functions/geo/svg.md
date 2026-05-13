@@ -34,9 +34,8 @@ Aliases: `SVG`, `svg`
 
 **Circle**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT SVG((0., 0.))
 ```
 
@@ -48,9 +47,8 @@ Result:
 
 **Polygon**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT SVG([(0., 0.), (10, 0), (10, 10), (0, 10)])
 ```
 
@@ -62,9 +60,8 @@ Result:
 
 **Path**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT SVG([[(0., 0.), (10, 0), (10, 10), (0, 10)], [(4., 4.), (5, 4), (5, 5), (4, 5)]])
 ```
 

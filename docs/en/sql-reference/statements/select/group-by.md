@@ -79,9 +79,8 @@ Consider the table t:
 └──────┴───────┴─────┘
 ```
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);
 ```
 As `GROUP BY` section has three key expressions, the result contains four tables with subtotals "rolled up" from right to left:
@@ -147,9 +146,8 @@ Consider the table t:
 └──────┴───────┴─────┘
 ```
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT year, month, day, count(*) FROM t GROUP BY CUBE(year, month, day);
 ```
 
