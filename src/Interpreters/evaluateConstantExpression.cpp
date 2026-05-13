@@ -574,10 +574,7 @@ namespace
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return {};
 
-        auto col = value->column;
-        if (const auto * col_const = typeid_cast<const ColumnConst *>(col.get()))
-            col = col_const->getDataColumnPtr();
-
+        const auto & col = value->column->getDataColumnPtr();
         const auto * col_set = typeid_cast<const ColumnSet *>(col.get());
         if (!col_set || !col_set->getData())
             return {};

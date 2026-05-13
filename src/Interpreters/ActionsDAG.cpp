@@ -43,6 +43,13 @@
 namespace DB
 {
 
+ActionsDAG::ActionsDAG() = default;
+ActionsDAG::ActionsDAG(ActionsDAG &&) noexcept = default;
+ActionsDAG & ActionsDAG::operator=(ActionsDAG &&) noexcept = default;
+ActionsDAG::~ActionsDAG() = default;
+
+ActionsDAG::Nodes ActionsDAG::detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -249,7 +256,8 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_co
 {
     for (const auto & input : inputs_)
     {
-        if (input.column && isColumnConst(*input.column) && duplicate_const_columns)
+        const auto * input_const = input.column ? typeid_cast<const ColumnConst *>(input.column.get()) : nullptr;
+        if (input_const && duplicate_const_columns)
         {
             addInput(input);
 
@@ -259,7 +267,7 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_co
             ///   without any respect to header structure. So, it is a way to drop materialized column and use
             ///   constant value from header.
             /// We cannot remove such input right now cause inputs positions are important in some cases.
-            outputs.push_back(&addColumn(input));
+            outputs.push_back(&addColumn(input_const->getPtr(), input.type, input.name));
         }
         else
             outputs.push_back(&addInput(input.name, input.type));
@@ -315,22 +323,25 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
 
     /// Only keep the column if it is a propagated constant.
     /// Non-const columns from block headers must not be stored in DAG nodes.
-    if (column.column && isColumnConst(*column.column))
-        node.column = std::move(column.column);
+    if (const auto * column_const = column.column ? typeid_cast<const ColumnConst *>(column.column.get()) : nullptr)
+        node.column = column_const->getPtr();
 
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool is_deterministic_constant)
+const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant)
 {
-    if (!column.column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", column.name);
+    if (!column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", name);
+
+    if (column->size() != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because ColumnConst stored in ActionsDAG::Node must have size 0, got {}", name, column->size());
 
     Node node;
     node.type = ActionType::COLUMN;
-    node.result_type = std::move(column.type);
-    node.result_name = std::move(column.name);
-    node.column = std::move(column.column);
+    node.result_type = std::move(type);
+    node.result_name = std::move(name);
+    node.column = std::move(column);
     node.is_deterministic_constant = is_deterministic_constant;
 
     return addNode(std::move(node));
@@ -425,12 +436,11 @@ const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const Da
 {
     Field cast_type_constant_value(cast_type->getName());
 
-    ColumnWithTypeAndName column;
-    column.name = calculateConstantActionNodeName(cast_type_constant_value);
-    column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
-    column.type = std::make_shared<DataTypeString>();
+    auto type = std::make_shared<DataTypeString>();
+    auto column = assert_cast<const ColumnConst &>(*type->createColumnConst(0, cast_type_constant_value)).getPtr();
+    auto name = calculateConstantActionNodeName(cast_type_constant_value);
 
-    const auto * cast_type_constant_node = &addColumn(column);
+    const auto * cast_type_constant_node = &addColumn(std::move(column), type, std::move(name));
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
     auto func_base_cast = createInternalCast(ColumnWithTypeAndName{node_to_cast.result_type, node_to_cast.result_name}, cast_type, CastType::nonAccurate, {}, context);
 
@@ -479,16 +489,14 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
                 column->getName());
 
         /// If the result is not a constant, just in case, we will consider the result as unknown.
-        if (column && isColumnConst(*column))
+        if (const auto * column_const = column ? typeid_cast<const ColumnConst *>(column.get()) : nullptr)
         {
-            /// All constant (literal) columns in block are added with size 1.
-            /// But if there was no columns in block before executing a function, the result has size 0.
-            /// Change the size to 1.
-
-            if (column->empty())
-                column = column->cloneResized(1);
-
-            node.column = std::move(column);
+            /// Functions may produce a ColumnConst sized to match the input block; in DAG nodes
+            /// the size is meaningless and we keep them at zero.
+            if (column_const->size() != 0)
+                node.column = ColumnConst::create(column_const->getDataColumnPtr(), 0);
+            else
+                node.column = column_const->getPtr();
         }
     }
 
@@ -515,7 +523,6 @@ const ActionsDAG::Node & ActionsDAG::addPlaceholder(std::string name, DataTypePt
     node.type = ActionType::PLACEHOLDER;
     node.result_type = std::move(type);
     node.result_name = std::move(name);
-    node.column = node.result_type->createColumn();
 
     return addNode(std::move(node));
 }
@@ -991,11 +998,11 @@ static ColumnWithTypeAndName executeActionForPartialResult(
 
         case ActionsDAG::ActionType::COLUMN:
         {
-            auto column = node->column;
+            ColumnPtr column = node->column;
             if (input_rows_count != column->size())
                 column = column->cloneResized(input_rows_count);
 
-            res_column.column = column;
+            res_column.column = std::move(column);
             break;
         }
 
@@ -1841,7 +1848,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
                 {
                     const auto * res_const = typeid_cast<const ColumnConst *>(res_elem.column.get());
                     if (ignore_constant_values && res_const)
-                        src_node = dst_node = &actions_dag.addColumn(res_elem);
+                        src_node = dst_node = &actions_dag.addColumn(res_const->getPtr(), res_elem.type, res_elem.name);
                     else
                         throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
                                         "Cannot find column `{}` in source stream, there are only columns: [{}]",
@@ -1862,7 +1869,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
             if (const auto * src_const = typeid_cast<const ColumnConst *>(dst_node->column.get()))
             {
                 if (ignore_constant_values)
-                    dst_node = &actions_dag.addColumn(res_elem);
+                    dst_node = &actions_dag.addColumn(res_const->getPtr(), res_elem.type, res_elem.name);
                 else if (res_const->getField() != src_const->getField())
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
@@ -1876,7 +1883,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
                 /// compiled expression is "and(equals(input: Nullable(UInt64), null), null). Partial evaluation of the compiled expression isn't able to infer that the result column is constant.
                 /// It causes inconsistency between pipeline header(source column is not constant) and output header of ExpressionStep(destination column is constant).
                 /// So we need to convert non-constant column to constant column under this condition.
-                dst_node = &actions_dag.addColumn(res_elem);
+                dst_node = &actions_dag.addColumn(res_const->getPtr(), res_elem.type, res_elem.name);
             }
             else
                 throw Exception(
@@ -1888,12 +1895,11 @@ ActionsDAG ActionsDAG::makeConvertingActions(
         /// Add CAST function to convert into result type if needed.
         if (!res_elem.type->equals(*dst_node->result_type))
         {
-            ColumnWithTypeAndName column;
-            column.name = res_elem.type->getName();
-            column.column = DataTypeString().createColumnConst(0, column.name);
-            column.type = std::make_shared<DataTypeString>();
+            auto string_type = std::make_shared<DataTypeString>();
+            auto type_name = res_elem.type->getName();
+            auto type_const = assert_cast<const ColumnConst &>(*string_type->createColumnConst(0, type_name)).getPtr();
 
-            const auto * right_arg = &actions_dag.addColumn(std::move(column));
+            const auto * right_arg = &actions_dag.addColumn(std::move(type_const), string_type, std::move(type_name));
             const auto * left_arg = dst_node;
 
             CastDiagnostic diagnostic = {dst_node->result_name, res_elem.name};
@@ -1942,17 +1948,16 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     return actions_dag;
 }
 
-ActionsDAG ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
+ActionsDAG ActionsDAG::makeAddingColumnActions(ColumnConstPtr column, DataTypePtr type, std::string name)
 {
     ActionsDAG adding_column_action;
     FunctionOverloadResolverPtr func_builder_materialize
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize<true>>());
 
-    auto column_name = column.name;
-    const auto * column_node = &adding_column_action.addColumn(std::move(column));
+    const auto * column_node = &adding_column_action.addColumn(std::move(column), std::move(type), name);
     NodeRawConstPtrs inputs = {column_node};
     const auto & function_node = adding_column_action.addFunction(func_builder_materialize, std::move(inputs), {});
-    const auto & alias_node = adding_column_action.addAlias(function_node, std::move(column_name));
+    const auto & alias_node = adding_column_action.addAlias(function_node, std::move(name));
 
     adding_column_action.outputs.push_back(&alias_node);
     return adding_column_action;
@@ -1960,7 +1965,7 @@ ActionsDAG ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 
 ActionsDAG ActionsDAG::makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value)
 {
-    return makeAddingColumnActions(ColumnWithTypeAndName{type->createColumnConst(0, value), type, name});
+    return makeAddingColumnActions(assert_cast<const ColumnConst &>(*type->createColumnConst(0, value)).getPtr(), type, name);
 }
 
 ActionsDAG ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
@@ -3431,7 +3436,7 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
             }
             case ActionsDAG::ActionType::COLUMN:
             {
-                result_node = &result_dag.addColumn({node->column, node->result_type, node->result_name}, node->is_deterministic_constant);
+                result_node = &result_dag.addColumn(node->column, node->result_type, node->result_name, node->is_deterministic_constant);
                 break;
             }
             case ActionsDAG::ActionType::ALIAS:
@@ -3672,11 +3677,8 @@ ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter
                         /// Replace non-computable child in "and" with constant true.
                         if (name == "and")
                         {
-                            ColumnWithTypeAndName column;
-                            column.name = child->result_name;
-                            column.type = child->result_type;
-                            column.column = child->result_type->createColumnConst(0, 1);
-                            copy_map[child] = &actions.addColumn(std::move(column));
+                            auto const_column = assert_cast<const ColumnConst &>(*child->result_type->createColumnConst(0, 1)).getPtr();
+                            copy_map[child] = &actions.addColumn(std::move(const_column), child->result_type, child->result_name);
 
                             /// Mark as now computable (since we substituted it)
                             it->second = true;
@@ -3917,7 +3919,7 @@ static void serializeConstant(const IDataType & type, const IColumn & value, Wri
     type.getDefaultSerialization()->serializeBinary(data, 0, out, FormatSettings{});
 }
 
-static MutableColumnPtr deserializeConstant(
+static ColumnConst::Ptr deserializeConstant(
     const IDataType & type,
     ReadBuffer & in,
     DeserializedSetsRegistry & registry,
@@ -3963,7 +3965,7 @@ static MutableColumnPtr deserializeConstant(
                 std::move(capture_dag),
                 ExpressionActionsSettings(context, CompileExpressions::yes)));
 
-        return ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns));
+        return ColumnConst::create(ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns)), 0);
     }
 
     auto column = type.createColumn();

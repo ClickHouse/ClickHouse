@@ -969,7 +969,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             else
                 name = node.result_name;
 
-            res = &inverted_dag.addColumn({node.column, node.result_type, name});
+            res = &inverted_dag.addColumn(node.column, node.result_type, name);
             break;
         }
         case (ActionsDAG::ActionType::ALIAS):

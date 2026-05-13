@@ -15,6 +15,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -620,8 +621,8 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     auto zero_field = (nested_type->getTypeId() == TypeIndex::Nothing)
                         ? res->result_type->getDefault()
                         : nested_type->getDefault();
-                    auto zero_column = res->result_type->createColumnConst(1, zero_field);
-                    const auto & zero_node = tmp_dag.addColumn({zero_column, res->result_type, "0"});
+                    auto zero_column = assert_cast<const ColumnConst &>(*res->result_type->createColumnConst(0, zero_field)).getPtr();
+                    const auto & zero_node = tmp_dag.addColumn(std::move(zero_column), res->result_type, "0");
                     auto ne_func = FunctionFactory::instance().get("notEquals", context);
                     res = &tmp_dag.addFunction(ne_func, {res, &zero_node}, {});
                     additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));

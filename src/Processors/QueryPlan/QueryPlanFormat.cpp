@@ -240,9 +240,7 @@ namespace QueryPlanFormat
             if (!set_node->column)
                 return trimColumnIdentifier(set_node->result_name);
 
-            const auto * column_ptr = set_node->column.get();
-            const auto * col_const = typeid_cast<const ColumnConst *>(column_ptr);
-            const ColumnSet * column_set = col_const ? typeid_cast<const ColumnSet *>(&col_const->getDataColumn()) : typeid_cast<const ColumnSet *>(column_ptr);
+            const ColumnSet * column_set = typeid_cast<const ColumnSet *>(&set_node->column->getDataColumn());
 
             if (!column_set || !column_set->getData())
                 return trimColumnIdentifier(set_node->result_name);

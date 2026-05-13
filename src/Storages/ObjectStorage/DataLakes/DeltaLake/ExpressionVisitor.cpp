@@ -27,6 +27,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/LocalDate.h>
 #include <Common/logger_useful.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
 #include <Parsers/ASTLiteral.h>
@@ -247,13 +248,10 @@ public:
     void addLiteral(size_t list_id, DB::Field value, DB::DataTypePtr type)
     {
         chassert(type);
-        auto col = type->createColumnConst(1, value);
-        auto column = DB::ColumnWithTypeAndName(
-            col,
-            type,
-            /* name */"const_" + DB::toString(literal_counter++));
+        auto col = assert_cast<const DB::ColumnConst &>(*type->createColumnConst(0, value)).getPtr();
+        auto name = "const_" + DB::toString(literal_counter++);
 
-        const auto & node = dag->addColumn(std::move(column));
+        const auto & node = dag->addColumn(std::move(col), type, std::move(name));
 
         node_lists[list_id].push_back(&node);
 

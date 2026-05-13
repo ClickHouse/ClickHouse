@@ -603,7 +603,8 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(column, is_deterministic);
+        const auto * node = &actions_dag.addColumn(
+            assert_cast<const ColumnConst &>(*column.column).getPtr(), column.type, column.name, is_deterministic);
         node_name_to_node[node->result_name] = node;
 
         return node;

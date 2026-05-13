@@ -117,7 +117,9 @@ bool tryAppendConstantFunctionColumnName(
         outputs.reserve(captured_columns.size());
         for (size_t i = 0; i < captured_columns.size(); ++i)
         {
-            const auto & captured_node = captured_columns_dag.addColumn(captured_columns[i]);
+            const auto & captured = captured_columns[i];
+            auto captured_column_const = assert_cast<const ColumnConst &>(*captured.column).getPtr();
+            const auto & captured_node = captured_columns_dag.addColumn(std::move(captured_column_const), captured.type, captured.name);
             const auto & alias_node = captured_columns_dag.addAlias(captured_node, capture.captured_names[i]);
             outputs.push_back(&alias_node);
         }

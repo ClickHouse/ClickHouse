@@ -93,9 +93,9 @@ InConversion buildInConversion(
     auto future_set = std::make_shared<FutureSetFromSubquery>(
         get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, transform_null_in, size_limits, max_size_for_index);
 
-    ColumnPtr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 1);
+    ColumnConst::Ptr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 0);
     const ActionsDAG::Node * in_rhs_arg =
-        &lhs_dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
+        &lhs_dag.addColumn(std::move(set_col), std::make_shared<DataTypeSet>(), "set column");
 
     /// IN function
     auto func_in = FunctionFactory::instance().get("in", nullptr);
