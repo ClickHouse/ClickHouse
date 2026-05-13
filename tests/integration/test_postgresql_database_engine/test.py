@@ -69,6 +69,8 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
 
     cursor.execute("ALTER TABLE test_table ADD COLUMN data Text")
+    assert "data" in node1.query("SHOW COLUMNS FROM postgres_database.test_table")
+    assert "PRIMARY" in node1.query("SHOW INDEX FROM postgres_database.test_table")
     assert "data" in node1.query(
         "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'",
         settings={"show_remote_databases_in_system_tables": 1},

@@ -114,6 +114,12 @@ def test_mysql_ddl_for_mysql_database(started_cluster):
             "ALTER TABLE `test_database`.`test_table` ADD COLUMN `add_column` int(11)"
         )
         assert "add_column" in clickhouse_node.query(
+            "SHOW COLUMNS FROM test_database.test_table"
+        )
+        assert "PRIMARY" in clickhouse_node.query(
+            "SHOW INDEX FROM test_database.test_table"
+        )
+        assert "add_column" in clickhouse_node.query(
             "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'test_database'",
             settings={"show_remote_databases_in_system_tables": 1},
         )
