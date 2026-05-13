@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 
-#include <Common/logger_useful.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -13,8 +12,6 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
-    extern const Event SelectedMarks;
-    extern const Event SelectedRanges;
 }
 
 namespace DB
@@ -45,14 +42,12 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
 {
 }
 
-SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns)
+SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & part)
 {
     CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
     auto ranges = part.ranges;
     [[maybe_unused]] size_t total_granules = ranges.getNumberOfMarks();
-
-    IndexGranulesMap index_granules;
 
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (use_for_disjunctions)
@@ -67,13 +62,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index_and_condition.index, metadata_snapshot, all_updated_columns); !result)
-        {
-            LOG_TRACE(log, "Cannot use skip index for part {}. Reason: {}", part.data_part->name, result.error().text);
-            continue;
-        }
-
-        auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
+        ranges = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition,
             key_condition_rpn_template,
@@ -86,12 +75,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             vector_similarity_index_cache.get(),
             use_for_disjunctions,
             partial_eval_results,
-            log);
-
-        ranges = std::move(filtered_ranges);
-
-        for (auto & [name, granule] : filtered_hints.index_granules)
-            index_granules[name] = std::move(granule);
+            log).first;
 
         LOG_DEBUG(log, "Index {} has dropped {}/{} granules in part {}", index_and_condition.index->index.name,
                         (total_granules - ranges.getNumberOfMarks()), total_granules, part.data_part->name);
@@ -109,8 +93,27 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         total_granules = ranges.getNumberOfMarks();
     }
 
-    ProfileEvents::increment(ProfileEvents::SelectedMarks, ranges.getNumberOfMarks());
-    ProfileEvents::increment(ProfileEvents::SelectedRanges, ranges.size());
+    for (const auto & indices_and_condition : skip_indexes.merged_indices)
+    {
+        if (is_cancelled)
+            return {};
+
+        if (ranges.empty())
+            break;
+
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+
+        ranges = MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
+            indices_and_condition.indices,
+            indices_and_condition.condition,
+            part.data_part,
+            ranges,
+            reader_settings,
+            mark_cache.get(),
+            uncompressed_cache.get(),
+            vector_similarity_index_cache.get(),
+            log);
+    }
 
     if (is_cancelled)
         return {};
@@ -122,8 +125,6 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         for (auto i = range.begin; i < range.end; ++i)
             (*res).granules_selected[i] = true;
     }
-
-    res->index_granules = std::move(index_granules);
 
     if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker)
     {
@@ -481,7 +482,7 @@ MergeTreeIndexReadResultPool::MergeTreeIndexReadResultPool(
 }
 
 MergeTreeIndexReadResultPtr
-MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(const RangesInDataPart & part, const RangesInDataParts & projection_parts, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns)
+MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(const RangesInDataPart & part, const RangesInDataParts & projection_parts)
 {
     std::unique_lock lock(index_read_result_registry_mutex);
     auto it = index_read_result_registry.find(part.data_part.get());
@@ -495,7 +496,7 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(const RangesInDataPart &
             MergeTreeIndexReadResultPtr res;
             if (skip_index_reader)
             {
-                auto skip_index_res = skip_index_reader->read(part, metadata_snapshot, all_updated_columns);
+                auto skip_index_res = skip_index_reader->read(part);
                 if (skip_index_res)
                 {
                     res = std::make_shared<MergeTreeIndexReadResult>();
