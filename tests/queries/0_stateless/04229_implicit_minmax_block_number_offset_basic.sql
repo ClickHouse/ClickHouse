@@ -1,6 +1,7 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
 
-SET use_skip_indexes = 1;
+SET enable_analyzer=1;
+SET use_skip_indexes=1;
 
 CREATE TABLE t_imv_minmax_basic (a UInt64)
 ENGINE = MergeTree
