@@ -1287,6 +1287,16 @@ public:
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
+    /// `if(cond, then, else)` accepts UInt8 / Nullable(UInt8) / NULL for `cond`;
+    /// the result is `leastSupertype{,OrVariant}(then, else)`. The Variant
+    /// branch is selected by the `use_variant_when_no_common_type` setting.
+    String getSignatureString() const override
+    {
+        if (use_variant_when_no_common_type)
+            return "(MaybeNullable(UInt8) | Nothing, T1, T2) -> leastSupertypeOrVariant(T1, T2)";
+        return "(MaybeNullable(UInt8) | Nothing, T1, T2) -> leastSupertype(T1, T2)";
+    }
+
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
