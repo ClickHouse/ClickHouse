@@ -125,6 +125,15 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
+    enum class InputFormatColumnMatchingCaseSensitivity : uint8_t
+    {
+        MATCH_CASE, /// Matches case-sensitively
+        IGNORE_CASE, /// Matches case-insensitively
+        AUTO, /// First tries to match case-sensitively, if fails, tries to match case-insensitively
+    };
+
+    InputFormatColumnMatchingCaseSensitivity input_format_column_matching_case_sensitivity = InputFormatColumnMatchingCaseSensitivity::AUTO;
+
     UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
@@ -169,16 +178,26 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
+        bool output_unsupported_types_as_binary = true;
     } arrow{};
+
+    struct AvroSchemaRegistryTimeouts
+    {
+        UInt64 connection_timeout = 1;
+        UInt64 send_timeout = 1;
+        UInt64 receive_timeout = 1;
+    };
 
     struct
     {
         String schema_registry_url;
+        AvroSchemaRegistryTimeouts schema_registry_timeouts;
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
         String string_column_pattern;
         UInt64 output_rows_in_file = 1;
+        String output_confluent_subject;
     } avro{};
 
     String bool_true_representation = "true";
@@ -314,7 +333,7 @@ struct FormatSettings
         bool bloom_filter_push_down = true;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
-        bool use_native_reader_v3 = false;
+
         bool enable_json_parsing = true;
         bool preserve_order = false;
         bool enable_row_group_prefetch = true;
@@ -335,13 +354,11 @@ struct FormatSettings
         bool output_datetime_as_uint32 = false;
         bool output_date_as_uint16 = false;
         bool output_enum_as_byte_array = false;
-        bool use_custom_encoder = true;
+
         bool parallel_encoding = true;
-        bool output_compliant_nested_types = true;
         bool write_page_index = false;
         bool write_bloom_filter = false;
         bool write_checksums = true;
-        ParquetVersion output_version = ParquetVersion::V2_LATEST;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;

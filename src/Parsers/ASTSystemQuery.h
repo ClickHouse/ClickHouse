@@ -50,6 +50,7 @@ public:
         CLEAR_PAGE_CACHE,
         CLEAR_SCHEMA_CACHE,
         CLEAR_FORMAT_SCHEMA_CACHE,
+        CLEAR_AVRO_SCHEMA_CACHE,
         CLEAR_S3_CLIENT_CACHE,
         STOP_LISTEN,
         START_LISTEN,
@@ -100,6 +101,7 @@ public:
         FLUSH_LOGS,
         FLUSH_DISTRIBUTED,
         FLUSH_ASYNC_INSERT_QUEUE,
+        FLUSH_OBJECT_STORAGE_QUEUE,
         STOP_DISTRIBUTED_SENDS,
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
@@ -126,6 +128,8 @@ public:
         STOP_VIEW,
         STOP_VIEWS,
         STOP_REPLICATED_VIEW,
+        PAUSE_VIEW,
+        PAUSE_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
@@ -188,6 +192,8 @@ public:
     String schema_cache_storage;
 
     String schema_cache_format;
+
+    String queue_path;
 
     String fail_point_name;
 

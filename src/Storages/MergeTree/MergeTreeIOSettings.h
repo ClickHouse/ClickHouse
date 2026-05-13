@@ -99,6 +99,10 @@ struct MergeTreeWriterSettings
         bool save_primary_index_in_memory_,
         bool blocks_are_granules_size_);
 
+    /// Maximum allowed value for compression block size settings.
+    /// Prevents absurd memory allocations from fuzzed or misconfigured settings.
+    static constexpr size_t MAX_COMPRESS_BLOCK_SIZE = 256ULL * 1024 * 1024; /// 256 MiB
+
     size_t min_compress_block_size;
     size_t max_compress_block_size;
 
@@ -130,6 +134,7 @@ struct MergeTreeWriterSettings
     bool use_adaptive_write_buffer_for_dynamic_subcolumns;
     size_t min_columns_to_activate_adaptive_write_buffer;
     size_t adaptive_write_buffer_initial_size;
+    bool compress_per_column_in_compact_parts;
 };
 
 }
