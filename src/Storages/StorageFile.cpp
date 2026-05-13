@@ -1966,9 +1966,19 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     /// the predicate excludes the only path the file is not read at all. It also
     /// means a query against many paths whose predicate prunes down to a single file
     /// still benefits from the split.
+    ///
+    /// The split is also gated on `parallelize_output_from_storages`: if the user has
+    /// explicitly disabled output parallelism, we must not create multiple sources
+    /// for a single file either — the setting's contract is to allow / disallow
+    /// parallel reads of `file/url/s3/etc`, and the per-bucket sources are exactly
+    /// that. `need_only_count` queries are also excluded: they only consult the
+    /// file's metadata, so splitting them across N sources just multiplies the
+    /// metadata-parse cost N-fold without any read-side benefit.
     std::vector<FileBucketInfoPtr> per_source_buckets;
     String single_file_path;
     if (max_num_streams > 1
+        && !need_only_count
+        && ctx->getSettingsRef()[Setting::parallelize_output_from_storages]
         && !storage->archive_info
         && !storage->use_table_fd
         && !storage->has_peekable_read_buffer_from_fd.load()

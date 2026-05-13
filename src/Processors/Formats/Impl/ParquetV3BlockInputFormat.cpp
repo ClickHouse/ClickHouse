@@ -351,7 +351,17 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBucketsByCount(size
     /// Distribute row groups across at most target_count contiguous chunks. Each
     /// chunk becomes a single ParquetFileBucketInfo containing several row groups,
     /// so the caller gets one source per chunk and no row group is dropped.
-    const size_t num_chunks = std::min(target_count, num_row_groups);
+    ///
+    /// We also require each chunk to cover at least `min_row_groups_per_chunk` row
+    /// groups: parallelising a file with very few row groups across all available
+    /// threads multiplies the per-bucket metadata-parse / prefetcher-setup overhead
+    /// without giving each source enough work to amortise it. For "short" queries
+    /// over a smallish single Parquet file this can be a >2x slowdown vs reading the
+    /// file with a single source (see `tests/performance/clickbench_parquet_short.xml`).
+    /// Large files (many row groups) still get max parallelism.
+    static constexpr size_t min_row_groups_per_chunk = 8;
+    const size_t max_chunks_by_row_groups = std::max<size_t>(1, num_row_groups / min_row_groups_per_chunk);
+    const size_t num_chunks = std::min({target_count, num_row_groups, max_chunks_by_row_groups});
     std::vector<FileBucketInfoPtr> result;
     result.reserve(num_chunks);
     for (size_t g = 0; g < num_chunks; ++g)
