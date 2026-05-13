@@ -45,6 +45,7 @@ public:
     static constexpr auto name = "transactionLatestSnapshot";
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionLatestSnapshot>(context); }
     explicit FunctionTransactionLatestSnapshot(ContextPtr context) : FunctionConstantBase(getLatestSnapshot(context), context->isDistributed()) {}
+    String getSignatureString() const override { return "() -> UInt64"; }
 };
 
 class FunctionTransactionOldestSnapshot : public FunctionConstantBase<FunctionTransactionOldestSnapshot, UInt64, DataTypeUInt64>
@@ -58,6 +59,7 @@ public:
     static constexpr auto name = "transactionOldestSnapshot";
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionOldestSnapshot>(context); }
     explicit FunctionTransactionOldestSnapshot(ContextPtr context) : FunctionConstantBase(getOldestSnapshot(context), context->isDistributed()) {}
+    String getSignatureString() const override { return "() -> UInt64"; }
 };
 
 }

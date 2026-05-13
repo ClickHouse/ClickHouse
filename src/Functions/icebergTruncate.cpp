@@ -54,6 +54,23 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
+    /// Documentation-only — implements the Iceberg `truncate(W, v)` transform.
+    /// For string-like inputs the result is `String`; for integers and
+    /// `Decimal*` the result widens via internal `plus`/`minus` calls (e.g.
+    /// `UInt32 → Int64`), which isn't expressible in the DSL.
+    String getSignatureString() const override
+    {
+        return "(const UInt, StringOrFixedString | NativeInteger | Decimal) -> Any";
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// You may ask, why use global context and not the context provided

@@ -581,6 +581,23 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    /// Documentation-only — accumulates intervals into a tuple of intervals.
+    /// If the right-hand interval shares the unit of the last element of the
+    /// tuple, it's merged in place; otherwise it's appended. The composite
+    /// per-element-interval-kind result isn't expressible in the DSL.
+    String getSignatureString() const override
+    {
+        return "(Tuple | Interval, Interval) -> Tuple";
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isTuple(arguments[0]) && !isInterval(arguments[0]))

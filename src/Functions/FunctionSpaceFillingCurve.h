@@ -78,6 +78,15 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
+    /// Documentation-only — first arg is a constant `UInt` (the number of
+    /// dimensions to decode into) or a constant `Tuple` of bit-shift masks;
+    /// the result is a tuple of decoded coordinates (`UInt64` by default,
+    /// shrunk per the mask when one is provided).
+    String getSignatureString() const override
+    {
+        return "(const UInt | const Tuple, UInt) -> Tuple";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         UInt64 tuple_size = 0;

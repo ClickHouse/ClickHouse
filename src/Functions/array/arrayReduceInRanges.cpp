@@ -346,6 +346,14 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
+    /// Documentation-only — like `arrayReduce`, but applied per-range, so the
+    /// result is `Array(R)` where `R` is the named aggregator's result type.
+    /// The aggregate-function-name lookup isn't reachable from the DSL.
+    String getSignatureString() const override
+    {
+        return "(const String, Array(Tuple(UInt, UInt)), Array, ...) -> Array";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         return std::make_shared<DataTypeArray>(resolveAggregateFunction(arguments)->getResultType());

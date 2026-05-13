@@ -95,6 +95,15 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only — variadic with an optional const-`UInt`
+    /// clear-depth, then per-array (array, optional const-`UInt` depth)
+    /// groups. The result is a nested array of `UInt32` whose depth matches
+    /// the maximum effective input depth — not expressible in the DSL.
+    String getSignatureString() const override
+    {
+        return "([const UInt], Array, [const UInt], ...) -> Array(UInt32)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())

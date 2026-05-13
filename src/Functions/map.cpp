@@ -178,6 +178,24 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    /// Documentation-only — zips parallel `keys` and `values` arrays into a
+    /// `Map`. Either argument may instead be a `Map` (its key+value pair
+    /// becomes the corresponding side). The composite return type isn't
+    /// expressible in the DSL, so legacy `getReturnTypeImpl(DataTypes)` stays
+    /// authoritative.
+    String getSignatureString() const override
+    {
+        return "(Array(K : Any) | Map(Any, Any), Array(V : Any) | Map(Any, Any)) -> Map(K, V)";
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)

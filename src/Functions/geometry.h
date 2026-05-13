@@ -206,6 +206,14 @@ public:
         return 1;
     }
 
+    /// Declarative signature — covers `areaCartesian`, `areaSpherical`,
+    /// `perimeterCartesian`, `perimeterSpherical`: a single geometry-typed
+    /// argument, a `Float64` result.
+    String getSignatureString() const override
+    {
+        return "(Any) -> Float64";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments[0]->getName() != "Geometry" && !getGeometryColumnTypeFromDataType(arguments[0]))

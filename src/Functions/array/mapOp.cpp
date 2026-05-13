@@ -59,6 +59,24 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only — combines maps (or pairs of `Array(K)`+`Array(V)`)
+    /// element-wise on matching keys, summing or subtracting the values.
+    /// Value-type promotion follows the same rule as the underlying numeric
+    /// op (e.g. `Map(K, UInt8) + Map(K, UInt8)` → `Map(K, UInt64)`), which
+    /// isn't expressible in the DSL.
+    String getSignatureString() const override
+    {
+        return "(Map(K : Any, Any), ...) -> Map(K, Any)";
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
     void checkTypes(
         DataTypePtr & key_type, DataTypePtr & promoted_val_type, const DataTypePtr & check_key_type, DataTypePtr & check_val_type) const
     {

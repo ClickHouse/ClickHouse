@@ -80,6 +80,14 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isServerConstant() const override { return true; }
 
+    /// Documentation-only — internal helper; the result type comes from the
+    /// scalar subquery cached under the const-string name in the query
+    /// context, so the DSL can't resolve it.
+    String getSignatureString() const override
+    {
+        return "(const String) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1 || !isString(arguments[0].type) || !arguments[0].column || !isColumnConst(*arguments[0].column))

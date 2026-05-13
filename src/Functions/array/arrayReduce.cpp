@@ -192,6 +192,15 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
+    /// Documentation-only — the result type is the named aggregate function's
+    /// result type (resolved from the const-string first argument plus the
+    /// element types of the input arrays), which the DSL can't reach without
+    /// the aggregate-function registry.
+    String getSignatureString() const override
+    {
+        return "(const String, Array, ...) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         return resolveAggregateFunction(arguments)->getResultType();

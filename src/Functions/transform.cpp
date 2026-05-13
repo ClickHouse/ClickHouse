@@ -98,6 +98,24 @@ namespace
         bool useDefaultImplementationForNothing() const override { return false; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
+        /// Documentation-only — looks up `value` in `array_from` and returns
+        /// the parallel element from `array_to`; otherwise returns `default`
+        /// (or `value` itself if no default is provided). The result type is
+        /// the least common supertype of `array_to`'s element type and
+        /// (optionally) `default`'s type — too dynamic to model in the DSL.
+        String getSignatureString() const override
+        {
+            return "(Any, Array(Any), Array(Any), [Any]) -> Any";
+        }
+
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        {
+            DataTypes data_types(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+                data_types[i] = arguments[i].type;
+            return getReturnTypeImpl(data_types);
+        }
+
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             const auto args_size = arguments.size();
@@ -845,6 +863,22 @@ namespace
         bool useDefaultImplementationForNulls() const override { return false; }
         bool useDefaultImplementationForNothing() const override { return false; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+
+        /// Documentation-only — see `FunctionTransform`. The result type is
+        /// the least common supertype of `array_to`'s element type and
+        /// (optionally) `default`'s type, which isn't expressible in the DSL.
+        String getSignatureString() const override
+        {
+            return "(Any, Array(Any), Array(Any), [Any]) -> Any";
+        }
+
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        {
+            DataTypes data_types(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+                data_types[i] = arguments[i].type;
+            return getReturnTypeImpl(data_types);
+        }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {

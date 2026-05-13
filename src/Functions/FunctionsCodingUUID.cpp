@@ -361,6 +361,15 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
+    /// Documentation-only — extracts the timestamp embedded in a UUIDv7 as a
+    /// `DateTime64(3)` (optionally tagged with a const-string timezone). The
+    /// fixed scale and explicit-timezone tagging aren't expressible in the
+    /// DSL, so the override stays authoritative.
+    String getSignatureString() const override
+    {
+        return "(UUID, [const String]) -> DateTime64(3)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)

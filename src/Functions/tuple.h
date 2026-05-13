@@ -42,6 +42,16 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    /// Documentation-only — collects N argument types into a `Tuple` (or an
+    /// empty `Tuple()` for zero args). With `enable_named_columns_in_function_tuple`
+    /// and all-unique unquoted-identifier argument names, the result is a
+    /// named tuple — that's not expressible in the DSL, so the legacy
+    /// `getReturnTypeImpl` stays authoritative.
+    String getSignatureString() const override
+    {
+        return "(A1 : Any, ...) -> Tuple(A1, ...)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())

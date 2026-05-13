@@ -139,6 +139,15 @@ public:
 
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
+    /// `reverse` works on arrays (delegated to `arrayReverse`), strings,
+    /// fixed strings, and tuples. The DSL signature is authoritative.
+    String getSignatureString() const override
+    {
+        return "(Array(T : Any)) -> Array(T)"
+               " OR (S : StringOrFixedString) -> S"
+               " OR (T : Tuple) -> reverseTuple(T)";
+    }
+
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))

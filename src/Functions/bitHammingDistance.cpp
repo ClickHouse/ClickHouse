@@ -18,6 +18,10 @@ struct BitHammingDistanceImpl
     static constexpr bool allow_fixed_string = true;
     static constexpr bool allow_string_integer = false;
 
+    /// Documentation-only — result is `UInt16` for 256-bit inputs, otherwise
+    /// `UInt8`; this isn't expressible compactly in the DSL.
+    static constexpr auto signature_documentation = "(Number, Number) -> UInt";
+
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {

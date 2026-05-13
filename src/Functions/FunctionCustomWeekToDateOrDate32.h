@@ -32,6 +32,15 @@ public:
     {
     }
 
+    /// Documentation-only — covers `toStartOfWeek` and `toLastDayOfWeek`.
+    /// The result is `Date` by default, or `Date32` when the input is
+    /// `Date32`/`DateTime64` and `enable_extended_results_for_datetime_functions`
+    /// is set — a runtime-setting-dependent choice the DSL can't express.
+    String getSignatureString() const override
+    {
+        return "(Date | Date32 | DateTime | DateTime64 | String, [UInt8], [const String]) -> Date";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         this->checkArguments(arguments, /*is_result_type_date_or_date32*/ true, Transform::value_may_be_string);
