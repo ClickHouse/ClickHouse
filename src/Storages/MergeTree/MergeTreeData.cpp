@@ -7623,14 +7623,15 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
 
     for (const auto & command : commands)
     {
-        if (!command.partition)
+        auto partition = command.partition();
+        if (!partition)
         {
             affected_partition_ids.clear();
             break;
         }
 
         affected_partition_ids.insert(
-            getPartitionIDFromQuery(command.partition, query_context)
+            getPartitionIDFromQuery(partition, query_context)
         );
     }
 
@@ -10083,16 +10084,16 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                 if (mutation_command.column_name == command.column_name)
                     throw_exception(mutation_name, action, "column", command.column_name);
 
-                if (mutation_command.predicate)
+                if (auto predicate = mutation_command.predicate())
                 {
-                    auto query_tree = buildQueryTree(mutation_command.predicate, local_context);
+                    auto query_tree = buildQueryTree(predicate, local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
                     if (identifiers.contains(command.column_name))
                         throw_exception(mutation_name, action, "column", command.column_name);
                 }
 
-                for (const auto & [name, expr] : mutation_command.column_to_update_expression)
+                for (const auto & [name, expr] : mutation_command.columnToUpdateExpression())
                 {
                     if (name == command.column_name)
                         throw_exception(mutation_name, action, "column", command.column_name);

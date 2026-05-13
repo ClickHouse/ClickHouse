@@ -147,7 +147,8 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const Muta
     {
         case MutationCommand::UPDATE:
         {
-            auto update_assignments_ast = command.ast->as<const ASTAlterCommand &>().update_assignments->clone();
+            auto command_ast = command.ast();
+            auto update_assignments_ast = command_ast->as<const ASTAlterCommand &>().update_assignments->clone();
             FirstNonDeterministicFunctionFinder(finder_data).visit(update_assignments_ast);
 
             if (finder_data.result.nondeterministic_function_name)
@@ -159,7 +160,7 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const Muta
 
         case MutationCommand::DELETE:
         {
-            auto predicate_ast = command.predicate->clone();
+            auto predicate_ast = command.predicate();
             FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
             return finder_data.result;
         }

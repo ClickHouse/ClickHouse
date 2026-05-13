@@ -125,7 +125,7 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
                 return true;
         }
 
-        for (const auto & [column_name, _] : command.column_to_update_expression)
+        for (const auto & [column_name, _] : command.columnToUpdateExpression())
         {
             auto column = data_part->tryGetColumn(column_name);
             if (column && column->type->hasDynamicSubcolumns())
@@ -240,7 +240,7 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::APPLY_PATCHES)
             {
                 for_interpreter.push_back(command);
-                for (const auto & [column_name, expr] : command.column_to_update_expression)
+                for (const auto & [column_name, expr] : command.columnToUpdateExpression())
                     mutated_columns.emplace(column_name);
 
                 if (command.type == MutationCommand::Type::MATERIALIZE_TTL && suitable_for_ttl_optimization)
@@ -532,10 +532,11 @@ static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet 
 
     if (command.type == MutationCommand::UPDATE)
     {
-        return std::ranges::find_if(command.column_to_update_expression, [](const auto & pair)
+        auto column_to_update = command.columnToUpdateExpression();
+        return std::ranges::find_if(column_to_update, [](const auto & pair)
         {
             return pair.first == RowExistsColumn::name;
-        }) != command.column_to_update_expression.end();
+        }) != column_to_update.end();
     }
 
     return false;
@@ -2599,9 +2600,9 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
 
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
-    if (command.partition)
+    if (auto partition = command.partition())
     {
-        auto command_partition_id = part->storage.getPartitionIDFromQuery(command.partition, context);
+        auto command_partition_id = part->storage.getPartitionIDFromQuery(partition, context);
         if (part->info.getPartitionId() != command_partition_id)
             return true;
     }

@@ -15,6 +15,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Storages/AlterCommands.h>
@@ -96,7 +97,10 @@ BlockIO InterpreterDeleteQuery::execute()
         MutationCommand mut_command;
 
         mut_command.type = MutationCommand::Type::DELETE;
-        mut_command.predicate = delete_query.predicate;
+        auto alter_command = make_intrusive<ASTAlterCommand>();
+        alter_command->type = ASTAlterCommand::DELETE;
+        alter_command->predicate = alter_command->children.emplace_back(delete_query.predicate->clone()).get();
+        mut_command.ast_text = alter_command->formatWithSecretsOneLine();
 
         mutation_commands.emplace_back(mut_command);
 

@@ -142,10 +142,11 @@ static std::optional<ModuleDeleteFilter> getModuleDeleteFilterFromAst(const Muta
         return {};
 
     const auto & command = commands.front();
-    if (command.type != MutationCommand::DELETE || command.partition || !command.predicate)
+    auto predicate = command.predicate();
+    if (command.type != MutationCommand::DELETE || command.partition() || !predicate)
         return {};
 
-    const auto * func = command.predicate->as<ASTFunction>();
+    const auto * func = predicate->as<ASTFunction>();
     if (!func || !func->arguments || func->arguments->children.size() != 2)
         return {};
 

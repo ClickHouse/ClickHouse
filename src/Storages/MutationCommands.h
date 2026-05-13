@@ -22,7 +22,13 @@ class ReadBuffer;
 /// to values from set of columns which satisfy predicate.
 struct MutationCommand
 {
-    ASTPtr ast = {}; /// The AST of the whole command
+    /// Serialized text of the whole command (output of `formatWithSecretsOneLine`).
+    /// The AST itself is not kept around - call `ast` to parse it on demand.
+    String ast_text = {};
+
+    /// Parses `ast_text` and returns the resulting AST.
+    /// Returns nullptr when `ast_text` is empty.
+    ASTPtr ast() const;
 
     enum Type
     {
@@ -48,20 +54,23 @@ struct MutationCommand
 
     Type type = EMPTY;
 
-    /// WHERE part of mutation
-    ASTPtr predicate = {};
+    /// WHERE part of the mutation. Parsed on demand from `ast_text`.
+    /// Returns nullptr if `ast_text` is empty or the parsed command has no predicate.
+    ASTPtr predicate() const;
 
-    /// Columns with corresponding actions
-    std::unordered_map<String, ASTPtr> column_to_update_expression = {};
+    /// Columns with corresponding update expressions. Parsed on demand from `ast_text`.
+    /// Returns an empty map if `ast_text` is empty or the parsed command is not an UPDATE.
+    std::unordered_map<String, ASTPtr> columnToUpdateExpression() const;
+
+    /// Partition expression of the mutation. Parsed on demand from `ast_text`.
+    /// Returns nullptr if `ast_text` is empty or the parsed command has no partition.
+    ASTPtr partition() const;
 
     /// For MATERIALIZE INDEX and PROJECTION and STATISTICS
     String index_name = {};
     String projection_name = {};
     std::vector<String> statistics_columns = {};
     std::vector<String> statistics_types = {};
-
-    /// For MATERIALIZE INDEX, UPDATE and DELETE.
-    ASTPtr partition = {};
 
     /// For reads, drops and etc.
     String column_name = {};

@@ -1234,7 +1234,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.type = MutationCommand::Type::READ_COLUMN;
         result.column_name = column_name;
         result.data_type = data_type;
-        result.predicate = nullptr;
     }
     else if (type == DROP_COLUMN)
     {
@@ -1242,9 +1241,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = column_name;
         if (clear)
             result.clear = true;
-        if (partition)
-            result.partition = partition;
-        result.predicate = nullptr;
     }
     else if (type == DROP_INDEX)
     {
@@ -1252,10 +1248,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = index_name;
         if (clear)
             result.clear = true;
-        if (partition)
-            result.partition = partition;
-
-        result.predicate = nullptr;
     }
     else if (type == DROP_STATISTICS)
     {
@@ -1264,10 +1256,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
 
         if (clear)
             result.clear = true;
-        if (partition)
-            result.partition = partition;
-
-        result.predicate = nullptr;
     }
     else if (type == DROP_PROJECTION)
     {
@@ -1275,10 +1263,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = projection_name;
         if (clear)
             result.clear = true;
-        if (partition)
-            result.partition = partition;
-
-        result.predicate = nullptr;
     }
     else if (type == RENAME_COLUMN)
     {
@@ -1287,7 +1271,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.rename_to = rename_to;
     }
 
-    result.ast = ast->clone();
+    result.ast_text = ast->formatWithSecretsOneLine();
     apply(metadata, context);
     return result;
 }
@@ -1901,7 +1885,7 @@ static MutationCommand createMaterializeTTLCommand()
     auto ast = make_intrusive<ASTAlterCommand>();
     ast->type = ASTAlterCommand::MATERIALIZE_TTL;
     command.type = MutationCommand::MATERIALIZE_TTL;
-    command.ast = std::move(ast);
+    command.ast_text = ast->formatWithSecretsOneLine();
     return command;
 }
 
@@ -1927,7 +1911,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
         }
         else if (with_alters)
         {
-            result.push_back(MutationCommand{.ast = alter_cmd.ast->clone(), .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION});
+            result.push_back(MutationCommand{.ast_text = alter_cmd.ast->formatWithSecretsOneLine(), .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION});
         }
     }
 

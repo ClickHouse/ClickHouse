@@ -384,9 +384,10 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     }
 
     chassert(commands.front().type == MutationCommand::Type::UPDATE);
+    auto column_to_update = commands.front().columnToUpdateExpression();
     for (const auto & key_name : primary_keys)
     {
-        if (commands.front().column_to_update_expression.contains(key_name))
+        if (column_to_update.contains(key_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", key_name);
     }
 
