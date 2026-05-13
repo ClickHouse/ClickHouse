@@ -106,6 +106,16 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
+    /// Documentation-only — `dateTrunc(unit, datetime[, timezone])`. The unit
+    /// is a const string (year/quarter/month/week/day/hour/minute/second/
+    /// millisecond/microsecond/nanosecond); the result is Date/Date32/DateTime/
+    /// DateTime64 depending on the unit and on the
+    /// `function_date_trunc_return_type_behavior` setting.
+    String getSignatureString() const override
+    {
+        return "(const String, DateOrDateTime, [const String]) -> DateOrDateTime";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// The first argument is a constant string with the name of datepart.

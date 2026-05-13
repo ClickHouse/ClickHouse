@@ -315,6 +315,17 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
 
+    /// Documentation-only — `toStartOfInterval(time, interval[, timezone | origin])`.
+    /// The result type depends on the input time's width and the interval kind:
+    /// nano/micro/milli/second/minute/hour produce DateTime/DateTime64 results,
+    /// day/week/month/quarter/year produce Date/Date32 results. The exact
+    /// scale and Date/DateTime variant comes from the interval kind and the
+    /// `enable_extended_results_for_datetime_functions` setting.
+    String getSignatureString() const override
+    {
+        return "(DateOrDateTime, Interval, [const String | DateOrDateTime]) -> DateOrDateTime";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         bool value_is_date = false;
