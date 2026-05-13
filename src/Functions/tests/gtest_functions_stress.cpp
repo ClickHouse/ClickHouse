@@ -177,7 +177,7 @@ struct Options
     /// Use --ignore-problems to override (e.g. pass empty value to enable all checks).
     VectorOfStrings ignore_problems = {{"late_typecheck", "const_dependent_checks", "broken_nullable_input", "data_dependent_const",
         "exception_in_prepare", "bulk_success_but_row_error", "bulk_error_but_row_success",
-        "broken_determinism", "broken_injectivity", "broken_monotonicity",
+        "broken_injectivity", "broken_monotonicity",
         "field_comparison_inconsistency", "validation_infrastructure"}};
     VectorOfStrings functions;
     VectorOfStrings skip_functions;
@@ -2149,13 +2149,37 @@ TEST(FunctionsStress, stress)
     }
     if (num_threads <= 0)
         num_threads = 1;
-    std::vector<FunctionsStressTestThread> threads(static_cast<size_t>(num_threads));
+    /// Use heap-allocated `FunctionsStressTestThread` (via `std::unique_ptr`) so that we can
+    /// intentionally leak the state of stuck workers. If a worker thread gets stuck in some
+    /// runaway operation (e.g. an infinite loop in a tested function), we cannot safely destroy
+    /// its `FunctionsStressTestThread` from the main thread:
+    ///   * The worker is still using `context`, `thread_group`, `function_stats`, `valid_args`,
+    ///     `result`, `mutex`, `operation`, etc. — destroying any of them would race with the
+    ///     worker (use-after-free).
+    ///   * `~ThreadStatus` would run on the main thread, fire `prev.thread_id == curr.thread_id`
+    ///     in `RUsageCounters::incrementProfileEvents`, and abort. See issue #103750.
+    ///   * `~std::thread` on a still-joinable `std::thread` calls `std::terminate`.
+    /// For stuck workers we instead `detach` the `std::thread` and `release` the `unique_ptr`,
+    /// leaving the heap-allocated state alive forever. The test is failing anyway, so this leak
+    /// only persists until the test process exits.
+    ///
+    /// The actual `unique_ptr` release for stuck workers is deferred until after the signal
+    /// listener thread has stopped — see the cleanup pass at the bottom of this function.
+    /// `request_shutdown` (the signal listener callback) reads `threads`, so mutating the
+    /// `unique_ptr` slots concurrently would be a data race.
+    std::vector<std::unique_ptr<FunctionsStressTestThread>> threads(static_cast<size_t>(num_threads));
+    for (auto & t : threads)
+        t = std::make_unique<FunctionsStressTestThread>();
     const std::chrono::seconds stop_timeout(30);
 
     auto request_shutdown = [&]
         {
+            /// `threads` is only mutated after `signal_listener_thread` has been stopped and
+            /// joined, so all entries are non-null while the listener is alive. The `if (t)`
+            /// guard is purely defensive.
             for (auto & t : threads)
-                t.thread_should_stop.store(true);
+                if (t)
+                    t->thread_should_stop.store(true);
         };
 
     /// Print stack trace and function name on crash.
@@ -2175,14 +2199,14 @@ TEST(FunctionsStress, stress)
 
     for (size_t i = 0; i < threads.size(); ++i)
     {
-        threads[i].thread_idx = i;
-        threads[i].thread = std::thread([t = &threads[i]] { t->run(); });
+        threads[i]->thread_idx = i;
+        threads[i]->thread = std::thread([t = threads[i].get()] { t->run(); });
     }
 
     signal_listener.waitForTerminationRequest(std::chrono::seconds(options.duration_seconds));
 
     for (auto & t : threads)
-        t.thread_should_stop.store(true);
+        t->thread_should_stop.store(true);
 
     LOG_INFO(logger, "Waiting for threads to stop for up to {} seconds", stop_timeout.count());
 
@@ -2191,34 +2215,57 @@ TEST(FunctionsStress, stress)
         total_stats[i].function_idx = i;
     size_t stuck_threads = 0;
 
+    /// Indices of workers that turned out to be stuck. We detach their `std::thread` immediately
+    /// (so its destructor doesn't `std::terminate`), but defer the `unique_ptr` release until
+    /// after `signal_listener_thread` has been joined. `request_shutdown` reads `threads`, so
+    /// any concurrent mutation would be a data race.
+    std::vector<size_t> stuck_indices;
+
     auto deadline = std::chrono::steady_clock::now() + stop_timeout;
-    for (auto & t : threads)
+    for (size_t i = 0; i < threads.size(); ++i)
     {
+        auto & t = threads[i];
         std::optional<Operation> stuck_operation;
         {
-            std::unique_lock lock(t.mutex);
-            t.thread_stop_cv.wait_until(lock, deadline, [&] { return t.thread_stopped; });
-            if (!t.thread_stopped)
-                stuck_operation = t.operation;
+            std::unique_lock lock(t->mutex);
+            t->thread_stop_cv.wait_until(lock, deadline, [&] { return t->thread_stopped; });
+            if (!t->thread_stopped)
+                stuck_operation = t->operation;
         }
         if (stuck_operation.has_value())
         {
             LOG_ERROR(logger, "Thread is stuck while {}", stuck_operation->describe());
             ++stuck_threads;
+            /// Detach the still-joinable `std::thread` so its destructor doesn't `std::terminate`.
+            /// Detaching mutates only `t->thread`, which `request_shutdown` does not read, so it
+            /// is safe to do here while the signal listener is still alive.
+            t->thread.detach();
+            stuck_indices.push_back(i);
         }
         else
         {
-            t.thread.join();
-            for (size_t i = 0; i < testable_functions.size(); ++i)
-                total_stats[i].merge(t.function_stats[i]);
+            t->thread.join();
+            for (size_t j = 0; j < testable_functions.size(); ++j)
+                total_stats[j].merge(t->function_stats[j]);
         }
     }
 
     String failure_details = reportResults(total_stats, stuck_threads);
 
+    /// Stop and join the signal listener BEFORE releasing the `unique_ptr` slots for stuck
+    /// workers. While the listener is alive it can fire `request_shutdown`, which iterates
+    /// `threads` and reads each `unique_ptr`. Releasing concurrently would be a data race.
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
     HandledSignals::instance().reset();
+
+    /// Now that no other thread can read `threads`, release the stuck workers' `unique_ptr`s.
+    /// The heap-allocated state stays alive forever so the still-running stuck workers can keep
+    /// using it safely; the test process is about to exit so the leak is bounded.
+    for (size_t i : stuck_indices)
+    {
+        [[maybe_unused]] auto * leaked = threads[i].release();
+    }
 
     ASSERT_TRUE(failure_details.empty()) << failure_details;
 }
