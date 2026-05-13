@@ -20,7 +20,7 @@ struct BitTestImpl
     using ResultType = UInt8;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
-    static constexpr auto signature = "(NativeNumber, NativeInteger) -> UInt8";
+    static constexpr auto signature = "(Number, NativeInteger) -> UInt8";
 
     template <typename Result = ResultType>
     static Result apply(A a [[maybe_unused]], B b [[maybe_unused]])

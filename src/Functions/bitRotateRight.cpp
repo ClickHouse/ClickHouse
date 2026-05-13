@@ -19,7 +19,7 @@ struct BitRotateRightImpl
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
     static constexpr auto signature =
-        "(A : NativeNumber, B : NativeNumber) -> nativeNumber(selectIf(anyFloating(A, B), 64, maxBits(A, B)), anySigned(A, B), 0)";
+        "(A : Number, B : Number) -> nativeNumber(selectIf(anyFloating(A, B), 64, maxBits(A, B)), anySigned(A, B), 0)";
 
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])

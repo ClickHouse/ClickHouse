@@ -18,7 +18,7 @@ struct BitOrImpl
     static constexpr bool allow_fixed_string = true;
     static constexpr bool allow_string_integer = false;
     static constexpr auto signature =
-        "(A : NativeNumber, B : NativeNumber) -> nativeNumber(selectIf(anyFloating(A, B), 64, maxBits(A, B)), anySigned(A, B), 0)"
+        "(A : Number, B : Number) -> nativeNumber(selectIf(anyFloating(A, B), 64, maxBits(A, B)), anySigned(A, B), 0)"
         " OR (F : FixedString, FixedString) -> F";
 
     template <typename Result = ResultType>

@@ -21,9 +21,9 @@ struct BitShiftRightImpl
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = true;
     static constexpr auto signature =
-        "(A : NativeNumber, B : NativeNumber) -> nativeNumber(selectIf(anyFloating(A, B), 64, maxBits(A, B)), anySigned(A, B), 0)"
-        " OR (String, NativeInteger) -> String"
-        " OR (F : FixedString, NativeInteger) -> F";
+        "(A : Number, B : Number) -> nativeNumber(selectIf(anyFloating(A, B), 64, maxBits(A, B)), anySigned(A, B), 0)"
+        " OR (String, Integer) -> String"
+        " OR (F : FixedString, Integer) -> F";
 
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
