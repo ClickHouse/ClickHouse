@@ -35,6 +35,11 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    String getSignatureString() const override
+    {
+        return "(UInt64, UInt64, Array(String)) -> UInt64";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
