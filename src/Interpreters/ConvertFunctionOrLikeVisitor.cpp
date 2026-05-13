@@ -219,8 +219,8 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                 }
 
                 /// Don't merge `f(x) LIKE 'a%' OR f(x) LIKE 'b%'` when `f` is non-deterministic
-                /// (e.g. `rand`). Both branches would render to the same `getAliasOrColumnName`
-                /// key, but at runtime they evaluate independently — collapsing them into one
+                /// (e.g. `rand`). Both branches would render to the same column-name key, but at
+                /// runtime they evaluate independently — collapsing them into one
                 /// `multiSearchAny`/`multiMatchAny` call would change query results.
                 if (isExpressionNonDeterministic(identifier, context))
                 {
@@ -254,7 +254,11 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                         data.regexp = "(?i)" + data.regexp;
                 }
 
-                String key = identifier->getAliasOrColumnName();
+                /// Key by the alias-free canonical column name so that two structurally distinct
+                /// expressions sharing the same user-provided alias (e.g. `(toString(1) AS z) LIKE 'a'
+                /// OR (toString(2) AS z) LIKE 'b'`) are not merged into one rewritten call — which
+                /// would silently drop one branch.
+                String key = identifier->getColumnNameWithoutAlias();
                 auto it = key_to_index.find(key);
                 size_t idx;
                 if (it == key_to_index.end())
