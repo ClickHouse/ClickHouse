@@ -127,7 +127,7 @@ bool ParserKQLJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr right_select_node;
     {
         Tokens right_tokens(right_query.data(), right_query.data() + right_query.size(), 0, true);
-        IParser::Pos right_pos(right_tokens, pos.max_depth, pos.max_backtracks);
+        IParser::Pos right_pos(right_tokens, pos);
         if (!ParserKQLWithUnionQuery().parse(right_pos, right_select_node, expected))
             return false;
     }
@@ -239,7 +239,7 @@ bool ParserKQLJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Parse on expression
     String on_expr_str = sql_on;
     Tokens on_tokens(on_expr_str.data(), on_expr_str.data() + on_expr_str.size(), 0, true);
-    IParser::Pos on_pos(on_tokens, pos.max_depth, pos.max_backtracks);
+    IParser::Pos on_pos(on_tokens, pos);
     ASTPtr on_expr;
     if (!ParserExpressionWithOptionalAlias(false).parse(on_pos, on_expr, expected))
         return false;
