@@ -1119,132 +1119,105 @@ using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactio
 namespace
 {
 
-class CollectTablesInQueryMatcher
+struct CollectTablesData
 {
-public:
-    struct Data
+    explicit CollectTablesData(ContextPtr context_) : context(std::move(context_)) {}
+
+    const ContextPtr context;
+    std::vector<StorageID> tables;
+
+    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes)
     {
-        explicit Data(ContextPtr context_) : context(std::move(context_)) {}
+        if (table.empty())
+            return;
 
-        const ContextPtr context;
-        std::vector<StorageID> tables;
-        /// Names defined in any `WITH name AS ...` clause anywhere in the query.
-        /// Unqualified table references that match a CTE name are skipped to avoid
-        /// detaching/attaching an unrelated persistent table that happens to share the name.
-        std::unordered_set<String> cte_names;
+        /// Unqualified reference matching an in-scope CTE name: it refers to the CTE, not a real table.
+        if (database.empty() && active_ctes.contains(table))
+            return;
 
-        void addTableIfNotEmpty(const String & database, const String & table)
-        {
-            if (table.empty())
-                return;
+        StorageID storage_id = database.empty()
+            ? StorageID("", table)
+            : StorageID(database, table);
 
-            /// Unqualified reference matching a CTE name: it likely refers to the CTE, not a real table.
-            if (database.empty() && cte_names.contains(table))
-                return;
+        auto resolved = context->tryResolveStorageID(storage_id);
+        if (!resolved)
+            return;
 
-            StorageID storage_id = database.empty()
-                ? StorageID("", table)
-                : StorageID(database, table);
+        /// Skip temporary and external tables — detaching them makes no sense.
+        if (resolved.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE)
+            return;
 
-            auto resolved = context->tryResolveStorageID(storage_id);
-            if (!resolved)
-                return;
-
-            /// Skip temporary and external tables — detaching them makes no sense.
-            if (resolved.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE)
-                return;
-
-            tables.emplace_back(std::move(resolved));
-        }
-    };
-
-    static void visit(const ASTPtr & ast, Data & data)
-    {
-        if (const auto * select = ast->as<ASTSelectQuery>())
-            visit(*select, data);
-        else if (const auto * insert = ast->as<ASTInsertQuery>())
-            visit(*insert, data);
-        else if (const auto * backup = ast->as<ASTBackupQuery>())
-            visit(*backup, data);
-        else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
-            visit(*query_with_output, data);
+        tables.emplace_back(std::move(resolved));
     }
+};
 
-    static void visit(const ASTSelectQuery & select, Data & data)
+/// Walk the AST and collect tables, tracking CTE/`WITH`-alias scope so that an inner CTE name does not
+/// shadow an outer table with the same name. `active_ctes` is passed by value so each `ASTSelectQuery`'s
+/// WITH names propagate only to its descendants, not to siblings or ancestors.
+///
+/// Handles both forms of WITH:
+///   `WITH name AS (subquery)` — parsed as `ASTWithElement` with `name` field;
+///   `WITH expr AS alias`      — parsed as an expression node (e.g. `ASTSubquery`) with `alias` set
+///                               via the `ASTWithAlias` base class.
+void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::unordered_set<String> active_ctes)
+{
+    if (!ast)
+        return;
+
+    if (const auto * select = ast->as<ASTSelectQuery>())
     {
-        /// Walk the FROM table expressions directly so the original (un-resolved) database
-        /// name is preserved. `getDatabaseAndTables` would substitute the current database
-        /// for unqualified references, which defeats the CTE-name check below: a CTE
-        /// shadows only unqualified table references, so we need to know whether the
-        /// reference was qualified in the source query.
-        for (const auto * table_expression : getTableExpressions(select))
+        /// This select's WITH names shadow outer names for all descendants of this select (including its
+        /// own FROM tables, since a CTE with the same name as a table is referenced first).
+        if (auto with = select->with())
+        {
+            for (const auto & with_child : with->children)
+            {
+                if (const auto * with_element = with_child->as<ASTWithElement>())
+                    active_ctes.insert(with_element->name);
+                else
+                {
+                    const String alias = with_child->tryGetAlias();
+                    if (!alias.empty())
+                        active_ctes.insert(alias);
+                }
+            }
+        }
+
+        /// Walk the FROM table expressions directly so the original (un-resolved) database name is
+        /// preserved. `getDatabaseAndTables` would substitute the current database for unqualified
+        /// references, which defeats the CTE-name check: a CTE shadows only unqualified table references.
+        for (const auto * table_expression : getTableExpressions(*select))
         {
             if (!table_expression || !table_expression->database_and_table_name)
                 continue;
             if (const auto * id = table_expression->database_and_table_name->as<ASTTableIdentifier>())
-                data.addTableIfNotEmpty(id->getDatabaseName(), id->shortName());
+                data.addTableIfNotEmpty(id->getDatabaseName(), id->shortName(), active_ctes);
         }
     }
-
-    /// Pre-pass: collect names of all CTEs and WITH-clause aliases declared anywhere in the query so that
-    /// unqualified references matching them are not treated as real tables.
-    /// Handles both forms:
-    ///   `WITH name AS (subquery)` — parsed as `ASTWithElement` with `name` field;
-    ///   `WITH expr AS alias`      — parsed as an expression node (e.g. `ASTSubquery`) with `alias` set
-    ///                               via the `ASTWithAlias` base class.
-    static void collectCteNames(const ASTPtr & ast, Data & data)
+    else if (const auto * insert = ast->as<ASTInsertQuery>())
     {
-        if (!ast)
-            return;
-        if (const auto * with_element = ast->as<ASTWithElement>())
-            data.cte_names.insert(with_element->name);
-        else if (const auto * select = ast->as<ASTSelectQuery>())
-        {
-            if (auto with = select->with())
-            {
-                for (const auto & with_child : with->children)
-                {
-                    if (with_child && !with_child->as<ASTWithElement>())
-                    {
-                        const String alias = with_child->tryGetAlias();
-                        if (!alias.empty())
-                            data.cte_names.insert(alias);
-                    }
-                }
-            }
-        }
-        for (const auto & child : ast->children)
-            collectCteNames(child, data);
+        data.addTableIfNotEmpty(insert->getDatabase(), insert->getTable(), active_ctes);
+    }
+    else if (const auto * backup = ast->as<ASTBackupQuery>())
+    {
+        for (const auto & element : backup->elements)
+            data.addTableIfNotEmpty(element.database_name, element.table_name, active_ctes);
+    }
+    else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
+    {
+        data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes);
     }
 
-    static void visit(const ASTInsertQuery & insert, Data & data)
-    {
-        data.addTableIfNotEmpty(insert.getDatabase(), insert.getTable());
-    }
-
-    static void visit(const ASTBackupQuery & backup, Data & data)
-    {
-        for (const auto & element : backup.elements)
-            data.addTableIfNotEmpty(element.database_name, element.table_name);
-    }
-
-    static void visit(const ASTQueryWithTableAndOutput & query, Data & data)
-    {
-        data.addTableIfNotEmpty(query.getDatabase(), query.getTable());
-    }
-
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
-};
-
-using CollectTablesInQueryVisitor = ConstInDepthNodeVisitor<CollectTablesInQueryMatcher, true>;
+    for (const auto & child : ast->children)
+        collectTablesInQuery(child, data, active_ctes);
+}
 
 }
 
 static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr context)
 {
-    CollectTablesInQueryVisitor::Data data(context);
-    CollectTablesInQueryMatcher::collectCteNames(query, data);
-    CollectTablesInQueryVisitor(data).visit(query);
+    CollectTablesData data(context);
+    collectTablesInQuery(query, data, /* active_ctes */ {});
 
     /// Deduplicate: the same table can appear multiple times (e.g. self-joins).
     {

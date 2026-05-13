@@ -74,4 +74,7 @@ ${CLICKHOUSE_CLIENT} --reattach_tables_before_query_execution=1 -q "SELECT numbe
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_cte"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_cte (a UInt64) ENGINE = MergeTree ORDER BY a"
 check_if_not_detached "WITH (SELECT 1) AS t_reattach_cte SELECT * FROM t_reattach_cte" "t_reattach_cte"
+
+# A CTE defined only in a nested subquery must NOT shadow the same name in an outer FROM clause.
+check_if_detached "SELECT * FROM t_reattach_cte WHERE a IN (WITH (SELECT 1) AS t_reattach_cte SELECT t_reattach_cte)" "t_reattach_cte"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_cte"
