@@ -43,6 +43,19 @@ public:
      bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// The Tuple element ellipsis requires every subsequent element to match the
+    /// captured `T`, enforcing the runtime invariant that all values share a type.
+    /// Nullable(Tuple(...)) is also accepted by the runtime (the override below
+    /// strips Nullable before extracting the element type), so a second alternative
+    /// covers that input shape. The result is never wrapped in Nullable in either
+    /// case — the runtime always returns Array(Tuple(String, T)).
+    String getSignatureString() const override
+    {
+        return
+            "(Tuple(T : Any, T, ...)) -> Array(Tuple(String, T))"
+            " OR (Nullable(Tuple(T : Any, T, ...))) -> Array(Tuple(String, T))";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const DataTypePtr col = arguments[0].type;
