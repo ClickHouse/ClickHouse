@@ -20,6 +20,7 @@ struct IntExp2Impl
 {
     using ResultType = UInt64;
     static constexpr bool allow_string_or_fixed_string = false;
+    static constexpr auto signature = "(NativeNumber) -> UInt64";
 
     static ResultType apply([[maybe_unused]] A a)
     {

@@ -19,6 +19,7 @@ struct IntExp10Impl
 {
     using ResultType = UInt64;
     static constexpr const bool allow_string_or_fixed_string = false;
+    static constexpr auto signature = "(NativeNumber) -> UInt64";
 
     static ResultType apply([[maybe_unused]] A a)
     {

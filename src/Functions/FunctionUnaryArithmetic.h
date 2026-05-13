@@ -224,6 +224,19 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// Per-Op opt-in to declarative signatures. If `Op<UInt8>::signature` is defined,
+    /// the framework uses it for return-type resolution; otherwise falls back to the
+    /// long-form `getReturnTypeImplStatic`. The Op also keeps full control over the
+    /// dispatched execution path, so opting in is safe when the signature covers the
+    /// same shape as the legacy logic.
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Op<UInt8>::signature; })
+            return Op<UInt8>::signature;
+        else
+            return {};
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return getReturnTypeImplStatic(arguments, context);
