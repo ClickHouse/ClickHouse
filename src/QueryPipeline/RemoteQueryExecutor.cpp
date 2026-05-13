@@ -62,6 +62,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int SYSTEM_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -894,6 +896,22 @@ void RemoteQueryExecutor::finish()
 
             case Protocol::Server::Exception:
                 got_exception_from_replica = true;
+                /// We just called `tryCancel` above before entering this drain loop, which sends
+                /// `Cancel` to the replicas. A replica that was actively processing responds with
+                /// `QUERY_WAS_CANCELLED_BY_CLIENT` (or `QUERY_WAS_CANCELLED` when the cancel is
+                /// observed via the process list). Rethrowing such an expected cancellation would
+                /// kill the initiator's pipeline, prevent `PipelineExecutor::finalizeExecution`
+                /// from running, and lose the `Progress` packets that the replica already sent
+                /// before the cancellation — producing `rows_read = 0` in JSON/XML statistics.
+                /// Swallow these expected exceptions, log them, and let the loop continue so the
+                /// remaining replicas' trailing packets can still be drained.
+                if (packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+                    || packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED)
+                {
+                    if (log)
+                        LOG_TRACE(log, "Replica reported expected cancellation during drain: {}", packet.exception->displayText());
+                    break;
+                }
                 packet.exception->rethrow();
                 break;
 
