@@ -480,6 +480,16 @@ void encodeBlock(
         return;
 
     const size_t num_rows = columns.front()->size();
+    /// All columns must have the same row count; the loops below index every
+    /// column up to `num_rows` (`null_map[src]`, `data[src]`, `getDataAt(src)`).
+    for (size_t c = 1; c < columns.size(); ++c)
+    {
+        const size_t sz = columns[c]->size();
+        if (sz != num_rows)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "UNIQUE KEY encoding: column[{}] size {} != column[0] size {}",
+                            c, sz, num_rows);
+    }
     if (permutation && permutation->size() != num_rows)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "UNIQUE KEY encoding: permutation size {} != block rows {}",

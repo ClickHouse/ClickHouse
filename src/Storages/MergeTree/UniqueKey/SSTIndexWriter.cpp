@@ -238,6 +238,11 @@ UInt64 SSTIndexWriter::writeFromBlock(
     if (unique_key_column_names.empty() || block.rows() == 0)
         return 0;
 
+    /// Reject malformed blocks (mismatched per-column row counts) up front;
+    /// `block.rows()` reports only the first column, but the loop below
+    /// consumes `encoded[i]` derived from named UK columns.
+    block.checkNumberOfRows();
+
     Columns uk_columns;
     uk_columns.reserve(unique_key_column_names.size());
     for (const auto & name : unique_key_column_names)
@@ -280,6 +285,10 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
 #if USE_ROCKSDB
     if (unique_key_column_names.empty() || block.rows() == 0)
         return 0;
+
+    /// Reject malformed blocks before any encoding work; the SortDescription
+    /// path and named-uk-column lookup below both assume uniform row counts.
+    block.checkNumberOfRows();
 
     const size_t num_rows = block.rows();
     if (permutation && permutation->size() != num_rows)

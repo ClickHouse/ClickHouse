@@ -1011,6 +1011,24 @@ TEST(UniqueKeyEncoding, EncodeBlockPermutationValidAccepted)
     ASSERT_EQ(out.size(), 3u);
 }
 
+/// Mismatched per-column row counts must be rejected up front; otherwise
+/// indexing the shorter column at `num_rows-1` is OOB.
+TEST(UniqueKeyEncoding, EncodeBlockMismatchedColumnSizesRejected)
+{
+    auto col0 = ColumnUInt64::create();
+    col0->insert(Field(UInt64{1}));
+    col0->insert(Field(UInt64{2}));
+    col0->insert(Field(UInt64{3}));
+
+    auto col1 = ColumnUInt64::create();
+    col1->insert(Field(UInt64{10}));
+    col1->insert(Field(UInt64{20})); /// shorter by one
+
+    Columns cols{std::move(col0), std::move(col1)};
+    std::vector<String> out;
+    EXPECT_THROW(UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, out), DB::Exception);
+}
+
 /// Empty-block: must produce an empty output vector without touching max_size.
 TEST(UniqueKeyEncoding, EncodeBlockEmptyBlock)
 {

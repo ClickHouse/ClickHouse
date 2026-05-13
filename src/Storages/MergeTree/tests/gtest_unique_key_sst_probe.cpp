@@ -499,6 +499,58 @@ TEST_F(SSTFixture, UnsortedPermutationDuplicateRejected)
         DB::Exception);
 }
 
+/// Block with mismatched per-column row counts must be rejected before any
+/// encoding; otherwise `block.rows()` and the named uk-column lengths
+/// diverge and the writer reads past `encoded` bounds.
+TEST_F(SSTFixture, WriteFromBlockMismatchedRowCountsRejected)
+{
+    auto type_u64 = std::make_shared<DataTypeUInt64>();
+
+    auto k_col = type_u64->createColumn();
+    auto * k_typed = typeid_cast<ColumnUInt64 *>(k_col.get());
+    for (UInt64 v : {1, 2, 3})
+        k_typed->insertValue(v);
+
+    auto other = type_u64->createColumn();
+    auto * other_typed = typeid_cast<ColumnUInt64 *>(other.get());
+    for (UInt64 v : {10, 20}) /// shorter by one
+        other_typed->insertValue(v);
+
+    Block block;
+    block.insert({std::move(k_col), type_u64, "k"});
+    block.insert({std::move(other), type_u64, "other"});
+
+    EXPECT_THROW(
+        SSTIndexWriter::writeFromBlock(
+            *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256),
+        DB::Exception);
+}
+
+/// Same defense on the unsorted path.
+TEST_F(SSTFixture, WriteFromBlockUnsortedMismatchedRowCountsRejected)
+{
+    auto type_u64 = std::make_shared<DataTypeUInt64>();
+
+    auto k_col = type_u64->createColumn();
+    auto * k_typed = typeid_cast<ColumnUInt64 *>(k_col.get());
+    for (UInt64 v : {3, 1, 2})
+        k_typed->insertValue(v);
+
+    auto other = type_u64->createColumn();
+    auto * other_typed = typeid_cast<ColumnUInt64 *>(other.get());
+    for (UInt64 v : {10, 20}) /// shorter by one
+        other_typed->insertValue(v);
+
+    Block block;
+    block.insert({std::move(k_col), type_u64, "k"});
+    block.insert({std::move(other), type_u64, "other"});
+
+    EXPECT_THROW(
+        SSTIndexWriter::writeFromBlockUnsorted(
+            *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256),
+        DB::Exception);
+}
+
 #endif  // USE_ROCKSDB
 
 /// ---------------------------------------------------------------------------
