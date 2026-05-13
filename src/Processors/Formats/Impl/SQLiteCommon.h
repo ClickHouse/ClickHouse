@@ -32,8 +32,8 @@ class SQLiteDatabase
 public:
     sqlite3 * get() const { return db.get(); }
 
-    SQLitePtr db{nullptr, sqlite3_close};
     String serialized_database;
+    SQLitePtr db{nullptr, sqlite3_close};
 };
 
 inline void checkSQLiteStatus(sqlite3 * db, int status, std::string_view message)
@@ -103,7 +103,11 @@ inline SQLiteDatabase openSQLiteDatabaseForRead(ReadBuffer & in, const FormatSet
         {
             size_t view_offset = 0;
             if (file_in->isRegularLocalFile(&view_offset) && view_offset == 0)
-                return SQLiteDatabase{openSQLiteDatabase(file_in->getFileName()), {}};
+            {
+                SQLiteDatabase result;
+                result.db = openSQLiteDatabase(file_in->getFileName());
+                return result;
+            }
         }
     }
 
