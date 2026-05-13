@@ -20,6 +20,18 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only signature (the function overrides
+    /// `getReturnTypeImpl(ColumnsWithTypeAndName)` so the DSL is bypassed at
+    /// type-check time). The runtime additionally rejects a Nullable size argument.
+    String getSignatureString() const override
+    {
+        return
+            "(NULL, Any, Any) -> NULL"
+            " OR (NULL, Any) -> NULL"
+            " OR (Array(T : Any), Number) -> Array(T)"
+            " OR (Array(T : Any), Number, V : Any) -> Array(leastSupertype(T, V))";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override;
 };
