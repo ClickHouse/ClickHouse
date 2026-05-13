@@ -20,6 +20,9 @@
 #include <Interpreters/WasmModuleManager.h>
 #include <Storages/MutationCommands.h>
 
+#include <Common/likePatternToRegexp.h>
+#include <Common/re2.h>
+
 namespace DB
 {
 
@@ -127,7 +130,13 @@ void StorageSystemWasmModules::checkAlterIsPossible(const AlterCommands &, Conte
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER is not supported by storage {}", getName());
 }
 
-static std::optional<String> getModuleNameToDeleteFromAst(const MutationCommands & commands)
+struct ModuleDeleteFilter
+{
+    bool is_pattern;
+    String name_or_pattern;
+};
+
+static std::optional<ModuleDeleteFilter> getModuleDeleteFilterFromAst(const MutationCommands & commands)
 {
     if (commands.size() != 1)
         return {};
@@ -137,11 +146,15 @@ static std::optional<String> getModuleNameToDeleteFromAst(const MutationCommands
         return {};
 
     const auto * func = command.predicate->as<ASTFunction>();
-    if (!func || func->name != "equals" || func->arguments->children.size() != 2)
+    if (!func || !func->arguments || func->arguments->children.size() != 2)
+        return {};
+
+    const bool is_equals = func->name == "equals";
+    const bool is_like = func->name == "like";
+    if (!is_equals && !is_like)
         return {};
 
     const auto & args = func->arguments->children;
-
     const auto * ident = args[0]->as<ASTIdentifier>();
     if (!ident || ident->full_name != "name")
         return {};
@@ -150,25 +163,45 @@ static std::optional<String> getModuleNameToDeleteFromAst(const MutationCommands
     if (!literal || literal->value.getType() != Field::Types::String)
         return {};
 
-    return literal->value.safeGet<String>();
+    return ModuleDeleteFilter{is_like, literal->value.safeGet<String>()};
 }
 
 void StorageSystemWasmModules::checkMutationIsPossible(const MutationCommands & commands, const Settings &) const
 {
-    if (getModuleNameToDeleteFromAst(commands).has_value())
+    if (getModuleDeleteFilterFromAst(commands).has_value())
         return;
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "Only deletion of a module by name is supported. "
-        "Use query `DELETE FROM {} WHERE name == 'module_name'`", getStorageID().getFullTableName());
+        "Only deletion by module name is supported on {}. "
+        "The WHERE clause must be `name = 'module_name'` or `name LIKE 'pattern'`.",
+        getStorageID().getFullTableName());
 }
 
 void StorageSystemWasmModules::mutate(const MutationCommands & commands, ContextPtr)
 {
-    auto module_name = getModuleNameToDeleteFromAst(commands);
-    if (!module_name)
+    auto filter = getModuleDeleteFilterFromAst(commands);
+    if (!filter)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected single DELETE command with WHERE clause, got {}", commands.toString(/* with_pure_metadata_commands */ true));
 
-    wasm_module_manager.deleteModuleIfExists(*module_name);
+    if (filter->is_pattern)
+    {
+        const String regex_str = likePatternToRegexp(filter->name_or_pattern);
+        re2::RE2::Options options;
+        options.set_log_errors(false);
+        re2::RE2 pattern_re(regex_str, options);
+        if (!pattern_re.ok())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid LIKE pattern: '{}'", filter->name_or_pattern);
+
+        wasm_module_manager.deleteModuleIfExists(
+            [&pattern_re](std::string_view name)
+            {
+                return re2::RE2::PartialMatch(name, pattern_re);
+            });
+    }
+    else
+    {
+        wasm_module_manager.deleteModuleIfExists(filter->name_or_pattern);
+    }
+
 }
 
 }
