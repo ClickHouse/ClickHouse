@@ -102,6 +102,28 @@ TEST(FutureSetContentHash, MultiColumnOrderIndependent)
     EXPECT_EQ(h1, h3);
 }
 
+/// Multi-column set with repeated element types (String, String): rows that tie on the
+TEST(FutureSetContentHash, MultiColumnRepeatedTypeOrderIndependent)
+{
+    auto makeBlock = [](std::vector<std::pair<String, String>> rows)
+    {
+        auto col1 = ColumnString::create();
+        auto col2 = ColumnString::create();
+        for (const auto & [a, b] : rows) { col1->insert(a); col2->insert(b); }
+        auto type = std::make_shared<DataTypeString>();
+        return ColumnsWithTypeAndName{{std::move(col1), type, "s1"}, {std::move(col2), type, "s2"}};
+    };
+
+    /// ('a','b') and ('a','c') — tie on first column, differ on second
+    auto h1 = contentHash(makeBlock({{"a", "b"}, {"a", "c"}}));
+    auto h2 = contentHash(makeBlock({{"a", "c"}, {"a", "b"}}));
+    EXPECT_EQ(h1, h2);
+
+    /// Must differ from a set that has different second-column values
+    auto h3 = contentHash(makeBlock({{"a", "b"}, {"a", "d"}}));
+    EXPECT_NE(h1, h3);
+}
+
 /// Different sets must produce different hashes.
 TEST(FutureSetContentHash, DifferentSetsCollide)
 {
