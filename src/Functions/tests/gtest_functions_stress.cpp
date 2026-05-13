@@ -2318,6 +2318,8 @@ TEST(FunctionsStress, stress)
     /// `QueryStatus::is_killed` once the deadline of any registered query passes. In the real
     /// server it runs as a `BackgroundSchedulePool` task (see `Server.cpp`). Here we spin up a
     /// dedicated thread that runs the same `workerFunction` for the lifetime of the test.
+    /// `workerFunction` clears the stop flag on its way out, so calling `terminateThread` here
+    /// does not leave the singleton permanently dead for any later test in the same binary.
     std::thread cancellation_checker_thread([] { CancellationChecker::getInstance().workerFunction(); });
     SCOPE_EXIT({
         CancellationChecker::getInstance().terminateThread();
