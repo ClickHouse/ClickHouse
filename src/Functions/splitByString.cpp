@@ -36,6 +36,7 @@ private:
 
 public:
     static constexpr auto name = "splitByString";
+    static constexpr auto signature = "(String, String, [NativeInteger]) -> Array(String)";
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }
 

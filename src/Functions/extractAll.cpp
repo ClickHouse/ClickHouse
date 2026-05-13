@@ -46,6 +46,7 @@ private:
     Pos end;
 public:
     static constexpr auto name = "extractAll";
+    static constexpr auto signature = "(String, String) -> Array(String)";
     static String getName() { return name; }
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 2; }

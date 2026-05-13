@@ -26,6 +26,7 @@ private:
 
 public:
     static constexpr auto name = "splitByWhitespace";
+    static constexpr auto signature = "(String, [NativeInteger]) -> Array(String)";
 
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }
