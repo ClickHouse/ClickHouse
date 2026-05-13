@@ -2891,7 +2891,13 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         const double max_ratio = context->getSettingsRef()[Setting::read_in_order_max_primary_key_ratio];
         const auto & analysis_result = getAnalysisResult();
         const size_t effective_streams = output_streams_limit ? output_streams_limit : requested_num_streams;
-        if (!analysis_result.readFromProjection()
+        /// Only reject when there is actual parallelism to recover. When `effective_streams <= 1`
+        /// (e.g. `max_threads = 1` or planner-chosen single-stream reads), disabling read-in-order
+        /// just adds a full `MergeSortingTransform` on top of the same single stream — extra
+        /// CPU/memory with no parallelism gain, and possibly `MEMORY_LIMIT_EXCEEDED` for queries
+        /// that previously streamed in PK order.
+        if (effective_streams > 1
+            && !analysis_result.readFromProjection()
             && analysis_result.total_marks_pk > effective_streams
             && static_cast<double>(analysis_result.selected_marks_pk)
                 > static_cast<double>(analysis_result.total_marks_pk) * max_ratio)
