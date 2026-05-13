@@ -251,8 +251,9 @@ try
             /// `convertToFullColumnIfSparse` on a non-sparse column returns `getPtr()`, which shares
             /// the same column. We then need unique ownership to mutate the offset data below, so
             /// route through `IColumn::mutate`, which clones when shared and is a no-op otherwise.
-            result_column = IColumn::mutate(result_column->convertToFullColumnIfSparse());
-            auto & offset_data = assert_cast<ColumnUInt64 &>(*result_column).getData();
+            /// Hold the mutable pointer locally so the `assert_cast` below can produce a non-const reference.
+            auto mutable_column = IColumn::mutate(result_column->convertToFullColumnIfSparse());
+            auto & offset_data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
             if (read_task_info->merged_part_offsets->isMappingEnabled())
             {
                 for (auto & offset : offset_data)
@@ -263,6 +264,7 @@ try
                 for (auto & offset : offset_data)
                     offset += read_task_info->part_starting_offset_in_query;
             }
+            result_column = std::move(mutable_column);
         }
         /// `shrinkToFit` is a best-effort optimization that mutates the column in place; skip it
         /// when the column is shared so we do not violate the `assumeMutableRef` ownership check
