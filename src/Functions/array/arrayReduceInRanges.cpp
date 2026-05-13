@@ -56,6 +56,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
+    /// Documentation-only — the result is `Array(<agg>::ResultType)` where
+    /// `<agg>` is resolved at query time from the const-string first argument.
+    String getSignatureString() const override
+    {
+        return "(const String, Array(Tuple(Integer, Integer)), Array, ...) -> Array";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return std::make_shared<DataTypeArray>(aggregate_function->getResultType());

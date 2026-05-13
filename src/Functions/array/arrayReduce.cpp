@@ -58,6 +58,13 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
+    /// Documentation-only — the result type is the named aggregate function's
+    /// result type, resolved at query time from the const-string first argument.
+    String getSignatureString() const override
+    {
+        return "(const String, Array, ...) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return aggregate_function->getResultType();
