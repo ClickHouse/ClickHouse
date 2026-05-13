@@ -1161,7 +1161,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
         if (node.type != ActionsDAG::ActionType::COLUMN)
             continue;
 
-        const auto * column_set = checkAndGetColumn<ColumnSet>(node.column.get());
+        const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
         if (!column_set)
             continue;
 
