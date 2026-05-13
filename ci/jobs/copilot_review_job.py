@@ -18,6 +18,7 @@ single transient API failure does not fail the Code Review job.
 """
 
 import os
+import random
 import shlex
 import subprocess
 import sys
@@ -39,6 +40,11 @@ GH_PREFIX = "env -u GH_CONFIG_DIR"
 # subprocess controls. Re-authing and retrying the whole sequence is the
 # only reliable way to recover.
 COPILOT_MAX_ATTEMPTS = 3
+
+ROBOT_NAMES = [
+    "/ci/robot-ch-test-poll-copilot",
+    "/ci/robot-ch-test-poll-1-copilot",
+]
 
 
 def _join_prompt(*sections):
@@ -214,8 +220,8 @@ def _post_review():
     )
 
 
-def _run_copilot_once(prompt):
-    """Run a single attempt of `gh auth login` + `copilot`.
+def _run_copilot_once(prompt, robot_name):
+    """Run a single attempt of `gh auth login` + `copilot` for one robot.
 
     Removes any stale REVIEW_FILE first so a successful prior attempt's
     artifact cannot be mistaken for the result of a later failed attempt.
@@ -228,8 +234,10 @@ def _run_copilot_once(prompt):
             print(f"WARNING: Failed to remove stale {REVIEW_FILE}: {e}")
 
     with tempfile.TemporaryDirectory() as gh_config_dir:
+        print(f"Using robot: {robot_name}")
         token = Secret.Config(
-            name="/ci/robot-ch-test-poll-copilot", type=Secret.Type.AWS_SSM_PARAMETER
+            name=robot_name,
+            type=Secret.Type.AWS_SSM_PARAMETER,
         ).get_value()
         subprocess.run(
             ["gh", "auth", "login", "--with-token"],
@@ -239,11 +247,16 @@ def _run_copilot_once(prompt):
         token = None
         return Result.from_commands_run(
             name="copilot review",
-            # --allow-all-tools: run non-interactively
-            # --add-dir .: restrict file access to repo root (default,
-            #   but explicit; do NOT add --allow-all-paths)
+            # --allow-all: enable all permissions; --allow-all-tools alone hits
+            #   a CLI bug where compound shell commands are denied and the gate
+            #   then tries to escalate to a human (github/copilot-cli#176, #2971)
+            # --no-ask-user: disable ask_user so the agent cannot try to prompt
+            #   for permission in a non-interactive session
+            # --add-dir .: restrict file access to repo root (default, but explicit)
+            # </dev/null: ensure stdin is definitively non-interactive
             command=f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
-                    f"copilot -p {shlex.quote(prompt)} --allow-all-tools --add-dir . --model gpt-5.3-codex --effort xhigh",
+                    f"copilot -p {shlex.quote(prompt)} --allow-all --no-ask-user "
+                    f"--add-dir . --model gpt-5.3-codex --effort xhigh < /dev/null",
             with_info=True,
         )
 
@@ -259,9 +272,12 @@ def _run(prompt):
     code and a missing review file — so both have to be checked here.
     """
     last_error = None
+    robots = ROBOT_NAMES.copy()
+    random.shuffle(robots)
     for attempt in range(1, COPILOT_MAX_ATTEMPTS + 1):
+        robot_name = robots[(attempt - 1) % len(robots)]
         try:
-            result = _run_copilot_once(prompt)
+            result = _run_copilot_once(prompt, robot_name)
             if not result.is_ok():
                 last_error = (
                     f"copilot subprocess exited with non-OK status [{result.status}]"
