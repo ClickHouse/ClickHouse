@@ -178,10 +178,12 @@ public:
 NamedCollection::NamedCollection(
     ImplPtr pimpl_,
     const std::string & collection_name_,
-    const bool is_mutable_)
+    const bool is_mutable_,
+    SourceId source_id_)
     : pimpl(std::move(pimpl_))
     , collection_name(collection_name_)
     , is_mutable(is_mutable_)
+    , source_id(source_id_)
 {
 }
 
@@ -286,7 +288,7 @@ MutableNamedCollectionPtr NamedCollection::duplicate() const
     std::lock_guard lock(mutex);
     auto impl = pimpl->createCopy(collection_name);
     return std::unique_ptr<NamedCollection>(
-        new NamedCollection(std::move(impl), collection_name, true));
+        new NamedCollection(std::move(impl), collection_name, true, getSourceId()));
 }
 
 NamedCollection::Keys NamedCollection::getKeys(ssize_t depth, const std::string & prefix) const
@@ -335,7 +337,11 @@ NamedCollectionFromConfig::NamedCollectionFromConfig(
     const std::string & collection_name_,
     const std::string & collection_path_,
     const Keys & keys_)
-    : NamedCollection(Impl::create(config_, collection_name_, collection_path_, keys_), collection_name_, /* is_mutable */ false)
+    : NamedCollection(
+        Impl::create(config_, collection_name_, collection_path_, keys_),
+        collection_name_,
+        /* is_mutable */ false,
+        SourceId::CONFIG)
 {
 }
 
@@ -356,7 +362,7 @@ MutableNamedCollectionPtr NamedCollectionFromSQL::create(const ASTCreateNamedCol
 }
 
 NamedCollectionFromSQL::NamedCollectionFromSQL(const ASTCreateNamedCollectionQuery & query_)
-    : NamedCollection(nullptr, query_.collection_name, true)
+    : NamedCollection(nullptr, query_.collection_name, true, SourceId::SQL)
     , create_query_ptr(query_.clone()->as<ASTCreateNamedCollectionQuery &>())
 {
     const auto config = NamedCollectionConfiguration::createConfiguration(collection_name, create_query_ptr.changes, create_query_ptr.overridability);

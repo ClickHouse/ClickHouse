@@ -10,6 +10,9 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
 
+#include <cctype>
+#include <string_view>
+
 #include "config.h"
 
 #if USE_AWS_S3
@@ -21,6 +24,31 @@
 
 namespace DB
 {
+
+String sanitizeS3ErrorMessage(String message)
+{
+    static constexpr std::string_view arn_prefix = "arn:";
+    static constexpr std::string_view replacement = "[REDACTED_AWS_ARN]";
+
+    auto is_arn_char = [](char c)
+    {
+        return std::isalnum(static_cast<unsigned char>(c)) || c == ':' || c == '/' || c == '_' || c == '-'
+            || c == '+' || c == '=' || c == ',' || c == '.' || c == '@';
+    };
+
+    size_t pos = 0;
+    while ((pos = message.find(arn_prefix, pos)) != String::npos)
+    {
+        size_t end = pos + arn_prefix.size();
+        while (end < message.size() && is_arn_char(message[end]))
+            ++end;
+
+        message.replace(pos, end - pos, replacement);
+        pos += replacement.size();
+    }
+
+    return message;
+}
 
 bool S3Exception::isRetryableError() const
 {

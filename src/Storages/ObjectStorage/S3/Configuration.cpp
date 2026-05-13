@@ -76,8 +76,20 @@ namespace S3RequestSetting
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+bool hasExplicitS3Credentials(const S3::S3AuthSettings & auth_settings)
+{
+    return !auth_settings[S3AuthSetting::access_key_id].value.empty()
+        && !auth_settings[S3AuthSetting::secret_access_key].value.empty();
+}
+
 }
 
 static const std::unordered_set<std::string_view> required_configuration_keys =
@@ -219,10 +231,19 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
 
+    if (collection.getSourceId() == NamedCollection::SourceId::SQL
+        && collection.has("use_environment_credentials")
+        && collection.get<bool>("use_environment_credentials"))
+    {
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Using `use_environment_credentials` in SQL S3 named collections is not allowed");
+    }
+
     s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
-    s3_settings->auth_settings[S3AuthSetting::use_environment_credentials]
-        = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
+    if (collection.has("use_environment_credentials"))
+        s3_settings->auth_settings[S3AuthSetting::use_environment_credentials] = collection.get<bool>("use_environment_credentials");
     s3_settings->auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
     s3_settings->auth_settings[S3AuthSetting::expiration_window_seconds]
         = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
@@ -244,6 +265,14 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     partition_columns_in_data_file = collection.getOrDefault<bool>(
         "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
     s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.getOrDefault<String>("role_arn", "");
+    if (collection.getSourceId() == NamedCollection::SourceId::SQL
+        && !s3_settings->auth_settings[S3AuthSetting::role_arn].value.empty()
+        && !hasExplicitS3Credentials(s3_settings->auth_settings))
+    {
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Using `role_arn` without explicit S3 credentials in SQL S3 named collections is not allowed");
+    }
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
 
     s3_settings->auth_settings[S3AuthSetting::http_client] = collection.getOrDefault<String>("http_client", "");
@@ -275,13 +304,24 @@ static ASTPtr extractExtraCredentials(ASTs & args)
     return nullptr;
 }
 
-bool StorageS3Configuration::collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context)
+bool StorageS3Configuration::collectCredentials(
+    ASTPtr maybe_credentials,
+    S3::S3AuthSettings & auth_settings_,
+    ContextPtr local_context,
+    bool * role_arn_was_provided)
 {
-    return S3StorageParsedArguments::collectCredentials(maybe_credentials, auth_settings_, local_context);
+    return S3StorageParsedArguments::collectCredentials(maybe_credentials, auth_settings_, local_context, role_arn_was_provided);
 }
 
-bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context)
+bool S3StorageParsedArguments::collectCredentials(
+    ASTPtr maybe_credentials,
+    S3::S3AuthSettings & auth_settings_,
+    ContextPtr local_context,
+    bool * role_arn_was_provided)
 {
+    if (role_arn_was_provided)
+        *role_arn_was_provided = false;
+
     if (!maybe_credentials)
         return false;
 
@@ -317,7 +357,11 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
         if (arg_value.getType() != Field::Types::Which::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as credential value");
         else if (arg_name == "role_arn")
+        {
             auth_settings_[S3AuthSetting::role_arn] = arg_value.safeGet<String>();
+            if (role_arn_was_provided)
+                *role_arn_was_provided = !auth_settings_[S3AuthSetting::role_arn].value.empty();
+        }
         else if (arg_name == "role_session_name")
             auth_settings_[S3AuthSetting::role_session_name] = arg_value.safeGet<String>();
         else
@@ -378,6 +422,9 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
             S3StorageParsedArguments::getSignatures(with_structure));
 
     auto key_value_args = parseKeyValueArguments(key_value_asts, context);
+    if (key_value_args.contains("use_environment_credentials"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`use_environment_credentials` is not supported as an S3 table function argument");
+
     if (key_value_args.contains("structure"))
         with_structure = false;
 
@@ -616,7 +663,9 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     s3_settings->loadFromConfigForObjectStorage(
         config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
-    S3StorageParsedArguments::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
+    bool role_arn_from_extra_credentials = false;
+    S3StorageParsedArguments::collectCredentials(
+        extra_credentials, s3_settings->auth_settings, context, &role_arn_from_extra_credentials);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
@@ -686,6 +735,13 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         session_token_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::session_token] = session_token_value.value();
+    }
+
+    if (role_arn_from_extra_credentials && !hasExplicitS3Credentials(s3_settings->auth_settings))
+    {
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Using `role_arn` without explicit S3 credentials in S3 table function arguments is not allowed");
     }
 
     if (no_sign_request)

@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
+#include <IO/S3Common.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <Common/Exception.h>
 #include <base/EnumReflection.h>
@@ -1259,7 +1260,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     auto outcome = client->assumeRole(request);
     if (!outcome.IsSuccess())
     {
-        LOG_WARNING(logger, "Failed to get credentials using AssumeRule. Error: {}", outcome.GetError().GetMessage());
+        LOG_WARNING(logger, "Failed to get credentials using AssumeRule. Error: {}", sanitizeS3ErrorMessage(outcome.GetError().GetMessage()));
         return;
     }
 

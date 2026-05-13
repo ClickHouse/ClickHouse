@@ -385,5 +385,15 @@ TEST(S3UriTest, TrailingQuestionMarkWildcard)
     ASSERT_FALSE(uri.is_virtual_hosted_style);
 }
 
+TEST(S3CommonTest, SanitizeAwsArnsInErrorMessages)
+{
+    using namespace DB;
+
+    const auto sanitized = sanitizeS3ErrorMessage(
+        "User: arn:aws:sts::123456789012:assumed-role/ClickHouseRole/session is not authorized");
+
+    ASSERT_EQ("User: [REDACTED_AWS_ARN] is not authorized", sanitized);
+}
+
 }
 #endif

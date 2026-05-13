@@ -73,7 +73,11 @@ struct S3StorageParsedArguments : private StorageParsedArguments
         return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
     }
 
-    static bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
+    static bool collectCredentials(
+        ASTPtr maybe_credentials,
+        S3::S3AuthSettings & auth_settings_,
+        ContextPtr local_context,
+        bool * role_arn_was_provided = nullptr);
 
 
     S3::URI url;
@@ -145,7 +149,11 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
-    static bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
+    static bool collectCredentials(
+        ASTPtr maybe_credentials,
+        S3::S3AuthSettings & auth_settings_,
+        ContextPtr local_context,
+        bool * role_arn_was_provided = nullptr);
 
     S3::URI url;
 
