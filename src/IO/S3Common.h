@@ -28,6 +28,11 @@ struct Settings;
 
 String sanitizeS3ErrorMessage(String message);
 
+/// Returns `msg` with `text` replaced by its sanitized version. Preserves `format_string`
+/// and `format_string_args` so anonymized error reporting (`Exception::callback`,
+/// `ErrorCodes` statistics) keeps working for `S3Exception`.
+PreformattedMessage sanitizeS3PreformattedMessage(PreformattedMessage msg);
+
 class S3Exception : public Exception
 {
 public:
@@ -35,7 +40,7 @@ public:
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
     S3Exception(Aws::S3::S3Errors code_, FormatStringHelper<Args...> fmt, Args &&... args)
-        : Exception(sanitizeS3ErrorMessage(fmt.format(std::forward<Args>(args)...).text), ErrorCodes::S3_ERROR), code(code_)
+        : Exception(sanitizeS3PreformattedMessage(fmt.format(std::forward<Args>(args)...)), ErrorCodes::S3_ERROR), code(code_)
     {
     }
 

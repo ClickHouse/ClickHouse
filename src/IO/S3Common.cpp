@@ -50,6 +50,12 @@ String sanitizeS3ErrorMessage(String message)
     return message;
 }
 
+PreformattedMessage sanitizeS3PreformattedMessage(PreformattedMessage msg)
+{
+    msg.text = sanitizeS3ErrorMessage(std::move(msg.text));
+    return msg;
+}
+
 bool S3Exception::isRetryableError() const
 {
     /// Looks like these list is quite conservative, add more codes if you wish
