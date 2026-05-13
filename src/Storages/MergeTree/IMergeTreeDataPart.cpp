@@ -335,29 +335,21 @@ String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_
 
 IMergeTreeDataPart::MinMaxIndexPtr IMergeTreeDataPart::getMinMaxIndex() const
 {
-    if (is_minmax_idx_created.load())
-        return minmax_idx;
-
     std::lock_guard lock(minmax_idx_mutex);
 
-    if (is_minmax_idx_created.load())
+    if (minmax_idx)
         return minmax_idx;
 
     if (is_temp || isEmpty())
     {
-        if (!minmax_idx)
-            minmax_idx = std::make_shared<MinMaxIndex>();
+        minmax_idx = std::make_shared<MinMaxIndex>();
     }
     else
     {
-        if (!minmax_idx)
-        {
-            minmax_idx = std::make_shared<MinMaxIndex>();
-            minmax_idx->load(*this);
-        }
+        minmax_idx = std::make_shared<MinMaxIndex>();
+        minmax_idx->load(*this);
     }
 
-    is_minmax_idx_created.store(true);
     return minmax_idx;
 }
 
@@ -365,7 +357,6 @@ void IMergeTreeDataPart::setMinMaxIndex(MinMaxIndexPtr minmax_index) const
 {
     std::lock_guard lock(minmax_idx_mutex);
     minmax_idx = std::move(minmax_index);
-    is_minmax_idx_created.store(minmax_idx != nullptr);
 }
 
 void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) const

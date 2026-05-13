@@ -483,10 +483,10 @@ enum class SearchOrphanedPartsDisks : uint8_t
 
 DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 
-enum class MergeTreePartMinMaxIndexColumns : uint8_t
+enum class MergeTreePartMinMaxIndexColumns : uint64_t
 {
     PARTITION_KEY_ONLY = 0,
-    WITH_BLOCK_NUMBER_OFFSET = 1,
+    WITH_BLOCK_NUMBER_OFFSET = 1000,
 };
 
 DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)

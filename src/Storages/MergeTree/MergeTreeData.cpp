@@ -1271,8 +1271,9 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
     const MergeTreePartMinMaxIndexColumns setting_level = (*data_settings)[MergeTreeSetting::part_minmax_index_columns];
     const auto level = std::min(setting_level, up_to);
 
-    if (level >= MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY && !partition_key.column_names.empty())
-        columns = partition_key.expression->getRequiredColumnsWithTypes();
+    if (level >= MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY)
+        if (!partition_key.column_names.empty())
+            columns = partition_key.expression->getRequiredColumnsWithTypes();
 
     if (level >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
     {

@@ -388,9 +388,8 @@ public:
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
 
 private:
-    mutable MinMaxIndexPtr minmax_idx;
-    mutable std::atomic<bool> is_minmax_idx_created{false};
     mutable std::mutex minmax_idx_mutex;
+    mutable MinMaxIndexPtr minmax_idx TSA_GUARDED_BY(minmax_idx_mutex);
 
 public:
     /// Returns the per-part MinMaxIndex. Lazy-creates an empty one for temporary parts and lazy-loads from disk for committed parts.
