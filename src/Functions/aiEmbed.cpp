@@ -206,7 +206,7 @@ public:
                 {
                     if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
                     {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms * (1ULL << std::min(attempt, UInt64(63)))));
+                        std::this_thread::sleep_for(std::chrono::milliseconds(FunctionBaseAI::computeRetryBackoffMs(retry_delay_ms, attempt)));
                         continue;
                     }
 
@@ -311,7 +311,7 @@ requests a vector of the given size; otherwise the model's native size is return
         = {{"Embed a single string", "SELECT aiEmbed('ai_credentials', 'Hello world')", ""},
            {"With explicit dimensions", "SELECT aiEmbed('ai_credentials', 'Hello world', 256)", ""},
            {"Embed a column of texts", "SELECT aiEmbed('ai_credentials', title, 256) FROM articles LIMIT 10", ""}},
-        .introduced_in = {26, 4},
+        .introduced_in = {26, 5},
         .category = FunctionDocumentation::Category::AI});
 }
 

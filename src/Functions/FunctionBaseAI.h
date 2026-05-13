@@ -64,6 +64,11 @@ public:
     /// required fields (`provider`, `endpoint`, `model`, `api_key`) are non-empty.
     static AINamedCollectionConfig resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg);
 
+    /// Exponential backoff delay capped at one minute, so adversarial values of
+    /// `ai_function_retry_initial_delay_ms` or `ai_function_max_retries` cannot produce a multi-hour
+    /// sleep or overflow `std::chrono::milliseconds`.
+    static UInt64 computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt);
+
 protected:
     ContextWeakPtr context_weak;
     ContextPtr getContext() const { return context_weak.lock(); }

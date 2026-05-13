@@ -108,6 +108,15 @@ FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection
     return config;
 }
 
+UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt)
+{
+    constexpr UInt64 max_retry_delay_ms = 60'000;
+    UInt64 delay_ms = std::min(initial_delay_ms, max_retry_delay_ms);
+    for (UInt64 i = 0; i < attempt && delay_ms < max_retry_delay_ms; ++i)
+        delay_ms = std::min(delay_ms * 2, max_retry_delay_ms);
+    return delay_ms;
+}
+
 FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTypeAndName & arguments) const
 {
     auto base = resolveAINamedCollection(getContext(), arguments[0].column);
@@ -241,7 +250,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             {
                 if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
                 {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms * (1ULL << std::min(attempt, UInt64(63)))));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));
                     continue;
                 }
 
