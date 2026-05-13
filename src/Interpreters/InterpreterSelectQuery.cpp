@@ -586,7 +586,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (settings[Setting::count_distinct_optimization])
     {
-        RewriteCountDistinctFunctionMatcher::Data data_rewrite_countdistinct;
+        RewriteCountDistinctFunctionMatcher::Data data_rewrite_countdistinct{context};
         RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
     }
 

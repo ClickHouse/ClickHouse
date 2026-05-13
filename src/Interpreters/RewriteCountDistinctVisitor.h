@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -12,7 +13,10 @@ class ASTFunction;
 class RewriteCountDistinctFunctionMatcher
 {
 public:
-    struct Data {};
+    struct Data
+    {
+        ContextPtr context;
+    };
     static void visit(ASTPtr & ast, Data &);
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 };

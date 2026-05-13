@@ -1,0 +1,6 @@
+string	3
+distributed	3
+remote()	3
+numeric	2
+nullable numeric	2
+LC nullable numeric	2

@@ -1,4 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
@@ -8,11 +12,14 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
 
-void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
+void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     auto * selectq = ast->as<ASTSelectQuery>();
     if (!selectq || !selectq->tables() || selectq->tables()->children.size() != 1)
@@ -33,6 +40,31 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
     auto * table_expr = selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children[0]->as<ASTTableExpression>();
     if (!table_expr || table_expr->size() != 1 || !table_expr->database_and_table_name)
         return;
+
+    /// Apply the same gates as the new-analyzer `CountDistinctPass`:
+    /// the rewrite must skip remote tables (`Distributed`, `remote(...)`) and
+    /// fixed-size numeric columns, where `uniqExact` already beats the GROUP BY
+    /// rewrite. If the storage cannot be resolved (e.g. the table is being
+    /// created within the same query), skip the rewrite to fail closed.
+    if (!data.context)
+        return;
+    auto table_id = data.context->tryResolveStorageID(table_expr->database_and_table_name);
+    if (!table_id)
+        return;
+    auto storage = DatabaseCatalog::instance().tryGetTable(table_id, data.context);
+    if (!storage || storage->isRemote())
+        return;
+
+    const auto column_name = arg[0]->as<ASTIdentifier>()->name();
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(data.context, false);
+    if (!metadata_snapshot)
+        return;
+    auto physical_column = metadata_snapshot->getColumns().tryGetPhysical(column_name);
+    if (!physical_column)
+        return;
+    if (removeNullableOrLowCardinalityNullable(physical_column->type)->isValueRepresentedByNumber())
+        return;
+
     // Check done, we now rewrite the AST
     auto cloned_select_query = selectq->clone();
     expr_list->children[0] = makeASTFunction("count");
@@ -43,7 +75,6 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
     table_expr->table_function = nullptr;
     table_expr->subquery = table_expr->children[0];
 
-    auto column_name = arg[0]->as<ASTIdentifier>()->name();
     // Form AST for subquery
     {
         auto * select_ptr = cloned_select_query->as<ASTSelectQuery>();
