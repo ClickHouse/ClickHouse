@@ -19,6 +19,7 @@ class RunnerLabels:
     FUNC_TESTER_ARM = ["self-hosted", "arm-medium"]
     AMD_LARGE = ["self-hosted", "amd-large"]
     ARM_LARGE = ["self-hosted", "arm-large"]
+    ARM_LARGE_STORAGE = ["self-hosted", "arm-large-storage"]
     AMD_MEDIUM = ["self-hosted", "amd-medium"]
     ARM_MEDIUM = ["self-hosted", "arm-medium"]
     AMD_MEDIUM_CPU = ["self-hosted", "amd-medium-cpu"]
@@ -336,7 +337,6 @@ class JobNames:
     DOCKER_BUILDS_ARM = "Dockers build (arm)"
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
     STYLE_CHECK = "Style check"
-    PR_BODY = "PR formatter"
     CODE_REVIEW = "Code Review"
     CI_RESULTS_REVIEW = "CI Results Review"
     FAST_TEST = "Fast test"

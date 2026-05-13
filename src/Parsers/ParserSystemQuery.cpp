@@ -288,6 +288,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP PAGE CACHE", Type::CLEAR_PAGE_CACHE},
             {"DROP SCHEMA CACHE", Type::CLEAR_SCHEMA_CACHE},
             {"DROP FORMAT SCHEMA CACHE", Type::CLEAR_FORMAT_SCHEMA_CACHE},
+            {"DROP AVRO SCHEMA CACHE", Type::CLEAR_AVRO_SCHEMA_CACHE},
             {"DROP S3 CLIENT CACHE", Type::CLEAR_S3_CLIENT_CACHE},
         };
 
@@ -586,6 +587,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
         case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
         case Type::CANCEL_VIEW:
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
@@ -593,6 +595,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
+        case Type::PAUSE_VIEWS:
         case Type::FREE_MEMORY:
             break;
 

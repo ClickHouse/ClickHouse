@@ -7,7 +7,7 @@
 #include <Functions/PerformanceAdaptors.h>
 
 #include <morton-nd/mortonND_LUT.h>
-#if USE_MULTITARGET_CODE && defined(__BMI2__)
+#if defined(__BMI2__)
 #include <morton-nd/mortonND_BMI2.h>
 #endif
 
@@ -23,21 +23,8 @@ namespace ErrorCodes
 #define EXTRACT_VECTOR(INDEX) \
     const ColumnPtr & col##INDEX = non_const_arguments[(INDEX) + vectorStartIndex].column;
 
-#define ENCODE(ND, ...) \
-    if (nd == (ND)) \
-    { \
-        for (size_t i = 0; i < input_rows_count; i++) \
-        {               \
-            vec_res[i] = MortonND_##ND##D_Enc.Encode(__VA_ARGS__); \
-        } \
-        return col_res; \
-    }
-
 #define EXPAND(IDX, ...) \
     (mask) ? expand(mask->getColumn(IDX).getUInt(0), __VA_ARGS__) : __VA_ARGS__
-
-#define MASK(ND, IDX, ...) \
-    (EXPAND(IDX, __VA_ARGS__) & MortonND_##ND##D_Enc.InputMask())
 
 #define EXECUTE() \
     size_t nd = arguments.size(); \
@@ -134,7 +121,21 @@ namespace ErrorCodes
                     "Illegal number of UInt arguments of function {}, max: 8", \
                     getName()); \
 
-DECLARE_DEFAULT_CODE(
+#if !defined(__BMI2__)
+
+#define ENCODE(ND, ...) \
+    if (nd == (ND)) \
+    { \
+        for (size_t i = 0; i < input_rows_count; i++) \
+        {               \
+            vec_res[i] = MortonND_##ND##D_Enc.Encode(__VA_ARGS__); \
+        } \
+        return col_res; \
+    }
+
+#define MASK(ND, IDX, ...) \
+    (EXPAND(IDX, __VA_ARGS__) & MortonND_##ND##D_Enc.InputMask())
+
 constexpr auto MortonND_2D_Enc = mortonnd::MortonNDLutEncoder<2, 32, 8>();
 constexpr auto MortonND_3D_Enc = mortonnd::MortonNDLutEncoder<3, 21, 8>();
 constexpr auto MortonND_4D_Enc = mortonnd::MortonNDLutEncoder<4, 16, 8>();
@@ -182,13 +183,15 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return ColumnUInt64::create();
+
         EXECUTE()
     }
 };
-) // DECLARE_DEFAULT_CODE
 
-#if defined(MORTON_ND_BMI2_ENABLED)
-#undef ENCODE
+#else
+
 #define ENCODE(ND, ...) \
     if (nd == (ND)) \
     { \
@@ -199,11 +202,9 @@ public:
         return col_res; \
     }
 
-#undef MASK
 #define MASK(ND, IDX, ...) \
     (EXPAND(IDX, __VA_ARGS__))
 
-DECLARE_AVX2_SPECIFIC_CODE(
 using MortonND_2D = mortonnd::MortonNDBmi<2, uint64_t>;
 using MortonND_3D = mortonnd::MortonNDBmi<3, uint64_t>;
 using MortonND_4D = mortonnd::MortonNDBmi<4, uint64_t>;
@@ -212,9 +213,20 @@ using MortonND_6D = mortonnd::MortonNDBmi<6, uint64_t>;
 using MortonND_7D = mortonnd::MortonNDBmi<7, uint64_t>;
 using MortonND_8D = mortonnd::MortonNDBmi<8, uint64_t>;
 
-class FunctionMortonEncode : public TargetSpecific::Default::FunctionMortonEncode
+class FunctionMortonEncode : public FunctionSpaceFillingCurveEncode
 {
 public:
+    static constexpr auto name = "mortonEncode";
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionMortonEncode>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
     static UInt64 expand(UInt64 ratio, UInt64 value)
     {
         switch (ratio)
@@ -241,48 +253,20 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return ColumnUInt64::create();
+
         EXECUTE()
     }
 };
-) // DECLARE_AVX2_SPECIFIC_CODE
-#endif // MORTON_ND_BMI2_ENABLED
+
+#endif
 
 #undef ENCODE
 #undef MASK
 #undef EXTRACT_VECTOR
 #undef EXPAND
 #undef EXECUTE
-
-class FunctionMortonEncode: public TargetSpecific::Default::FunctionMortonEncode
-{
-public:
-    explicit FunctionMortonEncode(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-                                        TargetSpecific::Default::FunctionMortonEncode>();
-
-#if USE_MULTITARGET_CODE && defined(MORTON_ND_BMI2_ENABLED)
-        selector.registerImplementation<TargetArch::x86_64_v3,
-                                        TargetSpecific::x86_64_v3::FunctionMortonEncode>();
-#endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        if (input_rows_count == 0)
-            return ColumnUInt64::create();
-
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionMortonEncode>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
-};
 
 REGISTER_FUNCTION(MortonEncode)
 {
