@@ -1174,37 +1174,55 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_colu
 
 Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns) const
 {
-    std::lock_guard lock(estimates_mutex);
-
-    /// Empty `required_columns` means "load and cache every column with statistics".
+    const bool load_all = required_columns.empty();
     Names missing;
-    if (!estimates_fully_loaded && !required_columns.empty())
+
     {
-        for (const auto & column_name : required_columns)
-            if (!estimates.contains(column_name))
-                missing.push_back(column_name);
+        std::lock_guard lock(estimates_mutex);
+
+        if (load_all)
+        {
+            if (estimates_fully_loaded)
+                return estimates;
+        }
+        else
+        {
+            if (!estimates_fully_loaded)
+            {
+                for (const auto & column_name : required_columns)
+                    if (!estimates.contains(column_name))
+                        missing.push_back(column_name);
+            }
+
+            if (missing.empty())
+            {
+                Estimates result;
+                result.reserve(required_columns.size());
+                for (const auto & column_name : required_columns)
+                    if (auto it = estimates.find(column_name); it != estimates.end())
+                        result.emplace(column_name, it->second);
+                return result;
+            }
+        }
     }
 
-    bool need_load = required_columns.empty() ? !estimates_fully_loaded : !missing.empty();
-    if (need_load)
-    {
-        /// Build a fresh map first; commit to `estimates` only after all per-column
-        /// `getEstimate()` calls succeed so that a failure does not poison the cache.
-        auto statistics = required_columns.empty() ? loadStatistics() : loadStatistics(missing);
+    /// Build a fresh map first; commit to `estimates` only after all per-column
+    /// `getEstimate()` calls succeed so that a failure does not poison the cache.
+    auto statistics = load_all ? loadStatistics() : loadStatistics(missing);
 
-        Estimates fresh;
-        fresh.reserve(statistics.size());
-        for (const auto & [column_name, stats] : statistics)
-            fresh.emplace(column_name, stats->getEstimate());
+    Estimates fresh;
+    fresh.reserve(statistics.size());
+    for (const auto & [column_name, stats] : statistics)
+        fresh.emplace(column_name, stats->getEstimate());
 
-        for (auto & [column_name, estimate] : fresh)
-            estimates.insert_or_assign(column_name, std::move(estimate));
+    std::lock_guard lock(estimates_mutex);
+    for (auto & [column_name, estimate] : fresh)
+        estimates.insert_or_assign(column_name, std::move(estimate));
 
-        if (required_columns.empty())
-            estimates_fully_loaded = true;
-    }
+    if (load_all)
+        estimates_fully_loaded = true;
 
-    if (required_columns.empty())
+    if (load_all)
         return estimates;
 
     Estimates result;
