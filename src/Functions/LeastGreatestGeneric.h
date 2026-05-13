@@ -127,6 +127,13 @@ public:
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return legacy_null_behavior; }
 
+    /// Declarative signature — the result is the least common supertype of
+    /// the inputs (or a specialized numeric result for two numeric args).
+    String getSignatureString() const override
+    {
+        return "(A1 : Any, ...) -> leastSupertype(A1, ...)";
+    }
+
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes argument_types;

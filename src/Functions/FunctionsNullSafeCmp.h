@@ -75,6 +75,14 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 
+    /// Documentation-only — null-safe comparison treats `NULL` as comparable
+    /// and always returns a definite `UInt8` (or `Nothing` when an argument
+    /// contains the bare `Nothing` type).
+    String getSignatureString() const override
+    {
+        return "(Any, Any) -> UInt8";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)

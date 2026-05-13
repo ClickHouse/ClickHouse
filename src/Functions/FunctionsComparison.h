@@ -1212,6 +1212,19 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Documentation-only — comparison is defined for numbers (cross-type via
+    /// least-supertype), strings, dates, UUIDs, IPv4/IPv6, equivalent enums,
+    /// and same-arity tuples (element-wise). Result is `UInt8` for the
+    /// null-safe variants (`isDistinctFrom` / `isNotDistinctFrom`) and for
+    /// non-Nullable inputs; otherwise `Nullable(UInt8)` propagates from any
+    /// Nullable element. The DSL doesn't capture this matrix concisely, so
+    /// the legacy `getReturnTypeImpl(DataTypes)` remains authoritative;
+    /// the string is surfaced via `system.functions`.
+    String getSignatureString() const override
+    {
+        return "(Any, Any) -> UInt8";
+    }
+
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

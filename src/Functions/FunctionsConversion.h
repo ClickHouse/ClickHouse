@@ -3471,6 +3471,18 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
+    /// Documentation-only — same opt-in mechanism as `FunctionConvert`:
+    /// the `Name` may expose a `signature` constant. The override below
+    /// retains authoritative control over Nullable / scale / timezone
+    /// argument handling; the string is surfaced via `system.functions`.
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Name::signature; })
+            return Name::signature;
+        else
+            return {};
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypePtr res;
@@ -4329,21 +4341,81 @@ using FunctionToUUIDOrNull = FunctionConvertFromString<DataTypeUUID, NameToUUIDO
 using FunctionToIPv4OrNull = FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToIPv6OrNull = FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrNull, ConvertFromStringExceptionMode::Null>;
 
-struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
-struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
-struct NameParseDateTimeBestEffortOrNull { static constexpr auto name = "parseDateTimeBestEffortOrNull"; };
-struct NameParseDateTimeBestEffortUS { static constexpr auto name = "parseDateTimeBestEffortUS"; };
-struct NameParseDateTimeBestEffortUSOrZero { static constexpr auto name = "parseDateTimeBestEffortUSOrZero"; };
-struct NameParseDateTimeBestEffortUSOrNull { static constexpr auto name = "parseDateTimeBestEffortUSOrNull"; };
-struct NameParseDateTime32BestEffort { static constexpr auto name = "parseDateTime32BestEffort"; };
-struct NameParseDateTime32BestEffortOrZero { static constexpr auto name = "parseDateTime32BestEffortOrZero"; };
-struct NameParseDateTime32BestEffortOrNull { static constexpr auto name = "parseDateTime32BestEffortOrNull"; };
-struct NameParseDateTime64BestEffort { static constexpr auto name = "parseDateTime64BestEffort"; };
-struct NameParseDateTime64BestEffortOrZero { static constexpr auto name = "parseDateTime64BestEffortOrZero"; };
-struct NameParseDateTime64BestEffortOrNull { static constexpr auto name = "parseDateTime64BestEffortOrNull"; };
-struct NameParseDateTime64BestEffortUS { static constexpr auto name = "parseDateTime64BestEffortUS"; };
-struct NameParseDateTime64BestEffortUSOrZero { static constexpr auto name = "parseDateTime64BestEffortUSOrZero"; };
-struct NameParseDateTime64BestEffortUSOrNull { static constexpr auto name = "parseDateTime64BestEffortUSOrNull"; };
+struct NameParseDateTimeBestEffort
+{
+    static constexpr auto name = "parseDateTimeBestEffort";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> DateTime";
+};
+struct NameParseDateTimeBestEffortOrZero
+{
+    static constexpr auto name = "parseDateTimeBestEffortOrZero";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> DateTime";
+};
+struct NameParseDateTimeBestEffortOrNull
+{
+    static constexpr auto name = "parseDateTimeBestEffortOrNull";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> Nullable(DateTime)";
+};
+struct NameParseDateTimeBestEffortUS
+{
+    static constexpr auto name = "parseDateTimeBestEffortUS";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> DateTime";
+};
+struct NameParseDateTimeBestEffortUSOrZero
+{
+    static constexpr auto name = "parseDateTimeBestEffortUSOrZero";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> DateTime";
+};
+struct NameParseDateTimeBestEffortUSOrNull
+{
+    static constexpr auto name = "parseDateTimeBestEffortUSOrNull";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> Nullable(DateTime)";
+};
+struct NameParseDateTime32BestEffort
+{
+    static constexpr auto name = "parseDateTime32BestEffort";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> DateTime";
+};
+struct NameParseDateTime32BestEffortOrZero
+{
+    static constexpr auto name = "parseDateTime32BestEffortOrZero";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> DateTime";
+};
+struct NameParseDateTime32BestEffortOrNull
+{
+    static constexpr auto name = "parseDateTime32BestEffortOrNull";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> Nullable(DateTime)";
+};
+struct NameParseDateTime64BestEffort
+{
+    static constexpr auto name = "parseDateTime64BestEffort";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> DateTime64";
+};
+struct NameParseDateTime64BestEffortOrZero
+{
+    static constexpr auto name = "parseDateTime64BestEffortOrZero";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> DateTime64";
+};
+struct NameParseDateTime64BestEffortOrNull
+{
+    static constexpr auto name = "parseDateTime64BestEffortOrNull";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> Nullable(DateTime64)";
+};
+struct NameParseDateTime64BestEffortUS
+{
+    static constexpr auto name = "parseDateTime64BestEffortUS";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> DateTime64";
+};
+struct NameParseDateTime64BestEffortUSOrZero
+{
+    static constexpr auto name = "parseDateTime64BestEffortUSOrZero";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> DateTime64";
+};
+struct NameParseDateTime64BestEffortUSOrNull
+{
+    static constexpr auto name = "parseDateTime64BestEffortUSOrNull";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> Nullable(DateTime64)";
+};
 
 extern template class FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
