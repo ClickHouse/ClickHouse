@@ -69,11 +69,13 @@ public:
     void unlock() TSA_RELEASE() { absl::Mutex::unlock(); }
 
     // Shared ownership
-    void lock_shared() const TSA_ACQUIRE_SHARED() { absl::Mutex::lock_shared(); }
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-const-cast)
+    void lock_shared() const TSA_ACQUIRE_SHARED() { const_cast<SharedMutex *>(this)->absl::Mutex::lock_shared(); }
 
-    bool try_lock_shared() const TSA_TRY_ACQUIRE_SHARED(true) { return absl::Mutex::try_lock_shared(); }
+    bool try_lock_shared() const TSA_TRY_ACQUIRE_SHARED(true) { return const_cast<SharedMutex *>(this)->absl::Mutex::try_lock_shared(); }
 
-    void unlock_shared() const TSA_RELEASE_SHARED() { absl::Mutex::unlock_shared(); }
+    void unlock_shared() const TSA_RELEASE_SHARED() { const_cast<SharedMutex *>(this)->absl::Mutex::unlock_shared(); }
+    // NOLINTEND(cppcoreguidelines-pro-type-const-cast)
 };
 }
 
