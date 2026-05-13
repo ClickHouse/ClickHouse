@@ -140,8 +140,12 @@ public:
     }
 
     /// Read a JSON array of strings.
-    /// Each element must be a JSON string; otherwise a BAD_ARGUMENTS exception is thrown
-    /// (Poco's `getElement<String>` would otherwise silently stringify numbers, bools, etc.).
+    /// When the key exists but its value is not a JSON array, throws `BAD_ARGUMENTS`
+    /// instead of silently returning an empty vector — silently dropping fields like
+    /// `name_parts` or `src_replicas` would convert malformed input into a different
+    /// valid AST. Each element must be a JSON string; otherwise a `BAD_ARGUMENTS`
+    /// exception is thrown (Poco's `getElement<String>` would otherwise silently
+    /// stringify numbers, bools, etc.).
     std::vector<String> readStringArray(const char * key) const
     {
         std::vector<String> result;
@@ -149,7 +153,8 @@ public:
             return result;
         auto arr = obj.getArray(key);
         if (!arr)
-            return result;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected JSON array for key '{}' during AST JSON deserialization", key);
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto var = arr->get(i);
