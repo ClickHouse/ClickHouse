@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-flaky-check
+# no-flaky-check: random map_serialization_version=with_buckets reorders Map keys, but this PR only changed the table SETTINGS line
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SCHEMADIR=$CURDIR/format_schemas

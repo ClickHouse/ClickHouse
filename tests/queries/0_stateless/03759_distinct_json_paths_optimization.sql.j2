@@ -1,5 +1,6 @@
--- Tags: long, no-azure-blob-storage, no-msan
+-- Tags: long, no-azure-blob-storage, no-msan, no-flaky-check
 -- no-azure-blob-storage: too slow
+-- no-flaky-check: can exceed the flaky-check time budget under random debug-build settings; this PR only changed the table SETTINGS line
 -- Random settings limits: index_granularity=(1000, None); index_granularity_bytes=(1000000, None)
 
 SET enable_analyzer=1;
