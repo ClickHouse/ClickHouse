@@ -3,10 +3,10 @@
         <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
     </settings>
 
-    <create_query>CREATE TABLE build_5k (id0 Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE build_10k (id1 Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE build_50k (id2 Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE probe (id0 Int64, id1 Int64, id2 Int64, id3 Int64, id4 Int64, id5 Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE build_5k (id0 Int64) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE build_10k (id1 Int64) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE build_50k (id2 Int64) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE probe (id0 Int64, id1 Int64, id2 Int64, id3 Int64, id4 Int64, id5 Int64) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
 
     <fill_query>INSERT INTO build_5k SELECT number FROM numbers(5000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO build_10k SELECT number FROM numbers(10000) ORDER BY rand()</fill_query>
