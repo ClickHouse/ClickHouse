@@ -136,6 +136,8 @@ public:
 
     void onException(std::exception_ptr) override
     {
+        if (executor)
+            executor->cancel();
         executor.reset();
         block_io.onException();
         block_io = {};
