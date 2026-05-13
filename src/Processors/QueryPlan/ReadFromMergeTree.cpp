@@ -1953,12 +1953,7 @@ void ReadFromMergeTree::buildIndexes(
         ActionsDAGWithInversionPushDown empty_filter(nullptr, query_context);
         const auto & effective_filter = skip_partition_pruning_ ? empty_filter : filter_dag;
         indexes->minmax_idx_condition.emplace(effective_filter, query_context, minmax_columns_names, minmax_expression_actions);
-        indexes->partition_pruner.emplace(
-            metadata_snapshot,
-            effective_filter,
-            query_context,
-            false /* strict */,
-            !settings[Setting::use_partition_pruning] /* skip_analysis */);
+        indexes->partition_pruner.emplace(metadata_snapshot, effective_filter, query_context, false /* strict */);
     }
 
     indexes->part_values
