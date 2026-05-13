@@ -23,6 +23,7 @@ class FunctionAddressToLine : public FunctionAddressToLineBase<std::string_view,
 public:
     static constexpr auto name = "addressToLine";
     String getName() const override { return name; }
+    String getSignatureString() const override { return "(UInt64) -> String"; }
     static FunctionPtr create(ContextPtr context)
     {
         context->checkAccess(AccessType::addressToLine);

@@ -26,6 +26,7 @@ class FunctionAddressToLineWithInlines: public FunctionAddressToLineBase<StringV
 public:
     static constexpr auto name = "addressToLineWithInlines";
     String getName() const override { return name; }
+    String getSignatureString() const override { return "(UInt64) -> Array(String)"; }
     static FunctionPtr create(ContextPtr context)
     {
         context->checkAccess(AccessType::addressToLineWithInlines);
