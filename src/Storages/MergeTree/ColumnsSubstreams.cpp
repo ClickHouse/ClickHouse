@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Common/escapeForFileName.h>
+#include <DataTypes/NestedUtils.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -229,6 +231,40 @@ void ColumnsSubstreams::validateColumns(const std::vector<String> & columns) con
         if (columns_substreams[i].first != columns[i])
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column at position {} in columns substreams: expected {}, got {}", i, columns[i], columns_substreams[i].first);
     }
+}
+
+/// Check if substream name has a valid prefix: it must be exactly the prefix
+/// or start with prefix followed by '.'.
+static bool hasValidPrefix(const String & substream, const String & escaped_prefix)
+{
+    if (!substream.starts_with(escaped_prefix))
+        return false;
+    /// Must be exactly the prefix, or followed by '.' separator.
+    return substream.size() == escaped_prefix.size() || substream[escaped_prefix.size()] == '.';
+}
+
+String ColumnsSubstreams::findInvalidSubstreamName() const
+{
+    for (const auto & [column_name, substreams] : columns_substreams)
+    {
+        auto escaped_column_name = escapeForFileName(column_name);
+        auto nested_table_name = Nested::extractTableName(column_name);
+        auto escaped_nested_table_name = escapeForFileName(nested_table_name);
+        bool has_nested_prefix = (escaped_nested_table_name != escaped_column_name);
+
+        for (const auto & substream : substreams)
+        {
+            if (hasValidPrefix(substream, escaped_column_name))
+                continue;
+
+            if (has_nested_prefix && hasValidPrefix(substream, escaped_nested_table_name))
+                continue;
+
+            return substream;
+        }
+    }
+
+    return {};
 }
 
 }

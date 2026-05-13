@@ -247,24 +247,60 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     }
     else if (part_type == MergeTreeDataPartType::Wide)
     {
-        for (const auto & column : columns_list)
+        const auto & cols_substreams = data_part->getColumnsSubstreams();
+        if (!cols_substreams.empty())
         {
-            get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            /// Use columns_substreams.txt as the source of truth for substream file names.
+            /// This is more reliable than enumerateStreams for types with dynamic structure (JSON, Dynamic)
+            /// because enumerateStreams requires deserialization state to correctly enumerate dynamic substreams.
+            size_t col_idx = 0;
+            for (const auto & column : columns_list)
             {
-                /// Skip ephemeral subcolumns that don't store any real data.
-                if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                    return;
+                const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
+                for (const auto & substream : substreams)
+                {
+                    auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", data_part_storage);
+                    if (!stream_name)
+                        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "There is no file for column '{}' (substream {}) in data part '{}'",
+                            column.name, substream, data_part->name);
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
+                    auto file_name = *stream_name + ".bin";
+                    checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
+                }
+                ++col_idx;
+            }
+        }
+        else
+        {
+            /// Fallback for old parts without columns_substreams.txt.
+            /// Don't enumerate dynamic streams because we don't have the proper deserialization state.
+            /// Dynamic stream files will still be verified by the subsequent directory-level check
+            /// against checksums.txt.
+            ISerialization::EnumerateStreamsSettings settings;
+            settings.enumerate_dynamic_streams = false;
+            for (const auto & column : columns_list)
+            {
+                auto serialization = get_serialization(column);
+                auto data = ISerialization::SubstreamData(serialization)
+                    .withType(column.type)
+                    .withColumn(data_part->getColumnSample(column));
+                serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                        return;
 
-                if (!stream_name)
-                    throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
-                        "There is no file for column '{}' in data part '{}'",
-                        column.name, data_part->name);
+                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
 
-                auto file_name = *stream_name + ".bin";
-                checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
-            }, column.type, data_part->getColumnSample(column));
+                    if (!stream_name)
+                        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "There is no file for column '{}' in data part '{}'",
+                            column.name, data_part->name);
+
+                    auto file_name = *stream_name + ".bin";
+                    checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
+                }, data);
+            }
         }
     }
     else

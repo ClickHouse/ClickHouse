@@ -1,0 +1,8 @@
+Data before corruption:
+10	45	20
+Data after attach with corrupted file:
+10	45	20
+CHECK TABLE result:
+1
+Data after partition reattach:
+10	45	20
