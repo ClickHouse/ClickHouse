@@ -153,6 +153,28 @@ WITH RECURSIVE rec_two_branch AS
 )
 SELECT id FROM rec_two_branch ORDER BY id;
 
+-- The CTE column's type can be wider than the joined storage column's type
+-- (e.g. recursive key `Int64` produces values like `-1`, joined column is
+-- `UInt8`). The injected `IN (...)` filter must use the CTE column's type for
+-- the RHS tuple so that values not representable in the storage column type
+-- are correctly evaluated as no-match by `in` resolution, rather than throwing
+-- during filter construction.
+DROP TABLE IF EXISTS narrow;
+CREATE TABLE narrow (id UInt8, next_id Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO narrow VALUES (1, 2), (2, 3), (3, -1);
+
+WITH RECURSIVE walk AS
+(
+    SELECT CAST(1 AS Int64) AS current_id
+  UNION ALL
+    SELECT n.next_id AS current_id
+    FROM narrow AS n
+    INNER JOIN walk AS w ON n.id = w.current_id
+)
+SELECT current_id FROM walk ORDER BY current_id;
+
+DROP TABLE narrow;
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;

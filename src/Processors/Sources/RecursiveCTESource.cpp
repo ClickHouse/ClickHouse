@@ -86,6 +86,7 @@ struct CTEJoinKey
 {
     QueryNode * containing_query_node;
     String cte_column_name;
+    DataTypePtr cte_column_type;
     ColumnNode * real_column_node;
 };
 
@@ -149,7 +150,7 @@ void extractEquiJoinKeys(
     if (!real_source->as<TableNode>())
         return;
 
-    result.push_back({&containing_query_node, cte_column->getColumnName(), real_column});
+    result.push_back({&containing_query_node, cte_column->getColumnName(), cte_column->getColumnType(), real_column});
 }
 
 /// Walk the join tree of a single `QueryNode` to collect equi-join keys.
@@ -250,8 +251,18 @@ std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
 }
 
 /// Build a resolved query-tree expression equivalent to `real_column IN (values...)`.
+///
+/// The RHS tuple elements are typed using the CTE column's type (the type the
+/// values were originally produced with), not the real column's type. This
+/// matches the semantics of `JOIN ... ON real_col = cte_col`: the join is
+/// resolved over a common comparison type, and values that are valid under
+/// the join but not representable in the storage column's type (e.g.
+/// `Int64(-1)` against a `UInt8` column, or `NULL` against a non-nullable
+/// column) are correctly evaluated as no-match rather than triggering a
+/// conversion exception while the filter is being built.
 QueryTreeNodePtr buildInFilterNode(
     ColumnNode & real_column,
+    const DataTypePtr & cte_column_type,
     const std::vector<Field> & values,
     const ContextPtr & context)
 {
@@ -260,11 +271,10 @@ QueryTreeNodePtr buildInFilterNode(
     DataTypes tuple_element_types;
     tuple_element_types.reserve(values.size());
 
-    const auto & column_type = real_column.getColumnType();
     for (const auto & value : values)
     {
         tuple_values.push_back(value);
-        tuple_element_types.push_back(column_type);
+        tuple_element_types.push_back(cte_column_type);
     }
 
     auto rhs_node = std::make_shared<ConstantNode>(
@@ -474,7 +484,7 @@ private:
                 continue;
 
             predicates_by_query[key.containing_query_node]
-                .push_back(buildInFilterNode(*key.real_column_node, *values, recursive_query_context));
+                .push_back(buildInFilterNode(*key.real_column_node, key.cte_column_type, *values, recursive_query_context));
         }
 
         bool injected_any = false;
