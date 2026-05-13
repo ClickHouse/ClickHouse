@@ -2495,7 +2495,7 @@ void executeQuery(
 
             if (std::find_if(key.begin(), key.end(), isControlASCII) != key.end()
                 || std::find_if(value.begin(), value.end(), isControlASCII) != value.end())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `http_response_headers` cannot contain ASCII control characters");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys and values of the `http_response_headers` setting cannot contain ASCII control characters");
 
             if (!result_details.additional_headers.emplace(key, value).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are duplicate entries in the `http_response_headers` setting");

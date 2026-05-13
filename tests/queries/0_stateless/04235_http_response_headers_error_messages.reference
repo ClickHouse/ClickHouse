@@ -4,3 +4,6 @@ Control character in value:
 http_response_headers
 Control character in key:
 http_response_headers
+Control character message mentions keys and values:
+1
+1
