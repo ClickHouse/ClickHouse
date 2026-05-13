@@ -95,6 +95,14 @@ using ArrayAggregateResult = typename ArrayAggregateResultImpl<ArrayElement, ope
 template<AggregateOperation aggregate_operation>
 struct ArrayAggregateImpl
 {
+    /// Documentation-only — reduces the array (optionally transformed by a
+    /// lambda) with the aggregate operation. For `min`/`max`, the result
+    /// type follows the array element type; for `sum`/`average`/`product`,
+    /// it widens to a numeric scalar.
+    static constexpr auto signature =
+        "(Function((Any, ...), Any), Array, ...) -> Any"
+        " OR (Array) -> Any";
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

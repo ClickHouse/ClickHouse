@@ -10,6 +10,11 @@ namespace DB
   */
 struct ArrayFilterImpl
 {
+    /// Documentation-only — keeps the first array's elements where the lambda
+    /// returns truthy; element type of the result is the element type of the
+    /// first input array.
+    static constexpr auto signature = "(Function((Any, ...), UInt8), Array(T : Any), ...) -> Array(T)";
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }

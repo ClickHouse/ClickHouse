@@ -77,6 +77,19 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// Documentation-only — the declarative signature for the higher-order
+    /// function comes from the `Impl`, which may opt in by exposing a
+    /// `signature` constant. The base `getReturnTypeImpl` is overridden here,
+    /// so the DSL is bypassed at type-check time; the string is surfaced via
+    /// `system.functions` for documentation purposes.
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Impl::signature; })
+            return Impl::signature;
+        else
+            return {};
+    }
+
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
     void getLambdaArgumentTypes(DataTypes & arguments) const override

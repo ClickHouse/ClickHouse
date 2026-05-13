@@ -20,6 +20,11 @@ namespace ErrorCodes
 template <bool reverse>
 struct ArrayFillImpl
 {
+    /// Documentation-only — fills positions where the lambda returns false
+    /// with the previous (or next, for the reverse variant) element;
+    /// element type of the source array is preserved.
+    static constexpr auto signature = "(Function((Any, ...), UInt8), Array(T : Any), ...) -> Array(T)";
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }

@@ -11,6 +11,12 @@ namespace DB
   */
 struct ArrayAllImpl
 {
+    /// Documentation-only — `f(array)` overload behaves like
+    /// `f(x -> x, array)`.
+    static constexpr auto signature =
+        "(Function((Any, ...), UInt8), Array, ...) -> UInt8"
+        " OR (Array) -> UInt8";
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

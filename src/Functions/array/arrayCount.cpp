@@ -17,6 +17,11 @@ namespace ErrorCodes
   */
 struct ArrayCountImpl
 {
+    /// Documentation-only — `f(array)` overload counts non-zero elements.
+    static constexpr auto signature =
+        "(Function((Any, ...), UInt8), Array, ...) -> UInt32"
+        " OR (Array) -> UInt32";
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

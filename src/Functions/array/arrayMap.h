@@ -9,6 +9,11 @@ namespace DB
   */
 struct ArrayMapImpl
 {
+    /// Documentation-only declarative signature (lambda required, applied
+    /// element-wise to N parallel arrays; the result is an array of the
+    /// lambda's return type).
+    static constexpr auto signature = "(Function((Any, ...), R : Any), Array, ...) -> Array(R)";
+
     /// true if the expression (for an overload of f(expression, arrays)) or an array (for f(array)) should be boolean.
     static bool needBoolean() { return false; }
     /// true if the f(array) overload is unavailable.

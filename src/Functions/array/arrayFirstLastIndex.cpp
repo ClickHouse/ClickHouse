@@ -21,6 +21,10 @@ enum class ArrayFirstLastIndexStrategy : uint8_t
 template <ArrayFirstLastIndexStrategy strategy>
 struct ArrayFirstLastIndexImpl
 {
+    /// Documentation-only — index of the first/last element matched by the
+    /// lambda; 0 if no element matches.
+    static constexpr auto signature = "(Function((Any, ...), UInt8), Array, ...) -> UInt32";
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
