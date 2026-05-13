@@ -239,26 +239,6 @@ static inline void updateBlockData(Block & old_block, const Block & new_block)
     }
 }
 
-static bool pullMutationBlock(PullingPipelineExecutor & executor, Block & block)
-{
-    if (executor.pull(block))
-        return true;
-
-    /// `pull` returns `false` either on normal end-of-stream or on cancellation (including soft timeout
-    /// with `timeout_overflow_mode = 'break'`). On cancellation the pipeline may not have produced all
-    /// expected blocks, and a partial result must not be applied to a `Memory` table.
-    /// We rely on the executor's status to distinguish the two cases: gating the throw on the cancellation
-    /// status avoids a false `TIMEOUT_EXCEEDED` when the timeout flips between the last produced block and
-    /// the final `pull` that observes the normal end-of-stream.
-    const auto status = executor.getExecutionStatus();
-    if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
-    if (status == PipelineExecutor::ExecutionStatus::CancelledByUser)
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
-
-    return false;
-}
-
 void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
 {
     /// Some validation will be added
@@ -284,7 +264,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
 
     Blocks out;
     Block block;
-    while (pullMutationBlock(executor, block))
+    while (executor.pull(block))
     {
         if ((*memory_settings)[MemorySetting::compress])
             for (auto & elem : block)
@@ -293,19 +273,45 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         out.push_back(block);
     }
 
+    /// `pull` returns `false` either on normal end-of-stream or on cancellation (including soft timeout
+    /// with `timeout_overflow_mode = 'break'`). On true cancellation the pipeline may not have produced
+    /// all expected blocks, and a partial result must not be swapped into a `Memory` table.
+    const auto final_status = executor.getExecutionStatus();
+    const bool cancelled
+        = final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
+        || final_status == PipelineExecutor::ExecutionStatus::CancelledByUser;
+
+    auto throw_on_cancellation = [&]
+    {
+        if (final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
+    };
+
     std::unique_ptr<Blocks> new_data;
 
     // all column affected
     if (interpreter->isAffectingAllColumns())
     {
+        /// Replacing the entire data set: we cannot validate completeness precisely (some mutations
+        /// legitimately change the block count). Fail-close on cancellation rather than silently
+        /// swap in a possibly-truncated result.
+        if (cancelled)
+            throw_on_cancellation();
         new_data = std::make_unique<Blocks>(out);
     }
     else
     {
         /// just some of the column affected, we need update it with new column
         const auto & old_data = *(data.get());
+        /// Partial-column mutations preserve the input block count. A precise completeness check by
+        /// count avoids a false `TIMEOUT_EXCEEDED` when a late cancellation flag is set after all
+        /// expected blocks were already produced (e.g. when the soft timeout flips between the last
+        /// successful `pull` and the next `pull`'s pre-step `checkTimeLimitSoft`).
         if (out.size() != old_data.size())
         {
+            if (cancelled)
+                throw_on_cancellation();
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Mutation of `Memory` table produced {} blocks, expected {} blocks",
