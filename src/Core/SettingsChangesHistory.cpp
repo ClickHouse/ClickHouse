@@ -42,6 +42,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.5",
         {
             {"count_distinct_optimization", false, true, "Rewrite `count(DISTINCT col)` into a subquery with `GROUP BY` by default. The optimization is also restricted to local tables only."},
+            {"date_time_input_format", "basic", "best_effort", "Better usability"},
+            {"cast_string_to_date_time_mode", "basic", "best_effort", "Better usability"},
             {"paimon_target_snapshot_id", -1, -1, "New setting."},
             {"max_consume_snapshots", 0, 0, "New setting."},
             {"allow_experimental_paimon_storage_engine", false, false, "New setting."},
