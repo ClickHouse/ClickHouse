@@ -369,20 +369,25 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 {
     auto settings = WhatIfSettings::fromAST(explain_settings);
 
+    /// Hypothetical indexes only exist on the initiator; with parallel replicas the
+    /// SELECT is dispatched remotely and the plan root isn't `ReadFromMergeTree`.
+    auto local_context = Context::createCopy(context);
+    local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
+
     SelectQueryOptions query_options;
     query_options.setExplain();
     QueryPlan plan;
-    ContextPtr plan_context = context;
+    ContextPtr plan_context = local_context;
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        InterpreterSelectQueryAnalyzer interpreter(select_query, context, query_options);
+        InterpreterSelectQueryAnalyzer interpreter(select_query, local_context, query_options);
         plan_context = interpreter.getContext();
         plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
-        InterpreterSelectWithUnionQuery interpreter(select_query, context, query_options);
+        InterpreterSelectWithUnionQuery interpreter(select_query, local_context, query_options);
         plan_context = interpreter.getContext();
         interpreter.buildQueryPlan(plan);
     }

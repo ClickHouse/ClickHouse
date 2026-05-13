@@ -21,3 +21,7 @@ With idx_b_set (set, hypothetical):
 With idx_a_minmax (minmax, hypothetical):
   status:       not_applicable
   reason:       Query has no filter predicate
+--- parallel replicas: EXPLAIN WHATIF still runs locally ---
+With idx_a (minmax, hypothetical):
+  status:       applicable
+  source:           empirical

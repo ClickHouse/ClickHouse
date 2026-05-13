@@ -107,3 +107,20 @@ $CLICKHOUSE_CLIENT -n -q "
 " | grep -E '^\s+status:|^\s+reason:|^With '
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_app"
+
+# =========================================================
+# EXPLAIN WHATIF must work even when the session enables parallel
+# replicas — hypothetical indexes are session-local to the initiator,
+# so the WHATIF plan must stay on the local MergeTree read.
+# =========================================================
+echo "--- parallel replicas: EXPLAIN WHATIF still runs locally ---"
+$CLICKHOUSE_CLIENT --enable_parallel_replicas=1 --parallel_replicas_for_non_replicated_merge_tree=1 --cluster_for_parallel_replicas=parallel_replicas --parallel_replicas_local_plan=1 -n -q "
+    DROP TABLE IF EXISTS t_hypo_pr;
+    CREATE TABLE t_hypo_pr (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    INSERT INTO t_hypo_pr SELECT number, number FROM numbers(1000);
+
+    CREATE HYPOTHETICAL INDEX idx_a ON t_hypo_pr (a) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_pr WHERE a > 500;
+" | grep -E '^\s+status:|^\s+source:|^With idx_a'
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_pr"
