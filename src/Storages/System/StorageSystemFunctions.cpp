@@ -296,9 +296,6 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[11]->insertDefault(); // examples
         res_columns[12]->insertDefault(); // introduced_in
         res_columns[13]->insertDefault(); // categories
-
-        /// Determinism is unknown — the WASM module is opaque to ClickHouse — so report NULL.
-        /// They cannot accept lambda parameters.
         res_columns[14]->insertDefault(); // is_deterministic
         res_columns[15]->insert(UInt8{0}); // higher_order
     }

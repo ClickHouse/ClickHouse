@@ -5,9 +5,9 @@ higher_order	Nullable(UInt8)
 plus	1	0
 -- non-deterministic function
 today	0	0
--- another deterministic non-higher-order function (variadic)
+-- another deterministic non-higher-order function
 concat	1	0
--- non-deterministic variadic function
+-- non-deterministic function
 rand	0	0
 -- higher-order functions are flagged (array, map and arraySort variants)
 arrayFilter	1

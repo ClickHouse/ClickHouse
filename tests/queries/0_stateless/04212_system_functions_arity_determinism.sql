@@ -17,11 +17,11 @@ SELECT '-- non-deterministic function';
 SELECT name, deterministic, higher_order
 FROM system.functions WHERE name = 'today';
 
-SELECT '-- another deterministic non-higher-order function (variadic)';
+SELECT '-- another deterministic non-higher-order function';
 SELECT name, deterministic, higher_order
 FROM system.functions WHERE name = 'concat';
 
-SELECT '-- non-deterministic variadic function';
+SELECT '-- non-deterministic function';
 SELECT name, deterministic, higher_order
 FROM system.functions WHERE name = 'rand';
 
