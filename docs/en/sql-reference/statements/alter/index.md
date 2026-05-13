@@ -61,7 +61,7 @@ Mutations are totally ordered by their creation order and are applied to each pa
 
 A mutation query returns immediately after the mutation entry is added (in case of replicated tables to ZooKeeper, for non-replicated tables - to the filesystem). The mutation itself executes asynchronously using the system profile settings. To track the progress of mutations you can use the [`system.mutations`](/operations/system-tables/mutations) table. A mutation that was successfully submitted will continue to execute even if ClickHouse servers are restarted. There is no way to roll back the mutation once it is submitted, but if the mutation is stuck for some reason it can be cancelled with the [`KILL MUTATION`](/sql-reference/statements/kill.md/#kill-mutation) query.
 
-Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
+Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter; if it is set to zero, no finished mutation entries are kept). Older mutation entries are deleted.
 
 ## Synchronicity of ALTER Queries {#synchronicity-of-alter-queries}
 

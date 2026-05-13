@@ -505,9 +505,6 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(
 size_t ReplicatedMergeTreeCleanupThread::clearOldMutations()
 {
     auto storage_settings = storage.getSettings();
-    if (!(*storage_settings)[MergeTreeSetting::finished_mutations_to_keep])
-        return 0;
-
     if (storage.queue.countFinishedMutations() <= (*storage_settings)[MergeTreeSetting::finished_mutations_to_keep])
     {
         /// Not strictly necessary, but helps to avoid unnecessary ZooKeeper requests.

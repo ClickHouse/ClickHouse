@@ -1837,11 +1837,7 @@ UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique
 
 size_t StorageMergeTree::clearOldMutations(bool truncate)
 {
-    size_t finished_mutations_to_keep = (*getSettings())[MergeTreeSetting::finished_mutations_to_keep];
-    if (!truncate && !finished_mutations_to_keep)
-        return 0;
-
-    finished_mutations_to_keep = truncate ? 0 : finished_mutations_to_keep;
+    size_t finished_mutations_to_keep = truncate ? 0 : (*getSettings())[MergeTreeSetting::finished_mutations_to_keep];
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
