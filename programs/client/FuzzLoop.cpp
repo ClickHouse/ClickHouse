@@ -746,6 +746,39 @@ bool Client::buzzHouse()
             }
             else
             {
+                auto runDumpReadOracle = [&](auto dumpContent, auto dumpIntermediate, const char * oracle_name)
+                {
+                    qo.resetOracleValues();
+
+                    BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::REATTACH;
+                    rg.pickWeighted(
+                        {{20, [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
+                         {5, [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }}});
+
+                    full_query.resize(0);
+                    dumpContent();
+                    BuzzHouse::SQLQueryToString(full_query, sq1);
+                    fuzz_config->outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
+                    qo.processFirstOracleQueryResult(error_code, *external_integrations);
+
+                    dumpIntermediate(strategy);
+                    for (const auto & entry : intermediate_queries)
+                    {
+                        full_query.resize(0);
+                        BuzzHouse::SQLQueryToString(full_query, entry);
+                        fuzz_config->outf << full_query << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query);
+                        qo.setIntermediateStepSuccess(!have_error);
+                    }
+
+                    full_query.resize(0);
+                    BuzzHouse::SQLQueryToString(full_query, sq2);
+                    fuzz_config->outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
+                    qo.processSecondOracleQueryResult(error_code, *external_integrations, oracle_name);
+                };
+
                 rg.pickWeighted({
                     {20 * static_cast<uint32_t>(fuzz_config->allow_query_oracles),
                      [&]()
@@ -861,6 +894,32 @@ bool Client::buzzHouse()
                              server_up &= processBuzzHouseQuery(full_query);
                              qo.processSecondOracleQueryResult(error_code, *external_integrations, "Dump and read table");
                          }
+                     }},
+                    {5
+                         * static_cast<uint32_t>(
+                             fuzz_config->allow_query_oracles && fuzz_config->use_dump_table_oracle > 1
+                             && gen.collectionHas<BuzzHouse::SQLDictionary>(gen.attached_dictionaries_to_compare_content)),
+                     [&]()
+                     {
+                         const auto & dict = rg.pickRandomly(
+                             gen.filterCollection<BuzzHouse::SQLDictionary>(gen.attached_dictionaries_to_compare_content));
+                         runDumpReadOracle(
+                             [&]() { qo.dumpDictionaryContent(rg, gen, dict, sq1, sq2); },
+                             [&](auto s) { qo.dumpObjectIntermediateSteps(rg, gen, dict, BuzzHouse::SQLObject::DICTIONARY, s, intermediate_queries); },
+                             "Dump and read dictionary");
+                     }},
+                    {5
+                         * static_cast<uint32_t>(
+                             fuzz_config->allow_query_oracles && fuzz_config->use_dump_table_oracle > 1
+                             && gen.collectionHas<BuzzHouse::SQLView>(gen.attached_views_to_compare_content)),
+                     [&]()
+                     {
+                         const auto & view
+                             = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLView>(gen.attached_views_to_compare_content));
+                         runDumpReadOracle(
+                             [&]() { qo.dumpViewContent(rg, view, sq1, sq2); },
+                             [&](auto s) { qo.dumpObjectIntermediateSteps(rg, gen, view, BuzzHouse::SQLObject::VIEW, s, intermediate_queries); },
+                             "Dump and read view");
                      }},
                     {20
                          * static_cast<uint32_t>(
