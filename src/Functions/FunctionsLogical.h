@@ -285,6 +285,11 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    String getSignatureString() const override
+    {
+        return "(Bool) -> Bool OR (NativeNumber) -> UInt8";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
