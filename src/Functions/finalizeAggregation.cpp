@@ -43,17 +43,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
-        if (!type)
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Argument for function '{}' must have type AggregateFunction - state of aggregate function."
-                " Got '{}' instead", getName(), arguments[0]->getName());
-        }
-
-        return type->getReturnType();
+        return "(T : AggregateFunction) -> aggregateFunctionReturnType(T)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override

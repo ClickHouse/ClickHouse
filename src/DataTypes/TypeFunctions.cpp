@@ -807,6 +807,29 @@ public:
 };
 
 
+/// `aggregateFunctionReturnType(T)` — unwraps a `DataTypeAggregateFunction` and
+/// returns the type that the aggregator finalizes to (i.e. the type of
+/// `finalizeAggregation(state)`). Throws if `T` is not an aggregate-function state.
+class TypeFunctionAggregateFunctionReturnType : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Type function aggregateFunctionReturnType takes 1 argument");
+        const auto * af = typeid_cast<const DataTypeAggregateFunction *>(args.front().type().get());
+        if (!af)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "aggregateFunctionReturnType requires AggregateFunction(...), got {}",
+                args.front().type()->getName());
+        return Value(af->getReturnType());
+    }
+
+    std::string name() const override { return "aggregateFunctionReturnType"; }
+};
+
+
 /// AggregateFunction('sum', UInt64) → DataTypeAggregateFunction wrapping the sum aggregator
 /// over UInt64. Used by functions whose result is an aggregation state typed by both the
 /// aggregator name (constant string) and the argument types of the aggregator.
@@ -860,6 +883,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionDictionaryTypeOf>();
     factory.registerElement<TypeFunctionIntervalType>();
     factory.registerElement<TypeFunctionAggregateFunctionType>();
+    factory.registerElement<TypeFunctionAggregateFunctionReturnType>();
     factory.registerElement<TypeFunctionRemoveNullable>();
     factory.registerElement<TypeFunctionNull>();
     factory.registerElement<TypeFunctionNativeNumber>();

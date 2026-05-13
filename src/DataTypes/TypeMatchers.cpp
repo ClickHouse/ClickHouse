@@ -557,6 +557,23 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+/// Matches any DataTypeAggregateFunction regardless of aggregator name or arguments —
+/// used when a function consumes "any aggregation state" (e.g. `finalizeAggregation`).
+class TypeMatcherAggregateFunction : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "AggregateFunction"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string & out_reason) const override
+    {
+        if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
+            return true;
+        out_reason = "expected AggregateFunction, got " + type->getName();
+        return false;
+    }
+    size_t getIndex() const override { return 0; }
+};
+
+
 /// Matches AggregateFunction(<name>, <element matchers...>) where <name> is a string literal
 /// in the signature (e.g. AggregateFunction('groupBitmap', T)).
 class TypeMatcherAggregateFunctionOf : public ITypeMatcher
@@ -879,7 +896,12 @@ void registerTypeMatchers()
     factory.registerElement("Tuple", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherTuple>(children); });
     factory.registerElement("MaybeNullable", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherMaybeNullable>(children); });
     factory.registerElement("Nullable", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherNullable>(children); });
-    factory.registerElement("AggregateFunction", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherAggregateFunctionOf>(children); });
+    factory.registerElement("AggregateFunction", [](const TypeMatchers & children) -> TypeMatcherPtr
+    {
+        if (children.empty())
+            return std::make_shared<TypeMatcherAggregateFunction>();
+        return std::make_shared<TypeMatcherAggregateFunctionOf>(children);
+    });
     /// Function: 0 args matches any lambda; (arg_list, return) matches a specific shape.
     /// Here `arg_list` must be a parenthesized matcher list passed as a single child.
     factory.registerElement("Function", [](const TypeMatchers & children) -> TypeMatcherPtr
