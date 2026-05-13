@@ -102,7 +102,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             {
                 S3::S3AuthSettings auth_settings;
 
-                if (!StorageS3Configuration::collectCredentials(params.backup_info.function_arg, auth_settings, params.context))
+                if (!StorageS3Configuration::collectCredentials(params.backup_info.function_arg, auth_settings, params.context).found)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument: {}", params.backup_info.function_arg->formatForErrorMessage());
 
                 role_arn = std::move(auth_settings[S3AuthSetting::role_arn]);

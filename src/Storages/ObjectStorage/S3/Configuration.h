@@ -19,6 +19,13 @@ namespace DB
 struct S3StorageParsedArguments : private StorageParsedArguments
 {
     friend class StorageS3Configuration;
+
+    struct CollectedCredentials
+    {
+        bool found = false;
+        bool role_arn_provided = false;
+    };
+
     static constexpr auto max_number_of_arguments_with_structure = 10;
     static constexpr auto signatures_with_structure
         = " - url\n"
@@ -73,11 +80,10 @@ struct S3StorageParsedArguments : private StorageParsedArguments
         return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
     }
 
-    static bool collectCredentials(
+    static CollectedCredentials collectCredentials(
         ASTPtr maybe_credentials,
         S3::S3AuthSettings & auth_settings_,
-        ContextPtr local_context,
-        bool * role_arn_was_provided = nullptr);
+        ContextPtr local_context);
 
 
     S3::URI url;
@@ -149,11 +155,10 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
-    static bool collectCredentials(
+    static S3StorageParsedArguments::CollectedCredentials collectCredentials(
         ASTPtr maybe_credentials,
         S3::S3AuthSettings & auth_settings_,
-        ContextPtr local_context,
-        bool * role_arn_was_provided = nullptr);
+        ContextPtr local_context);
 
     S3::URI url;
 

@@ -302,30 +302,29 @@ static ASTPtr extractExtraCredentials(ASTs & args)
     return nullptr;
 }
 
-bool StorageS3Configuration::collectCredentials(
+S3StorageParsedArguments::CollectedCredentials StorageS3Configuration::collectCredentials(
     ASTPtr maybe_credentials,
     S3::S3AuthSettings & auth_settings_,
-    ContextPtr local_context,
-    bool * role_arn_was_provided)
+    ContextPtr local_context)
 {
-    return S3StorageParsedArguments::collectCredentials(maybe_credentials, auth_settings_, local_context, role_arn_was_provided);
+    return S3StorageParsedArguments::collectCredentials(maybe_credentials, auth_settings_, local_context);
 }
 
-bool S3StorageParsedArguments::collectCredentials(
+S3StorageParsedArguments::CollectedCredentials S3StorageParsedArguments::collectCredentials(
     ASTPtr maybe_credentials,
     S3::S3AuthSettings & auth_settings_,
-    ContextPtr local_context,
-    bool * role_arn_was_provided)
+    ContextPtr local_context)
 {
-    if (role_arn_was_provided)
-        *role_arn_was_provided = false;
+    CollectedCredentials result;
 
     if (!maybe_credentials)
-        return false;
+        return result;
 
     const auto * credentials_ast_function = maybe_credentials->as<ASTFunction>();
     if (!credentials_ast_function || credentials_ast_function->name != "extra_credentials")
-        return false;
+        return result;
+
+    result.found = true;
 
     const auto * credentials_function_args_expr = assert_cast<const ASTExpressionList *>(credentials_ast_function->arguments.get());
     auto credentials_function_args = credentials_function_args_expr->children;
@@ -357,8 +356,7 @@ bool S3StorageParsedArguments::collectCredentials(
         else if (arg_name == "role_arn")
         {
             auth_settings_[S3AuthSetting::role_arn] = arg_value.safeGet<String>();
-            if (role_arn_was_provided)
-                *role_arn_was_provided = !auth_settings_[S3AuthSetting::role_arn].value.empty();
+            result.role_arn_provided = !auth_settings_[S3AuthSetting::role_arn].value.empty();
         }
         else if (arg_name == "role_session_name")
             auth_settings_[S3AuthSetting::role_session_name] = arg_value.safeGet<String>();
@@ -366,7 +364,7 @@ bool S3StorageParsedArguments::collectCredentials(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid credential argument found: {}", arg_name);
     }
 
-    return true;
+    return result;
 }
 
 void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure)
@@ -661,9 +659,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     s3_settings->loadFromConfigForObjectStorage(
         config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
-    bool role_arn_from_extra_credentials = false;
-    S3StorageParsedArguments::collectCredentials(
-        extra_credentials, s3_settings->auth_settings, context, &role_arn_from_extra_credentials);
+    auto extra_credentials_result = S3StorageParsedArguments::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
@@ -735,7 +731,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings[S3AuthSetting::session_token] = session_token_value.value();
     }
 
-    if (role_arn_from_extra_credentials && !hasExplicitS3Credentials(s3_settings->auth_settings))
+    if (extra_credentials_result.role_arn_provided && !hasExplicitS3Credentials(s3_settings->auth_settings))
     {
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
