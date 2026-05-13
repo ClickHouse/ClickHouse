@@ -673,7 +673,14 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         {
             try
             {
-                WebSocketFrame frame = readWebSocketFrame(socket);
+                /// Enforce an absolute per-frame deadline. The per-read
+                /// `setReceiveTimeout` above bounds a single `receiveBytes` call,
+                /// but a client could keep trickling one byte at a time within
+                /// the per-read timeout to hold the handler thread indefinitely.
+                /// The absolute deadline closes that hole by capping the total
+                /// time spent reading a single frame.
+                UInt64 frame_deadline = clock_gettime_ns() + 30'000'000'000ULL; /// 30 seconds per frame
+                WebSocketFrame frame = readWebSocketFrame(socket, frame_deadline);
 
                 if (frame.protocol_error)
                 {
