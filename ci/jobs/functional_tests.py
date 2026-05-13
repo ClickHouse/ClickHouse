@@ -660,8 +660,15 @@ def main():
                     # Stop the server before overwriting the binary: on Linux,
                     # `cp` over a running ELF fails with `Text file busy`,
                     # and `strict=True` ensures a failed switch is not ignored.
+                    # `CH.terminate` does not guarantee that every descendant
+                    # process (transient `clickhouse-client` invocations, stray
+                    # workers) has released the binary by the time we replace
+                    # it, so unlink the destination first: any process still
+                    # holding the old inode keeps executing from it, while
+                    # `cp` creates a fresh inode for the new binary.
                     CH.terminate()
                     Shell.run(
+                        f"rm -f {ch_path}/clickhouse && "
                         f"cp {temp_dir}/clickhouse_{bugfix_bt} {ch_path}/clickhouse",
                         verbose=True,
                         strict=True,
