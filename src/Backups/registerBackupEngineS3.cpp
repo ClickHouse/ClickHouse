@@ -27,6 +27,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
@@ -76,6 +77,22 @@ void registerBackupEngineS3(BackupFactory & factory)
             role_arn = collection->getOrDefault<String>("role_arn", "");
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
 
+            /// Reject `BACKUP TO S3(named_collection)` where the collection sets
+            /// `use_environment_credentials = 1` or supplies a `role_arn` without
+            /// `access_key_id` and `secret_access_key`. Otherwise the AWS SDK would
+            /// sign the request with whatever the server has available — environment
+            /// credentials in Cloud, or static `<s3>` config keys on-prem.
+            if (collection->getOrDefault<bool>("use_environment_credentials", false))
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Using `use_environment_credentials` in S3 named collections is not allowed");
+
+            if (!role_arn.empty() && (access_key_id.empty() || secret_access_key.empty()))
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Using `role_arn` without user-supplied `access_key_id` and `secret_access_key` "
+                    "in S3 named collections is not allowed");
+
             if (collection->has("filename"))
                 s3_uri = std::filesystem::path(s3_uri) / collection->get<String>("filename");
 
@@ -107,6 +124,15 @@ void registerBackupEngineS3(BackupFactory & factory)
 
                 role_arn = std::move(auth_settings[S3AuthSetting::role_arn]);
                 role_session_name = std::move(auth_settings[S3AuthSetting::role_session_name]);
+
+                /// `role_arn` here came from `extra_credentials(role_arn = ...)`. Require
+                /// the user to have also passed the access keys via the positional args,
+                /// otherwise the STS request would be signed with server-managed keys.
+                if (!role_arn.empty() && (access_key_id.empty() || secret_access_key.empty()))
+                    throw Exception(
+                        ErrorCodes::ACCESS_DENIED,
+                        "Using `role_arn` without user-supplied `access_key_id` and `secret_access_key` "
+                        "in BACKUP S3 arguments is not allowed");
             }
         }
 
