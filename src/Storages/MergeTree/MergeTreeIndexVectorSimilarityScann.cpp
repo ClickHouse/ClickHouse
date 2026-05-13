@@ -8,6 +8,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -25,6 +26,7 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wshadow"
 #include <scann/base/search_parameters.h>
+#include <scann/tree_x_hybrid/tree_x_params.h>
 #include <scann/base/single_machine_base.h>
 #include <scann/base/single_machine_factory_options.h>
 #include <scann/base/single_machine_factory_scann.h>
@@ -39,6 +41,15 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsFloat vector_search_index_fetch_multiplier;
+    extern const SettingsUInt64 max_limit_for_vector_search_queries;
+    extern const SettingsBool vector_search_with_rescoring;
+    extern const SettingsUInt64 scann_num_leaves_to_search;
+    extern const SettingsUInt64 scann_candidate_pool_size;
+}
+
 namespace ErrorCodes
 {
 extern const int INCORRECT_QUERY;
@@ -46,6 +57,7 @@ extern const int INCORRECT_DATA;
 extern const int ILLEGAL_COLUMN;
 extern const int LOGICAL_ERROR;
 extern const int INCORRECT_NUMBER_OF_COLUMNS;
+extern const int INVALID_SETTING_VALUE;
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +173,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & 
     readIntBinary(fmt_version, istr);
     if (fmt_version != FILE_FORMAT_VERSION)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Unsupported vector_similarity_scann index version: {}", static_cast<int>(fmt_version));
+            "Unsupported vector_similarity('scann', ...) index version: {}", static_cast<int>(fmt_version));
 
     UInt64 n, pd;
     readIntBinary(n, istr);
@@ -520,7 +532,7 @@ void MergeTreeIndexAggregatorVectorSimilarityScann::update(
     const auto * column_array = typeid_cast<const ColumnArray *>(column_cut.get());
     if (!column_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Expected Array column for vector_similarity_scann index");
+            "Expected Array column for vector_similarity('scann', ...) index");
 
     const auto & offsets = column_array->getOffsets();
     const auto & data_col = column_array->getData();
@@ -546,7 +558,7 @@ void MergeTreeIndexAggregatorVectorSimilarityScann::update(
 
         if (row_len != dims)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Array has {} elements, expected {} for vector_similarity_scann index",
+                "Array has {} elements, expected {} for vector_similarity('scann', ...) index",
                 row_len, dims);
 
         const size_t old_size = granule->vectors.size();
@@ -568,7 +580,7 @@ void MergeTreeIndexAggregatorVectorSimilarityScann::update(
         else
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "vector_similarity_scann index supports only Array(Float32) and Array(Float64)");
+                "vector_similarity('scann', ...) index supports only Array(Float32) and Array(Float64)");
         }
     }
 
@@ -583,16 +595,29 @@ void MergeTreeIndexAggregatorVectorSimilarityScann::update(
 MergeTreeIndexConditionVectorSimilarityScann::MergeTreeIndexConditionVectorSimilarityScann(
     const std::optional<VectorSearchParameters> & parameters_,
     const String & index_column_,
-    const ScannIndexParams & index_params_)
+    const ScannIndexParams & index_params_,
+    ContextPtr context)
     : parameters(parameters_)
     , index_column(index_column_)
     , index_params(index_params_)
+    , index_fetch_multiplier(context->getSettingsRef()[Setting::vector_search_index_fetch_multiplier])
+    , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
+    , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
+    , scann_num_leaves_to_search(context->getSettingsRef()[Setting::scann_num_leaves_to_search])
+    , scann_candidate_pool_size(context->getSettingsRef()[Setting::scann_candidate_pool_size])
 {
+    static constexpr double MAX_INDEX_FETCH_MULTIPLIER = 1000.0;
+    if (!std::isfinite(index_fetch_multiplier)
+        || index_fetch_multiplier <= 0.0 || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
+        || (parameters && !std::isfinite(index_fetch_multiplier * static_cast<double>(parameters->limit))))
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}",
+            MAX_INDEX_FETCH_MULTIPLIER);
 }
 
 std::string MergeTreeIndexConditionVectorSimilarityScann::getDescription() const
 {
-    return "vector_similarity_scann(" + index_params.distance_name + ", " + std::to_string(index_params.dimensions) + ")";
+    return "vector_similarity(scann, " + index_params.distance_name + ", " + std::to_string(index_params.dimensions) + ")";
 }
 
 bool MergeTreeIndexConditionVectorSimilarityScann::alwaysUnknownOrTrue() const
@@ -610,7 +635,7 @@ bool MergeTreeIndexConditionVectorSimilarityScann::mayBeTrueOnGranule(
     MergeTreeIndexGranulePtr, const UpdatePartialDisjunctionResultFn &) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR,
-        "mayBeTrueOnGranule is not supported for vector_similarity_scann index");
+        "mayBeTrueOnGranule is not supported for vector_similarity('scann', ...) index");
 }
 
 NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproximateNearestNeighbors(
@@ -646,9 +671,14 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
         return result;
     }
 
-    const size_t topk      = parameters->limit;
+    size_t topk            = parameters->limit;
     const size_t pd        = granule->padded_dim;
     const size_t orig_dims = index_params.dimensions;
+
+    /// Mirror HNSW behaviour: expand the candidate set when additional filters are present
+    /// (post-filtering may discard results) or when rescoring is enabled.
+    if (parameters->additional_filters_present || is_rescoring)
+        topk = std::min(static_cast<size_t>(static_cast<double>(topk) * index_fetch_multiplier), max_limit);
 
     const auto & ref = parameters->reference_vector;
     if (ref.size() != orig_dims)
@@ -676,17 +706,25 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
     /// Run search.
     research_scann::DenseDataset<float> query_dataset(std::move(query), 1);
 
-    /// Return enough candidates for ClickHouse to find the true top-k via its own exact reranking.
-    /// pre_k: AH candidate pool fed into ScaNN's exact reranker.
-    /// num_candidates: rows returned to ClickHouse (superset of the true top-k).
-    const size_t num_candidates = std::min(topk * 10, granule->num_vectors);
-    const auto pre_k = static_cast<int32_t>(std::min(num_candidates * 100, granule->num_vectors));
+    /// num_candidates: rows returned to ClickHouse for its own exact reranking.
+    /// candidate_pool: AH candidate pool fed into ScaNN's internal exact reranker.
+    const size_t num_candidates = std::min(topk, granule->num_vectors);
+    const size_t candidate_pool = (scann_candidate_pool_size > 0)
+        ? std::min(scann_candidate_pool_size, granule->num_vectors)
+        : std::min(num_candidates * 1000, granule->num_vectors);
 
     std::vector<research_scann::SearchParameters> search_params(1);
-    search_params[0].set_pre_reordering_num_neighbors(pre_k);
+    search_params[0].set_pre_reordering_num_neighbors(static_cast<int32_t>(candidate_pool));
     search_params[0].set_post_reordering_num_neighbors(static_cast<int32_t>(num_candidates));
     search_params[0].set_pre_reordering_epsilon(std::numeric_limits<float>::infinity());
     search_params[0].set_post_reordering_epsilon(std::numeric_limits<float>::infinity());
+
+    if (scann_num_leaves_to_search > 0)
+    {
+        auto tree_params = std::make_shared<research_scann::TreeXOptionalParameters>();
+        tree_params->set_num_partitions_to_search_override(static_cast<int32_t>(scann_num_leaves_to_search));
+        search_params[0].set_searcher_specific_optional_parameters(std::move(tree_params));
+    }
     std::vector<research_scann::NNResultsVector> result_vecs(1);
 
     const auto status = granule->searcher->inner->FindNeighborsBatched(
@@ -750,82 +788,20 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarityScann::createIndexAggr
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarityScann::createIndexCondition(
-    const ActionsDAG::Node * /*predicate*/, ContextPtr /*context*/) const
+    const ActionsDAG::Node * /*predicate*/, ContextPtr context) const
 {
     /// Called when no VectorSearchParameters are available (e.g. non-vector-search queries).
     /// Return a condition with null parameters so alwaysUnknownOrTrue() = true → index is skipped.
     return std::make_shared<MergeTreeIndexConditionVectorSimilarityScann>(
-        std::nullopt, index.column_names[0], params);
+        std::nullopt, index.column_names[0], params, context);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarityScann::createIndexCondition(
-    const ActionsDAG::Node * /*predicate*/, ContextPtr /*context*/,
+    const ActionsDAG::Node * /*predicate*/, ContextPtr context,
     const std::optional<VectorSearchParameters> & parameters) const
 {
     return std::make_shared<MergeTreeIndexConditionVectorSimilarityScann>(
-        parameters, index.column_names[0], params);
-}
-
-// ---------------------------------------------------------------------------
-// Creator / Validator
-// ---------------------------------------------------------------------------
-
-MergeTreeIndexPtr vectorSimilarityScannIndexCreator(const IndexDescription & index)
-{
-    const FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
-
-    ScannIndexParams p;
-    p.distance_name = args[0].safeGet<String>();
-    p.dimensions    = args[1].safeGet<UInt64>();
-
-    return std::make_shared<MergeTreeIndexVectorSimilarityScann>(index, p);
-}
-
-void vectorSimilarityScannIndexValidator(const IndexDescription & index, bool /*attach*/)
-{
-    static const std::unordered_set<String> supported_distances = {
-        "L2Distance", "cosineDistance", "dotProduct"};
-
-    const FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
-
-    if (args.size() != 2)
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "vector_similarity_scann index requires exactly 2 arguments: "
-            "distance_function (String) and dimensions (UInt64)");
-
-    if (args[0].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "First argument of vector_similarity_scann index must be a String (distance function)");
-
-    if (args[1].getType() != Field::Types::UInt64)
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "Second argument of vector_similarity_scann index must be a UInt64 (dimensions)");
-
-    const String & dist = args[0].safeGet<String>();
-    if (!supported_distances.contains(dist))
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Unsupported distance function '{}' for vector_similarity_scann index. "
-            "Supported: L2Distance, cosineDistance, dotProduct", dist);
-
-    if (args[1].safeGet<UInt64>() == 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Dimensions argument of vector_similarity_scann index must be > 0");
-
-    if (index.column_names.size() != 1 || index.data_types.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS,
-            "vector_similarity_scann index must be created on a single column");
-
-    const DataTypePtr data_type = index.sample_block.getDataTypes()[0];
-    const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
-    if (!array_type)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "vector_similarity_scann index requires Array(Float32) or Array(Float64) column");
-
-    const TypeIndex nested = array_type->getNestedType()->getTypeId();
-    WhichDataType which(nested);
-    if (!which.isFloat32() && !which.isFloat64())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "vector_similarity_scann index requires Array(Float32) or Array(Float64) column");
+        parameters, index.column_names[0], params, context);
 }
 
 }

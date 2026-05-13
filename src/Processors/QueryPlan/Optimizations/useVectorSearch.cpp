@@ -211,7 +211,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     bool has_vector_similarity_index = false;
     for (const auto & index : indexes)
     {
-        if (index.type != "vector_similarity" && index.type != "vector_similarity_scann")
+        if (index.type != "vector_similarity")
             continue;
 
         chassert(index.expression);

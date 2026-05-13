@@ -113,7 +113,7 @@ UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & ty
     if (granularity)
         return granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
 
-    if (type && (type->name == "vector_similarity" || type->name == "vector_similarity_scann"))
+    if (type && type->name == "vector_similarity")
         return ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
 
     return ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;

@@ -5,6 +5,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Common/Logger.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace research_scann
 {
@@ -90,7 +91,8 @@ public:
     MergeTreeIndexConditionVectorSimilarityScann(
         const std::optional<VectorSearchParameters> & parameters_,
         const String & index_column_,
-        const ScannIndexParams & index_params_);
+        const ScannIndexParams & index_params_,
+        ContextPtr context);
 
     std::string getDescription() const override;
     bool alwaysUnknownOrTrue() const override;
@@ -101,6 +103,11 @@ private:
     std::optional<VectorSearchParameters> parameters;
     String index_column;
     ScannIndexParams index_params;
+    double index_fetch_multiplier;
+    size_t max_limit;
+    bool is_rescoring;
+    size_t scann_num_leaves_to_search; /// 0 = use index build-time default
+    size_t scann_candidate_pool_size;  /// 0 = auto (100 × num_candidates)
 };
 
 class MergeTreeIndexVectorSimilarityScann final : public IMergeTreeIndex
@@ -123,9 +130,6 @@ public:
 private:
     ScannIndexParams params;
 };
-
-MergeTreeIndexPtr vectorSimilarityScannIndexCreator(const IndexDescription & index);
-void vectorSimilarityScannIndexValidator(const IndexDescription & index, bool attach);
 
 }
 

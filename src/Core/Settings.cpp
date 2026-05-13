@@ -7569,6 +7569,17 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
     DECLARE_WITH_ALIAS(Float, vector_search_index_fetch_multiplier, 1.0, R"(
 Multiply the number of fetched nearest neighbors from the vector similarity index by this number. Only applied for post-filtering with other predicates or if setting 'vector_search_with_rescoring = 1'.
 )", 0, vector_search_postfilter_multiplier) \
+    DECLARE(UInt64, scann_num_leaves_to_search, 0, R"(
+The number of IVF partitions to search at query time when using a `vector_similarity('scann', ...)` index.
+Value 0 means the default configured at index build time is used: `sqrt(num_leaves)` where `num_leaves = sqrt(num_vectors)`, i.e. `num_vectors^0.25` (17 for 100K vectors out of 316 total).
+Higher values increase recall at the cost of query latency.
+)", 0) \
+    DECLARE(UInt64, scann_candidate_pool_size, 0, R"(
+The size of the approximate-hashing candidate pool fed into ScaNN's exact reranker when querying a `vector_similarity('scann', ...)` index.
+This is the number of vectors that are scored by the fast asymmetric hashing stage before the slower exact distance reranking.
+Value 0 means automatic: `100 × num_candidates` where `num_candidates` is the number of results requested from the index.
+Higher values increase recall at the cost of query latency.
+)", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
 )", 0) \

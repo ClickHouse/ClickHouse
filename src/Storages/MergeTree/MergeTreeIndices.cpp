@@ -192,10 +192,6 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
 
-#if USE_SCANN
-    registerCreator("vector_similarity_scann", vectorSimilarityScannIndexCreator);
-    registerValidator("vector_similarity_scann", vectorSimilarityScannIndexValidator);
-#endif
 
     registerCreator("text", textIndexCreator);
     registerValidator("text", textIndexValidator);
