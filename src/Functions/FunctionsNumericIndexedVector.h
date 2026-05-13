@@ -129,6 +129,15 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    /// Binary ops between two NumericIndexedVector sketches or a sketch and a
+    /// scalar. The runtime additionally enforces that both sketches share inner
+    /// index/value types (the DSL doesn't model the cross-argument equality).
+    String getSignatureString() const override
+    {
+        return "(A : AggregateFunction('groupNumericIndexedVector', Any, Any), AggregateFunction('groupNumericIndexedVector', Any, Any)) -> A"
+               " OR (A : AggregateFunction('groupNumericIndexedVector', Any, Any), Number) -> A";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
