@@ -39,24 +39,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
-                getName(), arguments.size());
-
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
-            if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "All arguments for function {} must be arrays but argument {} has type {}.",
-                                getName(), i + 1, arguments[i]->getName());
-        }
-
-        return std::make_shared<DataTypeUInt32>();
-    }
+    String getSignatureString() const override { return "(Array(Any), ...) -> UInt32"; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
