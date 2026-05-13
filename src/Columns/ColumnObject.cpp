@@ -81,8 +81,13 @@ ColumnObject::ColumnObject(
     dynamic_paths_ptrs.reserve(dynamic_paths_.size());
     for (auto & [path, column] : dynamic_paths_)
     {
+        /// Capture the raw pointer from the `MutableColumnPtr` before moving it. Going through
+        /// `it->second.get()` after the move would call `WrappedPtr::get` (non-const), which
+        /// asserts `use_count() == 1`; that breaks when this constructor is reached via
+        /// `create(const ColumnPtr &, ...)` while the caller still holds shared references.
+        auto * raw_ptr = column.get();
         auto it = dynamic_paths.emplace(path, std::move(column)).first;
-        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(it->second.get());
+        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(raw_ptr);
         sorted_dynamic_paths.insert(it->first);
     }
 }
@@ -141,20 +146,31 @@ ColumnObject::Ptr ColumnObject::create(
     size_t max_dynamic_types_,
     const ColumnObject::StatisticsPtr & statistics_)
 {
+    /// Per the doc comment on the header overload, the underlying columns may be shared with
+    /// the caller. `assumeMutable` here would `chassert(use_count() == 1)` and abort, while
+    /// `IColumn::mutate` would deep-clone. Bypass the assertion via `const_cast` + `getPtr`
+    /// — equivalent to the old `assumeMutable` fast path. The result is returned as `Ptr`
+    /// (immutable), and any subsequent mutation must go through `IColumn::mutate`, which
+    /// deep-clones shared sub-columns at the proper time.
+    auto borrow_as_mutable = [](const ColumnPtr & col) -> MutableColumnPtr
+    {
+        return const_cast<IColumn *>(col.get())->getPtr();
+    };
+
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> mutable_typed_paths;
     mutable_typed_paths.reserve(typed_paths_.size());
     for (const auto & [path, column] : typed_paths_)
-        mutable_typed_paths[path] = typed_paths_.at(path)->assumeMutable();
+        mutable_typed_paths[path] = borrow_as_mutable(column);
 
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> mutable_dynamic_paths;
     mutable_dynamic_paths.reserve(dynamic_paths_.size());
     for (const auto & [path, column] : dynamic_paths_)
-        mutable_dynamic_paths[path] = dynamic_paths_.at(path)->assumeMutable();
+        mutable_dynamic_paths[path] = borrow_as_mutable(column);
 
     return ColumnObject::create(
         std::move(mutable_typed_paths),
         std::move(mutable_dynamic_paths),
-        shared_data_->assumeMutable(),
+        borrow_as_mutable(shared_data_),
         max_dynamic_paths_,
         global_max_dynamic_paths_,
         max_dynamic_types_,
