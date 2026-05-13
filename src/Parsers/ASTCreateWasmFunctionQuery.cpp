@@ -192,12 +192,20 @@ void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
 
     if (auto ast = r.readChild("function_name"))
         setName(std::move(ast));
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'function_name' for `CreateWasmFunctionQuery` during AST JSON deserialization");
     if (auto ast = r.readChild("arguments"))
         setArguments(std::move(ast));
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'arguments' for `CreateWasmFunctionQuery` during AST JSON deserialization");
     if (auto ast = r.readChild("result_type"))
         setReturnType(std::move(ast));
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'result_type' for `CreateWasmFunctionQuery` during AST JSON deserialization");
     if (auto ast = r.readChild("module_name"))
         setModuleName(std::move(ast));
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'module_name' for `CreateWasmFunctionQuery` during AST JSON deserialization");
     if (auto ast = r.readChild("source_function_name"))
         setSourceFunctionName(std::move(ast));
     if (auto ast = r.readChild("module_hash"))
