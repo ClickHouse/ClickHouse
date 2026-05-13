@@ -429,6 +429,25 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    /// `reinterpretAs<T>` accepts any type whose value fits unambiguously in a fixed-size
+    /// contiguous memory region — i.e. `canBeReinterpretedAsNumeric`-typed inputs plus
+    /// `String`/`FixedString`. Returns the requested target type. We can advertise a
+    /// signature when `ToDataType` is default-constructible (all the numeric/date/UUID
+    /// variants); `reinterpretAsFixedString` derives its `N` from the input's value size
+    /// and stays on the legacy `getReturnTypeImpl` path.
+    String getSignatureString() const override
+    {
+        if constexpr (std::is_same_v<ToDataType, DataTypeFixedString>)
+            return {};
+        else
+        {
+            static const String sig
+                = String("(Number | Date | Date32 | DateTime | DateTime64 | UUID | StringOrFixedString) -> ")
+                + ToDataType{}.getName();
+            return sig;
+        }
+    }
+
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
