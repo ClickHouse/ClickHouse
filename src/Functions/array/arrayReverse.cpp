@@ -33,7 +33,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Array(T : Any)) -> Array(T)"; }
+    String getSignatureString() const override { return "(Array(T)) -> Array(T)"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
 

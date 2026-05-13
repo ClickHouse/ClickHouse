@@ -52,8 +52,8 @@ public:
     String getSignatureString() const override
     {
         return
-            "(Tuple(T : Any, T, ...)) -> Array(Tuple(String, T))"
-            " OR (Nullable(Tuple(T : Any, T, ...))) -> Array(Tuple(String, T))";
+            "(Tuple(T, T, ...)) -> Array(Tuple(String, T))"
+            " OR (Nullable(Tuple(T, T, ...))) -> Array(Tuple(String, T))";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

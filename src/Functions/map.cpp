@@ -93,9 +93,9 @@ public:
     {
         if (use_variant_as_common_type)
             return "() -> Map(Nothing, Nothing)"
-                   " OR (K1 : Any, V1 : Any, ...) -> Map(leastSupertypeOrVariant(K1, ...), leastSupertypeOrVariant(V1, ...))";
+                   " OR (K1, V1, ...) -> Map(leastSupertypeOrVariant(K1, ...), leastSupertypeOrVariant(V1, ...))";
         return "() -> Map(Nothing, Nothing)"
-               " OR (K1 : Any, V1 : Any, ...) -> Map(leastSupertype(K1, ...), leastSupertype(V1, ...))";
+               " OR (K1, V1, ...) -> Map(leastSupertype(K1, ...), leastSupertype(V1, ...))";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -290,7 +290,7 @@ public:
     /// second forces type-level equality at type-check time.
     String getSignatureString() const override
     {
-        return "(M : Map(K : Any, V : Any), Map(K, V)) -> M";
+        return "(M : Map(K, V), Map(K, V)) -> M";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

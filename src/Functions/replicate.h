@@ -38,7 +38,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(T : Any, Array, ...) -> Array(T)";
+        return "(T, Array, ...) -> Array(T)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override;

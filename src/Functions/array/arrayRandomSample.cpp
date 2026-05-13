@@ -40,7 +40,7 @@ public:
     /// reject non-const callers.
     String getSignatureString() const override
     {
-        return "(Array(T : Any), UInt) -> Array(T)";
+        return "(Array(T), UInt) -> Array(T)";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

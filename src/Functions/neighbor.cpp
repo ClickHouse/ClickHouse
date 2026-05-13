@@ -77,7 +77,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(T : Any, Integer) -> T OR (T : Any, Integer, D : Any) -> leastSupertype(T, D)";
+        return "(T, Integer) -> T OR (T, Integer, D) -> leastSupertype(T, D)";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

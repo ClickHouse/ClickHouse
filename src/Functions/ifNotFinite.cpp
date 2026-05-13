@@ -40,7 +40,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(T1 : Any, T2 : Any) -> leastSupertype(T1, T2)";
+        return "(T1, T2) -> leastSupertype(T1, T2)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

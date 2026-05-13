@@ -43,7 +43,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(Array(T : Any), MaybeNullable(Integer) | NULL, [MaybeNullable(Integer) | NULL]) -> Array(T)"
+        return "(Array(T), MaybeNullable(Integer) | NULL, [MaybeNullable(Integer) | NULL]) -> Array(T)"
                " OR (NULL, MaybeNullable(Integer) | NULL, [MaybeNullable(Integer) | NULL]) -> NULL";
     }
 

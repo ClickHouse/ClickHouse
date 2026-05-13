@@ -52,7 +52,7 @@ private:
 
     String getSignatureString() const override
     {
-        return "(T1 : Any, ...) -> leastSupertype(T1, ...)";
+        return "(T1, ...) -> leastSupertype(T1, ...)";
     }
 
     template <typename T>
@@ -501,7 +501,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(T1 : Any, ...) -> leastSupertype(T1, ...)";
+        return "(T1, ...) -> leastSupertype(T1, ...)";
     }
 
 private:

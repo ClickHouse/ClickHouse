@@ -28,8 +28,8 @@ public:
         return
             "(NULL, Any, Any) -> NULL"
             " OR (NULL, Any) -> NULL"
-            " OR (Array(T : Any), Number) -> Array(T)"
-            " OR (Array(T : Any), Number, V : Any) -> Array(leastSupertype(T, V))";
+            " OR (Array(T), Number) -> Array(T)"
+            " OR (Array(T), Number, V) -> Array(leastSupertype(T, V))";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;

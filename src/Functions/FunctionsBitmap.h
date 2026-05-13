@@ -193,7 +193,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(AggregateFunction('groupBitmap', T : Any)) -> Array(T)";
+        return "(AggregateFunction('groupBitmap', T)) -> Array(T)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -848,7 +848,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(AggregateFunction('groupBitmap', T : Any), AggregateFunction('groupBitmap', T)) -> "
+        return "(AggregateFunction('groupBitmap', T), AggregateFunction('groupBitmap', T)) -> "
             + DataTypeNumber<ToType>{}.getName();
     }
 
@@ -981,7 +981,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(B : AggregateFunction('groupBitmap', T : Any), AggregateFunction('groupBitmap', T)) -> B";
+        return "(B : AggregateFunction('groupBitmap', T), AggregateFunction('groupBitmap', T)) -> B";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

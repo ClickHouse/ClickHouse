@@ -50,7 +50,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(Map(K : Any, V : Any)) -> AggregateFunction('groupNumericIndexedVector', K, V)";
+        return "(Map(K, V)) -> AggregateFunction('groupNumericIndexedVector', K, V)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

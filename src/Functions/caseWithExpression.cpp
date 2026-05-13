@@ -52,7 +52,7 @@ public:
         /// The fixed group matches (expr, when1, then1), the ellipsis repeats (when, then),
         /// and the trailing E is the else branch. The when-positions are matched as Any
         /// since CASE WHEN equality semantics handles arbitrary types.
-        return "(Any, Any, V1 : Any, ..., E : Any) -> leastSupertype(V1, ..., E)";
+        return "(Any, Any, V1, ..., E) -> leastSupertype(V1, ..., E)";
     }
 
     /// Helper function to implement CASE WHEN equality semantics where NULL = NULL is true

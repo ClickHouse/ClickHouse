@@ -37,7 +37,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(NativeNumber, T : Any) -> Array(T)"; }
+    String getSignatureString() const override { return "(NativeNumber, T) -> Array(T)"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }

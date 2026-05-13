@@ -50,8 +50,8 @@ public:
     String getSignatureString() const override
     {
         if (use_variant_as_common_type)
-            return "() -> Array(Nothing) OR (T1 : Any, ...) -> Array(leastSupertypeOrVariant(T1, ...))";
-        return "() -> Array(Nothing) OR (T1 : Any, ...) -> Array(leastSupertype(T1, ...))";
+            return "() -> Array(Nothing) OR (T1, ...) -> Array(leastSupertypeOrVariant(T1, ...))";
+        return "() -> Array(Nothing) OR (T1, ...) -> Array(leastSupertype(T1, ...))";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

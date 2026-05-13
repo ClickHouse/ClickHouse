@@ -93,8 +93,8 @@ public:
         ///      leastSupertype, not leastSupertypeOrVariant.
         return
             "() -> NULL"
-            " OR (T : Any) -> T"
-            " OR (T1 : Any, ..., E : Any) -> leastSupertype(removeNullable(T1), ..., E)";
+            " OR (T) -> T"
+            " OR (T1, ..., E) -> leastSupertype(removeNullable(T1), ..., E)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

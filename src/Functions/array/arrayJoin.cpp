@@ -54,7 +54,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(Array(T : Any)) -> T OR (Map(K : Any, V : Any)) -> Tuple(K, V)";
+        return "(Array(T)) -> T OR (Map(K, V)) -> Tuple(K, V)";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

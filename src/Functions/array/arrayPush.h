@@ -32,7 +32,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(Array(T : Any), V : Any) -> Array(leastSupertype(T, V))"
+        return "(Array(T), V) -> Array(leastSupertype(T, V))"
                " OR (NULL, Any) -> NULL";
     }
 
