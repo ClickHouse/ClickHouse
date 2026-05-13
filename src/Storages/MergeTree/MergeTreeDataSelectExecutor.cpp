@@ -2104,6 +2104,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// Vector index may be consulted for several skip-index granules; MergeTreeRangeReader expects
         /// `vector_search_results.rows` as part-global row offsets, so merge all granule-local hits here.
         std::optional<NearestNeighbours> merged_vector_search_results;
+        bool skip_vector_distance_hints = false;
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
@@ -2141,7 +2142,14 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (has_duplicates)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
-                    if (nn.distances.has_value())
+                    if (!nn.distances.has_value())
+                    {
+                        /// Fail-close: `_distance` path requires paired distances; if any granule lacks them,
+                        /// drop accumulated hints for this part (conservative, matches legacy `read_hints = {}` intent).
+                        skip_vector_distance_hints = true;
+                        merged_vector_search_results.reset();
+                    }
+                    else if (!skip_vector_distance_hints)
                     {
                         if (!merged_vector_search_results.has_value())
                         {
@@ -2200,7 +2208,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
         if (index_helper->isVectorSimilarityIndex())
         {
-            if (merged_vector_search_results.has_value() && merged_vector_search_results->distances.has_value()
+            if (!skip_vector_distance_hints && merged_vector_search_results.has_value()
+                && merged_vector_search_results->distances.has_value()
                 && !merged_vector_search_results->rows.empty())
             {
                 auto & rows_out = merged_vector_search_results->rows;
