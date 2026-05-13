@@ -89,6 +89,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    /// Documentation-only — element-wise binary op applied to each pair of
+    /// tuple elements; the result is a tuple whose i-th element type follows
+    /// the underlying scalar op's promotion rules.
+    String getSignatureString() const override
+    {
+        return "(Tuple, Tuple) -> Tuple";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
@@ -175,6 +183,13 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    /// Documentation-only — element-wise `negate` applied to each tuple element;
+    /// the result tuple's i-th element type follows scalar `negate` promotion.
+    String getSignatureString() const override
+    {
+        return "(Tuple) -> Tuple";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
@@ -248,6 +263,14 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// Documentation-only — applies the scalar op to each tuple element with
+    /// the same right-hand operand; the result tuple's i-th element type
+    /// follows the underlying scalar op's promotion rules.
+    String getSignatureString() const override
+    {
+        return "(Tuple, Any) -> Tuple";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -451,6 +474,14 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// Documentation-only — applies `plus`/`minus` with each tuple-element
+    /// interval to the date/datetime. The concrete result type depends on
+    /// the date/datetime input and the precision of the intervals.
+    String getSignatureString() const override
+    {
+        return "(Date | Date32 | DateTime | DateTime64, Tuple) -> Any";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
