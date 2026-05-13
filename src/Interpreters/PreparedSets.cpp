@@ -2,7 +2,6 @@
 #include <variant>
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
-#include <Interpreters/sortBlock.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -149,24 +148,35 @@ FutureSetFromTuple::FutureSetFromTuple(
     ///
     /// We hash the normalized set elements (deduplicated, NULL-filtered, sorted) rather
     /// than the raw input block so that permutations and duplicate inputs are equivalent.
+    /// getPermutation/updatePermutation operate by column index, so sets with repeated
+    /// element types (e.g. (String, String)) are handled correctly.
     {
         const Columns & normalized = getKeyColumns();
         const DataTypes element_types = set->getElementsTypes();
+        const size_t normalized_rows = normalized.empty() ? 0 : normalized[0]->size();
 
-        Block sort_block;
-        SortDescription sort_desc;
-        for (size_t i = 0; i < normalized.size(); ++i)
+        IColumn::Permutation perm;
+        if (!normalized.empty() && normalized_rows > 0)
         {
-            sort_block.insert({normalized[i], element_types[i], element_types[i]->getName()});
-            sort_desc.emplace_back(element_types[i]->getName(), 1 /* ascending */);
+            EqualRanges ranges{{0, normalized_rows}};
+            normalized[0]->getPermutation(
+                IColumn::PermutationSortDirection::Ascending,
+                IColumn::PermutationSortStability::Stable, 0, 1, perm);
+            for (size_t i = 1; i < normalized.size(); ++i)
+                normalized[i]->updatePermutation(
+                    IColumn::PermutationSortDirection::Ascending,
+                    IColumn::PermutationSortStability::Stable, 0, 1, perm, ranges);
         }
-        sortBlock(sort_block, sort_desc);
 
         SipHash siphasher;
-        for (const auto & col : sort_block)
+        for (size_t i = 0; i < normalized.size(); ++i)
         {
-            siphasher.update(col.name.data(), col.name.size());
-            col.column->updateHashFast(siphasher);
+            const auto type_name = element_types[i]->getName();
+            siphasher.update(type_name.data(), type_name.size());
+            if (!perm.empty())
+                normalized[i]->permute(perm, 0)->updateHashFast(siphasher);
+            else
+                normalized[i]->updateHashFast(siphasher);
         }
         content_hash = getSipHash128AsPair(siphasher);
     }
