@@ -25,17 +25,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-            FunctionArgumentDescriptors args{
-                {"array", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-                {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"}
-            };
-            validateFunctionArguments(*this, arguments, args);
-
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(array_type->getNestedType()));
-    }
+    String getSignatureString() const override { return "(Array(T : Any), Integer) -> Array(Array(T))"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
