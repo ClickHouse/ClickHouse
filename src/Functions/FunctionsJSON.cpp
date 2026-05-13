@@ -670,6 +670,17 @@ public:
         return !functionForcesTheReturnType<Impl>();
     }
 
+    /// `build()` below constructs the result type itself, so the signature is purely
+    /// advertised — it does not gate execution. We still surface it through
+    /// `system.functions` so users see the expected shape for each JSON function.
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Impl<DummyJSONParser>::signature; })
+            return Impl<DummyJSONParser>::signature;
+        else
+            return {};
+    }
+
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
         bool has_nothing_argument = false;
@@ -737,6 +748,7 @@ class JSONHasImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> UInt8";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
 
@@ -786,6 +798,7 @@ class JSONLengthImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> UInt64";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -816,6 +829,7 @@ class JSONKeyImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -901,6 +915,10 @@ class JSONExtractNumericImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature =
+        std::is_same_v<NumberType, Int64>  ? "(String, ...) -> Int64"  :
+        std::is_same_v<NumberType, UInt64> ? "(String, ...) -> UInt64" :
+                                             "(String, ...) -> Float64";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -940,6 +958,7 @@ class JSONExtractBoolImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> UInt8";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -980,6 +999,7 @@ class JSONExtractStringImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1116,6 +1136,7 @@ class JSONExtractRawImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1143,6 +1164,7 @@ class JSONExtractArrayRawImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> Array(String)";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1211,6 +1233,7 @@ class JSONExtractKeysImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> Array(String)";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
