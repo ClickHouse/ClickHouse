@@ -1861,6 +1861,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "http_handlers",
         "arrowflight",
         "proxy",
+        "enable_http_stacktrace",
+        "enable_verbose_replicas_status",
 
         /// Monitoring and metrics
         "graphite",
