@@ -28,6 +28,13 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
+    /// Documentation-only — the result type is the subcolumn type of the
+    /// first argument, looked up dynamically from the const-string subcolumn name.
+    String getSignatureString() const override
+    {
+        return "(Any, const String) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto subcolumn_name = getSubcolumnName(arguments);

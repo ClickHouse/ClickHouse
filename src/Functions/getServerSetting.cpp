@@ -36,6 +36,13 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
+    /// Documentation-only — the result type is the dynamic type of the
+    /// server-setting value resolved at query time from its const-string name.
+    String getSignatureString() const override
+    {
+        return "(const String) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto value = getValue(arguments);
