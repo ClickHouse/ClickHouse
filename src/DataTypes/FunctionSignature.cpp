@@ -1056,6 +1056,16 @@ bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
                 return true;
             }
 
+            /// Integer literal child — used by matchers like `TupleOfSize(3)` that take a
+            /// numeric constant. We carry the literal as a placeholder string (matching how
+            /// `StringLiteral` is handled); the parent matcher parses it back to an integer.
+            if (inner->type == TokenType::Number)
+            {
+                args.emplace_back(makeStringLiteralMatcher(std::string(inner->begin, inner->end - inner->begin)));
+                ++inner;
+                return true;
+            }
+
             /// Parenthesized matcher list `(m1, m2, ...)` — used by matchers like
             /// Function((Arg1, Arg2), Result) that need a list of matchers in a single arg slot.
             if (inner->type == TokenType::OpeningRoundBracket)

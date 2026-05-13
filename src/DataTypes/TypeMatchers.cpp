@@ -703,6 +703,55 @@ public:
     }
 };
 
+/// `TupleOfSize(N)` — matches a `Tuple` with exactly `N` elements, regardless of their
+/// types. Useful for signatures that need to constrain tuple arity without enumerating
+/// element matchers (e.g. `mortonEncode((x, y), mask_x, mask_y)` where the tuple has the
+/// same number of elements as the trailing `NativeUInt` arguments).
+class TypeMatcherTupleOfSize : public ITypeMatcher
+{
+private:
+    size_t expected_size;
+public:
+    explicit TypeMatcherTupleOfSize(const TypeMatchers & child_matchers)
+    {
+        if (child_matchers.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "TupleOfSize matcher takes exactly one argument — an integer literal");
+        const auto * size_lit = dynamic_cast<const TypeMatcherStringLiteral *>(child_matchers.front().get());
+        if (!size_lit)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "TupleOfSize matcher's argument must be an integer literal");
+        const String & literal = size_lit->getLiteral();
+        expected_size = std::stoull(literal);
+    }
+
+    std::string toString() const override
+    {
+        return "TupleOfSize(" + DB::toString(expected_size) + ")";
+    }
+
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string & out_reason) const override
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+        if (!tuple_type)
+        {
+            out_reason = "expected Tuple of size " + DB::toString(expected_size) + ", got " + type->getName();
+            return false;
+        }
+        const size_t actual_size = tuple_type->getElements().size();
+        if (actual_size != expected_size)
+        {
+            out_reason = "expected Tuple of size " + DB::toString(expected_size)
+                + ", got Tuple of size " + DB::toString(actual_size);
+            return false;
+        }
+        return true;
+    }
+
+    size_t getIndex() const override { return 0; }
+};
+
+
 class TypeMatcherTuple : public ITypeMatcher
 {
 private:
@@ -894,6 +943,7 @@ void registerTypeMatchers()
 
     factory.registerElement("Array", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherArray>(children); });
     factory.registerElement("Tuple", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherTuple>(children); });
+    factory.registerElement("TupleOfSize", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherTupleOfSize>(children); });
     factory.registerElement("MaybeNullable", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherMaybeNullable>(children); });
     factory.registerElement("Nullable", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherNullable>(children); });
     factory.registerElement("AggregateFunction", [](const TypeMatchers & children) -> TypeMatcherPtr
