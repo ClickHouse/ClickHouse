@@ -31,6 +31,7 @@
 #include <base/types.h>
 
 #include <algorithm>
+#include <mutex>
 #include <numeric>
 #include <deque>
 #include <iterator>
@@ -281,6 +282,13 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     /// We materialize columns here to avoid materializing them multiple times on different threads
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
+
+    /// Initialize the row store layout based on the first block.
+    std::call_once(row_store_init_flag, [&]
+    {
+        for (auto & hj : hash_joins)
+            hj->data->initRowStore(right_block);
+    });
 
     /// We also build the row store here to avoid building it multiple times on different threads.
     bool use_zero_copy = useZeroCopyApproach(right_block);

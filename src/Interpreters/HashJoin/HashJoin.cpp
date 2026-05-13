@@ -234,8 +234,6 @@ HashJoin::HashJoin(
     data->maps.resize(disjuncts_num);
     key_sizes.reserve(disjuncts_num);
 
-    initRowStore();
-
     for (const auto & clause : table_join->getClauses())
     {
         const auto & key_names_right = clause.key_names_right;
@@ -603,8 +601,9 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     }
 }
 
-void HashJoin::initRowStore()
+void HashJoin::initRowStore(const Block & block)
 {
+    data->row_store_initialized = true;
     if (table_join->minColumnsForHashJoinRowStore() == 0)
         return;
 
@@ -615,7 +614,8 @@ void HashJoin::initRowStore()
         return;
 
     /// Extract columns suitable for row store.
-    const auto & columns = data->sample_block.getColumns();
+    Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
+    const auto & columns = block_to_save.getColumns();
     ColumnAccessIndexes access_indexes;
     access_indexes.reserve(columns.size());
     size_t row_store_columns = 0;
@@ -630,11 +630,6 @@ void HashJoin::initRowStore()
 
     if (row_store_columns >= table_join->minColumnsForHashJoinRowStore())
     {
-        /// Build row store from collected columns.
-        /// For now replicated columns are materialized to make sure all blocks have
-        /// the same split of columnar and row store columns.
-        /// TODO: allow columns to be in row store in some blocks and remain columnar
-        /// in others (in case of replicated columns).
         data->column_access_indexes = std::move(access_indexes);
         data->use_row_store = true;
     }
@@ -704,6 +699,10 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
     if (unlikely(selector.size() > std::numeric_limits<RowRef::SizeT>::max()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", selector.size());
+
+    /// Initialize the row store layout based on the first block.
+    if (!data->row_store_initialized)
+        initRowStore(block);
 
     /** We do not allocate memory for stored blocks inside HashJoin, only for hash table.
       * In case when we have all the blocks allocated before the first `addBlockToJoin` call, will already be quite high.

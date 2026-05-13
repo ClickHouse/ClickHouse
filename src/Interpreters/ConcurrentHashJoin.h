@@ -119,6 +119,7 @@ private:
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
     bool build_phase_finished = false;
+    std::once_flag row_store_init_flag;
 
     StatsCollectingParams stats_collecting_params;
     const size_t external_join_threshold;

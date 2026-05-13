@@ -219,17 +219,10 @@ MutableColumns RowDataStore::buildEmptyColumns() const
 
 bool isRowStorageUseful(const ColumnPtr & column)
 {
-    /// Limit cost of copying columns to row store.
-    static constexpr size_t MAX_ROW_STORE_FIELD_SIZE = 64;
-
-    const IColumn * col = column.get();
-    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(col))
-        col = column_replicated->getNestedColumn().get();
-
-    const IColumn * check_col = col;
-    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(col))
+    const IColumn * check_col = column.get();
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
         check_col = column_nullable->getNestedColumnPtr().get();
 
-    return check_col->isFixedAndContiguous() && col->sizeOfValueIfFixed() <= MAX_ROW_STORE_FIELD_SIZE;
+    return check_col->isFixedAndContiguous() && column->sizeOfValueIfFixed() <= 64;
 }
 }

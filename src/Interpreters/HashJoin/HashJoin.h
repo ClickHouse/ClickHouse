@@ -443,6 +443,8 @@ public:
         size_t keys_to_join = 0;
         /// Whether the right table reranged by key
         bool sorted = false;
+        /// Whether the row store initialization was already attempted or not
+        bool row_store_initialized = false;
         /// Whether the right table payload is in row store
         bool use_row_store = false;
 
@@ -517,6 +519,8 @@ public:
 
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
+
+    void initRowStore(const Block & block);
 
 private:
     friend class NotJoinedHash;
@@ -598,8 +602,6 @@ private:
     void dataMapInit(MapsVariant & map);
 
     void initRightBlockStructure(Block & saved_block_sample);
-
-    void initRowStore();
 
     JoinResultPtr joinBlockImplCross(Block block) const;
 
