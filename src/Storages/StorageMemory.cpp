@@ -304,18 +304,31 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     {
         /// just some of the column affected, we need update it with new column
         const auto & old_data = *(data.get());
-        /// Partial-column mutations preserve the input block count. A precise completeness check by
-        /// count avoids a false `TIMEOUT_EXCEEDED` when a late cancellation flag is set after all
-        /// expected blocks were already produced (e.g. when the soft timeout flips between the last
-        /// successful `pull` and the next `pull`'s pre-step `checkTimeLimitSoft`).
-        if (out.size() != old_data.size())
+        /// Partial-column mutations preserve the input block count *and* per-block row counts.
+        /// Both shape checks are required before suppressing a late cancellation flag, because
+        /// `PullingPipelineExecutor::pull(Block)` can return `true` with an empty block on
+        /// timeout. A block-count match alone would let that empty trailing block slip past:
+        /// `updateBlockData` no-ops on a block with no columns, silently keeping the
+        /// un-mutated old block.
+        auto reject_incomplete = [&](const String & reason)
         {
             if (cancelled)
                 throw_on_cancellation();
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Mutation of `Memory` table produced {} blocks, expected {} blocks",
-                out.size(), old_data.size());
+                "Mutation of `Memory` table produced incomplete output: {}",
+                reason);
+        };
+
+        if (out.size() != old_data.size())
+            reject_incomplete(fmt::format(
+                "got {} blocks, expected {}", out.size(), old_data.size()));
+
+        for (size_t i = 0; i < out.size(); ++i)
+        {
+            if (out[i].rows() != old_data[i].rows())
+                reject_incomplete(fmt::format(
+                    "block {} has {} rows, expected {}", i, out[i].rows(), old_data[i].rows()));
         }
 
         new_data = std::make_unique<Blocks>(old_data);
