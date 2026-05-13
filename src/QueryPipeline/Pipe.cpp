@@ -821,10 +821,12 @@ void Pipe::resizeGradual(size_t num_streams, size_t min_rows_per_output, size_t 
         size_t groups = std::min<size_t>(numOutputPorts(), num_streams / min_outstreams_per_resize_after_split);
         if (groups > 1)
         {
+            /// Overflow-safe ceil division: `min_* + groups - 1` could wrap for large
+            /// user-configured thresholds (`UInt64` setting) and produce a tiny per-group value.
             if (min_rows_per_output > 0)
-                per_group_min_rows = std::max<size_t>(1, (min_rows_per_output + groups - 1) / groups);
+                per_group_min_rows = 1 + (min_rows_per_output - 1) / groups;
             if (min_bytes_per_output > 0)
-                per_group_min_bytes = std::max<size_t>(1, (min_bytes_per_output + groups - 1) / groups);
+                per_group_min_bytes = 1 + (min_bytes_per_output - 1) / groups;
         }
     }
 
