@@ -3468,6 +3468,17 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isVariadic() const override { return false; }
 
+    /// Per-Op opt-in to declarative signatures. If `Op<UInt8, UInt8>::signature` is
+    /// defined, the framework uses it for type checking and return-type resolution.
+    /// Falls back to the long-form `getReturnTypeImpl` otherwise.
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Op<UInt8, UInt8>::signature; })
+            return Op<UInt8, UInt8>::signature;
+        else
+            return {};
+    }
+
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         /// Only division-like operations can have division_by_nullable=true.
