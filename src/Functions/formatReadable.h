@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteBufferFromVector.h>
 
 namespace DB
@@ -66,8 +66,10 @@ public:
         {
             const UInt8 precision = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<UInt8>();
             if (precision > double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint)
-                throw Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-                                   "Too high precision requested, must not be more than 100, got {}", static_cast<uint8_t>(precision));
+                throw Exception(
+                    DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+                    "Too high precision requested, must not be more than 100, got {}",
+                    static_cast<uint8_t>(precision));
         }
 
         return std::make_shared<DataTypeString>();
