@@ -592,6 +592,28 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
 
+        case Type::REFRESH_NAMED_SCALAR:
+        {
+            ASTPtr name_ast;
+            ParserIdentifier id_parser;
+            if (!id_parser.parse(pos, name_ast, expected))
+                return false;
+            if (!tryGetIdentifierNameInto(name_ast, res->named_scalar_name) || res->named_scalar_name.empty())
+                return false;
+            break;
+        }
+
+        case Type::START_NAMED_SCALAR_REFRESHES:
+        case Type::STOP_NAMED_SCALAR_REFRESHES:
+        {
+            /// Optional name; absent means "all scalars of the matching scope".
+            ASTPtr name_ast;
+            ParserIdentifier id_parser;
+            if (id_parser.parse(pos, name_ast, expected))
+                tryGetIdentifierNameInto(name_ast, res->named_scalar_name);
+            break;
+        }
+
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
         case Type::PAUSE_VIEWS:

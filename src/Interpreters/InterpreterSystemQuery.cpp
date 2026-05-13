@@ -27,6 +27,7 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/NamedScalars/NamedScalarsManager.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DeltaMetadataLog.h>
@@ -210,7 +211,6 @@ void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
     if (result.code != 0)
         throw Exception::createDeprecated(result.message, result.code);
 }
-
 
 AccessType getRequiredAccessType(StorageActionBlockType action_type)
 {
@@ -875,6 +875,27 @@ BlockIO InterpreterSystemQuery::execute()
             for (const auto & task : getRefreshTasks())
                 task->run();
             break;
+        case Type::REFRESH_NAMED_SCALAR:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_REFRESH_NAMED_SCALAR);
+            if (query.named_scalar_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named scalar name must be specified");
+            getContext()->getNamedScalarsManager().refreshNow(query.named_scalar_name);
+            break;
+        }
+        case Type::START_NAMED_SCALAR_REFRESHES:
+        case Type::STOP_NAMED_SCALAR_REFRESHES:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_NAMED_SCALAR_REFRESHES);
+            const bool stop = query.type == Type::STOP_NAMED_SCALAR_REFRESHES;
+            auto & manager = getContext()->getNamedScalarsManager();
+            /// Empty name -> all named scalar refreshes.
+            if (query.named_scalar_name.empty())
+                manager.setAllRefreshesPaused(stop);
+            else
+                manager.setRefreshPaused(query.named_scalar_name, stop);
+            break;
+        }
         case Type::WAIT_VIEW:
             for (const auto & task : getRefreshTasks())
                 task->wait();
@@ -2464,6 +2485,17 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS);
             else
                 required_access.emplace_back(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::REFRESH_NAMED_SCALAR:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_REFRESH_NAMED_SCALAR);
+            break;
+        }
+        case Type::START_NAMED_SCALAR_REFRESHES:
+        case Type::STOP_NAMED_SCALAR_REFRESHES:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_NAMED_SCALAR_REFRESHES);
             break;
         }
         case Type::REFRESH_VIEW:

@@ -1372,6 +1372,12 @@ The server successfully detected this situation and will download merged part fr
     M(RefreshableViewSyncReplicaRetry, "How many times a SELECT from refreshable materialized view failed and retried an implicit SYNC REPLICA", ValueType::Number) \
     M(RefreshableViewLockTableRetry, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
     \
+    M(NamedScalarRefreshAttempts, "How many named-scalar refresh ticks proceeded past the per-tick lock (i.e. ran the SELECT)", ValueType::Number) \
+    M(NamedScalarRefreshSuccesses, "How many named-scalar refresh ticks evaluated successfully and published a new value", ValueType::Number) \
+    M(NamedScalarRefreshFailures, "How many named-scalar refresh ticks failed (eval threw or persist failed); the previously-good value is retained", ValueType::Number) \
+    M(NamedScalarRefreshSkippedByPeer, "Shared scalars only: refresh ticks where the per-scalar Keeper lock was held by a peer replica", ValueType::Number) \
+    M(NamedScalarRefreshDurationMicroseconds, "Cumulative wall-clock duration of named-scalar refresh bodies (divide by Attempts for mean)", ValueType::Microseconds) \
+    \
     M(AsyncLoggingConsoleTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the console log", ValueType::Number) \
     M(AsyncLoggingFileLogTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the file log", ValueType::Number) \
     M(AsyncLoggingErrorFileLogTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the error file log", ValueType::Number) \

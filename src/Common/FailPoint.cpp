@@ -137,6 +137,8 @@ static struct InitFiu
     ONCE(backup_add_empty_memory_table) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
+    ONCE(shared_named_scalars_store_value_fail_once) \
+    PAUSEABLE(named_scalar_create_after_publish_pause) \
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \
     REGULAR(sc_intentions_commit_fail) \

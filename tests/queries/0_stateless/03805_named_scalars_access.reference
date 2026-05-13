@@ -1,0 +1,17 @@
+create_without_grant=DENIED
+set_definer_without_create_grant=DENIED
+drop_without_grant=DENIED
+bare_drop=DENIED
+get_without_grant=DENIED
+7
+7
+0
+1
+sys_refresh_without_grant=DENIED
+system_alias_grants=OK
+readonly_blocks_create=DENIED
+set_definer_without_grant=DENIED
+definer_recorded=OK
+value_tier_exception_null=1
+value_tier_leak=NO_OK
+operator_tier_sees_full=YES_OK

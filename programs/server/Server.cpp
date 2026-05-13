@@ -2986,6 +2986,7 @@ try
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+        global_context->initializeNamedScalars();
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }

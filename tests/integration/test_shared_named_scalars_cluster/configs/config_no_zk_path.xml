@@ -1,0 +1,3 @@
+<clickhouse>
+    <!-- Deliberately no <named_scalar_definitions_zookeeper_path> -->
+</clickhouse>

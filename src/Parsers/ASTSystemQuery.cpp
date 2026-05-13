@@ -467,6 +467,22 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_database_table();
             break;
         }
+        case Type::REFRESH_NAMED_SCALAR:
+        {
+            ostr << ' ';
+            print_identifier(named_scalar_name);
+            break;
+        }
+        case Type::START_NAMED_SCALAR_REFRESHES:
+        case Type::STOP_NAMED_SCALAR_REFRESHES:
+        {
+            if (!named_scalar_name.empty())
+            {
+                ostr << ' ';
+                print_identifier(named_scalar_name);
+            }
+            break;
+        }
         case Type::TEST_VIEW:
         {
             ostr << ' ';

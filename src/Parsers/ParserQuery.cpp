@@ -1,5 +1,6 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
+#include <Parsers/ParserNamedScalarDDLQuery.h>
 #include <Parsers/ParserCreateWorkloadQuery.h>
 #include <Parsers/ParserCreateResourceQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -62,6 +63,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateSettingsProfileQuery create_settings_profile_p;
     ParserCreateFunctionQuery create_function_p;
     ParserDropFunctionQuery drop_function_p;
+    ParserNamedScalarDDLQuery named_scalar_ddl_p;
     ParserCreateWorkloadQuery create_workload_p;
     ParserDropWorkloadQuery drop_workload_p;
     ParserCreateResourceQuery create_resource_p;
@@ -95,6 +97,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_settings_profile_p.parse(pos, node, expected)
         || create_function_p.parse(pos, node, expected)
         || drop_function_p.parse(pos, node, expected)
+        || named_scalar_ddl_p.parse(pos, node, expected)
         || create_workload_p.parse(pos, node, expected)
         || drop_workload_p.parse(pos, node, expected)
         || create_resource_p.parse(pos, node, expected)

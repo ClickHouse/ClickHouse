@@ -119,6 +119,9 @@ public:
         START_CLEANUP,
         RESET_COVERAGE,
         SET_COVERAGE_TEST,
+        REFRESH_NAMED_SCALAR,
+        START_NAMED_SCALAR_REFRESHES,
+        STOP_NAMED_SCALAR_REFRESHES,
         REFRESH_VIEW,
         WAIT_VIEW,
         START_VIEW,
@@ -195,6 +198,10 @@ public:
     String queue_path;
 
     String fail_point_name;
+
+    /// SYSTEM { REFRESH | { START | STOP } REFRESHES } NAMED SCALAR <name>.
+    /// Empty name = the "{START|STOP} ... REFRESHES" no-arg form.
+    String named_scalar_name;
 
     enum class FailPointAction
     {

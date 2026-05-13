@@ -1,0 +1,13 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_ddl>1</allow_ddl>
+            <allow_experimental_named_scalars>1</allow_experimental_named_scalars>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>
