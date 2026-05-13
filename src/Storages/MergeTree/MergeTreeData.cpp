@@ -1237,25 +1237,35 @@ void MergeTreeData::setProperties(
     /// name is reintroduced as a new column) can otherwise serve stale data. We also
     /// invalidate on type or default changes for the same name, since `MODIFY COLUMN`
     /// can change how the data is interpreted on read.
+    ///
+    /// We compare columns by sequence position rather than only by name: the prefix
+    /// of old columns must match the prefix of new columns by `(name, type, default)`.
+    /// If any old position now holds a column with a different name, the column at
+    /// that position has been dropped, renamed, or reordered, and any cached entries
+    /// for the old name are stale. This catches the `RENAME a TO b, ADD COLUMN a`
+    /// case even when the reintroduced `a` has the same type and default as the old
+    /// one: the new `a` is appended at the end, so the position previously occupied
+    /// by `a` now holds `b`.
     if (!attach)
     {
         const auto & old_columns = old_metadata.columns;
         const auto & new_columns = new_metadata.columns;
         bool columns_identity_changed = false;
-        for (const auto & column : old_columns)
+        auto old_it = old_columns.begin();
+        auto new_it = new_columns.begin();
+        for (; old_it != old_columns.end() && new_it != new_columns.end(); ++old_it, ++new_it)
         {
-            if (!new_columns.has(column.name))
-            {
-                columns_identity_changed = true;
-                break;
-            }
-            const auto & new_column = new_columns.get(column.name);
-            if (!column.type->equals(*new_column.type) || !(column.default_desc == new_column.default_desc))
+            if (old_it->name != new_it->name
+                || !old_it->type->equals(*new_it->type)
+                || !(old_it->default_desc == new_it->default_desc))
             {
                 columns_identity_changed = true;
                 break;
             }
         }
+        /// Any leftover old columns means columns were dropped (or renamed away) at the end.
+        if (!columns_identity_changed && old_it != old_columns.end())
+            columns_identity_changed = true;
         if (columns_identity_changed)
         {
             if (auto columns_cache = getContext()->getColumnsCache())
