@@ -664,6 +664,21 @@ namespace
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
 
+        /// Documentation-only — the override below is authoritative (it computes
+        /// the DateTime64 scale from the number of `S` placeholders in the
+        /// format string, and attaches the timezone from the optional third arg).
+        String getSignatureString() const override
+        {
+            String result;
+            if constexpr (return_type == ReturnType::DateTime)
+                result = "DateTime";
+            else
+                result = "DateTime64";
+            if constexpr (error_handling == ErrorHandling::Null)
+                result = "Nullable(" + result + ")";
+            return "(String, [const String], [const String]) -> " + result;
+        }
+
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args{
