@@ -139,7 +139,7 @@ CLOUD = CloudInfrastructure.Config(
             tenancy="host",
             praktika_resource_tag="mac_m2_pro",
             runner_type=RunnerLabels.MACOS_ARM_SMALL[1],
-            quantity=3,
+            quantity=4,
         ),
     ],
     # TODO: add autoscaling and launch templates
