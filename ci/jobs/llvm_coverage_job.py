@@ -368,24 +368,47 @@ if __name__ == "__main__":
                     return True
                 return False
 
+            _CPP_EXTS = (".cpp", ".cc", ".cxx", ".c", ".h", ".hpp", ".hxx", ".hh")
+
+            def _is_production_cpp(p: str) -> bool:
+                # C/C++ source that compiles into the production ClickHouse binary.
+                # If anything in this set changes, the binary itself is different
+                # vs. baseline and the per-changed-file differential coverage report
+                # is the right signal; newly-covered transitions then mix "tests
+                # caught up to old code" with "new code exercised by old tests".
+                if p.startswith("contrib/"):
+                    return False
+                if _is_test_path(p):
+                    return False
+                return p.endswith(_CPP_EXTS)
+
             _tests_changed = any(_is_test_path(p) for p in _changed_paths)
-            _only_tests_changed = bool(_changed_paths) and all(
-                _is_test_path(p) for p in _changed_paths
+            # The binary is identical to baseline iff no production C/C++ source
+            # changed. Scripts (CI helpers in ci/, tests/ci/, .py / .sh), configs,
+            # docs, and test files all leave the binary unchanged, so any coverage
+            # delta is purely attributable to the test set running against it.
+            _binary_unchanged = bool(_changed_paths) and not any(
+                _is_production_cpp(p) for p in _changed_paths
             )
 
             _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
             _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
             _global_stats_available = Path(_base_info).exists() and Path(_curr_info).exists()
 
-            # For a tests-only PR, the small global delta is useless on its own (a single
-            # new test rarely moves overall coverage by more than 0.01 pp). Run a dedicated
-            # analysis that lists lines/functions whose coverage transitioned from 0 in the
-            # master baseline to >0 in the current build — that is the concrete payoff of
-            # the new test(s).
+            # Newly-covered analysis: only meaningful when the production binary is
+            # unchanged (so 0->nonzero transitions can be attributed to the test
+            # change) AND at least one test file actually changed (otherwise there
+            # is no reason to expect coverage to differ). This admits PRs that mix
+            # test additions with CI script / config / doc edits, which is the
+            # common shape of a "fix CI" or "add regression test" PR.
             _nc_info = ""
             _nc_url = ""
             _nc_top_files: list[dict] = []
-            if _only_tests_changed and _global_stats_available:
+            if (
+                _tests_changed
+                and _binary_unchanged
+                and _global_stats_available
+            ):
                 _nc_log = f"{TEMP_DIR}{Utils.normalize_string('Newly Covered Code')}.log"
                 Shell.run(
                     f"python3 ci/jobs/scripts/print_newly_covered_code.py 2>&1 | tee {_nc_log}",
