@@ -6,15 +6,10 @@
 #include <base/hex.h>
 
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnArray.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnTuple.h>
-
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <IO/VarInt.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -507,12 +502,10 @@ public:
             if (arguments[i]->equals(*expected_arguments[i]))
                 continue;
 
-            /// Allow implicit coercion between types that map to the same WASM kind
-            /// (e.g. Int8/UInt8/Int16/UInt16/Int32 all map to i32, so they are interchangeable).
-            /// Pairs with different WASM kinds (e.g. Float64 vs Int32) are rejected.
+            /// Allow implicit coercions: same kind, i32→i64, any int→any float, f32→f64.
             auto actual_kind = wasmKindForDataType(arguments[i].get());
             auto expected_kind = wasmKindForDataType(expected_arguments[i].get());
-            if (actual_kind && expected_kind && *actual_kind == *expected_kind)
+            if (actual_kind && expected_kind && canCoerce(*actual_kind, *expected_kind))
                 continue;
 
             auto get_type_names = std::views::transform([](const auto & arg) { return arg->getName(); });
@@ -629,174 +622,6 @@ private:
     mutable WasmCompartmentPool compartment_pool;
 };
 
-/// Aggregate function wrapper for WASM UDFs with is_aggregate=1.
-///
-/// ClickHouse accumulates argument rows per group using per-argument MutableColumns.
-/// At insertResultInto time each accumulated column is wrapped into an Array column,
-/// forming a one-row block of Array(T) arguments, which is then passed to the underlying
-/// BUFFERED_V1 WASM function. The WASM function receives arrays and returns one result.
-class AggregateFunctionUserDefinedWasm final
-    : public IAggregateFunctionHelper<AggregateFunctionUserDefinedWasm>
-{
-public:
-    AggregateFunctionUserDefinedWasm(
-        String function_name_,
-        std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_function_,
-        DataTypes original_arg_types_,
-        ContextPtr context_)
-        : IAggregateFunctionHelper<AggregateFunctionUserDefinedWasm>(original_arg_types_, {}, wasm_function_->getResultType())
-        , function_name(std::move(function_name_))
-        , wasm_function(std::move(wasm_function_))
-        , original_arg_types(std::move(original_arg_types_))
-        , context(std::move(context_))
-        , compartment_pool(
-              static_cast<UInt32>(context->getSettingsRef()[Setting::webassembly_udf_max_instances]),
-              wasm_function->getModule(),
-              getWasmModuleConfig(context))
-    {
-    }
-
-    String getName() const override { return function_name; }
-    bool allocatesMemoryInArena() const override { return false; }
-    bool hasTrivialDestructor() const override { return false; }
-
-    size_t sizeOfData() const override { return sizeof(State); }
-    size_t alignOfData() const override { return alignof(State); }
-
-    void create(AggregateDataPtr __restrict place) const override
-    {
-        auto * state = new (place) State();
-        state->columns = new MutableColumns();
-        try
-        {
-            state->columns->reserve(original_arg_types.size());
-            for (const auto & type : original_arg_types)
-                state->columns->push_back(type->createColumn());
-        }
-        catch (...)
-        {
-            /// destroy() is NOT called when create() throws, so clean up manually.
-            delete state->columns;
-            state->columns = nullptr;
-            throw;
-        }
-    }
-
-    void destroy(AggregateDataPtr __restrict place) const noexcept override
-    {
-        auto * state = reinterpret_cast<State *>(place);
-        delete state->columns;
-    }
-
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
-    {
-        auto * state = reinterpret_cast<State *>(place);
-        for (size_t i = 0; i < state->columns->size(); ++i)
-            (*state->columns)[i]->insertFrom(*columns[i], row_num);
-        ++state->num_rows;
-    }
-
-    void addBatchSinglePlace(
-        size_t row_begin, size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena *,
-        ssize_t if_argument_pos) const override
-    {
-        auto * state = reinterpret_cast<State *>(place);
-        if (if_argument_pos >= 0)
-        {
-            const auto & filter = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]);
-            for (size_t row = row_begin; row < row_end; ++row)
-            {
-                if (filter.getElement(row))
-                {
-                    for (size_t i = 0; i < state->columns->size(); ++i)
-                        (*state->columns)[i]->insertFrom(*columns[i], row);
-                    ++state->num_rows;
-                }
-            }
-            return;
-        }
-        for (size_t i = 0; i < state->columns->size(); ++i)
-            (*state->columns)[i]->insertRangeFrom(*columns[i], row_begin, row_end - row_begin);
-        state->num_rows += row_end - row_begin;
-    }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
-    {
-        auto * state = reinterpret_cast<State *>(place);
-        const auto * rhs_state = reinterpret_cast<const State *>(rhs);
-        for (size_t i = 0; i < state->columns->size(); ++i)
-            (*state->columns)[i]->insertRangeFrom(*(*rhs_state->columns)[i], 0, rhs_state->num_rows);
-        state->num_rows += rhs_state->num_rows;
-    }
-
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /*version*/) const override
-    {
-        const auto * state = reinterpret_cast<const State *>(place);
-        writeVarUInt(state->num_rows, buf);
-        for (size_t i = 0; i < state->columns->size(); ++i)
-        {
-            auto serialization = original_arg_types[i]->getDefaultSerialization();
-            serialization->serializeBinaryBulk(*(*state->columns)[i], buf, 0, state->num_rows);
-        }
-    }
-
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /*version*/, Arena *) const override
-    {
-        auto * state = reinterpret_cast<State *>(place);
-        size_t num_rows;
-        readVarUInt(num_rows, buf);
-        for (size_t i = 0; i < state->columns->size(); ++i)
-        {
-            auto serialization = original_arg_types[i]->getDefaultSerialization();
-            serialization->deserializeBinaryBulk(*(*state->columns)[i], buf, /*rows_offset=*/0, num_rows, /*avg_value_size_hint=*/0);
-        }
-        state->num_rows = num_rows;
-    }
-
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
-    {
-        const auto * state = reinterpret_cast<const State *>(place);
-
-        /// Build a one-row block where each column is Array(original_arg_type),
-        /// containing all the accumulated rows for this group.
-        Block block;
-        for (size_t i = 0; i < original_arg_types.size(); ++i)
-        {
-            auto offsets = ColumnUInt64::create();
-            offsets->insert(static_cast<UInt64>(state->num_rows));
-            auto array_col = ColumnArray::create((*state->columns)[i]->getPtr(), std::move(offsets));
-            auto array_type = std::make_shared<DataTypeArray>(original_arg_types[i]);
-            block.insert(ColumnWithTypeAndName(std::move(array_col), array_type, "arg" + std::to_string(i)));
-        }
-
-        auto compartment_entry = compartment_pool.acquire();
-        StopSource stop_source;
-        auto result_col = wasm_function->executeOnBlock(&(*compartment_entry), block, context, /*num_rows=*/1, stop_source.get_token());
-
-        if (result_col->empty())
-            throw Exception(ErrorCodes::WASM_ERROR,
-                "WASM aggregate function '{}' returned empty result", function_name);
-
-        to.insertFrom(*result_col, 0);
-    }
-
-private:
-    struct State
-    {
-        MutableColumns * columns = nullptr;
-        size_t num_rows = 0;
-    };
-
-    String function_name;
-    std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_function;
-    DataTypes original_arg_types;
-    ContextPtr context;
-    mutable WasmCompartmentPool compartment_pool;
-};
-
 std::shared_ptr<UserDefinedWebAssemblyFunction>
 UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query, WasmModuleManager & module_manager)
 {
@@ -829,30 +654,11 @@ UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query
     const auto & internal_function_name
         = function_def.source_function_name.empty() ? function_def.function_name : function_def.source_function_name;
 
-    const bool is_aggregate = function_def.settings.isAggregate();
-
-    if (is_aggregate && function_def.abi_version == WasmAbiVersion::RowDirect)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "SETTINGS is_aggregate = 1 is not supported with ABI ROW_DIRECT: array arguments "
-            "cannot be passed as scalar WASM values. Use ABI BUFFERED_V1 instead.");
-
-    /// For aggregate functions, the WASM export receives Array(T) arguments — one array per declared
-    /// argument type containing all accumulated rows for the group.
-    /// Wrap the declared argument types before creating the WASM function so signature validation
-    /// checks the actual types the WASM export must accept.
-    DataTypes wasm_arg_types = function_def.argument_types;
-    if (is_aggregate)
-    {
-        for (auto & type : wasm_arg_types)
-            type = std::make_shared<DataTypeArray>(type);
-    }
-
     std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_func = UserDefinedWebAssemblyFunction::create(
         wasm_module,
         internal_function_name,
         function_def.argument_names,
-        wasm_arg_types,
+        function_def.argument_types,
         function_def.result_type,
         function_def.abi_version,
         function_def.settings,
@@ -903,38 +709,6 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::tryGet(const 
 
     auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(executable_function));
-}
-
-bool UserDefinedWebAssemblyFunctionFactory::isAggregate(const String & function_name) const
-{
-    std::shared_lock lock(registry_mutex);
-    auto it = registry.find(function_name);
-    return it != registry.end() && it->second.is_aggregate;
-}
-
-std::shared_ptr<IAggregateFunction> UserDefinedWebAssemblyFunctionFactory::getAggregate(
-    const String & function_name, const DataTypes & /*arg_types*/, ContextPtr context) const
-{
-    std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_func;
-    DataTypes original_arg_types;
-    {
-        std::shared_lock lock(registry_mutex);
-        auto it = registry.find(function_name);
-        if (it == registry.end())
-            throw Exception(
-                ErrorCodes::RESOURCE_NOT_FOUND,
-                "WebAssembly aggregate function '{}' not found",
-                function_name);
-        if (!it->second.is_aggregate)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "WebAssembly function '{}' is not an aggregate function",
-                function_name);
-        wasm_func = it->second.function;
-        original_arg_types = it->second.original_arg_types;
-    }
-    return std::make_shared<AggregateFunctionUserDefinedWasm>(
-        function_name, std::move(wasm_func), std::move(original_arg_types), std::move(context));
 }
 
 
@@ -1033,10 +807,6 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         /// Serialization format for input/output data for ABI what uses serialization
         {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary", "Buffers"}}.withDefault("MsgPack")},
         {"webassembly_udf_enable_fuel", SettingBool{}.withDefault(true)},
-        /// When true, the function is registered as an aggregate function.
-        /// ClickHouse accumulates argument rows per group and calls the WASM function once at finalize
-        /// with Array-wrapped arguments (one Array per declared argument type).
-        {"is_aggregate", SettingBool{}.withDefault(false)},
         /// Whether bbox-disjoint pruning is safe for this function (see IFunctionBase::isSpatialPredicate).
         {"is_spatial_predicate", SettingBool{}.withDefault(false)},
     };
@@ -1095,11 +865,6 @@ bool WebAssemblyFunctionSettings::isFuelEnabled() const
 WebAssembly::FuelMode WebAssemblyFunctionSettings::getFuelMode() const
 {
     return isFuelEnabled() ? WebAssembly::FuelMode::Enabled : WebAssembly::FuelMode::Disabled;
-}
-
-bool WebAssemblyFunctionSettings::isAggregate() const
-{
-    return getValue("is_aggregate").safeGet<bool>();
 }
 
 
