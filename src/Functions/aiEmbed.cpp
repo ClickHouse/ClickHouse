@@ -68,7 +68,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiEmbed>(context); }
 
-    explicit FunctionAiEmbed(ContextPtr context_) : context_weak(context_)
+    explicit FunctionAiEmbed(ContextPtr context_) : context(context_)
     {
         if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -267,8 +267,8 @@ public:
 private:
     static constexpr size_t text_arg_index = 1;
 
-    ContextWeakPtr context_weak;
-    ContextPtr getContext() const { return context_weak.lock(); }
+    ContextPtr context;
+    ContextPtr getContext() const { return context; }
 };
 
 }

@@ -70,8 +70,8 @@ public:
     static UInt64 computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt);
 
 protected:
-    ContextWeakPtr context_weak;
-    ContextPtr getContext() const { return context_weak.lock(); }
+    ContextPtr context;
+    ContextPtr getContext() const { return context; }
 
     virtual String functionName() const = 0;
 

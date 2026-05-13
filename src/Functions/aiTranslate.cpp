@@ -17,9 +17,9 @@ class FunctionAiTranslate final : public FunctionBaseAI
 public:
     static constexpr auto name = "aiTranslate";
 
-    explicit FunctionAiTranslate(ContextPtr context) : FunctionBaseAI(context) {}
+    explicit FunctionAiTranslate(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiTranslate>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiTranslate>(context_); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

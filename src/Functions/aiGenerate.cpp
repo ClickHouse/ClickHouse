@@ -20,9 +20,9 @@ class FunctionAiGenerate final : public FunctionBaseAI
 public:
     static constexpr auto name = "aiGenerate";
 
-    explicit FunctionAiGenerate(ContextPtr context) : FunctionBaseAI(context) {}
+    explicit FunctionAiGenerate(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiGenerate>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiGenerate>(context_); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

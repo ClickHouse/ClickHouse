@@ -68,7 +68,7 @@ String sanitizeTextForAI(std::string_view input)
 
 }
 
-FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context_weak(context_)
+FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context(context_)
 {
     if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

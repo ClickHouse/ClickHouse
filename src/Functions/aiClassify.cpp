@@ -36,9 +36,9 @@ class FunctionAiClassify final : public FunctionBaseAI
 public:
     static constexpr auto name = "aiClassify";
 
-    explicit FunctionAiClassify(ContextPtr context) : FunctionBaseAI(context) {}
+    explicit FunctionAiClassify(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiClassify>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiClassify>(context_); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
