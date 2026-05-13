@@ -214,6 +214,13 @@ private:
     /// Allocate block number for new mutation, write mutation to disk
     /// and into in-memory structures. Wake up merge-mutation task.
     Int64 startMutation(const MutationCommands & commands, ContextPtr query_context);
+    /// Same as above, but requires the caller to already hold `currently_processing_in_background_mutex`.
+    /// Used by `alter` to atomically transition (in-memory metadata, current_mutations_by_version)
+    /// from the old state to the new state: see comment at the call site in `alter` for details.
+    Int64 startMutation(
+        const MutationCommands & commands,
+        ContextPtr query_context,
+        const std::lock_guard<std::mutex> & currently_processing_in_background_mutex_lock);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;

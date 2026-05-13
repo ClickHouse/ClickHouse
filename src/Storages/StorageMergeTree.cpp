@@ -490,6 +490,17 @@ void StorageMergeTree::alter(
             changeSettings(new_metadata.settings_changes, table_lock_holder);
             checkTTLExpressions(new_metadata, old_metadata);
 
+            /// Hold `currently_processing_in_background_mutex` across `setProperties` and the
+            /// mutation registration in `startMutation` (which inserts into
+            /// `current_mutations_by_version`). Background merge selection acquires the same
+            /// mutex; without this fix, a merge could observe the new in-memory metadata
+            /// published by `setProperties` while `current_mutations_by_version` is still
+            /// missing the pending barrier mutation. For an `ALTER RENAME COLUMN d TO d1`,
+            /// such a merge would read the old parts with the new column name (`d1`),
+            /// find no file, and fill `d1` with default values — losing the renamed
+            /// column's data. See issue #80648.
+            std::lock_guard background_lock(currently_processing_in_background_mutex);
+
             /// Reinitialize primary key because primary key column types might have changed.
             setProperties(new_metadata, old_metadata, false, local_context);
 
@@ -511,7 +522,7 @@ void StorageMergeTree::alter(
             }
 
             if (!maybe_mutation_commands.empty())
-                mutation_version = startMutation(maybe_mutation_commands, local_context);
+                mutation_version = startMutation(maybe_mutation_commands, local_context, background_lock);
         }
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)
@@ -642,6 +653,15 @@ MergeMutateSelectedEntry::~MergeMutateSelectedEntry()
 
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
 {
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    return startMutation(commands, query_context, lock);
+}
+
+Int64 StorageMergeTree::startMutation(
+    const MutationCommands & commands,
+    ContextPtr query_context,
+    const std::lock_guard<std::mutex> & /*currently_processing_in_background_mutex_lock*/)
+{
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
     auto disk = getStoragePolicy()->getAnyDisk();
@@ -663,15 +683,11 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     if (txn)
         txn->addMutation(shared_from_this(), mutation_id);
 
-    {
-        std::lock_guard lock(currently_processing_in_background_mutex);
+    auto [it, inserted] = current_mutations_by_version.try_emplace(version, std::move(entry));
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
 
-        auto [it, inserted] = current_mutations_by_version.try_emplace(version, std::move(entry));
-        if (!inserted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
-
-        incrementMutationsCounters(mutation_counters, *it->second.commands);
-    }
+    incrementMutationsCounters(mutation_counters, *it->second.commands);
 
     LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
     background_operations_assignee.trigger();
