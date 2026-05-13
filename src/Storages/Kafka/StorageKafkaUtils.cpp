@@ -263,8 +263,8 @@ void registerStorageKafka(StorageFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS,
                 "To store committed offsets in Keeper both kafka_keeper_path and kafka_replica_name must be specified");
 
-        const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        const auto is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+        const auto is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal()
             && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
         // UUID macro is only allowed:
