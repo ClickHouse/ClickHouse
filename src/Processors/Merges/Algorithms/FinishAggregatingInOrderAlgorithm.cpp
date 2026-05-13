@@ -40,8 +40,9 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     AggregatingTransformParamsPtr params_,
     const SortDescription & description_,
     size_t max_block_size_rows_,
-    size_t max_block_size_bytes_)
-    : num_inputs(num_inputs_), params(params_), max_block_size_rows(max_block_size_rows_), max_block_size_bytes(max_block_size_bytes_)
+    size_t max_block_size_bytes_,
+    size_t limit_hint_)
+    : num_inputs(num_inputs_), params(params_), max_block_size_rows(max_block_size_rows_), max_block_size_bytes(max_block_size_bytes_), limit_hint(limit_hint_)
 {
     for (const auto & column_description : description_)
         description.emplace_back(column_description, header_->getPositionByName(column_description.column_name));
@@ -123,14 +124,23 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 
     addToAggregation();
 
+    /// Each iteration of merge() processes one group boundary.
+    ++groups_produced;
+
     /// At least one chunk should be fully aggregated.
     assert(!inputs_to_update.empty());
     Status status(inputs_to_update.back());
     inputs_to_update.pop_back();
 
     /// Do not merge blocks, if there are too few rows or bytes.
-    if (accumulated_rows >= max_block_size_rows || accumulated_bytes >= max_block_size_bytes)
+    bool need_flush = accumulated_rows >= max_block_size_rows || accumulated_bytes >= max_block_size_bytes;
+    bool limit_reached = limit_hint && groups_produced >= limit_hint;
+
+    if (need_flush || limit_reached)
         status.chunk = prepareToMerge();
+
+    if (limit_reached)
+        status.is_finished = true;
 
     return status;
 }

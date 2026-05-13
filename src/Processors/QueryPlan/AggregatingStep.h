@@ -58,6 +58,9 @@ public:
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
+    void setLimitHint(size_t limit) { limit_hint = limit; }
+    size_t getLimitHint() const { return limit_hint; }
+    const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
     const SortDescription & getSortDescription() const override;
 
@@ -135,6 +138,8 @@ private:
     const bool should_produce_results_in_order_of_bucket_number;
     bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
+
+    size_t limit_hint = 0;
 
     Processors aggregating_in_order;
     Processors aggregating_sorted;
