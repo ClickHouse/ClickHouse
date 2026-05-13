@@ -11,9 +11,9 @@ doc_type: 'reference'
 
 ## Description {#description}
 
-The `system.user_query_log` table is a view over `system.query_log` that returns only rows where the `user` column is equal to `currentUser()`.
+The `system.user_query_log` table is a view over the query log table configured by the `query_log.database` and `query_log.table` server configuration parameters. By default, this is `system.query_log`. The view returns only rows where the `user` column is equal to `currentUser()`.
 
-The view is created with `SQL SECURITY DEFINER` and the `default` user as the definer, so a user can read their own query log rows through `system.user_query_log` without being granted direct access to `system.query_log`. Users do not need an explicit `SELECT` grant on `system.user_query_log`.
+The view is created with `SQL SECURITY DEFINER` and the `default` user as the definer, so a user can read their own query log rows through `system.user_query_log` without being granted direct access to the configured query log table. Users do not need an explicit `SELECT` grant on `system.user_query_log`.
 
 The filter is placed in `PREWHERE` in the view definition.
 
@@ -23,7 +23,7 @@ In `clickhouse-local`, `system.user_query_log` is available only when `query_log
 
 ## Columns {#columns}
 
-The columns match [`system.query_log`](query_log.md), except `LowCardinality` wrappers are removed from exposed column types.
+The columns match the configured query log table, which uses the same structure as [`system.query_log`](query_log.md), except `LowCardinality` wrappers are removed from exposed column types.
 
 ## Example {#example}
 
