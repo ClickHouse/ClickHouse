@@ -133,10 +133,21 @@ bool granuleLocalKeyAllowed(USearchIndex::vector_key_t key, const IMergeTreeInde
     if (key_u64 >= rows_in_granule)
         return false;
 
-    const size_t global_row = granule_row_base + static_cast<size_t>(key_u64);
-    const MarkRange mark_for_row = index_granularity->getMarkRangeForRowOffset(global_row);
-    chassert(mark_for_row.begin + 1 == mark_for_row.end);
-    const size_t data_mark = mark_for_row.begin;
+    /// Resolve containing data mark inside [base_mark, end_mark) only.
+    /// This avoids getMarkRangeForRowOffset(global_row), which does a lower_bound over all part marks.
+    const size_t target_global_row = granule_row_base + static_cast<size_t>(key_u64);
+    size_t left = base_mark + 1;
+    size_t right = end_mark;
+    while (left < right)
+    {
+        const size_t mid = left + (right - left) / 2;
+        if (index_granularity->getMarkStartingRow(mid) <= target_global_row)
+            left = mid + 1;
+        else
+            right = mid;
+    }
+    const size_t data_mark = left - 1;
+    chassert(data_mark >= base_mark && data_mark < end_mark);
     chassert(data_mark < marks_without_final);
 
     if (filter.pk_ranges.size() == 1)
