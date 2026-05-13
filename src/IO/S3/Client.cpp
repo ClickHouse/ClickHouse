@@ -338,7 +338,6 @@ Client::~Client()
     catch (...)
     {
         tryLogCurrentException(log);
-        throw;
     }
 }
 
