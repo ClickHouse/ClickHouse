@@ -129,8 +129,8 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root)
                 if (prefix_match)
                 {
                     /// Use the smallest limit if multiple LimitSteps point to the same AggregatingStep.
-                    size_t current = aggregating_step->getLimitHint();
-                    if (current == 0 || limit < current)
+                    size_t current_hint = aggregating_step->getLimitHint();
+                    if (current_hint == 0 || limit < current_hint)
                         aggregating_step->setLimitHint(limit);
                 }
 
