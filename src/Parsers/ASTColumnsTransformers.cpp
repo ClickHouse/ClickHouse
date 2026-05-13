@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int BAD_ARGUMENTS;
 }
 
 void ASTColumnsTransformerList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -455,7 +456,17 @@ void ASTColumnsReplaceTransformer::Replacement::readJSON(const Poco::JSON::Objec
 {
     JSONObjectReader r(json);
     name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTColumnsReplaceTransformer::Replacement JSON requires a non-empty 'name'");
     children = r.readChildren();
+
+    /// `formatImpl`, `appendColumnName`, `updateTreeHashImpl`, and `transform`
+    /// all access `children[0]`, so the invariant must hold after JSON deserialization.
+    if (children.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTColumnsReplaceTransformer::Replacement JSON must have exactly one child (the expression), got {}",
+            children.size());
 }
 
 void ASTColumnsReplaceTransformer::readJSON(const Poco::JSON::Object & json)
