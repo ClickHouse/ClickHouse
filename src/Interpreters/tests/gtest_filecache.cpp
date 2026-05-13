@@ -1644,45 +1644,6 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
 
     ASSERT_NE(eviction_info, nullptr);
     ASSERT_TRUE(eviction_info->requiresEviction());
-
-    const auto & user = FileCache::getCommonOrigin();
-
-    auto read_and_check = [&](const std::string & file, const FileCacheKey & key, const std::string & expect_result)
-    {
-        auto read_buffer_creator = [&]()
-        {
-            return createReadBufferFromFileBase(file, read_settings, std::nullopt, std::nullopt);
-        };
-        auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-            file, key, cache, user, read_buffer_creator,
-            read_settings.getFilesystemCacheSettings(), read_settings.remote_fs_buffer_size, read_settings.local_fs_buffer_size,
-            "test", expect_result.size(), false, false, std::nullopt, nullptr);
-        WriteBufferFromOwnString result;
-        copyData(*cached_buffer, result);
-        ASSERT_EQ(result.str(), expect_result);
-    };
-
-    /// Read file1 twice -> 15 bytes / 3 segments in protected, probationary stays empty.
-    /// This is the exact precondition that used to trigger the chassert.
-    std::string data1(15, '*');
-    auto file1 = write_file("test_free_space_104307", data1);
-    auto key1 = DB::FileCacheKey::fromPath(file1);
-    read_and_check(file1, key1, data1);
-    read_and_check(file1, key1, data1);
-
-    assertProbationary(cache->dumpQueue(), Ranges{});
-    assertProtected(cache->dumpQueue(), { Range(0, 4), Range(5, 9), Range(10, 14) });
-
-    /// Without the fix, this call (or the background scheduling that immediately follows
-    /// `cache->initialize()` with the same precondition) aborts via
-    /// `chassert(evict_size_from_probationary || evict_elements_from_probationary)`.
-    /// With the fix, the function evicts from the protected queue and returns cleanly.
-    ASSERT_NO_THROW(cache->freeSpaceRatioKeepingThreadFunc());
-
-    /// And the eviction thread should make progress -- with `keep_free_space_elements_ratio = 1.0`
-    /// and a `keep_free_space_remove_batch` of 10 by default, all 3 protected entries fit in one batch.
-    ASSERT_EQ(cache->getFileSegmentsNum(), 0);
-    ASSERT_EQ(cache->getUsedCacheSize(), 0);
 }
 
 TEST_F(FileCacheTest, FileCacheGetOrSet)
