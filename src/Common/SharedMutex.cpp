@@ -51,7 +51,7 @@ void SharedMutex::unlock()
         futexWakeUpperAll(state);
 }
 
-void SharedMutex::lock_shared() const
+void SharedMutex::lock_shared()
 {
     UInt64 value = state.load();
     while (true)
@@ -67,7 +67,7 @@ void SharedMutex::lock_shared() const
     }
 }
 
-bool SharedMutex::try_lock_shared() const
+bool SharedMutex::try_lock_shared()
 {
     UInt64 value = state.load();
     while (true)
@@ -81,7 +81,7 @@ bool SharedMutex::try_lock_shared() const
     return true;
 }
 
-void SharedMutex::unlock_shared() const
+void SharedMutex::unlock_shared()
 {
     UInt64 value = state.fetch_sub(1) - 1;
     if (value == writers)
