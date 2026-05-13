@@ -11,7 +11,12 @@
          first run, instead of being limited to the handful of granules that
          survive `__topKFilter`):
 
-           * 100M rows, `index_granularity = 8192` → ~12 200 granules.
+           * 500M rows, `index_granularity = 8192` → ~61 000 granules. The
+             table is intentionally large so the data-scan cost dominates
+             query-planning overhead in the comparison harness; with a
+             smaller table the cache hit only saves a few milliseconds of
+             scan time on top of ~50 ms of unrelated overhead, which is
+             below the harness's noise threshold.
            * `v1 = number % 1000`, so every granule contains ~8 rows with
              `v1 = 0`. The TopK threshold settles to `0` almost immediately,
              and `__topKFilter` keeps those ~8 rows per granule — they
@@ -21,7 +26,7 @@
              full `UInt32` range and cannot prune parts on `v2 = constant`.
              Exactly one row is injected with `v2 = 12345` (and `v1 = 0`
              so it also survives `__topKFilter`), so the matching row sits
-             in a single granule and the remaining ~12 200 granules are
+             in a single granule and the remaining ~60 999 granules are
              recorded as skippable in the QCC, leaving only that one granule
              to scan on every subsequent run. -->
 
@@ -36,9 +41,9 @@
 
     <fill_query>
         INSERT INTO qcc_topk_test SELECT rand(),
-            if(number = 12345678, 0, number % 1000),
-            if(number = 12345678, 12345, rand())
-        FROM numbers(100000000)
+            if(number = 50000000, 0, number % 1000),
+            if(number = 50000000, 12345, rand())
+        FROM numbers(500000000)
     </fill_query>
 
     <settings>
