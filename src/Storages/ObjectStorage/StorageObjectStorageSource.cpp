@@ -1065,87 +1065,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// Page cache
     if (use_page_cache)
     {
-        /// Prefer bigger buffer size when filesystem cache is active
-        if (modified_read_settings.filesystem_cache_prefer_bigger_buffer_size && use_filesystem_cache)
-            modified_read_settings.remote_fs_buffer_size = std::max<size_t>(
-                modified_read_settings.remote_fs_buffer_size,
-                modified_read_settings.prefetch_buffer_size);
-
-        ReadPipeline pipeline;
-
-        StoredObject stored_object(object_info.getPath(), "", object_size);
-        pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
-
-        /// Filesystem cache
-        if (use_filesystem_cache)
-        {
-            chassert(object_info.metadata.has_value());
-            if (object_info.metadata->etag.empty())
-            {
-                LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
-            }
-            else
-            {
-                SipHash hash;
-                hash.update(object_info.getPath());
-                hash.update(object_info.metadata->etag);
-
-                auto cache_key = FileCacheKey::fromKey(hash.get128());
-                auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
-
-                pipeline.needDiskCache(
-                    cache,
-                    cache_key,
-                    FileCache::getCommonOrigin(),
-                    modified_read_settings.getFilesystemCacheSettings(),
-                    context_->getFilesystemCacheLog());
-
-                LOG_TRACE(
-                    log,
-                    "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
-                    filesystem_cache_name,
-                    object_info.getPath(),
-                    object_info.metadata->etag,
-                    toString(hash.get128()));
-            }
-        }
-
-        /// No needGather() — StorageObjectStorageSource reads single objects directly
-        /// (one logical file = one S3/Azure blob). Gather is only needed for DiskObjectStorage
-        /// where metadata maps a logical path to multiple blobs.
-
-        /// Page cache
-        if (use_page_cache)
-        {
-            pipeline.needMemoryCache(
-                effective_read_settings.page_cache,
-                "s3:" + object_info.getPath(),
-                "etag:" + object_info.metadata->etag,
-                modified_read_settings.getPageCacheSettings());
-        }
-
-        /// Async prefetch
-        if (use_async_buffer)
-        {
-            auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-            pipeline.needAsyncPrefetch(
-                reader,
-                context_->getAsyncReadCounters(),
-                context_->getFilesystemReadPrefetchesLog());
-        }
-
-        if (effective_read_settings.use_reader_executor)
-        {
-            pipeline.needPrefetchPool(context_->getPrefetchThreadPool());
-            pipeline.needBufferLimit(context_->getSourceBufferLimit());
-        }
-
-        LOG_TRACE(
-            log, "Downloading object {} of size {} {} initial prefetch (pipeline: {})",
-            object_info.getPath(), object_size, use_prefetch ? "with" : "without",
-            pipeline.describe());
-
-        impl = pipeline.build();
+        pipeline.needMemoryCache(
+            effective_read_settings.page_cache,
+            "s3:" + object_info.getPath(),
+            "etag:" + object_info.metadata->etag,
+            modified_read_settings.getPageCacheSettings());
     }
 
     /// Async prefetch
@@ -1156,6 +1080,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             reader,
             context_->getAsyncReadCounters(),
             context_->getFilesystemReadPrefetchesLog());
+    }
+
+    if (effective_read_settings.use_reader_executor)
+    {
+        pipeline.needPrefetchPool(context_->getPrefetchThreadPool());
+        pipeline.needBufferLimit(context_->getSourceBufferLimit());
     }
 
     LOG_TRACE(
