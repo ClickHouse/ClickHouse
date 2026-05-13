@@ -867,7 +867,15 @@ def main():
         # would set `has_failure = True` from the `FAIL` rows and call
         # `set_success`, masking the `ERROR` and flipping the job to green.
         # Mirrors the `has_error`-dominant guard in `integration_test_job.py`.
-        has_error = any(r.status == Result.Status.ERROR for r in test_result.results)
+        #
+        # Include the aggregate `test_result.is_error()`: `FTResultsProcessor`
+        # can set the top-level status to `ERROR` (e.g. `not s.success_finish`
+        # on unexpected runner termination) even when all parsed per-test rows
+        # are `FAIL`/`OK`. Without this, a harness-level failure could still
+        # invert `FAIL` to `OK` and flip the job to green.
+        has_error = test_result.is_error() or any(
+            r.status == Result.Status.ERROR for r in test_result.results
+        )
         if has_error:
             print("Bugfix validation: ERROR result is present, skipping status inversion")
         else:
