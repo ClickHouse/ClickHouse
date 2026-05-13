@@ -510,6 +510,16 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    String getSignatureString() const override
+    {
+        if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+            return "(Array(Any), Any) -> UInt8"
+                   " OR (Map(Any, Any), Any) -> UInt8"
+                   " OR (JSON, String | FixedString) -> UInt8";
+        else
+            return "(Array(Any), Any) -> UInt64";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto first_argument_type = arguments[0].type;

@@ -52,6 +52,11 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    String getSignatureString() const override
+    {
+        return "(Array(T : Any)) -> T OR (Map(K : Any, V : Any)) -> Tuple(K, V)";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto & arr = getArrayJoinDataType(arguments[0]);
