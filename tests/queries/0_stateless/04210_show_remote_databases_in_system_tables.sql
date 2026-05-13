@@ -19,22 +19,31 @@ SELECT engine FROM system.databases WHERE name IN ({CLICKHOUSE_DATABASE_1:String
 SELECT engine FROM system.databases WHERE name IN ({CLICKHOUSE_DATABASE_1:String}, {CLICKHOUSE_DATABASE_2:String}) ORDER BY engine SETTINGS show_remote_databases_in_system_tables = 1;
 
 SELECT '--- system.tables hides PostgreSQL by default (count must be 0 without contacting the server) ---';
-SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} SETTINGS show_remote_databases_in_system_tables = 0;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT count() FROM system.tables WHERE database = currentDatabase() SETTINGS show_remote_databases_in_system_tables = 0;
 
 SELECT '--- system.tables hides MySQL by default ---';
-SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String} SETTINGS show_remote_databases_in_system_tables = 0;
+USE {CLICKHOUSE_DATABASE_2:Identifier};
+SELECT count() FROM system.tables WHERE database = currentDatabase() SETTINGS show_remote_databases_in_system_tables = 0;
 
-SELECT '--- system.columns hides remote databases by default ---';
-SELECT count() FROM system.columns WHERE database IN ({CLICKHOUSE_DATABASE_1:String}, {CLICKHOUSE_DATABASE_2:String}) SETTINGS show_remote_databases_in_system_tables = 0;
+SELECT '--- system.columns hides PostgreSQL by default ---';
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT count() FROM system.columns WHERE database = currentDatabase() SETTINGS show_remote_databases_in_system_tables = 0;
+
+SELECT '--- system.columns hides MySQL by default ---';
+USE {CLICKHOUSE_DATABASE_2:Identifier};
+SELECT count() FROM system.columns WHERE database = currentDatabase() SETTINGS show_remote_databases_in_system_tables = 0;
 
 SELECT '--- system.completions does not list remote databases by default (count must be 0 without contacting the server) ---';
 SELECT count() FROM system.completions WHERE word IN ({CLICKHOUSE_DATABASE_1:String}, {CLICKHOUSE_DATABASE_2:String}) AND context = 'database' SETTINGS show_remote_databases_in_system_tables = 0;
 
 SELECT '--- the old setting name still works as an alias ---';
-SELECT count() FROM system.tables WHERE database IN ({CLICKHOUSE_DATABASE_1:String}, {CLICKHOUSE_DATABASE_2:String}) SETTINGS show_data_lake_catalogs_in_system_tables = 0;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT count() FROM system.tables WHERE database = currentDatabase() SETTINGS show_data_lake_catalogs_in_system_tables = 0;
 
 SELECT '--- system.settings exposes both the new name and the alias ---';
 SELECT name, alias_for FROM system.settings WHERE name IN ('show_remote_databases_in_system_tables', 'show_data_lake_catalogs_in_system_tables') ORDER BY name;
 
+USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};

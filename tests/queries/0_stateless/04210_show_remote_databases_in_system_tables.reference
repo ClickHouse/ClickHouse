@@ -7,7 +7,9 @@ PostgreSQL
 0
 --- system.tables hides MySQL by default ---
 0
---- system.columns hides remote databases by default ---
+--- system.columns hides PostgreSQL by default ---
+0
+--- system.columns hides MySQL by default ---
 0
 --- system.completions does not list remote databases by default (count must be 0 without contacting the server) ---
 0
