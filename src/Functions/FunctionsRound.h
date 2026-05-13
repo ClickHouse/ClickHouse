@@ -10,6 +10,7 @@
 #include <Interpreters/castColumn.h>
 #include <Functions/IFunction.h>
 #include <Common/intExp.h>
+#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <cmath>
@@ -110,7 +111,12 @@ struct IntegerRoundingComputation
         {
             case RoundingMode::Trunc:
             {
-                return x / scale * scale;
+                /// `x - x % scale` instead of `x / scale * scale`. For wide integer types
+                /// (`Decimal128`/`Decimal256`) the compiler emits a single divmod helper call
+                /// (`__udivmodti4`) that returns both quotient and remainder, so we can
+                /// compute the truncated value with a subtraction and skip the multi-word
+                /// `imul scale` that the textbook formulation would otherwise require.
+                return x - x % scale;
             }
             case RoundingMode::Floor:
             {
@@ -886,6 +892,10 @@ private:
         size_t size = src.size();
         dst.resize(size);
 
+        /// NaN inputs have no defined position in the boundary ordering: every comparison
+        /// against NaN is false, which breaks both the linear-search carry-over hint and
+        /// `std::upper_bound`'s strict-weak-ordering contract. Propagate NaN through
+        /// unchanged so the result is the same in scalar and vector paths.
         if (boundary_values.size() < 32)    /// Just a guess
         {
             /// Linear search with value on previous iteration as a hint.
@@ -898,6 +908,15 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 auto value = src[i];
+
+                if constexpr (is_floating_point<ValueType>)
+                {
+                    if (isNaN(value))
+                    {
+                        dst[i] = value;
+                        continue;
+                    }
+                }
 
                 if (*it < value)
                 {
@@ -919,6 +938,15 @@ private:
         {
             for (size_t i = 0; i < size; ++i)
             {
+                if constexpr (is_floating_point<ValueType>)
+                {
+                    if (isNaN(src[i]))
+                    {
+                        dst[i] = src[i];
+                        continue;
+                    }
+                }
+
                 auto it = std::upper_bound(boundary_values.begin(), boundary_values.end(), src[i]);
                 if (it == boundary_values.end())
                 {
