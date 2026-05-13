@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTSubquery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "Subquery");
@@ -23,6 +28,23 @@ void ASTSubquery::readJSON(const Poco::JSON::Object & json)
     cte_name = r.getString("cte_name");
     r.readAlias(*this);
     children = r.readChildren();
+
+    /// `formatImplWithoutAlias` dereferences `children[0]` when `cte_name` is empty,
+    /// so the invariant must hold after JSON deserialization.
+    if (cte_name.empty())
+    {
+        if (children.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ASTSubquery JSON must have exactly one child when 'cte_name' is empty, got {}",
+                children.size());
+    }
+    else
+    {
+        if (children.size() > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ASTSubquery JSON must have at most one child when 'cte_name' is set, got {}",
+                children.size());
+    }
 }
 
 void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr) const
