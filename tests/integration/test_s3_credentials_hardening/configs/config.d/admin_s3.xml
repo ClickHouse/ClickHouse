@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!--
+    Simulate an on-prem deployment that puts static S3 credentials in the
+    top-level <s3> config block. Before the hardening fix, a user-supplied
+    `role_arn` would silently be signed with these credentials (privilege
+    escalation). After the fix, the server must reject any user `role_arn`
+    that is not paired with user-supplied `access_key_id` and
+    `secret_access_key` in the same SQL scope.
+-->
+<clickhouse>
+    <s3>
+        <access_key_id>ADMIN_FAKE_KEY</access_key_id>
+        <secret_access_key>ADMIN_FAKE_SECRET</secret_access_key>
+    </s3>
+</clickhouse>
