@@ -762,6 +762,41 @@ public:
     std::string name() const override { return "anyFloat64"; }
 };
 
+/// `anyBool(T1, T2, ...)` — predicate type function that returns `1` if any
+/// argument is the `Bool` custom-named UInt8 type, otherwise `0`. Mirrors
+/// `isBool` (which matches the literal type name) — `Nullable(Bool)` does
+/// *not* satisfy this predicate, matching the legacy `and`/`or`/`xor` rule
+/// that only un-wrapped Bool inputs propagate to a Bool result.
+class TypeFunctionAnyBool : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        for (const auto & arg : args)
+            if (arg.type()->getName() == "Bool")
+                return Value(Field(UInt64{1}));
+        return Value(Field(UInt64{0}));
+    }
+
+    std::string name() const override { return "anyBool"; }
+};
+
+/// `anyNullable(T1, T2, ...)` — predicate type function that returns `1` if
+/// any argument is a `Nullable(...)` type, otherwise `0`.
+class TypeFunctionAnyNullable : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        for (const auto & arg : args)
+            if (arg.type()->isNullable())
+                return Value(Field(UInt64{1}));
+        return Value(Field(UInt64{0}));
+    }
+
+    std::string name() const override { return "anyNullable"; }
+};
+
 
 /// `isFloat32OrSmaller(T)` — `1` if `T` is a floating-point type at most 32 bits
 /// wide (i.e. `BFloat16` or `Float32`), otherwise `0`. The `Float64`-promotion
@@ -936,6 +971,8 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionAnySigned>();
     factory.registerElement<TypeFunctionAnyFloating>();
     factory.registerElement<TypeFunctionAnyFloat64>();
+    factory.registerElement<TypeFunctionAnyBool>();
+    factory.registerElement<TypeFunctionAnyNullable>();
     factory.registerElement<TypeFunctionAnyInteger>();
     factory.registerElement<TypeFunctionSelectIf>();
     factory.registerElement<TypeFunctionIsFloat32OrSmaller>();

@@ -212,6 +212,21 @@ public:
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 
+    /// `and`/`or` accept 2+ NativeNumber arguments, optionally Nullable or a NULL literal
+    /// (they have `specialImplementationForNulls`); `xor` accepts only non-Nullable
+    /// NativeNumber arguments. The result is `Bool` when any input is bare-`Bool`
+    /// (not Nullable(Bool)), otherwise `UInt8`. For and/or, the result is wrapped
+    /// in `Nullable` when any input is Nullable.
+    String getSignatureString() const override
+    {
+        if constexpr (Impl::specialImplementationForNulls())
+        {
+            return "(A1 : MaybeNullable(NativeNumber) | Nothing, ...) -> "
+                   "selectIf(anyNullable(A1, ...), Nullable(selectIf(anyBool(A1, ...), Bool, UInt8)), selectIf(anyBool(A1, ...), Bool, UInt8))";
+        }
+        return "(A1 : NativeNumber, ...) -> selectIf(anyBool(A1, ...), Bool, UInt8)";
+    }
+
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
