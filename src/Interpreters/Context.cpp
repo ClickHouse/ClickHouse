@@ -4010,9 +4010,6 @@ void Context::updateUniqueKeyIndexCacheConfiguration(const Poco::Util::AbstractC
 {
     std::lock_guard lock(shared->mutex);
 
-    if (!shared->unique_key_index_cache)
-        return; /// Cache disabled at startup — nothing to update.
-
 #if USE_ROCKSDB
     size_t size = config.getUInt64("unique_key_index_cache_size_bytes", 1ULL << 30);
     if (size > max_cache_size)
@@ -4020,6 +4017,25 @@ void Context::updateUniqueKeyIndexCacheConfiguration(const Poco::Util::AbstractC
         size = max_cache_size;
         LOG_DEBUG(shared->log, "Lowered UNIQUE KEY index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
     }
+
+    if (!shared->unique_key_index_cache)
+    {
+        if (size == 0)
+            return; /// Stay disabled until reload requests a non-zero size.
+        /// Construct on the first reload that requests a non-zero size, so
+        /// `unique_key_index_cache_size_bytes` is reversible rather than a
+        /// one-way disable for the process lifetime.
+        shared->unique_key_index_cache = std::make_shared<UniqueKeyIndexCache>(
+            config.getString("unique_key_index_cache_policy", "SLRU"),
+            CurrentMetrics::UniqueKeyIndexCacheBytes,
+            CurrentMetrics::UniqueKeyIndexCacheEntries,
+            size,
+            config.getDouble("unique_key_index_cache_size_ratio", 0.5));
+        LOG_INFO(shared->log, "Enabled UNIQUE KEY index cache at {} via reload-config",
+                 formatReadableSizeWithBinarySuffix(size));
+        return;
+    }
+
     const size_t before = shared->unique_key_index_cache->GetCapacity();
     shared->unique_key_index_cache->setMaxSizeInBytes(size);
     if (size != before)
