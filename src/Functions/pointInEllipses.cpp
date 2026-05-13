@@ -59,6 +59,15 @@ private:
 
     size_t getNumberOfArguments() const override { return 0; }
 
+    /// `pointInEllipses(x, y, x1, y1, a1, b1, ..., xN, yN, aN, bN)` — 2 + 4*N args
+    /// where N >= 1. The DSL repeats the preceding `[...]` Optional group via the
+    /// ellipsis, so this signature accepts 2 + 4*k args for k >= 0. The runtime
+    /// still rejects `k == 0` (no ellipses) and `k > 2498` (the upper bound).
+    String getSignatureString() const override
+    {
+        return "(Float64, Float64, [Float64, Float64, Float64, Float64], ...) -> UInt8";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 6 || arguments.size() % 4 != 2)
