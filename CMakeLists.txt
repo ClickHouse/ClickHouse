@@ -417,13 +417,16 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         # CFI) would cause false positives. Start conservative; broaden after baseline is clean.
         # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
         #
-        # `-fvisibility=hidden` is required by Clang CFI: vtable type-confusion checks are scoped
-        # to classes with non-default linkage, so without it CFI would silently skip most classes.
-        # Suppress `-Wunique-object-duplication`: it flags inline static members (e.g.
-        # `Context::global_context_instance`, `BaseSettings::unknown_settings`) whose addresses
-        # may diverge across DSOs under hidden visibility. ClickHouse is statically linked into
-        # a single binary, so address duplication across DSOs does not apply.
-        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=hidden -Wno-unique-object-duplication")
+        # Use `-fvisibility=default` rather than the CFI-documented `hidden`: with hidden
+        # visibility the build succeeds (with `-Wunique-object-duplication` suppressed) but the
+        # resulting binary crashes with SIGSEGV before main runs, because inline-static singletons
+        # like `Context::global_context_instance` and `BaseSettings::unknown_settings` get
+        # duplicated per translation unit and singleton identity is broken. Validated empirically
+        # by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with signal 11.
+        # CFI vtable visibility is still satisfied for in-binary types because
+        # `-fwhole-program-vtables` and `-Wl,--lto-whole-program-visibility` (set above) cause
+        # the linker to treat all vtables as internal to the binary.
+        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=default")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
         set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
     endif ()
