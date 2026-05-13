@@ -810,7 +810,8 @@ void executeQueryWithParallelReplicas(
             std::move(storage_limits),
             std::move(connection_pools),
             std::nullopt,
-            shard.pool);
+            shard.pool,
+            std::move(remote_query_plan));
 
         query_plan.addStep(std::move(read_from_remote));
     }
