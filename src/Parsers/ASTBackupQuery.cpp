@@ -523,8 +523,9 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE kind: {}", kind_value);
     kind = *kind_opt;
     auto backup_name_child = r.readChild("backup_name");
-    if (backup_name_child)
-        set(backup_name, backup_name_child);
+    if (!backup_name_child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'backup_name' for `BackupQuery` during AST JSON deserialization");
+    set(backup_name, backup_name_child);
     auto base_backup_name_child = r.readChild("base_backup_name");
     if (base_backup_name_child)
         set(base_backup_name, base_backup_name_child);
