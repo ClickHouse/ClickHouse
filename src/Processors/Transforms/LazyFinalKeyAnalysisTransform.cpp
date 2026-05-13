@@ -172,7 +172,7 @@ void LazyFinalKeyAnalysisTransform::work()
 
         ColumnWithTypeAndName column_set;
         column_set.type = std::make_shared<DataTypeSet>();
-        column_set.column = ColumnConst::create(ColumnSet::create(0, future_set), 0);
+        column_set.column = ColumnConst::create(ColumnSet::create(1, future_set), 0);
 
         const auto * key_node = filter_dag.getOutputs().at(0);
         if (filter_dag.getOutputs().size() > 1)
