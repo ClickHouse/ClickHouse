@@ -4,6 +4,7 @@ sidebar_label: 'Overview'
 sidebar_position: 1
 slug: /sql-reference/functions/overview
 title: 'Regular Functions'
+doc_type: 'reference'
 ---
 
 # Regular functions

@@ -1,6 +1,7 @@
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
+#include <DataTypes/DataTypeFactory.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
@@ -11,11 +12,12 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
+
+#include <IO/WriteHelpers.h>
 
 #include "delta_kernel_ffi.hpp"
 
@@ -88,7 +90,12 @@ public:
     const DB::Names & getPartitionColumns() const { return partition_columns; }
 
 private:
-    DB::DataTypes getDataTypesFromTypeList(size_t list_idx);
+    struct Field;
+    DB::NamesAndTypesList getNamesAndTypesFromList(
+        size_t list_idx,
+        const std::string & parent_logical_path,
+        const std::string & parent_physical_path,
+        DB::NameToNameMap & physical_names_map);
 
     struct Field
     {
@@ -158,9 +165,7 @@ public:
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
-    static void visitReadSchema(
-        ffi::SharedScan * scan,
-        SchemaVisitorData & data)
+    static void visitReadSchema(ffi::SharedScan * scan, SchemaVisitorData & data)
     {
         KernelSharedSchema schema(ffi::scan_physical_schema(scan));
         auto visitor = createVisitor(data);
@@ -168,9 +173,7 @@ public:
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
-    static void visitWriteSchema(
-        ffi::SharedWriteContext * write_context,
-        SchemaVisitorData & data)
+    static void visitWriteSchema(ffi::SharedWriteContext * write_context, SchemaVisitorData & data)
     {
         KernelSharedSchema schema(ffi::get_write_schema(write_context));
         auto visitor = createVisitor(data);
@@ -178,12 +181,17 @@ public:
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
-    static void visitPartitionColumns(
-        ffi::SharedSnapshot * snapshot,
-        SchemaVisitorData & data)
+    static void visitPartitionColumns(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
         KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(snapshot));
         while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
+    }
+
+    static void visitSchema(ffi::SharedSchema * schema, SchemaVisitorData & data)
+    {
+        auto visitor = createVisitor(data);
+        [[maybe_unused]] size_t result = ffi::visit_schema(schema, &visitor);
+        chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
 private:
@@ -376,61 +384,45 @@ private:
 
 SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
 {
-    const auto types = getDataTypesFromTypeList(0);
-    chassert(types.size() == type_lists[0]->size());
-
-    std::list<DB::NameAndTypePair> names_and_types;
     SchemaResult result;
-    for (size_t i = 0; i < types.size(); ++i)
-    {
-        const auto & field = (*type_lists[0])[i];
-        names_and_types.emplace_back(field.name, types[i]);
-        if (!field.physical_name.empty())
-        {
-            [[maybe_unused]] bool inserted = result.physical_names_map.emplace(field.name, field.physical_name).second;
-            chassert(inserted);
-        }
-    }
-    result.names_and_types = DB::NamesAndTypesList(names_and_types.begin(), names_and_types.end());
+    result.names_and_types = getNamesAndTypesFromList(0, "", "", result.physical_names_map);
+    chassert(result.names_and_types.size() == type_lists[0]->size());
     return result;
 }
 
-DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
+DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
+    size_t list_idx,
+    const std::string & parent_logical_path,
+    const std::string & parent_physical_path,
+    DB::NameToNameMap & physical_names_map)
 {
-    DB::DataTypes types;
+    DB::NamesAndTypesList names_and_types;
     for (const auto & field : *type_lists[list_idx])
     {
+        DB::DataTypePtr type;
         if (field.is_bool)
         {
-            auto type = DB::DataTypeFactory::instance().get("Bool");
+            type = DB::DataTypeFactory::instance().get("Bool");
             if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
-
-            types.push_back(type);
         }
         else if (field.type == DB::TypeIndex::Decimal32)
         {
-            auto type = DB::createDecimal<DB::DataTypeDecimal>(field.precision, field.scale);
+            type = DB::createDecimal<DB::DataTypeDecimal>(field.precision, field.scale);
             if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
-
-            types.push_back(type);
         }
         else if (field.type == DB::TypeIndex::DateTime64)
         {
-            DB::DataTypePtr type = std::make_shared<DB::DataTypeDateTime64>(6);
+            type = std::make_shared<DB::DataTypeDateTime64>(6);
             if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
-
-            types.push_back(type);
         }
         else if (DB::isSimpleDataType(field.type))
         {
-            auto type = DB::getSimpleDataTypeFromTypeIndex(field.type);
+            type = DB::getSimpleDataTypeFromTypeIndex(field.type);
             if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
-
-            types.push_back(type);
         }
         else
         {
@@ -442,14 +434,23 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
             }
 
             DB::WhichDataType which(field.type);
+            /// Compute full ancestor paths for this field so children at any
+            /// depth use the complete logical/physical path as the map key/value.
+            const std::string field_logical_path = parent_logical_path.empty()
+                ? field.name
+                : parent_logical_path + "." + field.name;
+            const std::string field_physical_path = (!field.physical_name.empty() && !parent_physical_path.empty())
+                ? parent_physical_path + "." + field.physical_name
+                : field.physical_name;
+
             if (which.isTuple())
             {
-                auto child_types = getDataTypesFromTypeList(field.child_list_id);
-                types.push_back(std::make_shared<DB::DataTypeTuple>(child_types));
+                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, field_logical_path, field_physical_path, physical_names_map);
+                type = std::make_shared<DB::DataTypeTuple>(child_names_and_types.getTypes(), child_names_and_types.getNames());
             }
             else if (which.isArray())
             {
-                auto child_types = getDataTypesFromTypeList(field.child_list_id);
+                auto child_types = getNamesAndTypesFromList(field.child_list_id, field_logical_path, field_physical_path, physical_names_map);
                 if (child_types.size() != 1)
                 {
                     throw DB::Exception(
@@ -458,11 +459,12 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
                         child_types.size());
                 }
 
-                types.push_back(std::make_shared<DB::DataTypeArray>(child_types[0]));
+                type = std::make_shared<DB::DataTypeArray>(child_types.getTypes()[0]);
             }
             else if (which.isMap())
             {
-                auto child_types = getDataTypesFromTypeList(field.child_list_id);
+                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, field_logical_path, field_physical_path, physical_names_map);
+                auto child_types = child_names_and_types.getTypes();
                 if (child_types.size() != 2)
                 {
                     throw DB::Exception(
@@ -470,7 +472,7 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
                         "Unexpected number of types in array: {}",
                         child_types.size());
                 }
-                types.push_back(std::make_shared<DB::DataTypeMap>(child_types[0], child_types[1]));
+                type = std::make_shared<DB::DataTypeMap>(child_types[0], child_types[1]);
             }
             else
             {
@@ -479,8 +481,24 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
                     "Column {} has unsupported complex data type: {}", field.name, field.type);
             }
         }
+        chassert(type);
+        if (!field.physical_name.empty())
+        {
+            /// Use the full ancestor path as the map key so that lookups in
+            /// replaceTypeNamesToPhysicalRecursively work at any nesting depth.
+            /// key:   "grandparent.parent.field"  (full logical path)
+            /// value: "grandparent_phys.parent_phys.field_phys" (full physical path)
+            const std::string logical_path = parent_logical_path.empty()
+                ? field.name
+                : parent_logical_path + "." + field.name;
+            const std::string physical_path = parent_physical_path.empty()
+                ? field.physical_name
+                : parent_physical_path + "." + field.physical_name;
+            physical_names_map.emplace(logical_path, physical_path);
+        }
+        names_and_types.emplace_back(field.name, type);
     }
-    return types;
+    return names_and_types;
 }
 
 std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
@@ -510,6 +528,13 @@ DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
     SchemaVisitorData data;
     SchemaVisitor::visitPartitionColumns(snapshot, data);
     return data.getPartitionColumns();
+}
+
+DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema)
+{
+    SchemaVisitorData data;
+    SchemaVisitor::visitSchema(schema, data);
+    return data.getSchemaResult().names_and_types;
 }
 
 }

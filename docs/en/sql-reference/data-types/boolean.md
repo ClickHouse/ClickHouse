@@ -4,6 +4,7 @@ sidebar_label: 'Boolean'
 sidebar_position: 33
 slug: /sql-reference/data-types/boolean
 title: 'Bool'
+doc_type: 'reference'
 ---
 
 # Bool

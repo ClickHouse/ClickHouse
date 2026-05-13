@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/ProfileEvents.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
@@ -46,10 +46,12 @@ struct PartLogElement
         NOT_A_MERGE = 1,
         /// Just regular merge
         REGULAR_MERGE = 2,
-        /// Merge assigned to delete some data from parts (with TTLMergeSelector)
+        /// Merge assigned to delete rows from parts
         TTL_DELETE_MERGE = 3,
         /// Merge with recompression
         TTL_RECOMPRESS_MERGE = 4,
+        /// Merge assigned to delete parts completely
+        TTL_DROP_MERGE = 5,
     };
 
     String query_id;
@@ -70,8 +72,9 @@ struct PartLogElement
     String partition;
     String disk_name;
     String path_on_disk;
+    Strings deduplication_block_ids;
 
-    MergeTreeDataPartType part_type;
+    MergeTreeDataPartFormat part_format;
 
     /// Size of the part
     UInt64 rows = 0;
@@ -90,7 +93,12 @@ struct PartLogElement
     UInt16 error = 0;
     String exception;
 
+    /// Mutation IDs for MUTATE_PART events (array of all mutation IDs applied)
+    Strings mutation_ids;
+
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+
+    std::map<String, UInt64> projections_duration_ms;
 
     static std::string name() { return "PartLog"; }
 
@@ -141,10 +149,16 @@ public:
 
     /// Add a record about creation of a new part.
     static bool addNewPart(ContextPtr context, const PartLogEntry & part,
-                           const ExecutionStatus & execution_status = {});
+                            Strings deduplication_block_ids,
+                            const ExecutionStatus & execution_status = {});
 
     static bool addNewParts(ContextPtr context, const PartLogEntries & parts,
                             const ExecutionStatus & execution_status = {});
+
+private:
+    static bool addNewPartsImpl(ContextPtr context, const PartLogEntries & parts,
+                                std::vector<Strings> deduplication_block_ids,
+                                const ExecutionStatus & execution_status);
 };
 
 }

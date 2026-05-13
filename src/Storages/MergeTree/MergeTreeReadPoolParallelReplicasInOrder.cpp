@@ -26,8 +26,11 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     RangesInDataParts parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
-    bool has_limit_below_one_block_,
+    const IndexReadTasks & index_read_tasks_,
+    bool has_hard_limit_below_one_block_,
+    bool has_soft_limit_below_one_block_,
     const StorageSnapshotPtr & storage_snapshot_,
+    const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
@@ -39,7 +42,9 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         std::move(parts_),
         std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
+        index_read_tasks_,
         storage_snapshot_,
+        row_level_filter_,
         prewhere_info_,
         actions_settings_,
         reader_settings_,
@@ -49,7 +54,8 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         context_)
     , extension(std::move(extension_))
     , mode(mode_)
-    , has_limit_below_one_block(has_limit_below_one_block_)
+    , has_hard_limit_below_one_block(has_hard_limit_below_one_block_)
+    , has_soft_limit_below_one_block(has_soft_limit_below_one_block_)
     , min_marks_per_task(pool_settings.min_marks_for_concurrent_read)
 {
     for (const auto & info : per_part_infos)
@@ -71,7 +77,12 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         buffered_tasks.push_back({.info = std::move(info), .ranges = MarkRanges{}, .projection_name = std::move(projection_name)});
     }
 
-    extension.sendInitialRequest(mode, parts_ranges, /*mark_segment_size_=*/0);
+    auto descriptions = parts_ranges.getDescriptions();
+    chassert(descriptions.size() == per_part_infos.size());
+    for (size_t i = 0; i < descriptions.size(); ++i)
+        descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
+    extension.sendInitialRequest(
+        mode, std::move(descriptions), /*mark_segment_size=*/0, /*min_marks_per_request=*/min_marks_per_task * request.size());
 
     per_part_marks_in_range.resize(per_part_infos.size(), 1);
 }
@@ -111,8 +122,12 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                         return result;
                     }
 
-                    /// for asc limit, just return one range
-                    if (has_limit_below_one_block)
+                    /// For asc limit, just return one range.
+                    /// With a hard limit (no filter) reading stops exactly at the limit, so always emit
+                    /// single-range tasks. With a soft limit (filter + LIMIT) the estimation may be off,
+                    /// so apply this only to the first task per part: if it didn't reach the limit, the
+                    /// filter is likely selective and we should continue with regular block size.
+                    if (has_hard_limit_below_one_block || (has_soft_limit_below_one_block && !previous_task))
                     {
                         MarkRanges result;
                         auto & range = desc.ranges.front();
@@ -182,18 +197,31 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     if (no_more_tasks)
         return nullptr;
 
-    std::optional<ParallelReadResponse> response = extension.sendReadRequest(mode, min_marks_per_task * request.size(), request);
-    if (response)
+    if (failed_to_get_task)
+        return nullptr;
+
+    std::optional<ParallelReadResponse> response;
+    try
     {
-        LOG_DEBUG(log, "Got response: {}", response->describe());
-        if (response->description.empty() || response->finish)
+        response = extension.sendReadRequest(mode, min_marks_per_task * request.size(), request);
+        if (response)
+        {
+            LOG_DEBUG(log, "Got response: {}", response->describe());
+            if (response->description.empty() || response->finish)
+                no_more_tasks = true;
+        }
+        else
+        {
+            LOG_DEBUG(log, "Got no response");
             no_more_tasks = true;
+        }
     }
-    else
+    catch (...)
     {
-        LOG_DEBUG(log, "Got no response");
-        no_more_tasks = true;
+        failed_to_get_task = true;
+        throw;
     }
+
     if (no_more_tasks)
         return nullptr;
 

@@ -4,11 +4,12 @@ sidebar_label: 'Data types binary encoding specification.'
 sidebar_position: 56
 slug: /sql-reference/data-types/data-types-binary-encoding
 title: 'Data types binary encoding specification'
+doc_type: 'reference'
 ---
 
 # Data types binary encoding specification
 
-This specification describes the binary format that can be used for binary encoding and decoding of ClickHouse data types. This format is used in `Dynamic` column [binary serialization](dynamic.md#binary-output-format) and can be used in input/output formats [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes) and [Native](../../interfaces/formats.md#native) under corresponding settings.
+This specification describes the binary format that can be used for binary encoding and decoding of ClickHouse data types. This format is used in `Dynamic` column [binary serialization](dynamic.md#binary-output-format) and can be used in input/output formats [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes) and [Native](/interfaces/formats/Native) under corresponding settings.
 
 The table below describes how each data type is represented in binary format. Each data type encoding consist of 1 byte that indicates the type and some optional additional information.
 `var_uint` in the binary encoding means that the size is encoded using Variable-Length Quantity compression.
@@ -64,6 +65,10 @@ The table below describes how each data type is represented in binary format. Ea
 | `SimpleAggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)`                      | `0x2E<var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N>` (see [aggregate function parameter binary encoding](#aggregate-function-parameter-binary-encoding))                                                                       |
 | `Nested(name1 T1, ..., nameN TN)`                                                                         | `0x2F<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>`                                                                                                                                                                                                               |
 | `JSON(max_dynamic_paths=N, max_dynamic_types=M, path Type, SKIP skip_path, SKIP REGEXP skip_path_regexp)` | `0x30<uint8_serialization_version><var_int_max_dynamic_paths><uint8_max_dynamic_types><var_uint_number_of_typed_paths><var_uint_path_name_size_1><path_name_data_1><encoded_type_1>...<var_uint_number_of_skip_paths><var_uint_skip_path_size_1><skip_path_data_1>...<var_uint_number_of_skip_path_regexps><var_uint_skip_path_regexp_size_1><skip_path_data_regexp_1>...` |
+| `BFloat16`                                                                                                | `0x31`                                                                                                                                                                                                                                                                                                                                                                     |
+| `Time`                                                                                                    | `0x32`                                                                                                                                                                                                                                                                                                                                                                     |
+| `Time64(P)`                                                                                               | `0x34<uint8_precision>`                                                                                                                                                                                                                                                                                                                                                    |
+| `QBit(T, N)`                                                                                              | `0x36<element_type_encoding><var_uint_dimension>`                                                                                                                                                                                                                                                                                                                          |
 
 For type `JSON` byte `uint8_serialization_version` indicates the version of the serialization. Right now the version is always 0 but can change in future if new arguments will be introduced for `JSON` type.
 
@@ -97,8 +102,8 @@ The encoding of a parameter consists of 1 byte indicating the type of the parame
 | `Int64`                  | `0x02<var_int_value>`                                                                                                          |
 | `UInt128`                | `0x03<uint128_little_endian_value>`                                                                                            |
 | `Int128`                 | `0x04<int128_little_endian_value>`                                                                                             |
-| `UInt128`                | `0x05<uint128_little_endian_value>`                                                                                            |
-| `Int128`                 | `0x06<int128_little_endian_value>`                                                                                             |
+| `UInt256`                | `0x05<uint256_little_endian_value>`                                                                                            |
+| `Int256`                 | `0x06<int256_little_endian_value>`                                                                                             |
 | `Float64`                | `0x07<float64_little_endian_value>`                                                                                            |
 | `Decimal32`              | `0x08<var_uint_scale><int32_little_endian_value>`                                                                              |
 | `Decimal64`              | `0x09<var_uint_scale><int64_little_endian_value>`                                                                              |

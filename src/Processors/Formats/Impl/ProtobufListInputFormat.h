@@ -36,6 +36,7 @@ public:
     String getName() const override { return "ProtobufListInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetParser() override;
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
@@ -59,6 +60,7 @@ public:
 private:
     const FormatSchemaInfo schema_info;
     bool skip_unsupported_fields;
+    bool oneof_presence;
     const String google_protos_path;
 };
 

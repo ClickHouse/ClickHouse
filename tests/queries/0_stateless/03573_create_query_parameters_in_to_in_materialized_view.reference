@@ -1,0 +1,8 @@
+CREATE MATERIALIZED VIEW mv_kek TO {db:Identifier}.{target_table:Identifier} AS SELECT * FROM null_kek
+CREATE MATERIALIZED VIEW mv_kek TO {target_table:Identifier} AS SELECT * FROM null_kek
+0
+1
+2
+42
+2
+42

@@ -69,7 +69,6 @@ def start_cluster():
         with_minio=True,
         env_variables={
             "ENDPOINT_SUBPATH": "node2",
-            "ROTATED_REPLICA_ENDPOINT_SUBPATH": "node1",
         },
         stay_alive=True,
         instance_env_variables=True,
@@ -172,3 +171,5 @@ def test_alter_partition_after_table_rotation(start_cluster, storage_policy, par
 
     node2.query(f"DROP TABLE {rotated_table} SYNC")
     node2.query(f"DROP TABLE {table2} SYNC")
+    node1.restart_clickhouse()
+    node2.restart_clickhouse()

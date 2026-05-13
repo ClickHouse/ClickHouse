@@ -1,12 +1,15 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
-#include <Columns/ColumnString.h>
+#include <base/demangle.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemSymbols.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/SymbolIndex.h>
@@ -17,16 +20,29 @@ namespace DB
 
 
 StorageSystemSymbols::StorageSystemSymbols(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
     {
         {"symbol", std::make_shared<DataTypeString>(), "Symbol name in the binary. It is mangled. You can apply demangle(symbol) to obtain a readable name."},
+#if USE_XRAY
+        {"symbol_demangled", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Demangled symbol used for XRay instrumentation."},
+        {"function_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()), "Function ID in the XRay instrumentation map."},
+#endif
         {"address_begin", std::make_shared<DataTypeUInt64>(), "Start address of the symbol in the binary."},
         {"address_end", std::make_shared<DataTypeUInt64>(), "End address of the symbol in the binary."},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSystemSymbols::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 
@@ -64,6 +80,10 @@ protected:
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
+#if USE_XRAY
+        const auto & instrumentation_functions = InstrumentationManager::instance().getFunctions();
+#endif
+
         size_t rows_count = 0;
         while (rows_count < max_block_size && it != end)
         {
@@ -72,6 +92,26 @@ protected:
 
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(it->name);
+#if USE_XRAY
+            const auto function_name = demangle(it->name);
+            const auto instrumentation_function = instrumentation_functions.get<InstrumentationManager::FunctionName>().find(function_name);
+
+            /// Not every function is instrumented, so we need to look for those which are.
+            if (instrumentation_function != instrumentation_functions.get<InstrumentationManager::FunctionName>().end())
+            {
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(instrumentation_function->function_name);
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(instrumentation_function->function_id);
+            }
+            else
+            {
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(Field());
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(Field());
+            }
+#endif
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(it->offset_begin));
             if (columns_mask[src_index++])

@@ -254,6 +254,8 @@ def test_watchers(started_cluster, request):
         genuine_data_watch_data = None
 
         def genuine_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Genuine data watch called")
             nonlocal genuine_data_watch_data
             genuine_data_watch_data = event
@@ -261,6 +263,8 @@ def test_watchers(started_cluster, request):
         fake_data_watch_data = None
 
         def fake_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Fake data watch called")
             nonlocal fake_data_watch_data
             fake_data_watch_data = event
@@ -284,6 +288,8 @@ def test_watchers(started_cluster, request):
         genuine_children = None
 
         def genuine_child_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Genuine child watch called")
             nonlocal genuine_children
             genuine_children = event
@@ -291,6 +297,8 @@ def test_watchers(started_cluster, request):
         fake_children = None
 
         def fake_child_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Fake child watch called")
             nonlocal fake_children
             fake_children = event
@@ -327,6 +335,8 @@ def test_watchers(started_cluster, request):
         genuine_children_delete = None
 
         def genuine_child_delete_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Genuine child watch called")
             nonlocal genuine_children_delete
             genuine_children_delete = event
@@ -334,6 +344,8 @@ def test_watchers(started_cluster, request):
         fake_children_delete = None
 
         def fake_child_delete_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Fake child watch called")
             nonlocal fake_children_delete
             fake_children_delete = event
@@ -341,6 +353,8 @@ def test_watchers(started_cluster, request):
         genuine_child_delete = None
 
         def genuine_own_delete_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Genuine child watch called")
             nonlocal genuine_child_delete
             genuine_child_delete = event
@@ -348,6 +362,8 @@ def test_watchers(started_cluster, request):
         fake_child_delete = None
 
         def fake_own_delete_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Fake child watch called")
             nonlocal fake_child_delete
             fake_child_delete = event
@@ -614,6 +630,8 @@ def test_end_of_session(started_cluster, request):
         fake_ephemeral_event = None
 
         def fake_ephemeral_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Fake watch triggered")
             nonlocal fake_ephemeral_event
             fake_ephemeral_event = event
@@ -621,6 +639,8 @@ def test_end_of_session(started_cluster, request):
         genuine_ephemeral_event = None
 
         def genuine_ephemeral_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Genuine watch triggered")
             nonlocal genuine_ephemeral_event
             genuine_ephemeral_event = event
@@ -684,6 +704,8 @@ def test_end_of_watches_session(started_cluster, request):
         dummy_set = 0
 
         def dummy_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             nonlocal dummy_set
             dummy_set += 1
             print(event)
@@ -743,6 +765,8 @@ def test_concurrent_watches(started_cluster, request):
 
             # new function each time
             def dumb_watch(event):
+                if not keeper_utils.is_znode_watch_event(event):
+                    return
                 nonlocal dumb_watch_triggered_counter
                 dumb_watch_triggered_counter += 1
                 nonlocal all_paths_triggered

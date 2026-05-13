@@ -5,7 +5,7 @@ if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif ()
 
 # Print details to output
-execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
+execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version --target=${CMAKE_CXX_COMPILER_TARGET} --sysroot=${CMAKE_SYSROOT}
     OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION
     COMMAND_ERROR_IS_FATAL ANY
     OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -13,7 +13,7 @@ execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
 message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
-set (CLANG_MINIMUM_VERSION 19)
+set (CLANG_MINIMUM_VERSION 21)
 if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
     message (FATAL_ERROR "Compilation with Clang version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${CLANG_MINIMUM_VERSION}.")
 endif ()
@@ -41,7 +41,7 @@ if (NOT LINKER_NAME)
     if (OS_LINUX AND NOT ARCH_S390X)
         ch_find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     elseif (OS_DARWIN)
-        ch_find_program (LLD_PATH NAMES "ld")
+        ch_find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld" "ld")
         # Duplicate libraries passed to the linker is not a problem.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_warn_duplicate_libraries")
     endif ()
@@ -63,7 +63,7 @@ endif ()
 
 if (LINKER_NAME)
     message(STATUS "Using linker: ${LINKER_NAME}")
-elseif (NOT ARCH_S390X AND NOT OS_FREEBSD)
+elseif (NOT ARCH_S390X AND NOT OS_FREEBSD AND NOT OS_SUNOS)
     message (FATAL_ERROR "The only supported linker is LLVM's LLD, but we cannot find it.")
 else ()
     message(STATUS "Using linker: <default>")

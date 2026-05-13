@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/arithmeticOverflow.h>
 #include <base/types.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -14,6 +15,7 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace DB::GatherUtils
@@ -381,7 +383,28 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
         Int64 size = has_length ? length_nested_column->getInt(row_num) : static_cast<Int64>(src.getElementSize());
 
         if (size < 0)
-            size += offset > 0 ? static_cast<Int64>(src.getElementSize()) - (offset - 1) : -UInt64(offset);
+        {
+            Int64 abs_size;
+            if (common::subOverflow(Int64(0), size, abs_size))
+                throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "Overflow in length argument of substring-like function: {}", size);
+            Int64 adjustment;
+            if (offset > 0)
+            {
+                adjustment = static_cast<Int64>(src.getElementSize()) - (offset - 1);
+            }
+            else
+            {
+                if (common::subOverflow(Int64(0), offset, adjustment))
+                    throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "Overflow in offset argument of substring-like function: {}", offset);
+            }
+            Int64 new_size;
+            if (common::addOverflow(size, adjustment, new_size))
+                throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "Overflow when computing slice size in substring-like function: size={}, adjustment={}", size, adjustment);
+            size = new_size;
+        }
 
         if (offset != 0 && size > 0)
         {

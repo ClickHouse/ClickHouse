@@ -6,6 +6,7 @@ sidebar_label: 'Atomic'
 sidebar_position: 10
 slug: /engines/database-engines/atomic
 title: 'Atomic'
+doc_type: 'reference'
 ---
 
 # Atomic 

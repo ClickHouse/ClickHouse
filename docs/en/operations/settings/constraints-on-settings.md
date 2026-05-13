@@ -6,6 +6,7 @@ sidebar_label: 'Constraints on settings'
 sidebar_position: 62
 slug: /operations/settings/constraints-on-settings
 title: 'Constraints on settings'
+doc_type: 'reference'
 ---
 
 # Constraints on settings

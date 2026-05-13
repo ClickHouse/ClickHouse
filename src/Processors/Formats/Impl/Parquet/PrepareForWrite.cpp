@@ -22,6 +22,8 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeVariant.h>
 
 /// This file deals with schema conversion and with repetition and definition levels.
 
@@ -64,9 +66,6 @@ namespace DB::ErrorCodes
 
 namespace DB::Parquet
 {
-
-/// Thrift structs that Parquet uses for various metadata inside the parquet file.
-namespace parq = parquet::format;
 
 namespace
 {
@@ -150,8 +149,8 @@ void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offset
             }
             else
             {
-                s.def.push_back(1);
-                s.rep.push_back(1);
+                s.def.push_back(static_cast<UInt8>(1));
+                s.rep.push_back(static_cast<UInt8>(1));
                 s.def[i] = 0;
                 s.rep[i] = 0;
                 i += 1;
@@ -198,7 +197,7 @@ void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offset
         }
         else
         {
-            mask.push_back(1);
+            mask.push_back(static_cast<UInt8>(1));
             mask[i + empty_arrays] = 0;
             ++empty_arrays;
         }
@@ -230,10 +229,10 @@ parq::CompressionCodec::type compressionMethodToParquet(CompressionMethod c)
 /// Depth-first traversal of the schema tree for this column.
 void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas);
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids);
 
 void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::string & name,
-    const WriteOptions & options, ColumnChunkWriteStates & states, SchemaElements & schemas)
+    const WriteOptions & options, ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id)
 {
     /// Add physical column info.
     auto & state = states.emplace_back();
@@ -250,6 +249,8 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
     auto & schema = schemas.emplace_back();
     schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
     schema.__set_name(name);
+    if (field_id)
+        schema.__set_field_id(static_cast<Int32>(*field_id));
 
     /// Convert the type enums.
 
@@ -388,7 +389,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
         case TypeIndex::DateTime64:
         {
-            parq::ConvertedType::type converted;
+            std::optional<parq::ConvertedType::type> converted;
             parq::TimeUnit unit;
             const auto & dt = assert_cast<const DataTypeDateTime64 &>(*type);
             UInt32 scale = dt.getScale();
@@ -455,6 +456,15 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             break;
         }
 
+        case TypeIndex::UUID:
+        {
+            parq::UUIDType uuid;
+            parq::LogicalType t;
+            t.__set_UUID(uuid);
+            fixed_string(16, std::nullopt, t);
+            break;
+        }
+
         /// Parquet doesn't have logical types for these.
         case TypeIndex::UInt128: fixed_string(16); break;
         case TypeIndex::UInt256: fixed_string(32); break;
@@ -474,7 +484,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
 void prepareColumnNullable(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & field_ids)
 {
     const ColumnNullable * column_nullable = assert_cast<const ColumnNullable *>(column.get());
     ColumnPtr nested_column = column_nullable->getNestedColumnPtr();
@@ -484,7 +494,7 @@ void prepareColumnNullable(
     size_t child_states_begin = states.size();
     size_t child_schema_idx = schemas.size();
 
-    prepareColumnRecursive(nested_column, nested_type, name, options, states, schemas);
+    prepareColumnRecursive(nested_column, nested_type, name, options, states, schemas, field_ids);
 
     if (schemas[child_schema_idx].repetition_type == parq::FieldRepetitionType::REQUIRED)
     {
@@ -524,6 +534,9 @@ void prepareColumnTuple(
     const auto * type_tuple = assert_cast<const DataTypeTuple *>(type.get());
     size_t num_elements = type_tuple->getElements().size();
 
+    /// We artificially disallow empty tuples because they're not widely supported.
+    /// But they're supported in clickhouse; if we remove this check, nothing breaks, and clickhouse
+    /// can write and read such columns.
     if (num_elements == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parquet doesn't support empty tuples");
 
@@ -535,7 +548,7 @@ void prepareColumnTuple(
     size_t child_states_begin = states.size();
 
     for (size_t i = 0; i < num_elements; ++i)
-        prepareColumnRecursive(column_tuple->getColumnPtr(i), type_tuple->getElement(i), type_tuple->getNameByPosition(i + 1), options, states, schemas);
+        prepareColumnRecursive(column_tuple->getColumnPtr(i), type_tuple->getElement(i), type_tuple->getNameByPosition(i + 1), options, states, schemas, std::nullopt);
 
     for (size_t i = child_states_begin; i < states.size(); ++i)
     {
@@ -582,7 +595,7 @@ void prepareColumnArray(
     size_t child_states_begin = states.size();
 
     /// Recurse.
-    prepareColumnRecursive(nested_column, nested_type, "element", options, states, schemas);
+    prepareColumnRecursive(nested_column, nested_type, "element", options, states, schemas, std::nullopt);
 
     /// Update repetition+definition levels and fully-qualified column names (x -> myarray.list.x).
     for (size_t i = child_states_begin; i < states.size(); ++i)
@@ -641,15 +654,15 @@ void prepareColumnMap(
 
 void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
 {
     /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
     /// parquet dictionary-encoding.
-    column = column->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+    column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
 
     switch (type->getTypeId())
     {
-        case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, states, schemas); break;
+        case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, states, schemas, column_field_ids); break;
         case TypeIndex::Array: prepareColumnArray(column, type, name, options, states, schemas); break;
         case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, states, schemas); break;
         case TypeIndex::Map: prepareColumnMap(column, type, name, options, states, schemas); break;
@@ -658,21 +671,21 @@ void prepareColumnRecursive(
             auto nested_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
             if (nested_type->isNullable())
                 prepareColumnNullable(
-                    column->convertToFullColumnIfLowCardinality(), nested_type, name, options, states, schemas);
+                    column->convertToFullColumnIfLowCardinality(), nested_type, name, options, states, schemas, column_field_ids);
             else
                 /// Use nested data type, but keep ColumnLowCardinality. The encoder can deal with it.
-                preparePrimitiveColumn(column, nested_type, name, options, states, schemas);
+                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, column_field_ids ? std::optional(column_field_ids->at(name)) : std::nullopt);
             break;
         }
         default:
-            preparePrimitiveColumn(column, type, name, options, states, schemas);
+            preparePrimitiveColumn(column, type, name, options, states, schemas, column_field_ids ? std::optional(column_field_ids->at(name)) : std::nullopt);
             break;
     }
 }
 
 }
 
-SchemaElements convertSchema(const Block & sample, const WriteOptions & options)
+SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
 {
     SchemaElements schema;
     auto & root = schema.emplace_back();
@@ -680,7 +693,7 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options)
     root.__set_num_children(static_cast<Int32>(sample.columns()));
 
     for (const auto & c : sample)
-        prepareColumnForWrite(c.column, c.type, c.name, options, nullptr, &schema);
+        prepareColumnForWrite(c.column, c.type, c.name, options, nullptr, &schema, column_field_ids);
 
     return schema;
 }
@@ -689,6 +702,58 @@ void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 {
     if (!type->getCustomName())
         return;
+
+    if (type->getCustomName()->getName() == "Geometry")
+    {
+        const auto & col_variant = assert_cast<const ColumnVariant &>(*column);
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
+        const auto & variants = variant_type.getVariants();
+
+        std::vector<std::shared_ptr<IWKBTransform>> transforms(variants.size());
+        for (size_t i = 0; i < variants.size(); ++i)
+        {
+            const auto & variant_name = variants[i]->getCustomName() ? variants[i]->getCustomName()->getName() : variants[i]->getName();
+            if (variant_name == WKBPointTransform::name)
+                transforms[i] = std::make_shared<WKBPointTransform>();
+            else if (variant_name == WKBLineStringTransform::name || variant_name == "Ring")
+                transforms[i] = std::make_shared<WKBLineStringTransform>();
+            else if (variant_name == WKBPolygonTransform::name)
+                transforms[i] = std::make_shared<WKBPolygonTransform>();
+            else if (variant_name == WKBMultiLineStringTransform::name)
+                transforms[i] = std::make_shared<WKBMultiLineStringTransform>();
+            else if (variant_name == WKBMultiPolygonTransform::name)
+                transforms[i] = std::make_shared<WKBMultiPolygonTransform>();
+        }
+
+        auto result = ColumnString::create();
+        auto null_map = ColumnUInt8::create();
+        result->reserve(col_variant.size());
+        null_map->reserve(col_variant.size());
+        for (size_t i = 0; i < col_variant.size(); ++i)
+        {
+            const auto local_discriminator = col_variant.localDiscriminatorAt(i);
+            if (local_discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+            {
+                result->insertDefault();
+                null_map->insertValue(1);
+                continue;
+            }
+            const auto global_discriminator = col_variant.globalDiscriminatorAt(i);
+            if (!transforms[global_discriminator])
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot encode Geometry sub-type '{}' as WKB",
+                    variants[global_discriminator]->getName());
+            const auto & sub_column = col_variant.getVariantByLocalDiscriminator(local_discriminator);
+            Field field;
+            sub_column.get(col_variant.offsetAt(i), field);
+            result->insert(transforms[global_discriminator]->dumpObject(field));
+            null_map->insertValue(0);
+        }
+        column = ColumnNullable::create(std::move(result), std::move(null_map));
+        type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
+        return;
+    }
 
     std::shared_ptr<IWKBTransform> transform;
     if (type->getCustomName()->getName() == WKBPointTransform::name)
@@ -719,7 +784,7 @@ void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema)
+    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
 {
     if (column->empty() && out_columns_to_write != nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column passed to Parquet encoder");
@@ -728,7 +793,7 @@ void prepareColumnForWrite(
     SchemaElements schemas;
     if (options.write_geometadata)
         prepareGeoColumn(column, type);
-    prepareColumnRecursive(column, type, name, options, states, schemas);
+    prepareColumnRecursive(column, type, name, options, states, schemas, column_field_ids);
 
     if (out_columns_to_write)
         for (auto & s : states)

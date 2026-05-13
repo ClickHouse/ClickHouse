@@ -9,6 +9,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/DecimalFunctions.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -17,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -36,11 +38,8 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeSeriesRange<with_values>>(); }
 
     String getName() const override { return name; }
-
     size_t getNumberOfArguments() const override { return with_values ? 4 : 3; }
-
     bool isDeterministic() const override { return true; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -249,9 +248,20 @@ public:
 
         for (size_t i = 0; i != num_rows; ++i)
         {
-            auto start_timestamp = static_cast<TimestampType>(start_timestamp_column.get64(i) * start_timestamp_multiplier);
-            auto end_timestamp = static_cast<TimestampType>(end_timestamp_column.get64(i) * end_timestamp_multiplier);
-            auto step = static_cast<IntervalType>(step_column.getInt(i) * step_multiplier);
+            Int64 start_timestamp_raw = 0;
+            if (common::mulOverflow(start_timestamp_column.get64(i), start_timestamp_multiplier, start_timestamp_raw))
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
+            auto start_timestamp = static_cast<TimestampType>(start_timestamp_raw);
+
+            Int64 end_timestamp_raw = 0;
+            if (common::mulOverflow(end_timestamp_column.get64(i), end_timestamp_multiplier, end_timestamp_raw))
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
+            auto end_timestamp = static_cast<TimestampType>(end_timestamp_raw);
+
+            Int64 step_raw = 0;
+            if (common::mulOverflow(step_column.getInt(i), step_multiplier, step_raw))
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
+            auto step = static_cast<IntervalType>(step_raw);
 
             if (end_timestamp < start_timestamp)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "End timestamp is less than start timestamp");
@@ -282,7 +292,7 @@ public:
                     if (null_map && (*null_map)[offset])
                         continue;
                 }
-                TimestampType timestamp = start_timestamp + j * step;
+                TimestampType timestamp = static_cast<TimestampType>(start_timestamp + j * step);
                 res_timestamps->insert(timestamp);
                 if constexpr (with_values)
                     res_values->insertFrom(*values, offset);
@@ -302,17 +312,33 @@ public:
 REGISTER_FUNCTION(TimeSeriesRange)
 {
     FunctionDocumentation::Description description = R"(
-        Returns a range of timestamps [start_timestamp, start_timestamp + step, start_timestamp + 2 * step, ..., end_timestamp].
-        )";
+Generates a range of timestamps [start_timestamp, start_timestamp + step, start_timestamp + 2 * step, ..., end_timestamp].
+
+If `start_timestamp` is equal to `end_timestamp`, the function returns a 1-element array containing `[start_timestamp]`.
+
+Function `timeSeriesRange()` is similar to function [range](../functions/array-functions.md#range).
+)";
     FunctionDocumentation::Syntax syntax = "timeSeriesRange(start_timestamp, end_timestamp, step)";
     FunctionDocumentation::Arguments arguments = {{"start_timestamp", "Start of the range.", {"DateTime64", "DateTime", "UInt32"}},
                                                   {"end_timestamp", "End of the range.", {"DateTime64", "DateTime", "UInt32"}},
-                                                  {"step", "Step of the range in seconds", {"Decimal64", "Decimal32", "UInt64", "UInt32"}}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a range of timestamps", {"Array(DateTime64)"}};
-    FunctionDocumentation::Examples examples = {{"Example", "SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:00'::DateTime64(3), 30)", "['2025-06-01 00:00:00.000', '2025-06-01 00:00:30.000', '2025-06-01 00:01:00.000']"}};
+                                                  {"step", "Step of the range in seconds", {"UInt32/64", "Decimal32/64"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a range of timestamps.", {"Array(DateTime64)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:00'::DateTime64(3), 30)
+        )",
+        R"(
+┌────────────────────────────────────result─────────────────────────────────────────┐
+│ ['2025-06-01 00:00:00.000', '2025-06-01 00:00:30.000', '2025-06-01 00:01:00.000'] │
+└───────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeSeriesRange<false>>(documentation);
 }
@@ -320,24 +346,39 @@ REGISTER_FUNCTION(TimeSeriesRange)
 REGISTER_FUNCTION(TimeSeriesFromGrid)
 {
     FunctionDocumentation::Description description = R"(
-        Converts array of values [value1, value2, value3, ...] to array of tuples
-        [(start_timestamp, value1), (start_timestamp + step, value2), (start_timestamp + 2 * step, value3), ...].
-        If some of the values [value1, value2, value3, ...] are NULL then the function won't copy such null values to the result array
-        but will still increase the current timestamp, i.e. for example for [value1, NULL, value2] the function will return
-        [(start_timestamp, value1), (start_timestamp + 2 * step, value2)].
-        The current timestamp is increased by step until it becomes greater than end_timestamp, each timestamp will be combined with a value
-        from a specified array of values. If number of the values doesn't match number of the timestamps the function will throw an exception.
-        )";
+Converts an array of values `[x1, x2, x3, ...]` to an array of tuples
+`[(start_timestamp, x1), (start_timestamp + step, x2), (start_timestamp + 2 * step, x3), ...]`.
+
+The current timestamp is increased by `step` until it becomes greater than `end_timestamp`
+If the number of the values doesn't match the number of the timestamps, the function throws an exception.
+
+NULL values in `[x1, x2, x3, ...]` are skipped but the current timestamp is still incremented.
+For example, for `[value1, NULL, x2]` the function returns `[(start_timestamp, x1), (start_timestamp + 2 * step, x2)]`.
+    )";
     FunctionDocumentation::Syntax syntax = "timeSeriesFromGrid(start_timestamp, end_timestamp, step, values)";
-    FunctionDocumentation::Arguments arguments = {{"start_timestamp", "Start of the grid.", {"DateTime64", "DateTime", "UInt32"}},
-                                                  {"end_timestamp", "End of the grid.", {"DateTime64", "DateTime", "UInt32"}},
-                                                  {"step", "Step of the grid in seconds", {"Decimal64", "Decimal32", "UInt64", "UInt32"}},
-                                                  {"values", "array of values", {"Array(Nullable(Float64))", "Array(Float64)", "Array(Nullable(Float32))", "Array(Float32)"}}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns values from the source array of values combined with timestamps on a regular time grid described by start timestamp and step", {"Array(DateTime64, Float64"}};
-    FunctionDocumentation::Examples examples = {{"Example", "SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:30.000'::DateTime64(3), 30, [10, 20, NULL, 30])", "[('2025-06-01 00:00:00.000',10),('2025-06-01 00:00:30.000',20),('2025-06-01 00:01:30.000',30)]"}};
+    FunctionDocumentation::Arguments arguments = {
+        {"start_timestamp", "Start of the grid.", {"DateTime64", "DateTime", "UInt32"}},
+        {"end_timestamp", "End of the grid.", {"DateTime64", "DateTime", "UInt32"}},
+        {"step", "Step of the grid in seconds", {"Decimal64", "Decimal32", "UInt32/64"}},
+        {"values", "Array of values", {"Array(Float*)", "Array(Nullable(Float*))"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns values from the source array of values combined with timestamps on a regular time grid described by `start_timestamp` and `step`.", {"Array(Tuple(DateTime64, Float64))"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:30.000'::DateTime64(3), 30, [10, 20, NULL, 30]) AS result;
+        )",
+        R"(
+┌─────────────────────────────────────────────result─────────────────────────────────────────────┐
+│ [('2025-06-01 00:00:00.000',10),('2025-06-01 00:00:30.000',20),('2025-06-01 00:01:30.000',30)] │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeSeriesRange<true>>(documentation);
 }

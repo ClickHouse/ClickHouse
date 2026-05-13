@@ -1,32 +1,25 @@
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
-#include <Common/checkStackSize.h>
-#include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
+#include <Client/IConnections.h>
 #include <Core/Settings.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Planner/Utils.h>
-#include <TableFunctions/TableFunctionFactory.h>
-#include <IO/ConnectionTimeouts.h>
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <DataTypes/ObjectUtils.h>
-#include <Client/IConnections.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromRemote.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
+#include <TableFunctions/TableFunctionFactory.h>
+
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 
 namespace ProfileEvents
@@ -44,6 +37,7 @@ namespace Setting
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool serialize_query_plan;
+    extern const SettingsBool skip_unavailable_shards;
     extern const SettingsUInt64 distributed_group_by_no_merge;
 }
 
@@ -112,11 +106,9 @@ ASTPtr rewriteSelectQuery(
 
 SelectStreamFactory::SelectStreamFactory(
     SharedHeader header_,
-    const ColumnsDescriptionByShardNum & objects_by_shard_,
     const StorageSnapshotPtr & storage_snapshot_,
     QueryProcessingStage::Enum processed_stage_)
     : header(header_),
-    objects_by_shard(objects_by_shard_),
     storage_snapshot(storage_snapshot_),
     processed_stage(processed_stage_)
 {
@@ -132,12 +124,9 @@ void SelectStreamFactory::createForShard(
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator)
+    AdditionalShardFilterGenerator shard_filter_generator,
+    const UnavailableShardTrackerPtr & unavailable_shard_tracker)
 {
-    auto it = objects_by_shard.find(shard_info.shard_num);
-    if (it != objects_by_shard.end())
-        replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
-
     createForShardImpl(
         shard_info,
         query_ast,
@@ -149,7 +138,8 @@ void SelectStreamFactory::createForShard(
         remote_shards,
         shard_count,
         parallel_replicas_enabled,
-        std::move(shard_filter_generator));
+        std::move(shard_filter_generator),
+        unavailable_shard_tracker);
 }
 
 void SelectStreamFactory::createForShardImpl(
@@ -164,12 +154,12 @@ void SelectStreamFactory::createForShardImpl(
     UInt32 shard_count,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
-    bool has_missing_objects) const
+    const UnavailableShardTrackerPtr & unavailable_shard_tracker) const
 {
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects));
+            query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
@@ -181,12 +171,12 @@ void SelectStreamFactory::createForShardImpl(
 
         const auto & settings = context->getSettingsRef();
 
-        /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColums,
+        /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColumns,
         /// But distributed_group_by_no_merge requires Complete.
         if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
-                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, true, shard_info.default_database);
+                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
 
             shard_header = query_plan->getCurrentHeader();
         }
@@ -205,7 +195,6 @@ void SelectStreamFactory::createForShardImpl(
             .query_plan = std::move(query_plan),
             .main_table = main_table,
             .header = shard_header,
-            .has_missing_objects = has_missing_objects,
             .shard_info = shard_info,
             .lazy = lazy,
             .shard_filter_generator = std::move(shard_filter_generator),
@@ -248,6 +237,14 @@ void SelectStreamFactory::createForShardImpl(
                     "There is no table {} on local replica of shard {}, will try remote replicas.",
                     main_table.getNameForLogs(), shard_info.shard_num);
                 emplace_remote_stream();
+            }
+            else if (settings[Setting::skip_unavailable_shards])
+            {
+                LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
+                    "There is no table {} on local replica of shard {}, and no remote replicas configured. Skipping.",
+                    main_table.getNameForLogs(), shard_info.shard_num);
+                if (unavailable_shard_tracker)
+                    unavailable_shard_tracker->onShardSkipped();
             }
             else
                 emplace_local_stream();  /// Let it fail the usual way.
@@ -325,22 +322,20 @@ void SelectStreamFactory::createForShard(
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator)
+    AdditionalShardFilterGenerator shard_filter_generator,
+    const UnavailableShardTrackerPtr & unavailable_shard_tracker)
 {
-
-    auto it = objects_by_shard.find(shard_info.shard_num);
-    QueryTreeNodePtr modified_query = query_tree;
-
-    bool has_missing_objects = false;
-    if (it != objects_by_shard.end())
-        has_missing_objects = replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, modified_query, context);
-
-    auto query_ast = queryNodeToDistributedSelectQuery(modified_query);
+    /// Convert grouping function specializations (e.g. groupingForGroupingSets -> grouping)
+    /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
+    /// Use a clone to keep the original query_tree with specialized functions intact,
+    /// since it is reused later for getSampleBlock / plan building.
+    auto query_tree_for_ast = query_tree->clone();
+    removeGroupingFunctionSpecializations(query_tree_for_ast);
 
     createForShardImpl(
         shard_info,
-        query_ast,
-        modified_query,
+        queryNodeToDistributedSelectQuery(query_tree_for_ast),
+        query_tree,
         main_table,
         table_func_ptr,
         std::move(context),
@@ -349,8 +344,7 @@ void SelectStreamFactory::createForShard(
         shard_count,
         parallel_replicas_enabled,
         std::move(shard_filter_generator),
-        has_missing_objects);
-
+        unavailable_shard_tracker);
 }
 
 

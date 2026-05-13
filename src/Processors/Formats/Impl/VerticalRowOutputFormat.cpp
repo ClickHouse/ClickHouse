@@ -8,6 +8,7 @@
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
 
 
@@ -29,6 +30,7 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
 
     names_and_paddings.resize(columns);
     is_number.resize(columns);
+    is_json.resize(columns);
 
     for (size_t i = 0; i < columns; ++i)
     {
@@ -52,7 +54,9 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     {
         size_t new_size = max_name_width - name_widths[i] + names_and_paddings[i].size();
         names_and_paddings[i].resize(new_size, ' ');
-        is_number[i] = isNumber(removeNullable(recursiveRemoveLowCardinality(sample.getByPosition(i).type)));
+        const auto & type = removeNullable(recursiveRemoveLowCardinality(sample.getByPosition(i).type));
+        is_number[i] = isNumber(type);
+        is_json[i] = isObject(type);
     }
 }
 
@@ -70,10 +74,15 @@ void VerticalRowOutputFormat::writeField(const IColumn & column, const ISerializ
 }
 
 
-void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const
+void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, const size_t row_num) const
 {
+    if (is_json[field_number])
+    {
+        constexpr size_t indent = 0;
+        serialization.serializeTextJSONPretty(column, row_num, out, format_settings, indent);
+    }
     /// If we need highlighting.
-    if (color
+    else if (color
         && ((format_settings.pretty.highlight_digit_groups && is_number[field_number])
             || format_settings.pretty.highlight_trailing_spaces))
     {

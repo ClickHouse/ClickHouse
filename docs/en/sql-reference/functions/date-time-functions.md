@@ -3,6 +3,7 @@ description: 'Documentation for Functions for Working with Dates and Times'
 sidebar_label: 'Dates and time'
 slug: /sql-reference/functions/date-time-functions
 title: 'Functions for Working with Dates and Times'
+doc_type: 'reference'
 ---
 
 # Functions for working with dates and times
@@ -24,6 +25,10 @@ SELECT
 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-16 │ 2016-06-15 09:00:00 │
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
 ```
+
+:::note
+For SQL standard compatibility the following functions, `NOW`, `CURRENT_TIMESTAMP`, `TODAY`, and `CURRENT_DATE` can be used without parentheses.
+:::
 
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 

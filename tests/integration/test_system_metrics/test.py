@@ -133,7 +133,7 @@ def test_metrics_storage_buffer_size(start_cluster):
                 "SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'"
             )
         )
-        assert 24 <= bytes <= 25
+        assert 22 <= bytes <= 23
 
         node1.query("INSERT INTO test.buffer_table VALUES('hello');")
         assert (
@@ -147,7 +147,7 @@ def test_metrics_storage_buffer_size(start_cluster):
                 "SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'"
             )
         )
-        assert 24 <= bytes <= 25
+        assert 22 <= bytes <= 23
 
         # flush
         node1.query("OPTIMIZE TABLE test.buffer_table")

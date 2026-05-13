@@ -167,8 +167,8 @@ public:
         auto & result_column_data = result_column->getChars();
         auto & result_column_offsets = result_column->getOffsets();
 
-        /* longest possible word 'Wednesday' with zero terminator */
-        static constexpr size_t longest_word_length = 9 + 1;
+        /* longest possible word, 'Wednesday' */
+        static constexpr size_t longest_word_length = 9;
 
         result_column_data.resize_fill(times_data.size() * longest_word_length);
         result_column_offsets.resize(times_data.size());
@@ -192,8 +192,6 @@ public:
                     writer.write(buffer, times_data[i], time_zone);
                 }
 
-                /// Null terminator
-                ++buffer.position();
                 result_column_offsets[i] = buffer.position() - begin;
             }
         });
@@ -399,7 +397,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDateNameImpl>(documentation, FunctionFactory::Case::Insensitive);
 }

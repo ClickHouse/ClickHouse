@@ -120,4 +120,16 @@ template class DataTypeNumber<Int128>;
 template class DataTypeNumber<UInt256>;
 template class DataTypeNumber<Int256>;
 
+
+DataTypePtr getSmallestIndexesType(size_t num_indexes)
+{
+    if (num_indexes <= std::numeric_limits<UInt8>::max() + 1ull)
+        return std::make_shared<DataTypeUInt8>();
+    if (num_indexes <= std::numeric_limits<UInt16>::max() + 1ull)
+        return std::make_shared<DataTypeUInt16>();
+    if (num_indexes <= std::numeric_limits<UInt32>::max() + 1ull)
+        return std::make_shared<DataTypeUInt32>();
+    return std::make_shared<DataTypeUInt64>();
+}
+
 }

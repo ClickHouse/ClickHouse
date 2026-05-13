@@ -1,0 +1,543 @@
+-- Tags: long
+
+SET allow_experimental_nullable_tuple_type = 1;
+
+{% for setting in ['enable_analyzer = 1', 'enable_analyzer = 0'] -%}
+
+select '{{ setting }}';
+
+SET {{ setting }};
+
+DROP TABLE IF EXISTS calendar;
+DROP TABLE IF EXISTS events32;
+
+CREATE TABLE calendar
+(
+    `year` Int64,
+    `month` Int64
+)
+ENGINE = TinyLog;
+
+INSERT INTO calendar VALUES
+    (2000, 1),
+    (2001, 2),
+    (2000, 3);
+
+CREATE TABLE events32
+(
+    `year` Int32,
+    `month` Int32
+)
+ENGINE = TinyLog;
+
+INSERT INTO events32 VALUES
+    (2001, 2),
+    (2001, 3);
+
+SET transform_null_in = 0;
+SELECT 'basic_subquery_tuple_transform_null_in_0';
+SELECT *
+FROM calendar
+WHERE (year, month) IN (SELECT (year, month) FROM events32)
+ORDER BY year, month;
+
+SELECT 'basic_subquery_tuple_transform_null_in_0_select';
+SELECT year, month, (year, month) IN (SELECT (year, month) FROM events32)
+FROM calendar
+ORDER BY ALL;
+
+SET transform_null_in = 1;
+SELECT 'basic_subquery_tuple_transform_null_in_1';
+SELECT *
+FROM calendar
+WHERE (year, month) IN (SELECT (year, month) FROM events32)
+ORDER BY year, month;
+
+SELECT 'basic_subquery_tuple_transform_null_in_1_select';
+SELECT year, month, (year, month) IN (SELECT (year, month) FROM events32)
+FROM calendar
+ORDER BY ALL;
+
+DROP TABLE IF EXISTS calendar;
+DROP TABLE IF EXISTS events32;
+
+
+-- RHS Nullable(Tuple), LHS plain Tuple
+
+DROP TABLE IF EXISTS lhs_r1;
+DROP TABLE IF EXISTS rhs_r1;
+
+CREATE TABLE lhs_r1
+(
+    id  UInt8,
+    key Tuple(Int32, Int32)
+)
+ENGINE = TinyLog;
+
+INSERT INTO lhs_r1 VALUES
+    (1, (2000, 1)),
+    (2, (2001, 2)),
+    (3, (2000, 3)),
+    (4, (2002, 4));
+
+CREATE TABLE rhs_r1
+(
+    key Nullable(Tuple(Int32, Int32))
+)
+ENGINE = TinyLog;
+
+INSERT INTO rhs_r1 VALUES
+    (NULL),
+    ((2001, 2)),
+    ((2002, 4));
+
+-- subquery form
+SET transform_null_in = 0;
+SELECT 'rhs_nullable_tuple_subquery_transform_null_in_0';
+SELECT id, key
+FROM lhs_r1
+WHERE key IN (SELECT key FROM rhs_r1)
+ORDER BY id;
+
+SELECT 'rhs_nullable_tuple_subquery_transform_null_in_0_select';
+SELECT id, key, key IN (SELECT key FROM rhs_r1)
+FROM lhs_r1
+ORDER BY ALL;
+
+-- table-name form
+SELECT 'rhs_nullable_tuple_table_transform_null_in_0';
+SELECT id, key
+FROM lhs_r1
+WHERE key IN rhs_r1
+ORDER BY id;
+
+SELECT 'rhs_nullable_tuple_table_transform_null_in_0_select';
+SELECT id, key, key IN rhs_r1
+FROM lhs_r1
+ORDER BY ALL;
+
+-- subquery form
+SET transform_null_in = 1;
+SELECT 'rhs_nullable_tuple_subquery_transform_null_in_1';
+SELECT id, key
+FROM lhs_r1
+WHERE key IN (SELECT key FROM rhs_r1)
+ORDER BY id;
+
+SELECT 'rhs_nullable_tuple_subquery_transform_null_in_1_select';
+SELECT id, key, key IN (SELECT key FROM rhs_r1)
+FROM lhs_r1
+ORDER BY ALL;
+
+-- table-name form
+SELECT 'rhs_nullable_tuple_table_transform_null_in_1';
+SELECT id, key
+FROM lhs_r1
+WHERE key IN rhs_r1
+ORDER BY id;
+
+SELECT 'rhs_nullable_tuple_table_transform_null_in_1_select';
+SELECT id, key, key IN rhs_r1
+FROM lhs_r1
+ORDER BY ALL;
+
+DROP TABLE IF EXISTS lhs_r1;
+DROP TABLE IF EXISTS rhs_r1;
+
+
+-- LHS Nullable(Tuple), RHS plain Tuple
+
+DROP TABLE IF EXISTS lhs_r2;
+DROP TABLE IF EXISTS rhs_r2;
+
+CREATE TABLE lhs_r2
+(
+    id  UInt8,
+    key Nullable(Tuple(Int32, Int32))
+)
+ENGINE = TinyLog;
+
+INSERT INTO lhs_r2 VALUES
+    (1, (2000, 1)),
+    (2, (2001, 2)),
+    (3, NULL),
+    (4, (2002, 4)),
+    (5, NULL);
+
+CREATE TABLE rhs_r2
+(
+    key Tuple(Int32, Int32)
+)
+ENGINE = TinyLog;
+
+INSERT INTO rhs_r2 VALUES
+    ((2001, 2)),
+    ((2002, 4));
+
+SET transform_null_in = 0;
+SELECT 'lhs_nullable_tuple_subquery_transform_null_in_0';
+SELECT id, key
+FROM lhs_r2
+WHERE key IN (SELECT key FROM rhs_r2)
+ORDER BY id;
+
+SELECT 'lhs_nullable_tuple_subquery_transform_null_in_0_select';
+SELECT id, key, key IN (SELECT key FROM rhs_r2)
+FROM lhs_r2
+ORDER BY ALL;
+
+SET transform_null_in = 1;
+SELECT 'lhs_nullable_tuple_subquery_transform_null_in_1';
+SELECT id, key
+FROM lhs_r2
+WHERE key IN (SELECT key FROM rhs_r2)
+ORDER BY id;
+
+SELECT 'lhs_nullable_tuple_subquery_transform_null_in_1_select';
+SELECT id, key, key IN (SELECT key FROM rhs_r2)
+FROM lhs_r2
+ORDER BY ALL;
+
+DROP TABLE IF EXISTS lhs_r2;
+DROP TABLE IF EXISTS rhs_r2;
+
+
+-- Both sides Nullable(Tuple)
+
+DROP TABLE IF EXISTS lhs_r3;
+DROP TABLE IF EXISTS rhs_r3;
+
+CREATE TABLE lhs_r3
+(
+    id  UInt8,
+    key Nullable(Tuple(Int32, Int32))
+)
+ENGINE = TinyLog;
+
+INSERT INTO lhs_r3 VALUES
+    (1, (2000, 1)),
+    (2, (2001, 2)),
+    (3, NULL),
+    (4, (2002, 4)),
+    (5, NULL);
+
+CREATE TABLE rhs_r3
+(
+    key Nullable(Tuple(Int32, Int32))
+)
+ENGINE = TinyLog;
+
+INSERT INTO rhs_r3 VALUES
+    (NULL),
+    ((2001, 2));
+
+SET transform_null_in = 0;
+SELECT 'both_nullable_tuple_subquery_transform_null_in_0';
+SELECT id, key
+FROM lhs_r3
+WHERE key IN (SELECT key FROM rhs_r3)
+ORDER BY id;
+
+SELECT 'both_nullable_tuple_subquery_transform_null_in_0_select';
+SELECT id, key, key IN (SELECT key FROM rhs_r3)
+FROM lhs_r3
+ORDER BY ALL;
+
+SET transform_null_in = 1;
+SELECT 'both_nullable_tuple_subquery_transform_null_in_1';
+SELECT id, key
+FROM lhs_r3
+WHERE key IN (SELECT key FROM rhs_r3)
+ORDER BY id;
+
+SELECT 'both_nullable_tuple_subquery_transform_null_in_1_select';
+SELECT id, key, key IN (SELECT key FROM rhs_r3)
+FROM lhs_r3
+ORDER BY ALL;
+
+DROP TABLE IF EXISTS lhs_r3;
+DROP TABLE IF EXISTS rhs_r3;
+
+
+-- RHS subquery with JOIN producing Nullable(Tuple)
+
+DROP TABLE IF EXISTS lhs_join_l;
+DROP TABLE IF EXISTS rhs_join_src;
+DROP TABLE IF EXISTS rhs_join_filter;
+
+CREATE TABLE lhs_join_l
+(
+    id  UInt8,
+    key Nullable(Tuple(Int32, Int32))
+)
+ENGINE = TinyLog;
+
+INSERT INTO lhs_join_l VALUES
+    (1, (2000, 1)),
+    (2, (2001, 2)),
+    (3, (2001, 3)),
+    (4, NULL);
+
+CREATE TABLE rhs_join_src
+(
+    src_id UInt8,
+    key    Nullable(Tuple(Int32, Int32))
+)
+ENGINE = TinyLog;
+
+INSERT INTO rhs_join_src VALUES
+    (1, (2001, 2)),
+    (2, (2001, 3)),
+    (3, NULL);
+
+CREATE TABLE rhs_join_filter
+(
+    src_id UInt8
+)
+ENGINE = TinyLog;
+
+INSERT INTO rhs_join_filter VALUES
+    (1),
+    (3);
+
+-- subquery uses JOIN, returns Nullable(Tuple)
+SET transform_null_in = 0;
+SELECT 'rhs_nullable_tuple_join_subquery_transform_null_in_0';
+SELECT id, key
+FROM lhs_join_l
+WHERE key IN
+(
+    SELECT s.key
+    FROM rhs_join_src AS s
+    INNER JOIN rhs_join_filter AS f ON s.src_id = f.src_id
+)
+ORDER BY id;
+
+SELECT 'rhs_nullable_tuple_join_subquery_transform_null_in_0_select';
+SELECT id, key, key IN
+(
+    SELECT s.key
+    FROM rhs_join_src AS s
+    INNER JOIN rhs_join_filter AS f ON s.src_id = f.src_id
+)
+FROM lhs_join_l
+ORDER BY ALL;
+
+SET transform_null_in = 1;
+SELECT 'rhs_nullable_tuple_join_subquery_transform_null_in_1';
+SELECT id, key
+FROM lhs_join_l
+WHERE key IN
+(
+    SELECT s.key
+    FROM rhs_join_src AS s
+    INNER JOIN rhs_join_filter AS f ON s.src_id = f.src_id
+)
+ORDER BY id;
+
+SELECT 'rhs_nullable_tuple_join_subquery_transform_null_in_1_select';
+SELECT id, key, key IN
+(
+    SELECT s.key
+    FROM rhs_join_src AS s
+    INNER JOIN rhs_join_filter AS f ON s.src_id = f.src_id
+)
+FROM lhs_join_l
+ORDER BY ALL;
+
+DROP TABLE IF EXISTS lhs_join_l;
+DROP TABLE IF EXISTS rhs_join_src;
+DROP TABLE IF EXISTS rhs_join_filter;
+
+
+-- RHS subquery with UNION ALL / UNION DISTINCT
+
+DROP TABLE IF EXISTS lhs_union_l;
+DROP TABLE IF EXISTS rhs_union_a;
+DROP TABLE IF EXISTS rhs_union_b;
+
+CREATE TABLE lhs_union_l
+(
+    id  UInt8,
+    key Nullable(Tuple(Int32, Int32))
+)
+ENGINE = TinyLog;
+
+INSERT INTO lhs_union_l VALUES
+    (1, (2000, 1)),
+    (2, (2001, 2)),
+    (3, (2001, 3)),
+    (4, NULL),
+    (5, (2002, 4));
+
+CREATE TABLE rhs_union_a
+(
+    key Nullable(Tuple(Int32, Int32))
+)
+ENGINE = TinyLog;
+
+INSERT INTO rhs_union_a VALUES
+    (NULL),
+    ((2001, 2));
+
+CREATE TABLE rhs_union_b
+(
+    key Nullable(Tuple(Int32, Int32))
+)
+ENGINE = TinyLog;
+
+INSERT INTO rhs_union_b VALUES
+    ((2001, 3)),
+    ((2002, 4));
+
+SET transform_null_in = 0;
+SELECT 'nullable_tuple_union_all_subquery_transform_null_in_0';
+SELECT id, key
+FROM lhs_union_l
+WHERE key IN
+(
+    SELECT key FROM rhs_union_a
+    UNION ALL
+    SELECT key FROM rhs_union_b
+)
+ORDER BY id;
+
+SELECT 'nullable_tuple_union_all_subquery_transform_null_in_0_select';
+SELECT id, key, key IN
+(
+    SELECT key FROM rhs_union_a
+    UNION ALL
+    SELECT key FROM rhs_union_b
+)
+FROM lhs_union_l
+ORDER BY ALL;
+
+SET transform_null_in = 1;
+SELECT 'nullable_tuple_union_all_subquery_transform_null_in_1';
+SELECT id, key
+FROM lhs_union_l
+WHERE key IN
+(
+    SELECT key FROM rhs_union_a
+    UNION ALL
+    SELECT key FROM rhs_union_b
+)
+ORDER BY id;
+
+SELECT 'nullable_tuple_union_all_subquery_transform_null_in_1_select';
+SELECT id, key, key IN
+(
+    SELECT key FROM rhs_union_a
+    UNION ALL
+    SELECT key FROM rhs_union_b
+)
+FROM lhs_union_l
+ORDER BY ALL;
+
+-- UNION DISTINCT variant
+SET transform_null_in = 0;
+SELECT 'nullable_tuple_union_distinct_subquery_transform_null_in_0';
+SELECT id, key
+FROM lhs_union_l
+WHERE key IN
+(
+    SELECT key FROM rhs_union_a
+    UNION DISTINCT
+    SELECT key FROM rhs_union_b
+)
+ORDER BY id;
+
+SELECT 'nullable_tuple_union_distinct_subquery_transform_null_in_0_select';
+SELECT id, key, key IN
+(
+    SELECT key FROM rhs_union_a
+    UNION DISTINCT
+    SELECT key FROM rhs_union_b
+)
+FROM lhs_union_l
+ORDER BY ALL;
+
+SET transform_null_in = 1;
+SELECT 'nullable_tuple_union_distinct_subquery_transform_null_in_1';
+SELECT id, key
+FROM lhs_union_l
+WHERE key IN
+(
+    SELECT key FROM rhs_union_a
+    UNION DISTINCT
+    SELECT key FROM rhs_union_b
+)
+ORDER BY id;
+
+SELECT 'nullable_tuple_union_distinct_subquery_transform_null_in_1_select';
+SELECT id, key, key IN
+(
+    SELECT key FROM rhs_union_a
+    UNION DISTINCT
+    SELECT key FROM rhs_union_b
+)
+FROM lhs_union_l
+ORDER BY ALL;
+
+DROP TABLE IF EXISTS lhs_union_l;
+DROP TABLE IF EXISTS rhs_union_a;
+DROP TABLE IF EXISTS rhs_union_b;
+
+
+-- Mixed-width tuple elements (Int64 vs Int32) with Nullable(Tuple)
+
+DROP TABLE IF EXISTS lhs_mixed;
+DROP TABLE IF EXISTS rhs_mixed;
+
+CREATE TABLE lhs_mixed
+(
+    id  UInt8,
+    key Nullable(Tuple(Int64, Int64))
+)
+ENGINE = TinyLog;
+
+INSERT INTO lhs_mixed VALUES
+    (1, (2000, 1)),
+    (2, (2001, 2)),
+    (3, (2001, 3)),
+    (4, NULL);
+
+CREATE TABLE rhs_mixed
+(
+    `year`  Int32,
+    `month` Int32
+)
+ENGINE = TinyLog;
+
+INSERT INTO rhs_mixed VALUES
+    (2001, 2),
+    (2001, 3);
+
+SET transform_null_in = 0;
+SELECT 'mixed_width_nullable_tuple_subquery_transform_null_in_0';
+SELECT id, key
+FROM lhs_mixed
+WHERE key IN (SELECT CAST((year, month), 'Nullable(Tuple(Int64, Int64))') FROM rhs_mixed)
+ORDER BY id;
+
+SELECT 'mixed_width_nullable_tuple_subquery_transform_null_in_0_select';
+SELECT id, key, key IN (SELECT CAST((year, month), 'Nullable(Tuple(Int64, Int64))') FROM rhs_mixed)
+FROM lhs_mixed
+ORDER BY ALL;
+
+SET transform_null_in = 1;
+SELECT 'mixed_width_nullable_tuple_subquery_transform_null_in_1';
+SELECT id, key
+FROM lhs_mixed
+WHERE key IN (SELECT CAST((year, month), 'Nullable(Tuple(Int64, Int64))') FROM rhs_mixed)
+ORDER BY id;
+
+SELECT 'mixed_width_nullable_tuple_subquery_transform_null_in_1_select';
+SELECT id, key, key IN (SELECT CAST((year, month), 'Nullable(Tuple(Int64, Int64))') FROM rhs_mixed)
+FROM lhs_mixed
+ORDER BY ALL;
+
+DROP TABLE IF EXISTS lhs_mixed;
+DROP TABLE IF EXISTS rhs_mixed;
+
+{% endfor -%}

@@ -12,6 +12,7 @@ FROM
     SETTINGS enable_parallel_replicas = 0
 );
 
+SET automatic_parallel_replicas_mode = 0;
 SELECT 'PR result hash: ', cityHash64(groupArray(CounterID))
 FROM
 (
