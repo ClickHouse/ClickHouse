@@ -147,6 +147,17 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
+    /// Documentation-only — covers `tumble`, `tumbleStart`, `tumbleEnd`,
+    /// `hop`, `hopStart`, `hopEnd`, `windowID`. Different variants accept
+    /// different argument shapes; the result is either a `DateTime` (for
+    /// `*Start`/`*End` and `windowID`), or a `Tuple(DateTime, DateTime)` (for
+    /// `tumble` and `hop`). The runtime resolves the exact shape from the
+    /// interval arguments.
+    String getSignatureString() const override
+    {
+        return "(DateTime, Interval, ...) -> DateTime | Tuple(DateTime, DateTime)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override;
