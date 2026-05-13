@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
@@ -407,6 +408,24 @@ public:
 };
 
 
+/// `NULL` on the return-type side evaluates to `Nullable(Nothing)`, the type of
+/// the SQL NULL constant. Lets signatures write `(NULL, Any) -> NULL` instead of
+/// `(Nullable(Nothing), Any) -> Nullable(Nothing)`.
+class TypeFunctionNull : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (!args.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function NULL takes no arguments");
+
+        return Value(DataTypePtr(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())));
+    }
+
+    std::string name() const override { return "NULL"; }
+};
+
+
 /// IntervalType('week') → DataTypeInterval(Kind::Week). Used by functions that take a
 /// constant string naming an interval unit and return an Interval-typed value, such as
 /// `toInterval(value, 'day')`.
@@ -484,6 +503,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionIntervalType>();
     factory.registerElement<TypeFunctionAggregateFunctionType>();
     factory.registerElement<TypeFunctionRemoveNullable>();
+    factory.registerElement<TypeFunctionNull>();
 
     /// Predicates.
     factory.registerElement<TypeFunctionTuplesHaveSameSize>();
