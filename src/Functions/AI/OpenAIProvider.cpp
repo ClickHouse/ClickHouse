@@ -215,6 +215,11 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
             "AI embedding response 'data' has {} entries but {} were requested",
             data_arr->size(), ai_embedding_request.inputs.size());
 
+    /// Track which input slots have been filled, so a misbehaving provider that returns duplicate
+    /// `index` values can't silently leave other slots empty or stack multiple embeddings into one.
+    /// Combined with the cardinality check above, "no duplicates" implies every slot is filled exactly once.
+    std::vector<bool> seen(ai_embedding_request.inputs.size(), false);
+
     for (unsigned i = 0; i < data_arr->size(); ++i)
     {
         auto item = data_arr->getObject(i);
@@ -228,6 +233,10 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
             throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
                 "AI embedding response 'data[{}].index' = {} is out of range (expected < {})",
                 i, idx, ai_embedding_response.embeddings.size());
+        if (seen[idx])
+            throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "AI embedding response 'data[{}].index' = {} duplicates an earlier entry", i, idx);
+        seen[idx] = true;
 
         auto embedding_arr = item->getArray("embedding");
         if (!embedding_arr)
