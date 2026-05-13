@@ -797,6 +797,46 @@ public:
     std::string name() const override { return "anyNullable"; }
 };
 
+/// `concatTuples(T1, T2, ...)` — concatenates the element lists of the given
+/// Tuple types and returns a flat Tuple containing all elements in order.
+/// Throws if any argument is not a Tuple. Names are preserved when *every*
+/// input tuple is named (mixing named and unnamed loses the names, matching
+/// the legacy `tupleConcat` behaviour which builds an unnamed result tuple).
+class TypeFunctionConcatTuples : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        DataTypes flat_elems;
+        Strings flat_names;
+        bool all_named = !args.empty();
+        for (const auto & arg : args)
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(arg.type().get());
+            if (!tuple_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "concatTuples requires Tuple(...), got {}", arg.type()->getName());
+
+            const auto & elems = tuple_type->getElements();
+            flat_elems.insert(flat_elems.end(), elems.begin(), elems.end());
+
+            if (tuple_type->hasExplicitNames())
+            {
+                const auto & names = tuple_type->getElementNames();
+                flat_names.insert(flat_names.end(), names.begin(), names.end());
+            }
+            else
+                all_named = false;
+        }
+
+        if (all_named && !flat_names.empty())
+            return Value(DataTypePtr(std::make_shared<DataTypeTuple>(flat_elems, flat_names)));
+        return Value(DataTypePtr(std::make_shared<DataTypeTuple>(flat_elems)));
+    }
+
+    std::string name() const override { return "concatTuples"; }
+};
+
 /// `reverseTuple(T)` — flips the element order of a Tuple, preserving names if
 /// the tuple is named. Used by `reverse` to compute the result type when the
 /// input is a Tuple. Throws if the input is not a Tuple.
@@ -1006,6 +1046,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionAnyBool>();
     factory.registerElement<TypeFunctionAnyNullable>();
     factory.registerElement<TypeFunctionReverseTuple>();
+    factory.registerElement<TypeFunctionConcatTuples>();
     factory.registerElement<TypeFunctionAnyInteger>();
     factory.registerElement<TypeFunctionSelectIf>();
     factory.registerElement<TypeFunctionIsFloat32OrSmaller>();

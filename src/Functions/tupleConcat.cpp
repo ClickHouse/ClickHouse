@@ -27,6 +27,11 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    String getSignatureString() const override
+    {
+        return "(T1 : Tuple(Any, ...), ...) -> concatTuples(T1, ...)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptor variadic_args{"tupleN", &isTuple, nullptr, "Tuple"};
