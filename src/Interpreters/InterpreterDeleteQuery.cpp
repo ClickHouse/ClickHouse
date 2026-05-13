@@ -100,6 +100,7 @@ BlockIO InterpreterDeleteQuery::execute()
 
         mutation_commands.emplace_back(mut_command);
 
+        table->updateExternalDynamicMetadataIfExists(getContext());
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter::Settings mutation_settings(false);
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();

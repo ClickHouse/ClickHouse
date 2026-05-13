@@ -597,8 +597,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
 
-    if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
-        table_specific_properties.has_value())
+     if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
+        table_specific_properties.has_value()
+        && catalog->getCatalogType() != DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
     {
         auto metadata_location = table_specific_properties->iceberg_metadata_file_location;
         if (!metadata_location.empty())

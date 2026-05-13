@@ -287,6 +287,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 {
     BlockIO res;
     const auto & settings = context->getSettingsRef();
+    table->updateExternalDynamicMetadataIfExists(context);
 
     for (auto & segment : segments)
     {

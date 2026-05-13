@@ -145,7 +145,9 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 {
     chassert(commands.size() == 1);
 
-    auto storage_ptr = DatabaseCatalog::instance().getTable(storage_id, context);
+    StorageID lookup_id = storage_id;
+    lookup_id.uuid = UUIDHelpers::Nil;
+    auto storage_ptr = DatabaseCatalog::instance().getTable(lookup_id, context);
     DataFileWriteResultByPartitionKey delete_data_result;
     DataFileStatisticsByPartitionKey delete_data_statistics;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> delete_data_write_buffers;
