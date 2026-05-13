@@ -964,11 +964,6 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
     blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
 }
 
-std::map<String, String> DiskObjectStorage::getConfigurationFields() const override
-{
-    return configuration_fields;
-}
-
 #if USE_AWS_S3
 std::shared_ptr<const S3::Client> DiskObjectStorage::getS3StorageClient() const
 {

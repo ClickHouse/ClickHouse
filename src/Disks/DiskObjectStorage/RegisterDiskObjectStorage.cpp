@@ -15,7 +15,7 @@ namespace DB
 void registerObjectStorages();
 void registerMetadataStorages();
 
-void ConfigurationFields getS3DiskConfigurationFields(
+ConfigurationFields getS3DiskConfigurationFields(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
 {
@@ -34,7 +34,7 @@ void ConfigurationFields getS3DiskConfigurationFields(
         "metadata_keep_free_space_bytes",
     };
 
-    IDisk::ConfigurationFields result;
+    ConfigurationFields result;
 
     for (const auto & key : whitelist)
     {
@@ -88,6 +88,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
 
         ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>(name, std::move(cluster_registry));
         ObjectStorageRouterPtr object_storages = std::make_shared<ObjectStorageRouter>(std::move(object_storage_registry));
+        ConfigurationFields configuration_fields = getS3DiskConfigurationFields(config, config_prefix);
 
         std::string compatibility_metadata_type_hint;
         if (!config.has(config_prefix + ".metadata_type"))
@@ -113,7 +114,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
             std::move(cluster),
             std::move(metadata_storage),
             std::move(object_storages),
-            getS3DiskConfigurationFields(),
+            std::move(configuration_fields),
             /*wrapped_disk=*/nullptr,
             config,
             config_prefix,

@@ -1,7 +1,10 @@
 #include <Storages/System/StorageSystemDisks.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -39,7 +42,13 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
         {"is_remote", std::make_shared<DataTypeUInt8>(), "Flag which indicated what operations with this disk involve network interaction."},
         {"is_broken", std::make_shared<DataTypeUInt8>(), "Flag which indicates if disk is broken. Broken disks will have 0 space and cannot be used."},
         {"cache_path", std::make_shared<DataTypeString>(), "The path to the cache directory on local drive in case when the disk supports caching."},
-        {"configuration_fields", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Set of custom settings which will be shows just in case."}
+        {
+            "configuration_fields",
+            std::make_shared<DataTypeMap>(
+                std::make_shared<DataTypeString>(),
+                std::make_shared<DataTypeString>()),
+                "Disk configuration options exposed for introspection."
+        },
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
@@ -79,6 +88,22 @@ Pipe StorageSystemDisks::read(
     MutableColumnPtr col_is_remote = ColumnUInt8::create();
     MutableColumnPtr col_is_broken = ColumnUInt8::create();
     MutableColumnPtr col_cache_path = ColumnString::create();
+    
+    MutableColumnPtr col_configuration_fields;
+    {
+        auto keys = ColumnString::create();
+        auto values = ColumnString::create();
+        auto offsets = ColumnArray::ColumnOffsets::create();
+
+        Columns tuple;
+        tuple.emplace_back(std::move(keys));
+        tuple.emplace_back(std::move(values));
+        
+        MutableColumnPtr nested = ColumnArray::create(ColumnTuple::create(std::move(tuple)), std::move(offsets))
+            ->assumeMutable();
+
+        col_configuration_fields = ColumnMap::create(std::move(nested));
+    }
 
     for (const auto & [disk_name, disk_ptr] : context->getDisksMap())
     {
@@ -103,6 +128,17 @@ Pipe StorageSystemDisks::read(
             cache_path = FileCacheFactory::instance().getByName(disk_ptr->getCacheName())->getSettings()[FileCacheSetting::path];
 
         col_cache_path->insert(cache_path);
+
+        Map configuration_fields;
+        for (const auto & [key, value] : disk_ptr->getConfigurationFields())
+        {
+            Tuple field;
+            field.emplace_back(key);
+            field.emplace_back(value);
+            configuration_fields.emplace_back(std::move(field));
+        }
+
+        col_configuration_fields->insert(configuration_fields);
     }
 
     Columns res_columns;
@@ -121,6 +157,7 @@ Pipe StorageSystemDisks::read(
     res_columns.emplace_back(std::move(col_is_remote));
     res_columns.emplace_back(std::move(col_is_broken));
     res_columns.emplace_back(std::move(col_cache_path));
+    res_columns.emplace_back(std::move(col_configuration_fields));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
