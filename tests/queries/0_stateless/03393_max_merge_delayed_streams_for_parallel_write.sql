@@ -1,23 +1,11 @@
 -- Tags: no-fasttest, long, no-parallel, no-flaky-check, no-msan, no-tsan
 -- - no-fasttest -- S3 is required
 -- - no-flaky-check -- not compatible with ThreadFuzzer
--- - no-tsan -- merging 1200+ columns on `s3_no_cache` is intrinsically slow under TSan and
---              consistently exceeds the 300 s client `receive_timeout` on `OPTIMIZE FINAL`.
---              The merge itself is healthy; only the client wait window is the issue, and
---              the global per-test timeout (10 min) makes bumping it impractical.
+-- - no-tsan -- merging 1200+ columns on `s3_no_cache` exceeds the 300 s client `receive_timeout` on `OPTIMIZE FINAL` under TSan
 
 -- The real example with metric_log with 1200+ columns!
 SET optimize_trivial_insert_select = 0;
--- Since #102961 ("Use max_insert_threads for plain INSERTs without materialized
--- views"), the INSERT below fans out into `max_insert_threads` parallel writer
--- threads. Each thread opens its own copy of all column streams and each stream
--- pre-allocates `max_compress_block_size` + `DBMS_DEFAULT_BUFFER_SIZE`, so the
--- writer footprint scales as N_threads * N_columns * ~2 MiB. With 1200+ columns
--- and the randomized `max_insert_threads = 3`, the INSERT can exceed the default
--- 4.66 GiB per-query memory limit on regular (non-sanitizer) builds as well —
--- see https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=76867&sha=8175ad6ae6252d416ba993505609e4fb0407c582&name_0=PR&name_1=Stateless%20tests%20%28arm_binary%2C%20sequential%29.
--- Pin to a single writer thread; the test verifies merge behaviour, not parallel
--- insert performance.
+-- Pin to one writer thread to avoid the per-thread, per-column buffer footprint that exceeds the memory limit after #102961 made plain INSERTs fan out across `max_insert_threads`.
 SET max_insert_threads = 1;
 
 system flush logs system.metric_log;
