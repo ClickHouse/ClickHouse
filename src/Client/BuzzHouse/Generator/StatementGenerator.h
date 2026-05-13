@@ -888,6 +888,10 @@ public:
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
     const std::function<bool(const SQLTable &)> attached_tables_for_external_call
         = [](const SQLTable & t) { return t.isAttached() && t.integration == IntegrationCall::Dolor; };
+    const std::function<bool(const SQLDictionary &)> attached_dictionaries_to_compare_content
+        = [](const SQLDictionary & d) { return d.isAttached() && d.is_deterministic; };
+    const std::function<bool(const SQLView &)> attached_views_to_compare_content
+        = [](const SQLView & v) { return v.isAttached() && v.is_deterministic; };
     /// Eligible row policies for the oracle: the policy is a *row* policy (not column),
     /// has a stored USING predicate, and targets the oracle role. We also require that the
     /// policy is the only policy on its table that targets the oracle role — otherwise the
