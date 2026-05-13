@@ -61,8 +61,13 @@ public:
     void stop();
 
     /// Returns true if this instance currently holds the leader lease
-    /// and the heartbeat thread has renewed it recently enough (within 2x heartbeat_interval).
-    /// This protects against the case when the heartbeat thread stalls due to scheduling delays.
+    /// and the heartbeat thread has renewed it recently enough.
+    /// Normally the freshness threshold is `2 * heartbeat_interval`, which protects against
+    /// a stalled heartbeat thread by failing closed before the remote lease can expire.
+    /// During an in-progress takeover-sync callback (see `TakeoverSyncScope` below), the
+    /// threshold is relaxed to `session_timeout` instead: the heartbeat thread is busy
+    /// executing the callback itself, so the "stalled thread" interpretation does not
+    /// apply, and the remote lease is still valid for the full session-timeout window.
     bool isLeader() const;
 
     /// Throw TABLE_IS_READ_ONLY if not the leader.
@@ -73,6 +78,21 @@ public:
     /// Set a callback to be invoked when leadership status changes.
     /// Used by StorageMergeTree to start/stop background threads.
     void setOnLeadershipChangeCallback(CallbackOnLeadershipChange callback) { on_leadership_change = std::move(callback); }
+
+    /// RAII scope that relaxes the `isLeader` freshness threshold while a synchronous
+    /// takeover-sync callback (e.g. `loadNewlyAppearedParts`) is running. The heartbeat
+    /// task is the caller of the callback, so the next heartbeat cannot run until the
+    /// callback returns — making the usual "stalled thread" check spuriously fail any
+    /// commit that the callback itself performs. Constructed by `run` around the
+    /// `on_leadership_change(true)` invocation.
+    class TakeoverSyncScope
+    {
+    public:
+        explicit TakeoverSyncScope(MergeTreeLeaderElection & election_);
+        ~TakeoverSyncScope();
+    private:
+        MergeTreeLeaderElection & election;
+    };
 
 private:
     /// The periodic task body.
@@ -118,6 +138,11 @@ private:
 
     std::atomic<bool> is_leader{false};
     std::atomic<bool> stopped{false};
+
+    /// True while the heartbeat task is synchronously executing the takeover-sync
+    /// callback (`on_leadership_change(true)`). Set via `TakeoverSyncScope`.
+    /// `isLeader` relaxes its freshness check while this is true.
+    std::atomic<bool> in_takeover_sync{false};
 
     /// Serializes leadership transitions in `run` and `stop` so that a heartbeat task
     /// in flight when `stop` is called cannot re-enable leadership or fire the

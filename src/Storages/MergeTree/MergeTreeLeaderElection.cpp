@@ -116,9 +116,30 @@ bool MergeTreeLeaderElection::isLeader() const
     /// was too long ago, we cannot be sure the lease is still valid.
     /// We use 2x heartbeat interval as the threshold — this gives a comfortable margin
     /// for scheduling jitter while being well within the session timeout.
+    ///
+    /// During an in-progress takeover-sync callback, the heartbeat task is busy executing
+    /// the callback itself (no other heartbeat can run until it returns), so the "stalled
+    /// thread" interpretation does not apply. Relax the threshold to `session_timeout_ms`
+    /// — the remote lease is valid for that long, so commits issued by the callback are
+    /// still backed by a legitimate lease. Beyond `session_timeout_ms`, another node may
+    /// have legitimately taken over and commits must fail.
     auto elapsed = std::chrono::steady_clock::now() - last_renewal_time.load(std::memory_order_acquire);
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-    return static_cast<UInt64>(elapsed_ms) < heartbeat_interval_ms * 2;
+    UInt64 threshold_ms = in_takeover_sync.load(std::memory_order_acquire)
+        ? session_timeout_ms
+        : heartbeat_interval_ms * 2;
+    return static_cast<UInt64>(elapsed_ms) < threshold_ms;
+}
+
+MergeTreeLeaderElection::TakeoverSyncScope::TakeoverSyncScope(MergeTreeLeaderElection & election_)
+    : election(election_)
+{
+    election.in_takeover_sync.store(true, std::memory_order_release);
+}
+
+MergeTreeLeaderElection::TakeoverSyncScope::~TakeoverSyncScope()
+{
+    election.in_takeover_sync.store(false, std::memory_order_release);
 }
 
 void MergeTreeLeaderElection::assertIsLeader() const
@@ -235,7 +256,16 @@ void MergeTreeLeaderElection::run()
             CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionFollower);
             CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionLeader);
             if (on_leadership_change)
+            {
+                /// Relax the `isLeader` freshness check while the takeover callback is
+                /// running. The callback (`loadNewlyAppearedParts` + counter advance)
+                /// commits parts via `Transaction::commit`, which goes through
+                /// `assertCanCommitTransaction` -> `assertIsLeader`. Without this scope,
+                /// any sync that exceeds `2 * heartbeat_interval` would self-fail and
+                /// drop leadership, livelocking failover with a non-trivial part backlog.
+                TakeoverSyncScope sync_scope(*this);
                 on_leadership_change(true);
+            }
         }
         else if (!became_leader && was_leader)
         {
