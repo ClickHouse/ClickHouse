@@ -574,6 +574,11 @@ For example:
 
     factory.registerFunction("arrayAUCPR", [](ContextPtr){ return FunctionArrayAUC::create("arrayAUCPR", true); }, documentation_pr);
     factory.registerAlias("arrayPRAUC", "arrayAUCPR");
+    /// Backward-compatibility alias. The function was originally introduced as `arrayPrAUC`
+    /// in v24.12.1.1614-stable (PR #72073) and renamed to `arrayAUCPR` in PR #72950
+    /// without preserving the old name. Function names in ClickHouse are case-sensitive,
+    /// so the all-caps alias `arrayPRAUC` does not cover the original mixed-case name.
+    factory.registerAlias("arrayPrAUC", "arrayAUCPR");
 }
 
 }
