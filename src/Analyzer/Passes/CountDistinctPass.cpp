@@ -14,6 +14,7 @@
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -97,7 +98,12 @@ public:
         /// `String`, `FixedString`, `Array`, etc. still benefit because the
         /// specialized `GROUP BY` hash tables outperform the generic ones used
         /// inside `uniqExact` for those types.
-        if (count_distinct_argument_column_typed.getColumnType()->isValueRepresentedByNumber())
+        /// Unwrap `Nullable` and `LowCardinality(Nullable(...))` wrappers first:
+        /// `DataTypeNullable` does not override `isValueRepresentedByNumber`, so
+        /// without this `Nullable(UInt64)` and `LowCardinality(Nullable(UInt32))`
+        /// would slip through the numeric gate.
+        auto column_type_unwrapped = removeNullableOrLowCardinalityNullable(count_distinct_argument_column_typed.getColumnType());
+        if (column_type_unwrapped->isValueRepresentedByNumber())
             return;
 
         /// Build subquery SELECT count_distinct_argument_column FROM table_expression GROUP BY count_distinct_argument_column

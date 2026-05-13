@@ -4,6 +4,8 @@ numeric: Decimal	1
 numeric: Enum	1
 numeric: IPv4	1
 numeric: LC(UInt32)	1
+numeric: Nullable(UInt64)	1
+numeric: LC(Nullable(U32))	1
 non-numeric: String	1
 non-numeric: UUID	1
 non-numeric: LC(String)	1
@@ -16,3 +18,5 @@ Enum	2
 IPv4	2
 LC(String)	2
 LC(UInt32)	2
+Nullable(UInt64)	2
+LC(Nullable(U32))	2
