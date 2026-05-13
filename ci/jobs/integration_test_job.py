@@ -122,9 +122,9 @@ _WITH_FLAG_TO_COMPOSE: dict[str, List[str]] = {
     ],
     "hms_catalog": ["docker_compose_iceberg_hms_catalog.yml"],
     "glue_catalog": ["docker_compose_glue_catalog.yml"],
-    "prometheus_writer": ["docker_compose_prometheus.yml"],
-    "prometheus_reader": ["docker_compose_prometheus.yml"],
-    "prometheus_receiver": ["docker_compose_prometheus.yml"],
+    "prometheus_writer": ["docker_compose_prometheus_writer.yml"],
+    "prometheus_reader": ["docker_compose_prometheus_reader.yml"],
+    "prometheus_receiver": ["docker_compose_prometheus_receiver.yml"],
     # with_odbc_drivers implicitly sets up mysql8 + postgres
     "odbc_drivers": ["docker_compose_mysql_8_0.yml", "docker_compose_postgres.yml"],
     # Flags with no separate compose file of their own
@@ -758,7 +758,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             workers,
             args.options,
             info,
-            no_strict=is_targeted_check,  # targeted check might want to run test that was removed on a merge-commit
+            no_strict=is_targeted_check or is_flaky_check,  # targeted check might want to run test that was removed on a merge-commit; flaky check might pick up a changed test filtered out by SKIP_LIST in the private fork
         )
     )
 
@@ -769,12 +769,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
         sequential_test_modules = []
         assert not is_sequential
 
-    if is_targeted_check and not parallel_test_modules and not sequential_test_modules:
-        # All targeted tests were stale (removed or renamed since the CIDB record).
-        # This is expected — skip gracefully instead of producing a "no results" error.
+    if (is_targeted_check or is_flaky_check) and not parallel_test_modules and not sequential_test_modules:
+        # Targeted check: all selected tests were stale (removed or renamed since the CIDB record).
+        # Flaky check: all changed tests were filtered out (e.g. by SKIP_LIST in the private fork).
+        # Either way, skip gracefully instead of producing a "no results" error.
+        skip_info = (
+            "All targeted tests are stale (removed or renamed)"
+            if is_targeted_check
+            else "All changed tests were filtered out (e.g. by SKIP_LIST)"
+        )
         Result.create_from(
             status=Result.Status.SKIPPED,
-            info="All targeted tests are stale (removed or renamed)",
+            info=skip_info,
         ).complete_job()
 
     if is_flaky_check or is_targeted_check:

@@ -1,4 +1,5 @@
 #include <Server/ArrowFlight/AuthMiddleware.h>
+#include <Server/ArrowFlight/CallsData.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -31,9 +32,22 @@ void AuthMiddleware::CallCompleted(const arrow::Status & /*status*/)
     if (!session_id.empty())
     {
         if (session_close)
+        {
+            calls_data.closeSessionPreparedStatements(session_id, username);
             session->closeSession(session_id);
+        }
         else
+        {
+            if (calls_data.usesSessionTimeoutForPsLifetime() && session_timeout.count() > 0)
+                calls_data.refreshSessionPreparedStatements(session_id, username, std::chrono::duration_cast<ArrowFlight::Duration>(session_timeout));
+            else if (auto ps_lifetime = calls_data.getPreparedStatementsLifetime())
+                calls_data.refreshSessionPreparedStatements(session_id, username, *ps_lifetime);
             session->releaseSessionID();
+        }
+    }
+    else if (auto ps_lifetime = calls_data.getPreparedStatementsLifetime())
+    {
+        calls_data.refreshSessionPreparedStatements("", username, *ps_lifetime);
     }
 }
 
@@ -243,7 +257,11 @@ arrow::Status AuthMiddlewareFactory::StartCall(
         if (auth)
             token = token_storage.getToken(username, password);
 
-        *middleware = std::make_unique<AuthMiddleware>(session, token, username, session_id, session_close == "1" && server.config().getBool("enable_arrow_close_session", true));
+        auto parsed_session_timeout = session_id.empty()
+            ? std::chrono::steady_clock::duration{0}
+            : parseSessionTimeout(server.context()->getConfigRef(), session_timeout);
+
+        *middleware = std::make_unique<AuthMiddleware>(session, token, username, calls_data, session_id, session_close == "1" && server.config().getBool("enable_arrow_close_session", true), parsed_session_timeout);
     }
     catch (DB::Exception & e)
     {
