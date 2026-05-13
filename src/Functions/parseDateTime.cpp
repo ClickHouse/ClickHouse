@@ -429,8 +429,8 @@ namespace
         [[nodiscard]]
         VoidOrError setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool hour_starts_at_1_ = false)
         {
-            Int32 max_hour = 0;
-            Int32 min_hour = 0;
+            Int32 max_hour; // NOLINT(cppcoreguidelines-init-variables) -- assigned in every branch below before first read, hot path
+            Int32 min_hour; // NOLINT(cppcoreguidelines-init-variables)
             Int32 new_hour = hour_;
             if (!is_hour_of_half_day_ && !hour_starts_at_1_)
             {
