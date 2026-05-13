@@ -84,10 +84,20 @@ namespace ErrorCodes
 namespace
 {
 
-bool hasExplicitS3Credentials(const S3::S3AuthSettings & auth_settings)
+/// `role_arn` triggers an STS `AssumeRole` flow signed with whatever
+/// credentials end up in `auth_settings`. Without this check, a `role_arn`
+/// supplied by the user via SQL would be signed with server-managed keys
+/// (e.g. a static `<s3>` config block, an endpoint-scoped config block, or
+/// the AWS SDK environment provider chain). To prevent that, every code path
+/// that accepts a user-supplied `role_arn` must verify that the user also
+/// supplied both S3 access keys in the same SQL scope.
+[[noreturn]] void throwRoleArnRequiresUserSuppliedKeys(const char * source)
 {
-    return !auth_settings[S3AuthSetting::access_key_id].value.empty()
-        && !auth_settings[S3AuthSetting::secret_access_key].value.empty();
+    throw Exception(
+        ErrorCodes::ACCESS_DENIED,
+        "Using `role_arn` without user-supplied `access_key_id` and `secret_access_key` "
+        "in {} is not allowed",
+        source);
 }
 
 }
@@ -264,13 +274,13 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     partition_columns_in_data_file = collection.getOrDefault<bool>(
         "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
     s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.getOrDefault<String>("role_arn", "");
-    if (!s3_settings->auth_settings[S3AuthSetting::role_arn].value.empty()
-        && !hasExplicitS3Credentials(s3_settings->auth_settings))
-    {
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "Using `role_arn` without explicit S3 credentials in S3 named collections is not allowed");
-    }
+    /// The check looks only at the keys in the named collection itself, not at the merged
+    /// `auth_settings`, so that the user cannot piggy-back on server-managed `<s3>` config
+    /// credentials when supplying their own `role_arn`.
+    const bool nc_has_user_keys = !collection.getOrDefault<String>("access_key_id", "").empty()
+        && !collection.getOrDefault<String>("secret_access_key", "").empty();
+    if (!s3_settings->auth_settings[S3AuthSetting::role_arn].value.empty() && !nc_has_user_keys)
+        throwRoleArnRequiresUserSuppliedKeys("S3 named collections");
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
 
     s3_settings->auth_settings[S3AuthSetting::http_client] = collection.getOrDefault<String>("http_client", "");
@@ -713,16 +723,23 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     else
         partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
 
+    /// Track whether the user supplied keys in the same SQL scope, not whether
+    /// keys ended up in `auth_settings` after merging with `<s3>` / endpoint config.
+    bool user_supplied_access_key_id = false;
+    bool user_supplied_secret_access_key = false;
+
     if (auto access_key_id_value = getFromPositionOrKeyValue<String>("access_key_id", args, engine_args_to_idx, key_value_args);
         access_key_id_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::access_key_id] = access_key_id_value.value();
+        user_supplied_access_key_id = !access_key_id_value.value().empty();
     }
 
     if (auto secret_access_key_value = getFromPositionOrKeyValue<String>("secret_access_key", args, engine_args_to_idx, key_value_args);
         secret_access_key_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::secret_access_key] = secret_access_key_value.value();
+        user_supplied_secret_access_key = !secret_access_key_value.value().empty();
     }
 
     if (auto session_token_value = getFromPositionOrKeyValue<String>("session_token", args, engine_args_to_idx, key_value_args);
@@ -731,11 +748,10 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings[S3AuthSetting::session_token] = session_token_value.value();
     }
 
-    if (extra_credentials_result.role_arn_provided && !hasExplicitS3Credentials(s3_settings->auth_settings))
+    if (extra_credentials_result.role_arn_provided
+        && !(user_supplied_access_key_id && user_supplied_secret_access_key))
     {
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "Using `role_arn` without explicit S3 credentials in S3 table function arguments is not allowed");
+        throwRoleArnRequiresUserSuppliedKeys("S3 table function arguments");
     }
 
     if (no_sign_request)
