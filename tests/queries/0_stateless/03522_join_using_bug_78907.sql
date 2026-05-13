@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: query has `max_execution_time = 10.` and is timing-sensitive; random DETACH/ATTACH overhead may push it past the limit
+
 CREATE TABLE tabc__fuzz_21 (`a` Int64, `b` Int8 ALIAS a + 1, `c` DateTime ALIAS b + 1, `s` Nullable(DateTime64(3))) ENGINE = MergeTree ORDER BY a;
 INSERT INTO tabc__fuzz_21 (a, s) SELECT number, concat('abc', toString(number)) FROM numbers(4);
 
