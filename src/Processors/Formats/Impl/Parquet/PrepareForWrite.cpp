@@ -22,8 +22,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeCustom.h>
-#include <Columns/ColumnVariant.h>
-#include <DataTypes/DataTypeVariant.h>
 
 /// This file deals with schema conversion and with repetition and definition levels.
 
@@ -149,8 +147,8 @@ void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offset
             }
             else
             {
-                s.def.push_back(static_cast<UInt8>(1));
-                s.rep.push_back(static_cast<UInt8>(1));
+                s.def.push_back(1);
+                s.rep.push_back(1);
                 s.def[i] = 0;
                 s.rep[i] = 0;
                 i += 1;
@@ -197,7 +195,7 @@ void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offset
         }
         else
         {
-            mask.push_back(static_cast<UInt8>(1));
+            mask.push_back(1);
             mask[i + empty_arrays] = 0;
             ++empty_arrays;
         }
@@ -456,15 +454,6 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             break;
         }
 
-        case TypeIndex::UUID:
-        {
-            parq::UUIDType uuid;
-            parq::LogicalType t;
-            t.__set_UUID(uuid);
-            fixed_string(16, std::nullopt, t);
-            break;
-        }
-
         /// Parquet doesn't have logical types for these.
         case TypeIndex::UInt128: fixed_string(16); break;
         case TypeIndex::UInt256: fixed_string(32); break;
@@ -534,9 +523,6 @@ void prepareColumnTuple(
     const auto * type_tuple = assert_cast<const DataTypeTuple *>(type.get());
     size_t num_elements = type_tuple->getElements().size();
 
-    /// We artificially disallow empty tuples because they're not widely supported.
-    /// But they're supported in clickhouse; if we remove this check, nothing breaks, and clickhouse
-    /// can write and read such columns.
     if (num_elements == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parquet doesn't support empty tuples");
 
@@ -658,7 +644,7 @@ void prepareColumnRecursive(
 {
     /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
     /// parquet dictionary-encoding.
-    column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+    column = column->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
 
     switch (type->getTypeId())
     {
@@ -702,58 +688,6 @@ void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 {
     if (!type->getCustomName())
         return;
-
-    if (type->getCustomName()->getName() == "Geometry")
-    {
-        const auto & col_variant = assert_cast<const ColumnVariant &>(*column);
-        const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
-        const auto & variants = variant_type.getVariants();
-
-        std::vector<std::shared_ptr<IWKBTransform>> transforms(variants.size());
-        for (size_t i = 0; i < variants.size(); ++i)
-        {
-            const auto & variant_name = variants[i]->getCustomName() ? variants[i]->getCustomName()->getName() : variants[i]->getName();
-            if (variant_name == WKBPointTransform::name)
-                transforms[i] = std::make_shared<WKBPointTransform>();
-            else if (variant_name == WKBLineStringTransform::name || variant_name == "Ring")
-                transforms[i] = std::make_shared<WKBLineStringTransform>();
-            else if (variant_name == WKBPolygonTransform::name)
-                transforms[i] = std::make_shared<WKBPolygonTransform>();
-            else if (variant_name == WKBMultiLineStringTransform::name)
-                transforms[i] = std::make_shared<WKBMultiLineStringTransform>();
-            else if (variant_name == WKBMultiPolygonTransform::name)
-                transforms[i] = std::make_shared<WKBMultiPolygonTransform>();
-        }
-
-        auto result = ColumnString::create();
-        auto null_map = ColumnUInt8::create();
-        result->reserve(col_variant.size());
-        null_map->reserve(col_variant.size());
-        for (size_t i = 0; i < col_variant.size(); ++i)
-        {
-            const auto local_discriminator = col_variant.localDiscriminatorAt(i);
-            if (local_discriminator == ColumnVariant::NULL_DISCRIMINATOR)
-            {
-                result->insertDefault();
-                null_map->insertValue(1);
-                continue;
-            }
-            const auto global_discriminator = col_variant.globalDiscriminatorAt(i);
-            if (!transforms[global_discriminator])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot encode Geometry sub-type '{}' as WKB",
-                    variants[global_discriminator]->getName());
-            const auto & sub_column = col_variant.getVariantByLocalDiscriminator(local_discriminator);
-            Field field;
-            sub_column.get(col_variant.offsetAt(i), field);
-            result->insert(transforms[global_discriminator]->dumpObject(field));
-            null_map->insertValue(0);
-        }
-        column = ColumnNullable::create(std::move(result), std::move(null_map));
-        type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
-        return;
-    }
 
     std::shared_ptr<IWKBTransform> transform;
     if (type->getCustomName()->getName() == WKBPointTransform::name)

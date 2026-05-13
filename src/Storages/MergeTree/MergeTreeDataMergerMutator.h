@@ -92,7 +92,6 @@ public:
         MergeTreeData::MergingParams merging_params,
         MergeTreeTransactionPtr txn,
         bool need_prefix = true,
-        ProjectionDescriptionRawPtr projection = nullptr,
         IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
 
@@ -135,45 +134,5 @@ private:
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };
-
-std::string convertMergeConstraintsToString(const MergeConstraints & constraints);
-
-std::expected<void, PreformattedMessage> canMergeAllParts(const PartsRange & range, const MergePredicatePtr & merge_predicate);
-std::unordered_map<String, PartitionStatistics> calculateStatisticsForPartitions(const PartsRanges & ranges);
-
-String getBestPartitionToOptimizeEntire(
-    size_t max_total_size_to_merge,
-    const ContextPtr & context,
-    const MergeTreeSettingsPtr & settings,
-    const std::unordered_map<String, PartitionStatistics> & stats,
-    const LoggerPtr & log);
-
-PartsRanges grabAllPossibleRanges(
-    const PartsCollectorPtr & parts_collector,
-    const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
-    const time_t & current_time,
-    const std::optional<PartitionIdsHint> & partitions_hint,
-    LogSeriesLimiter & series_log);
-
-MergeSelectorChoices chooseMergesFrom(
-    const MergeSelectorApplier & selector,
-    const IMergePredicate & predicate,
-    const PartsRanges & ranges,
-    const PartitionsStatistics & partitions_stats,
-    const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreeSettingsPtr & data_settings,
-    const PartitionIdToTTLs & next_delete_times,
-    const PartitionIdToTTLs & next_recompress_times,
-    bool can_use_ttl_merges,
-    time_t current_time,
-    const LoggerPtr & log);
-
-std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
-    const PartsCollectorPtr & parts_collector,
-    const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
-    const time_t & current_time,
-    const std::string & partition_id);
 
 }

@@ -2,7 +2,12 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
+#include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
+#include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
+#include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
+#include <Parsers/Kusto/KustoFunctions/KQLDateTimeFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLDynamicFunctions.h>
+#include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
 
 #include <fmt/format.h>
 
@@ -54,17 +59,7 @@ bool ArrayIndexOf::convertImpl(String & out, IParser::Pos & pos)
 
 bool ArrayLength::convertImpl(String & out, IParser::Pos & pos)
 {
-    const auto fn_name = getKQLFunctionName(pos);
-    if (fn_name.empty())
-        return false;
-    const auto arg = getArgument(fn_name, pos);
-    /// For string inputs that look like JSON arrays, parse and count elements
-    /// For actual arrays, use length() directly
-    out = "if(toTypeName(" + arg + ") LIKE '%Array%', length(" + arg + "), "
-        "if(toTypeName(" + arg + ") LIKE '%String%' AND startsWith(trimBoth(ifNull(toString(" + arg + "), '')), '['), "
-        "JSONArrayLength(ifNull(toString(" + arg + "), '[]')), "
-        "NULL))";
-    return true;
+    return directMapping(out, pos, "length");
 }
 
 bool ArrayReverse::convertImpl(String & out, IParser::Pos & pos)
@@ -74,7 +69,7 @@ bool ArrayReverse::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto array = getArgument(function_name, pos);
-    out = fmt::format("reverse({0})", array);
+    out = fmt::format("if(throwIf(not startsWith(toTypeName({0}), 'Array'), 'Only arrays are supported'), [], reverse({0}))", array);
 
     return true;
 }

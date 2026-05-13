@@ -19,14 +19,9 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 
-#include <Core/Settings.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool cloud_mode;
-}
 
 namespace ErrorCodes
 {
@@ -108,7 +103,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 {
 }
 
-BlockIO ExecutableDictionarySource::loadAll()
+QueryPipeline ExecutableDictionarySource::loadAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
@@ -119,12 +114,10 @@ BlockIO ExecutableDictionarySource::loadAll()
     auto command = configuration.command;
     updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context));
-    return io;
+    return QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context));
 }
 
-BlockIO ExecutableDictionarySource::loadUpdatedAll()
+QueryPipeline ExecutableDictionarySource::loadUpdatedAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");
@@ -156,29 +149,23 @@ BlockIO ExecutableDictionarySource::loadUpdatedAll()
 
     LOG_TRACE(log, "loadUpdatedAll {}", command);
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context));
-    return io;
+    return QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context));
 }
 
-BlockIO ExecutableDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
+QueryPipeline ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     auto block = blockForIds(dict_struct, ids);
-    BlockIO io;
-    io.pipeline = getStreamForBlock(block);
-    return io;
+    return getStreamForBlock(block);
 }
 
-BlockIO ExecutableDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
+QueryPipeline ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    BlockIO io;
-    io.pipeline = getStreamForBlock(block);
-    return io;
+    return getStreamForBlock(block);
 }
 
 QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
@@ -238,9 +225,6 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
-        if (global_context->getSettingsRef()[Setting::cloud_mode])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `executable` is disabled");
-
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `executable` does not support attribute expressions");
 
@@ -258,7 +242,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 
         bool execute_direct = config.getBool(settings_config_prefix + ".execute_direct", false);
         std::string command_value = config.getString(settings_config_prefix + ".command");
-        VectorWithMemoryTracking<String> command_arguments;
+        std::vector<String> command_arguments;
 
         if (execute_direct)
         {
