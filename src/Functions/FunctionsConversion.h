@@ -2833,6 +2833,7 @@ struct NameToDecimal256 { static constexpr auto name = "toDecimal256"; };
     { \
         static constexpr auto name = "toInterval" #INTERVAL_KIND; \
         static constexpr auto kind = IntervalKind::Kind::INTERVAL_KIND; \
+        static constexpr auto signature = "(NativeNumber) -> Interval" #INTERVAL_KIND; \
     };
 
 DEFINE_NAME_TO_INTERVAL(Nanosecond)
@@ -2953,6 +2954,20 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
+    }
+
+    /// Documentation-only — `FunctionConvert::getReturnTypeImpl(ColumnsWithTypeAndName)`
+    /// is overridden below, so the DSL is bypassed at type-check time. The string is
+    /// surfaced via `system.functions`. Opt-in is per-`Name`: an Impl exposes a
+    /// `signature` constant describing the simple non-Nullable shape; the override
+    /// continues to handle Nullable propagation and the (optional) trailing
+    /// scale/timezone arguments.
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Name::signature; })
+            return Name::signature;
+        else
+            return {};
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

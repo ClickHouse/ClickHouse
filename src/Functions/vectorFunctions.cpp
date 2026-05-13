@@ -1305,6 +1305,18 @@ public:
             return 1;
     }
 
+    /// Documentation-only — divides the input vector by its L-norm. The
+    /// `Lp` variant takes a `p` parameter; the others are unary. The result
+    /// element type is computed from `LNorm / TupleDivideByNumber`, so the
+    /// string is surfaced via `system.functions` only.
+    String getSignatureString() const override
+    {
+        if constexpr (FuncLabel::name[0] == 'p')
+            return "(Tuple, Float | UInt) -> Tuple";
+        else
+            return "(Tuple) -> Tuple";
+    }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (FuncLabel::name[0] == 'p')
@@ -1465,6 +1477,18 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Documentation-only — `Traits` may expose a `signature` constant describing
+    /// the shape accepted by both the tuple- and array-path. The actual return
+    /// type is computed by the underlying `tuple_function` / `array_function`,
+    /// so the string is surfaced via `system.functions` only.
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Traits::signature; })
+            return Traits::signature;
+        else
+            return {};
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Since transposed distance functions are variadic, we check the number of arguments, as we won't do it later like with others
@@ -1533,6 +1557,7 @@ extern FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr contex
 struct DotProduct
 {
     static constexpr auto name = "dotProduct";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionDotProduct::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayDotProduct;
@@ -1541,6 +1566,7 @@ struct DotProduct
 struct L1NormTraits
 {
     static constexpr auto name = "L1Norm";
+    static constexpr auto signature = "(Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionL1Norm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL1Norm;
@@ -1549,6 +1575,7 @@ struct L1NormTraits
 struct L2NormTraits
 {
     static constexpr auto name = "L2Norm";
+    static constexpr auto signature = "(Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionL2Norm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Norm;
@@ -1557,6 +1584,7 @@ struct L2NormTraits
 struct L2SquaredNormTraits
 {
     static constexpr auto name = "L2SquaredNorm";
+    static constexpr auto signature = "(Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionL2SquaredNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2SquaredNorm;
@@ -1565,6 +1593,7 @@ struct L2SquaredNormTraits
 struct LpNormTraits
 {
     static constexpr auto name = "LpNorm";
+    static constexpr auto signature = "(Tuple | Array | QBit, Float | UInt) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionLpNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLpNorm;
@@ -1573,6 +1602,7 @@ struct LpNormTraits
 struct LinfNormTraits
 {
     static constexpr auto name = "LinfNorm";
+    static constexpr auto signature = "(Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionLinfNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLinfNorm;
@@ -1581,6 +1611,7 @@ struct LinfNormTraits
 struct L1DistanceTraits
 {
     static constexpr auto name = "L1Distance";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionL1Distance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL1Distance;
@@ -1589,6 +1620,7 @@ struct L1DistanceTraits
 struct L2DistanceTraits
 {
     static constexpr auto name = "L2Distance";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionL2Distance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Distance;
@@ -1597,6 +1629,7 @@ struct L2DistanceTraits
 struct L2SquaredDistanceTraits
 {
     static constexpr auto name = "L2SquaredDistance";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionL2SquaredDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2SquaredDistance;
@@ -1605,6 +1638,7 @@ struct L2SquaredDistanceTraits
 struct LpDistanceTraits
 {
     static constexpr auto name = "LpDistance";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit, Float | UInt) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionLpDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLpDistance;
@@ -1613,6 +1647,7 @@ struct LpDistanceTraits
 struct LinfDistanceTraits
 {
     static constexpr auto name = "LinfDistance";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionLinfDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLinfDistance;
@@ -1621,6 +1656,7 @@ struct LinfDistanceTraits
 struct CosineDistanceTraits
 {
     static constexpr auto name = "cosineDistance";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionCosineDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistance;
@@ -1630,6 +1666,7 @@ struct L2DistanceTransposedTraits
 {
     static constexpr auto name = "L2DistanceTransposed";
     static constexpr bool is_transposed = true;
+    static constexpr auto signature = "(Array | QBit | FixedString, ...) -> Array(Float64)";
 
     /// Transposed distances are always array functions, but we still need CreateTupleFunction to compile
     static FunctionPtr CreateTupleFunction(ContextPtr) { return nullptr; } /// NOLINT(readability-identifier-naming)
@@ -1640,6 +1677,7 @@ struct CosineDistanceTransposedTraits
 {
     static constexpr auto name = "cosineDistanceTransposed";
     static constexpr bool is_transposed = true;
+    static constexpr auto signature = "(Array | QBit | FixedString, ...) -> Array(Float64)";
 
     static FunctionPtr CreateTupleFunction(ContextPtr) { return nullptr; } /// NOLINT(readability-identifier-naming)
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistanceTransposed;
