@@ -768,6 +768,7 @@ class IsValidJSONImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String) -> UInt8";
 
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
@@ -1031,6 +1032,13 @@ class JSONExtractImpl
 public:
     using Element = typename JSONParser::Element;
 
+    /// Declarative signature — the last argument is a constant string with the
+    /// type name; the result is the type produced by `typeFromString` on that
+    /// name. The optional middle arguments are JSON-pointer-like index/key
+    /// selectors. The signature is documentation-only because the function's
+    /// `build()` constructs the return type itself.
+    static constexpr auto signature = "(String, ..., const t String) -> typeFromString(t)";
+
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() < 2)
@@ -1071,6 +1079,12 @@ class JSONExtractKeysAndValuesImpl
 {
 public:
     using Element = typename JSONParser::Element;
+
+    /// Declarative signature — keys are strings; values get parsed via the
+    /// trailing constant type-name argument. Result is `Array(Tuple(String,
+    /// typeFromString(t)))`. Documentation-only (the function's `build()`
+    /// constructs the return type itself).
+    static constexpr auto signature = "(String, ..., const t String) -> Array(Tuple(String, typeFromString(t)))";
 
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {

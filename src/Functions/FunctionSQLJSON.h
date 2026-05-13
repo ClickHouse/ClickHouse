@@ -483,6 +483,17 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only — `JSON_*` functions take a JSON `String` plus a
+    /// const-`String` JSONPath; the result-type varies by `Impl` (delegated
+    /// to `Impl::signature`).
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::signature; })
+            return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::signature;
+        else
+            return {};
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::getReturnType(
@@ -534,6 +545,9 @@ class JSONExistsImpl
 {
 public:
     using Element = typename JSONParser::Element;
+
+    /// Documentation-only — `JSON_EXISTS(json, jsonpath, [jsonpath, ...])`.
+    static constexpr auto signature = "(String, const String, ...) -> UInt8";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool)
     {
@@ -592,6 +606,11 @@ class JSONValueImpl
 {
 public:
     using Element = typename JSONParser::Element;
+
+    /// Documentation-only — extracts a scalar at the JSON path as `String`
+    /// (or `Nullable(String)` when `function_json_value_return_type_allow_nullable`
+    /// is set; when multiple paths are passed the result becomes a tuple).
+    static constexpr auto signature = "(String, const String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool function_json_value_return_type_allow_nullable)
     {
@@ -690,6 +709,10 @@ class JSONQueryImpl
 {
 public:
     using Element = typename JSONParser::Element;
+
+    /// Documentation-only — returns the serialised JSON value(s) at the
+    /// JSON path as `String`.
+    static constexpr auto signature = "(String, const String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool)
     {

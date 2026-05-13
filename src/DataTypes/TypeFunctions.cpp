@@ -254,6 +254,10 @@ public:
     std::string name() const override { return "max"; }
 };
 
+/// Resolve a const-string type name to a `DataType`. Used in signatures of
+/// functions that take the result type as a string argument:
+///   reinterpret(value, const t String) -> typeFromString(t)
+///   JSONExtract(json, [...], const t String) -> typeFromString(t)
 class TypeFunctionTypeFromString : public ITypeFunction
 {
 public:

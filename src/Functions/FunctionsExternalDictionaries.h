@@ -351,6 +351,18 @@ public:
         return helper.isDictGetFunctionInjective(sample_columns);
     }
 
+    /// Documentation-only — the result type comes from the dictionary
+    /// schema's `attribute_name` column, which can't be expressed in the
+    /// DSL since it requires runtime access to the dictionary registry.
+    String getSignatureString() const override
+    {
+        if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault)
+            return "(const String, const String | Tuple, Any, Any) -> Any";
+        if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
+            return "(const String, const String | Tuple, Any, [UInt64]) -> Array(Any)";
+        return "(const String, const String | Tuple, Any) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 3)
@@ -939,6 +951,13 @@ private:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
+    /// Documentation-only — same shape as `dictGet`, with `Nullable` result
+    /// (or `Tuple(Nullable, ...)` when multiple attributes are requested).
+    String getSignatureString() const override
+    {
+        return "(const String, const String | Tuple, Any) -> Nullable(Any)";
+    }
+
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
         return dictionary_get_func_impl.isInjective(sample_columns);
@@ -1095,6 +1114,14 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
     bool isDeterministic() const override { return false; }
+
+    /// Documentation-only — returns an array of ancestor keys from a
+    /// hierarchical dictionary. The key column type matches the dictionary's
+    /// hierarchical-attribute type (typically `UInt64`).
+    String getSignatureString() const override
+    {
+        return "(const String, UInt64) -> Array(UInt64)";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -1295,6 +1322,15 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
     bool isDeterministic() const override { return false; }
+
+    /// Documentation-only — covers `dictGetDescendants` (variadic, with
+    /// optional const-UInt level) and `dictGetChildren` (fixed level=1).
+    String getSignatureString() const override
+    {
+        if constexpr (Strategy::is_variadic)
+            return "(const String, UInt64, [const UInt]) -> Array(UInt64)";
+        return "(const String, UInt64) -> Array(UInt64)";
+    }
 
     explicit FunctionDictGetDescendantsOverloadResolverImpl(ContextPtr context)
         : dictionary_helper(std::make_shared<FunctionDictHelper>(std::move(context)))

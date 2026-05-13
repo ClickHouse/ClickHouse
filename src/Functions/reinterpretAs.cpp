@@ -56,6 +56,15 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
+    /// Documentation-only — the result type is parsed from the const-string
+    /// second argument; the override below stays authoritative because it
+    /// additionally validates that source and destination types are
+    /// memory-compatible.
+    String getSignatureString() const override
+    {
+        return "(Any, const t String) -> typeFromString(t)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto & column = arguments.back().column;
@@ -434,11 +443,11 @@ public:
     /// `String`/`FixedString`. Returns the requested target type. We can advertise a
     /// signature when `ToDataType` is default-constructible (all the numeric/date/UUID
     /// variants); `reinterpretAsFixedString` derives its `N` from the input's value size
-    /// and stays on the legacy `getReturnTypeImpl` path.
+    /// so its signature is documentation-only.
     String getSignatureString() const override
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeFixedString>)
-            return {};
+            return "(Any) -> FixedString";
         else
         {
             static const String sig
