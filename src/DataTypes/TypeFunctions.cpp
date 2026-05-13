@@ -838,6 +838,27 @@ public:
     std::string name() const override { return "concatTuples"; }
 };
 
+/// `makeNullableIfCanBe(T)` — wraps `T` in `Nullable` if `T->canBeInsideNullable()`,
+/// otherwise returns `T` unchanged. Used by `arrayElementOrNull` to compute the
+/// result type — the Or-Null variant wraps in Nullable only when the element type
+/// permits it (Tuple-of-tuple chains, Map, etc. cannot be inside Nullable).
+class TypeFunctionMakeNullableIfCanBe : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function makeNullableIfCanBe takes 1 argument");
+
+        const DataTypePtr & type = args.front().type();
+        if (type->canBeInsideNullable())
+            return Value(makeNullable(type));
+        return Value(type);
+    }
+
+    std::string name() const override { return "makeNullableIfCanBe"; }
+};
+
 /// `mostSubtype(T1, T2, ...)` — finds the most specific common type. Used by
 /// `arrayIntersect` to compute the result element type as the type that fits
 /// in every input array. When the inputs share no common subtype (e.g. one
@@ -1096,6 +1117,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionConcatTuples>();
     factory.registerElement<TypeFunctionInnermostArrayElement>();
     factory.registerElement<TypeFunctionMostSubtype>();
+    factory.registerElement<TypeFunctionMakeNullableIfCanBe>();
     factory.registerElement<TypeFunctionAnyInteger>();
     factory.registerElement<TypeFunctionSelectIf>();
     factory.registerElement<TypeFunctionIsFloat32OrSmaller>();

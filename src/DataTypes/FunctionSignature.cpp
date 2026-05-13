@@ -303,7 +303,12 @@ public:
 
     size_t getIndex() const override
     {
-        return impl ? getCommonIndex(var_key.index, impl->getIndex()) : 0;
+        /// The variable's own index (e.g. `1` for `K1`) participates in the
+        /// ellipsis-grouping walk-back, regardless of whether a type matcher
+        /// is attached. So `(K1, V1, ...)` and `(K1 : Any, V1 : Any, ...)`
+        /// must both report index 1 — otherwise the bare form fails to
+        /// participate in multi-element repeat groups.
+        return impl ? getCommonIndex(var_key.index, impl->getIndex()) : var_key.index;
     }
 };
 
