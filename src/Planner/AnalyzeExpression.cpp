@@ -322,11 +322,15 @@ ActionsDAG analyzeExpressionToActionsDAG(
     }
     else if (add_aliases && !project_result)
     {
-        /// Mirror `ExpressionAnalyzer::getActionsDAG(true, false)`: add aliases,
+        /// Mirror `ExpressionAnalyzer::getActionsDAG(true, false)`: add aliases
+        /// for the projection outputs, append all source columns to outputs,
         /// then prune outputs to (alias names ∪ source-column names).  Without
         /// the pruning step the DAG keeps the original non-aliased expression
         /// output alongside the alias, which diverges from the legacy header
         /// shape (e.g. `expr AS x` would expose both `expr` and `x`).
+        /// Source columns must be appended to outputs before `removeUnusedActions`
+        /// because the `NameSet` overload looks only at outputs — inputs are not
+        /// reachable by name there.
         NamesWithAliases rename_pairs;
         rename_pairs.reserve(outputs.size());
         NameSet required_names;
@@ -340,8 +344,27 @@ ActionsDAG analyzeExpressionToActionsDAG(
 
         actions.addAliases(rename_pairs);
 
+        /// Append source columns (inputs) to outputs if not already present,
+        /// matching the legacy behavior where the input block columns remained
+        /// visible alongside the aliased expression.
+        std::vector<const ActionsDAG::Node *> inputs_to_add;
         for (const auto * input : actions.getInputs())
+        {
+            bool already_in_outputs = false;
+            for (const auto * output : outputs)
+            {
+                if (output == input)
+                {
+                    already_in_outputs = true;
+                    break;
+                }
+            }
+            if (!already_in_outputs)
+                inputs_to_add.push_back(input);
             required_names.insert(input->result_name);
+        }
+        for (const auto * input : inputs_to_add)
+            outputs.push_back(input);
 
         actions.removeUnusedActions(required_names);
     }
