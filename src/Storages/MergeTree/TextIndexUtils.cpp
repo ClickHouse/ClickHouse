@@ -21,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int FILE_DOESNT_EXIST;
 }
 
 namespace MergeTreeSetting
@@ -133,6 +132,9 @@ IProcessor::Status BuildTextIndexTransform::prepare()
 
 void BuildTextIndexTransform::aggregate(const Block & block)
 {
+    if (block.rows() == 0)
+        return;
+
     /// Threshold for the number of processed tokens to flush the segment.
     /// Calculating used RAM or number of processed unique tokens adds significant overhead,
     /// so we use a simple trade-off threshold, which is reasonable in normal scenarios.
@@ -502,22 +504,17 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
 {
     static constexpr size_t marks_count = 1;
 
-    /// Check for both original and hashed filenames (hashed if the index name is too long)
-    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, *data_part_storage);
-    if (!actual_stream_name)
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File for text index stream {} does not exist", stream_name + extension);
-
     /// Use reader stream that doesn't read marks,
     /// because text index always has one mark.
     return std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
         data_part_storage,
-        *actual_stream_name,
+        stream_name,
         extension,
         marks_count,
         MarkRanges{{0, marks_count}},
         reader_settings,
         /*uncompressed_cache=*/ nullptr,
-        data_part_storage->getFileSize(*actual_stream_name + extension),
+        data_part_storage->getFileSize(stream_name + extension),
         /*marks_loader=*/ nullptr,
         ReadBufferFromFileBase::ProfileCallback{},
         CLOCK_MONOTONIC_COARSE);

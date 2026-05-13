@@ -1,3 +1,5 @@
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
@@ -147,25 +149,27 @@ void ColumnArray::get(size_t n, Field & res) const
         res_arr.push_back(getData()[offset + i]);
 }
 
-void ColumnArray::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnArray::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
 
     if (options.notFull(name_buf))
         name_buf << "[";
+    DataTypes element_types;
+    element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        getData().getValueNameImpl(name_buf, offset + i, options);
-        if (!options.notFull(name_buf))
-            break;
+        const auto & type = getData().getValueNameAndTypeImpl(name_buf, offset + i, options);
+        element_types.push_back(type);
     }
-
     if (options.notFull(name_buf))
         name_buf << "]";
+
+    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
 }
 
 std::string_view ColumnArray::getDataAt(size_t n) const
@@ -301,6 +305,14 @@ void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
     hash.update(array_size);
     for (size_t i = 0; i < array_size; ++i)
         getData().updateHashWithValue(offset + i, hash);
+}
+
+void ColumnArray::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    size_t nested_begin = offsetAt(begin);
+    size_t nested_end = offsetAt(end);
+    getData().updateHashWithValueRange(nested_begin, nested_end, hash);
+    hash.update(reinterpret_cast<const char *>(&getOffsets()[begin]), (end - begin) * sizeof(getOffsets()[0]));
 }
 
 WeakHash32 ColumnArray::getWeakHash32() const

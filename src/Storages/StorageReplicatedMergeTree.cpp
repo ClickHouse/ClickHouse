@@ -99,7 +99,6 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -117,7 +116,6 @@
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/scope_guard_safe.h>
 #include <IO/SharedThreadPools.h>
 
@@ -675,7 +673,7 @@ bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper(const ZooKeepe
     {
         auto zookeeper = getZooKeeper();
         String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
-        auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
+        auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parseRaw(metadata_str);
         fixed_granularity = (metadata_from_zk.index_granularity_bytes == 0);
     };
 
@@ -708,15 +706,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         extended_list_of_replicas.push_back(replica_name);
         extended_list_of_replicas.insert(extended_list_of_replicas.end(), replicas.begin(), replicas.end());
         all_required_replicas = &extended_list_of_replicas;
-    }
-
-    /// Get the process list element to check for query cancellation while waiting.
-    QueryStatusPtr process_list_element;
-    if (CurrentThread::isInitialized())
-    {
-        auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context)
-            process_list_element = query_context->getProcessListElement();
     }
 
     std::set<String> inactive_replicas;
@@ -758,9 +747,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Replica could be removed
             if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, nullptr, wait_event))
             {
-                LOG_WARNING(log, "Replica {} was removed during mutation. "
-                    "Mutation will be done asynchronously when replica is restored.", replica);
-                inactive_replicas.emplace(replica);
+                LOG_WARNING(log, "Replica {} was removed", replica);
                 break;
             }
             if (mutation_pointer_value >= mutation_id) /// Maybe we already processed more fresh mutation
@@ -784,10 +771,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             {
                 LOG_TRACE(log, "Failed to wait for mutation '{}', will recheck", mutation_id);
             }
-
-            /// Check if the query was cancelled while we were waiting.
-            if (process_list_element)
-                process_list_element->checkTimeLimit();
 
             /// If mutation status is empty, than local replica may just not loaded it into memory.
             if (mutation_status && !mutation_status->latest_fail_reason.empty())
@@ -826,6 +809,10 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             throw Exception(ErrorCodes::UNFINISHED,
                             "Mutation is not finished because table shutdown was called. "
                             "It will be done after table restart.");
+
+        /// Replica inactive, don't check mutation status
+        if (!inactive_replicas.empty() && inactive_replicas.contains(replica))
+            continue;
 
         /// At least we have our current mutation
         std::set<String> mutation_ids;
@@ -1699,7 +1686,11 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
 
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(fs::path(zookeeper_prefix) / "metadata", &metadata_stat);
-    auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
+    auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+        metadata_str, metadata_snapshot->getColumns(),
+        metadata_snapshot->add_minmax_index_for_numeric_columns,
+        metadata_snapshot->add_minmax_index_for_string_columns,
+        getContext());
     bool is_metadata_equal = old_metadata.checkEquals(metadata_from_zk, metadata_snapshot->getColumns(), getStorageID().getNameForLogs(), getContext(), /*check_index_granularity*/ true, strict_check, log.load());
 
     if (metadata_version)
@@ -4283,11 +4274,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
             future_merged_part->uuid = UUIDHelpers::generateV4();
 
-        /// Skip merge selection when merges are stopped (e.g. SYSTEM STOP MERGES).
-        /// Without this check, merge entries are created in ZooKeeper even though they cannot be executed,
-        /// and the source parts become "virtual" in the queue, which blocks TTL moves.
-        bool can_assign_merge = max_source_parts_bytes_for_merge > 0
-            && !merger_mutator.merges_blocker.isCancelled();
+        bool can_assign_merge = max_source_parts_bytes_for_merge > 0;
         PartitionIdsHint partitions_to_merge_in;
         if (can_assign_merge)
         {
@@ -6507,7 +6494,11 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     auto zookeeper = getZooKeeper();
 
     auto columns_from_entry = ColumnsDescription::parse(entry.columns_str);
-    auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(entry.metadata_str);
+    auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+        entry.metadata_str, columns_from_entry,
+        current_metadata->add_minmax_index_for_numeric_columns,
+        current_metadata->add_minmax_index_for_string_columns,
+        getContext());
 
     MergeTreeData::DataParts parts;
 
@@ -8399,11 +8390,6 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
     chassert(!pipeline.completed());
     pipeline.complete(std::move(sink));
     return pipeline;
-}
-
-bool StorageReplicatedMergeTree::hasLightweightDeletedMask() const
-{
-    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
 }
 
 size_t StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
@@ -11367,9 +11353,12 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
         /// Try to adjust the create query using values from ZooKeeper.
         auto zookeeper = getZooKeeper();
         auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
-        auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
-
         auto current_metadata = getInMemoryMetadataPtr();
+        auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+            zookeeper->get(fs::path(zookeeper_path) / "metadata"), columns_from_entry,
+            current_metadata->add_minmax_index_for_numeric_columns,
+            current_metadata->add_minmax_index_for_string_columns,
+            getContext());
         const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
         auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getStorageID().getNameForLogs(), getContext());
         auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);

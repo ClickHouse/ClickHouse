@@ -67,23 +67,7 @@ In these versions, no special settings need to be configured to use the text ind
 We strongly recommend using ClickHouse versions >= 26.2 for production use cases.
 
 :::note
-If you have upgraded (or were upgraded, e.g. ClickHouse Cloud) from a ClickHouse version older than 26.2, the presence of a [compatibility](../../../operations/settings/settings#compatibility) setting may still cause the index to be disabled, and/or text-index related performance optimizations to be deactivated.
-
-If query
-
-```sql
-SELECT value FROM system.settings WHERE name = 'compatibility';
-```
-
-returns a value smaller than `26.2` (e.g. `25.4`), you will need to set three additional settings to use the text index:
-
-```sql
-SET enable_full_text_index = true;
-SET query_plan_direct_read_from_text_index = true;
-SET use_skip_indexes_on_data_read = true;
-```
-
-Alternatively, you can increment the [compatibility](../../../operations/settings/settings#compatibility) setting to `26.2` or newer but this affects many settings and typically requires prior testing.
+Text indexes can be used with any ClickHouse version >= 26.2, regardless of the [compatibility](../../../operations/settings/settings#compatibility) setting.
 :::
 
 To create a text index use the following syntax:
@@ -207,7 +191,7 @@ We plan to add specialized language-specific tokenizers to handle these cases be
 Typical use cases for the preprocessor argument include
 1. Lower- or upper-casing to enable case-insensitive matching, e.g., [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8) (see the first example below).
 2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8).
-3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode), [translate](/sql-reference/functions/string-replace-functions.md/#translate).
+3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode), [translate](./sql-reference/functions/string-replace-functions.md/#translate).
 
 The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type.
 If the text index was build on a column of type `Nullable(T)` or `LowCardinality(T)` column, then the preprocessor expression should accept nullable or low-cardinality values (i.e. not throw an exception).
@@ -372,9 +356,9 @@ FROM [...]
 WHERE string_search_function(column_with_text_index)
 ```
 
-#### `=` and `!=` {#functions-example-equals-notequals}
+#### `=` {#functions-example-equals}
 
-`=` ([equals](/sql-reference/functions/comparison-functions.md/#equals)) and `!=` ([notEquals](/sql-reference/functions/comparison-functions.md/#notEquals)) match the entire given search term.
+`=` ([equals](/sql-reference/functions/comparison-functions.md/#equals)) matches the entire given search term.
 
 Example:
 
@@ -382,11 +366,9 @@ Example:
 SELECT * from table WHERE str = 'Hello';
 ```
 
-The text index supports `=` and `!=`, yet equality and inequality search only make sense with the `array` tokenizer (it causes the index to store entire row values).
+#### `IN` {#functions-example-in}
 
-#### `IN` and `NOT IN` {#functions-example-in-notin}
-
-`IN` ([in](/sql-reference/functions/in-functions)) and `NOT IN` ([notIn](/sql-reference/functions/in-functions)) are similar to functions `equals` and `notEquals` but they match all (`IN`) or no (`NOT IN`) search terms.
+`IN` ([in](/sql-reference/functions/in-functions)) is similar to `equals` but matches all search terms.
 
 Example:
 
@@ -394,15 +376,21 @@ Example:
 SELECT * from table WHERE str IN ('Hello', 'World');
 ```
 
-The same restrictions as for `=` and `!=` apply, i.e. `IN` and `NOT IN` only make sense in conjunction with the `array` tokenizer.
+:::note
+`NOT IN` (`notIn`) is not supported by the text index.
+:::
 
-#### `LIKE`, `NOT LIKE` and `match` {#functions-example-like-notlike-match}
+#### `LIKE` and `match` {#functions-example-like-match}
 
 :::note
 These functions currently use the text index for filtering only if the index tokenizer is either `splitByNonAlpha`, `ngrams` or `sparseGrams`.
 :::
 
-In order to use `LIKE` ([like](/sql-reference/functions/string-search-functions.md/#like)), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notLike)), and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
+:::note
+`NOT LIKE` (`notLike`) is not supported by the text index.
+:::
+
+In order to use `LIKE` ([like](/sql-reference/functions/string-search-functions.md/#like)) and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
 For the index with `ngrams` tokenizer, this is the case if the length of the searched strings between wildcards is equal or longer than the ngram length.
 
 Example for the text index with `splitByNonAlpha` tokenizer:

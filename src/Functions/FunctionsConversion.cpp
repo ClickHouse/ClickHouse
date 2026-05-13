@@ -2228,8 +2228,23 @@ FunctionBasePtr createFunctionBaseCast(
 
     detail::FunctionCast::MonotonicityForRange monotonicity;
 
+    auto monotonicity_result_type = recursiveRemoveLowCardinality(return_type);
+
+    /// Monotonicity for CAST is determined by conversion to the nested target type.
+    /// Nullable only wraps the conversion result and does not change the order of successfully converted values.
+    /// We remove Nullable here so CAST(..., Nullable(T)) can reuse T monotonicity metadata in optimizeReadInOrder
+    /// and KeyCondition function-chain analysis. This is not a problem because both of them still validate monotonicity
+    /// on actual argument types/ranges using getMonotonicityForRange.
+    /// We do not do this for accurateCastOrNull because failed conversions can produce NULL from non-NULL input values.
+    /// For example, ordered Float64 values (1.0, 1.1, 1.2, 1.25, 1.3, 1.5) become
+    /// (1.0, NULL, NULL, 1.25, NULL, 1.5) with accurateCastOrNull(..., 'Float32').
+    /// This can violate monotonicity assumptions used by optimizeReadInOrder/KeyCondition
+    /// and can produce incorrect ORDER BY results.
+    if (cast_type != CastType::accurateOrNull)
+        monotonicity_result_type = removeNullable(monotonicity_result_type);
+
     if (isEnum(arguments.front().type)
-        && castTypeToEither<DataTypeEnum8, DataTypeEnum16>(return_type.get(), [&](auto & type)
+        && castTypeToEither<DataTypeEnum8, DataTypeEnum16>(monotonicity_result_type.get(), [&](auto & type)
         {
             monotonicity = detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
             return true;
@@ -2241,7 +2256,7 @@ FunctionBasePtr createFunctionBaseCast(
         DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
         DataTypeFloat32, DataTypeFloat64,
         DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64, DataTypeTime, DataTypeTime64,
-        DataTypeString>(recursiveRemoveLowCardinality(return_type).get(), [&](auto & type)
+        DataTypeString>(monotonicity_result_type.get(), [&](auto & type)
         {
             monotonicity = detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
             return true;

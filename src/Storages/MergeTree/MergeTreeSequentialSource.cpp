@@ -189,7 +189,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     auto counters = std::make_shared<ReadStepPerformanceCounters>();
 
-    MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true);
+    MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true, readers.main->canReadIncompleteGranules());
     readers_chain = MergeTreeReadersChain{{std::move(range_reader)}, readers.patches};
 
     updateRowsToRead(0);

@@ -7,13 +7,6 @@
 #    include <Common/Exception.h>
 #    include <Core/ValueWithType.h>
 #    include <DataTypes/IDataType.h>
-/// On PPC64LE, termios.h defines CR1, CR2, CR3 as macros which conflict
-/// with parameter names in llvm/IR/ConstantRange.h (included transitively).
-#    if defined(__powerpc64__)
-#        undef CR1
-#        undef CR2
-#        undef CR3
-#    endif
 #    include <llvm/IR/IRBuilder.h>
 
 
@@ -131,6 +124,19 @@ static inline llvm::Value * nativeCast(llvm::IRBuilderBase & b, llvm::Value * va
     auto native_data_type = toNativeDataType<FromType>();
     return nativeCast(b, native_data_type, value, to);
 }
+
+/// Cast LLVM value with type to specified type with `Decimal` scale awareness.
+/// Behaves identically to `nativeCast` for non-`Decimal` types but additionally
+/// performs the `* 10^scale` / `/ 10^scale` adjustment when one side of the
+/// conversion is a `Decimal` with a non-trivial scale.
+///
+/// Use this in non-aggregate function compilers (e.g. `if`, `multiIf`, ...)
+/// where the analyzer may leave a non-`Decimal` literal branch unconverted and
+/// the result type is `Decimal`. JIT-compiled aggregate functions like `avg`
+/// MUST keep using plain `nativeCast` because they intentionally treat the
+/// `Decimal` storage as a raw integer accumulator.
+llvm::Value * nativeCastWithDecimalScale(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value, const DataTypePtr & to_type);
+llvm::Value * nativeCastWithDecimalScale(llvm::IRBuilderBase & b, const ValueWithType & value, const DataTypePtr & to_type);
 
 /// Get column value for specified index as LLVM constant
 llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const IColumn & column, size_t index);

@@ -124,6 +124,8 @@ public:
         STOP_VIEW,
         STOP_VIEWS,
         STOP_REPLICATED_VIEW,
+        PAUSE_VIEW,
+        PAUSE_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
@@ -134,6 +136,7 @@ public:
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
         RECONNECT_ZOOKEEPER,
+        WAIT_BLOBS_CLEANUP,
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
@@ -159,8 +162,6 @@ public:
     String target_function;
     String replica;
     String shard;
-    String zk_name;
-    String full_replica_zk_path;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};

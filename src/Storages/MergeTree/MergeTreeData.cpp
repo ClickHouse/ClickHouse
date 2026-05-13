@@ -209,7 +209,6 @@ namespace Setting
     extern const SettingsUInt64 max_table_size_to_drop;
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
-    extern const SettingsBool use_partition_pruning;
 }
 
 namespace MergeTreeSetting
@@ -267,7 +266,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
-    extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool use_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
@@ -1650,13 +1648,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
 
     ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context);
 
-    PartitionPruner partition_pruner(
-        metadata_snapshot,
-        inverted_dag,
-        local_context,
-        true /* strict */,
-        !local_context->getSettingsRef()[Setting::use_partition_pruning] /* skip_analysis */);
-
+    PartitionPruner partition_pruner(metadata_snapshot, inverted_dag, local_context, true /* strict */);
     if (partition_pruner.isUseless() && !valid)
         return {};
 
@@ -2333,9 +2325,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     /// For iteration to be completed
     runner.waitForAllToFinishAndRethrowFirstError();
 
-    /// Check if the table is explicitly marked as readonly via the `table_readonly` setting.
-    const bool is_table_readonly = (*settings)[MergeTreeSetting::table_readonly];
-
     PartLoadingTree::PartLoadingInfos parts_to_load;
     for (auto & disk_parts : parts_to_load_by_disk)
         std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(parts_to_load));
@@ -2507,9 +2496,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             unloaded_parts.push_back(node);
     });
 
-    /// If all disks are readonly or the table is explicitly marked as readonly,
-    /// it does not make sense to load outdated parts (we will not own them).
-    if (!unloaded_parts.empty() && !all_disks_are_readonly && !is_table_readonly)
+    /// By the way, if all disks are readonly, it does not make sense to load outdated parts (we will not own them).
+    if (!unloaded_parts.empty() && !all_disks_are_readonly)
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
 
@@ -3070,8 +3058,9 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
             /// enough_space is created before runner and outlives it
             /// caches is passed as const-ref to the method and outlives the runner
             /// part belongs to data_parts, which is created before runner and outlives it
-            runner.enqueueAndKeepTrack([&enough_space, &caches, index_ratio_to_prewarm, &part]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, index_ratio_to_prewarm, &part, current_component = Coordination::getCurrentComponent()]
             {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
                 /// Check again, because another task may have filled the cache while this task was waiting in the queue.
                 /// The cache still may be filled slightly more than `index_ratio_to_prewarm`, but it's ok.
                 if (enough_space(caches.primary_index_cache, index_ratio_to_prewarm))
@@ -3083,8 +3072,9 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
 
         if (caches.mark_cache && enough_space(caches.mark_cache, marks_ratio_to_prewarm))
         {
-            runner.enqueueAndKeepTrack([&enough_space, &caches, marks_ratio_to_prewarm, &part, &columns_to_prewarm_marks]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, marks_ratio_to_prewarm, &part, &columns_to_prewarm_marks, current_component = Coordination::getCurrentComponent()]
             {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
                 if (enough_space(caches.mark_cache, marks_ratio_to_prewarm))
                     part->loadMarksToCache(columns_to_prewarm_marks, caches.mark_cache.get());
             });
@@ -3094,8 +3084,9 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
 
         if (caches.index_mark_cache && enough_space(caches.index_mark_cache, index_mark_ratio_to_prewarm))
         {
-            runner.enqueueAndKeepTrack([&enough_space, &caches, index_mark_ratio_to_prewarm, &part]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, index_mark_ratio_to_prewarm, &part, current_component = Coordination::getCurrentComponent()]
             {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
                 if (enough_space(caches.index_mark_cache, index_mark_ratio_to_prewarm))
                     part->loadIndexMarksToCache(caches.index_mark_cache.get());
             });
@@ -5179,7 +5170,6 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     if (hierarchy.duplicate_part)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", hierarchy.duplicate_part->getNameWithState());
-
 
     if (part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
@@ -7651,9 +7641,6 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
 
 void MergeTreeData::validateDetachedPartName(const String & name)
 {
-    if (name.empty())
-        throw DB::Exception(ErrorCodes::BAD_DATA_PART_NAME, "Empty part name");
-
     if (name.contains('/') || name == "." || name == "..")
         throw DB::Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid part name '{}'", name);
 
@@ -8639,12 +8626,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             minmax_idx_condition.emplace(
                 inverted_dag, query_context, minmax_columns_names,
                 getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)));
-            partition_pruner.emplace(
-                metadata_snapshot,
-                inverted_dag,
-                query_context,
-                false /* strict */,
-                !query_context->getSettingsRef()[Setting::use_partition_pruning] /* skip_analysis */);
+            partition_pruner.emplace(metadata_snapshot, inverted_dag, query_context, false /* strict */);
         }
 
         const auto * predicate = filter_dag->getOutputs().at(0);
@@ -10357,50 +10339,55 @@ SerializationInfoByName MergeTreeData::getSerializationHints() const
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
-    if (hasLightweightDeletedMask())
-        return false;
-
     const auto & settings = query_context->getSettingsRef();
+
+    auto supports_trivial_count = [&]()
+    {
+        /// Fallback for callers that don't provide a storage snapshot (e.g. StorageMerge).
+        return !has_lightweight_delete_parts.load(std::memory_order_relaxed) && !settings[Setting::apply_mutations_on_fly] && !settings[Setting::apply_patch_parts];
+    };
+
     if (!storage_snapshot)
-        return !settings[Setting::apply_mutations_on_fly] && !settings[Setting::apply_patch_parts];
+        return supports_trivial_count();
 
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & mutations_snapshot = snapshot_data.mutations_snapshot;
 
     if (!mutations_snapshot)
-        return !settings[Setting::apply_mutations_on_fly] && !settings[Setting::apply_patch_parts];
+        return supports_trivial_count();
 
-    return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasPatchParts();
+    return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasPatchParts() && !mutations_snapshot->hasLightweightDeletedMask();
 }
 
-Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
+MergeTreeData::PartsSnapshotInfo MergeTreeData::getPartsSnapshotInfo(const DataPartsVector & parts)
 {
-    Int64 version = -1;
-    for (const auto & part : parts)
-    {
-        Int64 part_version = part->getMetadataVersion();
-        if (version == -1 || part_version < version)
-            version = part_version;
-    }
-    return version;
-}
-
-MergeTreeData::PartitionIdToMinBlockPtr MergeTreeData::getMinDataVersionForEachPartition(const DataPartsVector & parts)
-{
-    PartitionIdToMinBlock partition_to_min_data_version;
+    PartsSnapshotInfo info;
+    PartitionIdToMinBlock min_data_versions;
 
     for (const auto & part : parts)
     {
-        const String & partition_id = part->info.getPartitionId();
-        const Int64 data_version = part->info.getDataVersion();
+        {
+            Int64 part_metadata_version = part->getMetadataVersion();
+            if (info.min_metadata_version == -1 || part_metadata_version < info.min_metadata_version)
+                info.min_metadata_version = part_metadata_version;
+        }
 
-        if (auto partition_it = partition_to_min_data_version.find(partition_id); partition_it != partition_to_min_data_version.end())
-            partition_it->second = std::min(partition_it->second, data_version);
-        else
-            partition_to_min_data_version.emplace(partition_id, data_version);
+        {
+            const String & partition_id = part->info.getPartitionId();
+            const Int64 data_version = part->info.getDataVersion();
+
+            if (auto it = min_data_versions.find(partition_id); it != min_data_versions.end())
+                it->second = std::min(it->second, data_version);
+            else
+                min_data_versions.emplace(partition_id, data_version);
+        }
+
+        if (!info.has_lightweight_delete_parts && part->hasLightweightDelete())
+            info.has_lightweight_delete_parts = true;
     }
 
-    return std::make_shared<PartitionIdToMinBlock>(std::move(partition_to_min_data_version));
+    info.min_data_versions = std::make_shared<PartitionIdToMinBlock>(std::move(min_data_versions));
+    return info;
 }
 
 MergeTreeSettingsPtr MergeTreeData::getSettings(ProjectionDescriptionRawPtr projection) const
@@ -10457,18 +10444,21 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
     auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);
     snapshot_data->parts = query_ranges;
 
+    auto parts_info = getPartsSnapshotInfo(*query_parts);
+
     bool apply_mutations_on_fly = query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
     bool apply_patch_parts = query_context->getSettingsRef()[Setting::apply_patch_parts];
 
     IMutationsSnapshot::Params params
     {
         .metadata_version = metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = getMinMetadataVersion(*query_parts),
-        .min_part_data_versions = getMinDataVersionForEachPartition(*query_parts),
+        .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_part_data_versions = std::move(parts_info.min_data_versions),
         .max_mutation_versions = query_context->getPartitionIdToMaxBlock(getStorageID().uuid),
         .need_data_mutations = apply_mutations_on_fly,
         .need_alter_mutations = apply_mutations_on_fly || apply_patch_parts,
         .need_patch_parts = apply_patch_parts,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
     };
 
     snapshot_data->mutations_snapshot = getMutationsSnapshot(params);

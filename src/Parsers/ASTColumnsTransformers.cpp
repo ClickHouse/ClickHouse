@@ -228,7 +228,12 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     if (!pattern)
     {
         for (const auto & child : children)
-            expected_columns.insert(child->as<const ASTIdentifier &>().name());
+        {
+            if (const auto * identifier = child->as<ASTIdentifier>())
+                expected_columns.insert(identifier->name());
+            else
+                expected_columns.insert(child->getAliasOrColumnName());
+        }
 
         for (auto it = nodes.begin(); it != nodes.end();)
         {

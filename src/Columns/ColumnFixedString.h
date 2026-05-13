@@ -88,7 +88,7 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override;
 
     std::string_view getDataAt(size_t index) const override
     {
@@ -138,6 +138,7 @@ public:
     void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
     WeakHash32 getWeakHash32() const override;
 

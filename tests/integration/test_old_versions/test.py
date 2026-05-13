@@ -7,7 +7,7 @@ cluster = ClickHouseCluster(__file__)
 node_oldest = cluster.add_instance(
     "node_oldest",
     image="clickhouse/clickhouse-server",
-    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    tag="25.12",
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
 )
@@ -44,6 +44,18 @@ def setup_nodes():
 
         yield cluster
     finally:
+        for n in old_nodes:
+            n.query(
+                """SYSTEM FLUSH DISTRIBUTED dist_table"""
+            )
+            n.query(
+                """DROP TABLE dist_table SYNC"""
+            )
+
+        for n in old_nodes + [new_node]:
+            n.query(
+                """DROP TABLE test_table SYNC"""
+            )
         cluster.shutdown()
 
 
