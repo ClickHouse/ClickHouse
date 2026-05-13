@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NestedUtils.h>
 
 #include <Storages/IStorage.h>
 
@@ -67,6 +68,10 @@ struct IdentifiersToOptimize
 };
 
 using NodeToSubcolumnTransformer = std::function<void(QueryTreeNodePtr &, FunctionNode &, ColumnContext &)>;
+
+using ChainedNodeToSubcolumnTransformer = std::function<void(
+    QueryTreeNodePtr &, FunctionNode &, ColumnContext &,
+    std::vector<FunctionNode *> & intermediate_functions)>;
 
 /// Before columns to substream optimization, we need to make sure, that column with such name as substream does not exists, otherwise the optimize will use it instead of substream.
 bool sourceHasColumn(QueryTreeNodePtr column_source, const String & column_name)
@@ -526,6 +531,123 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
     {TypeIndex::Map, "arrayElement"},
 };
 
+/// Optimizes:
+///   tupleElement(... tupleElement(arrayElement(ColumnNode(Dynamic), N), 'f1') ..., 'fK')
+/// to:
+///   arrayElement(ColumnNode("col.:`Array(JSON)`.f1...fK", type), N)
+///
+/// intermediate_functions contains the chain from outermost to innermost,
+/// e.g. [inner_tupleElement_1, ..., inner_tupleElement_M, arrayElement].
+void optimizeJSONArrayElement(
+    QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx,
+    std::vector<FunctionNode *> & intermediate_functions)
+{
+    if (intermediate_functions.empty())
+        return;
+
+    /// The last intermediate must be arrayElement with 2 args (col, index).
+    auto * array_element_func = intermediate_functions.back();
+    if (array_element_func->getFunctionName() != "arrayElement")
+        return;
+
+    auto & array_element_args = array_element_func->getArguments().getNodes();
+    if (array_element_args.size() != 2)
+        return;
+
+    auto array_index_node = array_element_args[1];
+
+    /// Collect field names from the tupleElement chain (outer to inner).
+    std::vector<String> field_names;
+
+    /// The outermost tupleElement is function_node itself.
+    {
+        auto & args = function_node.getArguments().getNodes();
+        if (args.size() != 2)
+            return;
+        const auto * constant = args[1]->as<ConstantNode>();
+        if (!constant || constant->getValue().getType() != Field::Types::String)
+            return;
+        field_names.push_back(constant->getValue().safeGet<String>());
+    }
+
+    /// All intermediates except the last (arrayElement) must be tupleElement with constant string second arg.
+    for (size_t i = 0; i + 1 < intermediate_functions.size(); ++i)
+    {
+        auto * inner_func = intermediate_functions[i];
+        if (inner_func->getFunctionName() != "tupleElement")
+            return;
+        auto & args = inner_func->getArguments().getNodes();
+        if (args.size() != 2)
+            return;
+        const auto * constant = args[1]->as<ConstantNode>();
+        if (!constant || constant->getValue().getType() != Field::Types::String)
+            return;
+        field_names.push_back(constant->getValue().safeGet<String>());
+    }
+
+    /// Reverse to get inner-to-outer order (the path under Array(JSON)).
+    std::reverse(field_names.begin(), field_names.end());
+
+    /// Verify the Dynamic column is a subcolumn of a JSON column.
+    /// Use getAllColumnAndSubcolumnPairs to handle nested cases like Tuple(json JSON).
+    auto column_source = ctx.column_source;
+    auto * table_node = column_source->as<TableNode>();
+    if (!table_node)
+        return;
+
+    const auto & storage_snapshot = table_node->getStorageSnapshot();
+    bool found_json_ancestor = false;
+    auto pairs = Nested::getAllColumnAndSubcolumnPairs(ctx.column.name);
+    for (auto it = pairs.rbegin(); it != pairs.rend(); ++it)
+    {
+        auto prefix_col = storage_snapshot->tryGetColumn(
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(),
+            String(it->first));
+        if (prefix_col && prefix_col->type->getTypeId() == TypeIndex::Object)
+        {
+            found_json_ancestor = true;
+            break;
+        }
+    }
+
+    if (!found_json_ancestor)
+        return;
+
+    /// Build the new subcolumn name: "col.:`Array(JSON)`.f1.f2...fK".
+    String new_col_name = ctx.column.name + ".:`Array(JSON)`";
+    for (const auto & field : field_names)
+        new_col_name += "." + field;
+
+    /// Verify the subcolumn exists in storage.
+    auto new_column = storage_snapshot->tryGetColumn(
+        GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), new_col_name);
+    if (!new_column)
+        return;
+
+    /// Remember the original result type before rewriting.
+    /// For example, json.a[1].b may have type Dynamic(max_types=8) while
+    /// arrayElement(col.:`Array(JSON)`.b, N) yields Dynamic(max_types=0).
+    auto original_result_type = function_node.getResultType();
+
+    /// Rewrite: replace the whole tupleElement chain with arrayElement(new_column, N).
+    auto new_column_node = std::make_shared<ColumnNode>(*new_column, column_source);
+
+    auto & args = function_node.getArguments().getNodes();
+    args = {std::move(new_column_node), std::move(array_index_node)};
+    resolveOrdinaryFunctionNodeByName(function_node, "arrayElement", ctx.context);
+
+    /// Cast back to the original type if it changed, e.g. Dynamic(max_types=N) -> Dynamic(max_types=0).
+    if (!original_result_type->equals(*function_node.getResultType()))
+        node = buildCastFunction(node, original_result_type, ctx.context);
+}
+
+std::map<std::pair<TypeIndex, String>, ChainedNodeToSubcolumnTransformer> chained_node_transformers =
+{
+    {
+        {TypeIndex::Dynamic, "tupleElement"}, optimizeJSONArrayElement,
+    },
+};
+
 bool canOptimizeWithWherePrewhereOrGroupBy(const String & function_name)
 {
     /// Optimization for distinctJSONPaths works correctly only if we request distinct JSON paths across whole table.
@@ -612,6 +734,68 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     return std::make_tuple(function_node, first_argument_column_node, table_node);
 }
 
+/// Like getTypedNodesForOptimization, but walks through first-argument
+/// function chains to find the underlying ColumnNode.
+/// Returns the outermost function, the underlying column, the table,
+/// and the chain of intermediate function nodes.
+std::tuple<FunctionNode *, ColumnNode *, TableNode *, std::vector<FunctionNode *>>
+getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
+{
+    auto * function_node = node->as<FunctionNode>();
+    if (!function_node)
+        return {};
+
+    auto & function_arguments_nodes = function_node->getArguments().getNodes();
+    if (function_arguments_nodes.empty())
+        return {};
+
+    /// Walk through first arguments, collecting intermediate FunctionNodes,
+    /// until we find a ColumnNode.
+    std::vector<FunctionNode *> intermediates;
+    QueryTreeNodePtr current = function_arguments_nodes[0];
+    while (auto * inner_func = current->as<FunctionNode>())
+    {
+        intermediates.push_back(inner_func);
+        auto & inner_args = inner_func->getArguments().getNodes();
+        if (inner_args.empty())
+            return {};
+        current = inner_args[0];
+    }
+
+    /// Must have at least one intermediate (otherwise getTypedNodesForOptimization handles it).
+    if (intermediates.empty())
+        return {};
+
+    auto * first_argument_column_node = current->as<ColumnNode>();
+    if (!first_argument_column_node
+        || first_argument_column_node->getColumnName() == "__grouping_set"
+        || first_argument_column_node->hasExpression())
+        return {};
+
+    auto column_source = first_argument_column_node->getColumnSource();
+    auto * table_node = column_source->as<TableNode>();
+    if (!table_node)
+        return {};
+
+    const auto & storage = table_node->getStorage();
+    const auto & storage_snapshot = table_node->getStorageSnapshot();
+    auto column = first_argument_column_node->getColumn();
+
+    /// Same checks as getTypedNodesForOptimization.
+    auto view_source = context->getViewSource();
+    if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
+        return {};
+
+    if (!storage->supportsOptimizationToSubcolumns() || storage_snapshot->metadata->isVirtualColumn(column.name))
+        return {};
+
+    auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
+    if (!column_in_table || !column_in_table->type->equals(*column.type))
+        return {};
+
+    return {function_node, first_argument_column_node, table_node, std::move(intermediates)};
+}
+
 /// First pass collects info about identifiers to determine which identifiers are allowed to optimize.
 class FunctionToSubcolumnsVisitorFirstPass : public InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorFirstPass>
 {
@@ -640,6 +824,22 @@ public:
         if (function_node && first_argument_node && table_node)
         {
             enterImpl(*function_node, *first_argument_node, *table_node);
+            return;
+        }
+
+        /// Skip nodes that are inner parts of an already-matched chained pattern.
+        /// Without this, inner tupleElements in multi-level chains like
+        /// tupleElement(tupleElement(arrayElement(col, N), 'b'), 'c')
+        /// would also match chained_node_transformers and double-count
+        /// optimized_identifiers_count for the underlying column.
+        if (chained_pattern_inner_nodes.contains(node.get()))
+            return;
+
+        /// Chained match (e.g. tupleElement over Dynamic through arrayElement).
+        auto [chain_func, chain_col, chain_table, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
+        if (chain_func && chain_col && chain_table)
+        {
+            enterImpl(*chain_func, *chain_col, *chain_table, intermediates);
             return;
         }
 
@@ -770,6 +970,11 @@ private:
     bool can_wrap_result_columns_with_nullable = false;
     bool has_where_prewhere_or_group_by = false;
 
+    /// Intermediate function nodes of already-matched chained patterns.
+    /// Prevents double-counting in multi-level chains like
+    /// tupleElement(tupleElement(arrayElement(col, N), 'b'), 'c').
+    std::unordered_set<const IQueryTreeNode *> chained_pattern_inner_nodes;
+
     void enterImpl(const TableNode & table_node)
     {
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
@@ -843,6 +1048,30 @@ private:
                 identifiers_with_filter_optimization.insert(qualified_name);
         }
     }
+
+    void enterImpl(
+        const FunctionNode & function_node, const ColumnNode & first_argument_column_node,
+        const TableNode & table_node, std::vector<FunctionNode *> & intermediates)
+    {
+        if (table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
+            return;
+
+        const auto & column = first_argument_column_node.getColumn();
+        auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
+
+        if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
+            return;
+
+        if (chained_node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
+        {
+            Identifier qualified_name({table_name, column.name});
+            ++optimized_identifiers_count[qualified_name];
+
+            /// Mark intermediate nodes to prevent double-counting.
+            for (auto * func : intermediates)
+                chained_pattern_inner_nodes.insert(func);
+        }
+    }
 };
 
 /// Second pass optimizes functions to subcolumns for allowed identifiers.
@@ -897,36 +1126,64 @@ public:
             return;
         }
 
+        /// Direct match: first argument is a ColumnNode.
+        /// Restructured from "if (!match) return" to "if (match) { ... } return"
+        /// so that failed direct matches fall through to the chained match below.
         auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node, getContext());
-        if (!function_node || !first_argument_column_node || !table_node)
-            return;
-
-        auto column = first_argument_column_node->getColumn();
-        auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
-
-        Identifier qualified_name({table_name, column.name});
-
-        /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
-        bool should_optimize = identifiers_to_optimize.everywhere.contains(qualified_name);
-        if (!should_optimize
-            && identifiers_to_optimize.filter_only.contains(qualified_name)
-            && !in_where_prewhere_stack.empty()
-            && in_where_prewhere_stack.back())
-            should_optimize = true;
-
-        if (!should_optimize)
-            return;
-
-        auto result_type = function_node->getResultType();
-        auto transformer_it = node_transformers.find({column.type->getTypeId(), function_node->getFunctionName()});
-
-        if (transformer_it != node_transformers.end() && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(table_node)))
+        if (function_node && first_argument_column_node && table_node)
         {
-            ColumnContext ctx{std::move(column), first_argument_column_node->getColumnSource(), getContext()};
-            transformer_it->second(node, *function_node, ctx);
+            auto column = first_argument_column_node->getColumn();
+            auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
 
-            if (!result_type->equals(*node->getResultType()))
-                node = buildCastFunction(node, result_type, getContext());
+            Identifier qualified_name({table_name, column.name});
+
+            /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
+            bool should_optimize = identifiers_to_optimize.everywhere.contains(qualified_name);
+            if (!should_optimize
+                && identifiers_to_optimize.filter_only.contains(qualified_name)
+                && !in_where_prewhere_stack.empty()
+                && in_where_prewhere_stack.back())
+                should_optimize = true;
+
+            if (!should_optimize)
+                return;
+
+            auto result_type = function_node->getResultType();
+            auto transformer_it = node_transformers.find({column.type->getTypeId(), function_node->getFunctionName()});
+
+            if (transformer_it != node_transformers.end() && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(table_node)))
+            {
+                ColumnContext ctx{std::move(column), first_argument_column_node->getColumnSource(), getContext()};
+                transformer_it->second(node, *function_node, ctx);
+
+                if (!result_type->equals(*node->getResultType()))
+                    node = buildCastFunction(node, result_type, getContext());
+            }
+            return;
+        }
+
+        /// Chained match: first argument is a chain of functions with a ColumnNode at the bottom.
+        auto [chain_func, chain_col, chain_table, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
+        if (chain_func && chain_col && chain_table)
+        {
+            auto column = chain_col->getColumn();
+            auto table_name = chain_table->getStorage()->getStorageID().getFullTableName();
+            Identifier qualified_name({table_name, column.name});
+
+            if (!identifiers_to_optimize.everywhere.contains(qualified_name))
+                return;
+
+            auto it = chained_node_transformers.find({column.type->getTypeId(), chain_func->getFunctionName()});
+            if (it != chained_node_transformers.end()
+                && (it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(chain_table)))
+            {
+                auto result_type = chain_func->getResultType();
+                ColumnContext ctx{std::move(column), chain_col->getColumnSource(), getContext()};
+                it->second(node, *chain_func, ctx, intermediates);
+
+                if (!result_type->equals(*node->getResultType()))
+                    node = buildCastFunction(node, result_type, getContext());
+            }
         }
     }
 
