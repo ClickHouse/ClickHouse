@@ -60,6 +60,14 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Documentation-only — result type is parsed from the const-string
+    /// type-name (2nd argument). If the value can't be cast, the optional
+    /// default (3rd argument) is returned instead.
+    String getSignatureString() const override
+    {
+        return "(Any, const String, [Any]) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t arguments_size = arguments.size();
