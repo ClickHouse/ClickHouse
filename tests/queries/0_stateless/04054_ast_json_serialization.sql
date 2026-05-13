@@ -1329,6 +1329,10 @@ SELECT 'RT_subquery' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT * FROM (
 -- Query parameter
 SELECT 'RT_param' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT {param:UInt64}'));
 
+-- Identifier query parameter (parametrised ASTIdentifier with embedded ASTQueryParameter child)
+SELECT 'RT_param_identifier' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT {x:Identifier} FROM t'));
+SELECT 'RT_param_table_identifier' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT * FROM {tbl:Identifier}'));
+
 -- Asterisk, QualifiedAsterisk
 SELECT 'RT_asterisk' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT * FROM t'));
 SELECT 'RT_qual_asterisk' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT t.* FROM t'));
