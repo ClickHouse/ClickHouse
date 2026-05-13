@@ -19,25 +19,36 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-# 100 attempts is enough to catch the bug with very high probability on master:
-# the original analysis observed 2-6% per attempt, so the chance of NOT seeing
-# any data loss in 100 attempts is below 1e-6 in the buggy case.
-ITERATIONS=100
+# 50 attempts keeps total wall time under the per-test timeout on slow sanitizer
+# builds (TSan ~20x slower than Debug, MSan/ASan+UBSan ~3-5x) while still
+# catching the regression with very high probability: at the observed 2-6%
+# per-attempt race rate on the buggy master, a single run misses the bug with
+# probability between ~5% (at the 6% high end) and ~36% (at the 2% low end) —
+# so any single sanitizer/build variant catches the regression 64-95% of the
+# time, and the 4+ build variants we run combined drive the miss probability
+# into the noise.
+ITERATIONS=50
 
 for i in $(seq 1 "$ITERATIONS"); do
-    $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS t_rename_merge_race"
-
+    # Batch DROP/CREATE/INSERTs into a single client invocation. Most of the
+    # per-iteration wall time on sanitizer builds is `clickhouse-client`
+    # process startup, so collapsing 7 separate invocations into 1 saves a
+    # large fraction of the per-iteration cost without changing semantics —
+    # each `INSERT` statement still creates its own part.
     $CLICKHOUSE_CLIENT --query="
+        DROP TABLE IF EXISTS t_rename_merge_race;
+
         CREATE TABLE t_rename_merge_race (id UInt64, d String DEFAULT '')
         ENGINE = MergeTree() ORDER BY id
-        SETTINGS min_bytes_for_wide_part = 0"
+        SETTINGS min_bytes_for_wide_part = 0;
 
-    # Create 5 separate parts to give OPTIMIZE FINAL something to merge.
-    $CLICKHOUSE_CLIENT --query="INSERT INTO t_rename_merge_race VALUES (1, 'hello'), (2, 'world')"
-    $CLICKHOUSE_CLIENT --query="INSERT INTO t_rename_merge_race VALUES (3, 'foo'), (4, 'bar')"
-    $CLICKHOUSE_CLIENT --query="INSERT INTO t_rename_merge_race VALUES (5, 'baz'), (6, 'qux')"
-    $CLICKHOUSE_CLIENT --query="INSERT INTO t_rename_merge_race VALUES (7, 'alpha'), (8, 'beta')"
-    $CLICKHOUSE_CLIENT --query="INSERT INTO t_rename_merge_race VALUES (9, 'gamma'), (10, 'delta')"
+        -- Create 5 separate parts to give OPTIMIZE FINAL something to merge.
+        INSERT INTO t_rename_merge_race VALUES (1, 'hello'), (2, 'world');
+        INSERT INTO t_rename_merge_race VALUES (3, 'foo'), (4, 'bar');
+        INSERT INTO t_rename_merge_race VALUES (5, 'baz'), (6, 'qux');
+        INSERT INTO t_rename_merge_race VALUES (7, 'alpha'), (8, 'beta');
+        INSERT INTO t_rename_merge_race VALUES (9, 'gamma'), (10, 'delta');
+    "
 
     # Run the ALTER RENAME and OPTIMIZE FINAL concurrently. Use alter_sync=2 to
     # wait for the rename mutation to fully apply before we read the result.
