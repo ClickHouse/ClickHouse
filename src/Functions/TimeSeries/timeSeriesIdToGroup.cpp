@@ -34,6 +34,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// FixedString is accepted only when its size is 16; the runtime
+    /// `checkArgumentTypeForID` still enforces that, so we accept any FixedString
+    /// at the signature level and let the helper reject mismatched widths.
+    String getSignatureString() const override
+    {
+        return "(UInt64 | UInt128 | UUID | FixedString) -> UInt64";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
