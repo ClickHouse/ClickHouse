@@ -657,12 +657,20 @@ def main():
             if test_result.is_ok():
                 for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
                     print(f"\n=== Bugfix validation with {bugfix_bt} ===")
+                    # Stop the server before overwriting the binary: on Linux,
+                    # `cp` over a running ELF fails with `Text file busy`,
+                    # and `strict=True` ensures a failed switch is not ignored.
+                    CH.terminate()
                     Shell.run(
                         f"cp {temp_dir}/clickhouse_{bugfix_bt} {ch_path}/clickhouse",
                         verbose=True,
+                        strict=True,
                     )
-                    Shell.run(f"chmod +x {ch_path}/clickhouse", verbose=True)
-                    CH.terminate()
+                    Shell.run(
+                        f"chmod +x {ch_path}/clickhouse",
+                        verbose=True,
+                        strict=True,
+                    )
                     CH.clean_logs()
                     CH.start()
                     CH.wait_ready()
