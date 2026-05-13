@@ -1308,6 +1308,14 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
 StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t idx)
 {
     UniqueLock lock(consumers_mutex);
+
+    /// Check shutdown first: `cleanConsumers` clears the `consumers` vector during shutdown,
+    /// so a late call from an already-built direct-read source would otherwise hit the bounds
+    /// check below and surface a `LOGICAL_ERROR` instead of the expected `ABORTED` for a
+    /// detached table.
+    if (shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
     if (idx >= consumers.size() || !consumers[idx])
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid consumer index: {}, number of consumers is {}", idx, consumers.size());
 
