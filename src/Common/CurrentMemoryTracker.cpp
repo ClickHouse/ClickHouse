@@ -80,7 +80,8 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             }
             catch (...)
             {
-                current_thread->untracked_memory.store(previous_untracked_memory);
+                current_thread->untracked_memory.store(
+                    current_thread->untracked_memory.load() + previous_untracked_memory);
                 throw;
             }
         }
