@@ -322,32 +322,28 @@ ActionsDAG analyzeExpressionToActionsDAG(
     }
     else if (add_aliases && !project_result)
     {
-        /// Add aliases but keep source columns in the output — matches the old
-        /// ExpressionAnalyzer::getActionsDAG(true, false) behavior.
+        /// Mirror `ExpressionAnalyzer::getActionsDAG(true, false)`: add aliases,
+        /// then prune outputs to (alias names ∪ source-column names).  Without
+        /// the pruning step the DAG keeps the original non-aliased expression
+        /// output alongside the alias, which diverges from the legacy header
+        /// shape (e.g. `expr AS x` would expose both `expr` and `x`).
         NamesWithAliases rename_pairs;
         rename_pairs.reserve(outputs.size());
+        NameSet required_names;
+        required_names.reserve(outputs.size() + actions.getInputs().size());
 
         for (size_t i = 0; i != outputs.size(); ++i)
+        {
             rename_pairs.emplace_back(outputs[i]->result_name, ast_column_names[i]);
+            required_names.insert(ast_column_names[i]);
+        }
 
         actions.addAliases(rename_pairs);
 
-        /// Preserve source columns in the output — the old ExpressionAnalyzer
-        /// with remove_unused_result=false kept all input columns in the output.
         for (const auto * input : actions.getInputs())
-        {
-            bool already_in_outputs = false;
-            for (const auto * output : outputs)
-            {
-                if (output == input)
-                {
-                    already_in_outputs = true;
-                    break;
-                }
-            }
-            if (!already_in_outputs)
-                outputs.push_back(input);
-        }
+            required_names.insert(input->result_name);
+
+        actions.removeUnusedActions(required_names);
     }
     else
     {
