@@ -616,8 +616,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
     NodeMap visited;
     bool res = true;
     for (const auto & node : partition_actions.getOutputs())
-        if (node->type != ActionsDAG::ActionType::INPUT)
-            res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
+        res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
     return res;
 }
 
