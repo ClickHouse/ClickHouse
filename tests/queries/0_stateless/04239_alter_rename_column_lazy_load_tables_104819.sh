@@ -1,14 +1,29 @@
 #!/usr/bin/env bash
 
-# Regression for #104819 (STID 0993-2385).
+# Regression test for #104819 (STID 0993-2385).
+#
 # An `ALTER RENAME COLUMN` on a `lazy_load_tables=1` `DatabaseAtomic` after
-# `DETACH DATABASE` / `ATTACH DATABASE` left the `StorageTableProxy`'s cached
-# metadata out of sync with the nested storage while the alter was running.
-# A concurrent `INSERT` with the pre-rename column name would resolve against
-# the stale proxy metadata, build a pipeline source with the old column, then
-# build a sink from the nested storage with the new column, and crash the
-# server with `Logical error: 'Block structure mismatch ... different names of
-# columns: c0 ... c1'` in `Chain::addSink`.
+# `DETACH DATABASE` / `ATTACH DATABASE` left the `StorageTableProxy`'s
+# cached metadata out of sync with the nested storage. When the alter was
+# blocked on a `STOP MERGES` mutation, `setProperties` on the nested
+# storage had already published the post-rename schema (`c1`) while the
+# proxy still returned the pre-rename schema (`c0`) from
+# `getInMemoryMetadataPtr`. A concurrent `INSERT` then resolved column
+# names against the proxy's stale view but built its sink from the nested
+# storage's current metadata, and the chain raised
+# `Block structure mismatch ... different names of columns: c0 ... c1` in
+# `Chain::addSink`.
+#
+# A direct `INSERT`-driven repro kills the server in debug/sanitizer
+# builds, which `clickhouse-test` records as `server-died` (mapped to
+# `ERROR`, not `FAIL`). The bugfix-validation framework only inverts
+# `FAIL <-> OK`, so a server-death result reads as "Failed to reproduce
+# the bug". We therefore probe the underlying metadata mismatch with
+# `DESCRIBE TABLE` (goes through `IStorage::getInMemoryMetadataPtr` on
+# the proxy) and compare it to the on-disk `CREATE TABLE` (rewritten by
+# `setProperties` as part of the alter). Without the fix the two
+# disagree; with the fix the proxy forwards to the nested storage and
+# they match.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,42 +41,42 @@ ${CLICKHOUSE_CLIENT} -nq "
     SYSTEM STOP MERGES \`${DB}\`.t;
 "
 
-# Start `ALTER RENAME COLUMN` in the background. With merges stopped, the
-# alter blocks waiting for the column-rename mutation to finish, leaving the
-# proxy's cached metadata behind. Use a short client timeout so the client
-# disconnects quickly; the alter call continues on the server side until we
-# restart merges below.
+# Drive `ALTER RENAME COLUMN` from a background client. With merges
+# stopped the server-side alter blocks on the rename mutation right
+# after `setProperties` has already updated the nested storage's
+# in-memory metadata and rewritten the on-disk `CREATE TABLE`. Use
+# short client timeouts so the client disconnects fast; the server-side
+# alter stays parked until we resume merges below.
 ${CLICKHOUSE_CLIENT} --receive_timeout 2 --send_timeout 2 \
     -q "ALTER TABLE \`${DB}\`.t RENAME COLUMN c0 TO c1" >/dev/null 2>&1 &
 ALTER_PID=$!
 
-# Give the server time to enter the alter call and run `setProperties` on the
-# nested storage. After this point the nested has the new schema (`c1`) but
-# the proxy's cached metadata still has `c0` -- this is the race window. We
-# poll `system.columns` to detect that the nested has been updated (and the
-# proxy used to show the stale view), with a hard upper bound to keep the
-# test bounded if the race never opens (e.g. if the alter completes too
-# quickly).
-for _ in $(seq 1 50); do
-    cnt=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.columns WHERE database = '${DB}' AND table = 't' AND name = 'c1'" 2>/dev/null)
-    [[ "${cnt}" == "1" ]] && break
-    sleep 0.1
+# Wait for the race window to open. `SHOW CREATE TABLE` reads the table's
+# AST via the database engine, which is updated synchronously by
+# `setProperties` before the alter blocks on the mutation. Once it
+# returns `c1` we know `nested.getInMemoryMetadataPtr` already exposes
+# `c1`; the proxy's cached metadata is still `c0` unless the fix is in
+# place.
+for _ in $(seq 1 200); do
+    create=$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE \`${DB}\`.t" 2>/dev/null)
+    case "${create}" in
+        *'`c1`'*) break ;;
+    esac
+    sleep 0.05
 done
 
-# Before the fix this `INSERT` crashed the server with the
-# `Block structure mismatch` `LOGICAL_ERROR`. After the fix the proxy reports
-# the nested's current schema, so the `INSERT` resolves against the renamed
-# column and fails cleanly with `NO_SUCH_COLUMN_IN_TABLE` (or succeeds, in
-# the rare case where `setProperties` has not yet run -- which is also fine).
-# Either way the server must stay alive.
-${CLICKHOUSE_CLIENT} -q "INSERT INTO \`${DB}\`.t (c0) VALUES (2)" 2>&1 \
-    | grep -qE "(NO_SUCH_COLUMN_IN_TABLE|^$)" && echo "no_crash" || echo "unexpected"
+# Probe the proxy via `DESCRIBE TABLE`. `InterpreterDescribeQuery` calls
+# `storage->getInMemoryMetadataPtr`, which hits `StorageTableProxy`.
+# - Without the fix: returns the proxy's stale cached metadata -> `c0`.
+# - With the fix:    forwards to the nested storage             -> `c1`.
+# The reference fixes the expected column name to `c1`, so the buggy
+# build produces a clean output diff (regular `FAIL`) instead of crashing
+# the server.
+${CLICKHOUSE_CLIENT} -q "DESCRIBE TABLE \`${DB}\`.t FORMAT TSV" \
+    | awk '{print $1}'
 
-# Server must still be alive after the `INSERT`.
-${CLICKHOUSE_CLIENT} -q "SELECT 'alive'"
-
-# Resume merges so the in-flight alter mutation can finally complete, then
-# wait for the background client process to finish.
+# Resume merges so the parked alter mutation can complete, then wait for
+# the background client process to wind down before dropping.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START MERGES \`${DB}\`.t" >/dev/null
 wait "${ALTER_PID}" 2>/dev/null || true
 
