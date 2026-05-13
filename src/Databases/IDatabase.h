@@ -192,7 +192,7 @@ public:
     /// True for databases whose contents live on a remote service that we don't
     /// want to enumerate implicitly in system tables (data lake catalogs, MySQL, PostgreSQL, ...).
     /// Such databases are hidden from system.tables / system.columns / system.completions
-    /// unless `show_external_databases_in_system_tables` is enabled.
+    /// unless `show_remote_databases_in_system_tables` is enabled.
     /// This is distinct from `isExternal()` (which classifies whether the engine supports
     /// ClickHouse internal table types) and from `isDatalakeCatalog()` (which is narrower).
     virtual bool isRemoteDatabase() const { return false; }

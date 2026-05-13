@@ -40,7 +40,7 @@ ColumnsDescription StorageSystemGraphite::getColumnsDescription()
  */
 static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 {
-    const Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_external_databases = false});
+    const Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
     StorageSystemGraphite::Configs graphite_configs;
 
     for (const auto & db : databases)

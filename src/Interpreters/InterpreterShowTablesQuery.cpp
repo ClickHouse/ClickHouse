@@ -239,7 +239,7 @@ BlockIO InterpreterShowTablesQuery::execute()
     {
         /// HACK: force the setting so that system.tables includes tables from the requested external database.
         /// system.databases already shows all databases unconditionally, so no override is needed for SHOW DATABASES.
-        query_context->setSetting("show_external_databases_in_system_tables", true);
+        query_context->setSetting("show_remote_databases_in_system_tables", true);
     }
     return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
 }
