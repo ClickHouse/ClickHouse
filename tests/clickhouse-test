@@ -954,7 +954,7 @@ def get_stacktraces_from_gdb(pid):
 
 
 # collect server stacktraces from system.stack_trace table
-def get_stacktraces_from_clickhouse(args):
+def get_stacktraces_from_clickhouse(args, timeout: float = 30):
     settings_str = " ".join(
         [
             get_additional_client_options(args),
@@ -992,7 +992,10 @@ def get_stacktraces_from_clickhouse(args):
             'FROM system.stack_trace FORMAT Vertical"'
         )
 
-    return shell_get_output(msg)
+    # Bound the dump so timeout_handler / hung-check callers cannot wedge
+    # forever if clickhouse-client itself blocks (e.g. the server accepted
+    # the connection but is not making progress on system.stack_trace).
+    return shell_get_output(msg, timeout=timeout)
 
 def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[str]]:
     # -ww disables line-width truncation of the command column.  Without it,
