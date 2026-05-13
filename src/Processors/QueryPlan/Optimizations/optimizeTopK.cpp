@@ -1,3 +1,4 @@
+#include <Columns/Collator.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <Functions/IFunction.h>
@@ -232,7 +233,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         /// Compute a deterministic hash from the planning-time parameters. Used by
         /// `updateQueryConditionCache` to partition QCC entries by TopK plan, so the same
         /// query reuses cached granule decisions and a different TopK plan (different LIMIT,
-        /// sort column, etc.) gets a fresh entry.
+        /// sort column, direction, NULLS FIRST/LAST, COLLATE, etc.) gets a fresh entry.
         SipHash hash;
         hash.update(info.column_name);
         const String type_name = info.data_type->getName();
@@ -240,6 +241,9 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         hash.update(info.num_sort_columns);
         hash.update(info.limit_n);
         hash.update(info.direction);
+        hash.update(sort_col_desc.nulls_direction);
+        if (sort_col_desc.collator)
+            hash.update(sort_col_desc.collator->getLocale());
         info.condition_hash = hash.get64();
 
         read_from_mergetree_step->setTopKColumn(info);
