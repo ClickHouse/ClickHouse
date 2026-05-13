@@ -39,19 +39,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        for (auto i : collections::range(0, arguments.size()))
-        {
-            const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
-            if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Argument {} for function {} must be an array but it has type {}.",
-                                i, getName(), arguments[i]->getName());
-        }
-
-        return std::make_shared<DataTypeUInt8>();
-    }
+    String getSignatureString() const override { return "(Array(Any), Array(Any)) -> UInt8"; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {

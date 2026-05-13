@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 /// arrayEnumerate(arr) - Returns the array [1,2,3,..., length(arr)]
@@ -36,16 +35,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be an array but it has type {}.",
-                            getName(), arguments[0]->getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
-    }
+    String getSignatureString() const override { return "(Array(Any)) -> Array(UInt32)"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
