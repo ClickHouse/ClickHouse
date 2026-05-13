@@ -153,6 +153,15 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (join_operator.expression.empty())
         return false;
 
+    /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows
+    /// Planning and pipeline overhead outweighs any saving on a tiny probe.
+    if (optimization_settings.join_runtime_filter_min_probe_rows > 0)
+    {
+        auto probe_size = join_step->getInputRowsEstimation(JoinTableSide::Left);
+        if (probe_size && *probe_size <= optimization_settings.join_runtime_filter_min_probe_rows)
+            return false;
+    }
+
     /// In the case of LEFT ANTI JOIN we need to add a filter that filters out rows
     /// that would have matches in the right table. This means we need to add something like NOT IN filter.
     const bool check_left_does_not_contain = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
