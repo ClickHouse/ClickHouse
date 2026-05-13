@@ -6,6 +6,7 @@
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use std::panic;
 
 use h3o::CellIndex;
 use h3o::DirectedEdgeIndex;
@@ -949,12 +950,24 @@ pub unsafe extern "C" fn getIcosahedronFaces(h3: H3Index, out: *mut i32) -> H3Er
 ///                               uint32_t flags, int64_t *out)
 ///
 /// `h3o` validates polygon coordinates inside `TilerBuilder::add` and surfaces
-/// invalid geometries as an `Err`, so the previously-needed `catch_unwind`
-/// guard against panics from the `geo` line-sweep code is no longer required
-/// (see https://github.com/HydroniumLabs/h3o/issues/44). If a future version
-/// of `h3o` regresses and starts panicking again, the fix belongs upstream.
+/// invalid geometries as an `Err`, but the transitive `geo` line-sweep code
+/// has panicked on malformed inputs before (see
+/// https://github.com/HydroniumLabs/h3o/issues/44). We wrap the body in
+/// `catch_unwind` so any future panic in geometry code is converted to
+/// `E_FAILED` and surfaces as a normal ClickHouse exception rather than
+/// crossing the FFI boundary and aborting the server.
 #[no_mangle]
 pub unsafe extern "C" fn maxPolygonToCellsSize(
+    geo_polygon: *const GeoPolygon,
+    res: i32,
+    flags: u32,
+    out: *mut i64,
+) -> H3Error {
+    panic::catch_unwind(|| max_polygon_to_cells_size_impl(geo_polygon, res, flags, out))
+        .unwrap_or(E_FAILED)
+}
+
+unsafe fn max_polygon_to_cells_size_impl(
     geo_polygon: *const GeoPolygon,
     res: i32,
     flags: u32,
@@ -983,8 +996,22 @@ pub unsafe extern "C" fn maxPolygonToCellsSize(
 
 /// H3Error polygonToCells(const GeoPolygon *geoPolygon, int res,
 ///                        uint32_t flags, H3Index *out)
+///
+/// See `maxPolygonToCellsSize` — wrapped in `catch_unwind` to convert any
+/// panic from transitive geometry code into `E_FAILED` instead of aborting
+/// the server across the FFI boundary.
 #[no_mangle]
 pub unsafe extern "C" fn polygonToCells(
+    geo_polygon: *const GeoPolygon,
+    res: i32,
+    flags: u32,
+    out: *mut H3Index,
+) -> H3Error {
+    panic::catch_unwind(|| polygon_to_cells_impl(geo_polygon, res, flags, out))
+        .unwrap_or(E_FAILED)
+}
+
+unsafe fn polygon_to_cells_impl(
     geo_polygon: *const GeoPolygon,
     res: i32,
     flags: u32,
