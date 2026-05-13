@@ -118,8 +118,6 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
 
     auto new_context = Context::createCopy(context);
 
-    /// Build from the pre-analyzed query tree (not AST): re-analysis from AST loses
-    /// `MaterializedCTE` wiring on `TableNode`s and crashes the planner.
     auto select_query_options = SelectQueryOptions(processed_stage);
     select_query_options.build_logical_plan = true;
 
