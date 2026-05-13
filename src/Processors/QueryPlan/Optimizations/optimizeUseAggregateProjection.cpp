@@ -1,3 +1,4 @@
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -6,6 +7,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Sources/NullSource.h>
@@ -362,8 +364,9 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
-    bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection
-        && !reading.getMergeTreeData().has_lightweight_delete_parts.load();
+    bool can_use_minmax_projection = allow_implicit_projections
+        && metadata->minmax_count_projection
+        && !reading.getMutationsSnapshot()->hasLightweightDeletedMask();
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
@@ -527,9 +530,7 @@ static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projec
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
-    bool allow_implicit_projections,
-    bool is_parallel_replicas_initiator_with_projection_support,
-    size_t max_step_description_length)
+    const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)
         return {};
@@ -560,7 +561,7 @@ std::optional<String> optimizeUseAggregateProjections(
 
     auto candidates
         = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading)
-                    : getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections));
+                    : getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, optimization_settings.optimize_use_implicit_projections));
 
     auto logger = getLogger("optimizeUseAggregateProjections");
     const auto & query_info = reading->getQueryInfo();
@@ -795,7 +796,7 @@ std::optional<String> optimizeUseAggregateProjections(
         selected_projection_name = best_candidate->projection->name;
 
     bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled()
-        && !is_parallel_replicas_initiator_with_projection_support;
+        && !optimization_settings.is_parallel_replicas_initiator_with_projection_support;
     /// Add reading from projection step.
     if (candidates.minmax_projection)
     {
@@ -892,7 +893,7 @@ std::optional<String> optimizeUseAggregateProjections(
             projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         }
 
-        if (has_parent_parts && is_parallel_replicas_initiator_with_projection_support)
+        if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
             fallbackToLocalProjectionReading(projection_reading);
     }
 
@@ -905,7 +906,7 @@ std::optional<String> optimizeUseAggregateProjections(
         });
     }
 
-    projection_reading->setStepDescription(selected_projection_name, max_step_description_length);
+    projection_reading->setStepDescription(selected_projection_name, optimization_settings.max_step_description_length);
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
 
     /// Root node of optimized child plan using @projection_name
@@ -955,7 +956,8 @@ std::optional<String> optimizeUseAggregateProjections(
         const auto & expected_header = node.step->getOutputHeader();
         if (blocksHaveEqualStructure(*projection_header, *expected_header))
         {
-            node.step->updateInputHeader(projection_header);
+            if (!has_parent_parts)
+                node.step->updateInputHeader(projection_header);
         }
         else
         {
@@ -973,7 +975,26 @@ std::optional<String> optimizeUseAggregateProjections(
     }
 
     if (has_parent_parts)
-        node.children.push_back(source_node);
+    {
+        if (aggregating)
+        {
+            node.children.push_back(source_node);
+        }
+        else
+        {
+            /// Some parts have no projection data. DistinctStep must see rows from both readings
+            /// to return the correct set of distinct values; union them into its single input.
+            auto * main_node = node.children.front();
+            SharedHeaders input_headers = {
+                main_node->step->getOutputHeader(),
+                source_node->step->getOutputHeader(),
+            };
+            auto & union_node = nodes.emplace_back();
+            union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
+            union_node.children = {main_node, source_node};
+            node.children.front() = &union_node;
+        }
+    }
     else
         node.children.front() = source_node;
 

@@ -1,3 +1,12 @@
 [libfuzzer]
 timeout = 20
 dict = all.dict
+rss_limit_mb = 4096
+
+[fuzzer_arguments]
+s3_retry_attempts=1
+max_execution_time=10
+http_connection_timeout=1
+http_send_timeout=1
+http_receive_timeout=1
+http_max_tries=1

@@ -149,13 +149,7 @@ struct Options
 {
     int num_threads = -1;
 
-    /// Under sanitizers, everything is ~10-20x slower, so reduce default duration
-    /// to avoid CI timeouts (the gtest CI job has a 45-minute hard limit).
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
-    int duration_seconds = 10;
-#else
-    int duration_seconds = 60;
-#endif
+    int duration_seconds = 600;
 
     size_t rows_per_batch = 32;
 
@@ -183,7 +177,7 @@ struct Options
     /// Use --ignore-problems to override (e.g. pass empty value to enable all checks).
     VectorOfStrings ignore_problems = {{"late_typecheck", "const_dependent_checks", "broken_nullable_input", "data_dependent_const",
         "exception_in_prepare", "bulk_success_but_row_error", "bulk_error_but_row_success",
-        "broken_determinism", "broken_injectivity", "broken_monotonicity",
+        "broken_injectivity", "broken_monotonicity",
         "field_comparison_inconsistency", "validation_infrastructure"}};
     VectorOfStrings functions;
     VectorOfStrings skip_functions;
@@ -236,6 +230,10 @@ const std::unordered_set<std::string_view> excluded_functions = {
     /// Avoid depending on environment (e.g. current query, configuration, settings).
     "synonyms",
     "catboostEvaluate",
+    "aiGenerate",
+    "aiClassify",
+    "aiExtract",
+    "aiTranslate",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
@@ -266,6 +264,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "timeSeriesCopyTag",
     "timeSeriesCopyTags",
     "timeSeriesExtractTag",
+    "timeSeriesGroupToSamplingKey",
     "timeSeriesGroupToTags",
     "timeSeriesIdToGroup",
     "timeSeriesJoinTags",
@@ -489,6 +488,11 @@ const std::unordered_map<std::string_view, std::vector<std::pair</*arg_idx*/ siz
 function_arg_constraints = {
     {"randomStringUTF8", {{0, {.integer_at_most = 50}}}},
     {"arrayWithConstant", {{0, {.integer_at_most = 20}}}},
+    {"arrayResize", {{1, {.integer_at_most = 1000}}}},
+    /// `isProbablePrime` runs Miller-Rabin on UInt128/UInt256, which can take seconds per row under
+    /// sanitizer + ThreadFuzzer instrumentation - long enough for the stress test's stop timeout to
+    /// classify the worker as stuck. The cap forces the function through its fast bitmap/UInt64 path.
+    {"isProbablePrime", {{0, {.integer_at_most = 1000}}}},
 };
 
 constexpr size_t MEMORY_LIMIT_BYTES_PER_THREAD = 256 << 20;
@@ -643,6 +647,11 @@ public:
     bool hasProblem(Problem p) const
     {
         return !problems.at(p).empty();
+    }
+
+    const String & getProblemError(Problem p) const
+    {
+        return problems.at(p);
     }
 
     void merge(const FunctionStats & s)
@@ -900,7 +909,8 @@ String valueToString(const DataTypePtr & type, const ColumnPtr & column, size_t 
     return std::move(buf.str());
 }
 
-bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stuck_threads)
+/// Returns empty string on success, or a non-empty error description on failure.
+String reportResults(const std::vector<FunctionStats> & function_stats, size_t stuck_threads)
 {
     FunctionStats totals;
     /// Names should fit in sentences "functions with {}".
@@ -908,7 +918,11 @@ bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stu
     std::vector<std::pair<Int64, String>> by_time_max;
     std::vector<std::pair<Int64, String>> by_time_total;
     std::vector<std::pair<Int64, String>> by_memory_peak;
-    bool have_unignored_problems = false;
+
+    /// Collect detailed error messages for unignored problems.
+    /// Maps problem category name -> list of error messages.
+    std::map<String, std::vector<String>> unignored_errors;
+
     for (size_t i = 0; i < testable_functions.size(); ++i)
     {
         const String & name = testable_functions[i].name;
@@ -923,7 +937,7 @@ bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stu
                 function_lists[problemInfo(p).first].push_back(name);
 
                 if (!options.ignore_problem.at(p))
-                    have_unignored_problems = true;
+                    unignored_errors[problemInfo(p).first].push_back(stats.getProblemError(p));
             }
         }
 
@@ -993,7 +1007,19 @@ bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stu
     print_top_few("total time", 1e9, "s", by_time_total);
     print_top_few("memory peak", 1 << 20, "MiB", by_memory_peak);
 
-    return !have_unignored_problems && stuck_threads == 0;
+    String failure_details;
+
+    if (stuck_threads != 0)
+        failure_details += fmt::format("{} threads got stuck\n", stuck_threads);
+
+    for (const auto & [category, errors] : unignored_errors)
+    {
+        failure_details += fmt::format("\n{}:\n", category);
+        for (const auto & error : errors)
+            failure_details += fmt::format("  {}\n", error);
+    }
+
+    return failure_details;
 }
 
 /// Quirk in string vs enum comparison when the string value is not in the enum:
@@ -1938,17 +1964,14 @@ struct FunctionsStressTestThread
 
         bool injective = resolved_function->isInjective(valid_args);
         bool resolver_injective = resolver->isInjective(valid_args);
-        if (resolver_injective && !injective)
+        if (resolver_injective != injective)
         {
-            stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective is false with arguments but true without; {}", operation.describe()));
-        }
-        else if (!resolver_injective && injective)
-        {
-            /// Skip isInjective mismatch check for Dynamic/Variant/Object types: the resolver doesn't have full
-            /// type information before build(), so it may return a different (default) answer than the resolved function.
+            /// Skip isInjective mismatch for Dynamic/Variant/Object types: the adaptors intentionally
+            /// return false (conservative) because injectivity of the underlying function does not hold
+            /// on the mixed-type domain, and the resolver lacks full type information before build().
             if (!isAnyArgumentDynamicallyTyped(valid_args))
             {
-                stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective mismatch between IFunctionOverloadResolver and IFunctionBase; {}", operation.describe()));
+                stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective mismatch between IFunctionOverloadResolver ({}) and IFunctionBase ({}); {}", resolver_injective, injective, operation.describe()));
             }
         }
 
@@ -2130,13 +2153,37 @@ TEST(FunctionsStress, stress)
     }
     if (num_threads <= 0)
         num_threads = 1;
-    std::vector<FunctionsStressTestThread> threads(static_cast<size_t>(num_threads));
+    /// Use heap-allocated `FunctionsStressTestThread` (via `std::unique_ptr`) so that we can
+    /// intentionally leak the state of stuck workers. If a worker thread gets stuck in some
+    /// runaway operation (e.g. an infinite loop in a tested function), we cannot safely destroy
+    /// its `FunctionsStressTestThread` from the main thread:
+    ///   * The worker is still using `context`, `thread_group`, `function_stats`, `valid_args`,
+    ///     `result`, `mutex`, `operation`, etc. — destroying any of them would race with the
+    ///     worker (use-after-free).
+    ///   * `~ThreadStatus` would run on the main thread, fire `prev.thread_id == curr.thread_id`
+    ///     in `RUsageCounters::incrementProfileEvents`, and abort. See issue #103750.
+    ///   * `~std::thread` on a still-joinable `std::thread` calls `std::terminate`.
+    /// For stuck workers we instead `detach` the `std::thread` and `release` the `unique_ptr`,
+    /// leaving the heap-allocated state alive forever. The test is failing anyway, so this leak
+    /// only persists until the test process exits.
+    ///
+    /// The actual `unique_ptr` release for stuck workers is deferred until after the signal
+    /// listener thread has stopped — see the cleanup pass at the bottom of this function.
+    /// `request_shutdown` (the signal listener callback) reads `threads`, so mutating the
+    /// `unique_ptr` slots concurrently would be a data race.
+    std::vector<std::unique_ptr<FunctionsStressTestThread>> threads(static_cast<size_t>(num_threads));
+    for (auto & t : threads)
+        t = std::make_unique<FunctionsStressTestThread>();
     const std::chrono::seconds stop_timeout(30);
 
     auto request_shutdown = [&]
         {
+            /// `threads` is only mutated after `signal_listener_thread` has been stopped and
+            /// joined, so all entries are non-null while the listener is alive. The `if (t)`
+            /// guard is purely defensive.
             for (auto & t : threads)
-                t.thread_should_stop.store(true);
+                if (t)
+                    t->thread_should_stop.store(true);
         };
 
     /// Print stack trace and function name on crash.
@@ -2156,14 +2203,14 @@ TEST(FunctionsStress, stress)
 
     for (size_t i = 0; i < threads.size(); ++i)
     {
-        threads[i].thread_idx = i;
-        threads[i].thread = std::thread([t = &threads[i]] { t->run(); });
+        threads[i]->thread_idx = i;
+        threads[i]->thread = std::thread([t = threads[i].get()] { t->run(); });
     }
 
     signal_listener.waitForTerminationRequest(std::chrono::seconds(options.duration_seconds));
 
     for (auto & t : threads)
-        t.thread_should_stop.store(true);
+        t->thread_should_stop.store(true);
 
     LOG_INFO(logger, "Waiting for threads to stop for up to {} seconds", stop_timeout.count());
 
@@ -2172,36 +2219,59 @@ TEST(FunctionsStress, stress)
         total_stats[i].function_idx = i;
     size_t stuck_threads = 0;
 
+    /// Indices of workers that turned out to be stuck. We detach their `std::thread` immediately
+    /// (so its destructor doesn't `std::terminate`), but defer the `unique_ptr` release until
+    /// after `signal_listener_thread` has been joined. `request_shutdown` reads `threads`, so
+    /// any concurrent mutation would be a data race.
+    std::vector<size_t> stuck_indices;
+
     auto deadline = std::chrono::steady_clock::now() + stop_timeout;
-    for (auto & t : threads)
+    for (size_t i = 0; i < threads.size(); ++i)
     {
+        auto & t = threads[i];
         std::optional<Operation> stuck_operation;
         {
-            std::unique_lock lock(t.mutex);
-            t.thread_stop_cv.wait_until(lock, deadline, [&] { return t.thread_stopped; });
-            if (!t.thread_stopped)
-                stuck_operation = t.operation;
+            std::unique_lock lock(t->mutex);
+            t->thread_stop_cv.wait_until(lock, deadline, [&] { return t->thread_stopped; });
+            if (!t->thread_stopped)
+                stuck_operation = t->operation;
         }
         if (stuck_operation.has_value())
         {
             LOG_ERROR(logger, "Thread is stuck while {}", stuck_operation->describe());
             ++stuck_threads;
+            /// Detach the still-joinable `std::thread` so its destructor doesn't `std::terminate`.
+            /// Detaching mutates only `t->thread`, which `request_shutdown` does not read, so it
+            /// is safe to do here while the signal listener is still alive.
+            t->thread.detach();
+            stuck_indices.push_back(i);
         }
         else
         {
-            t.thread.join();
-            for (size_t i = 0; i < testable_functions.size(); ++i)
-                total_stats[i].merge(t.function_stats[i]);
+            t->thread.join();
+            for (size_t j = 0; j < testable_functions.size(); ++j)
+                total_stats[j].merge(t->function_stats[j]);
         }
     }
 
-    bool ok = reportResults(total_stats, stuck_threads);
+    String failure_details = reportResults(total_stats, stuck_threads);
 
+    /// Stop and join the signal listener BEFORE releasing the `unique_ptr` slots for stuck
+    /// workers. While the listener is alive it can fire `request_shutdown`, which iterates
+    /// `threads` and reads each `unique_ptr`. Releasing concurrently would be a data race.
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
     HandledSignals::instance().reset();
 
-    ASSERT_TRUE(ok) << "Functions stress test found problems (see log above)";
+    /// Now that no other thread can read `threads`, release the stuck workers' `unique_ptr`s.
+    /// The heap-allocated state stays alive forever so the still-running stuck workers can keep
+    /// using it safely; the test process is about to exit so the leak is bounded.
+    for (size_t i : stuck_indices)
+    {
+        [[maybe_unused]] auto * leaked = threads[i].release();
+    }
+
+    ASSERT_TRUE(failure_details.empty()) << failure_details;
 }
 
 // TODO:

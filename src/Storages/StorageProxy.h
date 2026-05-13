@@ -20,6 +20,7 @@ public:
 
     bool isRemote() const override { return getNested()->isRemote(); }
     bool isView() const override { return getNested()->isView(); }
+    bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
     bool supportsFinal() const override { return getNested()->supportsFinal(); }
     bool supportsPrewhere() const override { return getNested()->supportsPrewhere(); }
@@ -33,9 +34,11 @@ public:
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & base_metadata, ContextPtr query_context) const override
     {
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, getNested()->getVirtualsPtr());
+        auto nested_metadata = getNested()->getInMemoryMetadataPtr(query_context, false);
+        auto new_metadata = std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(nested_metadata->virtuals));
+        return std::make_shared<StorageSnapshot>(*this, std::move(new_metadata));
     }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
@@ -44,7 +47,7 @@ public:
         const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override
     {
-        const auto & nested_metadata = getNested()->getInMemoryMetadataPtr();
+        const auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, false);
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
     }
 
@@ -103,7 +106,7 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
     {
         getNested()->alter(params, context, alter_lock_holder);
-        IStorage::setInMemoryMetadata(getNested()->getInMemoryMetadata());
+        IStorage::setInMemoryMetadata(*getNested()->getInMemoryMetadataPtr(context, true));
     }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override
