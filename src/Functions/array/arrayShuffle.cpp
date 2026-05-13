@@ -68,6 +68,16 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShuffleImpl<Traits>>(); }
 
+    String getSignatureString() const override
+    {
+        if constexpr (Traits::has_limit)
+            return "(Array(T : Any)) -> Array(T)"
+                   " OR (Array(T : Any), Integer) -> Array(T)"
+                   " OR (Array(T : Any), Integer, Integer) -> Array(T)";
+        return "(Array(T : Any)) -> Array(T)"
+               " OR (Array(T : Any), Integer) -> Array(T)";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() > Traits::max_num_params || arguments.empty())

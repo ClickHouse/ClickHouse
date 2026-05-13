@@ -851,9 +851,36 @@ namespace
         std::string reason;
         DataTypePtr result = sig->check(arguments, reason);
         if (!result)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        {
+            /// Surface the legacy `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` code when every
+            /// alternative failed for arity reasons only. The DSL phrases arity
+            /// problems with one of three exact prefixes ("too few arguments...",
+            /// "too many arguments...", "number of arguments..."); type problems
+            /// never start with those words. So: if the reason contains any of
+            /// those phrases *and* nothing that looks like a type mismatch
+            /// (a matcher's "argument N (...) has type X that is not Y" prefix),
+            /// we're confident this is an arity-only failure. This keeps existing
+            /// `serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH` test annotations
+            /// valid after a function adopts a declarative signature.
+            const bool mentions_arity =
+                reason.find("too few arguments") != std::string::npos
+                || reason.find("too many arguments") != std::string::npos
+                || reason.find("number of arguments") != std::string::npos;
+            /// `has type ` and `must be of type ` are produced by the type-matcher
+            /// `ArgumentDescription` wrapper for every type-mismatch; arity-only
+            /// reasons never include them. `doesn't match` appears in the
+            /// outer alternatives wrapper (`Variant ... doesn't match because ...`)
+            /// even for pure-arity failures, so we cannot use it as the type-marker.
+            const bool mentions_type_mismatch =
+                reason.find(" has type ") != std::string::npos
+                || reason.find("must be of type ") != std::string::npos;
+
+            throw Exception(mentions_arity && !mentions_type_mismatch
+                    ? ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+                    : ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Arguments of function {} do not match its signature ({}): {}",
                 function_name, signature_str, reason);
+        }
         return result;
     }
 }
