@@ -696,6 +696,15 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+/// Matches the `Interval` data type (any `IntervalKind`).
+class TypeMatcherInterval : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Interval"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isInterval(type); }
+    size_t getIndex() const override { return 0; }
+};
+
 class TypeMatcherDynamic : public ITypeMatcher
 {
 public:
@@ -945,6 +954,7 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherNULL>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherIsNothing>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherBool>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherInterval>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherRepresentedByNumber>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherSet>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDateOrDateTime>(factory);
