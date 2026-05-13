@@ -105,4 +105,14 @@ result	Array(Float32)
 result	Array(Float32)
 -- aiEmbed: NULL input → []
 0
+-- aiEmbed: DEFAULT survives INSERT (no server crash)
+1	0
+-- aiGenerate: DEFAULT survives INSERT (no server crash)
+1	0
+-- aiClassify: DEFAULT survives INSERT (no server crash)
+1	0
+-- aiExtract: DEFAULT survives INSERT (no server crash)
+1	0
+-- aiTranslate: DEFAULT survives INSERT (no server crash)
+1	0
 -- Re-disabled blocks function

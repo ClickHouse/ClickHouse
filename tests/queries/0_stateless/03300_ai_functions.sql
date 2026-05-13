@@ -422,6 +422,78 @@ DROP TABLE IF EXISTS _03300_embed_null_out;
 DROP TABLE IF EXISTS _03300_embed_null_in;
 
 -- =============================================================================
+-- 17b. AI functions in column DEFAULTs: CREATE + INSERT + SELECT must complete.
+-- The HTTP call fails (no provider on localhost:1); `ai_function_throw_on_error = 0`
+-- swallows the error so the INSERT still succeeds, with `[]` / "" for the row.
+-- =============================================================================
+
+SET ai_function_throw_on_error = 0;
+SET ai_function_request_timeout_sec = 3;
+
+SELECT '-- aiEmbed: DEFAULT survives INSERT (no server crash)';
+DROP TABLE IF EXISTS _03300_embed_default;
+CREATE TABLE _03300_embed_default
+(
+    id UInt32,
+    doc String,
+    vector Array(Float32) DEFAULT aiEmbed('ai_credentials', doc)
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_embed_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(vector) FROM _03300_embed_default;
+DROP TABLE _03300_embed_default;
+
+SELECT '-- aiGenerate: DEFAULT survives INSERT (no server crash)';
+DROP TABLE IF EXISTS _03300_generate_default;
+CREATE TABLE _03300_generate_default
+(
+    id UInt32,
+    doc String,
+    summary String DEFAULT aiGenerate('ai_credentials', doc)
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_generate_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(summary) FROM _03300_generate_default;
+DROP TABLE _03300_generate_default;
+
+SELECT '-- aiClassify: DEFAULT survives INSERT (no server crash)';
+DROP TABLE IF EXISTS _03300_classify_default;
+CREATE TABLE _03300_classify_default
+(
+    id UInt32,
+    doc String,
+    label String DEFAULT aiClassify('ai_credentials', doc, ['positive', 'negative'])
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_classify_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(label) FROM _03300_classify_default;
+DROP TABLE _03300_classify_default;
+
+SELECT '-- aiExtract: DEFAULT survives INSERT (no server crash)';
+DROP TABLE IF EXISTS _03300_extract_default;
+CREATE TABLE _03300_extract_default
+(
+    id UInt32,
+    doc String,
+    extracted String DEFAULT aiExtract('ai_credentials', doc, 'main topic')
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_extract_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(extracted) FROM _03300_extract_default;
+DROP TABLE _03300_extract_default;
+
+SELECT '-- aiTranslate: DEFAULT survives INSERT (no server crash)';
+DROP TABLE IF EXISTS _03300_translate_default;
+CREATE TABLE _03300_translate_default
+(
+    id UInt32,
+    doc String,
+    translation String DEFAULT aiTranslate('ai_credentials', doc, 'French')
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_translate_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(translation) FROM _03300_translate_default;
+DROP TABLE _03300_translate_default;
+
+SET ai_function_throw_on_error = 1;
+SET ai_function_request_timeout_sec = 60;
+
+-- =============================================================================
 -- 18. Re-disable the setting mid-session
 -- =============================================================================
 
