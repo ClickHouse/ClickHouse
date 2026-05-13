@@ -744,6 +744,24 @@ public:
     std::string name() const override { return "anyFloating"; }
 };
 
+/// `anyFloat64(T1, T2, ...)` — predicate type function that returns `1` if
+/// any argument is `Float64` (native, not BFloat16), otherwise `0`. Used by
+/// `greatCircleDistance` and friends to widen the result to `Float64`
+/// whenever one of the coordinate inputs is `Float64`.
+class TypeFunctionAnyFloat64 : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        for (const auto & arg : args)
+            if (WhichDataType(arg.type()).isFloat64())
+                return Value(Field(UInt64{1}));
+        return Value(Field(UInt64{0}));
+    }
+
+    std::string name() const override { return "anyFloat64"; }
+};
+
 
 /// `isFloat32OrSmaller(T)` — `1` if `T` is a floating-point type at most 32 bits
 /// wide (i.e. `BFloat16` or `Float32`), otherwise `0`. The `Float64`-promotion
@@ -917,6 +935,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionMaxFloatingBits>();
     factory.registerElement<TypeFunctionAnySigned>();
     factory.registerElement<TypeFunctionAnyFloating>();
+    factory.registerElement<TypeFunctionAnyFloat64>();
     factory.registerElement<TypeFunctionAnyInteger>();
     factory.registerElement<TypeFunctionSelectIf>();
     factory.registerElement<TypeFunctionIsFloat32OrSmaller>();
