@@ -1067,7 +1067,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 #define SETTING_DECLARE_ID_(TYPE, NAME, ...) NAME,
 #define SETTING_TAG_ARRAY_ENTRY_(TYPE, NAME, ...) SettingTypeTag::TYPE,
 #define SETTING_DECLARE_DATA_ARRAY_(CLASS_NAME, TYPE) \
-    SettingField##TYPE TYPE##_[settings_layout.type_counts[static_cast<size_t>(SettingTypeTag::TYPE)]];
+    SettingField##TYPE TYPE##_[CLASS_NAME##Detail::settings_layout.type_counts[static_cast<size_t>(CLASS_NAME##Detail::SettingTypeTag::TYPE)]];
 
 /// These reference Traits_ / Owner_ which are `using` aliases injected by
 /// IMPLEMENT_SETTINGS_TRAITS_COMMON / IMPLEMENT_SETTINGS_EXTERN_ into the enclosing scope
@@ -1141,41 +1141,49 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
     /* trivially-copyable types in the copy constructor. The layout (array sizes and */ \
     /* per-setting indices) is computed at compile time from the settings list, replacing */ \
     /* what would otherwise require an external code-generation step. */ \
-    /* Unprefixed names are safe: each .cpp has at most one DECLARE_SETTINGS_TRAITS. */ \
-    enum class SettingTypeTag : uint8_t \
+    /* Helpers live in a per-traits namespace so each settings .cpp gets its own qualified */ \
+    /* names (e.g. `SettingsTraits_detail::SettingTypeTag` vs `MergeTreeSettingsTraits_detail::`). */ \
+    /* Putting them at namespace scope under fixed names would be an ODR violation: every .cpp */ \
+    /* redefines them with different contents under the same `DB::SettingTypeTag`. Nesting */ \
+    /* inside Traits directly hits constexpr-evaluation issues because in-class member function */ \
+    /* bodies and default-member-initializers of nested types are deferred. */ \
+    namespace SETTINGS_TRAITS_NAME##Detail \
     { \
-        SUPPORTED_TYPES_MACRO(SETTINGS_TRAITS_NAME, SETTING_DECLARE_TYPE_TAG_) \
-        NUM_TYPES \
-    }; \
-    enum class SettingID : size_t \
-    { \
-        LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_DECLARE_ID_, SETTING_DECLARE_ID_) \
-        LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_DECLARE_ID_, SETTING_DECLARE_ID_) \
-        NUM_SETTINGS \
-    }; \
-    struct SettingsLayout \
-    { \
-        size_t type_counts[static_cast<size_t>(SettingTypeTag::NUM_TYPES)] = {}; \
-        size_t local_index[static_cast<size_t>(SettingID::NUM_SETTINGS)] = {}; \
-    }; \
-    constexpr SettingTypeTag setting_type_tags[] = { \
-        LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_TAG_ARRAY_ENTRY_, SETTING_TAG_ARRAY_ENTRY_) \
-        LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_TAG_ARRAY_ENTRY_, SETTING_TAG_ARRAY_ENTRY_) \
-    }; \
-    constexpr SettingsLayout computeSettingsLayout() \
-    { \
-        SettingsLayout layout; \
-        for (size_t i = 0; i < static_cast<size_t>(SettingID::NUM_SETTINGS); ++i) \
-            layout.local_index[i] = layout.type_counts[static_cast<size_t>(setting_type_tags[i])]++; \
-        return layout; \
+        enum class SettingTypeTag : uint8_t \
+        { \
+            SUPPORTED_TYPES_MACRO(SETTINGS_TRAITS_NAME, SETTING_DECLARE_TYPE_TAG_) \
+            NUM_TYPES \
+        }; \
+        enum class SettingID : size_t \
+        { \
+            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_DECLARE_ID_, SETTING_DECLARE_ID_) \
+            LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_DECLARE_ID_, SETTING_DECLARE_ID_) \
+            NUM_SETTINGS \
+        }; \
+        struct SettingsLayout \
+        { \
+            size_t type_counts[static_cast<size_t>(SettingTypeTag::NUM_TYPES)] = {}; \
+            size_t local_index[static_cast<size_t>(SettingID::NUM_SETTINGS)] = {}; \
+        }; \
+        constexpr SettingTypeTag setting_type_tags[] = { \
+            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_TAG_ARRAY_ENTRY_, SETTING_TAG_ARRAY_ENTRY_) \
+            LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_TAG_ARRAY_ENTRY_, SETTING_TAG_ARRAY_ENTRY_) \
+        }; \
+        constexpr SettingsLayout computeSettingsLayout() \
+        { \
+            SettingsLayout layout; \
+            for (size_t i = 0; i < static_cast<size_t>(SettingID::NUM_SETTINGS); ++i) \
+                layout.local_index[i] = layout.type_counts[static_cast<size_t>(setting_type_tags[i])]++; \
+            return layout; \
+        } \
+        constexpr SettingsLayout settings_layout = computeSettingsLayout(); \
     } \
-    constexpr SettingsLayout settings_layout = computeSettingsLayout(); \
     \
     struct SETTINGS_TRAITS_NAME \
     { \
-        using SettingTypeTag_ = SettingTypeTag; \
-        using SettingID_ = SettingID; \
-        static constexpr auto & settings_layout_ = settings_layout; \
+        using SettingTypeTag_ = SETTINGS_TRAITS_NAME##Detail::SettingTypeTag; \
+        using SettingID_ = SETTINGS_TRAITS_NAME##Detail::SettingID; \
+        static constexpr auto & settings_layout_ = SETTINGS_TRAITS_NAME##Detail::settings_layout; \
         \
         /* Data struct: typed arrays sized by the constexpr layout */ \
         struct Data \
