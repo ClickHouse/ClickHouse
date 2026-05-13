@@ -999,7 +999,7 @@ Chunk ObjectStorageQueueSource::generate()
     catch (...)
     {
         if (commit_once_processed)
-            commit(false, getCurrentExceptionMessage(true));
+            commit(false, getCurrentExceptionMessage(true), getCurrentExceptionCode());
 
         throw;
     }
@@ -1585,7 +1585,7 @@ void ObjectStorageQueueSource::finalizeCommit(
         std::rethrow_exception(finalize_exception);
 }
 
-void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)
+void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message, int error_code)
 {
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
@@ -1601,7 +1601,8 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         successful_objects,
         last_processed_file_per_partition,
         /* created_nodes */ nullptr,
-        exception_message);
+        exception_message,
+        error_code);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
     if (requests.empty() && successful_objects.empty())
