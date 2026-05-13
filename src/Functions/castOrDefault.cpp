@@ -234,6 +234,21 @@ private:
         return impl.isSuitableForShortCircuitArgumentsExecution(arguments);
     }
 
+    /// Documentation-only — the result type is the destination type bound at
+    /// construction time. For `Decimal*` / `DateTime64` a const-`UInt` scale
+    /// is required before the optional default value; for `DateTime` /
+    /// `DateTime64` a const-`String` timezone may follow; the trailing
+    /// argument is the optional fallback that's returned when parsing fails.
+    String getSignatureString() const override
+    {
+        const String target = type->getName();
+        if (isDecimal(type) || isDateTime64(type))
+            return "(Any, const UInt8, [const String], [" + target + "]) -> " + target;
+        if (isDateTimeOrDateTime64(type))
+            return "(Any, [const String], [" + target + "]) -> " + target;
+        return "(Any, [" + target + "]) -> " + target;
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, "any type"}};

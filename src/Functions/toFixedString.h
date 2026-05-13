@@ -41,6 +41,14 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only — the result `FixedString(N)` takes its size from
+    /// the const-UInt second argument; the parameterised result type isn't
+    /// expressible by the DSL's bare `FixedString` matcher.
+    String getSignatureString() const override
+    {
+        return "(StringOrFixedString, const UInt) -> FixedString";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isUInt(arguments[1].type))

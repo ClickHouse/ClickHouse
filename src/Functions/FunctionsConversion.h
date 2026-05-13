@@ -1504,7 +1504,11 @@ struct ConvertThroughParsing
 
 
 /// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
-struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
+struct NameToUnixTimestamp
+{
+    static constexpr auto name = "toUnixTimestamp";
+    static constexpr auto signature = "(Any, [const String]) -> UInt32";
+};
 
 enum class BehaviourOnErrorFromString : uint8_t
 {
@@ -2814,18 +2818,66 @@ struct ConvertImplFromDynamicToColumn
 };
 
 /// Declared early because used below.
-struct NameToDate { static constexpr auto name = "toDate"; };
-struct NameToDate32 { static constexpr auto name = "toDate32"; };
-struct NameToDateTime { static constexpr auto name = "toDateTime"; };
-struct NameToTime { static constexpr auto name = "toTime"; };
-struct NameToTime64 { static constexpr auto name = "toTime64"; };
-struct NameToDateTime32 { static constexpr auto name = "toDateTime32"; };
-struct NameToDateTime64 { static constexpr auto name = "toDateTime64"; };
-struct NameToString { static constexpr auto name = "toString"; };
-struct NameToDecimal32 { static constexpr auto name = "toDecimal32"; };
-struct NameToDecimal64 { static constexpr auto name = "toDecimal64"; };
-struct NameToDecimal128 { static constexpr auto name = "toDecimal128"; };
-struct NameToDecimal256 { static constexpr auto name = "toDecimal256"; };
+struct NameToDate
+{
+    static constexpr auto name = "toDate";
+    static constexpr auto signature = "(Any, [const String]) -> Date";
+};
+struct NameToDate32
+{
+    static constexpr auto name = "toDate32";
+    static constexpr auto signature = "(Any, [const String]) -> Date32";
+};
+struct NameToDateTime
+{
+    static constexpr auto name = "toDateTime";
+    static constexpr auto signature = "(Any, [const String]) -> DateTime";
+};
+struct NameToTime
+{
+    static constexpr auto name = "toTime";
+    static constexpr auto signature = "(Any, [const String]) -> Time";
+};
+struct NameToTime64
+{
+    static constexpr auto name = "toTime64";
+    static constexpr auto signature = "(Any, [const UInt8], [const String]) -> Time64";
+};
+struct NameToDateTime32
+{
+    static constexpr auto name = "toDateTime32";
+    static constexpr auto signature = "(Any, [const String]) -> DateTime";
+};
+struct NameToDateTime64
+{
+    static constexpr auto name = "toDateTime64";
+    static constexpr auto signature = "(Any, [const UInt8], [const String]) -> DateTime64";
+};
+struct NameToString
+{
+    static constexpr auto name = "toString";
+    static constexpr auto signature = "(Any, [const String]) -> String";
+};
+struct NameToDecimal32
+{
+    static constexpr auto name = "toDecimal32";
+    static constexpr auto signature = "(Any, const UInt8) -> Decimal32";
+};
+struct NameToDecimal64
+{
+    static constexpr auto name = "toDecimal64";
+    static constexpr auto signature = "(Any, const UInt8) -> Decimal64";
+};
+struct NameToDecimal128
+{
+    static constexpr auto name = "toDecimal128";
+    static constexpr auto signature = "(Any, const UInt8) -> Decimal128";
+};
+struct NameToDecimal256
+{
+    static constexpr auto name = "toDecimal256";
+    static constexpr auto signature = "(Any, const UInt8) -> Decimal256";
+};
 
 
 #define DEFINE_NAME_TO_INTERVAL(INTERVAL_KIND) \
@@ -4027,24 +4079,24 @@ struct ToStringMonotonicity
 };
 
 
-struct NameToUInt8 { static constexpr auto name = "toUInt8"; };
-struct NameToUInt16 { static constexpr auto name = "toUInt16"; };
-struct NameToUInt32 { static constexpr auto name = "toUInt32"; };
-struct NameToUInt64 { static constexpr auto name = "toUInt64"; };
-struct NameToUInt128 { static constexpr auto name = "toUInt128"; };
-struct NameToUInt256 { static constexpr auto name = "toUInt256"; };
-struct NameToInt8 { static constexpr auto name = "toInt8"; };
-struct NameToInt16 { static constexpr auto name = "toInt16"; };
-struct NameToInt32 { static constexpr auto name = "toInt32"; };
-struct NameToInt64 { static constexpr auto name = "toInt64"; };
-struct NameToInt128 { static constexpr auto name = "toInt128"; };
-struct NameToInt256 { static constexpr auto name = "toInt256"; };
-struct NameToBFloat16 { static constexpr auto name = "toBFloat16"; };
-struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
-struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
-struct NameToUUID { static constexpr auto name = "toUUID"; };
-struct NameToIPv4 { static constexpr auto name = "toIPv4"; };
-struct NameToIPv6 { static constexpr auto name = "toIPv6"; };
+struct NameToUInt8 { static constexpr auto name = "toUInt8"; static constexpr auto signature = "(Any) -> UInt8"; };
+struct NameToUInt16 { static constexpr auto name = "toUInt16"; static constexpr auto signature = "(Any) -> UInt16"; };
+struct NameToUInt32 { static constexpr auto name = "toUInt32"; static constexpr auto signature = "(Any) -> UInt32"; };
+struct NameToUInt64 { static constexpr auto name = "toUInt64"; static constexpr auto signature = "(Any) -> UInt64"; };
+struct NameToUInt128 { static constexpr auto name = "toUInt128"; static constexpr auto signature = "(Any) -> UInt128"; };
+struct NameToUInt256 { static constexpr auto name = "toUInt256"; static constexpr auto signature = "(Any) -> UInt256"; };
+struct NameToInt8 { static constexpr auto name = "toInt8"; static constexpr auto signature = "(Any) -> Int8"; };
+struct NameToInt16 { static constexpr auto name = "toInt16"; static constexpr auto signature = "(Any) -> Int16"; };
+struct NameToInt32 { static constexpr auto name = "toInt32"; static constexpr auto signature = "(Any) -> Int32"; };
+struct NameToInt64 { static constexpr auto name = "toInt64"; static constexpr auto signature = "(Any) -> Int64"; };
+struct NameToInt128 { static constexpr auto name = "toInt128"; static constexpr auto signature = "(Any) -> Int128"; };
+struct NameToInt256 { static constexpr auto name = "toInt256"; static constexpr auto signature = "(Any) -> Int256"; };
+struct NameToBFloat16 { static constexpr auto name = "toBFloat16"; static constexpr auto signature = "(Any) -> BFloat16"; };
+struct NameToFloat32 { static constexpr auto name = "toFloat32"; static constexpr auto signature = "(Any) -> Float32"; };
+struct NameToFloat64 { static constexpr auto name = "toFloat64"; static constexpr auto signature = "(Any) -> Float64"; };
+struct NameToUUID { static constexpr auto name = "toUUID"; static constexpr auto signature = "(Any) -> UUID"; };
+struct NameToIPv4 { static constexpr auto name = "toIPv4"; static constexpr auto signature = "(Any) -> IPv4"; };
+struct NameToIPv6 { static constexpr auto name = "toIPv6"; static constexpr auto signature = "(Any) -> IPv6"; };
 
 extern template class FunctionConvert<DataTypeUInt8, NameToUInt8, ToNumberMonotonicity<UInt8>>;
 extern template class FunctionConvert<DataTypeUInt16, NameToUInt16, ToNumberMonotonicity<UInt16>>;
@@ -4167,34 +4219,34 @@ template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
 {
 };
 
-struct NameToUInt8OrZero { static constexpr auto name = "toUInt8OrZero"; };
-struct NameToUInt16OrZero { static constexpr auto name = "toUInt16OrZero"; };
-struct NameToUInt32OrZero { static constexpr auto name = "toUInt32OrZero"; };
-struct NameToUInt64OrZero { static constexpr auto name = "toUInt64OrZero"; };
-struct NameToUInt128OrZero { static constexpr auto name = "toUInt128OrZero"; };
-struct NameToUInt256OrZero { static constexpr auto name = "toUInt256OrZero"; };
-struct NameToInt8OrZero { static constexpr auto name = "toInt8OrZero"; };
-struct NameToInt16OrZero { static constexpr auto name = "toInt16OrZero"; };
-struct NameToInt32OrZero { static constexpr auto name = "toInt32OrZero"; };
-struct NameToInt64OrZero { static constexpr auto name = "toInt64OrZero"; };
-struct NameToInt128OrZero { static constexpr auto name = "toInt128OrZero"; };
-struct NameToInt256OrZero { static constexpr auto name = "toInt256OrZero"; };
-struct NameToBFloat16OrZero { static constexpr auto name = "toBFloat16OrZero"; };
-struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
-struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
-struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; };
-struct NameToDate32OrZero { static constexpr auto name = "toDate32OrZero"; };
-struct NameToTimeOrZero { static constexpr auto name = "toTimeOrZero"; };
-struct NameToTime64OrZero { static constexpr auto name = "toTime64OrZero"; };
-struct NameToDateTimeOrZero { static constexpr auto name = "toDateTimeOrZero"; };
-struct NameToDateTime64OrZero { static constexpr auto name = "toDateTime64OrZero"; };
-struct NameToDecimal32OrZero { static constexpr auto name = "toDecimal32OrZero"; };
-struct NameToDecimal64OrZero { static constexpr auto name = "toDecimal64OrZero"; };
-struct NameToDecimal128OrZero { static constexpr auto name = "toDecimal128OrZero"; };
-struct NameToDecimal256OrZero { static constexpr auto name = "toDecimal256OrZero"; };
-struct NameToUUIDOrZero { static constexpr auto name = "toUUIDOrZero"; };
-struct NameToIPv4OrZero { static constexpr auto name = "toIPv4OrZero"; };
-struct NameToIPv6OrZero { static constexpr auto name = "toIPv6OrZero"; };
+struct NameToUInt8OrZero { static constexpr auto name = "toUInt8OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> UInt8"; };
+struct NameToUInt16OrZero { static constexpr auto name = "toUInt16OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> UInt16"; };
+struct NameToUInt32OrZero { static constexpr auto name = "toUInt32OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> UInt32"; };
+struct NameToUInt64OrZero { static constexpr auto name = "toUInt64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> UInt64"; };
+struct NameToUInt128OrZero { static constexpr auto name = "toUInt128OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> UInt128"; };
+struct NameToUInt256OrZero { static constexpr auto name = "toUInt256OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> UInt256"; };
+struct NameToInt8OrZero { static constexpr auto name = "toInt8OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Int8"; };
+struct NameToInt16OrZero { static constexpr auto name = "toInt16OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Int16"; };
+struct NameToInt32OrZero { static constexpr auto name = "toInt32OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Int32"; };
+struct NameToInt64OrZero { static constexpr auto name = "toInt64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Int64"; };
+struct NameToInt128OrZero { static constexpr auto name = "toInt128OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Int128"; };
+struct NameToInt256OrZero { static constexpr auto name = "toInt256OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Int256"; };
+struct NameToBFloat16OrZero { static constexpr auto name = "toBFloat16OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> BFloat16"; };
+struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Float32"; };
+struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Float64"; };
+struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Date"; };
+struct NameToDate32OrZero { static constexpr auto name = "toDate32OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Date32"; };
+struct NameToTimeOrZero { static constexpr auto name = "toTimeOrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> Time"; };
+struct NameToTime64OrZero { static constexpr auto name = "toTime64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8]) -> Time64"; };
+struct NameToDateTimeOrZero { static constexpr auto name = "toDateTimeOrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> DateTime"; };
+struct NameToDateTime64OrZero { static constexpr auto name = "toDateTime64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> DateTime64"; };
+struct NameToDecimal32OrZero { static constexpr auto name = "toDecimal32OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Decimal32"; };
+struct NameToDecimal64OrZero { static constexpr auto name = "toDecimal64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Decimal64"; };
+struct NameToDecimal128OrZero { static constexpr auto name = "toDecimal128OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Decimal128"; };
+struct NameToDecimal256OrZero { static constexpr auto name = "toDecimal256OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Decimal256"; };
+struct NameToUUIDOrZero { static constexpr auto name = "toUUIDOrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> UUID"; };
+struct NameToIPv4OrZero { static constexpr auto name = "toIPv4OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> IPv4"; };
+struct NameToIPv6OrZero { static constexpr auto name = "toIPv6OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> IPv6"; };
 
 extern template class FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -4254,34 +4306,34 @@ using FunctionToUUIDOrZero = FunctionConvertFromString<DataTypeUUID, NameToUUIDO
 using FunctionToIPv4OrZero = FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToIPv6OrZero = FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrZero, ConvertFromStringExceptionMode::Zero>;
 
-struct NameToUInt8OrNull { static constexpr auto name = "toUInt8OrNull"; };
-struct NameToUInt16OrNull { static constexpr auto name = "toUInt16OrNull"; };
-struct NameToUInt32OrNull { static constexpr auto name = "toUInt32OrNull"; };
-struct NameToUInt64OrNull { static constexpr auto name = "toUInt64OrNull"; };
-struct NameToUInt128OrNull { static constexpr auto name = "toUInt128OrNull"; };
-struct NameToUInt256OrNull { static constexpr auto name = "toUInt256OrNull"; };
-struct NameToInt8OrNull { static constexpr auto name = "toInt8OrNull"; };
-struct NameToInt16OrNull { static constexpr auto name = "toInt16OrNull"; };
-struct NameToInt32OrNull { static constexpr auto name = "toInt32OrNull"; };
-struct NameToInt64OrNull { static constexpr auto name = "toInt64OrNull"; };
-struct NameToInt128OrNull { static constexpr auto name = "toInt128OrNull"; };
-struct NameToInt256OrNull { static constexpr auto name = "toInt256OrNull"; };
-struct NameToBFloat16OrNull { static constexpr auto name = "toBFloat16OrNull"; };
-struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
-struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
-struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; };
-struct NameToDate32OrNull { static constexpr auto name = "toDate32OrNull"; };
-struct NameToTimeOrNull { static constexpr auto name = "toTimeOrNull"; };
-struct NameToTime64OrNull { static constexpr auto name = "toTime64OrNull"; };
-struct NameToDateTimeOrNull { static constexpr auto name = "toDateTimeOrNull"; };
-struct NameToDateTime64OrNull { static constexpr auto name = "toDateTime64OrNull"; };
-struct NameToDecimal32OrNull { static constexpr auto name = "toDecimal32OrNull"; };
-struct NameToDecimal64OrNull { static constexpr auto name = "toDecimal64OrNull"; };
-struct NameToDecimal128OrNull { static constexpr auto name = "toDecimal128OrNull"; };
-struct NameToDecimal256OrNull { static constexpr auto name = "toDecimal256OrNull"; };
-struct NameToUUIDOrNull { static constexpr auto name = "toUUIDOrNull"; };
-struct NameToIPv4OrNull { static constexpr auto name = "toIPv4OrNull"; };
-struct NameToIPv6OrNull { static constexpr auto name = "toIPv6OrNull"; };
+struct NameToUInt8OrNull { static constexpr auto name = "toUInt8OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(UInt8)"; };
+struct NameToUInt16OrNull { static constexpr auto name = "toUInt16OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(UInt16)"; };
+struct NameToUInt32OrNull { static constexpr auto name = "toUInt32OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(UInt32)"; };
+struct NameToUInt64OrNull { static constexpr auto name = "toUInt64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(UInt64)"; };
+struct NameToUInt128OrNull { static constexpr auto name = "toUInt128OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(UInt128)"; };
+struct NameToUInt256OrNull { static constexpr auto name = "toUInt256OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(UInt256)"; };
+struct NameToInt8OrNull { static constexpr auto name = "toInt8OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Int8)"; };
+struct NameToInt16OrNull { static constexpr auto name = "toInt16OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Int16)"; };
+struct NameToInt32OrNull { static constexpr auto name = "toInt32OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Int32)"; };
+struct NameToInt64OrNull { static constexpr auto name = "toInt64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Int64)"; };
+struct NameToInt128OrNull { static constexpr auto name = "toInt128OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Int128)"; };
+struct NameToInt256OrNull { static constexpr auto name = "toInt256OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Int256)"; };
+struct NameToBFloat16OrNull { static constexpr auto name = "toBFloat16OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(BFloat16)"; };
+struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Float32)"; };
+struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Float64)"; };
+struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Date)"; };
+struct NameToDate32OrNull { static constexpr auto name = "toDate32OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Date32)"; };
+struct NameToTimeOrNull { static constexpr auto name = "toTimeOrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> Nullable(Time)"; };
+struct NameToTime64OrNull { static constexpr auto name = "toTime64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8]) -> Nullable(Time64)"; };
+struct NameToDateTimeOrNull { static constexpr auto name = "toDateTimeOrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> Nullable(DateTime)"; };
+struct NameToDateTime64OrNull { static constexpr auto name = "toDateTime64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> Nullable(DateTime64)"; };
+struct NameToDecimal32OrNull { static constexpr auto name = "toDecimal32OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Nullable(Decimal32)"; };
+struct NameToDecimal64OrNull { static constexpr auto name = "toDecimal64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Nullable(Decimal64)"; };
+struct NameToDecimal128OrNull { static constexpr auto name = "toDecimal128OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Nullable(Decimal128)"; };
+struct NameToDecimal256OrNull { static constexpr auto name = "toDecimal256OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Nullable(Decimal256)"; };
+struct NameToUUIDOrNull { static constexpr auto name = "toUUIDOrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(UUID)"; };
+struct NameToIPv4OrNull { static constexpr auto name = "toIPv4OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(IPv4)"; };
+struct NameToIPv6OrNull { static constexpr auto name = "toIPv6OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(IPv6)"; };
 
 extern template class FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrNull, ConvertFromStringExceptionMode::Null>;
