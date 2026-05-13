@@ -415,12 +415,15 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         # CFI checks: virtual dispatch type safety and bad downcasts via static_cast.
         # cfi-icall is omitted because C function pointers in contrib libraries (compiled without
         # CFI) would cause false positives. Start conservative; broaden after baseline is clean.
-        # Clang 21 requires an explicit -fvisibility= flag alongside -fsanitize=cfi-*.
-        # Use -fvisibility=default (not hidden) to avoid -Wunique-object-duplication
-        # errors on inline static members. CFI vtable visibility is already satisfied
-        # by -fwhole-program-vtables and -Wl,--lto-whole-program-visibility above.
         # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
-        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=default")
+        #
+        # `-fvisibility=hidden` is required by Clang CFI: vtable type-confusion checks are scoped
+        # to classes with non-default linkage, so without it CFI would silently skip most classes.
+        # Suppress `-Wunique-object-duplication`: it flags inline static members (e.g.
+        # `Context::global_context_instance`, `BaseSettings::unknown_settings`) whose addresses
+        # may diverge across DSOs under hidden visibility. ClickHouse is statically linked into
+        # a single binary, so address duplication across DSOs does not apply.
+        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=hidden -Wno-unique-object-duplication")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
         set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
     endif ()
