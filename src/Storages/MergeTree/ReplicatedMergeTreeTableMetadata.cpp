@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/IndicesDescription.h>
 #include <DataTypes/IDataType.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -30,11 +31,25 @@ namespace ErrorCodes
     extern const int METADATA_MISMATCH;
 }
 
+/// User-written parentheses around individual key elements (e.g. `PRIMARY KEY (col)`) are
+/// syntactically meaningless in stored metadata. Strip them so the canonical form matches
+/// what `KeyDescription::parse` produces when reading metadata back from ZooKeeper.
+static void stripArtificialParens(IAST & ast)
+{
+    ast.setParenthesized(false);
+    if (auto * list = ast.as<ASTExpressionList>())
+        for (auto & child : list->children)
+            if (child)
+                child->setParenthesized(false);
+}
+
 static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    return ast->formatWithSecretsOneLine();
+    auto cloned = ast->clone();
+    stripArtificialParens(*cloned);
+    return cloned->formatWithSecretsOneLine();
 }
 
 static String formattedASTNormalized(const ASTPtr & ast)
@@ -43,6 +58,7 @@ static String formattedASTNormalized(const ASTPtr & ast)
         return "";
     auto ast_normalized = ast->clone();
     FunctionNameNormalizer::visit(ast_normalized.get());
+    stripArtificialParens(*ast_normalized);
     return ast_normalized->formatWithSecretsOneLine();
 }
 
@@ -372,17 +388,17 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
             handleTableMetadataMismatch(table_name_for_error_message, "graphite params", from_zk.graphite_params_hash, "", graphite_params_hash);
     }
 
-    /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
-    ///    in formatAST code.
     String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, virtuals, context, true).getOriginalExpressionList());
-    if (primary_key != parsed_zk_primary_key)
+    String parsed_local_primary_key = formattedAST(KeyDescription::parse(primary_key, columns, virtuals, context, true).getOriginalExpressionList());
+    if (parsed_local_primary_key != parsed_zk_primary_key)
         handleTableMetadataMismatch(table_name_for_error_message, "primary key", from_zk.primary_key, parsed_zk_primary_key, primary_key);
 
     if (data_format_version != from_zk.data_format_version)
         handleTableMetadataMismatch(table_name_for_error_message, "data format version", DB::toString(from_zk.data_format_version.toUnderType()), "", DB::toString(data_format_version.toUnderType()));
 
     String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, virtuals, context, false).expression_list_ast);
-    if (partition_key != parsed_zk_partition_key)
+    String parsed_local_partition_key = formattedAST(KeyDescription::parse(partition_key, columns, virtuals, context, false).expression_list_ast);
+    if (parsed_local_partition_key != parsed_zk_partition_key)
         handleTableMetadataMismatch(table_name_for_error_message, "partition key expression", from_zk.partition_key, parsed_zk_partition_key, partition_key);
 }
 
@@ -593,7 +609,23 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     }
 
     if (new_metadata.partition_key.definition_ast != nullptr)
+    {
+        auto old_partition_key_sample_block = new_metadata.partition_key.sample_block;
         new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
+
+        /// If partition key expression structure changed we must rebuild minmax_count_projection,
+        /// otherwise it retains stale column types (e.g. plain Int8 instead of LowCardinality(Int8))
+        /// and the aggregation engine hits a type mismatch. See #100175.
+        if (new_metadata.minmax_count_projection
+            && !blocksHaveEqualStructure(new_metadata.partition_key.sample_block, old_partition_key_sample_block))
+        {
+            auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
+            auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
+            FunctionNameNormalizer::visit(partition_key_ast.get());
+            new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+                new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
+        }
+    }
 
     if (!sorting_key_changed) /// otherwise already updated
         new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
