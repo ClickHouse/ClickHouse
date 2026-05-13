@@ -1927,12 +1927,29 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
         zookeeper->isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA) &&
         !filter_by_table_name)
     {
-        auto paths = {
+        std::vector<std::string> paths = {
             zookeeper_path + "/metadata",
             zookeeper_path
         };
 
-        auto responses = zookeeper->getChildren(paths, Coordination::ListRequestType::ALL, /* with_stat = */ false, /* with_data = */ true);
+        /// Use `tryGetChildren` so a concurrent `DROP DATABASE` between the entry-time
+        /// stat read and this multi-read surfaces as `ZNONODE` per response rather than
+        /// throwing a generic `KEEPER_EXCEPTION` from the multi-call boundary. We then
+        /// map `ZNONODE` to the same operation-level `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT`
+        /// error as every other drop/recreate guard in this function.
+        auto responses = zookeeper->tryGetChildren(paths, Coordination::ListRequestType::ALL, /* with_stat = */ false, /* with_data = */ true);
+
+        for (size_t i = 0; i < paths.size(); ++i)
+        {
+            if (responses[i].error == Coordination::Error::ZNONODE)
+            {
+                throw Exception(
+                    ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                    "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                    "(node {} missing during snapshot read)",
+                    paths[i]);
+            }
+        }
 
         for (size_t i = 0; i < responses[0].names.size(); ++i)
             table_name_to_metadata.emplace(unescapeForFileName(responses[0].names[i]), std::move(responses[0].data[i]));
@@ -2011,7 +2028,20 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
         LOG_DEBUG(log, "Trying to get consistent metadata snapshot for log pointer {}", max_log_ptr);
 
         Strings escaped_table_names;
-        escaped_table_names = zookeeper->getChildren(metadata_path);
+        /// Use `tryGetChildren` so a concurrent `DROP DATABASE` between the prior
+        /// `tryGet(metadata_path, ...)` and this list call surfaces as `ZNONODE`
+        /// instead of leaking a generic `KEEPER_EXCEPTION`. Map it to the same
+        /// `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` operation-level error as the
+        /// surrounding drop/recreate guards.
+        auto get_children_err = zookeeper->tryGetChildren(metadata_path, escaped_table_names);
+        if (get_children_err == Coordination::Error::ZNONODE)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(metadata node missing during list at retry iteration {})",
+                iteration);
+        }
         if (filter_by_table_name)
             std::erase_if(escaped_table_names, [&](const String & table) { return !filter_by_table_name(unescapeForFileName(table)); });
 
