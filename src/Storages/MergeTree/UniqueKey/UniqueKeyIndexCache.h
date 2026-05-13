@@ -39,22 +39,19 @@ class UniqueKeyIndexCacheBacking;
 ///   - `Ref(handle)` returns false; the spec allows it ("returns false if
 ///     the entry could not be refed"). Per-handle refcounting is therefore
 ///     not maintained and `Release` is unconditionally final.
-///   - `Release(handle, erase_if_last_ref=true)` drops the entry's table
-///     slot unconditionally. No `use_count` or identity check guards the
-///     removal; live HandlePins still pin the entry via `shared_ptr`, so
-///     correctness is preserved, but a fresh Lookup for the same key will
-///     miss until someone re-inserts. Spec says "true iff this call erased
-///     the shared-table entry"; our return value reflects the request, not
-///     a strict-truth check that something was actually present.
 ///   - `GetPinnedUsage()` returns 0 — pinned bytes are not tracked.
+///
+/// `Release(handle, erase_if_last_ref=true)` honors the spec contract:
+/// erases only when the entry's `shared_ptr` use_count and identity confirm
+/// this handle is the last external pin and the table resident has not
+/// been replaced by a concurrent Insert. Predicate evaluation runs under
+/// CacheBase's bucket lock for stability.
 ///
 /// Honoring `Ref` / strict-cap / `CreateStandalone(allow_uncharged=false)`
 /// would require shadow bookkeeping on top of `CacheBase` (per-entry pin
 /// counts plus a joint get-and-mutate primitive `CacheBase` does not
 /// expose). Those surfaces are not exercised by rocksdb's `BlockBasedTable`
-/// against a user-provided `block_cache`. `Release(handle, true)` IS
-/// exercised by the table reader; the relaxed identity / `use_count` check
-/// trades small cache churn for a simpler hot path.
+/// against a user-provided `block_cache`.
 class UniqueKeyIndexCache : public ROCKSDB_NAMESPACE::Cache
 {
 public:

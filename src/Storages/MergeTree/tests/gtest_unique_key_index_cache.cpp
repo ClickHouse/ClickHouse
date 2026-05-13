@@ -129,11 +129,12 @@ TEST(UniqueKeyIndexCache, ReleaseEraseIfLastRefRemovesEntry)
     EXPECT_EQ(h3, nullptr);
 }
 
-TEST(UniqueKeyIndexCache, ReleaseEraseIfLastRefYanksSlotUnconditionally)
+TEST(UniqueKeyIndexCache, ReleaseEraseLastRefRespectsOtherLiveHandle)
 {
-    /// `Release(h, erase_if_last_ref=true)` drops the table slot; a live
-    /// HandlePin keeps the entry alive via `shared_ptr` but a fresh Lookup
-    /// for the same key misses.
+    /// Release(h, erase_if_last_ref=true) must NOT erase the entry while
+    /// another HandlePin still pins it. The predicate requires
+    /// `pinned.use_count() == 2` (backing + this HandlePin); a second live
+    /// HandlePin pushes use_count to 3 and the predicate refuses.
     UniqueKeyIndexCache cache = makeCache(1 << 20);
     auto * obj = new FakeObject{nullptr, 7};
     rocksdb::Cache::Handle * h1 = nullptr;
@@ -146,14 +147,46 @@ TEST(UniqueKeyIndexCache, ReleaseEraseIfLastRefYanksSlotUnconditionally)
                              rocksdb::Cache::Priority::LOW, nullptr);
     ASSERT_NE(h2, nullptr);
 
-    EXPECT_TRUE(cache.Release(h1, /*erase_if_last_ref=*/true));
-    EXPECT_EQ(cache.Lookup(rocksdb::Slice("k"), &kTestHelper, nullptr,
-                           rocksdb::Cache::Priority::LOW, nullptr),
-              nullptr);
+    EXPECT_FALSE(cache.Release(h1, /*erase_if_last_ref=*/true));
 
-    /// h2 still usable — shared_ptr keeps the entry alive.
-    EXPECT_EQ(static_cast<FakeObject *>(cache.Value(h2))->value, 7);
+    auto * h3 = cache.Lookup(rocksdb::Slice("k"), &kTestHelper, nullptr,
+                             rocksdb::Cache::Priority::LOW, nullptr);
+    ASSERT_NE(h3, nullptr) << "entry was erased while h2 was still pinning it";
+    cache.Release(h3, /*erase_if_last_ref=*/false);
     cache.Release(h2, /*erase_if_last_ref=*/false);
+}
+
+TEST(UniqueKeyIndexCache, ReleaseEraseIdentityAwareDoesNotEvictReplacement)
+{
+    /// A concurrent re-Insert of the same key replaces the table resident
+    /// with a new shared_ptr while the old handle still pins the old entry.
+    /// Release(old, erase_if_last_ref=true) must NOT erase the new resident
+    /// — the predicate's `v == pinned` identity check refuses.
+    UniqueKeyIndexCache cache = makeCache(1 << 20);
+
+    auto * obj_old = new FakeObject{nullptr, 1};
+    rocksdb::Cache::Handle * h_old = nullptr;
+    cache.Insert(rocksdb::Slice("samekey"), obj_old, &kTestHelper, 64, &h_old,
+                 rocksdb::Cache::Priority::LOW,
+                 rocksdb::Slice(), rocksdb::CompressionType::kNoCompression);
+    ASSERT_NE(h_old, nullptr);
+
+    auto * obj_new = new FakeObject{nullptr, 2};
+    rocksdb::Cache::Handle * h_new = nullptr;
+    cache.Insert(rocksdb::Slice("samekey"), obj_new, &kTestHelper, 64, &h_new,
+                 rocksdb::Cache::Priority::LOW,
+                 rocksdb::Slice(), rocksdb::CompressionType::kNoCompression);
+    ASSERT_NE(h_new, nullptr);
+
+    EXPECT_FALSE(cache.Release(h_old, /*erase_if_last_ref=*/true));
+
+    auto * h_check = cache.Lookup(rocksdb::Slice("samekey"), &kTestHelper, nullptr,
+                                  rocksdb::Cache::Priority::LOW, /*stats=*/nullptr);
+    ASSERT_NE(h_check, nullptr);
+    EXPECT_EQ(static_cast<FakeObject *>(cache.Value(h_check))->value, 2);
+
+    cache.Release(h_check, /*erase_if_last_ref=*/false);
+    cache.Release(h_new, /*erase_if_last_ref=*/false);
 }
 
 TEST(UniqueKeyIndexCache, StrictCapacityLimitIsUnsupported)

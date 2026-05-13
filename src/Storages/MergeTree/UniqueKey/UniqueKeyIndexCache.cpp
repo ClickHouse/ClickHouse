@@ -219,13 +219,32 @@ bool UniqueKeyIndexCache::Release(Handle * handle, bool erase_if_last_ref)
         return false;
     auto * pin = asPin(handle);
 
-    /// Drop the entry's table slot; live HandlePins keep the entry alive
-    /// via `shared_ptr`.
+    /// Identity-aware "last reference" erase per the rocksdb::Cache::Release
+    /// contract. Predicate runs under CacheBase's bucket lock; same lock
+    /// taken by Lookup (`backing->get`) and Insert (`backing->set`), so
+    /// during this call no other thread can copy the table's shared_ptr or
+    /// insert a new HandlePin for this entry. Inside the lock the
+    /// contributors to `pinned.use_count()` are stable: the table holds one
+    /// strong ref, our HandlePin holds one, and any additional Lookup-issued
+    /// HandlePin contributes one more. So:
+    ///   - `use_count == 2` means we are the last external pin: erase.
+    ///   - `use_count > 2` means another live HandlePin exists: keep the
+    ///     entry resident so a fresh Lookup still hits.
+    ///   - `v != pinned` means the table resident has been replaced under
+    ///     the same key by a concurrent Insert: do not evict the replacement.
     bool erased = false;
     if (erase_if_last_ref)
     {
-        backing->remove(pin->key);
-        erased = true;
+        const auto & pinned = pin->entry;
+        using RemovePred = std::function<bool(const UInt128 &, const std::shared_ptr<UniqueKeyIndexCacheEntry> &)>;
+        RemovePred pred = [&](const UInt128 & k, const std::shared_ptr<UniqueKeyIndexCacheEntry> & v)
+        {
+            const bool matches = (k == pin->key && v == pinned && pinned.use_count() == 2);
+            if (matches)
+                erased = true;
+            return matches;
+        };
+        backing->remove(pred);
     }
     delete pin;
     return erased;
