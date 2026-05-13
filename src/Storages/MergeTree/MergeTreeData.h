@@ -67,7 +67,7 @@ using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
 struct MergeTreeSettings;
 struct WriteSettings;
-enum class MergeTreePartMinMaxIndexColumns : uint8_t;
+enum class MergeTreePartMinMaxIndexColumns : uint64_t;
 
 class MarkCache;
 using MarkCachePtr = std::shared_ptr<MarkCache>;
