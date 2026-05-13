@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-msan
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} <<EOF
+${CLICKHOUSE_CLIENT} --enable_analyzer=1 <<EOF
 DROP FUNCTION IF EXISTS as_add;
 DROP FUNCTION IF EXISTS as_double;
 DROP FUNCTION IF EXISTS as_greet;
@@ -18,10 +18,10 @@ DELETE FROM system.webassembly_modules WHERE name = 'as_example';
 DELETE FROM system.webassembly_modules WHERE name = 'as_infinite_start';
 EOF
 
-cat "${CUR_DIR}/wasm/as_example.wasm" | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'as_example', code FROM input('code String') FORMAT RawBlob"
-cat "${CUR_DIR}/wasm/as_infinite_start.wasm" | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'as_infinite_start', code FROM input('code String') FORMAT RawBlob"
+cat "${CUR_DIR}/wasm/as_example.wasm" | ${CLICKHOUSE_CLIENT} --enable_analyzer=1 --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'as_example', code FROM input('code String') FORMAT RawBlob"
+cat "${CUR_DIR}/wasm/as_infinite_start.wasm" | ${CLICKHOUSE_CLIENT} --enable_analyzer=1 --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'as_infinite_start', code FROM input('code String') FORMAT RawBlob"
 
-${CLICKHOUSE_CLIENT} <<EOF
+${CLICKHOUSE_CLIENT} --enable_analyzer=1 <<EOF
 SET webassembly_udf_max_fuel = 100000000;
 
 CREATE OR REPLACE FUNCTION as_add
