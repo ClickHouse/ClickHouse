@@ -4,7 +4,6 @@ description: 'System table containing information about maximums for all interva
 keywords: ['system table', 'quota_limits']
 slug: /operations/system-tables/quota_limits
 title: 'system.quota_limits'
-doc_type: 'reference'
 ---
 
 # system.quota_limits

@@ -72,11 +72,7 @@ TotalsHavingStep::TotalsHavingStep(
 
 void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto actions_settings = settings.getActionsSettings();
-    /// ArrayJoin is not supported in Having and we have to disable lazy columns
-    /// replication to avoid block structure mismatch during query analisys.
-    actions_settings.enable_lazy_columns_replication = false;
-    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(std::move(*actions_dag), actions_settings) : nullptr;
+    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(std::move(*actions_dag), settings.getActionsSettings()) : nullptr;
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
         pipeline.getHeader(),
@@ -191,7 +187,7 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
     }
 }
 
-QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
+std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");

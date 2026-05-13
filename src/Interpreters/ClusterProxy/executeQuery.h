@@ -3,7 +3,6 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <QueryPipeline/QueryPipeline.h>
 
 #include <optional>
 
@@ -103,8 +102,6 @@ void executeQueryWithParallelReplicas(
     SharedHeader header,
     QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
-    QueryTreeNodePtr query_tree,
-    PlannerContextPtr planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
     QueryPlanStepPtr read_from_merge_tree);

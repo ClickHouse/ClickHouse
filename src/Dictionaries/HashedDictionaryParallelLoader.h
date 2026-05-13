@@ -15,7 +15,7 @@
 #include <boost/noncopyable.hpp>
 #include <numeric>
 #include <optional>
-#include <Common/VectorWithMemoryTracking.h>
+#include <vector>
 
 namespace CurrentMetrics
 {
@@ -68,7 +68,7 @@ public:
             {
                 pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_LOAD);
+                    ThreadGroupSwitcher switcher(thread_group, "HashedDictLoad");
 
                     WorkerStatistic statistic;
                     SCOPE_EXIT_SAFE(
@@ -161,11 +161,11 @@ private:
     const size_t shards;
     ThreadPool pool;
     std::atomic_bool stop_all_workers{false};
-    VectorWithMemoryTracking<std::optional<ConcurrentBoundedQueue<Block>>> shards_queues;
+    std::vector<std::optional<ConcurrentBoundedQueue<Block>>> shards_queues;
     std::chrono::seconds loading_timeout;
     Stopwatch total_loading_time;
 
-    VectorWithMemoryTracking<UInt64> shards_slots;
+    std::vector<UInt64> shards_slots;
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
 
     struct WorkerStatistic
@@ -186,16 +186,8 @@ private:
             if (!shard_queue.tryPop(block, /* milliseconds= */ 100))
             {
                 /// Check if we need to stop
-                if (stop_all_workers)
+                if (stop_all_workers || shard_queue.isFinished())
                     break;
-
-                /// Note: we use isFinishedAndEmpty() instead of isFinished() to avoid
-                /// a race condition where items could be pushed to the queue between
-                /// tryPop timing out and this check. With isFinished(), the worker
-                /// could exit while the queue still had unprocessed blocks.
-                if (shard_queue.isFinishedAndEmpty())
-                    break;
-
                 /// Timeout expired, but the queue is not finished yet, try again
                 continue;
             }
@@ -231,7 +223,7 @@ private:
         return out_blocks;
     }
 
-    IColumn::Selector createShardSelector(const Block & block, const VectorWithMemoryTracking<UInt64> & slots)
+    IColumn::Selector createShardSelector(const Block & block, const std::vector<UInt64> & slots)
     {
         size_t num_rows = block.rows();
         IColumn::Selector selector(num_rows);

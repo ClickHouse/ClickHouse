@@ -1,10 +1,7 @@
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <Common/assert_cast.h>
-
 
 namespace DB
 {
@@ -13,55 +10,44 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
 {
     ColumnPtr null_map_holder;
 
-    auto addNullMap = [&](const ColumnNullable * column_nullable)
+    if (key_columns.size() == 1)
     {
-        if (!null_map_holder)
-        {
-            /// First nullable column: just take its null map as the base
-            null_map_holder = column_nullable->getNullMapColumnPtr();
-        }
-        else
-        {
-            /// Subsequent nullable columns: OR their null maps into the accumulated one
-            MutableColumnPtr mutable_null_map_holder = IColumn::mutate(std::move(null_map_holder));
-
-            PaddedPODArray<UInt8> & mutable_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
-            const PaddedPODArray<UInt8> & other_null_map = column_nullable->getNullMapData();
-
-            for (size_t i = 0, size = mutable_null_map.size(); i < size; ++i)
-                mutable_null_map[i] |= other_null_map[i];
-
-            null_map_holder = std::move(mutable_null_map_holder);
-        }
-    };
-
-    for (auto & column : key_columns)
-    {
+        auto & column = key_columns[0];
         if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*column))
         {
-            /// Top-level Nullable(...) always contributes to the combined null map
-            addNullMap(column_nullable);
-
-            const IColumn * nested_column = &column_nullable->getNestedColumn();
-            column = nested_column;
-
-            /// Special case: Nullable(Tuple(...))
-            /// If the nested column is a tuple, also fold in null maps of nullable tuple elements
-            if (const auto * tuple = checkAndGetColumn<ColumnTuple>(nested_column))
+            null_map_holder = column_nullable->getNullMapColumnPtr();
+            null_map = &column_nullable->getNullMapData();
+            column = &column_nullable->getNestedColumn();
+        }
+    }
+    else
+    {
+        for (auto & column : key_columns)
+        {
+            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*column))
             {
-                const auto & tuple_columns = tuple->getColumns();
-                for (const auto & element : tuple_columns)
+                column = &column_nullable->getNestedColumn();
+
+                if (!null_map_holder)
                 {
-                    if (const auto * elem_nullable = checkAndGetColumn<ColumnNullable>(element.get()))
-                    {
-                        addNullMap(elem_nullable);
-                    }
+                    null_map_holder = column_nullable->getNullMapColumnPtr();
+                }
+                else
+                {
+                    MutableColumnPtr mutable_null_map_holder = IColumn::mutate(std::move(null_map_holder));
+
+                    PaddedPODArray<UInt8> & mutable_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
+                    const PaddedPODArray<UInt8> & other_null_map = column_nullable->getNullMapData();
+                    for (size_t i = 0, size = mutable_null_map.size(); i < size; ++i)
+                        mutable_null_map[i] |= other_null_map[i];
+
+                    null_map_holder = std::move(mutable_null_map_holder);
                 }
             }
         }
-    }
 
-    null_map = null_map_holder ? &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData() : nullptr;
+        null_map = null_map_holder ? &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData() : nullptr;
+    }
 
     return null_map_holder;
 }

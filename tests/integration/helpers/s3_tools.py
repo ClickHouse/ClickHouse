@@ -54,45 +54,6 @@ class S3Uploader(CloudUploader):
             file_path=local_path,
         )
 
-class S3Downloader:
-    def __init__(self, minio_client, bucket_name):
-        self.minio_client = minio_client
-        self.bucket_name = bucket_name
-
-    def download_file(self, remote_blob_path, local_path, bucket=None):
-        print(f"Download from bucket: {bucket}")
-        if bucket is None:
-            bucket = self.bucket_name
-
-        data = self.minio_client.get_object(
-            bucket_name=bucket,
-            object_name=remote_blob_path,
-        )
-
-        with open(local_path, "wb") as f:
-            for chunk in data.stream():
-                f.write(chunk)
-
-    def download_directory(self, local_path, remote_blobs_path, **kwargs):
-        if remote_blobs_path.startswith("/"):
-            remote_blobs_path = remote_blobs_path[1:]
-
-        objects = self.minio_client.list_objects(
-            bucket_name=self.bucket_name,
-            prefix=remote_blobs_path,
-            recursive=True,
-        )
-
-        result_files = []
-        for obj in objects:
-            result_files.append(obj.object_name)
-            diff_path = os.path.relpath(obj.object_name, start=remote_blobs_path)
-            local_file_path = os.path.join(local_path, diff_path)
-            os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
-            print(f"Downloading {obj.object_name} to {local_file_path}")
-            self.download_file(obj.object_name, local_file_path, bucket=self.bucket_name)
-        return result_files
-
 
 class LocalUploader(CloudUploader):
 
@@ -128,7 +89,6 @@ class LocalDownloader:
                     "mkdir -p {}".format(dir_path),
                 ]
             )
-        print(f"Downloading {remote_blob_path} to {local_path}")
         self.clickhouse_node.copy_file_from_container(remote_blob_path, local_path)
 
     def download_directory(self, local_path, remote_blob_path, **kwargs):

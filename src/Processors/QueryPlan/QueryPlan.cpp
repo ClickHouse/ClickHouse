@@ -18,11 +18,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
 
-namespace ProfileEvents
-{
-    extern const Event QueryPlanOptimizeMicroseconds;
-}
-
 namespace DB
 {
 
@@ -41,8 +36,6 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("projections", int(projections));
     changes.emplace_back("sorting", int(sorting));
     changes.emplace_back("distributed", int(distributed));
-    changes.emplace_back("input_headers", int(input_headers));
-    changes.emplace_back("column_structure", int(column_structure));
 
     return changes;
 }
@@ -100,7 +93,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
                 step->getName(),
-                plans[i]->root->step->getName(),
+                root->step->getName(),
                 plan_header->dumpStructure(),
                 step_header->dumpStructure());
     }
@@ -219,7 +212,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
-    last_pipeline->addResources(resources);
+    last_pipeline->addResources(std::move(resources));
     last_pipeline->setConcurrencyControl(getConcurrencyControl());
 
     return last_pipeline;
@@ -237,40 +230,21 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
             map.add("Description", description);
     }
 
-    const auto dump_column = [](JSONBuilder::JSONArray & header_array, const ColumnWithTypeAndName & column)
-    {
-        auto column_map = std::make_unique<JSONBuilder::JSONMap>();
-        column_map->add("Name", column.name);
-        if (column.type)
-            column_map->add("Type", column.type->getName());
-        header_array.add(std::move(column_map));
-    };
-
     if (options.header && step.hasOutputHeader())
     {
         auto header_array = std::make_unique<JSONBuilder::JSONArray>();
 
         for (const auto & output_column : *step.getOutputHeader())
-            dump_column(*header_array, output_column);
-
-        map.add("Header", std::move(header_array));
-    }
-
-    if (options.input_headers && !step.getInputHeaders().empty())
-    {
-        auto input_headers_array = std::make_unique<JSONBuilder::JSONArray>();
-
-        for (const auto & input_header : step.getInputHeaders())
         {
-            auto header_array = std::make_unique<JSONBuilder::JSONArray>();
+            auto column_map = std::make_unique<JSONBuilder::JSONMap>();
+            column_map->add("Name", output_column.name);
+            if (output_column.type)
+                column_map->add("Type", output_column.type->getName());
 
-            for (const auto & input_column : *input_header)
-                dump_column(*header_array, input_column);
-
-            input_headers_array->add(std::move(header_array));
+            header_array->add(std::move(column_map));
         }
 
-        map.add("Input Headers", std::move(input_headers_array));
+        map.add("Header", std::move(header_array));
     }
 
     if (options.actions)
@@ -345,28 +319,17 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
 static void explainStep(
     IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
-    const ExplainPlanOptions & options,
-    size_t max_description_length)
+    const ExplainPlanOptions & options)
 {
-    const std::string prefix(settings.offset, ' ');
+    std::string prefix(settings.offset, ' ');
     settings.out << prefix;
     settings.out << step.getName();
 
-    auto description = step.getStepDescription();
-    if (max_description_length)
-        description = description.substr(0, max_description_length);
+    const auto & description = step.getStepDescription();
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
 
     settings.out.write('\n');
-
-    const auto dump_column = [&out = settings.out, dump_structure = options.column_structure](const ColumnWithTypeAndName & column)
-    {
-        if (dump_structure)
-            column.dumpStructure(out);
-        else
-            column.dumpNameAndType(out);
-    };
 
     if (options.header)
     {
@@ -384,53 +347,16 @@ static void explainStep(
             for (const auto & elem : *step.getOutputHeader())
             {
                 if (!first)
-                    settings.out << '\n' << prefix << "        ";
+                    settings.out << "\n" << prefix << "        ";
 
                 first = false;
-                dump_column(elem);
+                elem.dumpNameAndType(settings.out);
+                if (elem.column && isColumnLazy(*elem.column.get()))
+                    settings.out << " (Lazy)";
             }
         }
         settings.out.write('\n');
-    }
 
-    if (options.input_headers)
-    {
-        const std::string_view input_headers_title = "Input headers: ";
-        const std::string_view input_header_indent = "               ";
-        settings.out << prefix << input_headers_title;
-
-        bool first_input_header = true;
-        size_t input_header_index = 0;
-
-        if (step.getInputHeaders().empty())
-        {
-            settings.out << "No input headers";
-        }
-        else
-        {
-            for (const auto & input_header : step.getInputHeaders())
-            {
-                if (!first_input_header)
-                    settings.out << '\n' << prefix << input_header_indent;
-                first_input_header = false;
-
-                settings.out << fmt::format("#{}", input_header_index);
-                ++input_header_index;
-
-                if (input_header->empty())
-                {
-                    settings.out << " Empty header";
-                    continue;
-                }
-
-                for (const auto & elem : *input_header)
-                {
-                    settings.out << '\n' << prefix << input_header_indent;
-                    dump_column(elem);
-                }
-            }
-        }
-        settings.out.write('\n');
     }
 
     if (options.sorting)
@@ -461,19 +387,11 @@ std::string debugExplainStep(IQueryPlanStep & step)
     WriteBufferFromOwnString out;
     ExplainPlanOptions options{.actions = true};
     IQueryPlanStep::FormatSettings settings{.out = out};
-    explainStep(step, settings, options, 0);
+    explainStep(step, settings, options);
     return out.str();
 }
 
-std::string debugExplainPlan(const QueryPlan & plan)
-{
-    WriteBufferFromOwnString out;
-    ExplainPlanOptions options{.header = true, .actions = true};
-    plan.explainPlan(out, options);
-    return out.str();
-}
-
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent, size_t max_description_length) const
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent) const
 {
     checkInitialized();
 
@@ -496,7 +414,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
         if (!frame.is_description_printed)
         {
             settings.offset = (indent + stack.size() - 1) * settings.indent;
-            explainStep(*frame.node->step, settings, options, max_description_length);
+            explainStep(*frame.node->step, settings, options);
             frame.is_description_printed = true;
         }
 
@@ -568,8 +486,6 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
-
     /// optimization need to be applied before "mergeExpressions" optimization
     /// it removes redundant sorting steps, but keep underlying expressions,
     /// so "mergeExpressions" optimization handles them afterwards
@@ -746,10 +662,9 @@ QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
     return new_plan;
 }
 
-void QueryPlan::cloneInplace(Node * node_to_replace, Node * subplan_root)
+QueryPlan QueryPlan::clone() const
 {
-    if (!subplan_root)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot clone subplan in place because subplan root is null");
+    QueryPlan result;
 
     struct Frame
     {
@@ -758,7 +673,10 @@ void QueryPlan::cloneInplace(Node * node_to_replace, Node * subplan_root)
         std::vector<Node *> children = {};
     };
 
-    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
+    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
+    result.root = &result.nodes.back();
+
+    std::vector<Frame> nodes_to_process{ Frame{ .node = root, .clone = result.root } };
 
     while (!nodes_to_process.empty())
     {
@@ -774,98 +692,43 @@ void QueryPlan::cloneInplace(Node * node_to_replace, Node * subplan_root)
             size_t next_child = frame.children.size();
             auto * child = frame.node->children[next_child];
 
-            nodes.emplace_back(Node{ .step = {} });
-            nodes.back().children.reserve(child->children.size());
-            auto * child_clone = &nodes.back();
+            result.nodes.emplace_back(Node{ .step = {} });
+            result.nodes.back().children.reserve(child->children.size());
+            auto * child_clone = &result.nodes.back();
 
             frame.children.push_back(child_clone);
 
             nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
         }
     }
-}
-
-QueryPlan QueryPlan::clone() const
-{
-    QueryPlan result;
-    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
-    auto * current_subplan_copy_root = &result.nodes.back();
-
-    result.cloneInplace(current_subplan_copy_root, root);
-    result.root = current_subplan_copy_root;
 
     return result;
 }
 
-void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes)
-{
-    if (!subplan_root)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot clone subplan in place because subplan root is null");
 
-    struct Frame
-    {
-        Node * node;
-        Node * clone;
-        std::vector<Node *> children = {};
-    };
-
-    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
-
-    while (!nodes_to_process.empty())
-    {
-        auto & frame = nodes_to_process.back();
-        if (frame.children.size() == frame.node->children.size())
-        {
-            frame.clone->step = frame.node->step->clone();
-            frame.clone->children = std::move(frame.children);
-            nodes_to_process.pop_back();
-        }
-        else
-        {
-            size_t next_child = frame.children.size();
-            auto * child = frame.node->children[next_child];
-
-            nodes.emplace_back(Node{ .step = {} });
-            nodes.back().children.reserve(child->children.size());
-            auto * child_clone = &nodes.back();
-
-            frame.children.push_back(child_clone);
-
-            nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
-        }
-    }
-}
-
-
-void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan)
+void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlanPtr plan)
 {
     chassert(nodes.end() != std::find_if(cbegin(nodes), cend(nodes), [node](const Node & n) { return n.step == node->step; }));
 
-    if (node->step)
+    const auto & header = node->step->getOutputHeader();
+    const auto & plan_header = plan->getCurrentHeader();
+
+    if (!blocksHaveEqualStructure(*header, *plan_header))
     {
-        const auto & header = node->step->getOutputHeader();
-        const auto & plan_header = plan.getCurrentHeader();
+        auto converting_dag = ActionsDAG::makeConvertingActions(
+            plan_header->getColumnsWithTypeAndName(), header->getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
 
-        if (!blocksHaveEqualStructure(*header, *plan_header))
-        {
-            auto converting_dag = ActionsDAG::makeConvertingActions(
-                plan_header->getColumnsWithTypeAndName(),
-                header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name,
-                nullptr);
-
-            auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
-            plan.addStep(std::move(expression));
-        }
+        auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
+        plan->addStep(std::move(expression));
     }
 
-    nodes.splice(nodes.end(), std::move(plan.nodes));
+    nodes.splice(nodes.end(), std::move(plan->nodes));
 
-    node->step = std::move(plan.getRootNode()->step);
-    node->children = std::move(plan.getRootNode()->children);
+    node->step = std::move(plan->getRootNode()->step);
+    node->children = std::move(plan->getRootNode()->children);
 
-    max_threads = std::max(max_threads, plan.max_threads);
-    resources = std::move(plan.resources);
+    max_threads = std::max(max_threads, plan->max_threads);
+    resources = std::move(plan->resources);
 }
 
 }

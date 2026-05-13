@@ -155,36 +155,7 @@ private:
 
 REGISTER_FUNCTION(IsDecimalOverflow)
 {
-    FunctionDocumentation::Description description = R"(
-Checks if a decimal number has too many digits to fit properly in a Decimal data type with given precision.
-    )";
-    FunctionDocumentation::Syntax syntax = "isDecimalOverflow(value[, precision])";
-    FunctionDocumentation::Arguments arguments = {
-        {"value", "Decimal value to check.", {"Decimal"}},
-        {"precision", "Optional. The precision of the Decimal type. If omitted, the initial precision of the first argument is used.", {"UInt8"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the decimal value has more digits than allowed by its precision, `0` if the decimal value satisfies the specified precision.", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
-       isDecimalOverflow(toDecimal32(1000000000, 0)),
-       isDecimalOverflow(toDecimal32(-1000000000, 0), 9),
-       isDecimalOverflow(toDecimal32(-1000000000, 0));
-        )",
-        R"(
-┌─isDecimalOverflow(toDecimal32(1000000000, 0), 9)─┬─isDecimalOverflow(toDecimal32(1000000000, 0))─┬─isDecimalOverflow(toDecimal32(-1000000000, 0), 9)─┬─isDecimalOverflow(toDecimal32(-1000000000, 0))─┐
-│                                                1 │                                             1 │                                                 1 │                                              1 │
-└──────────────────────────────────────────────────┴───────────────────────────────────────────────┴───────────────────────────────────────────────────┴────────────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 8};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionIsDecimalOverflow>(documentation);
+    factory.registerFunction<FunctionIsDecimalOverflow>();
 }
 
 }

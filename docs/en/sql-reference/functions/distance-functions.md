@@ -4,7 +4,6 @@ sidebar_label: 'Distance'
 slug: /sql-reference/functions/distance-functions
 title: 'Distance functions'
 keywords: ['distance functions', 'norms', 'distances', 'vectors']
-doc_type: 'reference'
 ---
 
 # Distance functions

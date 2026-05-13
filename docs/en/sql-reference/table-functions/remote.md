@@ -6,7 +6,6 @@ sidebar_label: 'remote'
 sidebar_position: 175
 slug: /sql-reference/table-functions/remote
 title: 'remote, remoteSecure'
-doc_type: 'reference'
 ---
 
 # remote, remoteSecure Table Function

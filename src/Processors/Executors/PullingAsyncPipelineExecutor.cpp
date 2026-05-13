@@ -71,7 +71,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PULLING_ASYNC_EXECUTOR);
+        ThreadGroupSwitcher switcher(thread_group, "QueryPullPipeEx");
 
         data.executor->execute(num_threads, concurrency_control);
     }
@@ -144,7 +144,6 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
     {
          block.info.bucket_num = agg_info->bucket_num;
          block.info.is_overflows = agg_info->is_overflows;
-         block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
     }
 
     return true;

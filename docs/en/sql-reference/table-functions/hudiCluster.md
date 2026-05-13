@@ -5,7 +5,6 @@ sidebar_label: 'hudiCluster'
 sidebar_position: 86
 slug: /sql-reference/table-functions/hudiCluster
 title: 'hudiCluster Table Function'
-doc_type: 'reference'
 ---
 
 # hudiCluster Table Function

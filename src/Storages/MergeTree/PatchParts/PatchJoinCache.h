@@ -1,6 +1,5 @@
 #pragma once
 #include <future>
-#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/HashTable/Hash.h>
@@ -10,7 +9,6 @@
 #include <IO/SharedThreadPools.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
-#include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 
@@ -19,50 +17,24 @@ namespace DB
 
 struct RangesInPatchParts;
 
-/**  We use two-level map (_block_number -> (_block_offset -> (block_idx, row_idx))).
+/**  We use two-level hash map (_block_number -> (_block_offset -> (block_idx, row_idx))).
   *  Block numbers are usually the same for large ranges of consecutive rows.
-  *  Therefore, we rarely switch between maps for blocks.
-  *  It makes two-level map more cache-friendly than single-level ((_block_number, _block_offset) -> (block_idx, row_idx)).
-  *
-  *  There are four facts about block offsets:
-  *  1. Block offsets are unique within a block number in regular parts.
-  *  2. Block offsets are sorted within a block number in regular parts.
-  *  3. Block offsets have large sorted ranges within a block number in patch parts.
-  *  4. Block offsets are not globally sorted even within a block number and may have duplicates in patch parts.
-  *
-  *  We build a sorted map _block_offset -> (block_idx, row_idx) for each block number to resolve (4).
-  *  When applying a patch, the order of rows in the read block is not violated, and (1) and (2) are true.
-  *  Then we build a hash table (_block_number -> iterator in sorted map)
-  *  and apply the patch using a two-iterators-like algorithm (see applyPatchJoin function).
-  *
-  *  Because of (3), values are mostly inserted at the end of the map, and we can utilize
-  *  the emplace hint iterator, to make insertion complexity O(1) on average instead of O(log n).
+  *  Therefore, we rarely switch between hash maps for blocks.
+  *  It makes two-level hash map more cache-friendly than single-level ((_block_number, _block_offset) -> (block_idx, row_idx)).
   */
+using OffsetsHashMap = absl::flat_hash_map<UInt64, std::pair<UInt32, UInt32>, DefaultHash<UInt64>>;
+using PatchHashMap = absl::flat_hash_map<UInt64, OffsetsHashMap, DefaultHash<UInt64>>;
 
-using PatchOffsetsMap = absl::btree_map<
-    UInt64,
-    std::pair<UInt32, UInt32>,
-    std::less<>,
-    AllocatorWithMemoryTracking<std::pair<const UInt64, std::pair<UInt32, UInt32>>>>;
-
-using PatchHashMap = absl::node_hash_map<
-    UInt64,
-    PatchOffsetsMap,
-    HashCRC32<UInt64>,
-    std::equal_to<>,
-    AllocatorWithMemoryTracking<std::pair<const UInt64, PatchOffsetsMap>>>;
-
-
-/**  A cache of maps and blocks for applying patch parts in Join mode.
-  *  It avoids re-reading the same ranges of patch parts and rebuilding maps multiple times.
-  *  The cache (and patch map) is optimized for the case when patch parts are almost sorted by _block_number,
+/**  A cache of hash tables and blocks for applying patch parts in Join mode.
+  *  It avoids re-reading the same ranges of patch parts and rebuilding hash tables multiple times.
+  *  The cache (and patch hash table) is optimized for the case when patch parts are almost sorted by _block_number,
   *  i.e., when data is inserted almost in the order of the order key (the order key has a timestamp value), which is the typical case.
   *
-  *  The cache allows reading data from patches in small ranges and lowers the amount of patch parts
-  *  to apply by aggregating data from multiple read blocks into a single map in the entry.
+  *  The cache allows reading data from patches by small ranges and lowers the amount of patch parts (hash tables)
+  *  to apply by aggregating data from multiple patch parts into a single hash table in the entry.
   *
-  *  A cache entry is created for each patch part. To lower lock contention, each entry is split into buckets
-  *  by the patch part's ranges. Each bucket has contiguous ranges of the patch part, and is sorted by the range's beginning.
+  *  A cache entry is created for each patch part. To lower lock contention, each entry is split into buckets by the patch part's ranges.
+  *  Each bucket has contiguous ranges of the patch part, and is sorted by the range's beginning.
   */
 struct PatchJoinCache
 {

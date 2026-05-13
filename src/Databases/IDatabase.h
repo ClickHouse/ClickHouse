@@ -10,7 +10,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
-#include <Common/AsyncLoader_fwd.h>
+#include <Common/AsyncLoader.h>
 
 #include <ctime>
 #include <functional>
@@ -37,13 +37,6 @@ using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 struct ParsedTablesMetadata;
 struct QualifiedTableName;
 class IRestoreCoordination;
-
-/// This structure is returned when getLightweightTablesIterator is called
-/// It contains basic details of the table, currently only the table name
-struct LightWeightTableDetails
-{
-    String name;
-};
 
 class IDatabaseTablesIterator
 {
@@ -181,14 +174,11 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// External database (i.e. PostgreSQL/Datalake/...) does not support any of ClickHouse internal tables:
-    /// - *MergeTree
-    /// - Distributed
-    /// - RocksDB
-    /// - ...
-    virtual bool isExternal() const { return true; }
+    virtual bool canContainMergeTreeTables() const { return true; }
 
-    virtual bool isDatalakeCatalog() const { return false; }
+    virtual bool canContainDistributedTables() const { return true; }
+
+    virtual bool canContainRocksDBTables() const { return true; }
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
@@ -278,17 +268,9 @@ public:
 
     /// Same as above, but may return non-fully initialized StoragePtr objects which are not suitable for reading.
     /// Useful for queries like "SHOW TABLES"
-    virtual std::vector<LightWeightTableDetails> getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
+    virtual DatabaseTablesIteratorPtr getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false, [[maybe_unused]] bool skip_data_lake_catalog = false) const /// NOLINT
     {
-        std::vector<LightWeightTableDetails> result;
-
-        for (auto iterator = getTablesIterator(context, filter_by_table_name, skip_not_loaded); iterator->isValid(); iterator->next())
-        {
-            if (const auto & table = iterator->table())
-                result.emplace_back(iterator->name());
-        }
-
-        return result;
+        return getTablesIterator(context, filter_by_table_name, skip_not_loaded);
     }
 
     virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
@@ -354,8 +336,7 @@ public:
     virtual void alterTable(
         ContextPtr /*context*/,
         const StorageID & /*table_id*/,
-        const StorageInMemoryMetadata & /*metadata*/,
-        bool validate_new_create_query);
+        const StorageInMemoryMetadata & /*metadata*/);
 
     /// Special method for ReplicatedMergeTree and DatabaseReplicated
     virtual bool canExecuteReplicatedMetadataAlter() const { return true; }
@@ -381,11 +362,7 @@ public:
     }
 
     /// Get the CREATE DATABASE query for current database.
-    ASTPtr getCreateDatabaseQuery() const
-    {
-        std::lock_guard lock{mutex};
-        return getCreateDatabaseQueryImpl();
-    }
+    virtual ASTPtr getCreateDatabaseQuery() const = 0;
 
     String getDatabaseComment() const
     {
@@ -406,7 +383,7 @@ public:
     }
 
     // Alter comment of database.
-    virtual void alterDatabaseComment(const AlterCommand &, ContextPtr);
+    virtual void alterDatabaseComment(const AlterCommand &);
 
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
@@ -461,7 +438,6 @@ public:
     virtual ~IDatabase();
 
 protected:
-    virtual ASTPtr getCreateDatabaseQueryImpl() const = 0;
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const;
 
     mutable std::mutex mutex;
@@ -471,6 +447,6 @@ protected:
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using ConstDatabasePtr = std::shared_ptr<const IDatabase>;
-using Databases = std::map<String, DatabasePtr, std::less<>>;
+using Databases = std::map<String, DatabasePtr>;
 
 }

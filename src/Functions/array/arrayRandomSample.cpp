@@ -30,7 +30,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -50,8 +50,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        ColumnPtr col = arguments[0].column->convertToFullColumnIfConst();
-        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(col.get());
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!col_array)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be an array", getName());
 
@@ -114,7 +113,7 @@ REGISTER_FUNCTION(ArrayRandomSample)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayRandomSample>(documentation);
 }

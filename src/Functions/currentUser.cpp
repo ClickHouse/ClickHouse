@@ -53,30 +53,7 @@ public:
 
 REGISTER_FUNCTION(CurrentUser)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the name of the current user.
-In case of a distributed query, the name of the user who initiated the query is returned.
-    )";
-    FunctionDocumentation::Syntax syntax = "currentUser()";
-    FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the name of the current user, otherwise the login of the user who initiated the query.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example", R"(
-SELECT currentUser()
-        )",
-        R"(
-┌─currentUser()─┐
-│ default       │
-└───────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionCurrentUser>(documentation);
+    factory.registerFunction<FunctionCurrentUser>();
     factory.registerAlias("user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
 }

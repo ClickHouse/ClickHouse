@@ -18,8 +18,9 @@ using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjecti
 /// Since 22.11 it creates single ephemeral node with `path_prefix` that references persistent fake "secondary node".
 class EphemeralLockInZooKeeper : public boost::noncopyable
 {
-    friend EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
-        const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_path,
+    template<typename T>
+    friend std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
+        const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path,
         const std::optional<String> & znode_data);
 
 protected:
@@ -72,7 +73,8 @@ public:
     void unlock();
 
     /// Adds actions equivalent to `unlock()` to the list.
-    void getUnlockOp(Coordination::Requests & ops) const;
+    /// Returns index of the action that removes
+    void getUnlockOp(Coordination::Requests & ops);
 
     /// Do not delete nodes in destructor. You may call this method after 'getUnlockOps' and successful execution of these ops,
     ///  because the nodes will be already deleted.
@@ -92,8 +94,9 @@ private:
     String conflict_path;
 };
 
-EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_paths,
+template<typename T>
+std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path,
     const std::optional<String> & znode_data);
 
 /// Acquires block number locks in all partitions.
@@ -135,8 +138,6 @@ public:
     const std::vector<LockInfo> & getLocks() const { return locks; }
 
     void unlock();
-    void assumeUnlocked();
-    void getUnlockOps(Coordination::Requests & ops) const;
 
     ~EphemeralLocksInAllPartitions();
 
@@ -175,8 +176,6 @@ public:
     {
     }
 
-    void assumeUnlocked();
-    void getUnlockOps(Coordination::Requests & ops) const;
     const BlockNumbersType & getBlockNumbers() const { return block_numbers; }
 
     void reset()

@@ -3,7 +3,6 @@ description: 'Documentation for UNION Clause'
 sidebar_label: 'UNION'
 slug: /sql-reference/statements/select/union
 title: 'UNION Clause'
-doc_type: 'reference'
 ---
 
 # UNION Clause

@@ -205,7 +205,7 @@ static void check(
         checkOld(state, table_num, query, expected);
     }
     {
-        SCOPED_TRACE("Analyzer");
+        SCOPED_TRACE("New analyzer");
         checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new);
     }
 }

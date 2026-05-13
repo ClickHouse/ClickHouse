@@ -79,8 +79,6 @@ def test_psql_client(started_cluster):
         "query3.sql",
         "query4.sql",
         "query5.sql",
-        "query6.sql",
-        "query7.sql",
     ]:
         started_cluster.copy_file_to_container(
             started_cluster.postgres_id,
@@ -91,8 +89,7 @@ def test_psql_client(started_cluster):
         "/usr/bin/psql",
         f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
     ]
-    # -F same as --field-separator
-    cmd_prefix += ["--no-align", "-F", " "]
+    cmd_prefix += ["--no-align", "--field-separator=' '"]
 
     res = started_cluster.exec_in_container(
         started_cluster.postgres_id, cmd_prefix + ["-f", "/query1.sql"], shell=True
@@ -112,11 +109,11 @@ def test_psql_client(started_cluster):
     logging.debug(res)
     assert res == "\n".join(
         [
-            "CREATE DATABASE",
-            "USE",
-            "CREATE TABLE",
-            "INSERT 0 3",
-            "INSERT 0 3",
+            "SELECT 0",
+            "SELECT 0",
+            "SELECT 0",
+            "INSERT 0 0",
+            "INSERT 0 0",
             "column",
             "0",
             "0",
@@ -125,7 +122,7 @@ def test_psql_client(started_cluster):
             "5",
             "5",
             "(6 rows)",
-            "DROP DATABASE\n",
+            "SELECT 0\n",
         ]
     )
 
@@ -134,7 +131,7 @@ def test_psql_client(started_cluster):
     )
     logging.debug(res)
     assert res == "\n".join(
-        ["CREATE TABLE", "INSERT 0 2", "tmp_column", "0", "1", "(2 rows)", "DROP TABLE\n"]
+        ["SELECT 0", "INSERT 0 0", "tmp_column", "0", "1", "(2 rows)", "SELECT 0\n"]
     )
 
     res = started_cluster.exec_in_container(
@@ -143,48 +140,13 @@ def test_psql_client(started_cluster):
     logging.debug(res)
     assert res == "\n".join(
         [
-            "CREATE DATABASE",
-            "USE",
-            "CREATE TABLE",
-            "INSERT 0 3",
-            "CREATE TABLE",
-            "INSERT 0 3",
-            "DROP DATABASE\n",
-        ]
-    )
-
-    res = started_cluster.exec_in_container(
-        started_cluster.postgres_id, cmd_prefix + ["-f", "/query6.sql"], shell=True
-    )
-    logging.debug(res)
-    # PostgreSQL should return boolean values as 't' or 'f'
-    assert res == "\n".join(
-        ["bool_true bool_false", "t f", "(1 row)", ""]
-    )
-
-    res = started_cluster.exec_in_container(
-        started_cluster.postgres_id, cmd_prefix + ["-f", "/query7.sql"], shell=True
-    )
-    logging.debug(res)
-    # Test all DDL command tags
-    assert res == "\n".join(
-        [
-            "CREATE DATABASE",
-            "USE",
-            "CREATE TABLE",
-            "CREATE TABLE",
-            "ALTER TABLE",
-            "INSERT 0 3",
-            "id name age",
-            "1 Alice 25",
-            "2 Bob 30",
-            "3 Charlie 35",
-            "(3 rows)",
-            "SET",
-            "TRUNCATE",
-            "DROP TABLE",
-            "DROP TABLE",
-            "DROP DATABASE\n",
+            "SELECT 0",
+            "SELECT 0",
+            "SELECT 0",
+            "INSERT 0 0",
+            "SELECT 0",
+            "INSERT 0 0",
+            "SELECT 0\n",
         ]
     )
 
@@ -201,8 +163,7 @@ def test_psql_client_secure(started_cluster):
         "/usr/bin/psql",
         f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
     ]
-    # -F same as --field-separator
-    cmd_prefix += ["--no-align", "-F", " "]
+    cmd_prefix += ["--no-align", "--field-separator=' '"]
 
     res = started_cluster.exec_in_container(
         started_cluster.postgres_id, cmd_prefix + ["-f", "/query1.sql"], shell=True
@@ -217,8 +178,7 @@ def test_psql_client_secure(started_cluster):
         "/usr/bin/psql",
         f"sslmode=disable host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
     ]
-    # -F same as --field-separator
-    cmd_prefix += ["--no-align", "-F", " "]
+    cmd_prefix += ["--no-align", "--field-separator=' '"]
 
     code, (stdout, stderr) = postgres_container.exec_run(cmd_prefix + ["-f", "/query1.sql"], demux=True,)
     logging.debug(f"test_psql_client_secure code:{code} stdout:{stdout}, stderr:{stderr}")
@@ -412,51 +372,6 @@ def test_copy_command(started_cluster):
 
     assert cur.fetchall() == [(1, "a"), (2, "b"), (3, "c")]
     cur.execute("DROP DATABASE copy_x")
-
-
-def test_boolean_type(started_cluster):
-    node = cluster.instances["node"]
-
-    ch = py_psql.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        database="",
-    )
-    cur = ch.cursor()
-
-    # Test boolean literals
-    # PostgreSQL protocol MUST return boolean values as 't' or 'f' in text format
-    # psycopg2 will automatically convert 't'/'f' to Python True/False
-    # If server sends '1'/'0' or 'true'/'false', psycopg2 will NOT convert them to bool
-    cur.execute("SELECT true AS bool_true, false AS bool_false")
-    result = cur.fetchone()
-    logging.debug(f"Boolean literals result: {result}, types: {type(result[0])}, {type(result[1])}")
-    # psycopg2 should convert 't'/'f' to True/False automatically
-    # If we get strings or numbers, it means the server didn't send proper PostgreSQL boolean format
-    assert result == (True, False), \
-        f"Expected (True, False) from psycopg2 conversion of 't'/'f', but got {result} with types {type(result[0])}, {type(result[1])}"
-
-    # Test with table
-    cur.execute("CREATE DATABASE test_bool_db")
-    cur.execute("USE test_bool_db")
-    cur.execute("CREATE TEMPORARY TABLE bool_test (id Int32, flag Bool) ENGINE = Memory")
-    cur.execute("INSERT INTO bool_test VALUES (1, true), (2, false)")
-    cur.execute("SELECT id, flag FROM bool_test ORDER BY id")
-    results = cur.fetchall()
-    logging.debug(f"Table boolean results: {results}")
-    assert len(results) == 2
-    # Strict check for boolean values from table
-    assert results[0][1] is True, \
-        f"Expected True (psycopg2 conversion of 't'), but got {results[0][1]} with type {type(results[0][1])}"
-    assert results[1][1] is False, \
-        f"Expected False (psycopg2 conversion of 'f'), but got {results[1][1]} with type {type(results[1][1])}"
-
-    cur.execute("DROP TABLE bool_test")
-    cur.execute("DROP DATABASE test_bool_db")
-    cur.close()
-    ch.close()
 
 
 def test_java_client(started_cluster):

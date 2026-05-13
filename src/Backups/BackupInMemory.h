@@ -2,8 +2,6 @@
 
 #include <base/defines.h>
 #include <base/types.h>
-
-#include <memory>
 #include <mutex>
 #include <unordered_map>
 

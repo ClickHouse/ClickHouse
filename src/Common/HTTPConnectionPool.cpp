@@ -92,7 +92,6 @@ namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_URI_SCHEME;
-    extern const int HTTP_CONNECTION_LIMIT_REACHED;
 }
 
 
@@ -172,12 +171,6 @@ public:
         mute_warning_until = 0;
     }
 
-    HTTPConnectionPools::Limits getLimits() const
-    {
-        std::lock_guard lock(mutex);
-        return limits;
-    }
-
     bool isSoftLimitReached() const
     {
         std::lock_guard lock(mutex);
@@ -190,15 +183,9 @@ public:
         return total_connections_in_group >= limits.store_limit;
     }
 
-    void atConnectionCreate(std::string host, UInt16 port)
+    void atConnectionCreate()
     {
         std::lock_guard lock(mutex);
-
-        if (isHardLimitReached())
-            throw Exception(
-                ErrorCodes::HTTP_CONNECTION_LIMIT_REACHED,
-                "Cannot create new connection to {}:{}, hard limit {} for connections in group {} is reached",
-                host, port, limits.hard_limit, getType());
 
         ++total_connections_in_group;
 
@@ -210,7 +197,7 @@ public:
         }
     }
 
-    void atConnectionDestroy() noexcept
+    void atConnectionDestroy()
     {
         std::lock_guard lock(mutex);
 
@@ -230,11 +217,6 @@ public:
     const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const { return metrics; }
 
 private:
-    bool isHardLimitReached() const TSA_REQUIRES(mutex)
-    {
-        return limits.hard_limit > 0 && total_connections_in_group >= limits.hard_limit;
-    }
-
     const HTTPConnectionGroupType type;
     const IHTTPConnectionPoolForEndpoint::Metrics metrics;
 
@@ -421,7 +403,7 @@ private:
                 Session::setSendThrottler(throttler);
 
             std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
-            chassert(result.exceptions() & std::ios::badbit);
+            result.exceptions(std::ios::badbit);
 
             request_stream = &result;
             request_stream_completed = false;
@@ -435,7 +417,7 @@ private:
         std::istream & receiveResponse(Poco::Net::HTTPResponse & response) override
         {
             std::istream & result = Session::receiveResponse(response);
-            chassert(result.exceptions() & std::ios::badbit);
+            result.exceptions(std::ios::badbit);
 
             response_stream = &result;
             response_stream_completed = false;
@@ -504,10 +486,8 @@ private:
             , group(group_)
             , metrics(std::move(metrics_))
         {
-            // atConnectionCreate can throw. If it does, this object's constructor fails and its destructor won't be called,
-            // so we must call atConnectionCreate before incrementing active_count to avoid leaking the metric increment.
-            group->atConnectionCreate(Session::getHost(), Session::getPort());
             CurrentMetrics::add(metrics.active_count);
+            group->atConnectionCreate();
         }
 
         template <class... Args>
@@ -706,7 +686,7 @@ private:
         {
             address.setFail();
             ProfileEvents::increment(getMetrics().errors);
-            (*connection).reset();
+            connection->reset();
             throw;
         }
 
@@ -714,7 +694,7 @@ private:
         return connection;
     }
 
-    void atConnectionDestroy(PooledConnection & connection) noexcept
+    void atConnectionDestroy(PooledConnection & connection)
     {
         if (connection.getKeepAliveRequest() >= connection.getKeepAliveMaxRequests())
         {
@@ -729,25 +709,17 @@ private:
             return;
         }
 
-        try
-        {
-            auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-            connection_to_store->assign(connection);
+        auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+        connection_to_store->assign(connection);
 
-            {
-                MemoryTrackerSwitcher switcher{&total_memory_tracker};
-                std::lock_guard lock(mutex);
-                stored_connections.push(connection_to_store);
-            }
-
-            CurrentMetrics::add(getMetrics().stored_count, 1);
-            ProfileEvents::increment(getMetrics().preserved, 1);
-        }
-        catch (...)
         {
-            ProfileEvents::increment(getMetrics().reset, 1);
-            tryLogCurrentException("HTTPConnectionPool", "Failed to preserve connection for reuse");
+            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            std::lock_guard lock(mutex);
+            stored_connections.push(connection_to_store);
         }
+
+        CurrentMetrics::add(getMetrics().stored_count, 1);
+        ProfileEvents::increment(getMetrics().preserved, 1);
     }
 
 

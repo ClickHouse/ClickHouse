@@ -4,7 +4,6 @@ sidebar_label: 'ytsaurus'
 sidebar_position: 85
 slug: /sql-reference/table-functions/ytsaurus
 title: 'ytsaurus'
-doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
