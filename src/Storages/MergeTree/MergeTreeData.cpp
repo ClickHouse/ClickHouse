@@ -2672,9 +2672,18 @@ size_t MergeTreeData::loadNewlyAppearedParts()
         }
     }
 
-    has_non_adaptive_index_granularity_parts = have_non_adaptive_parts;
-    has_lightweight_delete_parts = have_lightweight_in_parts;
-    transactions_enabled = have_parts_with_version_metadata;
+    /// Only flip capability flags from `false` to `true`: these flags reflect properties of
+    /// the entire active part set, but `parts_to_add` only contains newly appearing parts.
+    /// On a `leader_election` takeover with no new parts to add, an unconditional assignment
+    /// would clobber flags that existing active parts still require (e.g. resetting
+    /// `has_non_adaptive_index_granularity_parts` would let `canUseAdaptiveGranularity` flip
+    /// back to true and start writing adaptive parts on top of legacy non-adaptive ones).
+    if (have_non_adaptive_parts)
+        has_non_adaptive_index_granularity_parts = true;
+    if (have_lightweight_in_parts)
+        has_lightweight_delete_parts.store(true);
+    if (have_parts_with_version_metadata)
+        transactions_enabled.store(true);
 
     auto old_parts = grabOldParts(true);
 
