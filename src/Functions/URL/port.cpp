@@ -15,7 +15,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 template<bool conform_rfc>
@@ -27,23 +26,7 @@ struct FunctionPortImpl : public IFunction
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
-                            getName(), arguments.size());
-
-        if (!WhichDataType(arguments[0].type).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
-                "Must be String.", arguments[0].type->getName(), getName());
-
-        if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isUInt16())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}. "
-                "Must be UInt16.", arguments[1].type->getName(), getName());
-
-        return std::make_shared<DataTypeUInt16>();
-    }
+    String getSignatureString() const override { return "(String, [UInt16]) -> UInt16"; }
 
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
