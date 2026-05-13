@@ -109,16 +109,7 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root)
                 if (sort_desc.empty() || sort_desc.size() > agg_sort_desc.size())
                     break;
 
-                bool prefix_match = true;
-                for (size_t i = 0; i < sort_desc.size(); ++i)
-                {
-                    if (sort_desc[i].column_name != agg_sort_desc[i].column_name
-                        || sort_desc[i].direction != agg_sort_desc[i].direction)
-                    {
-                        prefix_match = false;
-                        break;
-                    }
-                }
+                bool prefix_match = agg_sort_desc.hasPrefix(sort_desc);
 
                 if (prefix_match)
                 {
