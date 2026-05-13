@@ -106,7 +106,7 @@ public:
 
     bool supportsDataflowStatisticsCollection() const override
     {
-        return sort_description_for_merging.empty() && grouping_sets_params.empty();
+        return grouping_sets_params.empty();
     }
 
 private:
