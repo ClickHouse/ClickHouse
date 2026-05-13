@@ -273,10 +273,16 @@ Estimate ColumnStatistics::getEstimate() const
 
 UInt64 ColumnStatistics::getNullCount() const
 {
-    auto it = stats.find(StatisticsType::NullCount);
-    if (it == stats.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "getNullCount called but NullCount statistics not present");
-    return assert_cast<const StatisticsNullCount &>(*it->second).getNullCount();
+    if (auto it = stats.find(StatisticsType::NullCount); it != stats.end())
+        return assert_cast<const StatisticsNullCount &>(*it->second).getNullCount();
+    /// MinMax::row_count tracks only non-NULL rows, so the null count can be derived
+    /// as total rows minus MinMax row count when NullCount statistics are absent.
+    if (auto it = stats.find(StatisticsType::MinMax); it != stats.end())
+    {
+        UInt64 non_null = assert_cast<const StatisticsMinMax &>(*it->second).getRowCount();
+        return non_null <= rows ? rows - non_null : 0;
+    }
+    return 0;
 }
 
 UInt64 ColumnStatistics::getNonNullRowCount() const
@@ -299,8 +305,8 @@ Float64 ColumnStatistics::estimateIsNull() const
 {
     if (rows == 0)
         return 0.0;
-    if (stats.contains(StatisticsType::NullCount))
-        return static_cast<Float64>(std::min(getNullCount(), rows)) / static_cast<Float64>(rows);
+    if (stats.contains(StatisticsType::NullCount) || stats.contains(StatisticsType::MinMax))
+        return static_cast<Float64>(getNullCount()) / static_cast<Float64>(rows);
     return ConditionSelectivityEstimator::default_cond_equal_factor;
 }
 
@@ -308,7 +314,7 @@ Float64 ColumnStatistics::estimateIsNotNull() const
 {
     if (rows == 0)
         return 0.0;
-    if (stats.contains(StatisticsType::NullCount))
+    if (stats.contains(StatisticsType::NullCount) || stats.contains(StatisticsType::MinMax))
         return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(rows);
     return 1.0 - ConditionSelectivityEstimator::default_cond_equal_factor;
 }
