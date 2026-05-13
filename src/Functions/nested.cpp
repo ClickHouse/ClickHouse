@@ -63,6 +63,15 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Documentation-only — given a const-array of N names and N parallel
+    /// Array values, returns `Array(Tuple(<name_i> T_i))`. The output's
+    /// named-tuple shape comes from the const names, so the DSL can't
+    /// produce the exact type.
+    String getSignatureString() const override
+    {
+        return "(const Array(String), Array, ...) -> Array";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         // Validation is not exhaustive.
