@@ -384,7 +384,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         file_metadata,
         options,
         &extended_sample_block,
-        options.format.parquet.allow_geoparquet_parser ? std::move(geo_meta) : std::unordered_map<String, DB::GeoColumnMetadata>{});
+        options.format.parquet.allow_geoparquet_parser ? std::make_optional(std::move(geo_meta)) : std::nullopt);
     auto add_prewhere_outputs = [&](const ActionsDAG & actions)
     {
         for (const auto * node : actions.getOutputs())
