@@ -145,13 +145,14 @@ public:
             /// Parse query from scratch for each table instead of clone,
             /// to store proper pointers to inlined data,
             /// which are not copied during clone.
-            auto & query = queries.emplace_back(tryParseQueryForFuzzedTables<Parser>(full_query));
+            auto query = tryParseQueryForFuzzedTables<Parser>(full_query);
             if (!query)
                 continue;
             auto * fuzzed_ast = query->template as<ParsedAST>();
             if (!fuzzed_ast)
                 continue;
             fuzzed_ast->setTable(fuzzed_name);
+            queries.emplace_back(std::move(query));
         }
 
         return queries;
