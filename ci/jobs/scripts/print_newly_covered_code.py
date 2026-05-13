@@ -108,28 +108,59 @@ def _parse_info(path: str) -> dict:
 
 
 def _format_block_preview(rel: str, lines_in_block: list[int], context: int = 2) -> list[str]:
-    """Render newly-covered line blocks for one file, mirroring print_uncovered_code."""
+    """Render newly-covered lines for one file as merged blocks.
+
+    Adjacent newly-covered lines are grouped first; then *near*-adjacent
+    groups whose surrounding-context windows would touch or overlap are
+    merged into a single block, so the reader sees one cohesive snippet
+    instead of several near-identical stanzas that re-print the same
+    intermediate code. Inside the merged block, only the actually
+    newly-covered lines (the original set) carry the ">>" marker — lines
+    that fall in the gap between original sub-blocks are shown without
+    highlight as ordinary context.
+    """
     out: list[str] = []
     src = _load_source(rel)
     if not src:
         out.append(f"  [source file not found: {os.path.join(repo_root, rel)}]")
         return out
-    file_lines = sorted(set(lines_in_block))
-    blocks: list[tuple[int, int]] = []
+    nc_set = set(lines_in_block)
+    if not nc_set:
+        return out
+    file_lines = sorted(nc_set)
+
+    # Group consecutive newly-covered lines.
+    raw_blocks: list[tuple[int, int]] = []
     start = prev = file_lines[0]
     for ln in file_lines[1:]:
         if ln == prev + 1:
             prev = ln
         else:
-            blocks.append((start, prev))
+            raw_blocks.append((start, prev))
             start = prev = ln
-    blocks.append((start, prev))
-    for block_start, block_end in blocks:
+    raw_blocks.append((start, prev))
+
+    # Merge groups whose context windows would touch/overlap. With `context`
+    # lines on each side, two groups whose original ends are within
+    # `2 * context + 1` lines of each other would otherwise have their
+    # printed regions duplicate one another (and the gap lines themselves
+    # are useful context, so keeping them in a single block is strictly
+    # better than splitting).
+    merge_gap = 2 * context + 1
+    merged: list[tuple[int, int]] = [raw_blocks[0]]
+    for s, e in raw_blocks[1:]:
+        ps, pe = merged[-1]
+        if s - pe <= merge_gap:
+            merged[-1] = (ps, e)
+        else:
+            merged.append((s, e))
+
+    for block_start, block_end in merged:
         s = max(1, block_start - context)
         e = min(len(src), block_end + context)
         out.append(f"\n--- newly covered block {block_start}-{block_end} ---")
         for i in range(s, e + 1):
-            pfx = ">>" if block_start <= i <= block_end else "  "
+            pfx = ">>" if i in nc_set else "  "
             out.append(f"{pfx} {i:6d} | {src[i - 1].rstrip()}")
     return out
 
