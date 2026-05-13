@@ -15,6 +15,7 @@ restores it. On buggy code, the RESTORE fails with UNKNOWN_SETTING error.
 After the fix, RESTORE succeeds.
 """
 
+import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -67,8 +68,9 @@ def test_restore_replicated_table_uses_correct_keeper_settings(started_cluster):
     )
     node.query("INSERT INTO test_tbl VALUES (1, 'a'), (2, 'b'), (3, 'c')")
 
-    # Backup the table
-    backup_name = "Disk('backups', 'test_restore_setting_bug/')"
+    # Backup the table - use UUID to ensure unique backup name per run
+    backup_id = uuid.uuid4().hex
+    backup_name = f"Disk('backups', 'test_restore_setting_bug_{backup_id}/')"
     node.query(f"BACKUP TABLE test_tbl TO {backup_name}")
 
     # Drop the table
