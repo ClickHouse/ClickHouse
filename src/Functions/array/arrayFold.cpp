@@ -32,6 +32,16 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only — folds the parallel arrays into a single
+    /// accumulator value. The lambda's first argument is the accumulator
+    /// (whose type is taken from the trailing `acc_initial` argument),
+    /// followed by one element per parallel array; the lambda must return
+    /// the accumulator type, which is also the result type.
+    String getSignatureString() const override
+    {
+        return "(Function((A : Any, Any, ...), A), Array, ..., A) -> A";
+    }
+
     /// Avoid the default adaptors since they modify the inputs and that makes knowing the lambda argument types
     /// (getLambdaArgumentTypes) more complex, as it requires knowing what the adaptors will do
     /// It's much simpler to avoid the adapters
