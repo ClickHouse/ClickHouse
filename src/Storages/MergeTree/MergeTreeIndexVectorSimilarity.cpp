@@ -626,8 +626,8 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
             return index->search(parameters->reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
         }
 
-        IMergeTreeIndexCondition::GranuleRowFilter rf = row_filter.value();
-        auto predicate = [rf](USearchIndex::vector_key_t key) { return granuleLocalKeyAllowed(key, rf); };
+        const IMergeTreeIndexCondition::GranuleRowFilter & rf = row_filter.value();
+        auto predicate = [&rf](USearchIndex::vector_key_t key) { return granuleLocalKeyAllowed(key, rf); };
         return index->filtered_search(parameters->reference_vector.data(), limit, std::move(predicate), USearchIndex::any_thread(), false, expansion_search);
     }();
 
