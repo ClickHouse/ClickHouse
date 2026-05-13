@@ -150,6 +150,14 @@ def test_create_workload():
     indirect=True,
 )
 def test_independent_pools(with_custom_config):
+    if (
+        node.is_built_with_address_sanitizer()
+        or node.is_built_with_thread_sanitizer()
+        or node.is_built_with_memory_sanitizer()
+        or node.is_built_with_llvm_coverage()
+    ):
+        pytest.skip("doesn't fit in timeouts due to heavy workload")
+
     node.query(
         f"""
         create resource cpu (master thread, worker thread);
