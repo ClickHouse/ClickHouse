@@ -110,10 +110,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        auto nc = FunctionBaseAI::resolveAINamedCollection(getContext(), arguments[0].column);
+
         if (input_rows_count == 0)
             return result_type->createColumn();
-
-        auto nc = FunctionBaseAI::resolveAINamedCollection(getContext(), arguments[0].column);
 
         UInt64 dimensions = 0;
         if (arguments.size() > 2)

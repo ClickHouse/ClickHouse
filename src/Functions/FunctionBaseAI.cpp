@@ -155,6 +155,8 @@ float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & argument
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    auto config = resolveConfig(arguments);
+
     if (input_rows_count == 0)
         return result_type->createColumn();
 
@@ -171,7 +173,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         prompt_nullable = typeid_cast<const ColumnNullable *>(prompt_column.get());
     }
 
-    auto config = resolveConfig(arguments);
     auto provider = createAIProvider(config.provider, config.endpoint, config.api_key, config.api_version);
     float temperature = resolveTemperature(arguments, config);
 
