@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 
 #include <Common/typeid_cast.h>
@@ -407,6 +408,137 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+/// Holds a parenthesized list of child matchers. Used as a placeholder carried to a parent
+/// matcher that needs a structured group (e.g. lambda argument-type list inside Function).
+/// Trying to use this directly as a matcher errors.
+class TypeMatcherList : public ITypeMatcher
+{
+private:
+    TypeMatchers children;
+public:
+    explicit TypeMatcherList(TypeMatchers children_) : children(std::move(children_)) {}
+    const TypeMatchers & getChildren() const { return children; }
+
+    std::string toString() const override
+    {
+        WriteBufferFromOwnString out;
+        out << "(";
+        writeList(children, [&](const auto & c){ out << c->toString(); }, [&]{ out << ", "; });
+        out << ")";
+        return out.str();
+    }
+
+    bool match(const DataTypePtr &, Variables &, size_t, size_t, std::string & out_reason) const override
+    {
+        out_reason = "parenthesized matcher list cannot be used as a top-level type matcher";
+        return false;
+    }
+
+    size_t getIndex() const override
+    {
+        size_t res = 0;
+        for (const auto & c : children)
+            res = getCommonIndex(res, c->getIndex());
+        return res;
+    }
+};
+
+
+/// Matches any lambda (DataTypeFunction) — used when the function high-order arg is a
+/// lambda and the caller doesn't constrain its shape.
+class TypeMatcherFunction : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Function"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string & out_reason) const override
+    {
+        if (typeid_cast<const DataTypeFunction *>(type.get()))
+            return true;
+        out_reason = "expected lambda Function, got " + type->getName();
+        return false;
+    }
+    size_t getIndex() const override { return 0; }
+};
+
+
+/// Matches DataTypeFunction with a specific argument-list shape and return-type shape.
+/// Built from Function((Arg1, Arg2, ...), Result) in signatures: the first child is a
+/// TypeMatcherList of argument matchers, the second is the return-type matcher.
+class TypeMatcherFunctionOf : public ITypeMatcher
+{
+private:
+    TypeMatchers arg_matchers;
+    TypeMatcherPtr return_matcher;
+public:
+    explicit TypeMatcherFunctionOf(const TypeMatchers & children)
+    {
+        if (children.size() != 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Function matcher takes exactly two arguments: an arg-list and a return-type matcher");
+        const auto * arg_list = dynamic_cast<const TypeMatcherList *>(children[0].get());
+        if (!arg_list)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "First argument of Function matcher must be a parenthesized arg list, e.g. Function((T, U), R)");
+        arg_matchers = arg_list->getChildren();
+        return_matcher = children[1];
+    }
+
+    std::string toString() const override
+    {
+        WriteBufferFromOwnString out;
+        out << "Function((";
+        writeList(arg_matchers, [&](const auto & c){ out << c->toString(); }, [&]{ out << ", "; });
+        out << "), " << return_matcher->toString() << ")";
+        return out.str();
+    }
+
+    bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string & out_reason) const override
+    {
+        const auto * fn = typeid_cast<const DataTypeFunction *>(type.get());
+        if (!fn)
+        {
+            out_reason = "expected lambda Function, got " + type->getName();
+            return false;
+        }
+        const auto & fn_args = fn->getArgumentTypes();
+        if (fn_args.size() != arg_matchers.size())
+        {
+            out_reason = "lambda arity mismatch: expected " + DB::toString(arg_matchers.size())
+                + ", got " + DB::toString(fn_args.size());
+            return false;
+        }
+        for (size_t i = 0; i < arg_matchers.size(); ++i)
+        {
+            if (!arg_matchers[i]->match(fn_args[i], variables, iteration, arg_num, out_reason))
+            {
+                out_reason = "lambda argument " + DB::toString(i) + " doesn't match: " + out_reason;
+                return false;
+            }
+        }
+        const auto & fn_ret = fn->getReturnType();
+        if (!fn_ret)
+        {
+            out_reason = "lambda has no inferred return type yet";
+            return false;
+        }
+        if (!return_matcher->match(fn_ret, variables, iteration, arg_num, out_reason))
+        {
+            out_reason = "lambda return type doesn't match: " + out_reason;
+            return false;
+        }
+        return true;
+    }
+
+    size_t getIndex() const override
+    {
+        size_t res = return_matcher->getIndex();
+        for (const auto & m : arg_matchers)
+            res = getCommonIndex(res, m->getIndex());
+        return res;
+    }
+};
+
+
 /// Wraps a string literal token; used as a non-matching constraint passed to parent matchers
 /// that need to know an identifier (e.g. an aggregate-function name to require).
 class TypeMatcherStringLiteral : public ITypeMatcher
@@ -748,11 +880,24 @@ void registerTypeMatchers()
     factory.registerElement("MaybeNullable", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherMaybeNullable>(children); });
     factory.registerElement("Nullable", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherNullable>(children); });
     factory.registerElement("AggregateFunction", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherAggregateFunctionOf>(children); });
+    /// Function: 0 args matches any lambda; (arg_list, return) matches a specific shape.
+    /// Here `arg_list` must be a parenthesized matcher list passed as a single child.
+    factory.registerElement("Function", [](const TypeMatchers & children) -> TypeMatcherPtr
+    {
+        if (children.empty())
+            return std::make_shared<TypeMatcherFunction>();
+        return std::make_shared<TypeMatcherFunctionOf>(children);
+    });
 }
 
 TypeMatcherPtr makeStringLiteralMatcher(std::string literal)
 {
     return std::make_shared<TypeMatcherStringLiteral>(std::move(literal));
+}
+
+TypeMatcherPtr makeListMatcher(TypeMatchers children)
+{
+    return std::make_shared<TypeMatcherList>(std::move(children));
 }
 
 }

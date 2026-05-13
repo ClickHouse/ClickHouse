@@ -1046,6 +1046,31 @@ bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
                 return true;
             }
 
+            /// Parenthesized matcher list `(m1, m2, ...)` — used by matchers like
+            /// Function((Arg1, Arg2), Result) that need a list of matchers in a single arg slot.
+            if (inner->type == TokenType::OpeningRoundBracket)
+            {
+                auto saved = inner;
+                ++inner;
+                TypeMatchers list_elems;
+                if (parseList(inner, true,
+                    [&](TokenIterator & it)
+                    {
+                        TypeMatcherPtr elem;
+                        if (!parseTypeMatcher(it, elem))
+                            return false;
+                        list_elems.emplace_back(elem);
+                        return true;
+                    },
+                    [](TokenIterator & it) { return consumeToken(it, TokenType::Comma); })
+                    && consumeToken(inner, TokenType::ClosingRoundBracket))
+                {
+                    args.emplace_back(makeListMatcher(std::move(list_elems)));
+                    return true;
+                }
+                inner = saved;
+            }
+
             TypeMatcherPtr elem;
             if (parseTypeMatcher(inner, elem))
             {

@@ -205,6 +205,11 @@ namespace FunctionSignatures
     /// aggregator name without inventing one matcher class per name.
     TypeMatcherPtr makeStringLiteralMatcher(std::string literal);
 
+    /// Builds a placeholder "list" matcher that bundles several matchers into one child.
+    /// Used so that complex matchers like Function((Arg1, Arg2), Result) can accept a
+    /// parenthesized matcher list as a single argument position.
+    TypeMatcherPtr makeListMatcher(TypeMatchers children);
+
 
     /** A function of variables (types and constants) that returns a value (type or constant).
       * May return a Value containing nullptr type, meaning "not applicable".
