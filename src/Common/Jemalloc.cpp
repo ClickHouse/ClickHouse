@@ -224,7 +224,12 @@ void verifySetup(
             &Poco::Logger::get("Jemalloc"), "Jemalloc settings mismatch: `{}` differs between BaseDaemon and server settings", setting);
     };
 
-    if (getThreadProfileInitMib().getValue() != enable_global_profiler)
+    /// `prof.*` mallctls (including `prof.thread_active_init` / `prof.lg_sample`) only exist when
+    /// jemalloc was built with `JEMALLOC_PROF`. When absent, `setup` could not have applied the
+    /// corresponding settings either (the writes were no-ops), so there is nothing to verify and
+    /// reading a missing MIB must not abort debug builds.
+    if (bool current_thread_active_init = false; getThreadProfileInitMib().tryGetValue(current_thread_active_init)
+        && current_thread_active_init != enable_global_profiler)
         log_warning(config_enable_global_profiler);
     /// `background_thread` and `max_background_threads` mallctls only exist when jemalloc was built
     /// with `JEMALLOC_BACKGROUND_THREAD` (e.g. not on macOS). When unavailable, `je_mallctl` returns
@@ -237,7 +242,9 @@ void verifySetup(
         && tryGetValue("max_background_threads", current_max_background_threads)
         && current_max_background_threads != max_background_threads_num)
         log_warning(config_max_background_threads_num);
-    if (profiler_sampling_rate != default_profiler_sampling_rate && getValue<size_t>("prof.lg_sample") != profiler_sampling_rate)
+    if (size_t current_lg_sample = 0; profiler_sampling_rate != default_profiler_sampling_rate
+        && tryGetValue("prof.lg_sample", current_lg_sample)
+        && current_lg_sample != profiler_sampling_rate)
         log_warning(config_profiler_sampling_rate);
     if (collect_global_profiles_in_trace_log != collect_global_profile_samples_in_trace_log)
         log_warning(config_collect_global_profile_samples_in_trace_log);
