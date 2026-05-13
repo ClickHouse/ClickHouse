@@ -206,6 +206,24 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     auto left_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.first; }));
     auto right_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.second; }));
+
+    /// Decline the conversion if any input of `join_output_actions` is not
+    /// among the outputs of `left_pre_join_actions`. After the rewrite, the
+    /// post-JOIN ExpressionStep would otherwise reference a column
+    /// (e.g. source `L.col` whose only forwarded form is `arrayJoin(L.col)`)
+    /// that the rewritten plan's stream header does not expose, leading to a
+    /// NOT_FOUND_COLUMN_IN_BLOCK exception at execution. The bail-out must
+    /// happen here, before any plan mutation below.
+    {
+        auto join_output_actions_subdag = JoinExpressionActions::getSubDAG(join_output_actions);
+        std::unordered_set<std::string_view> forwarded_columns;
+        for (const auto * out : left_pre_join_actions.getOutputs())
+            forwarded_columns.insert(out->result_name);
+        for (const auto * input : join_output_actions_subdag.getInputs())
+            if (!forwarded_columns.contains(input->result_name))
+                return 0;
+    }
+
     auto * lhs_in_node = parent_node->children.at(0);
     makeExpressionNodeOnTopOf(*lhs_in_node, std::move(left_pre_join_actions), nodes, makeDescription("Calculate join left keys"));
     auto * rhs_in_node = parent_node->children.at(1);
