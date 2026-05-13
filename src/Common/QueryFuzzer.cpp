@@ -693,6 +693,7 @@ void QueryFuzzer::fuzzWindowDefinition(ASTWindowDefinition & def)
     auto removeChild = [](ASTWindowDefinition & wdef, ASTPtr & member)
     {
         auto & ch = wdef.children;
+        member->children.clear();
         ch.erase(std::remove(ch.begin(), ch.end(), member), ch.end());
         member = nullptr;
     };
@@ -1731,10 +1732,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         const size_t n = type_fixed_string->getN();
         const size_t new_n = (fuzz_rand() % 4 == 0)
             ? (fuzz_rand() % MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS + 1)
-            : std::clamp<size_t>(
-                  std::max<ssize_t>(1, static_cast<ssize_t>(n) + static_cast<ssize_t>(fuzz_rand() % 5) - 2),
-                  1,
-                  MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
+            : std::clamp<size_t>(n + fuzz_rand() % 5 - 2, 1, MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
         return std::make_shared<DataTypeFixedString>(new_n);
     }
 
@@ -2186,10 +2184,10 @@ ASTPtr QueryFuzzer::reverseLiteralFuzzing(ASTPtr child)
             "toNullable",
             "toUInt128",
             "toUInt256"};
-        if (can_be_reverted.contains(function->name) && function->arguments && function->arguments->children.size() == 1)
+        if (can_be_reverted.contains(function->name) && function->children.size() == 1)
         {
             if (fuzz_rand() % 7 == 0)
-                return function->arguments->children[0];
+                return function->children[0];
         }
     }
 
@@ -2527,7 +2525,7 @@ void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates, cons
 {
     if (const auto * func = node->as<ASTFunction>())
     {
-        if (func->name == op && func->arguments)
+        if (func->name == op)
         {
             /// Recursively extract predicates from children
             for (const auto & entry : func->arguments->children)
@@ -3442,7 +3440,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             with_intersect_except->final_operator = static_cast<ASTSelectIntersectExceptQuery::Operator>(
                 fuzz_rand() % (static_cast<int>(ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT) + 1));
         }
-        fuzz(with_intersect_except->children);
+        auto selects = with_intersect_except->getListOfSelects();
+        fuzz(selects);
     }
     else if (auto * tables = typeid_cast<ASTTablesInSelectQuery *>(ast.get()))
     {
@@ -3861,6 +3860,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
                     if (fuzz_rand() % 2 == 0)
                     {
+                        select->where()->children.clear();
                         select->setExpression(ASTSelectQuery::Expression::WHERE, {});
                     }
                 }
@@ -3885,6 +3885,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
                     if (fuzz_rand() % 2 == 0)
                     {
+                        select->prewhere()->children.clear();
                         select->setExpression(ASTSelectQuery::Expression::PREWHERE, {});
                     }
                 }
