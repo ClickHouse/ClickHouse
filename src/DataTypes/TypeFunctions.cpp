@@ -726,6 +726,28 @@ public:
 };
 
 
+/// `isFloat32OrSmaller(T)` — `1` if `T` is a floating-point type at most 32 bits
+/// wide (i.e. `BFloat16` or `Float32`), otherwise `0`. The `Float64`-promotion
+/// rule used by `arrayDistance`, `arrayNorm`, and the cosine/Lp variants is
+/// "return `Float32` when the common type is `BFloat16` or `Float32`, else
+/// `Float64`" — this predicate is the obvious way to express that branch.
+class TypeFunctionIsFloat32OrSmaller : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function isFloat32OrSmaller takes 1 argument");
+        const DataTypePtr & type = args.front().type();
+        WhichDataType w(type);
+        const bool small_float = w.isBFloat16() || w.isFloat32();
+        return Value(Field(UInt64{small_float ? 1u : 0u}));
+    }
+
+    std::string name() const override { return "isFloat32OrSmaller"; }
+};
+
+
 /// `anyInteger(T1, ...)` — `1` if any argument is a native integer type, otherwise `0`.
 class TypeFunctionAnyInteger : public ITypeFunction
 {
@@ -853,6 +875,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionAnyFloating>();
     factory.registerElement<TypeFunctionAnyInteger>();
     factory.registerElement<TypeFunctionSelectIf>();
+    factory.registerElement<TypeFunctionIsFloat32OrSmaller>();
 
     /// Predicates.
     factory.registerElement<TypeFunctionTuplesHaveSameSize>();
