@@ -388,23 +388,54 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
 
         return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), null_map);
     }
-    else if (const auto * const_src = checkAndGetColumn<ColumnConst>(src.get()))
+    if (const auto * const_src = checkAndGetColumn<ColumnConst>(src.get()))
     {
+        /// Only collapse the result to a single ColumnConst when the input null map is
+        /// uniform (or absent). Per-row null maps cannot be folded onto a constant value
+        /// without losing the not-null rows.
+        bool uniform_null_map = true;
         UInt8 is_null = 0;
         if (null_map)
         {
             const NullMap & null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
-            is_null = null_map_data[0];
+            is_null = null_map_data.empty() ? 0 : null_map_data[0];
+            for (size_t i = 1, size = null_map_data.size(); i < size; ++i)
+            {
+                if (null_map_data[i] != is_null)
+                {
+                    uniform_null_map = false;
+                    break;
+                }
+            }
         }
-        ColumnPtr result_null_map_column = ColumnUInt8::create(1, is_null || const_src->isNullAt(0));
+
+        if (uniform_null_map)
+        {
+            ColumnPtr result_null_map_column = ColumnUInt8::create(1, is_null || const_src->isNullAt(0));
+            const auto * nullable_data = checkAndGetColumn<ColumnNullable>(&const_src->getDataColumn());
+            auto data_not_nullable = nullable_data ? nullable_data->getNestedColumnPtr() : const_src->getDataColumnPtr();
+            return ColumnConst::create(ColumnNullable::create(data_not_nullable, result_null_map_column), const_src->size());
+        }
+
+        /// Heterogeneous null map: expand the constant and merge the inner null map (if any)
+        /// into the caller's per-row null_map.
         const auto * nullable_data = checkAndGetColumn<ColumnNullable>(&const_src->getDataColumn());
-        auto data_not_nullable = nullable_data ? nullable_data->getNestedColumnPtr() : const_src->getDataColumnPtr();
-        return ColumnConst::create(ColumnNullable::create(data_not_nullable, result_null_map_column), const_src->size());
+        if (nullable_data && nullable_data->isNullAt(0))
+        {
+            auto result_null_map_column = IColumn::mutate(std::move(null_map));
+            auto & result_null_map = assert_cast<ColumnUInt8 &>(*result_null_map_column).getData();
+            std::fill(result_null_map.begin(), result_null_map.end(), UInt8(1));
+            null_map = std::move(result_null_map_column);
+        }
+        ColumnPtr inner = nullable_data
+            ? ColumnConst::create(nullable_data->getNestedColumnPtr(), const_src->size())
+            : src;
+        return ColumnNullable::create(inner->convertToFullColumnIfConst(), null_map);
     }
-    else if (null_map)
+
+    if (null_map)
         return ColumnNullable::create(src->convertToFullColumnIfConst(), null_map);
-    else
-        return ColumnNullable::create(src->convertToFullColumnIfConst(), ColumnUInt8::create(src->size(), UInt8(0)));
+    return ColumnNullable::create(src->convertToFullColumnIfConst(), ColumnUInt8::create(src->size(), UInt8(0)));
 }
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
