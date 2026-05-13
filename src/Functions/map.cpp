@@ -285,27 +285,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// `mapUpdate(left, right)` — both arguments must be `Map`s with identical key and
+    /// value types. Capturing `K`/`V` from the first argument and re-using them in the
+    /// second forces type-level equality at type-check time.
+    String getSignatureString() const override
     {
-        if (arguments.size() != 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(),
-                arguments.size());
-
-        const auto * left = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
-        const auto * right = checkAndGetDataType<DataTypeMap>(arguments[1].type.get());
-
-        if (!left || !right)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The two arguments for function {} must be both Map type", getName());
-
-        if (!left->getKeyType()->equals(*right->getKeyType()) || !left->getValueType()->equals(*right->getValueType()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The Key And Value type of Map for function {} must be the same", getName());
-
-        return std::make_shared<DataTypeMap>(left->getKeyType(), left->getValueType());
+        return "(M : Map(K : Any, V : Any), Map(K, V)) -> M";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
