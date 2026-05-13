@@ -17,7 +17,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/castColumn.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldAccurateComparison.h>
@@ -762,15 +761,31 @@ namespace
             const IColumn * default_col = arguments[3].column.get();
             if (default_col && isColumnConst(*default_col))
             {
-                auto default_column = result_type->createColumn();
-                if (!default_col->onlyNull())
+                if (default_col->onlyNull())
                 {
-                    Field f = convertFieldToType((*default_col)[0], *result_type);
-                    default_column->insert(f);
+                    /// Source is `Nothing`/only-`NULL`. Insert the default value of `result_type`
+                    /// (e.g. `0` for numeric types, `""` for `String`), matching the prior behavior.
+                    auto default_column = result_type->createColumn();
+                    default_column->insertDefault();
+                    cache->default_column = std::move(default_column);
                 }
                 else
-                    default_column->insertDefault();
-                cache->default_column = std::move(default_column);
+                {
+                    /// Use `castColumn` (not `convertFieldToType` + `insert`) so the conversion is
+                    /// performed at the column level with full source type information. The `Field`
+                    /// abstraction collapses some types -- e.g. `FixedString` and `String` both
+                    /// become `String`, and `Enum` becomes its underlying integer -- losing the
+                    /// context needed to do a proper cast such as `FixedString -> String` (which
+                    /// trims trailing zeros) or `Enum -> String` (which uses the value's name).
+                    /// Without this, `transform(x, src, dst, default)` returns different bytes for
+                    /// the default branch than `cast(default AS result_type)` and than the matched
+                    /// `dst` branch (which already uses `castColumn` for `cache->to_column`), even
+                    /// though all three should agree.
+                    auto casted = castColumn(arguments[3], result_type)->cut(0, 1);
+                    if (isColumnConst(*casted))
+                        casted = casted->convertToFullColumnIfConst();
+                    cache->default_column = std::move(casted);
+                }
             }
         }
 
