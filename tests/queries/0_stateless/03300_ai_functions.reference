@@ -101,4 +101,8 @@ result	Array(Float32)
 -- aiEmbed: nonexistent named collection
 -- aiEmbed: batch size setting default
 100
+-- aiEmbed: Nullable(String) input return type
+result	Array(Float32)
+-- aiEmbed: NULL input → []
+0
 -- Re-disabled blocks function

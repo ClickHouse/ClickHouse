@@ -402,6 +402,25 @@ SELECT aiEmbed('nonexistent_collection_xyz', 'hello'); -- { serverError NAMED_CO
 SELECT '-- aiEmbed: batch size setting default';
 SELECT default FROM system.settings WHERE name = 'ai_function_embedding_max_batch_size';
 
+-- `Nullable(Array(...))` is not a valid ClickHouse type, so `aiEmbed` must keep its
+-- return type as non-Nullable `Array(Float32)` even when given `Nullable(String)`,
+-- and NULL inputs must map to `[]` at execute time.
+SELECT '-- aiEmbed: Nullable(String) input return type';
+DROP TABLE IF EXISTS _03300_embed_null_in;
+DROP TABLE IF EXISTS _03300_embed_null_out;
+CREATE TABLE _03300_embed_null_in (x Nullable(String)) ENGINE = Memory;
+INSERT INTO _03300_embed_null_in VALUES (NULL);
+CREATE TABLE _03300_embed_null_out ENGINE = Memory AS
+    SELECT aiEmbed('ai_credentials', x) AS result FROM _03300_embed_null_in;
+SELECT name, type FROM system.columns
+    WHERE database = currentDatabase() AND table = '_03300_embed_null_out';
+
+SELECT '-- aiEmbed: NULL input → []';
+SELECT length(result) FROM _03300_embed_null_out;
+
+DROP TABLE IF EXISTS _03300_embed_null_out;
+DROP TABLE IF EXISTS _03300_embed_null_in;
+
 -- =============================================================================
 -- 18. Re-disable the setting mid-session
 -- =============================================================================

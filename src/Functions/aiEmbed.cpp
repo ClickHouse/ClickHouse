@@ -105,7 +105,7 @@ public:
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        return FunctionBaseAI::wrapReturnTypeForNullablePrompt(arguments, text_arg_index, std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>()));
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -155,7 +155,7 @@ public:
             : *arguments[text_arg_index].column;
 
         /// Collect the indices of rows that actually need an HTTP call: non-null and non-empty.
-        /// Null rows -> NULL via the null map; empty-string rows map to `[]`
+        /// Both null and empty-string rows map to `[]` in the output
         std::vector<size_t> live_rows;
         live_rows.reserve(input_rows_count);
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -261,20 +261,7 @@ public:
         ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
         ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
 
-        ColumnPtr array_col = ColumnArray::create(std::move(data_col), std::move(offsets_col));
-        if (result_type->isNullable())
-        {
-            auto null_map_col = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
-            if (text_nullable)
-            {
-                auto & null_map_data = null_map_col->getData();
-                const auto & null_map_src = text_nullable->getNullMapData();
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    null_map_data[i] = null_map_src[i];
-            }
-            return ColumnNullable::create(std::move(array_col), std::move(null_map_col));
-        }
-        return array_col;
+        return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 
 private:
@@ -306,7 +293,7 @@ requests a vector of the given size; otherwise the model's native size is return
         = {{"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
            {"text", "Text to embed.", {"String"}},
            {"dimensions", "Optional target dimensionality for the output vector. `0` or omitted means the model's native size.", {"UInt64"}}},
-        .returned_value = {"The embedding vector, or an empty array if the input is empty, the request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Array(Float32)"}},
+        .returned_value = {"The embedding vector, or an empty array if the input is NULL or empty, the request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Array(Float32)"}},
         .examples
         = {{"Embed a single string", "SELECT aiEmbed('ai_credentials', 'Hello world')", ""},
            {"With explicit dimensions", "SELECT aiEmbed('ai_credentials', 'Hello world', 256)", ""},
