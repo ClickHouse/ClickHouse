@@ -340,7 +340,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"Simple", MergeSelectorAlgorithm::SIMPLE},
      {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
-     {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
+     {"Trivial", MergeSelectorAlgorithm::TRIVIAL},
+     {"Manual", MergeSelectorAlgorithm::MANUAL}})
 
 IMPLEMENT_SETTING_ENUM(
     DatabaseDataLakeCatalogType,
