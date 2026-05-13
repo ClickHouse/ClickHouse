@@ -50,7 +50,7 @@ bool ParserKQLStatement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 String value;
                 {
                     Tokens val_tokens(raw_value.data(), raw_value.data() + raw_value.size(), 0, true);
-                    IParser::Pos val_pos(val_tokens, pos.max_depth, pos.max_backtracks);
+                    IParser::Pos val_pos(val_tokens, pos);
                     value = ParserKQLBase::getExprFromToken(val_pos);
                 }
                 if (value.empty())
@@ -60,7 +60,7 @@ bool ParserKQLStatement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 /// Generate a no-op SELECT to consume the statement
                 String noop_query = "SELECT 'ok' WHERE 0";
                 Tokens noop_tokens(noop_query.data(), noop_query.data() + noop_query.size(), 0, true);
-                IParser::Pos noop_pos(noop_tokens, pos.max_depth, pos.max_backtracks);
+                IParser::Pos noop_pos(noop_tokens, pos);
                 ParserSelectWithUnionQuery select_p;
                 return select_p.parse(noop_pos, node, expected);
             }
@@ -180,7 +180,7 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
 
     Tokens tokens_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true);
-    IParser::Pos pos_kql(tokens_kql, pos.max_depth, pos.max_backtracks);
+    IParser::Pos pos_kql(tokens_kql, pos);
 
     Expected kql_expected;
     kql_expected.enable_highlighting = false;
