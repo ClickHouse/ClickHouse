@@ -979,6 +979,80 @@ def test_shutdown_order(started_cluster):
     node.query(f"DROP TABLE {dst_table_name} SYNC")
 
 
+def test_shutdown_during_commit_on_select(started_cluster):
+    """
+    With `commit_on_select=1` a SELECT goes through
+    `ObjectStorageQueueSource::commit` (the `commit_once_processed` path)
+    instead of the streaming `StorageObjectStorageQueue::commit`. A shutdown
+    that interrupts an in-progress SELECT must not burn the file's retry
+    budget or record the cancelled attempt as Failed in `system.s3queue_log`.
+    """
+    node = started_cluster.instances["instance"]
+    table_name = f"test_shutdown_during_commit_on_select_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    format = "column1 Int32, column2 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 5,
+            "polling_max_timeout_ms": 100,
+            "polling_min_timeout_ms": 100,
+            "commit_on_select": 1,
+        },
+    )
+
+    # Files large enough that the SELECT cannot finish before the restart.
+    files_to_generate = 10
+    table_name_suffix = f"{uuid.uuid4()}"
+    for i in range(files_to_generate):
+        file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
+        s3_function = (
+            f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+            f"{started_cluster.minio_bucket}/{files_path}/{file_name}',"
+            f" 'minio', '{minio_secret_key}')"
+        )
+        node.query(
+            f"INSERT INTO FUNCTION {s3_function} "
+            f"select number, randomString(100) FROM numbers(50000)"
+        )
+
+    def run_select():
+        # The SELECT is expected to fail when the server restarts under it.
+        try:
+            node.query(f"SELECT count() FROM {table_name}")
+        except Exception:
+            pass
+
+    pool = Pool(1)
+    select_handle = pool.apply_async(run_select)
+    # Give the SELECT a moment to start processing files.
+    time.sleep(1)
+
+    node.restart_clickhouse()
+
+    select_handle.wait()
+    pool.close()
+
+    node.query(f"SYSTEM FLUSH LOGS system.s3queue_log")
+
+    assert 0 == int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log "
+            f"WHERE table = '{table_name}' and status = 'Failed'"
+        )
+    )
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
 @pytest.mark.parametrize("limit", [1, 9999999999])
 def test_mv_settings(started_cluster, mode, limit):
