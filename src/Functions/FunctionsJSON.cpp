@@ -854,6 +854,8 @@ class JSONTypeImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature
+        = "(String, ...) -> Enum8('Array' = 91, 'Object' = 123, 'String' = 34, 'Int64' = 105, 'UInt64' = 117, 'Double' = 100, 'Bool' = 98, 'Null' = 0)";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1195,6 +1197,7 @@ class JSONExtractKeysAndValuesRawImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> Array(Tuple(String, String))";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
