@@ -11,11 +11,7 @@
 #include <Common/logger_useful.h>
 
 #include <boost/algorithm/string/predicate.hpp>
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
 #include <cctz/time_zone.h>
-#pragma clang diagnostic pop
 
 #include <cmath>
 
@@ -29,19 +25,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_CONVERT_TYPE;
     extern const int BAD_ARGUMENTS;
-}
-
-bool stringToBool(const String & str)
-{
-    if (str == "0")
-        return false;
-    if (str == "1")
-        return true;
-    if (boost::iequals(str, "false"))
-        return false;
-    if (boost::iequals(str, "true"))
-        return true;
-    throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
 }
 
 namespace
@@ -62,7 +45,15 @@ namespace
     {
         if constexpr (std::is_same_v<T, bool>)
         {
-            return stringToBool(str);
+            if (str == "0")
+                return false;
+            if (str == "1")
+                return true;
+            if (boost::iequals(str, "false"))
+                return false;
+            if (boost::iequals(str, "true"))
+                return true;
+            throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
         }
         else
         {
@@ -116,21 +107,7 @@ namespace
                     /// Conversion of infinite values to integer is undefined.
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
                 }
-                /// Use precision-correct float-vs-integer comparison via `accurate::greaterOp` / `accurate::lessOp`.
-                /// A naive `x > Float64(numeric_limits<T>::max())` is wrong for wide integer types like `UInt64`:
-                /// `Float64(numeric_limits<UInt64>::max())` rounds UP to `2^64`, so a `Float64` value equal to
-                /// that rounded-up boundary slips through the check and produces undefined behavior in the
-                /// subsequent `static_cast<T>(x)`. See issue #103817.
-                ///
-                /// Bool is special-cased: `numeric_limits<bool>` is exactly representable in `Float64`, and
-                /// `accurate::lessOp` would fail to instantiate for `bool` (`make_unsigned_t<bool>` is ill-formed).
-                if constexpr (std::is_same_v<T, bool>)
-                {
-                    if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
-                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
-                }
-                else if (accurate::greaterOp(x, std::numeric_limits<T>::max())
-                         || accurate::lessOp(x, std::numeric_limits<T>::lowest()))
+                if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
                 {
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
                 }
@@ -150,7 +127,7 @@ namespace
 
         auto type_string = std::make_shared<DataTypeString>();
         DataTypeMap type_map(type_string, type_string);
-        auto serialization = type_map.getDefaultSerialization();
+        auto serialization = type_map.getSerialization(ISerialization::Kind::DEFAULT);
         auto column = type_map.createColumn();
 
         ReadBufferFromString buf(str);
@@ -447,7 +424,7 @@ String SettingFieldMap::toString() const
 {
     auto type_string = std::make_shared<DataTypeString>();
     DataTypeMap type_map(type_string, type_string);
-    auto serialization = type_map.getDefaultSerialization();
+    auto serialization = type_map.getSerialization(ISerialization::Kind::DEFAULT);
     auto column = type_map.createColumn();
     column->insert(value);
 

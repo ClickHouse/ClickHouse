@@ -1,5 +1,4 @@
 import logging
-import time
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -148,7 +147,7 @@ def test_postgres_conversions(started_cluster):
     cursor.execute(
         """CREATE TABLE IF NOT EXISTS test_array_dimensions
            (
-                a Date[] NOT NULL,                          -- Date32
+                a Date[] NOT NULL,                          -- Date
                 b Timestamp[] NOT NULL,                     -- DateTime64(6)
                 c real[][] NOT NULL,                        -- Float32
                 d double precision[][] NOT NULL,            -- Float64
@@ -169,7 +168,7 @@ def test_postgres_conversions(started_cluster):
         DESCRIBE TABLE postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', '{pg_pass}')"""
     )
     expected = (
-        "a\tArray(Date32)\t\t\t\t\t\n"
+        "a\tArray(Date)\t\t\t\t\t\n"
         "b\tArray(DateTime64(6))\t\t\t\t\t\n"
         "c\tArray(Array(Float32))\t\t\t\t\t\n"
         "d\tArray(Array(Float64))\t\t\t\t\t\n"
@@ -729,16 +728,11 @@ def test_auto_close_connection(started_cluster):
     """
     )
 
-    # Wait for auto-close to take effect (connections may still be closing under TSAN)
-    for _ in range(20):
-        count = int(
-            node2.query(
-                f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
-            )
+    count = int(
+        node2.query(
+            f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
         )
-        if count <= 2:
-            break
-        time.sleep(0.5)
+    )
 
     # Connection from python + pg_stat table also has a connection at the moment of current query
     assert count == 2

@@ -3,7 +3,6 @@ description: 'Documentation for LIMIT BY Clause'
 sidebar_label: 'LIMIT BY'
 slug: /sql-reference/statements/select/limit-by
 title: 'LIMIT BY Clause'
-doc_type: 'reference'
 ---
 
 # LIMIT BY Clause
@@ -35,7 +34,7 @@ INSERT INTO limit_by VALUES (1, 10), (1, 11), (1, 12), (2, 20), (2, 21);
 Queries:
 
 ```sql
-SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id;
+SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id
 ```
 
 ```text
@@ -48,7 +47,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id;
 ```
 
 ```sql
-SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id;
+SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id
 ```
 
 ```text
@@ -73,131 +72,5 @@ FROM hits
 GROUP BY domain, referrer, device_type
 ORDER BY cnt DESC
 LIMIT 5 BY domain, device_type
-LIMIT 100;
-```
-
-`LIMIT BY` also works with negative limits and offsets. Similar to the [negative LIMIT clause](/sql-reference/statements/select/limit#negative-limits), you can use negative values with `LIMIT BY` to select rows from the *end* of each group.
-
-```sql
-SELECT * FROM limit_by ORDER BY id, val LIMIT -2 BY id;
-```
-
-```text
-┌─id─┬─val─┐
-│  1 │  11 │
-│  1 │  12 │
-│  2 │  20 │
-│  2 │  21 │
-└────┴─────┘
-```
-
-Returns the last 2 rows for each `id`. For `id = 1` we get rows `11` and `12`; for `id = 2` both rows are returned because the group has only 2 rows.
-
-```sql
-SELECT * FROM limit_by ORDER BY id, val LIMIT -1 OFFSET -1 BY id;
-```
-
-```text
-┌─id─┬─val─┐
-│  1 │  11 │
-│  2 │  20 │
-└────┴─────┘
-```
-
-Returns the second-to-last row of each `id`: the trailing `OFFSET -1` drops the last row per group, and the leading `-1` then keeps the last row of what remains.
-
-Different sign `LIMIT` and `OFFSET` can be mixed as well. For example, to drop each group's first row and then keep the last 2 of what remains:
-
-```sql
-SELECT * FROM limit_by ORDER BY id, val LIMIT -2 OFFSET 1 BY id;
-```
-
-```text
-┌─id─┬─val─┐
-│  1 │  11 │
-│  1 │  12 │
-│  2 │  21 │
-└────┴─────┘
-```
-
-For `id = 1`, the first row (`10`) is skipped; the last 2 of `11, 12` are both returned. For `id = 2`, the first row (`20`) is skipped, leaving only `21`.
-
-## LIMIT BY ALL {#limit-by-all}
-
-`LIMIT BY ALL` is equivalent to listing all the SELECT-ed expressions that are not aggregate functions.
-
-For example:
-
-```sql
-SELECT col1, col2, col3 FROM table LIMIT 2 BY ALL;
-```
-
-is the same as
-
-```sql
-SELECT col1, col2, col3 FROM table LIMIT 2 BY col1, col2, col3;
-```
-
-For a special case that if there is a function having both aggregate functions and other fields as its arguments, the `LIMIT BY` keys will contain the maximum non-aggregate fields we can extract from it.
-
-For example:
-
-```sql
-SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY ALL;
-```
-
-is the same as
-
-```sql
-SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2);
-```
-
-## Examples {#examples-limit-by-all}
-
-Sample table:
-
-```sql
-CREATE TABLE limit_by(id Int, val Int) ENGINE = Memory;
-INSERT INTO limit_by VALUES (1, 10), (1, 11), (1, 12), (2, 20), (2, 21);
-```
-
-Queries:
-
-```sql
-SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id;
-```
-
-```text
-┌─id─┬─val─┐
-│  1 │  10 │
-│  1 │  11 │
-│  2 │  20 │
-│  2 │  21 │
-└────┴─────┘
-```
-
-```sql
-SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id;
-```
-
-```text
-┌─id─┬─val─┐
-│  1 │  11 │
-│  1 │  12 │
-│  2 │  21 │
-└────┴─────┘
-```
-
-The `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` query returns the same result.
-
-Using `LIMIT BY ALL`:
-
-```sql
-SELECT id, val FROM limit_by ORDER BY id, val LIMIT 2 BY ALL;
-```
-
-This is equivalent to:
-
-```sql
-SELECT id, val FROM limit_by ORDER BY id, val LIMIT 2 BY id, val;
+LIMIT 100
 ```

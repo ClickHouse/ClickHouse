@@ -2,14 +2,19 @@
 
 #include <cstddef>
 #include <cstring>
+#include <deque>
+#include <vector>
 
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/DequeWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 
@@ -127,7 +132,7 @@ private:
     }
 
     void fillResultValue(const TimestampType current_timestamp,
-        const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
+        const std::deque<std::pair<TimestampType, ValueType>> & samples_in_window,
         ValueType & result, UInt8 & null) const
     {
         size_t n = samples_in_window.size();
@@ -175,13 +180,13 @@ private:
         sum_xy += c_xy;
         sum_xx += c_xx;
 
-        Float64 cov_xy = sum_xy - sum_x * sum_y / static_cast<Float64>(n);
-        Float64 var_x = sum_xx - sum_x * sum_x / static_cast<Float64>(n);
+        Float64 cov_xy = sum_xy - sum_x * sum_y / n;
+        Float64 var_x = sum_xx - sum_x * sum_x / n;
 
         Float64 slope = cov_xy / var_x;
         if (is_predict)
         {
-            Float64 intercept = sum_y / static_cast<Float64>(n) - slope * sum_x / static_cast<Float64>(n);
+            Float64 intercept = sum_y / n - slope * sum_x / n;
             Float64 predicted_value = slope * predict_offset + intercept;
             result = static_cast<ValueType>(predicted_value);
         }
@@ -219,18 +224,14 @@ public:
 
         const auto & buckets = Base::data(place)->buckets;
 
-        DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> samples_in_window;
-        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> timestamps_buffer;
+        std::deque<std::pair<TimestampType, ValueType>> samples_in_window;
+        std::vector<std::pair<TimestampType, ValueType>> timestamps_buffer;
 
 
         /// Fill the data for missing buckets
         for (UInt32 i = 0; i < Base::bucket_count; ++i)
         {
-            /// Use `Base::timestampAtIndex` to compute the grid timestamp with overflow-safe
-            /// arithmetic. The plain expression `Base::start_timestamp + i * Base::step`
-            /// signed-overflows `TimestampType` when `step` is near `INT64_MAX` and `i >= 2`
-            /// (reachable from adversarial fuzzer inputs), which trips UBSAN.
-            const TimestampType current_timestamp = Base::timestampAtIndex(i);
+            const TimestampType current_timestamp = Base::start_timestamp + i * Base::step;
 
             auto bucket_it = buckets.find(i);
             if (bucket_it != buckets.end())
@@ -247,7 +248,7 @@ public:
             }
 
             /// Remove samples that are out of the window
-            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window <= current_timestamp)
+            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window < current_timestamp)
             {
                 samples_in_window.pop_front();
             }

@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <allow_experimental_delta_kernel_rs>0</allow_experimental_delta_kernel_rs>
-        </default>
-    </profiles>
-</clickhouse>
