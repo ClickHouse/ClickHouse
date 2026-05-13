@@ -389,10 +389,34 @@ TEST(S3CommonTest, SanitizeAwsArnsInErrorMessages)
 {
     using namespace DB;
 
-    const auto sanitized = sanitizeS3ErrorMessage(
-        "User: arn:aws:sts::123456789012:assumed-role/ClickHouseRole/session is not authorized");
+    /// Passthrough when no ARN is present.
+    ASSERT_EQ("AccessDenied", sanitizeS3ErrorMessage("AccessDenied"));
 
-    ASSERT_EQ("User: [REDACTED_AWS_ARN] is not authorized", sanitized);
+    /// Empty input.
+    ASSERT_EQ("", sanitizeS3ErrorMessage(""));
+
+    /// Single ARN in the middle of a message.
+    ASSERT_EQ(
+        "User: [REDACTED_AWS_ARN] is not authorized",
+        sanitizeS3ErrorMessage("User: arn:aws:sts::123456789012:assumed-role/ClickHouseRole/session is not authorized"));
+
+    /// ARN at the start of the message.
+    ASSERT_EQ(
+        "[REDACTED_AWS_ARN] is not authorized",
+        sanitizeS3ErrorMessage("arn:aws:iam::123456789012:role/Admin is not authorized"));
+
+    /// ARN at the end of the message.
+    ASSERT_EQ(
+        "User: [REDACTED_AWS_ARN]",
+        sanitizeS3ErrorMessage("User: arn:aws:iam::123456789012:role/Admin"));
+
+    /// Multiple ARNs.
+    ASSERT_EQ(
+        "[REDACTED_AWS_ARN] -> [REDACTED_AWS_ARN]",
+        sanitizeS3ErrorMessage("arn:aws:iam::111111111111:role/A -> arn:aws:iam::222222222222:role/B"));
+
+    /// `arn:` alone is still redacted.
+    ASSERT_EQ("[REDACTED_AWS_ARN]", sanitizeS3ErrorMessage("arn:"));
 }
 
 }
