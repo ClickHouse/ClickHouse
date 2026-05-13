@@ -103,6 +103,16 @@ DataTypeObject::DataTypeObject(const DB::DataTypeObject::SchemaFormat & schema_f
 {
 }
 
+void DataTypeObject::insertDefaultInto(IColumn & column) const
+{
+    auto & column_object = assert_cast<ColumnObject &>(column);
+    for (auto & [path, typed_column] : column_object.getTypedPaths())
+        typed_paths.at(path)->insertDefaultInto(*typed_column);
+    for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
+        dynamic_column->insertDefault();
+    column_object.getSharedDataColumn().insertDefault();
+}
+
 bool DataTypeObject::equals(const IDataType & rhs) const
 {
     if (const auto * object = typeid_cast<const DataTypeObject *>(&rhs))
