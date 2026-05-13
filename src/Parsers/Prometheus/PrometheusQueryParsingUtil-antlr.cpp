@@ -367,14 +367,18 @@ namespace
             /// one matcher that cannot match an empty label value instead. To intentionally query all
             /// metrics, use `{__name__=~".+"}`; if an empty-matching label matcher is needed, keep it
             /// and add `{__name__=~".+"}` as another matcher.
+            bool has_non_empty_matcher = false;
             for (const auto & matcher : matchers)
             {
                 bool matches_empty_string = false;
                 if (!matcherMatchesEmptyString(matcher, error_pos, matches_empty_string))
                     return false;
                 if (!matches_empty_string)
-                    return true;
+                    has_non_empty_matcher = true;
             }
+
+            if (has_non_empty_matcher)
+                return true;
 
             error_listener.setError("vector selector must contain at least one non-empty matcher", error_pos);
             return false;
