@@ -180,7 +180,7 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// External database (i.e. PostgreSQL/Datalake/...) does not support any of ClickHouse internal tables:
+    /// Some database engines do not support any of ClickHouse internal tables:
     /// - *MergeTree
     /// - Distributed
     /// - RocksDB

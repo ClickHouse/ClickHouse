@@ -237,7 +237,7 @@ BlockIO InterpreterShowTablesQuery::execute()
     query_context->setCurrentQueryId("");
     if (DatabaseCatalog::instance().isRemoteDatabase(database))
     {
-        /// HACK: force the setting so that system.tables includes tables from the requested external database.
+        /// HACK: force the setting so that system.tables includes tables from the requested remote database.
         /// system.databases already shows all databases unconditionally, so no override is needed for SHOW DATABASES.
         query_context->setSetting("show_remote_databases_in_system_tables", true);
     }
