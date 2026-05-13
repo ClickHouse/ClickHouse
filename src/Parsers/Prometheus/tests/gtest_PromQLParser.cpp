@@ -206,6 +206,18 @@ PrometheusQueryTree(INSTANT_VECTOR):
         job RE '.*'
 )");
 
+    EXPECT_THROW(parse(R"(
+        demo_memory_usage_bytes{job=~"(.*"}
+        )"), DB::Exception);
+
+    EXPECT_THROW(parse(R"(
+        {__name__=~".+", job=~"(.*"}
+        )"), DB::Exception);
+
+    EXPECT_THROW(parse(R"(
+        {job=~"(.*", __name__=~".+"}
+        )"), DB::Exception);
+
     /// Aggregation operators.
     EXPECT_EQ(parse("sum(demo_memory_usage_bytes)"), R"(
 sum(demo_memory_usage_bytes)
