@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Columns/ColumnSparse.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
@@ -192,6 +193,8 @@ void MergeTreeDataPartWriterWide::addStreams(
                 max_compress_block_size = value->safeGet<UInt64>();
         if (!max_compress_block_size)
             max_compress_block_size = settings.max_compress_block_size;
+        /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
+        max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
 
         WriteSettings query_write_settings = settings.query_write_settings;
         query_write_settings.use_adaptive_write_buffer =
