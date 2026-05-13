@@ -95,6 +95,15 @@ using ArrayAggregateResult = typename ArrayAggregateResultImpl<ArrayElement, ope
 template<AggregateOperation aggregate_operation>
 struct ArrayAggregateImpl
 {
+    /// Documentation-only — reduces the array (optionally transformed by a
+    /// lambda) with the aggregate operation. `min` / `max` preserve the
+    /// element type; `average` / `product` widen to `Float64`; `sum` widens
+    /// to fit the running total. The widening rule isn't expressible in the
+    /// current DSL, so legacy `getReturnType` stays authoritative.
+    static constexpr auto signature_documentation =
+        "(Function((Any, ...), Number), Array(Number), ...) -> Number"
+        " OR (Array(Number)) -> Number";
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

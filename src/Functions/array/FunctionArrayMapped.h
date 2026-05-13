@@ -77,16 +77,19 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// Declarative signature opt-in: an `Impl` may expose a `signature` constant
-    /// (typically using the `Function((args), R)` matcher to describe the lambda
-    /// shape). When set, `getReturnTypeImpl(ColumnsWithTypeAndName)` defers to
-    /// the base `IFunction` path, which actually applies the DSL — the signature
-    /// is then authoritative for both argument validation and result-type
-    /// computation. Impls without `signature` keep the legacy override below.
+    /// Declarative signature opt-in:
+    /// - `Impl::signature` (authoritative): the DSL applies and is the source
+    ///   of truth for argument validation and result-type computation.
+    /// - `Impl::signature_documentation` (docs-only): the string is surfaced
+    ///   via `system.functions` but legacy `getReturnTypeImpl` below stays
+    ///   authoritative — used when the widening rule isn't expressible in
+    ///   the current DSL (e.g. `arraySum`, `arrayCumSum`, `arrayDifference`).
     String getSignatureString() const override
     {
         if constexpr (requires { Impl::signature; })
             return Impl::signature;
+        else if constexpr (requires { Impl::signature_documentation; })
+            return Impl::signature_documentation;
         else
             return {};
     }
