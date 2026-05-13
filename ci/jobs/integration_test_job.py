@@ -758,7 +758,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             workers,
             args.options,
             info,
-            no_strict=is_targeted_check,  # targeted check might want to run test that was removed on a merge-commit
+            no_strict=is_targeted_check or is_flaky_check,  # targeted check might want to run test that was removed on a merge-commit; flaky check might pick up a changed test filtered out by SKIP_LIST in the private fork
         )
     )
 
@@ -769,12 +769,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
         sequential_test_modules = []
         assert not is_sequential
 
-    if is_targeted_check and not parallel_test_modules and not sequential_test_modules:
-        # All targeted tests were stale (removed or renamed since the CIDB record).
-        # This is expected — skip gracefully instead of producing a "no results" error.
+    if (is_targeted_check or is_flaky_check) and not parallel_test_modules and not sequential_test_modules:
+        # Targeted check: all selected tests were stale (removed or renamed since the CIDB record).
+        # Flaky check: all changed tests were filtered out (e.g. by SKIP_LIST in the private fork).
+        # Either way, skip gracefully instead of producing a "no results" error.
+        skip_info = (
+            "All targeted tests are stale (removed or renamed)"
+            if is_targeted_check
+            else "All changed tests were filtered out (e.g. by SKIP_LIST)"
+        )
         Result.create_from(
             status=Result.Status.SKIPPED,
-            info="All targeted tests are stale (removed or renamed)",
+            info=skip_info,
         ).complete_job()
 
     if is_flaky_check or is_targeted_check:
