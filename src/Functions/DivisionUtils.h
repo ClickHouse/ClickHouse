@@ -76,6 +76,9 @@ struct DivideIntegralImpl
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 
+    /// Documentation-only — see `PlusImpl::signature_documentation`.
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
+
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
@@ -142,6 +145,10 @@ struct ModuloImpl
 
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+
+    /// Documentation-only — see `PlusImpl::signature_documentation`.
+    /// Covers `modulo`, `moduloLegacy`, `moduloOrNull` (via inheritance).
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)

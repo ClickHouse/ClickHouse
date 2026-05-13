@@ -246,6 +246,15 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return Transform::suitable_for_short_circuit; }
 
+    /// Documentation-only — arithmetic on two `Decimal` operands; the optional
+    /// third argument is a const-`UInt8` scale for the result. The output is
+    /// a `Decimal256` with that scale; the legacy `getReturnTypeImpl` below
+    /// stays authoritative.
+    String getSignatureString() const override
+    {
+        return "(Decimal, Decimal, [const UInt8]) -> Decimal256";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
