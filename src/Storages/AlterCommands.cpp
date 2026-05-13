@@ -83,6 +83,13 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool share_nested_offsets;
+    extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
+    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
 }
 
 namespace
@@ -941,6 +948,25 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 it->value = change.value;
             else
                 settings_from_storage.push_back(change);
+        }
+
+        MergeTreeSettings effective_settings;
+        bool any_mt_setting = false;
+        for (const auto & change : settings_from_storage)
+        {
+            if (MergeTreeSettings::hasBuiltin(change.name))
+            {
+                effective_settings.applyChange(change);
+                any_mt_setting = true;
+            }
+        }
+        if (any_mt_setting)
+        {
+            metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
+            metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
+            metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+            metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
+            metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
         }
     }
     else if (type == RESET_SETTING)
