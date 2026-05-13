@@ -14,7 +14,7 @@ namespace DB
 DiskCacheHandle::DiskCacheHandle(
     FileCachePtr cache_,
     FileCacheKey cache_key_,
-    Range requested,
+    ByteRange requested,
     size_t file_size_,
     const FilesystemCacheSettings & cache_settings_)
     : cache(std::move(cache_))
@@ -46,7 +46,7 @@ CacheLookupResult DiskCacheHandle::status() const
     for (const auto & segment : *holder)
     {
         const auto & seg_range = segment->range();
-        Range r{seg_range.left, seg_range.size()};
+        ByteRange r{seg_range.left, seg_range.size()};
 
         auto state = segment->state();
         if (state == FileSegmentState::DOWNLOADED)
@@ -57,7 +57,7 @@ CacheLookupResult DiskCacheHandle::status() const
     return result;
 }
 
-Rope DiskCacheHandle::get(Range range)
+Rope DiskCacheHandle::get(ByteRange range)
 {
     Rope result;
     if (!holder)
@@ -69,7 +69,7 @@ Rope DiskCacheHandle::get(Range range)
             continue;
 
         const auto & seg_range = segment->range();
-        Range seg_r{seg_range.left, seg_range.size()};
+        ByteRange seg_r{seg_range.left, seg_range.size()};
 
         /// Check overlap.
         if (seg_r.end() <= range.offset || seg_r.offset >= range.end())
@@ -107,7 +107,7 @@ Rope DiskCacheHandle::get(Range range)
     return result;
 }
 
-bool DiskCacheHandle::put(Range range, Rope data)
+bool DiskCacheHandle::put(ByteRange range, Rope data)
 {
     if (!holder)
         return false;
@@ -123,7 +123,7 @@ bool DiskCacheHandle::put(Range range, Rope data)
             continue;
 
         const auto & seg_range = segment->range();
-        Range seg_r{seg_range.left, seg_range.size()};
+        ByteRange seg_r{seg_range.left, seg_range.size()};
 
         /// Check overlap.
         if (seg_r.end() <= range.offset || seg_r.offset >= range.end())
@@ -158,7 +158,7 @@ bool DiskCacheHandle::put(Range range, Rope data)
         }
 
         /// Extract bytes from the Rope for the overlap region.
-        Rope slice = data.slice(Range{overlap_start, write_size});
+        Rope slice = data.slice(ByteRange{overlap_start, write_size});
 
         /// Flatten the slice into a contiguous buffer for segment->write().
         std::vector<char> flat_buf(write_size);
@@ -183,7 +183,7 @@ bool DiskCacheHandle::put(Range range, Rope data)
 }
 
 
-std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(CacheKey key, Range range)
+std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(CacheKey key, ByteRange range)
 {
     auto cache_key = FileCacheKey::fromPath(key.path);
     return std::make_unique<DiskCacheHandle>(

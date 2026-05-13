@@ -142,7 +142,7 @@ class MockCacheHandle : public ICacheHandle
 {
 public:
     MockCacheHandle(
-        Range range,
+        ByteRange range,
         std::unordered_map<size_t, String> & storage_,
         size_t block_size_)
         : storage(storage_), block_size(block_size_)
@@ -155,7 +155,7 @@ public:
             size_t block_start = b * block_size;
             size_t block_end = std::min(block_start + block_size, range.end());
             block_start = std::max(block_start, range.offset);
-            Range block_range{block_start, block_end - block_start};
+            ByteRange block_range{block_start, block_end - block_start};
 
             if (storage.contains(b))
                 result.hit_ranges.push_back(block_range);
@@ -166,7 +166,7 @@ public:
 
     CacheLookupResult status() const override { return result; }
 
-    Rope get(Range range) override
+    Rope get(ByteRange range) override
     {
         size_t block = range.offset / block_size;
         const auto & data = storage.at(block);
@@ -178,7 +178,7 @@ public:
         return rope.slice(range);
     }
 
-    bool put(Range range, Rope data) override
+    bool put(ByteRange range, Rope data) override
     {
         size_t block = range.offset / block_size;
         if (storage.contains(block))
@@ -203,7 +203,7 @@ public:
     explicit MockCacheProvider(size_t block_size_)
         : block_size(block_size_) {}
 
-    std::unique_ptr<ICacheHandle> lookup(CacheKey, Range range) override
+    std::unique_ptr<ICacheHandle> lookup(CacheKey, ByteRange range) override
     {
         return std::make_unique<MockCacheHandle>(range, storage, block_size);
     }
@@ -329,7 +329,7 @@ TEST(ReaderExecutor, SeekDiscardsPrefetch)
 TEST(ReaderExecutor, MergeRangesNoGap)
 {
     /// Adjacent ranges — should merge into one
-    std::vector<Range> ranges = {{0, 100}, {100, 100}, {200, 100}};
+    std::vector<ByteRange> ranges = {{0, 100}, {100, 100}, {200, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 50);
     ASSERT_EQ(merged.size(), 1);
     EXPECT_EQ(merged[0].offset, 0);
@@ -339,7 +339,7 @@ TEST(ReaderExecutor, MergeRangesNoGap)
 TEST(ReaderExecutor, MergeRangesSmallGap)
 {
     /// Small gap (10 bytes) < min_gap (100) — merge
-    std::vector<Range> ranges = {{0, 100}, {110, 100}};
+    std::vector<ByteRange> ranges = {{0, 100}, {110, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 100);
     ASSERT_EQ(merged.size(), 1);
     EXPECT_EQ(merged[0].offset, 0);
@@ -349,7 +349,7 @@ TEST(ReaderExecutor, MergeRangesSmallGap)
 TEST(ReaderExecutor, MergeRangesLargeGap)
 {
     /// Large gap (500 bytes) > min_gap (100) — don't merge
-    std::vector<Range> ranges = {{0, 100}, {600, 100}};
+    std::vector<ByteRange> ranges = {{0, 100}, {600, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 100);
     ASSERT_EQ(merged.size(), 2);
     EXPECT_EQ(merged[0].offset, 0);
@@ -361,7 +361,7 @@ TEST(ReaderExecutor, MergeRangesLargeGap)
 TEST(ReaderExecutor, MergeRangesMixed)
 {
     /// Three ranges: first two close, third far away
-    std::vector<Range> ranges = {{0, 100}, {120, 100}, {1000, 100}};
+    std::vector<ByteRange> ranges = {{0, 100}, {120, 100}, {1000, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 50);
     ASSERT_EQ(merged.size(), 2);
     EXPECT_EQ(merged[0].offset, 0);
@@ -373,7 +373,7 @@ TEST(ReaderExecutor, MergeRangesMixed)
 TEST(ReaderExecutor, MergeRangesZeroMinGap)
 {
     /// min_gap=0 — no merging
-    std::vector<Range> ranges = {{0, 100}, {100, 100}};
+    std::vector<ByteRange> ranges = {{0, 100}, {100, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 0);
     ASSERT_EQ(merged.size(), 2);
 }

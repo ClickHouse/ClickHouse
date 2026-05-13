@@ -8,7 +8,7 @@ namespace DB
 
 PageCacheHandle::PageCacheHandle(
     PageCacheFile file_,
-    Range requested,
+    ByteRange requested,
     PageCachePtr cache_,
     size_t block_size,
     bool inject_eviction_)
@@ -47,7 +47,7 @@ CacheLookupResult PageCacheHandle::status() const
     CacheLookupResult result;
     for (const auto & block : blocks)
     {
-        Range r{block.byte_range.offset, block.byte_range.size};
+        ByteRange r{block.byte_range.offset, block.byte_range.size};
         if (block.is_hit)
             result.hit_ranges.push_back(r);
         else
@@ -56,7 +56,7 @@ CacheLookupResult PageCacheHandle::status() const
     return result;
 }
 
-Rope PageCacheHandle::get(Range range)
+Rope PageCacheHandle::get(ByteRange range)
 {
     Rope result;
     for (const auto & block : blocks)
@@ -64,7 +64,7 @@ Rope PageCacheHandle::get(Range range)
         if (!block.is_hit || !block.cell)
             continue;
 
-        Range block_range{block.byte_range.offset, block.byte_range.size};
+        ByteRange block_range{block.byte_range.offset, block.byte_range.size};
 
         /// Check overlap with requested range.
         if (block_range.end() <= range.offset || block_range.offset >= range.end())
@@ -81,14 +81,14 @@ Rope PageCacheHandle::get(Range range)
     return result;
 }
 
-bool PageCacheHandle::put(Range range, Rope data)
+bool PageCacheHandle::put(ByteRange range, Rope data)
 {
     for (auto & block : blocks)
     {
         if (block.is_hit)
             continue;
 
-        Range block_range{block.byte_range.offset, block.byte_range.size};
+        ByteRange block_range{block.byte_range.offset, block.byte_range.size};
 
         /// Check if the provided data covers this miss block.
         if (block_range.end() <= range.offset || block_range.offset >= range.end())
@@ -140,7 +140,7 @@ bool PageCacheHandle::put(Range range, Rope data)
 }
 
 
-std::unique_ptr<ICacheHandle> PageCacheProvider::lookup(CacheKey key, Range range)
+std::unique_ptr<ICacheHandle> PageCacheProvider::lookup(CacheKey key, ByteRange range)
 {
     PageCacheFile file;
     file.path = std::move(key.path);

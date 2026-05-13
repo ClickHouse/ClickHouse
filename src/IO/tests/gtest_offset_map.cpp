@@ -13,7 +13,7 @@ TEST(OffsetMap, SingleObject)
     map.build(objects);
     EXPECT_EQ(map.totalSize(), 1000);
 
-    auto ranges = map.map(Range{100, 200});
+    auto ranges = map.map(ByteRange{100, 200});
     ASSERT_EQ(ranges.size(), 1);
     EXPECT_EQ(ranges[0].object.remote_path, "obj_a");
     EXPECT_EQ(ranges[0].object_offset, 100);
@@ -31,15 +31,15 @@ TEST(OffsetMap, MultipleObjects)
     map.build(objects);
     EXPECT_EQ(map.totalSize(), 1000);
 
-    /// Range fully within first object
-    auto r1 = map.map(Range{0, 100});
+    /// ByteRange fully within first object
+    auto r1 = map.map(ByteRange{0, 100});
     ASSERT_EQ(r1.size(), 1);
     EXPECT_EQ(r1[0].object.remote_path, "blob_0");
     EXPECT_EQ(r1[0].object_offset, 0);
     EXPECT_EQ(r1[0].size, 100);
 
-    /// Range spanning first and second objects
-    auto r2 = map.map(Range{200, 200});
+    /// ByteRange spanning first and second objects
+    auto r2 = map.map(ByteRange{200, 200});
     ASSERT_EQ(r2.size(), 2);
     EXPECT_EQ(r2[0].object.remote_path, "blob_0");
     EXPECT_EQ(r2[0].object_offset, 200);
@@ -48,8 +48,8 @@ TEST(OffsetMap, MultipleObjects)
     EXPECT_EQ(r2[1].object_offset, 0);
     EXPECT_EQ(r2[1].size, 100);
 
-    /// Range spanning all three objects
-    auto r3 = map.map(Range{250, 700});
+    /// ByteRange spanning all three objects
+    auto r3 = map.map(ByteRange{250, 700});
     ASSERT_EQ(r3.size(), 3);
     EXPECT_EQ(r3[0].size, 50);
     EXPECT_EQ(r3[1].size, 500);
@@ -65,7 +65,7 @@ TEST(OffsetMap, RangeAtObjectBoundary)
     OffsetMap map;
     map.build(objects);
 
-    auto r = map.map(Range{100, 50});
+    auto r = map.map(ByteRange{100, 50});
     ASSERT_EQ(r.size(), 1);
     EXPECT_EQ(r[0].object.remote_path, "b");
     EXPECT_EQ(r[0].object_offset, 0);

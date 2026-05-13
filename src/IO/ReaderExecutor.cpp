@@ -49,16 +49,16 @@ ReaderExecutor::~ReaderExecutor()
     discardPrefetch();
 }
 
-std::vector<Range> ReaderExecutor::mergeRanges(const std::vector<Range> & ranges, size_t min_gap)
+std::vector<ByteRange> ReaderExecutor::mergeRanges(const std::vector<ByteRange> & ranges, size_t min_gap)
 {
     if (ranges.empty() || min_gap == 0)
         return ranges;
 
-    std::vector<Range> sorted = ranges;
+    std::vector<ByteRange> sorted = ranges;
     std::sort(sorted.begin(), sorted.end(),
-        [](const Range & a, const Range & b) { return a.offset < b.offset; });
+        [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
 
-    std::vector<Range> merged;
+    std::vector<ByteRange> merged;
     merged.push_back(sorted[0]);
 
     for (size_t i = 1; i < sorted.size(); ++i)
@@ -100,7 +100,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
         return;
 
     size_t next_size = std::min(window_size, logical_size - position);
-    Range next_physical_window{position + data_start_offset, next_size};
+    ByteRange next_physical_window{position + data_start_offset, next_size};
 
     LOG_TRACE(log, "Prefetch: submitting physical [{}, {})", next_physical_window.offset, next_physical_window.end());
 
@@ -145,14 +145,14 @@ void ReaderExecutor::initDecryption()
         decryption_layers.size(), data_start_offset);
 
     /// Read all headers in one call through the cache chain.
-    Rope header_rope = readPhysicalWindow(Range{0, data_start_offset});
+    Rope header_rope = readPhysicalWindow(ByteRange{0, data_start_offset});
     chassert(header_rope.totalBytes() == data_start_offset);
 
     /// Parse each header sequentially from the rope.
     size_t offset = 0;
     for (auto & layer : decryption_layers)
     {
-        Rope one_header = header_rope.slice(Range{offset, FileEncryption::Header::kSize});
+        Rope one_header = header_rope.slice(ByteRange{offset, FileEncryption::Header::kSize});
         chassert(one_header.totalBytes() == FileEncryption::Header::kSize);
 
         /// Header is 64 bytes — fits in a single node after slice.
@@ -235,7 +235,7 @@ Rope ReaderExecutor::readNextWindow()
     else
     {
         size_t win_size = std::min(window_size, logical_size - position);
-        Range physical_window{position + data_start_offset, win_size};
+        ByteRange physical_window{position + data_start_offset, win_size};
         LOG_TRACE(log, "readNextWindow: synchronous read physical [{}, {}), logical [{}, {})",
             physical_window.offset, physical_window.end(), position, position + win_size);
         rope = readPhysicalWindow(physical_window);
@@ -362,12 +362,12 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
     return source->read(object, offset, size, buffer);
 }
 
-Rope ReaderExecutor::readPhysicalWindow(Range physical_window)
+Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
 {
     LOG_TRACE(log, "readPhysicalWindow [{}, {})", physical_window.offset, physical_window.end());
 
     Rope result;
-    std::vector<Range> remaining = {physical_window};
+    std::vector<ByteRange> remaining = {physical_window};
 
     /// Handles with misses — kept alive for put after source fetch.
     std::vector<std::unique_ptr<ICacheHandle>> miss_handles;
@@ -375,7 +375,7 @@ Rope ReaderExecutor::readPhysicalWindow(Range physical_window)
     /// Walk the cache chain
     for (auto & cache : caches)
     {
-        std::vector<Range> still_missing;
+        std::vector<ByteRange> still_missing;
 
         for (const auto & r : remaining)
         {

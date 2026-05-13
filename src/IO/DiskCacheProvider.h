@@ -17,13 +17,13 @@ public:
     DiskCacheHandle(
         FileCachePtr cache,
         FileCacheKey cache_key,
-        Range requested,
+        ByteRange requested,
         size_t file_size,
         const FilesystemCacheSettings & cache_settings);
 
     CacheLookupResult status() const override;
-    Rope get(Range range) override;
-    bool put(Range range, Rope data) override;
+    Rope get(ByteRange range) override;
+    bool put(ByteRange range, Rope data) override;
 
 private:
     FileCachePtr cache;
@@ -49,7 +49,7 @@ public:
     {
     }
 
-    std::unique_ptr<ICacheHandle> lookup(CacheKey key, Range range) override;
+    std::unique_ptr<ICacheHandle> lookup(CacheKey key, ByteRange range) override;
     String name() const override { return "DiskCache"; }
 
 private:

@@ -22,7 +22,7 @@ void OffsetMap::build(const StoredObjects & objects)
     }
 }
 
-std::vector<OffsetMap::PhysicalRange> OffsetMap::map(Range logical_range) const
+std::vector<OffsetMap::PhysicalRange> OffsetMap::map(ByteRange logical_range) const
 {
     std::vector<PhysicalRange> result;
 

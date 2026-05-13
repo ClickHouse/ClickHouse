@@ -66,11 +66,11 @@ public:
 
     /// Merge close-together ranges to reduce source request count.
     /// Ranges separated by less than min_gap are combined.
-    static std::vector<Range> mergeRanges(const std::vector<Range> & ranges, size_t min_gap);
+    static std::vector<ByteRange> mergeRanges(const std::vector<ByteRange> & ranges, size_t min_gap);
 
 private:
     /// Read a specific physical range through the cache chain and source.
-    Rope readPhysicalWindow(Range physical_window);
+    Rope readPhysicalWindow(ByteRange physical_window);
 
     /// Read from source, trying live buffer first, falling back to stateless read.
     size_t readFromSource(const StoredObject & object, size_t offset, size_t size, char * buffer);
@@ -101,7 +101,7 @@ private:
 
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     std::future<Rope> prefetch_future;
-    Range prefetch_range;      /// range the in-flight prefetch covers
+    ByteRange prefetch_range;      /// range the in-flight prefetch covers
     bool prefetch_valid = false;
 
     /// Live buffer: keeps a connection open for sequential reads.

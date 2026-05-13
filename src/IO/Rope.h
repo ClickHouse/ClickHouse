@@ -9,7 +9,7 @@ class MemoryTracker;
 namespace DB
 {
 
-struct Range
+struct ByteRange
 {
     size_t offset = 0;
     size_t size = 0;
@@ -57,7 +57,7 @@ struct RopeNode
 
     char * data() { return buffer->data() + buffer_offset; } // NOLINT(readability-make-member-function-const)
     const char * data() const { return buffer->data() + buffer_offset; }
-    Range range() const { return {logical_offset, size}; }
+    ByteRange range() const { return {logical_offset, size}; }
 };
 
 /// Sequence of RopeNodes covering a logical range.
@@ -66,10 +66,10 @@ struct RopeNode
 class Rope
 {
 public:
-    Range range() const;
+    ByteRange range() const;
     void append(RopeNode node);
     void append(Rope && other);
-    Rope slice(Range req) const;
+    Rope slice(ByteRange req) const;
     /// Remove and return the first node.
     RopeNode popFront();
 

@@ -33,14 +33,14 @@ class PageCacheHandle : public ICacheHandle
 public:
     PageCacheHandle(
         PageCacheFile file,
-        Range requested,
+        ByteRange requested,
         PageCachePtr cache,
         size_t block_size,
         bool inject_eviction);
 
     CacheLookupResult status() const override;
-    Rope get(Range range) override;
-    bool put(Range range, Rope data) override;
+    Rope get(ByteRange range) override;
+    bool put(ByteRange range, Rope data) override;
 
 private:
     struct Block
@@ -70,7 +70,7 @@ public:
     {
     }
 
-    std::unique_ptr<ICacheHandle> lookup(CacheKey key, Range range) override;
+    std::unique_ptr<ICacheHandle> lookup(CacheKey key, ByteRange range) override;
     String name() const override { return "PageCache"; }
 
 private:

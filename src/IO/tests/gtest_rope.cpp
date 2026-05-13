@@ -5,17 +5,17 @@
 
 using namespace DB;
 
-TEST(Range, Basic)
+TEST(ByteRange, Basic)
 {
-    Range r{100, 50};
+    ByteRange r{100, 50};
     EXPECT_EQ(r.offset, 100);
     EXPECT_EQ(r.size, 50);
     EXPECT_EQ(r.end(), 150);
 }
 
-TEST(Range, ZeroSize)
+TEST(ByteRange, ZeroSize)
 {
-    Range r{0, 0};
+    ByteRange r{0, 0};
     EXPECT_EQ(r.end(), 0);
 }
 
@@ -95,7 +95,7 @@ TEST(Rope, SliceFullRange)
     rope.append(RopeNode{buf, 100, 100, 100});
     rope.append(RopeNode{buf, 200, 100, 200});
 
-    auto slice = rope.slice(Range{0, 300});
+    auto slice = rope.slice(ByteRange{0, 300});
     EXPECT_EQ(slice.range().offset, 0);
     EXPECT_EQ(slice.range().size, 300);
     EXPECT_EQ(slice.totalBytes(), 300);
@@ -111,7 +111,7 @@ TEST(Rope, SliceMiddle)
     rope.append(RopeNode{buf, 100, 100, 100});
     rope.append(RopeNode{buf, 200, 100, 200});
 
-    auto slice = rope.slice(Range{50, 200});
+    auto slice = rope.slice(ByteRange{50, 200});
     EXPECT_EQ(slice.range().offset, 50);
     EXPECT_EQ(slice.range().size, 200);
     EXPECT_EQ(slice.totalBytes(), 200);
@@ -133,7 +133,7 @@ TEST(Rope, SliceSingleNodeMiddle)
     Rope rope;
     rope.append(RopeNode{buf, 0, 1000, 0});
 
-    auto slice = rope.slice(Range{100, 200});
+    auto slice = rope.slice(ByteRange{100, 200});
     EXPECT_EQ(slice.getNodes().size(), 1);
     EXPECT_EQ(slice.getNodes()[0].buffer_offset, 100);
     EXPECT_EQ(slice.getNodes()[0].size, 200);
@@ -157,7 +157,7 @@ TEST(Rope, SliceKeepsBufferAlive)
 
         Rope rope;
         rope.append(RopeNode{buf, 0, 64, 0});
-        slice = rope.slice(Range{0, 64});
+        slice = rope.slice(ByteRange{0, 64});
     }
     EXPECT_FALSE(weak.expired());
 }

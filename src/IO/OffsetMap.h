@@ -26,7 +26,7 @@ public:
 
     /// Map a logical range to physical ranges.
     /// A single logical range may span multiple objects.
-    std::vector<PhysicalRange> map(Range logical_range) const;
+    std::vector<PhysicalRange> map(ByteRange logical_range) const;
 
     size_t totalSize() const { return total_size; }
 

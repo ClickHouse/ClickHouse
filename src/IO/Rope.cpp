@@ -21,7 +21,7 @@ void OwnedRopeBuffer::transferTo(MemoryTracker * /* new_tracker */)
     /// Will be implemented when PageCacheProvider needs it.
 }
 
-Range Rope::range() const
+ByteRange Rope::range() const
 {
     if (nodes.empty())
         return {0, 0};
@@ -52,7 +52,7 @@ RopeNode Rope::popFront()
     return node;
 }
 
-Rope Rope::slice(Range req) const
+Rope Rope::slice(ByteRange req) const
 {
     Rope result;
     for (const auto & node : nodes)
