@@ -193,12 +193,13 @@ def test_successful_auth_handshake():
 
 
 def test_invalid_auth_rejects_session():
-    """An auth frame with bad credentials must not establish a session.
+    """An auth frame with bad credentials must result in an explicit `1008` close frame.
 
-    The server's `Session::authenticate` throws on bad credentials; the
-    handler propagates the exception and `SCOPE_EXIT` shuts down the socket.
-    The client must observe either a close frame or an EOF, and crucially
-    no PTY data (no session established).
+    The handler catches the `Session::authenticate` exception and sends a
+    deterministic policy-violation close (`1008`) so clients can distinguish
+    login failure from network errors. We assert the close frame and its
+    code strictly: an ungraceful EOF (`1006` to the browser) would be a
+    regression of the explicit-close contract.
     """
     sock = _open_ws(instance.ip_address, 8123)
     try:
@@ -208,14 +209,15 @@ def test_invalid_auth_rejects_session():
         )
 
         frame = _ws_read_frame(sock, timeout=15.0)
-        if frame is None:
-            # EOF after the authenticate exception propagated.
-            return
-        opcode, _ = frame
-        # Must not be a binary frame (no session must be established).
-        assert opcode != 0x02, "Server forwarded PTY data despite invalid credentials"
-        # A close frame is the only acceptable other outcome.
-        assert opcode == 0x08, f"Unexpected opcode={opcode:#x} after invalid auth"
+        assert frame is not None, (
+            "Server closed the connection without an explicit close frame "
+            "(client would see 1006, breaking the auth-failure contract)"
+        )
+        opcode, payload = frame
+        assert opcode == 0x08, f"Expected close frame, got opcode={opcode:#x}"
+        assert len(payload) >= 2, f"Close frame missing 2-byte status code, payload={payload!r}"
+        code = struct.unpack(">H", payload[:2])[0]
+        assert code == 1008, f"Expected close code 1008, got {code}"
     finally:
         sock.close()
 
@@ -259,6 +261,19 @@ def test_origin_mismatch_rejected_same_origin():
     """
     response = _attempt_ws(instance.ip_address, 8123, origin="http://evil.example.com")
     assert response.startswith(b"HTTP/1.1 403"), response
+
+
+def test_origin_match_accepted_same_origin():
+    """A WebSocket upgrade with a matching same-origin `Origin` must succeed.
+
+    Locks in the default-allow path: a non-empty `Origin` whose scheme +
+    host equals the request's `Host` must reach the `101` upgrade. Without
+    this, a regression that rejects every non-empty origin (over-zealous
+    CSWSH check) would still pass the negative tests above.
+    """
+    host = instance.ip_address
+    sock = _open_ws(host, 8123, origin=f"http://{host}:8123")
+    sock.close()
 
 
 def test_allowed_origin_accepted_with_allowlist():
