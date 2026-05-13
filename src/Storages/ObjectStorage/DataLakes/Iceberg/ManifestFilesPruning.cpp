@@ -1,4 +1,5 @@
 #include <optional>
+#include <unordered_set>
 #include "config.h"
 
 #if USE_AVRO
@@ -111,42 +112,70 @@ bool tryExtractWkbBboxForIceberg(
     return true;
 }
 
+/// Recursively collect spatial predicates from `node` only when they are in a
+/// conjunctive-only context. Traverses `and` function nodes; stops at `or` or any
+/// non-spatial leaf — a predicate reachable via OR cannot safely be used for pruning
+/// because the non-spatial OR branch may still match even when the spatial branch is false.
+static void collectSpatialPredicatesConjunctive(
+    const DB::ActionsDAG::Node & node,
+    std::unordered_set<const DB::ActionsDAG::Node *> & visited,
+    std::vector<std::pair<String, std::array<double, 4>>> & result)
+{
+    if (!visited.insert(&node).second)
+        return;
+
+    if (node.type == DB::ActionsDAG::ActionType::ALIAS)
+    {
+        for (const auto * child : node.children)
+            collectSpatialPredicatesConjunctive(*child, visited, result);
+        return;
+    }
+
+    if (node.type != DB::ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return;
+
+    if (node.function_base->getName() == "and")
+    {
+        for (const auto * child : node.children)
+            collectSpatialPredicatesConjunctive(*child, visited, result);
+        return;
+    }
+
+    if (!node.function_base->isSpatialPredicate() || node.children.size() < 2)
+        return;
+
+    const DB::ActionsDAG::Node * col_node = nullptr;
+    const DB::ActionsDAG::Node * const_node = nullptr;
+    for (const auto * child : node.children)
+    {
+        if (child->type == DB::ActionsDAG::ActionType::INPUT && !col_node)
+            col_node = child;
+        else if (child->type == DB::ActionsDAG::ActionType::COLUMN && child->column
+                 && child->is_deterministic_constant && !const_node)
+            const_node = child;
+    }
+    if (!col_node || !const_node)
+        return;
+
+    double xmin = 0, ymin = 0, xmax = 0, ymax = 0;
+    if (!tryExtractWkbBboxForIceberg(const_node, xmin, ymin, xmax, ymax))
+        return;
+
+    result.push_back({col_node->result_name, {xmin, ymin, xmax, ymax}});
+}
+
 /// Walk filter_dag for spatial predicates (isSpatialPredicate()==true) where one child
-/// is an INPUT column and the other is a constant WKB geometry. Returns pairs of
-/// (column_name, [xmin,ymin,xmax,ymax]).
+/// is an INPUT column and the other is a constant WKB geometry. Only collects predicates
+/// in conjunctive-only positions — spatial predicates under OR are excluded to avoid
+/// false-negative pruning when a non-spatial OR branch can still match.
+/// Returns pairs of (column_name, [xmin,ymin,xmax,ymax]).
 std::vector<std::pair<String, std::array<double, 4>>> extractSpatialPredicatesFromDag(
     const DB::ActionsDAG & filter_dag)
 {
     std::vector<std::pair<String, std::array<double, 4>>> result;
-    for (const auto & node : filter_dag.getNodes())
-    {
-        if (node.type != DB::ActionsDAG::ActionType::FUNCTION || !node.function_base)
-            continue;
-        if (!node.function_base->isSpatialPredicate() || node.children.size() < 2)
-            continue;
-
-        const DB::ActionsDAG::Node * col_node = nullptr;
-        const DB::ActionsDAG::Node * const_node = nullptr;
-        for (const auto * child : node.children)
-        {
-            if (child->type == DB::ActionsDAG::ActionType::INPUT && !col_node)
-                col_node = child;
-            else if (child->type == DB::ActionsDAG::ActionType::COLUMN && child->column
-                     && child->is_deterministic_constant && !const_node)
-                const_node = child;
-        }
-        if (!col_node || !const_node)
-            continue;
-
-        double xmin = 0;
-        double ymin = 0;
-        double xmax = 0;
-        double ymax = 0;
-        if (!tryExtractWkbBboxForIceberg(const_node, xmin, ymin, xmax, ymax))
-            continue;
-
-        result.push_back({col_node->result_name, {xmin, ymin, xmax, ymax}});
-    }
+    std::unordered_set<const DB::ActionsDAG::Node *> visited;
+    for (const auto * output : filter_dag.getOutputs())
+        collectSpatialPredicatesConjunctive(*output, visited, result);
     return result;
 }
 

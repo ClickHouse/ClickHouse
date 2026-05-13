@@ -1,3 +1,5 @@
+#include <unordered_set>
+
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 
@@ -127,6 +129,81 @@ bool tryExtractConstBbox(
     return true;
 }
 
+/// Try to extract a SpatialFilter from a spatial-predicate FUNCTION node.
+/// Returns true and appends to result on success.
+bool trySpatialFilterFromNode(
+    const DB::ActionsDAG::Node & node,
+    const DB::Block & sample_block,
+    std::vector<SpatialFilter> & result)
+{
+    if (node.type != DB::ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return false;
+    if (!node.function_base->isSpatialPredicate() || node.children.size() < 2)
+        return false;
+
+    const DB::ActionsDAG::Node * col_node = nullptr;
+    const DB::ActionsDAG::Node * const_node = nullptr;
+    for (const auto * child : node.children)
+    {
+        if (child->type == DB::ActionsDAG::ActionType::INPUT && !col_node)
+            col_node = child;
+        else if (child->type == DB::ActionsDAG::ActionType::COLUMN
+                 && child->column
+                 && child->is_deterministic_constant
+                 && !const_node)
+            const_node = child;
+    }
+    if (!col_node || !const_node)
+        return false;
+    if (!sample_block.has(col_node->result_name))
+        return false;
+
+    double xmin = 0, ymin = 0, xmax = 0, ymax = 0;
+    if (!tryExtractConstBbox(const_node, xmin, ymin, xmax, ymax))
+        return false;
+
+    SpatialFilter filter;
+    filter.geometry_column_name = col_node->result_name;
+    filter.query_xmin = xmin;
+    filter.query_ymin = ymin;
+    filter.query_xmax = xmax;
+    filter.query_ymax = ymax;
+    result.push_back(std::move(filter));
+    return true;
+}
+
+/// Recursively collect spatial predicates that are in a conjunctive-only context.
+/// Traverses `and` function nodes; stops at `or` or any non-spatial leaf to preserve
+/// boolean semantics — a predicate reachable via OR cannot safely be used for pruning.
+void collectSpatialFiltersConjunctive(
+    const DB::ActionsDAG::Node & node,
+    std::unordered_set<const DB::ActionsDAG::Node *> & visited,
+    const DB::Block & sample_block,
+    std::vector<SpatialFilter> & result)
+{
+    if (!visited.insert(&node).second)
+        return;
+
+    if (node.type == DB::ActionsDAG::ActionType::ALIAS)
+    {
+        for (const auto * child : node.children)
+            collectSpatialFiltersConjunctive(*child, visited, sample_block, result);
+        return;
+    }
+
+    if (node.type != DB::ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return;
+
+    if (node.function_base->getName() == "and")
+    {
+        for (const auto * child : node.children)
+            collectSpatialFiltersConjunctive(*child, visited, sample_block, result);
+        return;
+    }
+
+    /// Any non-`and` function: attempt extraction as spatial predicate, do not recurse further.
+    trySpatialFilterFromNode(node, sample_block, result);
+}
 
 }
 
@@ -135,57 +212,14 @@ std::vector<SpatialFilter> extractSpatialFilters(
     const DB::Block & sample_block)
 {
     std::vector<SpatialFilter> result;
+    std::unordered_set<const DB::ActionsDAG::Node *> visited;
 
-    for (const auto & node : filter_dag.getNodes())
-    {
-        if (node.type != DB::ActionsDAG::ActionType::FUNCTION)
-            continue;
-        if (!node.function_base)
-            continue;
-
-        if (!node.function_base->isSpatialPredicate())
-            continue;
-        if (node.children.size() < 2)
-            continue;
-
-        /// Find one INPUT child (the geometry column) and one constant COLUMN child (geometry constant).
-        const DB::ActionsDAG::Node * col_node = nullptr;
-        const DB::ActionsDAG::Node * const_node = nullptr;
-
-        for (const auto * child : node.children)
-        {
-            if (child->type == DB::ActionsDAG::ActionType::INPUT && !col_node)
-                col_node = child;
-            else if (child->type == DB::ActionsDAG::ActionType::COLUMN
-                     && child->column
-                     && child->is_deterministic_constant
-                     && !const_node)
-                const_node = child;
-        }
-
-        if (!col_node || !const_node)
-            continue;
-
-        /// The column must be in the sample block (it's a real data column, not a prewhere output).
-        if (!sample_block.has(col_node->result_name))
-            continue;
-
-        /// Extract query bounding box from the constant geometry argument.
-        double xmin = 0;
-        double ymin = 0;
-        double xmax = 0;
-        double ymax = 0;
-        if (!tryExtractConstBbox(const_node, xmin, ymin, xmax, ymax))
-            continue;
-
-        SpatialFilter filter;
-        filter.geometry_column_name = col_node->result_name;
-        filter.query_xmin = xmin;
-        filter.query_ymin = ymin;
-        filter.query_xmax = xmax;
-        filter.query_ymax = ymax;
-        result.push_back(std::move(filter));
-    }
+    /// Walk from DAG outputs, following only `and` nodes.
+    /// Spatial predicates reachable via OR or other non-conjunctive paths are excluded
+    /// because pruning on them would be incorrect (a disjoint spatial branch doesn't mean
+    /// the full predicate is false — a non-spatial OR branch could still match).
+    for (const auto * output : filter_dag.getOutputs())
+        collectSpatialFiltersConjunctive(*output, visited, sample_block, result);
 
     return result;
 }
