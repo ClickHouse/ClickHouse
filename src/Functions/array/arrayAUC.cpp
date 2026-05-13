@@ -139,6 +139,18 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
+    /// `arrayROCAUC(scores, labels[, scale[, offsets]])`           — 2..4 args
+    /// `arrayAUCPR(scores, labels[, offsets])`                     — 2..3 args
+    /// `scores` and `labels` must be Array of numeric (labels can also be Enum).
+    /// Optional `scale` is a const Bool (only for ROC); optional `offsets` is
+    /// an Array of integers. Result is `Float64`.
+    String getSignatureString() const override
+    {
+        if (is_pr)
+            return "(Array, Array, [Array]) -> Float64";
+        return "(Array, Array, [const Bool, [Array]]) -> Float64";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t argument_count = arguments.size();
