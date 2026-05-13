@@ -1024,7 +1024,7 @@ timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness, p
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesQuantileToGrid = {"`quantile_over_time` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window to calculate the quantile for a particular grid point.", {}};
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesQuantileToGrid = {"`quantile_over_time` values on the specified grid. The returned array type preserves the value argument type, for example `Array(Nullable(Float32))` for `Float32` input and `Array(Nullable(Float64))` for `Float64` input. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window to calculate the quantile for a particular grid point.", {}};
     FunctionDocumentation::Examples examples_timeSeriesQuantileToGrid = {
     {
         "Calculate quantile values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210]",
