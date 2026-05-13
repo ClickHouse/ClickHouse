@@ -18,7 +18,6 @@ struct StoredObject
     String remote_path; /// abs path
     String local_path; /// or equivalent "metadata_path"
 
-    /// NOTE: the type must stay uint64_t — MetadataStorageFromDisk removal log serializes it as UInt64 LE.
     uint64_t bytes_size = std::numeric_limits<uint64_t>::max();
 
     explicit StoredObject(

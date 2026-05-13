@@ -1,15 +1,14 @@
 #pragma once
 
-#include <Common/Logger.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
 {
 
 /// Represents a storage for table function timeSeriesSelector().
-class StorageTimeSeriesSelector : public StorageWithCommonVirtualColumns
+class StorageTimeSeriesSelector : public IStorage
 {
 public:
     struct Configuration
@@ -35,9 +34,7 @@ public:
 
     std::string getName() const override { return "TimeSeriesSelector"; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -49,7 +46,6 @@ public:
 
 private:
     Configuration config;
-    LoggerPtr log;
 };
 
 }
