@@ -41,6 +41,7 @@ namespace Setting
 template <
     bool is_rate_or_resets,
     bool is_predict,
+    bool has_extra_float_param,
     bool array_arguments,
     typename ValueType,
     template <bool, typename, typename, typename, bool> class FunctionTraits,
@@ -48,21 +49,25 @@ template <
 >
 AggregateFunctionPtr createWithValueType(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
+    static_assert(!(is_predict && has_extra_float_param), "is_predict and has_extra_float_param are mutually exclusive");
+
     const auto & timestamp_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[0].get())->getNestedType() : argument_types[0];
 
-    if (!is_predict && parameters.size() != 4)
+    constexpr bool needs_extra_param = is_predict || has_extra_float_param;
+
+    if (!needs_extra_param && parameters.size() != 4)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
         "Aggregate function {} requires 4 parameters: start_timestamp, end_timestamp, step, window", name);
 
-    if (is_predict && parameters.size() != 5)
+    if (needs_extra_param && parameters.size() != 5)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-        "Aggregate function {} requires 5 parameters: start_timestamp, end_timestamp, step, window, predict_offset", name);
+        "Aggregate function {} requires 5 parameters: start_timestamp, end_timestamp, step, window, extra_param", name);
 
     const Field & start_timestamp_param = parameters[0];
     const Field & end_timestamp_param = parameters[1];
     const Field & step_param = parameters[2];
     const Field & window_param = parameters[3];
-    const Field & predict_offset_param = is_predict ? parameters[4] : Field();
+    const Field & extra_param_field = needs_extra_param ? parameters[4] : Field();
 
     AggregateFunctionPtr res;
     if (isDateTime64(timestamp_type))
@@ -78,9 +83,18 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
 
         if constexpr (is_predict)
         {
-            Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param) * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(target_scale));
+            /// predict_offset is a duration in seconds and must be scaled to the timestamp's unit.
+            Float64 predict_offset = extractFloatParameter(name, "predict_offset", extra_param_field)
+                * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(target_scale));
             res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_predict>>>
                 (argument_types, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
+        }
+        else if constexpr (has_extra_float_param)
+        {
+            /// Extra parameter is dimensionless (e.g. quantile phi) and must NOT be scaled.
+            Float64 extra = extractFloatParameter(name, "extra_param", extra_param_field);
+            res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, false>>>
+                (argument_types, start_timestamp, end_timestamp, step, window, target_scale, extra);
         }
         else
         {
@@ -97,9 +111,16 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
 
         if constexpr (is_predict)
         {
-            Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param);
+            /// predict_offset is already in seconds (no scale for UInt32/DateTime).
+            Float64 predict_offset = extractFloatParameter(name, "predict_offset", extra_param_field);
             res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_predict>>>
                 (argument_types, start_timestamp, end_timestamp, step, window, 0, predict_offset);
+        }
+        else if constexpr (has_extra_float_param)
+        {
+            Float64 extra = extractFloatParameter(name, "extra_param", extra_param_field);
+            res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, false>>>
+                (argument_types, start_timestamp, end_timestamp, step, window, 0, extra);
         }
         else
         {
@@ -118,6 +139,7 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
 template <
     bool is_rate_or_resets,
     bool is_predict,
+    bool has_extra_float_param,
     template <bool, typename, typename, typename, bool> class FunctionTraits,
     template <typename> class Function
 >
@@ -143,16 +165,16 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
     if (value_type->getTypeId() == TypeIndex::Float64)
     {
         if (array_arguments)
-            res = createWithValueType<is_rate_or_resets, is_predict, true, Float64, FunctionTraits, Function>(name, argument_types, parameters);
+            res = createWithValueType<is_rate_or_resets, is_predict, has_extra_float_param, true, Float64, FunctionTraits, Function>(name, argument_types, parameters);
         else
-            res = createWithValueType<is_rate_or_resets, is_predict, false, Float64, FunctionTraits, Function>(name, argument_types, parameters);
+            res = createWithValueType<is_rate_or_resets, is_predict, has_extra_float_param, false, Float64, FunctionTraits, Function>(name, argument_types, parameters);
     }
     else if (value_type->getTypeId() == TypeIndex::Float32)
     {
         if (array_arguments)
-            res = createWithValueType<is_rate_or_resets, is_predict, true, Float32, FunctionTraits, Function>(name, argument_types, parameters);
+            res = createWithValueType<is_rate_or_resets, is_predict, has_extra_float_param, true, Float32, FunctionTraits, Function>(name, argument_types, parameters);
         else
-            res = createWithValueType<is_rate_or_resets, is_predict, false, Float32, FunctionTraits, Function>(name, argument_types, parameters);
+            res = createWithValueType<is_rate_or_resets, is_predict, has_extra_float_param, false, Float32, FunctionTraits, Function>(name, argument_types, parameters);
     }
     else
     {
