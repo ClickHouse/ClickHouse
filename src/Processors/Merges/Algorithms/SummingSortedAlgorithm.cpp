@@ -671,9 +671,19 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
             /// Remove LowCardinality from columns if needed. It's important to use columns initialized in
             /// MergedData::initialize to keep correct dynamic structure of some columns (like JSON/Dynamic).
             if (desc.nested_type)
-                new_columns.emplace_back(recursiveRemoveLowCardinality(std::move(columns[desc.column_numbers[0]]))->assumeMutable());
+            {
+                /// Bind the result to a named local so the temporary `ColumnPtr` produced by the
+                /// implicit `MutableColumnPtr -> ColumnPtr` conversion of the argument is destroyed
+                /// before `assumeMutable` runs its `use_count() == 1` check. Otherwise, when
+                /// `recursiveRemoveLowCardinality` returns the input unchanged (no LC present), the
+                /// argument's temporary and the return value would both reference the same column.
+                ColumnPtr column_without_lc = recursiveRemoveLowCardinality(std::move(columns[desc.column_numbers[0]]));
+                new_columns.emplace_back(column_without_lc->assumeMutable());
+            }
             else
+            {
                 new_columns.emplace_back(std::move(columns[desc.column_numbers[0]]));
+            }
         }
     }
 
