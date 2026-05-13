@@ -696,6 +696,15 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+/// Matches the `QBit(...)` data type.
+class TypeMatcherQBit : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "QBit"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isQBit(type); }
+    size_t getIndex() const override { return 0; }
+};
+
 /// Matches the `Interval` data type (any `IntervalKind`).
 class TypeMatcherInterval : public ITypeMatcher
 {
@@ -955,6 +964,7 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherIsNothing>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherBool>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherInterval>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherQBit>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherRepresentedByNumber>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherSet>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDateOrDateTime>(factory);

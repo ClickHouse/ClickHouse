@@ -160,6 +160,18 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// Two call shapes:
+    ///   `<Kernel>DistanceTransposed(qbit, ref_vec, precision)`             — 3 args
+    ///   `<Kernel>DistanceTransposed(vec.1, ..., vec.p, qbit_size, ref_vec)` — 2 + p args
+    /// The second shape is an internal compiler-generated optimisation and
+    /// is not normally written by users; the runtime validates the exact
+    /// shape and the QBit/element types. Result is always `Float64`.
+    String getSignatureString() const override
+    {
+        return "(QBit, Array(Any), const UInt8) -> Float64"
+               " OR (FixedString, ..., UInt, Array(Any)) -> Float64";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 3)

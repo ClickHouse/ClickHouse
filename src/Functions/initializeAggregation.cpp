@@ -135,6 +135,15 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
+    /// Documentation-only — the result type is the aggregate function's result
+    /// type, derived dynamically from the const-string first argument and the
+    /// trailing data-column types. The DSL doesn't resolve aggregate functions,
+    /// so the override below is authoritative.
+    String getSignatureString() const override
+    {
+        return "(const String, Any, ...) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 2)
