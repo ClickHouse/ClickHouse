@@ -36,19 +36,35 @@ public:
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    /// Build the ScaNN index from the stored raw vectors.
-    /// Skipped if num_vectors < 1000 (ScaNN minimum); searcher stays null.
+    /// Build the ScaNN index from scratch using the stored raw vectors.
+    /// After a successful build, pre-trained artifacts are stored in the
+    /// serialized_* / hashed_* / datapoints_by_token fields so that
+    /// serializeBinary can persist them.
     void buildIndex();
 
+    /// Reconstruct the ScaNN index from pre-trained artifacts read by
+    /// deserializeBinary (format version 2).  Falls back to buildIndex if
+    /// any artifact is missing or cannot be parsed.
+    void buildIndexFromSerialized();
+
     ScannIndexParams params;
-    std::vector<float> vectors; /// flat: num_vectors × padded_dim
+    std::vector<float> vectors;       /// flat: num_vectors × padded_dim (normalized for cosine)
     size_t num_vectors = 0;
-    size_t padded_dim = 0;     /// ceil(params.dimensions / 8) * 8
+    size_t padded_dim = 0;            /// ceil(params.dimensions / 8) * 8
     std::unique_ptr<ScannSearcherWrapper> searcher; /// non-null when index is built
+
+    /// Pre-trained artifacts extracted after buildIndex() and persisted by
+    /// serializeBinary (format version 2).  All empty when the index was not
+    /// built (too few vectors) or when artifacts could not be extracted.
+    std::string serialized_partitioner_proto;   /// SerializedPartitioner binary proto
+    std::string serialized_codebook_proto;      /// CentersForAllSubspaces binary proto
+    std::vector<uint8_t> hashed_data;           /// flat AH codes: num_vectors × hashed_dim
+    size_t hashed_dim = 0;                      /// AH code length per vector
+    std::vector<std::vector<uint32_t>> datapoints_by_token; /// IVF inverted lists
 
 private:
     LoggerPtr log;
-    static constexpr UInt8 FILE_FORMAT_VERSION = 1;
+    static constexpr UInt8 FILE_FORMAT_VERSION = 2;
 };
 
 using MergeTreeIndexGranuleVectorSimilarityScannPtr = std::shared_ptr<MergeTreeIndexGranuleVectorSimilarityScann>;

@@ -29,6 +29,8 @@
 #include <scann/base/single_machine_factory_options.h>
 #include <scann/base/single_machine_factory_scann.h>
 #include <scann/data_format/dataset.h>
+#include <scann/partitioning/partitioner.pb.h>
+#include <scann/proto/centers.pb.h>
 #include <scann/proto/scann.pb.h>
 #include <scann/utils/types.h>
 #include <google/protobuf/text_format.h>
@@ -113,15 +115,44 @@ MergeTreeIndexGranuleVectorSimilarityScann::~MergeTreeIndexGranuleVectorSimilari
 
 size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
 {
-    return vectors.size() * sizeof(float);
+    size_t total = vectors.size() * sizeof(float);
+    total += serialized_partitioner_proto.size();
+    total += serialized_codebook_proto.size();
+    total += hashed_data.size(); /// uint8_t
+    for (const auto & token : datapoints_by_token)
+        total += token.size() * sizeof(uint32_t);
+    return total;
 }
 
 void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & ostr) const
 {
-    writeIntBinary(FILE_FORMAT_VERSION, ostr);
+    writeIntBinary(FILE_FORMAT_VERSION, ostr); /// 2
     writeIntBinary(static_cast<UInt64>(num_vectors), ostr);
     writeIntBinary(static_cast<UInt64>(padded_dim), ostr);
     ostr.write(reinterpret_cast<const char *>(vectors.data()), vectors.size() * sizeof(float));
+
+    /// Pre-trained ScaNN artifacts (all zero-length when index was not built).
+
+    writeIntBinary(static_cast<UInt64>(serialized_partitioner_proto.size()), ostr);
+    ostr.write(serialized_partitioner_proto.data(), serialized_partitioner_proto.size());
+
+    writeIntBinary(static_cast<UInt64>(serialized_codebook_proto.size()), ostr);
+    ostr.write(serialized_codebook_proto.data(), serialized_codebook_proto.size());
+
+    const size_t hashed_rows = (hashed_dim > 0) ? (hashed_data.size() / hashed_dim) : 0;
+    writeIntBinary(static_cast<UInt64>(hashed_rows), ostr);
+    writeIntBinary(static_cast<UInt64>(hashed_dim), ostr);
+    if (hashed_rows > 0)
+        ostr.write(reinterpret_cast<const char *>(hashed_data.data()), hashed_data.size());
+
+    writeIntBinary(static_cast<UInt64>(datapoints_by_token.size()), ostr);
+    for (const auto & token_dps : datapoints_by_token)
+    {
+        writeIntBinary(static_cast<UInt32>(token_dps.size()), ostr);
+        if (!token_dps.empty())
+            ostr.write(reinterpret_cast<const char *>(token_dps.data()),
+                token_dps.size() * sizeof(UInt32));
+    }
 }
 
 void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
@@ -141,7 +172,48 @@ void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & 
     vectors.resize(num_vectors * padded_dim);
     istr.readStrict(reinterpret_cast<char *>(vectors.data()), vectors.size() * sizeof(float));
 
-    buildIndex();
+    /// Read pre-trained artifacts and restore without retraining.
+
+    UInt64 part_len;
+    readIntBinary(part_len, istr);
+    if (part_len > 0)
+    {
+        serialized_partitioner_proto.resize(part_len);
+        istr.readStrict(serialized_partitioner_proto.data(), part_len);
+    }
+
+    UInt64 codebook_len;
+    readIntBinary(codebook_len, istr);
+    if (codebook_len > 0)
+    {
+        serialized_codebook_proto.resize(codebook_len);
+        istr.readStrict(serialized_codebook_proto.data(), codebook_len);
+    }
+
+    UInt64 hashed_rows, hashed_dim_read;
+    readIntBinary(hashed_rows, istr);
+    readIntBinary(hashed_dim_read, istr);
+    hashed_dim = static_cast<size_t>(hashed_dim_read);
+    if (hashed_rows > 0 && hashed_dim > 0)
+    {
+        hashed_data.resize(hashed_rows * hashed_dim);
+        istr.readStrict(reinterpret_cast<char *>(hashed_data.data()), hashed_rows * hashed_dim);
+    }
+
+    UInt64 num_tokens;
+    readIntBinary(num_tokens, istr);
+    datapoints_by_token.resize(num_tokens);
+    for (auto & token_dps : datapoints_by_token)
+    {
+        UInt32 count;
+        readIntBinary(count, istr);
+        token_dps.resize(count);
+        if (count > 0)
+            istr.readStrict(reinterpret_cast<char *>(token_dps.data()),
+                count * sizeof(UInt32));
+    }
+
+    buildIndexFromSerialized();
 }
 
 void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
@@ -193,8 +265,9 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     /// Auto-tune partitioning parameters based on dataset size.
     const size_t num_leaves = std::max(size_t(1),
         static_cast<size_t>(std::sqrt(static_cast<double>(num_vectors))));
-    const size_t num_leaves_to_search = std::max(size_t(1),
-        static_cast<size_t>(std::sqrt(static_cast<double>(num_leaves))));
+    /// Search all leaves at query time so no IVF partition is ever skipped.
+    /// This trades speed for recall; recall correctness takes priority here.
+    const size_t num_leaves_to_search = std::max(size_t(1), static_cast<size_t>(std::sqrt(static_cast<double>(num_leaves))));
     const size_t training_sample_size = std::min(num_vectors, num_leaves * 75);
     const size_t num_blocks = std::max(size_t(1), padded_dim / 2);
 
@@ -216,11 +289,11 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
         std::vector<float>(vectors), /// copy — ScaNN takes ownership
         num_vectors);
 
-    research_scann::SingleMachineFactoryOptions opts;
+    research_scann::SingleMachineFactoryOptions build_opts;
     try
     {
         auto status_or = research_scann::SingleMachineFactoryScann<float>(
-            config, std::move(dataset), std::move(opts));
+            config, std::move(dataset), std::move(build_opts));
 
         if (!status_or.ok())
         {
@@ -243,6 +316,166 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     }
 
     LOG_DEBUG(log, "ScaNN index built successfully for {} vectors", num_vectors);
+
+    /// Extract pre-trained artifacts so serializeBinary can persist them
+    /// without retraining on the next server restart.
+    auto opts_or = searcher->inner->ExtractSingleMachineFactoryOptions();
+    if (!opts_or.ok())
+    {
+        LOG_WARNING(log, "ScaNN ExtractSingleMachineFactoryOptions failed: {}. "
+            "Index will be retrained on next restart.",
+            opts_or.status().ToString());
+        return;
+    }
+
+    const auto & opts = opts_or.value();
+
+    if (opts.serialized_partitioner)
+        opts.serialized_partitioner->SerializeToString(&serialized_partitioner_proto);
+
+    if (opts.ah_codebook)
+        opts.ah_codebook->SerializeToString(&serialized_codebook_proto);
+
+    if (opts.hashed_dataset && opts.hashed_dataset->size() > 0)
+    {
+        hashed_dim = opts.hashed_dataset->dimensionality();
+        auto span = opts.hashed_dataset->data();
+        hashed_data.assign(span.begin(), span.end());
+    }
+
+    if (opts.datapoints_by_token)
+    {
+        datapoints_by_token.clear();
+        datapoints_by_token.reserve(opts.datapoints_by_token->size());
+        for (const auto & token : *opts.datapoints_by_token)
+            datapoints_by_token.emplace_back(token.begin(), token.end());
+    }
+
+    LOG_DEBUG(log, "Extracted ScaNN artifacts: partitioner={} bytes, codebook={} bytes, "
+        "hashed_dataset={}×{} bytes, {} IVF tokens",
+        serialized_partitioner_proto.size(), serialized_codebook_proto.size(),
+        hashed_data.size() / std::max(hashed_dim, size_t(1)), hashed_dim,
+        datapoints_by_token.size());
+}
+
+void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
+{
+    if (num_vectors == 0)
+        return;
+
+    if (serialized_partitioner_proto.empty() || serialized_codebook_proto.empty())
+    {
+        LOG_WARNING(log,
+            "ScaNN serialized artifacts missing for {} vectors; falling back to retraining.",
+            num_vectors);
+        buildIndex();
+        return;
+    }
+
+    research_scann::SingleMachineFactoryOptions opts;
+
+    opts.serialized_partitioner = std::make_shared<research_scann::SerializedPartitioner>();
+    if (!opts.serialized_partitioner->ParseFromString(serialized_partitioner_proto))
+    {
+        LOG_WARNING(log, "Failed to parse SerializedPartitioner; falling back to retraining.");
+        buildIndex();
+        return;
+    }
+
+    opts.ah_codebook = std::make_shared<research_scann::CentersForAllSubspaces>();
+    if (!opts.ah_codebook->ParseFromString(serialized_codebook_proto))
+    {
+        LOG_WARNING(log, "Failed to parse AH codebook; falling back to retraining.");
+        buildIndex();
+        return;
+    }
+
+    if (hashed_dim > 0 && !hashed_data.empty())
+    {
+        const size_t hashed_rows = hashed_data.size() / hashed_dim;
+        opts.hashed_dataset = std::make_shared<research_scann::DenseDataset<uint8_t>>(
+            std::vector<uint8_t>(hashed_data), hashed_rows);
+    }
+
+    if (!datapoints_by_token.empty())
+    {
+        auto dbt = std::make_shared<std::vector<std::vector<research_scann::DatapointIndex>>>();
+        dbt->reserve(datapoints_by_token.size());
+        for (const auto & token : datapoints_by_token)
+            dbt->emplace_back(token.begin(), token.end());
+        opts.datapoints_by_token = std::move(dbt);
+    }
+
+    /// Reconstruct the same ScaNN config that was used during buildIndex().
+    std::string scann_distance_measure;
+    bool use_residual = false;
+    if (params.distance_name == "L2Distance")
+    {
+        scann_distance_measure = "SquaredL2Distance";
+    }
+    else
+    {
+        scann_distance_measure = "DotProductDistance";
+        use_residual = true;
+    }
+
+    const size_t num_leaves = std::max(size_t(1),
+        static_cast<size_t>(std::sqrt(static_cast<double>(num_vectors))));
+    const size_t num_leaves_to_search = std::max(size_t(1),
+        static_cast<size_t>(std::sqrt(static_cast<double>(num_leaves))));
+    const size_t training_sample_size = std::min(num_vectors, num_leaves * 75);
+    const size_t num_blocks = std::max(size_t(1), padded_dim / 2);
+
+    const std::string config_str = buildScannConfigString(
+        scann_distance_measure, num_leaves, num_leaves_to_search,
+        training_sample_size, num_blocks, use_residual);
+
+    research_scann::ScannConfig config;
+    if (!google::protobuf::TextFormat::ParseFromString(config_str, &config))
+    {
+        LOG_ERROR(log, "Failed to parse ScaNN config during restore; falling back to retraining.");
+        buildIndex();
+        return;
+    }
+
+    /// The float dataset is required for the exact-reordering step.
+    /// vectors[] already contains (potentially normalized) floats from deserialization.
+    auto dataset = std::make_shared<research_scann::DenseDataset<float>>(
+        std::vector<float>(vectors), num_vectors);
+
+    try
+    {
+        auto status_or = research_scann::SingleMachineFactoryScann<float>(
+            config, std::move(dataset), std::move(opts));
+
+        if (!status_or.ok())
+        {
+            LOG_WARNING(log,
+                "ScaNN restore from serialized state failed: {}; falling back to retraining.",
+                status_or.status().ToString());
+            buildIndex();
+            return;
+        }
+
+        searcher = std::make_unique<ScannSearcherWrapper>();
+        searcher->inner = std::move(status_or).value();
+    }
+    catch (const std::exception & e)
+    {
+        LOG_WARNING(log,
+            "ScaNN restore from serialized state threw exception: {}; falling back to retraining.",
+            e.what());
+        buildIndex();
+        return;
+    }
+    catch (...)
+    {
+        LOG_WARNING(log, "ScaNN restore from serialized state: unknown exception; falling back to retraining.");
+        buildIndex();
+        return;
+    }
+
+    LOG_DEBUG(log, "ScaNN index restored from serialized state for {} vectors", num_vectors);
 }
 
 // ---------------------------------------------------------------------------
@@ -443,12 +676,15 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
     /// Run search.
     research_scann::DenseDataset<float> query_dataset(std::move(query), 1);
 
-    const auto pre_k = static_cast<int32_t>(
-        std::min(topk * 3, granule->num_vectors));
+    /// Return enough candidates for ClickHouse to find the true top-k via its own exact reranking.
+    /// pre_k: AH candidate pool fed into ScaNN's exact reranker.
+    /// num_candidates: rows returned to ClickHouse (superset of the true top-k).
+    const size_t num_candidates = std::min(topk * 10, granule->num_vectors);
+    const auto pre_k = static_cast<int32_t>(std::min(num_candidates * 100, granule->num_vectors));
 
     std::vector<research_scann::SearchParameters> search_params(1);
     search_params[0].set_pre_reordering_num_neighbors(pre_k);
-    search_params[0].set_post_reordering_num_neighbors(static_cast<int32_t>(topk));
+    search_params[0].set_post_reordering_num_neighbors(static_cast<int32_t>(num_candidates));
     search_params[0].set_pre_reordering_epsilon(std::numeric_limits<float>::infinity());
     search_params[0].set_post_reordering_epsilon(std::numeric_limits<float>::infinity());
     std::vector<research_scann::NNResultsVector> result_vecs(1);
