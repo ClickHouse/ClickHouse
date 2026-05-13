@@ -152,6 +152,15 @@ public:
 
     void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
     {
+        /// When `is_nullable`, `nested_column_nullable` keeps a second reference to
+        /// `column_holder` (see `createNullMask`), so `column_holder->use_count() >= 2`.
+        /// Drop that internal reference before exposing `column_holder` for mutation so the
+        /// `assumeMutableRef` ownership check passes; re-create `nested_column_nullable`
+        /// after the in-place mutations are done. `nested_null_mask` is left untouched and
+        /// will be re-wrapped together with the (now-possibly-mutated) `column_holder`.
+        if (is_nullable)
+            nested_column_nullable = nullptr;
+
         callback(*column_holder);
         column_holder->forEachMutableSubcolumnRecursively(callback);
         reverse_index.setColumn(getRawColumnPtr());
