@@ -84,6 +84,20 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    /// `map(K1, V1, K2, V2, ..., Kn, Vn)` — even number of arguments, alternating
+    /// keys and values. The captured `K`/`V` repeat in lockstep via the ellipsis,
+    /// and `leastSupertype{,OrVariant}` folds even-indexed and odd-indexed positions
+    /// independently. Picks the variant-falling-back type function when
+    /// `use_variant_as_common_type` is on.
+    String getSignatureString() const override
+    {
+        if (use_variant_as_common_type)
+            return "() -> Map(Nothing, Nothing)"
+                   " OR (K1 : Any, V1 : Any, ...) -> Map(leastSupertypeOrVariant(K1, ...), leastSupertypeOrVariant(V1, ...))";
+        return "() -> Map(Nothing, Nothing)"
+               " OR (K1 : Any, V1 : Any, ...) -> Map(leastSupertype(K1, ...), leastSupertype(V1, ...))";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() % 2 != 0)

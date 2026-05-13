@@ -58,6 +58,25 @@ public:
     std::string name() const override { return "leastSupertype"; }
 };
 
+/// `leastSupertypeOrVariant(T1, T2, ...)` — like `leastSupertype` but, when the inputs
+/// have no common supertype (and the `use_variant_as_common_type` setting is on), falls
+/// back to `Variant(T1, T2, ...)` instead of throwing. Used by `map` and any other
+/// constructor that needs to honour that setting.
+class TypeFunctionLeastSupertypeOrVariant : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        DataTypes types;
+        types.reserve(args.size());
+        for (const Value & arg : args)
+            types.emplace_back(arg.type());
+        return Value(getLeastSupertypeOrVariant(types));
+    }
+
+    std::string name() const override { return "leastSupertypeOrVariant"; }
+};
+
 class TypeFunctionArray : public ITypeFunction
 {
 public:
@@ -866,6 +885,7 @@ void registerTypeFunctions()
     auto & factory = TypeFunctionFactory::instance();
 
     factory.registerElement<TypeFunctionLeastSupertype>();
+    factory.registerElement<TypeFunctionLeastSupertypeOrVariant>();
     factory.registerElement<TypeFunctionArray>();
     factory.registerElement<TypeFunctionTuple>();
     factory.registerElement<TypeFunctionNamedField>();
