@@ -227,6 +227,7 @@ function(clickhouse_import_crate)
     enable_dummy_launchers_if_needed()
 endfunction()
 
+# Configure a Rust crate target with ClickHouse-specific flags.
 function(clickhouse_config_crate_flags target_name)
     corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS}")
     corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
@@ -257,4 +258,46 @@ function(clickhouse_config_crate_flags target_name)
     # Refs: https://github.com/rust-lang/cargo/issues/15099#issuecomment-2732847355
     corrosion_set_env_vars(${target_name} "CARGO_NET_OFFLINE=true")
     corrosion_link_libraries(${target_name} cxx)
+
+    # Localize all C-namespace symbols from Rust static libraries so they
+    # don't shadow our own implementations (libllvmlibc, glibc-compat).
+    # Rust's compiler_builtins exports cbrt, fma, sin, etc. as global symbols;
+    # without this, they silently win at link time and bypass our -falign-functions=64
+    # and -march flags, causing performance regressions.
+    #
+    # For workspace crates the .a may land in a parent directory rather than
+    # CMAKE_CURRENT_BINARY_DIR.  Set IMPORTED_LOCATION on the target before
+    # calling this function if the default path is wrong (see wasmtime for an
+    # example).
+    get_target_property(_rust_lib_path ${target_name} IMPORTED_LOCATION)
+    if (NOT _rust_lib_path OR _rust_lib_path MATCHES "NOTFOUND")
+        set(_rust_lib_path "${CMAKE_CURRENT_BINARY_DIR}/lib${target_name}.a")
+    endif()
+
+    # Skip on Darwin (Mach-O), ppc64le (broken .eh_frame), and dummy builds.
+    if (CMAKE_OBJCOPY AND NOT OS_DARWIN
+        AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le"
+        AND NOT CMAKE_AR MATCHES "dummy_compiler_linker")
+        # Verify the library path looks plausible at configure time.  The file
+        # won't exist yet (cargo hasn't run), but the parent directory must exist
+        # and the filename must end in .a — otherwise someone forgot to set
+        # IMPORTED_LOCATION for a workspace subcrate.
+        get_filename_component(_rust_lib_dir "${_rust_lib_path}" DIRECTORY)
+        if (NOT IS_DIRECTORY "${_rust_lib_dir}")
+            message(FATAL_ERROR
+                "localize_rust_c_symbols: output directory '${_rust_lib_dir}' for "
+                "target '${target_name}' does not exist.  If this is a workspace "
+                "subcrate, set IMPORTED_LOCATION on the target before calling "
+                "clickhouse_config_crate_flags().  Expected library: ${_rust_lib_path}")
+        endif()
+
+        add_custom_target(localize_rust_c_${target_name}
+            COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/localize_rust_c_symbols.sh"
+                "${_rust_lib_path}" "${CMAKE_OBJCOPY}"
+            COMMENT "Localizing C-namespace symbols in ${target_name}"
+            VERBATIM
+        )
+        add_dependencies(localize_rust_c_${target_name} cargo-build_${target_name})
+        add_dependencies(${target_name} localize_rust_c_${target_name})
+    endif()
 endfunction()
