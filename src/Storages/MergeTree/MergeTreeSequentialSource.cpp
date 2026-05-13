@@ -248,9 +248,11 @@ try
         {
             chassert(read_task_info->merged_part_offsets->isFinalized());
 
-            result_column = result_column->convertToFullColumnIfSparse();
-            auto & column = result_column->assumeMutableRef();
-            auto & offset_data = assert_cast<ColumnUInt64 &>(column).getData();
+            /// `convertToFullColumnIfSparse` on a non-sparse column returns `getPtr()`, which shares
+            /// the same column. We then need unique ownership to mutate the offset data below, so
+            /// route through `IColumn::mutate`, which clones when shared and is a no-op otherwise.
+            result_column = IColumn::mutate(result_column->convertToFullColumnIfSparse());
+            auto & offset_data = assert_cast<ColumnUInt64 &>(*result_column).getData();
             if (read_task_info->merged_part_offsets->isMappingEnabled())
             {
                 for (auto & offset : offset_data)
@@ -262,7 +264,11 @@ try
                     offset += read_task_info->part_starting_offset_in_query;
             }
         }
-        result_column->assumeMutableRef().shrinkToFit();
+        /// `shrinkToFit` is a best-effort optimization that mutates the column in place; skip it
+        /// when the column is shared so we do not violate the `assumeMutableRef` ownership check
+        /// and do not perturb state that the other holder still observes.
+        if (result_column->use_count() == 1)
+            result_column->assumeMutableRef().shrinkToFit();
     }
 
     auto result = Chunk(std::move(result_columns), read_result.num_rows);
