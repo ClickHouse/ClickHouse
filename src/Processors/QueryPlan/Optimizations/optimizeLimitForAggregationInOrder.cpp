@@ -1,8 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -11,21 +9,17 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Returns true if the step is transparent for this optimization:
-/// it doesn't change the number of rows, and the column names used
-/// in the sort description pass through unchanged.
+/// it must preserve both sorting and the number of rows.
+/// Steps like FilterStep, LimitByStep, OffsetStep drop rows and must not
+/// be crossed — applying the limit before them would under-read groups.
 static bool isTransparentStep(IQueryPlanStep * step)
 {
-    /// ExpressionStep and FilterStep may rename columns but don't change row count.
-    /// We allow them because we compare sort descriptions at the same level
-    /// (SortingStep and AggregatingStep both use the same internal column identifiers).
-    if (typeid_cast<ExpressionStep *>(step))
-        return true;
-    if (typeid_cast<FilterStep *>(step))
-        return true;
-
-    /// For any other ITransformingStep, only allow if it preserves sorting.
     auto * transforming = dynamic_cast<ITransformingStep *>(step);
-    return transforming && transforming->getDataStreamTraits().preserves_sorting;
+    if (!transforming)
+        return false;
+
+    return transforming->getDataStreamTraits().preserves_sorting
+        && transforming->getTransformTraits().preserves_number_of_rows;
 }
 
 /// When the plan contains LimitStep → SortingStep → AggregatingStep(in-order),
