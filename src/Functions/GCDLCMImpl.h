@@ -24,6 +24,8 @@ struct GCDLCMImpl
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    static constexpr auto signature =
+        "(A : NativeInteger, B : NativeInteger) -> nativeNumber(nextLargerNativeBits(maxBits(A, B)), anySigned(A, B), 0)";
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)
