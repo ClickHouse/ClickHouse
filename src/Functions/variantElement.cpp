@@ -45,6 +45,15 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only — the result type is the requested Variant element
+    /// (or array of, when called on Array(Variant)), looked up dynamically from
+    /// the const-string type-name in the second argument. The optional third
+    /// argument is the default value.
+    String getSignatureString() const override
+    {
+        return "(Variant | Array(Any), const String, [Any]) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto is_variant_or_array_of_variant = [](const IDataType & type)

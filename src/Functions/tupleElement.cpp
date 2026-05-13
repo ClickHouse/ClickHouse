@@ -76,6 +76,17 @@ public:
     bool useDefaultImplementationForDynamic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Documentation-only — the result type is the requested tuple/QBit/JSON
+    /// element, looked up dynamically from the const second argument
+    /// (an integer index or a string sub-column name). The optional third
+    /// argument is a default value used when the element is missing.
+    /// Array-of-Tuple inputs preserve the outer Array nesting; Nullable(Tuple)
+    /// wraps the result in Nullable when the element permits it.
+    String getSignatureString() const override
+    {
+        return "(Tuple(Any, ...) | Nullable(Tuple(Any, ...)) | Array(Any) | QBit | JSON, Any, [Any]) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
