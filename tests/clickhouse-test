@@ -648,7 +648,7 @@ def kill_process_group(pgid, fatal_log):
             print(f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP...")
             sleep(stacktrace_delay)
 
-            # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with gdb
+            # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with lldb
             client_printed_stacktrace = False
             try:
                 if fatal_log and os.path.exists(fatal_log):
@@ -664,7 +664,7 @@ def kill_process_group(pgid, fatal_log):
             if not client_printed_stacktrace:
                 processes = [p[0] for p in pgrep(pgid=pgid, command="clickhouse")]
                 for child in processes:
-                    print(get_stacktraces_from_gdb(child))
+                    print(get_stacktraces_from_lldb(child))
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
@@ -941,14 +941,43 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-# collect server stacktraces using gdb
-def get_stacktraces_from_gdb(pid):
-    # 30s ceiling: `thread apply all backtrace` should finish in seconds even
-    # on a debug build with many threads; anything beyond that means gdb
-    # itself is wedged (e.g. signal-handler deadlock on the inferior).
-    # Killing gdb leaves the server process untouched.
+def _ensure_lldb_installed():
+    """Make sure `lldb` is on PATH, installing it on the fly if not.
+
+    TEMPORARY scaffolding: the CI base images currently ship `gdb` (from the
+    `clickhouse/cctools` layer), not `lldb`. While the switch to `lldb` is in
+    flight, install it at runtime so `print_c_stacktraces` keeps working.
+    Once `ci/docker/cctools/Dockerfile` (and the images that copy from it)
+    install `lldb` permanently, this helper and its single call site below
+    should be removed.
+
+    Never raise: `print_c_stacktraces` is a best-effort diagnostic. If the
+    install fails (no sudo, no network, no `brew`, ...), let
+    `shell_get_output` return "" so the surrounding diagnostic flow keeps
+    going instead of crashing during an already-broken run.
+    """
+    if shutil.which("lldb"):
+        return
+    try:
+        if platform.system() == "Darwin":
+            subprocess.run(["brew", "install", "llvm"], check=True)
+        else:
+            env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+            subprocess.run(["apt-get", "update"], check=True, env=env)
+            subprocess.run(["apt-get", "install", "-y", "lldb"], check=True, env=env)
+    except Exception as e:
+        print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
+
+
+# collect server stacktraces using lldb (used uniformly on Linux and macOS)
+def get_stacktraces_from_lldb(pid):
+    # 30s ceiling: `thread backtrace all` should finish in seconds even on a
+    # debug build with many threads; anything beyond that means lldb itself
+    # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
+    # leaves the server process untouched.
+    _ensure_lldb_installed()  # TEMPORARY: see _ensure_lldb_installed docstring.
     return shell_get_output(
-        f"gdb -batch -ex 'thread apply all backtrace' -p {pid}",
+        f"lldb --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=30,
     )
 
@@ -1027,7 +1056,7 @@ def get_all_server_pids():
 
 
 def is_asan_build(args):
-    """Check if the server is an ASan build — gdb disables LeakSanitizer detections."""
+    """Check if the server is an ASan build — attaching a debugger disables LeakSanitizer detections."""
     try:
         result = clickhouse_execute(
             args,
@@ -1040,22 +1069,22 @@ def is_asan_build(args):
 
 
 def print_c_stacktraces(args) -> None:
-    """C++-side backtraces via gdb.  Works whenever the server process
+    """C++-side backtraces via lldb.  Works whenever the server process
     exists and is debuggable, independent of whether SQL is reachable.
 
     Every call site is one of two situations: we're aborting the whole
     run (SERVER_DIED, hung-check, check_server_started) or terminating
-    the one wedged test (timeout_handler).  gdb's "thread apply all
-    backtrace" pause is on the order of seconds — acceptable in both
-    cases against the diagnostic value.
+    the one wedged test (timeout_handler).  lldb's "thread backtrace all"
+    pause is on the order of seconds — acceptable in both cases against
+    the diagnostic value.
 
-    Skipped under ASan, where gdb attach disables LeakSanitizer
-    detections.
+    Skipped under ASan, where attaching a debugger disables
+    LeakSanitizer detections.
     """
     if is_asan_build(args):
         print(
             colored(
-                "\nCannot collect C stacktraces under ASan: gdb attach is disabled.",
+                "\nCannot collect C stacktraces under ASan: debugger attach is disabled.",
                 args,
                 "red",
                 attrs=["bold"],
@@ -1079,8 +1108,8 @@ def print_c_stacktraces(args) -> None:
 
     for pid in all_pids:
         label = "main server" if pid == server_pid else "replica"
-        print(f"\nCollecting C stacktraces from {label} process {pid} with gdb:")
-        bt = get_stacktraces_from_gdb(pid)
+        print(f"\nCollecting C stacktraces from {label} process {pid} with lldb:")
+        bt = get_stacktraces_from_lldb(pid)
         if bt and len(bt) >= 1000:
             print(f"=== PID {pid} ({label}) ===\n{bt}")
         else:
@@ -4314,7 +4343,7 @@ def run_tests_array(
 
             while True:
                 # This is the upper level timeout
-                # It helps with completely frozen processes, like in case of gdb errors
+                # It helps with completely frozen processes, like in case of lldb errors
                 def timeout_handler(_signum, _frame):
                     with redirect_stdout(cleanup_output):
                         # Dump stacktraces *before* stop_tests() kills the
