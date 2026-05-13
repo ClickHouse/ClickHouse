@@ -96,7 +96,7 @@ public:
     Value apply(const Values & args) const override
     {
         if (args.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function Tuple requires at least one element");
+            return Value(DataTypePtr(std::make_shared<DataTypeTuple>(DataTypes{})));
 
         DataTypes elems;
         Strings names;

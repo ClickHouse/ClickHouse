@@ -43,6 +43,17 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
+    /// `array(x1, x2, ..., xN)` — N=0 yields `Array(Nothing)` (empty array literal);
+    /// non-empty yields `Array(leastSupertype{,OrVariant}(x1, ..., xN))`. The
+    /// `leastSupertypeOrVariant` branch is selected when `use_variant_as_common_type`
+    /// is enabled (the default).
+    String getSignatureString() const override
+    {
+        if (use_variant_as_common_type)
+            return "() -> Array(Nothing) OR (T1 : Any, ...) -> Array(leastSupertypeOrVariant(T1, ...))";
+        return "() -> Array(Nothing) OR (T1 : Any, ...) -> Array(leastSupertype(T1, ...))";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (use_variant_as_common_type)

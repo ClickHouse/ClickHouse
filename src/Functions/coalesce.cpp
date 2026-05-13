@@ -92,7 +92,8 @@ public:
         ///   2. The \`use_variant_as_common_type\` setting opt-in — DSL only knows
         ///      leastSupertype, not leastSupertypeOrVariant.
         return
-            "(T : Any) -> T"
+            "() -> NULL"
+            " OR (T : Any) -> T"
             " OR (T1 : Any, ..., E : Any) -> leastSupertype(removeNullable(T1), ..., E)";
     }
 

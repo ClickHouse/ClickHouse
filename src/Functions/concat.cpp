@@ -50,7 +50,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(Any, Any, ...) -> String";
+        return "() -> String OR (Any, ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -239,7 +239,7 @@ public:
     String getSignatureString() const override
     {
         /// We always return String from concat, even if arguments were fixed strings.
-        return "(Any, ...) -> String";
+        return "() -> String OR (Any, ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

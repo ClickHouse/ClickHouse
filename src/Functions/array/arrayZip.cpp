@@ -43,8 +43,8 @@ public:
     String getSignatureString() const override
     {
         if (allow_unaligned)
-            return "(Array(T : Any), ...) -> Array(Tuple(Nullable(T), ...))";
-        return "(Array(T : Any), ...) -> Array(Tuple(T, ...))";
+            return "() -> Array(Tuple()) OR (Array(T : Any), ...) -> Array(Tuple(Nullable(T), ...))";
+        return "() -> Array(Tuple()) OR (Array(T : Any), ...) -> Array(Tuple(T, ...))";
     }
 
     ColumnPtr
