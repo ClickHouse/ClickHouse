@@ -20,11 +20,33 @@ using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 /// Returns at most one patch of type Merge and at most one patch of type Join.
 PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPartPtr & patch_part);
 
-/// Returns metadata snapshot of patch part that contains the following columns.
-StorageMetadataPtr getPatchPartMetadata(Block sample_block, ContextPtr local_context);
-StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, ContextPtr local_context);
+/// Returns metadata snapshot of a legacy (v1) patch part. Sort key is `(_part, _part_offset)`.
+StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, ContextPtr local_context);
 
-/// Returns system columns which are common for all patch parts.
+/// Returns metadata snapshot of a v2 patch part. Sort key is
+/// `(<sorting_key_expr_children[0..sorting_key_prefix_size]>..., _block_number, _block_offset)`, cloned
+/// from the target table's `KeyDescription` and sliced to exactly the prefix length the patch was
+/// written with (`SourcePartsSetForPatch::getSortKeyPrefixSize`). Nothing about the sort-key AST
+/// itself is persisted on disk; the metadata snapshot is rebuilt from the current main-table
+/// metadata every time a v2 patch is opened. Thanks to `KeyDescription::getKeyFromAST`, the
+/// produced `KeyDescription` carries an `ExpressionActions` object that materializes the sort-key
+/// result columns from the physical source columns — the same mechanism FINAL uses to compute
+/// sort-key outputs from base-part rows. `_part` is kept on disk in LowCardinality form only for
+/// partition-id derivation via `__patchPartitionID`.
+StorageMetadataPtr getPatchPartMetadataV2(
+    Block sample_block,
+    const KeyDescription & main_sorting_key,
+    UInt64 sorting_key_prefix_size,
+    ContextPtr local_context);
+
+StorageMetadataPtr getPatchPartMetadataV2(
+    ColumnsDescription patch_part_desc,
+    const KeyDescription & main_sorting_key,
+    UInt64 sorting_key_prefix_size,
+    ContextPtr local_context);
+
+/// Returns system columns which are common for all v1 patch parts.
 const NamesAndTypesList & getPatchPartKeyColumns();
 const NamesAndTypesList & getPatchPartSystemColumns();
 bool isPatchPartSystemColumn(const String & column_name);

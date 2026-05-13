@@ -1,15 +1,21 @@
+#include <Core/CompareHelper.h>
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/KeyDescription.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
+#include <absl/container/flat_hash_map.h>
+#include <base/types.h>
 #include <shared_mutex>
 
 namespace ProfileEvents
@@ -17,6 +23,7 @@ namespace ProfileEvents
     extern const Event ApplyPatchesMicroseconds;
     extern const Event BuildPatchesJoinMicroseconds;
     extern const Event BuildPatchesMergeMicroseconds;
+    extern const Event ApplyPatchMergeOnKeyMicroseconds;
 }
 
 namespace DB
@@ -503,6 +510,257 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
             }
         }
     }
+
+    return patch_to_apply;
+}
+
+namespace
+{
+
+ColumnRawPtrs extractSortingKeyColumns(const Block & block, const Names & sorting_key_column_names)
+{
+    ColumnRawPtrs out;
+    out.reserve(sorting_key_column_names.size());
+
+    for (const auto & name : sorting_key_column_names)
+        out.push_back(block.getByName(name).column.get());
+
+    return out;
+}
+
+/// Compares sort-key tuples at two (block, row) positions, honouring DESC flags. Both
+/// `SortKeyColumns` must have been resolved against the same ordered `sorting_key_column_names`;
+/// indices line up with `reverse_flags`. Returns <0, =0, or >0 using the same convention as
+/// `IColumn::compareAt` (NULL-aware, nan-last). `reverse_flags` is the `std::vector<bool>` carried
+/// directly from the patch's semantic-prefix `KeyDescription::reverse_flags`.
+ALWAYS_INLINE int compareSortKeyRows(
+    const ColumnRawPtrs & lhs_columns,
+    size_t lhs_row,
+    const ColumnRawPtrs & rhs_columns,
+    size_t rhs_row,
+    const std::vector<bool> & reverse_flags)
+{
+    const size_t n = lhs_columns.size();
+    chassert(n == rhs_columns.size());
+
+    if (reverse_flags.empty())
+    {
+        for (size_t i = 0; i < n; ++i)
+        {
+            int cmp = lhs_columns[i]->compareAt(lhs_row, rhs_row, *rhs_columns[i], /*nan_direction_hint=*/ 1);
+            if (cmp != 0)
+                return cmp;
+        }
+        return 0;
+    }
+    else
+    {
+        chassert(n == reverse_flags.size());
+        for (size_t i = 0; i < n; ++i)
+        {
+            int cmp = lhs_columns[i]->compareAt(lhs_row, rhs_row, *rhs_columns[i], /*nan_direction_hint=*/ 1);
+            if (cmp != 0)
+                return reverse_flags[i] ? -cmp : cmp;
+        }
+    }
+
+    return 0;
+}
+
+/// Galloping (exponential) partition-point search: returns the smallest `i` in `[begin, end)`
+/// such that `compareSortKeyRows(search_key[i], pivot_key[pivot_row])` is `< 0` when
+/// `is_lower_bound == true` (lower bound), or `>= 0` when `is_lower_bound == false` (upper bound).
+/// Used in two directions here: driven from the patch side into main to advance past runs of
+/// equal main keys, and driven from the main side into patch to skip patch rows that fall
+/// before/after the main block's key range when a patch is shared across several main blocks.
+/// When one side is much smaller, this collapses merge complexity from `O(m + p)` to
+/// `O(min(m, p) * log(max(m, p) / min(m, p)))` comparisons, matching the information-theoretic
+/// optimum for merging unbalanced sorted streams. With `gap = 1` (dense patches) it degrades to
+/// 1–2 extra comparisons per step vs. linear scan, so no adaptive fallback is needed.
+template <bool is_lower_bound>
+ALWAYS_INLINE size_t gallopingBinarySearch(
+    const ColumnRawPtrs & search_key,
+    size_t begin,
+    size_t end,
+    const ColumnRawPtrs & pivot_key,
+    size_t pivot_row,
+    const std::vector<bool> & reverse_flags)
+{
+    auto compare = [&](size_t i)
+    {
+        int res = compareSortKeyRows(search_key, i, pivot_key, pivot_row, reverse_flags);
+        if constexpr (is_lower_bound)
+            return res < 0;
+        else
+            return res <= 0;
+    };
+
+    static constexpr size_t max_step = 1ULL << 32;
+
+    size_t prev = 0;
+    size_t step = 1;
+
+    while (begin + step <= end && compare(begin + step - 1))
+    {
+        prev = step;
+        step = step < max_step ? step << 1 : max_step;
+    }
+
+    size_t lo = begin + prev;
+    size_t hi = std::min(end, begin + step);
+
+    while (lo < hi)
+    {
+        size_t mid = lo + (hi - lo) / 2;
+        if (compare(mid))
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+
+    return lo;
+}
+
+/// Pack `(block_number, block_offset)` into a `UInt128`: `block_offset` in the low 64 bits,
+/// `block_number` in the high 64 bits. `UInt128TrivialHash` takes the low limb as the hash,
+/// so putting the per-row-unique `block_offset` there keeps buckets well spread.
+ALWAYS_INLINE UInt128 makeBlockIdentity(UInt64 block_number, UInt64 block_offset)
+{
+    return (UInt128(block_number) << 64) | UInt128(block_offset);
+}
+
+}
+
+PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const KeyDescription & sorting_key)
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchMergeOnKeyMicroseconds);
+
+    auto patch_to_apply = std::make_shared<PatchToApply>();
+    size_t main_rows = result_block.rows();
+    size_t patch_rows = patch_block.rows();
+
+    if (main_rows == 0 || patch_rows == 0)
+        return patch_to_apply;
+
+    /// Execute sorting key expression and materialize the sorting key columns.
+    Block main_block_copy = result_block;
+    Block patch_block_copy = patch_block;
+
+    for (auto & column : main_block_copy)
+        column.column = removeSpecialRepresentations(column.column);
+
+    for (auto & column : patch_block_copy)
+        column.column = removeSpecialRepresentations(column.column);
+
+    if (sorting_key.expression)
+        sorting_key.expression->execute(main_block_copy);
+
+    const auto & sorting_key_names = sorting_key.column_names;
+    const auto & reverse_flags = sorting_key.reverse_flags;
+    const auto & main_block_number = getColumnUInt64Data(main_block_copy, BlockNumberColumn::name);
+    const auto & main_block_offset = getColumnUInt64Data(main_block_copy, BlockOffsetColumn::name);
+    const auto & patch_block_number = getColumnUInt64Data(patch_block_copy, BlockNumberColumn::name);
+    const auto & patch_block_offset = getColumnUInt64Data(patch_block_copy, BlockOffsetColumn::name);
+
+    const auto main_sorting_key = extractSortingKeyColumns(main_block_copy, sorting_key_names);
+    const auto patch_sorting_key = extractSortingKeyColumns(patch_block_copy, sorting_key_names);
+
+    /// Degenerate sorting key (tuple of no columns): by design the "equal-sort-key run" is the whole
+    /// block on both sides. We fall through to the hash-map branch and build a map over the full
+    /// patch — this mirrors today's Join-mode memory profile exactly, by user-locked decision.
+    size_t main_idx = 0;
+
+    /// A single patch block can be shared across several main blocks, so it often carries a long
+    /// prefix of rows whose sort key is strictly below `main[0]`. Those rows cannot match anything
+    /// in this main block. Without this jump, each one costs a full pass through the merge loop
+    /// (galloping search on main returns 0, we compare, we `++patch_idx`) — `O(prefix)` work. One
+    /// galloping binary search on the patch side finds the first candidate in `O(log prefix)`.
+    size_t patch_idx = gallopingBinarySearch<true>(patch_sorting_key, 0, patch_rows, main_sorting_key, 0, reverse_flags);
+
+    /// The patch stream is typically much smaller than the main stream, so we drive the merge
+    /// from the patch side using galloping search into main. This skips over long runs of main
+    /// rows below the current patch key in `O(log gap)` comparisons per patch row.
+    while (main_idx < main_rows && patch_idx < patch_rows)
+    {
+        main_idx = gallopingBinarySearch<true>(main_sorting_key, main_idx, main_rows, patch_sorting_key, patch_idx, reverse_flags);
+        if (main_idx == main_rows)
+            break;
+
+        /// main[main_idx] > patch[patch_idx]: the current patch row has no match in main. Advance past it.
+        if (compareSortKeyRows(main_sorting_key, main_idx, patch_sorting_key, patch_idx, reverse_flags) > 0)
+        {
+            ++patch_idx;
+            continue;
+        }
+
+        /// cmp == 0: equal-sort-key run on both sides. Find the run extents. Gallop on the main side.
+        /// The patch side is scanned linearly because patch_rows is small.
+        size_t main_run_end = gallopingBinarySearch<false>(main_sorting_key, main_idx + 1, main_rows, patch_sorting_key, patch_idx, reverse_flags);
+        size_t patch_run_end = patch_idx + 1;
+
+        while (patch_run_end < patch_rows && compareSortKeyRows(patch_sorting_key, patch_run_end, patch_sorting_key, patch_idx, reverse_flags) == 0)
+        {
+            ++patch_run_end;
+        }
+
+        if (main_run_end - main_idx == 1 && patch_run_end - patch_idx == 1)
+        {
+            /// Common case for unique sort keys: no hash map, just compare identity directly.
+            if (main_block_number[main_idx] == patch_block_number[patch_idx] && main_block_offset[main_idx] == patch_block_offset[patch_idx])
+            {
+                patch_to_apply->result_row_indices.push_back(main_idx);
+                patch_to_apply->patch_row_indices.push_back(patch_idx);
+            }
+        }
+        else
+        {
+            absl::flat_hash_map<UInt128, UInt32, UInt128TrivialHash> local_map;
+            local_map.reserve(patch_run_end - patch_idx);
+
+            for (size_t i = patch_idx; i < patch_run_end; ++i)
+            {
+                local_map.emplace(makeBlockIdentity(patch_block_number[i], patch_block_offset[i]), static_cast<UInt32>(i));
+            }
+
+            for (size_t i = main_idx; i < main_run_end; ++i)
+            {
+                auto it = local_map.find(makeBlockIdentity(main_block_number[i], main_block_offset[i]));
+
+                if (it != local_map.end())
+                {
+                    patch_to_apply->result_row_indices.push_back(i);
+                    patch_to_apply->patch_row_indices.push_back(it->second);
+                }
+            }
+        }
+
+        main_idx = main_run_end;
+        patch_idx = patch_run_end;
+    }
+
+    /// Remove all unneeded columns from patch block
+    /// and keep in block only the updated columns. Source columns (physical inputs to
+    /// `sorting_key.expression`) are derived directly from the shared KeyDescription; for a plain
+    /// sort key they equal the result columns, for expression sort keys (e.g. `cityHash64(id)`)
+    /// they are the expression inputs (`id`).
+    auto erase_column = [&](const String & column_name)
+    {
+        if (patch_block_copy.has(column_name))
+            patch_block_copy.erase(column_name);
+    };
+
+    for (const auto & column_name : sorting_key.column_names)
+        erase_column(column_name);
+
+    if (sorting_key.expression)
+    {
+        for (const auto & column_name : sorting_key.expression->getRequiredColumns())
+            erase_column(column_name);
+    }
+
+    erase_column(BlockNumberColumn::name);
+    erase_column(BlockOffsetColumn::name);
+    patch_to_apply->patch_blocks.emplace_back(patch_block_copy);
 
     return patch_to_apply;
 }

@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/KeyDescription.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -285,6 +287,16 @@ void MergeTreeReadersChain::addPatchVirtuals(ReadResult & result, const Block & 
         return;
 
     auto result_block = header.cloneWithColumns(result.columns);
+    /// Prewhere may project away columns that aren't needed by later read steps but
+    /// are still needed at patch-apply time — e.g. the sort-key source columns of a
+    /// v2 `MergeOnKey` patch when the query filters on them (`WHERE id = ...`). Those
+    /// projected-away columns live on in `result.additional_columns`; fold them in so
+    /// `addPatchVirtuals` below can cache them in `result.columns_for_patches`.
+    for (const auto & col : result.additional_columns)
+    {
+        if (!result_block.has(col.name))
+            result_block.insert(col);
+    }
     addPatchVirtuals(result.columns_for_patches, result_block);
 }
 
@@ -297,6 +309,27 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
         if (!to.has(column.name) && from.has(column.name))
             to.insert(from.getByName(column.name));
     }
+
+    /// v2 (MergeOnKey) patches need the main table's **physical source columns** for the
+    /// sort-key expression at apply time. For a plain sort key these are the sort-key columns
+    /// themselves; for an expression sort key (e.g. `ORDER BY cityHash64(id)`) these are the
+    /// expression inputs (`id`). The expression is *not* evaluated here — we defer it to
+    /// `applyPatchMergeOnKey` (which runs on its own clone) to keep this routine purely
+    /// mechanical. The result columns materialize at apply time, same pattern as FINAL. Source
+    /// columns come straight off the shared prefix `KeyDescription` — no identity-column
+    /// filtering needed because the prefix `KeyDescription` doesn't include `_block_number`
+    /// or `_block_offset`.
+    for (const auto & patch_reader : patch_readers)
+    {
+        const auto & patch = patch_reader->getPatchPart();
+        if (patch.mode != PatchMode::MergeOnKey || !patch.sorting_key || !patch.sorting_key->expression)
+            continue;
+        for (const auto & name : patch.sorting_key->expression->getRequiredColumns())
+        {
+            if (!to.has(name) && from.has(name))
+                to.insert(from.getByName(name));
+        }
+    }
 }
 
 void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
@@ -306,7 +339,7 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
         auto & patch_results = patches_results[i];
 
         /// Remove patches that are not needed for current block anymore.
-        while (!patch_results.empty() && !patch_readers[i]->needOldPatch(read_result, *patch_results.front()))
+        while (!patch_results.empty() && !patch_readers[i]->needOldPatch(read_result, *patch_results.front(), result_header))
         {
             patch_results.pop_front();
         }

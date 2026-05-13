@@ -18,6 +18,7 @@ namespace ProfileEvents
     extern const Event PatchesAppliedInAllReadTasks;
     extern const Event PatchesMergeAppliedInAllReadTasks;
     extern const Event PatchesJoinAppliedInAllReadTasks;
+    extern const Event PatchesMergeOnKeyAppliedInAllReadTasks;
     extern const Event ReadTasksWithAppliedMutationsOnFly;
     extern const Event MutationsAppliedOnFlyInAllReadTasks;
 }
@@ -333,6 +334,7 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
 
     size_t num_join = 0;
     size_t num_merge = 0;
+    size_t num_merge_on_key = 0;
 
     for (const auto & patch : patch_parts)
     {
@@ -362,10 +364,12 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
 
         if (has_column_in_patch)
         {
-            if (patch.mode == PatchMode::Join)
-                ++num_join;
-            else
-                ++num_merge;
+            switch (patch.mode)
+            {
+                case PatchMode::Join:       ++num_join; break;
+                case PatchMode::Merge:      ++num_merge; break;
+                case PatchMode::MergeOnKey: ++num_merge_on_key; break;
+            }
 
             patches_to_read.push_back(patch);
         }
@@ -377,6 +381,7 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
         ProfileEvents::increment(ProfileEvents::PatchesAppliedInAllReadTasks, patches_to_read.size());
         ProfileEvents::increment(ProfileEvents::PatchesJoinAppliedInAllReadTasks, num_join);
         ProfileEvents::increment(ProfileEvents::PatchesMergeAppliedInAllReadTasks, num_merge);
+        ProfileEvents::increment(ProfileEvents::PatchesMergeOnKeyAppliedInAllReadTasks, num_merge_on_key);
     }
 
     return patches_to_read;

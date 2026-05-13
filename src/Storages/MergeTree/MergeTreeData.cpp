@@ -40,7 +40,9 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -291,6 +293,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
+    extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool enable_block_number_column;
@@ -10129,6 +10132,9 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     auto patches = mutations->getPatchesForPart(part);
     PatchPartsForReader patches_for_reader;
 
+    /// `PatchPartInfo::sorting_key` was populated by `SourcePartsSetForPatch::getPatchParts`
+    /// straight from the patch part's rebuilt metadata. Here we just move it across into the
+    /// reader-shaped info; no extra metadata fetch and no prefix-length arithmetic needed.
     for (auto & patch : patches)
     {
         auto patch_commands = mutations->getOnFlyMutationCommandsForPart(patch.part);
@@ -10141,21 +10147,65 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
             .part = std::move(patch_for_reader),
             .source_parts = std::move(patch.source_parts),
             .source_data_version = patch.source_data_version,
+            .perform_alter_conversions = patch.perform_alter_conversions,
+            .sorting_key = std::move(patch.sorting_key),
         });
     }
 
     return std::make_shared<AlterConversions>(commands, patches_for_reader, query_context);
 }
 
-StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const ColumnsDescription & patch_part_desc, const String & patch_partition_id, ContextPtr local_context) const
+StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const
 {
     std::lock_guard lock(patch_parts_metadata_mutex);
-
+    const auto & patch_partition_id = patch_part.info.getPartitionId();
     auto & metadata_snapshot = patch_parts_metadata_cache[patch_partition_id];
-    if (!metadata_snapshot)
-        metadata_snapshot = DB::getPatchPartMetadata(patch_part_desc, local_context);
+
+    if (metadata_snapshot)
+        return metadata_snapshot;
+
+    const auto & source_parts_set = patch_part.getSourcePartsSet();
+
+    switch (source_parts_set.getFormatVersion())
+    {
+        case SourcePartsSetForPatch::V1_FORMAT_VERSION:
+            metadata_snapshot = DB::getPatchPartMetadataV1(patch_part.getColumnsDescription(), local_context);
+            break;
+        case SourcePartsSetForPatch::V2_FORMAT_VERSION:
+            auto main_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
+            const auto & main_sorting_key = main_metadata->getSortingKey();
+            metadata_snapshot = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), main_sorting_key, source_parts_set.getSortKeyPrefixSize(), local_context);
+            break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown patch part format version: {}", source_parts_set.getFormatVersion());
+    }
 
     return metadata_snapshot;
+}
+
+PatchPartMetadata MergeTreeData::getPatchPartMetadata(Block sample_block, MergeTreeSettingsPtr settings, ContextPtr local_context) const
+{
+    PatchPartMetadata result;
+    result.version = (*settings)[MergeTreeSetting::patch_parts_version];
+
+    switch (result.version)
+    {
+        case MergeTreePatchPartsVersion::V1:
+        {
+            result.metadata = DB::getPatchPartMetadataV1(std::move(sample_block), local_context);
+            break;
+        }
+        case MergeTreePatchPartsVersion::V2:
+        {
+            auto main_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
+            const auto & main_sorting_key = main_metadata->getSortingKey();
+            result.sorting_key_prefix_size = main_sorting_key.column_names.size();
+            result.metadata = DB::getPatchPartMetadataV2(std::move(sample_block), main_sorting_key, *result.sorting_key_prefix_size, local_context);
+            break;
+        }
+    }
+
+    return result;
 }
 
 MergeTreeData::MergingParams MergeTreeData::getMergingParamsForPatchParts()
@@ -10208,7 +10258,31 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     LOG_DEBUG(log, "Executing lightweight update with commands: {}", commands.toString(false));
 
     MutationCommands commands_to_run;
-    const auto & system_columns = getPatchPartSystemColumns();
+    auto system_columns = getPatchPartSystemColumns();
+    const auto patch_parts_version = (*getSettings())[MergeTreeSetting::patch_parts_version];
+
+    /// For v2 patches, additionally read the **physical source columns** of the target table's
+    /// sorting key expression through the mutation pipeline, so they land in every patch row.
+    if (patch_parts_version == MergeTreePatchPartsVersion::V2)
+    {
+        system_columns.erase(std::ranges::find(system_columns, "_part_offset", &NameAndTypePair::name));
+
+        NameSet already_read = system_columns.getNameSet();
+        auto main_metadata = getInMemoryMetadataPtr(query_context, false);
+        const auto & main_columns = main_metadata->getColumns();
+
+        Names source_columns;
+        if (main_metadata->hasSortingKey())
+            source_columns = main_metadata->getSortingKey().expression->getRequiredColumns();
+
+        for (const auto & name : source_columns)
+        {
+            if (!already_read.insert(name).second)
+                continue;
+
+            system_columns.push_back(NameAndTypePair{name, main_columns.getPhysical(name).type});
+        }
+    }
 
     for (const auto & [name, type] : system_columns)
     {

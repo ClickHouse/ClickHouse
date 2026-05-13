@@ -7,6 +7,8 @@
 namespace DB
 {
 
+struct KeyDescription;
+
 /// Represents a patch that can be applied to the result block to update the data.
 struct PatchToApply
 {
@@ -56,9 +58,28 @@ struct PatchJoinReadResult : public PatchReadResult
     bool empty() const override { return entries.empty(); }
 };
 
+/// v2 patch-read result. The block's last row — projected onto the sort-key columns — defines the
+/// upper bound that `MergeTreePatchReaderMergeOnKey::needNewPatch`/`needOldPatch` compare against
+/// the main-side read result's min/max sort-key tuple. The sort-key expression is materialized
+/// in-place on `block` by the reader, so callers can look up sort-key columns on it by name.
+struct PatchMergeOnKeyReadResult : public PatchReadResult
+{
+    Block block;
+
+    bool empty() const override { return block.rows() == 0; }
+};
+
 /// Applies patch. Returns indices in result and patch blocks for rows that should be updated.
 PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch);
 PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entry & join_entry);
+
+/// Applies a v2 (MergeOnKey) patch. Two-cursor merge on the main table's sort-key columns; within
+/// each equal-sort-key run, uses `(_block_number, _block_offset)` to identify which main-side row
+/// matches which patch-side row. Memory bounded by the largest equal-sort-key run (usually 1).
+/// The `sorting_key` argument is the shared semantic-prefix `KeyDescription` pointed to by
+/// `PatchPartInfoForReader::sorting_key` — no trailing `_block_number`/`_block_offset` identity
+/// columns.
+PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const KeyDescription & sorting_key);
 
 /// Updates rows in result_block from patch_block at specified indices.
 /// versions_block is a shared block with current versions of rows for each updated column.

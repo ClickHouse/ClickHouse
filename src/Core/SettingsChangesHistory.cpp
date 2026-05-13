@@ -1195,7 +1195,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
-
+            {"patch_parts_version", "v2", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {

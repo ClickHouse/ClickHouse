@@ -16,7 +16,7 @@ UPDATE t_lightweight SET c1 = 15000 WHERE id = 15;
 SELECT * FROM t_lightweight ORDER BY id SETTINGS apply_patch_parts = 1;
 SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_lightweight' AND active ORDER BY min_block_number;
 
-OPTIMIZE TABLE t_lightweight PARTITION ID 'patch-3e1a7650697c132eb044cc6f1d82bc92-all' FINAL;
+OPTIMIZE TABLE t_lightweight PARTITION ID 'patch-168d10ea2778c95c16f09e33cfcd7766-all' FINAL;
 
 SELECT * FROM t_lightweight ORDER BY id SETTINGS apply_patch_parts = 1;
 SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_lightweight' AND active ORDER BY min_block_number;

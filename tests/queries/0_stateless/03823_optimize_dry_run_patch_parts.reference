@@ -22,11 +22,11 @@ data with patches applied
 parts before dry run
 all_1_1_0	10
 all_2_2_0	10
-patch-3e1a7650697c132eb044cc6f1d82bc92-all_4_4_0_3	10
+patch-168d10ea2778c95c16f09e33cfcd7766-all_4_4_0_3	10
 parts after dry run with patches
 all_1_1_0	10
 all_2_2_0	10
-patch-3e1a7650697c132eb044cc6f1d82bc92-all_4_4_0_3	10
+patch-168d10ea2778c95c16f09e33cfcd7766-all_4_4_0_3	10
 data after dry run
 0	100
 1	1

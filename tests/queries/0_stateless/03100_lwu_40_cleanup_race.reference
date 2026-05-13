@@ -5,9 +5,9 @@ all_0_0_0_2	1	v1_updated
 all_0_0_0_2	2	u2_updated
 all_0_0_0_2	3	v3_updated
 t_lwu_cleanup_1	all_0_0_0
-t_lwu_cleanup_1	patch-9834becdf7e2e15ad7c410ffd6a5a63c-all_0_0_0_1
+t_lwu_cleanup_1	patch-9b8ac8c1a14533e89dbc2371a4b78965-all_0_0_0_1
 t_lwu_cleanup_2	all_0_0_0_2
-t_lwu_cleanup_2	patch-9834becdf7e2e15ad7c410ffd6a5a63c-all_0_0_0_1
+t_lwu_cleanup_2	patch-9b8ac8c1a14533e89dbc2371a4b78965-all_0_0_0_1
 all_0_0_0_2	1	v1_updated
 all_0_0_0_2	2	u2_updated
 all_0_0_0_2	3	v3_updated

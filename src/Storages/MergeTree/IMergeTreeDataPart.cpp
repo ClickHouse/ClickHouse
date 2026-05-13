@@ -701,7 +701,7 @@ String IMergeTreeDataPart::getProjectionName() const
 StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
 {
     if (info.isPatch())
-        return storage.getPatchPartMetadata(*columns_description, info.getPartitionId(), storage.getContext());
+        return storage.getPatchPartMetadata(*this, storage.getContext());
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     if (!parent_part)
@@ -1211,6 +1211,14 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         loadChecksums(require_columns_checksums);
         loadIndexGranularity();
 
+        /// Load `source_parts.dat` before the primary index: a v2 patch's rebuilt metadata depends
+        /// on `source_parts_set.getSortKeyPrefixSize()` (see `MergeTreeData::getPatchPartMetadata`
+        /// and `getPatchPartMetadataV2`) to slice the sort key to the shape the patch was written
+        /// with. Reading `primary.cidx` with a wrong column count (prefix_size=0 → just the two
+        /// identity columns) throws `EXPECTED_END_OF_FILE` because the on-disk file has more data
+        /// than the stale metadata expects.
+        loadSourcePartsSet();
+
         /// It's important to load index after index granularity.
         if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
             index = loadIndex();
@@ -1243,7 +1251,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             checkConsistency(require_columns_checksums);
 
         loadDefaultCompressionCodec();
-        loadSourcePartsSet();
     }
     catch (...)
     {
@@ -1545,7 +1552,10 @@ void IMergeTreeDataPart::loadSourcePartsSet()
         return;
 
     if (auto in = readFileIfExists(SourcePartsSetForPatch::FILENAME))
-        source_parts_set.readBinary(*in);
+    {
+        auto main_metadata = storage.getInMemoryMetadataPtr(storage.getContext(), /*bypass_metadata_cache=*/ false);
+        source_parts_set.readBinary(*in, main_metadata);
+    }
     else
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", SourcePartsSetForPatch::FILENAME, name);
 }
