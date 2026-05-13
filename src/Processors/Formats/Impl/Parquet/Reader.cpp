@@ -44,6 +44,7 @@ namespace ProfileEvents
 {
     extern const Event ParquetRowsFilterExpression;
     extern const Event ParquetColumnsFilterExpression;
+    extern const Event ParquetPrunedPages;
 }
 
 namespace DB::Parquet
@@ -1118,6 +1119,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                 if (start_row > prev_row_idx)
                     column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
                 prev_row_idx = end_row;
+                ProfileEvents::increment(ProfileEvents::ParquetPrunedPages);
             }
         }
 

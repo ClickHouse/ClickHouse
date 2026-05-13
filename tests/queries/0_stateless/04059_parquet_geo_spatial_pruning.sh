@@ -55,3 +55,22 @@ WHERE pointInPolygon(geometry, [(-99., 30.), (-96., 30.), (-96., 33.), (-99., 33
 ORDER BY id
 SETTINGS input_format_parquet_spatial_filter_push_down=0" 2>&1 | grep 'ParquetPrunedRowGroups' | sed 's/^.*] //')
 echo "${disabled_out:-no pruning}"
+
+# OR-safety: spatial predicate joined by OR must NOT prune any row group.
+# The south Texas polygon is disjoint from RG1 (north Texas), but because it is
+# under OR with a non-spatial predicate (id = 3 which lives in RG1), pruning RG1
+# would be incorrect — id=3 must still be returned.
+echo "=== or-safety (all 4 ids expected) ==="
+$CLICKHOUSE_LOCAL -q "
+SELECT id FROM file('$FILE', Parquet)
+WHERE pointInPolygon(geometry, [(-99., 30.), (-96., 30.), (-96., 33.), (-99., 33.), (-99., 30.)])
+   OR id = 3
+ORDER BY id"
+
+echo "=== or-safety no pruning expected ==="
+or_pruned=$($CLICKHOUSE_LOCAL --print-profile-events -q "
+SELECT id FROM file('$FILE', Parquet)
+WHERE pointInPolygon(geometry, [(-99., 30.), (-96., 30.), (-96., 33.), (-99., 33.), (-99., 30.)])
+   OR id = 3
+ORDER BY id" 2>&1 | grep 'ParquetPrunedRowGroups' | sed 's/^.*] //')
+echo "${or_pruned:-no pruning}"
