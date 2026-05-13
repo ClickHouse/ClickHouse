@@ -46,6 +46,14 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
+    /// Documentation-only — `catboostEvaluate(model_path, feature1, ..., featureN)`
+    /// returns either `Float64` or `Tuple(Float64, Float64, ...)` depending on
+    /// the model's tree count, resolved at query time via the library bridge.
+    String getSignatureString() const override
+    {
+        return "(const String, Any, ...) -> Float64 | Tuple";
+    }
+
     void initBridge(const ColumnConst * name_col) const
     {
         String library_path = getContext()->getConfigRef().getString("catboost_lib_path");

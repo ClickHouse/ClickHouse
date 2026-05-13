@@ -40,6 +40,15 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only — `kql_array_sort_asc/desc(arr1[, arr2, ...][, null_last_const_bool])`
+    /// sorts N parallel arrays by the first array's order. Result is a Tuple
+    /// of N arrays of nullable element types. Optional trailing UInt8 is a
+    /// "null_last" flag (must be const).
+    String getSignatureString() const override
+    {
+        return "(Array, ...) -> Tuple";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
