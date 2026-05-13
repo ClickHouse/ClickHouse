@@ -269,10 +269,8 @@ void generateManifestFile(
     String schema_representation;
     if (version == 1)
         schema_representation = manifest_entry_v1_schema;
-    else if (version == 2)
-        schema_representation = manifest_entry_v2_schema;
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
+        schema_representation = manifest_entry_v2_schema;
 
     extendSchemaForPartitions(schema_representation, partition_columns, partition_types);
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
@@ -449,10 +447,8 @@ void generateManifestList(
     String schema_representation;
     if (version == 1)
         schema_representation = manifest_list_v1_schema;
-    else if (version == 2)
-        schema_representation = manifest_list_v2_schema;
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
+        schema_representation = manifest_list_v2_schema;
 
     auto schema = avro::compileJsonSchemaFromString(schema_representation); // NOLINT
 
@@ -868,7 +864,7 @@ bool IcebergStorageSink::initializeMetadata()
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
 
     Int64 parent_snapshot = -1;
-    if (metadata->has(Iceberg::f_current_snapshot_id))
+    if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
     Int64 total_data_files = 0;
@@ -903,6 +899,7 @@ bool IcebergStorageSink::initializeMetadata()
             object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
         object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+        object_storage->removeObjectIfExists(StoredObject(resolver.resolve(metadata_info.path)));
 
         if (retry_because_of_metadata_conflict)
         {

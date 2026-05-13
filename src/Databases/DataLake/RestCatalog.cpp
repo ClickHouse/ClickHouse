@@ -55,6 +55,11 @@ namespace DB::ErrorCodes
     extern const int FAULT_INJECTED;
 }
 
+namespace DB::Setting
+{
+    extern const SettingsBool allow_experimental_geo_types_in_iceberg;
+}
+
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
@@ -1028,8 +1033,9 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (result.requiresSchema())
     {
-        // int format_version = metadata_object->getValue<int>("format-version");
-        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor();
+        const bool allow_geo_parser
+            = getContext()->getSettingsRef()[DB::Setting::allow_experimental_geo_types_in_iceberg].value;
+        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickhouseTableSchemaById(id);
         result.setSchema(*schema);
@@ -1155,6 +1161,10 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     request_body->set("stage-create", false);
     Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+
+    if (metadata_content->has("format-version"))
+        properties->set("format-version", std::to_string(metadata_content->getValue<int>("format-version")));
+
     request_body->set("properties", properties);
 
     try
