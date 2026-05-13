@@ -100,7 +100,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     if (promql_query_field.getType() != Field::Types::String)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'promql_query' must be a literal with type String, got {}", promql_query_field.getType());
 
-    PrometheusQueryTree promql_query{promql_query_field.safeGet<String>()};
+    PrometheusQueryTree promql_query{promql_query_field.safeGet<String>(), timestamp_scale};
 
     PrometheusQueryEvaluationMode mode;
     DateTime64 start_time;
@@ -153,8 +153,8 @@ StoragePrometheusQuery::StoragePrometheusQuery(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StoragePrometheusQuery::createVirtuals()

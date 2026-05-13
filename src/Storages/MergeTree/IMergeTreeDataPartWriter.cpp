@@ -66,7 +66,6 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const VirtualsDescriptionPtr & virtual_columns_,
     const MergeTreeWriterSettings & settings_,
     MergeTreeIndexGranularityPtr index_granularity_)
     : data_part_name(data_part_name_)
@@ -74,7 +73,6 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     , index_granularity_info(index_granularity_info_)
     , storage_settings(storage_settings_)
     , metadata_snapshot(metadata_snapshot_)
-    , virtual_columns(virtual_columns_)
     , columns_list(columns_list_)
     , settings(settings_)
     , with_final_mark(settings.can_use_adaptive_granularity)
@@ -138,11 +136,10 @@ ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_nam
     if (!default_compression_codec_mergetree_settings.empty())
         default_codec_desc = CompressionCodecFactory::instance().get(default_compression_codec_mergetree_settings)->getFullCodecDesc();
 
-    const auto & columns = metadata_snapshot->getColumns();
-    if (const auto * column_desc = columns.tryGet(column_name))
+    if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))
         return column_desc->codec ? column_desc->codec : default_codec_desc;
 
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+    if (const auto * virtual_desc = metadata_snapshot->virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
         return virtual_desc->codec ? virtual_desc->codec : default_codec_desc;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
@@ -162,7 +159,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
         const NamesAndTypesList & columns_list,
         const ColumnPositions & column_positions,
         const StorageMetadataPtr & metadata_snapshot,
-        const VirtualsDescriptionPtr & virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
@@ -178,7 +174,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
-        const VirtualsDescriptionPtr & virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
@@ -197,7 +192,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const NamesAndTypesList & columns_list,
         const ColumnPositions & column_positions,
         const StorageMetadataPtr & metadata_snapshot,
-        const VirtualsDescriptionPtr & virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
@@ -216,7 +210,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             columns_list,
             column_positions,
             metadata_snapshot,
-            virtual_columns,
             indices_to_recalc,
             marks_file_extension_,
             default_codec_,
@@ -232,7 +225,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             storage_settings_,
             columns_list,
             metadata_snapshot,
-            virtual_columns,
             indices_to_recalc,
             marks_file_extension_,
             default_codec_,

@@ -1,4 +1,5 @@
 #include <Dictionaries/IPAddressDictionary.h>
+#include <Columns/ColumnFixedString.h>
 
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>

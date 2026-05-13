@@ -109,7 +109,20 @@ SELECT * FROM url_engine_table
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
 
+## Resolving relative URLs {#resolving-relative-urls}
+
+The [url_base](/operations/settings/settings.md#url_base) setting allows using a relative URL in the `URL` engine. When `url_base` is set, the URL passed to the engine is resolved against it per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For a full description of the resolution rules, see the [url table function docs](../../../sql-reference/table-functions/url.md#resolving-relative-urls).
+
+**Example**
+
+```sql
+SET url_base = 'http://127.0.0.1:12345/';
+CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.csv', CSV);
+SELECT * FROM url_engine_table;
+```
+
 ## Storage settings {#storage-settings}
 
 - [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 - [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
+- [url_base](/operations/settings/settings.md#url_base) - base URL for resolving relative URLs passed to the engine.

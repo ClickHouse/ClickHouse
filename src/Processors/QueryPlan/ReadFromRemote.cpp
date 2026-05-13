@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
@@ -45,6 +46,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 #include <fmt/format.h>
 

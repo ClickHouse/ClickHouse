@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
@@ -20,7 +19,8 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, FileCachePolicy) \
-    M(CLASS_NAME, UInt64)
+    M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, NonZeroUInt64)
 
 FILE_CACHE_SETTINGS_SUPPORTED_TYPES(FileCacheSettings, DECLARE_SETTING_TRAIT)
 

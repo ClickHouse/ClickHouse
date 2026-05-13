@@ -2,7 +2,6 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>

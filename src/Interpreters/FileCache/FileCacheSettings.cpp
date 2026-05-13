@@ -18,6 +18,10 @@
 
 namespace fs = std::filesystem;
 
+/// Keys that belong to the disk configuration layer (IDisk), not to the cache layer.
+/// They must be skipped when loading cache settings to avoid UNKNOWN_SETTING errors.
+static const std::set<std::string> non_cache_keys = {"type", "disk", "name", "data_background_cleanup", "thread_pool_size"};
+
 namespace DB
 {
 
@@ -40,7 +44,7 @@ namespace ErrorCodes
     DECLARE(UInt64, background_download_threads, FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_THREADS, "Number of background download threads. Value 0 disables background download", 0) \
     DECLARE(UInt64, background_download_queue_size_limit, FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_QUEUE_SIZE_LIMIT, "Size of background download queue. Value 0 disables background download", 0) \
     DECLARE(UInt64, background_download_max_file_segment_size, FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE_WITH_BACKGROUND_DOWLOAD, "Maximum size which can be downloaded in background download", 0) \
-    DECLARE(UInt64, load_metadata_threads, FILECACHE_DEFAULT_LOAD_METADATA_THREADS, "Number of threads to load cache metadata at server startup. Value 0 disables asynchronous loading of metadata", 0) \
+    DECLARE(NonZeroUInt64, load_metadata_threads, FILECACHE_DEFAULT_LOAD_METADATA_THREADS, "Maximum number of threads used to load cache metadata at server startup", 0) \
     DECLARE(Bool, load_metadata_asynchronously, false, "Enables asynchronous loading of metadata on server startup", 0) \
     DECLARE(Double, keep_free_space_size_ratio, FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO, "A ratio of free space which cache would try to uphold in the background", 0) \
     DECLARE(Double, keep_free_space_elements_ratio, FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO, "A ratio of free elements which cache would try to uphold in the background", 0) \
@@ -51,6 +55,7 @@ namespace ErrorCodes
     DECLARE(UInt64, bypass_cache_threshold, FILECACHE_BYPASS_THRESHOLD, "Undocumented. Not recommended for use", 0) \
     DECLARE(Bool, write_cache_per_user_id_directory, false, "Internal ClickHouse Cloud setting", 0) \
     DECLARE(Bool, allow_dynamic_cache_resize, false, "Allow dynamic resize of filesystem cache", 0) \
+    DECLARE(UInt64, dynamic_resize_lock_wait_ms, 1000, "Timeout in milliseconds to acquire the dynamic resize exclusive lock before skipping the resize attempt", 0) \
     DECLARE(Double, max_size_ratio_to_total_space, 0, "Ratio of `max_size` to total disk space", 0) \
     DECLARE(Bool, skip_cache_on_disk_failure, false, "If true, bypass filesystem cache operations silently on disk IO errors. If false (default), disk IO errors are propagated as startup failures.", 0) \
     DECLARE(Bool, use_split_cache, false, "Use separation of files to system/data.", 0) \
@@ -121,7 +126,7 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
         desc.type = [&]() -> DataTypePtr
         {
             const auto type_name = setting.getTypeName();
-            if (type_name == "UInt64")
+            if (type_name == "UInt64" || type_name == "NonZeroUInt64")
                 return std::make_shared<DataTypeUInt64>();
             else if (type_name == "String")
                 return std::make_shared<DataTypeString>();
@@ -181,10 +186,9 @@ void FileCacheSettings::loadFromConfig(
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_prefix, config_keys);
 
-    std::set<std::string> ignore_keys = {"type", "disk", "name", "data_background_cleanup"};
     for (const std::string & key : config_keys)
     {
-        if (ignore_keys.contains(key))
+        if (non_cache_keys.contains(key))
             continue;
         impl->set(key, config.getString(config_prefix + "." + key));
     }
@@ -214,6 +218,8 @@ void FileCacheSettings::loadFromCollection(
 {
     for (const auto & key : collection.getKeys())
     {
+        if (non_cache_keys.contains(key))
+            continue;
         impl->set(key, collection.get<String>(key));
     }
 

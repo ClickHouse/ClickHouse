@@ -1,4 +1,5 @@
 #include <Storages/StorageMergeTreeIndex.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
