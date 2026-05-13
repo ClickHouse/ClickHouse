@@ -145,35 +145,16 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
-        if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must be array.", getName());
-
-        switch (array_type->getNestedType()->getTypeId())
-        {
-            case TypeIndex::BFloat16:
-            case TypeIndex::Float32:
-                return std::make_shared<DataTypeFloat32>();
-            case TypeIndex::UInt8:
-            case TypeIndex::UInt16:
-            case TypeIndex::UInt32:
-            case TypeIndex::UInt64:
-            case TypeIndex::Int8:
-            case TypeIndex::Int16:
-            case TypeIndex::Int32:
-            case TypeIndex::Int64:
-            case TypeIndex::Float64:
-                return std::make_shared<DataTypeFloat64>();
-            default:
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} has nested type {}. "
-                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
-                    getName(),
-                    array_type->getNestedType()->getName());
-        }
+        /// 1-arg norms (`array<L1|L2|L2Squared|Linf>Norm`) and the 2-arg `arrayLpNorm` share
+        /// the same nested-element → return-type table: arrays of BFloat16 or Float32
+        /// produce a Float32 result, everything else falls back to Float64. The trailing
+        /// `[NativeNumber]` covers LpNorm's `p` argument (a numeric constant; constness is
+        /// enforced separately in `initConstParams`).
+        return
+            "(Array(Float32 | BFloat16), [NativeNumber]) -> Float32"
+            " OR (Array(NativeNumber), [NativeNumber]) -> Float64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
