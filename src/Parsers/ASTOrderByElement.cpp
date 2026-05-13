@@ -158,6 +158,13 @@ void ASTStorageOrderByElement::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     direction = validateOrderByDirection(r.getInt("direction"), "direction");
     children = r.readChildren();
+
+    /// `formatImpl` unconditionally dereferences `children.front()`, so the invariant must
+    /// hold after JSON deserialization.
+    if (children.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTStorageOrderByElement JSON must have exactly one child (the expression), got {}",
+            children.size());
 }
 
 }
