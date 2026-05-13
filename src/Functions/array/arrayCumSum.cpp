@@ -18,13 +18,6 @@ namespace ErrorCodes
 
 struct ArrayCumSumImpl
 {
-    /// Documentation-only — array of cumulative sums; the result element
-    /// type widens to fit the running total (e.g. `Array(UInt8)` →
-    /// `Array(UInt64)`).
-    static constexpr auto signature =
-        "(Function((Any, ...), Any), Array, ...) -> Array"
-        " OR (Array) -> Array";
-
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

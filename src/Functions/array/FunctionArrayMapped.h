@@ -77,11 +77,12 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// Documentation-only — the declarative signature for the higher-order
-    /// function comes from the `Impl`, which may opt in by exposing a
-    /// `signature` constant. The base `getReturnTypeImpl` is overridden here,
-    /// so the DSL is bypassed at type-check time; the string is surfaced via
-    /// `system.functions` for documentation purposes.
+    /// Declarative signature opt-in: an `Impl` may expose a `signature` constant
+    /// (typically using the `Function((args), R)` matcher to describe the lambda
+    /// shape). When set, `getReturnTypeImpl(ColumnsWithTypeAndName)` defers to
+    /// the base `IFunction` path, which actually applies the DSL — the signature
+    /// is then authoritative for both argument validation and result-type
+    /// computation. Impls without `signature` keep the legacy override below.
     String getSignatureString() const override
     {
         if constexpr (requires { Impl::signature; })
@@ -179,6 +180,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        /// When the Impl exposes a declarative `signature`, defer to the base
+        /// IFunction path so that the DSL applies it (both argument validation
+        /// and result type come from the signature).
+        if constexpr (requires { Impl::signature; })
+            return IFunction::getReturnTypeImpl(arguments);
+
         size_t min_args = (Impl::needExpression() ? 2 : 1) + num_fixed_params ;
         if (arguments.size() < min_args)
             throw Exception(

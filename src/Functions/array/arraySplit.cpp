@@ -15,11 +15,13 @@ namespace ErrorCodes
 template <bool reverse>
 struct ArraySplitImpl
 {
-    /// Documentation-only — splits the source array into sub-arrays at every
-    /// position where the lambda returns true (or every position to the
-    /// right of a true, for the reverse variant); the source element type
-    /// becomes the element type of the inner array.
-    static constexpr auto signature = "(Function((Any, ...), UInt8), Array(T : Any), ...) -> Array(Array(T))";
+    /// Declarative signature — splits the source array into sub-arrays at
+    /// every position where the lambda returns true (or every position to
+    /// the right of a true, for the reverse variant); the source element
+    /// type becomes the element type of the inner array. Lambda return type
+    /// follows the boolean-predicate convention used by `arrayFilter`.
+    static constexpr auto signature =
+        "(Function((Any, ...), MaybeNullable(UInt8 | IsNothing)), Array(T : Any), ...) -> Array(Array(T))";
 
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }

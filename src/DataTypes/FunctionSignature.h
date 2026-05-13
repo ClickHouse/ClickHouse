@@ -210,6 +210,11 @@ namespace FunctionSignatures
     /// parenthesized matcher list as a single argument position.
     TypeMatcherPtr makeListMatcher(TypeMatchers children);
 
+    /// Builds a sentinel matcher that the parser emits for a trailing `...` inside a
+    /// parenthesized matcher list. Parent matchers that support variadic positions
+    /// (currently `Function`) detect and consume it during construction.
+    TypeMatcherPtr makeEllipsisMarkerMatcher();
+
 
     /** A function of variables (types and constants) that returns a value (type or constant).
       * May return a Value containing nullptr type, meaning "not applicable".

@@ -19,12 +19,6 @@ namespace ErrorCodes
   */
 struct ArrayCumSumNonNegativeImpl
 {
-    /// Documentation-only — like `arrayCumSum` but the running total is
-    /// clamped to zero (negative carryover is dropped).
-    static constexpr auto signature =
-        "(Function((Any, ...), Any), Array, ...) -> Array"
-        " OR (Array) -> Array";
-
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

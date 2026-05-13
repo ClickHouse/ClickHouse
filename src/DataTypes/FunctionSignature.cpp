@@ -1073,6 +1073,8 @@ bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
 
             /// Parenthesized matcher list `(m1, m2, ...)` — used by matchers like
             /// Function((Arg1, Arg2), Result) that need a list of matchers in a single arg slot.
+            /// A trailing `...` is captured as an ellipsis-marker matcher; parent matchers
+            /// that support variadic positions (e.g. `Function`) consume it during construction.
             if (inner->type == TokenType::OpeningRoundBracket)
             {
                 auto saved = inner;
@@ -1081,6 +1083,11 @@ bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
                 if (parseList(inner, true,
                     [&](TokenIterator & it)
                     {
+                        if (consumeEllipsis(it))
+                        {
+                            list_elems.emplace_back(makeEllipsisMarkerMatcher());
+                            return true;
+                        }
                         TypeMatcherPtr elem;
                         if (!parseTypeMatcher(it, elem))
                             return false;

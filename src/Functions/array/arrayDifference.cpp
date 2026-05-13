@@ -21,13 +21,6 @@ namespace ErrorCodes
   */
 struct ArrayDifferenceImpl
 {
-    /// Documentation-only — array of consecutive differences; the result
-    /// element type widens to fit a signed difference (e.g.
-    /// `Array(UInt8)` → `Array(Int16)`).
-    static constexpr auto signature =
-        "(Function((Any, ...), Any), Array, ...) -> Array"
-        " OR (Array) -> Array";
-
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

@@ -485,13 +485,38 @@ public:
 };
 
 
+/// Sentinel matcher inserted by the parser when it encounters `...` inside a
+/// parenthesized matcher list (e.g. `Function((T, ...), R)`). It carries no
+/// own matching logic — parent matchers that support variadic lambda args
+/// (currently `TypeMatcherFunctionOf`) detect and consume it during
+/// construction.
+class TypeMatcherEllipsisMarker : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "..."; }
+    bool match(const DataTypePtr &, Variables &, size_t, size_t, std::string & out_reason) const override
+    {
+        out_reason = "ellipsis marker cannot be used as a top-level matcher";
+        return false;
+    }
+    size_t getIndex() const override { return 0; }
+};
+
+
 /// Matches DataTypeFunction with a specific argument-list shape and return-type shape.
 /// Built from Function((Arg1, Arg2, ...), Result) in signatures: the first child is a
 /// TypeMatcherList of argument matchers, the second is the return-type matcher.
+///
+/// Supports a trailing `...` inside the arg list to match a variadic lambda — the
+/// matcher immediately preceding the ellipsis is repeated for any extra args. For
+/// example, `Function((Any, ...), R)` matches a lambda with zero or more args (each
+/// matched against `Any`); `Function((UInt8, T, ...), R)` matches a lambda whose
+/// first arg is `UInt8` and whose remaining args each match `T`.
 class TypeMatcherFunctionOf : public ITypeMatcher
 {
 private:
     TypeMatchers arg_matchers;
+    bool is_variadic = false;
     TypeMatcherPtr return_matcher;
 public:
     explicit TypeMatcherFunctionOf(const TypeMatchers & children)
@@ -504,6 +529,16 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "First argument of Function matcher must be a parenthesized arg list, e.g. Function((T, U), R)");
         arg_matchers = arg_list->getChildren();
+
+        if (!arg_matchers.empty() && dynamic_cast<const TypeMatcherEllipsisMarker *>(arg_matchers.back().get()))
+        {
+            is_variadic = true;
+            arg_matchers.pop_back();
+            if (arg_matchers.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Function matcher with `...` must have at least one matcher before the ellipsis");
+        }
+
         return_matcher = children[1];
     }
 
@@ -512,6 +547,8 @@ public:
         WriteBufferFromOwnString out;
         out << "Function((";
         writeList(arg_matchers, [&](const auto & c){ out << c->toString(); }, [&]{ out << ", "; });
+        if (is_variadic)
+            out << ", ...";
         out << "), " << return_matcher->toString() << ")";
         return out.str();
     }
@@ -525,20 +562,54 @@ public:
             return false;
         }
         const auto & fn_args = fn->getArgumentTypes();
-        if (fn_args.size() != arg_matchers.size())
+
+        if (!is_variadic)
         {
-            out_reason = "lambda arity mismatch: expected " + DB::toString(arg_matchers.size())
-                + ", got " + DB::toString(fn_args.size());
-            return false;
-        }
-        for (size_t i = 0; i < arg_matchers.size(); ++i)
-        {
-            if (!arg_matchers[i]->match(fn_args[i], variables, iteration, arg_num, out_reason))
+            if (fn_args.size() != arg_matchers.size())
             {
-                out_reason = "lambda argument " + DB::toString(i) + " doesn't match: " + out_reason;
+                out_reason = "lambda arity mismatch: expected " + DB::toString(arg_matchers.size())
+                    + ", got " + DB::toString(fn_args.size());
                 return false;
             }
+            for (size_t i = 0; i < arg_matchers.size(); ++i)
+            {
+                if (!arg_matchers[i]->match(fn_args[i], variables, iteration, arg_num, out_reason))
+                {
+                    out_reason = "lambda argument " + DB::toString(i) + " doesn't match: " + out_reason;
+                    return false;
+                }
+            }
         }
+        else
+        {
+            /// `(m1, ..., m_{N-1}, m_N, ...)` — the first N-1 matchers match positionally;
+            /// the N-th matcher repeats to cover any remaining lambda args (including zero).
+            const size_t num_fixed = arg_matchers.size() - 1;
+            if (fn_args.size() < num_fixed)
+            {
+                out_reason = "lambda has too few arguments: expected at least " + DB::toString(num_fixed)
+                    + ", got " + DB::toString(fn_args.size());
+                return false;
+            }
+            for (size_t i = 0; i < num_fixed; ++i)
+            {
+                if (!arg_matchers[i]->match(fn_args[i], variables, iteration, arg_num, out_reason))
+                {
+                    out_reason = "lambda argument " + DB::toString(i) + " doesn't match: " + out_reason;
+                    return false;
+                }
+            }
+            const auto & repeat_matcher = arg_matchers.back();
+            for (size_t i = num_fixed; i < fn_args.size(); ++i)
+            {
+                if (!repeat_matcher->match(fn_args[i], variables, iteration, arg_num, out_reason))
+                {
+                    out_reason = "lambda argument " + DB::toString(i) + " doesn't match: " + out_reason;
+                    return false;
+                }
+            }
+        }
+
         const auto & fn_ret = fn->getReturnType();
         if (!fn_ret)
         {
@@ -1064,6 +1135,11 @@ TypeMatcherPtr makeStringLiteralMatcher(std::string literal)
 TypeMatcherPtr makeListMatcher(TypeMatchers children)
 {
     return std::make_shared<TypeMatcherList>(std::move(children));
+}
+
+TypeMatcherPtr makeEllipsisMarkerMatcher()
+{
+    return std::make_shared<TypeMatcherEllipsisMarker>();
 }
 
 }
