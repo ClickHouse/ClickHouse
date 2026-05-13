@@ -183,6 +183,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_VIRTUAL_PARTS_UPDATE:
         case Type::STOP_REDUCE_BLOCKING_PARTS:
         case Type::START_REDUCE_BLOCKING_PARTS:
+        case Type::SYNC_MERGES:
         {
             if (table)
             {
@@ -193,6 +194,16 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 print_on_volume();
             }
+            break;
+        }
+        case Type::SCHEDULE_MERGE:
+        {
+            chassert(table);
+            ostr << ' ';
+            print_database_table();
+            print_keyword(" PARTS ");
+            chassert(scheduled_merge_parts);
+            scheduled_merge_parts->format(ostr, settings, state, frame);
             break;
         }
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:

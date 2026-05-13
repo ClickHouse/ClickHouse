@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Poco/String.h>
@@ -576,10 +577,30 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_VIRTUAL_PARTS_UPDATE:
         case Type::STOP_REDUCE_BLOCKING_PARTS:
         case Type::START_REDUCE_BLOCKING_PARTS:
+        case Type::SYNC_MERGES:
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
             break;
+
+        case Type::SCHEDULE_MERGE:
+        {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                return false;
+            if (!ParserKeyword{Keyword::PARTS}.ignore(pos, expected))
+                return false;
+            ParserList parser_list(std::make_unique<ParserStringLiteral>(),
+                                   std::make_unique<ParserToken>(TokenType::Comma),
+                                   /*allow_empty=*/false);
+            ASTPtr parts;
+            if (!parser_list.parse(pos, parts, expected))
+                return false;
+            res->scheduled_merge_parts = parts;
+            res->children.push_back(parts);
+            break;
+        }
 
         case Type::REFRESH_VIEW:
         case Type::WAIT_VIEW:

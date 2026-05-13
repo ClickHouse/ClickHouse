@@ -98,16 +98,30 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
     WriteBuffer & response, PullingPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
 {
+    /// Pull until the first non-empty block is ready before writing the header
+    /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
+    /// the correct error header {"status":"error", ...} in PrometheusRequestHandler::QueryAPIImpl.
+    bool has_output = false;
+    Block block;
+    while (pulling_executor.pull(block))
+    {
+        if (block.rows() > 0)
+        {
+            has_output = true;
+            break;
+        }
+    }
+
     writeQueryResponseHeader(response, result_type);
 
-    Block result_block;
-    bool first = true;
-
-    while (pulling_executor.pull(result_block))
+    if (has_output)
     {
-        if (result_block.rows() > 0)
-        {   writeQueryResponseBlock(response, result_type, result_block, first);
-            first = false;
+        writeQueryResponseBlock(response, result_type, block, /*first=*/ true);
+
+        while (pulling_executor.pull(block))
+        {
+            if (block.rows() > 0)
+                writeQueryResponseBlock(response, result_type, block, /*first=*/ false);
         }
     }
 

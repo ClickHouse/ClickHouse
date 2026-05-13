@@ -8368,8 +8368,9 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     /// we should remove it from settings_changed_by_compatibility_setting,
     /// otherwise the next time we will change compatibility setting
     /// this setting will be changed too (and we don't want it).
-    else if (settings_changed_by_compatibility_setting.contains(name))
-        settings_changed_by_compatibility_setting.erase(name);
+    /// Resolve aliases so the lookup matches the canonical names stored in the set.
+    else if (auto final_name = SettingsTraits::resolveName(name); settings_changed_by_compatibility_setting.contains(final_name))
+        settings_changed_by_compatibility_setting.erase(final_name);
 
     BaseSettings::set(name, value);
 }

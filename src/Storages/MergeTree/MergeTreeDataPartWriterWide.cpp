@@ -655,7 +655,15 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
         if (settings.can_use_adaptive_granularity)
             readBinaryLittleEndian(index_granularity_rows, *mrk_in);
         else
-            index_granularity_rows = index_granularity_info.fixed_index_granularity;
+            /// Non-adaptive mark files do not store per-mark row counts. The writer uses the
+            /// in-memory `index_granularity` to determine how many rows belong to each mark,
+            /// and `MergeTreeIndexGranularityConstant` allows the last data mark to have fewer
+            /// rows than `fixed_index_granularity` (e.g. after `fixFromRowsCount` adjusts it
+            /// during part loading). Read back the per-mark row count from the in-memory
+            /// granularity rather than blindly assuming `fixed_index_granularity`, otherwise
+            /// the comparison below would falsely fail for parts whose last mark is incomplete
+            /// (issue #98585).
+            index_granularity_rows = index_granularity->getMarkRows(mark_num);
 
         if (must_be_last)
         {

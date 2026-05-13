@@ -189,3 +189,8 @@
 
     investigate failed tests
 03707_statistics_cache
+
+    Non-deterministic row order under parallel replicas: queries without `ORDER BY` over
+    `nullable_minmax_index` return rows in a different order across replicas, and the
+    reference file pins a specific ordering.
+01410_nullable_key_and_index

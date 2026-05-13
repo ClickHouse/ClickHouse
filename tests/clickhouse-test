@@ -132,7 +132,7 @@ CGROUP_VERSION = detect_cgroup_version()
 
 BASH = "/bin/bash"
 
-def shell_get_output(cmd: str) -> str:
+def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
     try:
         res = subprocess.run(
             cmd,
@@ -144,6 +144,7 @@ def shell_get_output(cmd: str) -> str:
             encoding="utf-8",
             errors="replace",
             check=True,
+            timeout=timeout,
         )
         return res.stdout.strip()
     except Exception as e:
@@ -942,11 +943,18 @@ def get_transactions_list(args):
 
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(pid):
-    return shell_get_output(f"gdb -batch -ex 'thread apply all backtrace' -p {pid}")
+    # 30s ceiling: `thread apply all backtrace` should finish in seconds even
+    # on a debug build with many threads; anything beyond that means gdb
+    # itself is wedged (e.g. signal-handler deadlock on the inferior).
+    # Killing gdb leaves the server process untouched.
+    return shell_get_output(
+        f"gdb -batch -ex 'thread apply all backtrace' -p {pid}",
+        timeout=30,
+    )
 
 
 # collect server stacktraces from system.stack_trace table
-def get_stacktraces_from_clickhouse(args):
+def get_stacktraces_from_clickhouse(args, timeout: float = 30):
     settings_str = " ".join(
         [
             get_additional_client_options(args),
@@ -984,7 +992,10 @@ def get_stacktraces_from_clickhouse(args):
             'FROM system.stack_trace FORMAT Vertical"'
         )
 
-    return shell_get_output(msg)
+    # Bound the dump so timeout_handler / hung-check callers cannot wedge
+    # forever if clickhouse-client itself blocks (e.g. the server accepted
+    # the connection but is not making progress on system.stack_trace).
+    return shell_get_output(msg, timeout=timeout)
 
 def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[str]]:
     # -ww disables line-width truncation of the command column.  Without it,
@@ -1004,10 +1015,15 @@ def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[
     return ps
 
 def get_all_server_pids():
-    """Get PIDs of clickhouse-server processes belonging to the current process group.
+    """Get PIDs of all clickhouse-server processes visible to the current user.
+
+    No pgid scoping: in every real scenario where this helper is useful the
+    server lives outside `clickhouse-test`'s process group (CI harnesses,
+    Docker, systemd, and the `ClickHouseService` test fixture all spawn the
+    server with `start_new_session=True` or equivalent).  A pgid filter
+    silently filters out everything we are meant to find.
     """
-    pgid = os.getpgrp()
-    return [p[0] for p in pgrep(pgid=pgid, command="clickhouse-server")]
+    return [p[0] for p in pgrep(command="clickhouse-server")]
 
 
 def is_asan_build(args):
@@ -1023,46 +1039,73 @@ def is_asan_build(args):
         return bool(os.environ.get("ASAN_OPTIONS"))
 
 
-def print_stacktraces(args) -> None:
-    server_pid = get_server_pid()
+def print_c_stacktraces(args) -> None:
+    """C++-side backtraces via gdb.  Works whenever the server process
+    exists and is debuggable, independent of whether SQL is reachable.
 
-    bt = None
+    Every call site is one of two situations: we're aborting the whole
+    run (SERVER_DIED, hung-check, check_server_started) or terminating
+    the one wedged test (timeout_handler).  gdb's "thread apply all
+    backtrace" pause is on the order of seconds — acceptable in both
+    cases against the diagnostic value.
 
-    # Collect gdb stacktraces from all server processes (main + replicas).
-    # Skip gdb under ASan — it disables LeakSanitizer detections.
-    if not is_asan_build(args):
-        all_pids = get_all_server_pids()
-        if all_pids:
-            parts = []
-            for pid in all_pids:
-                label = "main server" if pid == server_pid else "replica"
-                print(f"\nCollecting stacktraces from {label} process {pid} with gdb:")
-                one_bt = get_stacktraces_from_gdb(pid)
-                if one_bt and len(one_bt) >= 1000:
-                    parts.append(f"=== PID {pid} ({label}) ===\n{one_bt}")
-                else:
-                    print(f"Got suspiciously small stacktraces from {pid}: {one_bt}")
-            if parts:
-                bt = "\n\n".join(parts)
-
-    if bt is None:
-        print("\nCollecting stacktraces from system.stacktraces table:")
-
-        bt = get_stacktraces_from_clickhouse(args)
-
-    if bt is not None:
-        print(bt)
+    Skipped under ASan, where gdb attach disables LeakSanitizer
+    detections.
+    """
+    if is_asan_build(args):
+        print(
+            colored(
+                "\nCannot collect C stacktraces under ASan: gdb attach is disabled.",
+                args,
+                "red",
+                attrs=["bold"],
+            )
+        )
         return
 
-    print(
-        colored(
-            f"\nUnable to locate any ClickHouse server process. "
-            f"It must have crashed or exited prematurely!",
-            args,
-            "red",
-            attrs=["bold"],
+    server_pid = get_server_pid()
+    all_pids = get_all_server_pids()
+    if not all_pids:
+        print(
+            colored(
+                "\nUnable to locate any ClickHouse server process. "
+                "It must have crashed or exited prematurely!",
+                args,
+                "red",
+                attrs=["bold"],
+            )
         )
-    )
+        return
+
+    for pid in all_pids:
+        label = "main server" if pid == server_pid else "replica"
+        print(f"\nCollecting C stacktraces from {label} process {pid} with gdb:")
+        bt = get_stacktraces_from_gdb(pid)
+        if bt and len(bt) >= 1000:
+            print(f"=== PID {pid} ({label}) ===\n{bt}")
+        else:
+            print(f"Got suspiciously small stacktraces from {pid}: {bt}")
+
+
+def print_sql_stacktraces(args) -> None:
+    """ClickHouse-internal stack view from system.stack_trace.
+
+    Adds thread_name and query_id to the C-side picture, which is the
+    only way to map a stuck thread to the query it was running.
+
+    Self-skips when the server is not answering queries — the SQL dump
+    would hit the same dead socket as the liveness check.  This keeps
+    callers honest: they can invoke this from any context (per-test
+    timeout, end-of-run hung-check) without first checking whether the
+    server still responds.
+    """
+    if not check_server_liveness(args, max_retries=1):
+        print("Skipping system.stack_trace query: server is unreachable.")
+        return
+    print("\nCollecting stacktraces from system.stack_trace table:")
+    bt = get_stacktraces_from_clickhouse(args)
+    if bt:
+        print(bt)
 
 
 def get_server_pid():
@@ -3528,7 +3571,25 @@ class TestCase:
         time_passed = (datetime.now() - args.testcase_start_time).total_seconds()
         timeout = max(args.timeout - time_passed, 20)
 
-        self._cleanup_database(args, timeout)
+        try:
+            self._cleanup_database(args, timeout)
+        except (ConnectionError, http.client.ImproperConnectionState) as e:
+            # Cleanup is best-effort only when the server is actually dead.
+            # If the server is still alive, this was a real cleanup failure
+            # (leftover state, unfinished DROP) and must propagate so the
+            # outer handler in run() classifies it as CONNECTION_ERROR — a
+            # silent swallow would let a test stay OK while leaving its
+            # database behind, hiding the bug.
+            if check_server_liveness(args):
+                raise
+            # Server died between the test finishing and cleanup running.
+            # The test's database is moot; the hung-check or the next test
+            # will detect the dead server and stop the run.
+            print(
+                f"WARNING: cleanup skipped for {self.name}: "
+                f"{type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
         shutil.rmtree(args.test_tmp_dir)
 
     def _cleanup_database(self, args, timeout):
@@ -4256,6 +4317,16 @@ def run_tests_array(
                 # It helps with completely frozen processes, like in case of gdb errors
                 def timeout_handler(_signum, _frame):
                     with redirect_stdout(cleanup_output):
+                        # Dump stacktraces *before* stop_tests() kills the
+                        # client connections.  This is the only moment
+                        # the offending user query is still wedged on the
+                        # server with its query_id — once the TCP
+                        # connection drops, the server typically cancels
+                        # the query and its threads go away.  BG threads
+                        # stay around either way and can be captured at
+                        # end-of-run.
+                        print_sql_stacktraces(args)
+                        print_c_stacktraces(args)
                         stop_tests()
                     raise TimeoutError("Test execution timed out")
 
@@ -4309,7 +4380,7 @@ def run_tests_array(
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
-                    print_stacktraces(args)
+                    print_c_stacktraces(args)
                     stop_tests()
                     stop_testing.set()
                     raise ServerDied("Server died")
@@ -4769,7 +4840,7 @@ def do_run_tests(
             if args.hung_check:
                 if not check_server_liveness(args):
                     print("Hung check failed: server is not responding")
-                    print_stacktraces(args)
+                    print_c_stacktraces(args)
                     stop_testing.set()
 
             if stop_testing.is_set():
@@ -5072,9 +5143,7 @@ def main(args):
         msg = "Server is not responding. Cannot execute 'SELECT 1' query."
         if args.hung_check:
             print(msg)
-            pid = get_server_pid()
-            print("Got server pid", pid)
-            print_stacktraces(args)
+            print_c_stacktraces(args)
         raise TestException(msg)
 
     if args.cloud:
@@ -5477,7 +5546,15 @@ ORDER BY (test_name, callee_offset)
             print(processlist.decode())
             print(get_transactions_list(args))
 
-            print_stacktraces(args)
+            # `processlist` above already shows per-thread stacks for
+            # every user query still running (system.processes JOIN
+            # system.stack_trace by query_id).  print_sql_stacktraces
+            # here dumps the rest of system.stack_trace — BG threads
+            # with no query_id (merges, replication, schedule pool),
+            # which are the typical lock-holders when a user query is
+            # wedged but looks idle.
+            print_sql_stacktraces(args)
+            print_c_stacktraces(args)
             exit_code.value = 1
         elif not hung_check_failed:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))

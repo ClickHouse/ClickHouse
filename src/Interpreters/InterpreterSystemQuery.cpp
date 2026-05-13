@@ -61,6 +61,10 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
@@ -69,6 +73,7 @@
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
+#include <Common/DynamicDelay.h>
 #include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/HostResolvePool.h>
@@ -144,6 +149,11 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
 }
 
 namespace ErrorCodes
@@ -938,6 +948,12 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
+            break;
+        case Type::SCHEDULE_MERGE:
+            scheduleMerge(query);
+            break;
+        case Type::SYNC_MERGES:
+            syncMerges();
             break;
         case Type::WAIT_BLOBS_CLEANUP:
         {
@@ -2039,6 +2055,71 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
+namespace
+{
+
+MergeTreeData & getMergeTreeWithManualSelector(const StoragePtr & table, const StorageID & table_id, const char * action)
+{
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get());
+    if (!merge_tree)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Command {} is supported only for MergeTree-family tables, but got: {}",
+            action, table->getName());
+
+    const auto algorithm = (*merge_tree->getSettings())[MergeTreeSetting::merge_selector_algorithm].value;
+    if (algorithm != MergeSelectorAlgorithm::MANUAL)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Command {} requires merge_selector_algorithm = 'manual' on table {}",
+            action, table_id.getNameForLogs());
+
+    return *merge_tree;
+}
+
+}
+
+void InterpreterSystemQuery::scheduleMerge(ASTSystemQuery & query)
+{
+    getContext()->checkAccess(AccessType::SYSTEM_MERGES, table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto & merge_tree = getMergeTreeWithManualSelector(table, table_id, "SCHEDULE MERGE");
+
+    if (!query.scheduled_merge_parts || query.scheduled_merge_parts->children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SCHEDULE MERGE requires at least one part name");
+
+    Names parts_to_merge;
+    parts_to_merge.reserve(query.scheduled_merge_parts->children.size());
+    for (const auto & child : query.scheduled_merge_parts->children)
+        parts_to_merge.emplace_back(child->as<ASTLiteral &>().value.safeGet<String>());
+
+    ManualMergeSelector::push(table_id, parts_to_merge);
+    merge_tree.triggerBackgroundOperations();
+}
+
+void InterpreterSystemQuery::syncMerges()
+{
+    getContext()->checkAccess(AccessType::SYSTEM_MERGES, table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto & merge_tree = getMergeTreeWithManualSelector(table, table_id, "SYNC MERGES");
+
+    DynamicDelay poll_delay;
+    poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
+
+    while (true)
+    {
+        merge_tree.triggerBackgroundOperations();
+
+        ActiveDataPartSet active_set;
+        for (const auto & part : merge_tree.getDataPartsVectorForInternalUsage())
+            active_set.add(part->info, part->name);
+
+        if (ManualMergeSelector::isAllScheduledPartsCovered(table_id, active_set))
+            return;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(poll_delay.getCurrentDelay()));
+        poll_delay.up();
+    }
+}
+
 void InterpreterSystemQuery::loadPrimaryKeys()
 {
     loadOrUnloadPrimaryKeysImpl(true);
@@ -2376,6 +2457,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_MERGES:
         case Type::START_MERGES:
+        case Type::SCHEDULE_MERGE:
+        case Type::SYNC_MERGES:
         {
             if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_MERGES);

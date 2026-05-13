@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/IMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
@@ -41,6 +42,7 @@ struct ChooseContext
     const PartitionsStatistics & partitions_stats;
     const IMergePredicate & predicate;
     const IMergeSelector::RangeFilter & range_filter;
+    const StorageID & storage_id;
     const MergeConstraints & merge_constraints;
     const StorageInMemoryMetadata & metadata_snapshot;
     const MergeTreeSettings & merge_tree_settings;
@@ -154,6 +156,9 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
         case MergeSelectorAlgorithm::TRIVIAL:
             selector = std::make_shared<TrivialMergeSelector>();
             break;
+        case MergeSelectorAlgorithm::MANUAL:
+            selector = std::make_shared<ManualMergeSelector>(ctx.storage_id);
+            break;
     }
 
     chassert(selector != nullptr);
@@ -167,11 +172,13 @@ MergeSelectorApplier::MergeSelectorApplier(
     std::vector<MergeConstraint> && merge_constraints_,
     bool merge_with_ttl_allowed_,
     bool aggressive_,
-    IMergeSelector::RangeFilter range_filter_)
+    IMergeSelector::RangeFilter range_filter_,
+    StorageID storage_id_)
     : merge_constraints(std::move(merge_constraints_))
     , merge_with_ttl_allowed(merge_with_ttl_allowed_)
     , aggressive(aggressive_)
     , range_filter(std::move(range_filter_))
+    , storage_id(std::move(storage_id_))
 {
     chassert(!merge_constraints.empty(), "At least one merge constraint should be passed");
 
@@ -197,6 +204,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .partitions_stats = partitions_stats,
         .predicate = predicate,
         .range_filter = range_filter,
+        .storage_id = storage_id,
         .merge_constraints = merge_constraints,
         .metadata_snapshot = *metadata_snapshot,
         .merge_tree_settings = *merge_tree_settings,
