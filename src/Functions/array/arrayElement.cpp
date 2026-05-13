@@ -64,6 +64,20 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
+    String getSignatureString() const override
+    {
+        if constexpr (is_null_mode)
+        {
+            /// `arrayElementOrNull` wraps the element/value type in `Nullable` *when
+            /// the wrapped type permits it* — i.e. not Tuple/Array-of-Tuple/Map.
+            /// The DSL doesn't model `canBeInsideNullable`, so this signature is
+            /// documentation-only: the override below is authoritative.
+            return "(Array(T), NativeInteger) -> Nullable(T)"
+                   " OR (Map(K, V), Any) -> Nullable(V)";
+        }
+        return "(Array(T), NativeInteger) -> T OR (Map(K, V), Any) -> V";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     ColumnPtr
