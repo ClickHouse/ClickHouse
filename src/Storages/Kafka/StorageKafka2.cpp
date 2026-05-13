@@ -415,23 +415,34 @@ private:
 
         ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
 
-        /// Reject direct reads whenever a materialized view is attached, even if no streamer is
-        /// currently running. Between consecutive `threadFunc` invocations (reschedule gaps),
-        /// `active_mv_streamers` is 0 while the MV is still attached, so checking the streamer
-        /// counter alone would let direct reads sneak in and produce inconsistent user behavior.
-        if (!DatabaseCatalog::instance().getDependentViews(kafka_storage.getStorageID()).empty())
-            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
-
-        /// Atomically check that no MV streamer is active, collect indices of consumers that were
-        /// successfully created (some slots may be empty if creation failed in `startup`), and
-        /// register all direct readers.
+        /// Atomically check that no materialized view is attached, that no MV streamer is active,
+        /// collect indices of consumers that were successfully created (some slots may be empty if
+        /// creation failed in `startup`), and register all direct readers.
         ///
-        /// This is done under `consumers_mutex` to prevent a TOCTOU race with `threadFunc`,
-        /// which performs the symmetric check (`active_direct_readers == 0`) before starting
-        /// MV streaming. Without the mutex, both sides could pass their checks simultaneously.
+        /// All checks are done under `consumers_mutex` to prevent two TOCTOU races:
+        ///   1. With `threadFunc`, which performs the symmetric check (`active_direct_readers == 0`)
+        ///      before starting MV streaming — without the mutex, both sides could pass their
+        ///      checks simultaneously.
+        ///   2. With an `ATTACH MATERIALIZED VIEW` running between an earlier `getDependentViews`
+        ///      check and the `active_mv_streamers` check — that would admit a direct read while
+        ///      an MV is already attached (the MV's first streamer iteration hasn't run yet, so
+        ///      `active_mv_streamers` is still 0).
+        ///
+        /// Note: `consumers_mutex` does not synchronize with DDL itself. After we register as a
+        /// direct reader, an `ATTACH MATERIALIZED VIEW` can still happen — but in that case
+        /// `threadFunc` will see `active_direct_readers > 0` and skip streaming until the direct
+        /// read completes, so the contract "no concurrent MV streaming with direct reads" holds.
         std::vector<size_t> valid_consumer_indices;
         {
             std::lock_guard lock(kafka_storage.consumers_mutex);
+
+            /// Reject direct reads whenever a materialized view is attached, even if no streamer
+            /// is currently running. Between consecutive `threadFunc` invocations (reschedule gaps),
+            /// `active_mv_streamers` is 0 while the MV is still attached, so checking the streamer
+            /// counter alone would let direct reads sneak in and produce inconsistent user behavior.
+            if (!DatabaseCatalog::instance().getDependentViews(kafka_storage.getStorageID()).empty())
+                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
+
             if (kafka_storage.active_mv_streamers.load() > 0)
                 throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
 
