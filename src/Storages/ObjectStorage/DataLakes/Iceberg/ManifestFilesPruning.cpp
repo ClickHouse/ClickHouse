@@ -116,7 +116,7 @@ bool tryExtractWkbBboxForIceberg(
 /// conjunctive-only context. Traverses `and` function nodes; stops at `or` or any
 /// non-spatial leaf — a predicate reachable via OR cannot safely be used for pruning
 /// because the non-spatial OR branch may still match even when the spatial branch is false.
-static void collectSpatialPredicatesConjunctive(
+void collectSpatialPredicatesConjunctive(
     const DB::ActionsDAG::Node & node,
     std::unordered_set<const DB::ActionsDAG::Node *> & visited,
     std::vector<std::pair<String, std::array<double, 4>>> & result)
@@ -157,7 +157,10 @@ static void collectSpatialPredicatesConjunctive(
     if (!col_node || !const_node)
         return;
 
-    double xmin = 0, ymin = 0, xmax = 0, ymax = 0;
+    double xmin = 0;
+    double ymin = 0;
+    double xmax = 0;
+    double ymax = 0;
     if (!tryExtractWkbBboxForIceberg(const_node, xmin, ymin, xmax, ymax))
         return;
 

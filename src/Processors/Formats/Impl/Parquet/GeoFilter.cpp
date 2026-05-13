@@ -158,7 +158,10 @@ bool trySpatialFilterFromNode(
     if (!sample_block.has(col_node->result_name))
         return false;
 
-    double xmin = 0, ymin = 0, xmax = 0, ymax = 0;
+    double xmin = 0;
+    double ymin = 0;
+    double xmax = 0;
+    double ymax = 0;
     if (!tryExtractConstBbox(const_node, xmin, ymin, xmax, ymax))
         return false;
 
