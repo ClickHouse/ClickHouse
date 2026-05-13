@@ -535,6 +535,11 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction('groupNumericIndexedVector', Any, Any)) -> " + DataTypeNumber<ToType>{}.getName();
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
@@ -631,6 +636,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    /// The result type is the sketch's value type V (the second inner argument
+    /// of `groupNumericIndexedVector`). The DSL captures it directly inside
+    /// the matcher, so the signature is authoritative for this function.
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction('groupNumericIndexedVector', Any, V), Any) -> V";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
@@ -726,6 +739,11 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction('groupNumericIndexedVector', Any, Any)) -> String";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
@@ -806,6 +824,11 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
+
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction('groupNumericIndexedVector', K, V)) -> Map(K, V)";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
