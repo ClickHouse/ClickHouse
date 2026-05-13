@@ -1,5 +1,6 @@
 #include <Disks/DiskLocal.h>
 #include <Common/IThrottler.h>
+#include <Core/Defines.h>
 #include <Common/createHardLink.h>
 #include <Disks/DiskFactory.h>
 
@@ -394,7 +395,19 @@ void DiskLocal::prepareRead(
         read_hint);
 
     /// Page cache for local disk reads — handled as a pipeline stage.
-    if (settings.use_page_cache_for_local_disks && settings.page_cache)
+    /// Page cache is incompatible with async local read methods (io_uring,
+    /// pread_fake_async, pread_threadpool) and with O_DIRECT when the page
+    /// cache block size is not aligned to the direct IO sector size.
+    bool use_page_cache = settings.use_page_cache_for_local_disks && settings.page_cache
+        && settings.local_fs_method != LocalFSReadMethod::io_uring
+        && settings.local_fs_method != LocalFSReadMethod::pread_fake_async
+        && settings.local_fs_method != LocalFSReadMethod::pread_threadpool;
+
+    if (use_page_cache && settings.direct_io_threshold
+        && settings.page_cache_block_size % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
+        use_page_cache = false;
+
+    if (use_page_cache)
         pipeline.needMemoryCache(settings.page_cache, "local:", settings.getPageCacheSettings());
 }
 

@@ -87,7 +87,7 @@ void ReadPipeline::needGather()
 
 void ReadPipeline::needDiskCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log)
 {
-    disk_cache = DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log), .cache_settings = std::move(cache_settings), .custom_cache_key = std::nullopt, .custom_origin = std::nullopt};
+    disk_caches.push_back(DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log), .cache_settings = std::move(cache_settings), .custom_cache_key = std::nullopt, .custom_origin = std::nullopt});
 }
 
 void ReadPipeline::needDiskCache(
@@ -97,12 +97,12 @@ void ReadPipeline::needDiskCache(
     FilesystemCacheSettings cache_settings,
     std::shared_ptr<FilesystemCacheLog> cache_log)
 {
-    disk_cache = DiskCacheStage{
+    disk_caches.push_back(DiskCacheStage{
         .cache = std::move(cache),
         .cache_log = std::move(cache_log),
         .cache_settings = std::move(cache_settings),
         .custom_cache_key = std::move(cache_key),
-        .custom_origin = std::move(origin)};
+        .custom_origin = std::move(origin)});
 }
 
 void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings)
@@ -228,14 +228,17 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             }
 
             /// FileCache (disk) — goes second in chain.
-            if (disk_cache && disk_cache->cache)
+            for (const auto & dc : disk_caches)
             {
-                auto fcs = disk_cache->cache_settings.value_or(FilesystemCacheSettings{});
-                executor_caches.push_back(std::make_shared<DiskCacheProvider>(
-                    disk_cache->cache, total_file_size, fcs));
+                if (dc.cache)
+                {
+                    auto fcs = dc.cache_settings.value_or(FilesystemCacheSettings{});
+                    executor_caches.push_back(std::make_shared<DiskCacheProvider>(
+                        dc.cache, total_file_size, fcs));
 
-                if (executor_cache_key.path.empty())
-                    executor_cache_key.path = source->objects.front().remote_path;
+                    if (executor_cache_key.path.empty())
+                        executor_cache_key.path = source->objects.front().remote_path;
+                }
             }
 
             auto executor = std::make_unique<ReaderExecutor>(
@@ -271,115 +274,77 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ReadPipeline: gather requires ObjectStorageSource or CustomSource");
 
+        /// Step 1: Build base gather_creator that reads from the source.
         ReadBufferFromRemoteFSGather::ReadBufferCreator gather_creator;
 
-        if (disk_cache && disk_cache->cache)
+        if (obj_source)
         {
-            auto fs_cache_settings = disk_cache->cache_settings.value_or(settings.getFilesystemCacheSettings());
-
-            if (obj_source)
+            gather_creator =
+                [storage = obj_source->storage, read_hint = obj_source->read_hint,
+                 captured_settings = settings](
+                    bool restricted_seek, const StoredObject & object) mutable
+                    -> std::unique_ptr<ReadBufferFromFileBase>
             {
-                gather_creator =
-                    [storage = obj_source->storage,
-                     read_hint = obj_source->read_hint,
-                     captured_settings = settings,
-                     fs_cache_settings,
-                     cache = disk_cache->cache,
-                     cache_log = disk_cache->cache_log,
-                     custom_key = disk_cache->custom_cache_key,
-                     custom_origin = disk_cache->custom_origin](
-                        bool restricted_seek, const StoredObject & object) mutable
-                        -> std::unique_ptr<ReadBufferFromFileBase>
-                {
-                    auto cache_key = custom_key.value_or(FileCacheKey::fromPath(object.remote_path));
-                    auto origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
-
-                    auto impl_creator = [storage, read_hint, captured_settings, restricted_seek, object]() mutable
-                        -> std::unique_ptr<ReadBufferFromFileBase>
-                    {
-                        return storage->readObject(object, captured_settings, read_hint, /* use_external_buffer */ true, restricted_seek);
-                    };
-
-                    return std::make_unique<CachedOnDiskReadBufferFromFile>(
-                        object.remote_path,
-                        cache_key,
-                        cache,
-                        origin,
-                        std::move(impl_creator),
-                        fs_cache_settings,
-                        captured_settings.remote_fs_buffer_size,
-                        captured_settings.local_fs_buffer_size,
-                        std::string(CurrentThread::getQueryId()),
-                        object.bytes_size,
-                        /* allow_seeks_after_first_read */ !restricted_seek,
-                        /* use_external_buffer */ true,
-                        /* read_until_position */ std::nullopt,
-                        cache_log);
-                };
-            }
-            else
-            {
-                gather_creator =
-                    [pipeline_creator = custom_source->creator,
-                     captured_settings = settings,
-                     fs_cache_settings,
-                     cache = disk_cache->cache,
-                     cache_log = disk_cache->cache_log,
-                     custom_key = disk_cache->custom_cache_key,
-                     custom_origin = disk_cache->custom_origin](
-                        bool restricted_seek, const StoredObject & object) mutable
-                        -> std::unique_ptr<ReadBufferFromFileBase>
-                {
-                    auto cache_key = custom_key.value_or(FileCacheKey::fromPath(object.remote_path));
-                    auto origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
-
-                    auto impl_creator = [pipeline_creator, captured_settings, restricted_seek, object]() mutable
-                        -> std::unique_ptr<ReadBufferFromFileBase>
-                    {
-                        return pipeline_creator(object, captured_settings, /* use_external_buffer */ true, restricted_seek);
-                    };
-
-                    return std::make_unique<CachedOnDiskReadBufferFromFile>(
-                        object.remote_path,
-                        cache_key,
-                        cache,
-                        origin,
-                        std::move(impl_creator),
-                        fs_cache_settings,
-                        captured_settings.remote_fs_buffer_size,
-                        captured_settings.local_fs_buffer_size,
-                        std::string(CurrentThread::getQueryId()),
-                        object.bytes_size,
-                        /* allow_seeks_after_first_read */ !restricted_seek,
-                        /* use_external_buffer */ true,
-                        /* read_until_position */ std::nullopt,
-                        cache_log);
-                };
-            }
+                return storage->readObject(object, captured_settings, read_hint, /* use_external_buffer */ true, restricted_seek);
+            };
         }
         else
         {
-            if (obj_source)
+            gather_creator =
+                [pipeline_creator = custom_source->creator, captured_settings = settings](
+                    bool restricted_seek, const StoredObject & object) mutable
+                    -> std::unique_ptr<ReadBufferFromFileBase>
             {
-                gather_creator =
-                    [storage = obj_source->storage, read_hint = obj_source->read_hint,
-                     captured_settings = settings](
-                        bool restricted_seek, const StoredObject & object) mutable
-                        -> std::unique_ptr<ReadBufferFromFileBase>
-                {
-                    return storage->readObject(object, captured_settings, read_hint, /* use_external_buffer */ true, restricted_seek);
-                };
-            }
-            else
+                return pipeline_creator(object, captured_settings, /* use_external_buffer */ true, restricted_seek);
+            };
+        }
+
+        /// Step 2: Wrap each disk cache layer around the source (innermost first).
+        /// With stacked CachedObjectStorage (cache-on-cache), each layer calls needDiskCache
+        /// in inner-to-outer order. The resulting per-object chain is:
+        ///   OuterCache(InnerCache(Source))
+        for (const auto & dc : disk_caches)
+        {
+            auto fs_cache_settings = dc.cache_settings.value_or(settings.getFilesystemCacheSettings());
+            gather_creator =
+                [prev_creator = std::move(gather_creator),
+                 captured_settings = settings,
+                 fs_cache_settings,
+                 cache = dc.cache,
+                 cache_log = dc.cache_log,
+                 custom_key = dc.custom_cache_key,
+                 custom_origin = dc.custom_origin](
+                    bool restricted_seek, const StoredObject & object) mutable
+                    -> std::unique_ptr<ReadBufferFromFileBase>
             {
-                gather_creator =
-                    [pipeline_creator = custom_source->creator, captured_settings = settings](
-                        bool restricted_seek, const StoredObject & object) mutable
-                        -> std::unique_ptr<ReadBufferFromFileBase>
+                auto cache_key = custom_key.value_or(FileCacheKey::fromPath(object.remote_path));
+                auto origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
+
+                /// Copy, not move: gather_creator may be called multiple times (once per object).
+                auto prev_copy = prev_creator;
+                auto impl_creator = [prev_copy, restricted_seek, object]() mutable
+                    -> std::unique_ptr<ReadBufferFromFileBase>
                 {
-                    return pipeline_creator(object, captured_settings, /* use_external_buffer */ true, restricted_seek);
+                    return prev_copy(restricted_seek, object);
                 };
-            }
+
+                return std::make_unique<CachedOnDiskReadBufferFromFile>(
+                    object.remote_path,
+                    cache_key,
+                    cache,
+                    origin,
+                    std::move(impl_creator),
+                    fs_cache_settings,
+                    captured_settings.remote_fs_buffer_size,
+                    captured_settings.local_fs_buffer_size,
+                    std::string(CurrentThread::getQueryId()),
+                    object.bytes_size,
+                    /* allow_seeks_after_first_read */ !restricted_seek,
+                    /* use_external_buffer */ true,
+                    /* read_until_position */ std::nullopt,
+                    cache_log,
+                    captured_settings.local_throttler);
+            };
         }
 
         /// use_external_buffer is true only when a downstream stage (memory cache, async prefetch)
@@ -460,91 +425,130 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 
         const auto & object = source->objects[0];
 
-        if (disk_cache && disk_cache->cache)
         {
-            /// -- Stages 1+2: Source + DiskCache (single-object, no gather) --
-            auto fs_cache_settings = disk_cache->cache_settings.value_or(settings.getFilesystemCacheSettings());
-            auto cache_key = disk_cache->custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
-            auto origin = disk_cache->custom_origin.value_or(disk_cache->cache->getCommonOriginWithSegmentKeyType(object.local_path));
-
-            /// use_external_buffer for CachedOnDiskReadBufferFromFile itself: true when a downstream
+            /// -- Stages 1+2: Source + DiskCache(s) (single-object, no gather) --
+            /// use_external_buffer for the outermost buffer: true when a downstream
             /// stage (memory cache, async prefetch) manages the working buffer.
+            /// Inner cache layers always use external buffer (the outer cache calls set()).
             bool use_ext_buf = memory_cache.has_value() || async_prefetch.has_value();
 
-            /// The impl buffer (source reader inside the cache) must always use external buffer mode.
-            /// CachedOnDiskReadBufferFromFile couples with its impl via set() — passing the working
-            /// buffer for each read and for predownload. Without external buffer mode, the impl
-            /// (e.g. ReadBufferFromS3) replaces the set() buffer with its own HTTP stream buffer
-            /// in nextImpl(), breaking the predownload size contract.
-            static constexpr bool impl_use_external_buffer = true;
-
-            CachedOnDiskReadBufferFromFile::ImplementationBufferCreator impl_creator;
-
-            if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
+            if (!disk_caches.empty())
             {
-                impl_creator = [storage = obj_src->storage, read_hint = obj_src->read_hint,
-                                captured_object = object, captured_settings = settings]()
-                    -> std::unique_ptr<ReadBufferFromFileBase>
+                /// The impl buffer (source reader inside the cache) must always use external buffer mode.
+                /// CachedOnDiskReadBufferFromFile couples with its impl via set() — passing the working
+                /// buffer for each read and for predownload.
+                static constexpr bool impl_use_external_buffer = true;
+
+                /// Build innermost impl_creator (source reader).
+                CachedOnDiskReadBufferFromFile::ImplementationBufferCreator impl_creator;
+
+                if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
                 {
-                    return storage->readObject(captured_object, captured_settings, read_hint,
-                        impl_use_external_buffer, /* restrict_seek */ false);
-                };
-            }
-            else if (const auto * cust_src = std::get_if<CustomSource>(&source->source))
-            {
-                impl_creator = [creator = cust_src->creator, captured_object = object, captured_settings = settings]()
-                    -> std::unique_ptr<ReadBufferFromFileBase>
+                    impl_creator = [storage = obj_src->storage, read_hint = obj_src->read_hint,
+                                    captured_object = object, captured_settings = settings]()
+                        -> std::unique_ptr<ReadBufferFromFileBase>
+                    {
+                        return storage->readObject(captured_object, captured_settings, read_hint,
+                            impl_use_external_buffer, /* restrict_seek */ false);
+                    };
+                }
+                else if (const auto * cust_src = std::get_if<CustomSource>(&source->source))
                 {
-                    return creator(captured_object, captured_settings, impl_use_external_buffer, /* restrict_seek */ false);
-                };
+                    impl_creator = [creator = cust_src->creator, captured_object = object, captured_settings = settings]()
+                        -> std::unique_ptr<ReadBufferFromFileBase>
+                    {
+                        return creator(captured_object, captured_settings, impl_use_external_buffer, /* restrict_seek */ false);
+                    };
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "ReadPipeline: disk cache without gather requires ObjectStorageSource or CustomSource");
+                }
+
+                /// Wrap inner cache layers (all except the outermost). Each layer's
+                /// impl_creator produces the previous layer's CachedOnDiskReadBufferFromFile.
+                /// Inner layers always use use_external_buffer=true.
+                for (size_t i = 0; i + 1 < disk_caches.size(); ++i)
+                {
+                    const auto & dc = disk_caches[i];
+                    auto fs_cache_settings = dc.cache_settings.value_or(settings.getFilesystemCacheSettings());
+                    auto cache_key = dc.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
+                    auto origin = dc.custom_origin.value_or(dc.cache->getCommonOriginWithSegmentKeyType(object.local_path));
+
+                    impl_creator = [
+                        prev_creator = std::move(impl_creator),
+                        path = object.remote_path,
+                        cache_key, cache = dc.cache, origin,
+                        fs_cache_settings,
+                        remote_buf_size = settings.remote_fs_buffer_size,
+                        local_buf_size = settings.local_fs_buffer_size,
+                        object_size = object.bytes_size,
+                        cache_log = dc.cache_log,
+                        throttler = settings.local_throttler
+                    ]() mutable -> std::unique_ptr<ReadBufferFromFileBase>
+                    {
+                        return std::make_unique<CachedOnDiskReadBufferFromFile>(
+                            path, cache_key, cache, origin,
+                            std::move(prev_creator),
+                            fs_cache_settings,
+                            remote_buf_size, local_buf_size,
+                            std::string(CurrentThread::getQueryId()),
+                            object_size,
+                            /* allow_seeks_after_first_read */ true,
+                            /* use_external_buffer */ true,
+                            /* read_until_position */ std::nullopt,
+                            cache_log, throttler);
+                    };
+                }
+
+                /// Build the outermost CachedOnDiskReadBufferFromFile.
+                /// The impl_creator now produces the full inner cache chain.
+                const auto & outermost = disk_caches.back();
+                auto fs_cache_settings = outermost.cache_settings.value_or(settings.getFilesystemCacheSettings());
+                auto cache_key = outermost.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
+                auto origin = outermost.custom_origin.value_or(outermost.cache->getCommonOriginWithSegmentKeyType(object.local_path));
+
+                impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
+                    object.remote_path,
+                    cache_key,
+                    outermost.cache,
+                    origin,
+                    std::move(impl_creator),
+                    fs_cache_settings,
+                    settings.remote_fs_buffer_size,
+                    settings.local_fs_buffer_size,
+                    std::string(CurrentThread::getQueryId()),
+                    object.bytes_size,
+                    /* allow_seeks_after_first_read */ true,
+                    use_ext_buf,
+                    /* read_until_position */ std::nullopt,
+                    outermost.cache_log,
+                    settings.local_throttler);
             }
             else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "ReadPipeline: disk cache without gather requires ObjectStorageSource or CustomSource");
+                /// -- Stage 1 only: Source (no cache, no gather) --
+                impl = std::visit(overloaded{
+                    [&](const ObjectStorageSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+                    {
+                        return s.storage->readObject(object, settings, s.read_hint, use_ext_buf, /* restrict_seek */ false);
+                    },
+                    [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+                    {
+                        return createReadBufferFromFileBase(
+                            s.path, settings, s.read_hint);
+                    },
+                    [&](const BackupSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+                    {
+                        return s.backup->readFile(s.path);
+                    },
+                    [&](const CustomSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+                    {
+                        return s.creator(object, settings, use_ext_buf, /* restrict_seek */ false);
+                    }
+                }, source->source);
             }
-
-            impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
-                object.remote_path,
-                cache_key,
-                disk_cache->cache,
-                origin,
-                std::move(impl_creator),
-                fs_cache_settings,
-                settings.remote_fs_buffer_size,
-                settings.local_fs_buffer_size,
-                std::string(CurrentThread::getQueryId()),
-                object.bytes_size,
-                /* allow_seeks_after_first_read */ true,
-                use_ext_buf,
-                /* read_until_position */ std::nullopt,
-                disk_cache->cache_log);
-        }
-        else
-        {
-            /// -- Stage 1 only: Source (no cache, no gather) --
-            /// use_external_buffer must be true when async prefetch or memory cache wraps this buffer.
-            bool use_ext_buf = memory_cache.has_value() || async_prefetch.has_value();
-
-            impl = std::visit(overloaded{
-                [&](const ObjectStorageSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
-                {
-                    return s.storage->readObject(object, settings, s.read_hint, use_ext_buf, /* restrict_seek */ false);
-                },
-                [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
-                {
-                    return createReadBufferFromFileBase(
-                        s.path, settings, s.read_hint);
-                },
-                [&](const BackupSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
-                {
-                    return s.backup->readFile(s.path);
-                },
-                [&](const CustomSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
-                {
-                    return s.creator(object, settings, use_ext_buf, /* restrict_seek */ false);
-                }
-            }, source->source);
         }
 
         /// -- Stage 2.5 (non-gather): Distributed cache --
@@ -555,6 +559,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             if (!dc_obj_source)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ReadPipeline: distributed cache requires ObjectStorageSource");
+
+            if (!disk_caches.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ReadPipeline: disk cache + distributed cache without gather is not supported. "
+                    "Use needGather() to enable the gather path which handles both stages");
 
             /// Fallback: read directly from object storage (same as non-DC path).
             /// use_external_buffer=false because DC calls set() on the fallback with its
@@ -682,7 +691,7 @@ String ReadPipeline::describe() const
             [&](const CustomSource &) { append("Source(Custom)"); }
         }, source->source);
     }
-    if (disk_cache)
+    for (size_t i = 0; i < disk_caches.size(); ++i)
         append("DiskCache");
     if (gather)
         append("Gather");

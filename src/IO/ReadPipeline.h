@@ -230,7 +230,7 @@ private:
 
     std::optional<SourceStage> source;
     bool gather = false;
-    std::optional<DiskCacheStage> disk_cache;
+    std::vector<DiskCacheStage> disk_caches;
     std::optional<MemoryCacheStage> memory_cache;
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;

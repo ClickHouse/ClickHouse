@@ -4216,6 +4216,18 @@ Possible values:
     DECLARE(Bool, allow_drop_detached, false, R"(
 Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 )", 0) \
+    DECLARE(Bool, dynamic_disk_allow_from_env, false, R"(
+Allow using `from_env` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
+Disabled by default to prevent users from reading arbitrary environment variables when defining table storage.
+)", 0) \
+    DECLARE(Bool, dynamic_disk_allow_include, false, R"(
+Allow using `include` in the dynamic disk configuration (i.e. in the `disk()` function arguments).
+Disabled by default.
+)", 0) \
+    DECLARE(Bool, dynamic_disk_allow_from_zk, false, R"(
+Allow using `from_zk` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
+Disabled by default.
+)", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
@@ -7031,7 +7043,7 @@ Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recomm
     DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
 Use types inference during String to Variant conversion.
 )", 0) \
-    DECLARE(DateTimeInputFormat, cast_string_to_date_time_mode, "basic", R"(
+    DECLARE(DateTimeInputFormat, cast_string_to_date_time_mode, "best_effort", R"(
 Allows choosing a parser of the text representation of date and time during cast from String.
 
 Possible values:
@@ -7743,6 +7755,9 @@ Enable experimental hash functions
 Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine. Possible values:
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_unique_key, false, R"(
+Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).

@@ -40,7 +40,8 @@ public:
         bool allow_seeks_after_first_read_,
         bool use_external_buffer_,
         std::optional<size_t> read_until_position_,
-        std::shared_ptr<FilesystemCacheLog> cache_log_);
+        std::shared_ptr<FilesystemCacheLog> cache_log_,
+        ThrottlerPtr local_throttler_ = nullptr);
 
     ~CachedOnDiskReadBufferFromFile() override;
 
@@ -96,7 +97,8 @@ public:
             bool use_external_buffer_,
             const FilesystemCacheSettings & cache_settings_,
             size_t local_fs_buffer_size_,
-            size_t read_until_position_);
+            size_t read_until_position_,
+            ThrottlerPtr local_throttler_ = nullptr);
 
         /// The readers can be reused among different ReadFromFileSegmentState
         /// objects, therefore they are stored here.
@@ -116,6 +118,8 @@ public:
         const FilesystemCacheSettings cache_settings;
         /// Buffer size for local filesystem reads (cache file reads).
         const size_t local_fs_buffer_size;
+        /// Throttler for local filesystem reads (cache file reads).
+        const ThrottlerPtr local_throttler;
 
         /// Non-included range end offset.
         size_t read_until_position = 0;
