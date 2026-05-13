@@ -59,6 +59,19 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// `arrayIntersect` uses `mostSubtype` to narrow the element types so that
+    /// the same value can fit in every input array. `arrayUnion` and
+    /// `arraySymmetricDifference` widen instead via `leastSupertype`. The
+    /// runtime additionally rejects mixing Decimal with non-Decimal in the
+    /// widening modes; the DSL surfaces a similar error via the underlying
+    /// resolver throwing `NO_COMMON_TYPE` on incompatible inputs.
+    String getSignatureString() const override
+    {
+        if (mode == ArraySetMode::Intersect)
+            return "(Array(T), ...) -> Array(mostSubtype(T, ...))";
+        return "(Array(T), ...) -> Array(leastSupertype(T, ...))";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;

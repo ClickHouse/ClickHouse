@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/getMostSubtype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -837,6 +838,27 @@ public:
     std::string name() const override { return "concatTuples"; }
 };
 
+/// `mostSubtype(T1, T2, ...)` — finds the most specific common type. Used by
+/// `arrayIntersect` to compute the result element type as the type that fits
+/// in every input array. When the inputs share no common subtype (e.g. one
+/// input is `Nothing` — i.e. `Array(Nothing)` produced by `[]`), the result
+/// is `Nothing` rather than an exception, so `arrayIntersect([1], [])` keeps
+/// returning `Array(Nothing)` rather than throwing `NO_COMMON_TYPE`.
+class TypeFunctionMostSubtype : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        DataTypes types;
+        types.reserve(args.size());
+        for (const auto & arg : args)
+            types.emplace_back(arg.type());
+        return Value(getMostSubtype(types, /* throw_if_result_is_nothing */ false));
+    }
+
+    std::string name() const override { return "mostSubtype"; }
+};
+
 /// `innermostArrayElement(T)` — for a (possibly nested) Array type, returns the
 /// innermost (non-Array) element type. `Array(Array(Int32))` -> `Int32`,
 /// `Array(Int32)` -> `Int32`. Throws if `T` is not an Array.
@@ -1073,6 +1095,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionReverseTuple>();
     factory.registerElement<TypeFunctionConcatTuples>();
     factory.registerElement<TypeFunctionInnermostArrayElement>();
+    factory.registerElement<TypeFunctionMostSubtype>();
     factory.registerElement<TypeFunctionAnyInteger>();
     factory.registerElement<TypeFunctionSelectIf>();
     factory.registerElement<TypeFunctionIsFloat32OrSmaller>();
