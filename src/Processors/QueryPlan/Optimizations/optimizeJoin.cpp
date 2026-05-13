@@ -33,6 +33,7 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/System/StorageSystemOne.h>
 
 #include <algorithm>
 #include <limits>
@@ -362,9 +363,23 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
     }
 
+    if (typeid_cast<const ReadFromSystemOneStep *>(step))
+    {
+        /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
+        return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
+    }
+
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {
         return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
+    }
+
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
+    {
+        return RelationStats{
+            .estimated_rows = join_step->getResultRowsEstimation(),
+            .column_stats = join_step->getResultColumnStats(),
+            .table_name = join_step->getReadableRelationName()};
     }
 
     if (node.children.size() != 1)
@@ -400,14 +415,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
-    }
-
-    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
-    {
-        return RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
-            .column_stats = join_step->getResultColumnStats(),
-            .table_name = join_step->getReadableRelationName()};
     }
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
