@@ -529,6 +529,13 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
         else
         {
             const WideType multiplier = DecimalUtils::scaleMultiplier<WideType>(scale);
+            /// At x86-64-v3 with `__AVX2__` the loop and SLP vectorizers widen the per-row Int128
+            /// stores into YMM/XMM packs (`vmovq`/`vpunpcklqdq`/`vmovdqu`) wrapping the BMI2
+            /// `mulxq`, regressing `sum #16`/`decimal_casts #2` ~7-12%. Plain GPR stores keep the
+            /// `mulxq` v3 win.
+#if defined(__clang__) && defined(__AVX2__)
+#pragma clang loop vectorize(disable) interleave(disable)
+#endif
             for (size_t i = 0; i < size; ++i)
             {
                 WideType converted_value;
