@@ -45,6 +45,9 @@ SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS max_j
 SELECT '--- joinGet / joinGetOrNull on Join engine storage ---';
 SELECT k, joinGet('right_storage_join', 'v2', k), joinGetOrNull('right_storage_join', 'v2', k) FROM left ORDER BY ALL;
 
+SELECT '--- Join with spilling ---';
+SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'parallel_hash,grace_hash', max_bytes_before_external_join = 1;
+
 DROP TABLE right_storage_join;
 DROP TABLE right_asof;
 DROP TABLE right;

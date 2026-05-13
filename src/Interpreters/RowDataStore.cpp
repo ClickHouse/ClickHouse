@@ -59,14 +59,12 @@ RowDataStore::RowDataStore(RowLayout && layout_)
 
 std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns)
 {
-    /// For now replicated columns are materialized to make sure all blocks have
+    /// Columns are materialized to make sure all blocks have
     /// the same split of columnar and row store columns.
-    /// TODO: try to allow columns to be in row store in some blocks and remain columnar
-    /// in others (in case of replicated columns).
     Columns materialized_columns;
     materialized_columns.reserve(columns.size());
     for (const auto & col : columns)
-        materialized_columns.push_back(col->convertToFullColumnIfReplicated());
+        materialized_columns.push_back(col->convertToFullIfNeeded());
 
     RowLayout layout = initLayout(materialized_columns);
     auto row_store = std::shared_ptr<RowDataStore>(new RowDataStore(std::move(layout)));
@@ -93,7 +91,7 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
 
     for (size_t i = 0; i < layout.size(); ++i)
     {
-        auto field_layout = layout[i];
+        const auto & field_layout = layout[i];
         if (field_layout.is_nullable)
         {
             const auto * nullable_column = assert_cast<const ColumnNullable *>(columns[i].get());
@@ -134,7 +132,7 @@ void RowDataStore::scatterRows(std::vector<IColumn *> & columns, size_t start, s
     const char * base = getRowAt(start);
     for (size_t i = 0; i < layout.size(); ++i)
     {
-        auto field_layout = layout[i];
+        const auto & field_layout = layout[i];
         if (field_layout.is_nullable)
         {
             auto * nullable_column = assert_cast<ColumnNullable *>(columns[i]);
@@ -175,7 +173,7 @@ void RowDataStore::scatterRows(std::vector<IColumn *> & columns, const PaddedPOD
 
     for (size_t i = 0; i < layout.size(); ++i)
     {
-        auto field_layout = layout[i];
+        const auto & field_layout = layout[i];
         if (field_layout.is_nullable)
         {
             auto * nullable_column = assert_cast<ColumnNullable *>(columns[i]);

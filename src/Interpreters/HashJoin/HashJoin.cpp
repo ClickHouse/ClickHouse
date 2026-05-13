@@ -1860,7 +1860,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
 
     /// Reconstruct full column list from compact columns and row store
     /// using the access indexes to place each column back at its original position.
-    /// TODO: make the row store a columns that can be spilled and reloaded as is.
+    /// TODO: make the row store spillable.
     auto materialize_columns = [&](ScatteredColumns & scattered_columns)
     {
         const auto & columns_info = scattered_columns.columns_info;
