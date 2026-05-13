@@ -1684,10 +1684,14 @@ ColumnPtr ColumnArray::replicateNullable(const Offsets & replicate_offsets) cons
     /// Make temporary arrays for each components of Nullable. Then replicate them independently and collect back to result.
     /// NOTE Offsets are calculated twice and it is redundant.
 
-    auto array_of_nested = ColumnArray(nullable.getNestedColumnPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable())
-            .replicate(replicate_offsets);
-    auto array_of_null_map = ColumnArray(nullable.getNullMapColumnPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable())
-            .replicate(replicate_offsets);
+    /// Construct temporary `ColumnArray` views via the shared-ownership-friendly factory
+    /// instead of `assumeMutable`: `this` is `const`, and `nullable`/`offsets` are typically
+    /// shared with other holders (use_count > 1), so the assertion in `assumeMutable` would
+    /// fire. `replicate` is a `const` method and does not mutate the inputs.
+    auto array_of_nested = ColumnArray::create(nullable.getNestedColumnPtr(), getOffsetsPtr())
+            ->replicate(replicate_offsets);
+    auto array_of_null_map = ColumnArray::create(nullable.getNullMapColumnPtr(), getOffsetsPtr())
+            ->replicate(replicate_offsets);
 
     return ColumnArray::create(
         ColumnNullable::create(
@@ -1708,10 +1712,11 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
     if (tuple_size == 0)
         return replicateGeneric(replicate_offsets);
 
+    /// See `replicateNullable` for why we use the factory instead of `assumeMutable`.
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i]->assumeMutable(), getOffsetsPtr()->assumeMutable())
-                .replicate(replicate_offsets);
+        temporary_arrays[i] = ColumnArray::create(tuple.getColumns()[i], getOffsetsPtr())
+                ->replicate(replicate_offsets);
 
     Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
