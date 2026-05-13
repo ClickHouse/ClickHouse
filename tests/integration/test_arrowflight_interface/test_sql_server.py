@@ -9,7 +9,9 @@ import string
 from .flight_sql_client import (
     FlightSQLClient,
     flight_descriptor,
+    ActionCreatePreparedStatementRequest,
     CommandStatementUpdate,
+    CommandStatementIngest,
     DoPutUpdateResult,
     CancelStatus,
     SetSessionOptionsResult,
@@ -869,3 +871,229 @@ def test_statement_ingest_temporary_not_supported():
         batch = pa.record_batch([pa.array([1], type=pa.uint32())], schema=schema)
         writer.write_batch(batch)
         writer.close()
+
+
+def test_prepared_statement_create_and_close():
+    """CreatePreparedStatement validates SQL and returns dataset schema; ClosePreparedStatement cleans up."""
+    client = get_client()
+
+    client.execute_update("CREATE TABLE mytable (id UInt32, name String, value Float64) ENGINE = Memory")
+    client.execute_update("INSERT INTO mytable VALUES (1, 'test', 42.5), (2, 'hello', 3.14)")
+
+    stmt = client.prepare("SELECT id, name, value FROM mytable WHERE id = ?")
+
+    # Schema should reflect the three result columns
+    assert stmt.dataset_schema is not None
+    assert len(stmt.dataset_schema) == 3
+    assert stmt.dataset_schema.field(0).name == "id"
+    assert stmt.dataset_schema.field(1).name == "name"
+    assert stmt.dataset_schema.field(2).name == "value"
+
+    # Handle should be non-empty
+    assert len(stmt.handle) > 0
+
+    # Close should not raise
+    stmt.close()
+
+
+def test_prepared_statement_invalid_sql():
+    """CreatePreparedStatement with invalid SQL should return an error."""
+    client = get_client()
+
+    with pytest.raises(flight.FlightServerError):
+        client.prepare("SELEKT invalid syntax !!!")
+
+
+def test_prepared_statement_no_params():
+    """CreatePreparedStatement works for a query without placeholders."""
+    client = get_client()
+
+    client.execute_update("CREATE TABLE mytable (id UInt32) ENGINE = Memory")
+
+    stmt = client.prepare("SELECT id FROM mytable")
+
+    assert stmt.dataset_schema is not None
+    assert len(stmt.dataset_schema) == 1
+    assert stmt.dataset_schema.field(0).name == "id"
+
+    stmt.close()
+
+
+def test_prepared_statement_empty_query():
+    """CreatePreparedStatement with empty query returns an error."""
+    client = get_client()
+
+    with pytest.raises(pa.lib.ArrowInvalid, match="query must not be empty"):
+        client.prepare("")
+
+
+def test_prepared_statement_execute_no_params():
+    """Execute a prepared SELECT without parameters."""
+    client = get_client()
+
+    client.execute_update("CREATE TABLE mytable (id UInt32, name String) ENGINE = Memory")
+    client.execute_update("INSERT INTO mytable VALUES (1, 'alice'), (2, 'bob')")
+
+    stmt = client.prepare("SELECT id, name FROM mytable ORDER BY id")
+    table = stmt.execute()
+    stmt.close()
+
+    assert table.num_rows == 2
+    assert table.column("id")[0].as_py() == 1
+    assert table.column("name")[1].as_py() == "bob"
+
+
+def test_prepared_statement_execute_with_params():
+    """Execute a prepared SELECT with bound parameters."""
+    client = get_client()
+
+    client.execute_update("CREATE TABLE mytable (id UInt32, name String) ENGINE = Memory")
+    client.execute_update("INSERT INTO mytable VALUES (1, 'alice'), (2, 'bob'), (3, 'charlie')")
+
+    stmt = client.prepare("SELECT id, name FROM mytable WHERE id = ?")
+
+    params = pa.record_batch(
+        [pa.array([2], type=pa.uint32())],
+        names=["param_1"],
+    )
+    stmt.bind_parameters(params)
+    table = stmt.execute()
+
+    assert table.num_rows == 1
+    assert table.column("id")[0].as_py() == 2
+    assert table.column("name")[0].as_py() == "bob"
+
+    stmt.close()
+
+
+def test_prepared_statement_execute_with_string_param():
+    """Execute a prepared SELECT with a string parameter."""
+    client = get_client()
+
+    client.execute_update("CREATE TABLE mytable (id UInt32, name String) ENGINE = Memory")
+    client.execute_update("INSERT INTO mytable VALUES (1, 'alice'), (2, 'bob')")
+
+    stmt = client.prepare("SELECT id FROM mytable WHERE name = ?")
+
+    params = pa.record_batch(
+        [pa.array(["alice"], type=pa.string())],
+        names=["param_1"],
+    )
+    stmt.bind_parameters(params)
+    table = stmt.execute()
+
+    assert table.num_rows == 1
+    assert table.column("id")[0].as_py() == 1
+
+    stmt.close()
+
+
+def test_prepared_statement_rebind_and_reexecute():
+    """Rebind parameters and re-execute a prepared statement."""
+    client = get_client()
+
+    client.execute_update("CREATE TABLE mytable (id UInt32, name String) ENGINE = Memory")
+    client.execute_update("INSERT INTO mytable VALUES (1, 'alice'), (2, 'bob'), (3, 'charlie')")
+
+    stmt = client.prepare("SELECT name FROM mytable WHERE id = ?")
+
+    # First execution: id = 1
+    params = pa.record_batch([pa.array([1], type=pa.uint32())], names=["p"])
+    stmt.bind_parameters(params)
+    table = stmt.execute()
+    assert table.column("name")[0].as_py() == "alice"
+
+    # Second execution: id = 3
+    params = pa.record_batch([pa.array([3], type=pa.uint32())], names=["p"])
+    stmt.bind_parameters(params)
+    table = stmt.execute()
+    assert table.column("name")[0].as_py() == "charlie"
+
+    stmt.close()
+
+
+def test_prepared_statement_update():
+    """Execute a prepared INSERT via CommandPreparedStatementUpdate with rebinding."""
+    client = get_client()
+
+    client.execute_update("CREATE TABLE mytable (id UInt32, name String) ENGINE = Memory")
+
+    stmt = client.prepare("INSERT INTO mytable VALUES (?, ?)")
+
+    # First insert
+    params = pa.record_batch(
+        [pa.array([1], type=pa.uint32()), pa.array(["alice"], type=pa.string())],
+        names=["p1", "p2"],
+    )
+    stmt.bind_parameters(params)
+    stmt.execute_update()
+
+    # Rebind and insert again
+    params = pa.record_batch(
+        [pa.array([2], type=pa.uint32()), pa.array(["bob"], type=pa.string())],
+        names=["p1", "p2"],
+    )
+    stmt.bind_parameters(params)
+    stmt.execute_update()
+
+    # Third insert
+    params = pa.record_batch(
+        [pa.array([3], type=pa.uint32()), pa.array(["charlie"], type=pa.string())],
+        names=["p1", "p2"],
+    )
+    stmt.bind_parameters(params)
+    stmt.execute_update()
+
+    stmt.close()
+
+    # Verify all rows were inserted
+    flight_info = client.execute("SELECT * FROM mytable ORDER BY id")
+    reader = client.do_get(flight_info.endpoints[0].ticket)
+    table = reader.read_all()
+
+    assert table.num_rows == 3
+    assert [table.column("id")[i].as_py() for i in range(3)] == [1, 2, 3]
+    assert [table.column("name")[i].as_py() for i in range(3)] == ["alice", "bob", "charlie"]
+
+
+#
+# Transaction ID rejection tests
+#
+
+def test_transaction_id_rejected_for_statement_query():
+    """CommandStatementQuery with transaction_id should be rejected."""
+    client = get_client()
+    cmd = CommandStatementQuery(query="SELECT 1", transaction_id=b"fake-txn-id")
+    with pytest.raises(pa.lib.ArrowNotImplementedError, match="transaction_id is not supported"):
+        client.client.get_flight_info(flight_descriptor(cmd), client._flight_call_options())
+
+
+def test_transaction_id_rejected_for_statement_update():
+    """CommandStatementUpdate with transaction_id should be rejected."""
+    client = get_client()
+    cmd = CommandStatementUpdate(query="SELECT 1", transaction_id=b"fake-txn-id")
+    desc = flight_descriptor(cmd)
+    with pytest.raises(pa.lib.ArrowNotImplementedError, match="transaction_id is not supported"):
+        writer, reader = client.client.do_put(desc, pa.schema([]), client._flight_call_options())
+        reader.read()
+        writer.close()
+
+
+def test_transaction_id_rejected_for_statement_ingest():
+    """CommandStatementIngest with transaction_id should be rejected."""
+    client = get_client()
+    cmd = CommandStatementIngest(table="t", transaction_id=b"fake-txn-id")
+    desc = flight_descriptor(cmd)
+    with pytest.raises(pa.lib.ArrowNotImplementedError, match="transaction_id is not supported"):
+        writer, reader = client.client.do_put(desc, pa.schema([]), client._flight_call_options())
+        reader.read()
+        writer.close()
+
+
+def test_transaction_id_rejected_for_create_prepared_statement():
+    """CreatePreparedStatement with transaction_id should be rejected."""
+    client = get_client()
+    req = ActionCreatePreparedStatementRequest(query="SELECT 1", transaction_id=b"fake-txn-id")
+    action = flight.Action("CreatePreparedStatement", req.SerializeToString())
+    with pytest.raises(pa.lib.ArrowNotImplementedError, match="transaction_id is not supported"):
+        list(client.client.do_action(action, client._flight_call_options()))

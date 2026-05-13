@@ -1,3 +1,10 @@
+-- Tags: no-flaky-check
+-- ^^ The test is large (780 lines) and runs ~190-260s in the flaky check at
+-- 5x; the only change in this PR is pinning `date_time_input_format` and
+-- `cast_string_to_date_time_mode` to `basic` to preserve the existing
+-- reference output, which doesn't affect test stability and doesn't warrant
+-- 5x re-runs.
+
 -- Tests adapted from https://github.com/davidnx/baby-kusto-csharp
 -- Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 -- Source: test/BabyKusto.Core.Tests/EndToEndTests.cs
@@ -7,6 +14,11 @@ set joined_subquery_requires_alias=0;
 set prefer_column_name_to_alias=1;
 set allow_experimental_dynamic_type=1;
 set allow_experimental_json_type=1;
+-- The Kusto-conformance reference relies on strict-mode parsing,
+-- where strings like '2015-12-14 11:15' (missing seconds) are rejected
+-- and produce NULL when inserted into `DateTime64` columns.
+set date_time_input_format='basic';
+set cast_string_to_date_time_mode='basic';
 set dialect='kusto';
 
 print '-- Print1 --';

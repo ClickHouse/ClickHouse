@@ -125,6 +125,45 @@ CommandGetPrimaryKeys = _globals['CommandGetPrimaryKeys']
 CommandStatementIngest = _globals['CommandStatementIngest']
 
 # ---------------------------------------------------------------------------
+# Prepared-statement messages (separate proto file to avoid conflicts).
+# Defines: ActionCreatePreparedStatementRequest/Result,
+#          ActionClosePreparedStatementRequest,
+#          CommandPreparedStatementQuery, CommandPreparedStatementUpdate,
+#          DoPutPreparedStatementResult.
+# ---------------------------------------------------------------------------
+_PREP_STMT_DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x1fflightsql/flightsql_extra.proto\x12\x19arrow.flight.protocol.sql'
+    b'"e\n$ActionCreatePreparedStatementRequest\x12\r\n\x05query\x18\x01 \x01(\t'
+    b'\x12\x1b\n\x0etransaction_id\x18\x02 \x01(\x0cH\x00\x88\x01\x01'
+    b'B\x11\n\x0f_transaction_id'
+    b'"z\n#ActionCreatePreparedStatementResult'
+    b'\x12!\n\x19prepared_statement_handle\x18\x01 \x01(\x0c'
+    b'\x12\x16\n\x0edataset_schema\x18\x02 \x01(\x0c'
+    b'\x12\x18\n\x10parameter_schema\x18\x03 \x01(\x0c'
+    b'"H\n#ActionClosePreparedStatementRequest'
+    b'\x12!\n\x19prepared_statement_handle\x18\x01 \x01(\x0c'
+    b'"B\n\x1dCommandPreparedStatementQuery'
+    b'\x12!\n\x19prepared_statement_handle\x18\x01 \x01(\x0c'
+    b'"C\n\x1eCommandPreparedStatementUpdate'
+    b'\x12!\n\x19prepared_statement_handle\x18\x01 \x01(\x0c'
+    b'"d\n\x1cDoPutPreparedStatementResult'
+    b'\x12&\n\x19prepared_statement_handle\x18\x01 \x01(\x0cH\x00\x88\x01\x01'
+    b'B\x1c\n\x1a_prepared_statement_handle'
+    b'b\x06proto3'
+)
+
+_builder.BuildMessageAndEnumDescriptors(_PREP_STMT_DESCRIPTOR, _globals)
+_builder.BuildTopDescriptorsAndMessages(
+    _PREP_STMT_DESCRIPTOR, 'flightsql.flightsql_extra_pb2', _globals)
+
+ActionCreatePreparedStatementRequest = _globals['ActionCreatePreparedStatementRequest']
+ActionCreatePreparedStatementResult = _globals['ActionCreatePreparedStatementResult']
+ActionClosePreparedStatementRequest = _globals['ActionClosePreparedStatementRequest']
+CommandPreparedStatementQuery = _globals['CommandPreparedStatementQuery']
+CommandPreparedStatementUpdate = _globals['CommandPreparedStatementUpdate']
+DoPutPreparedStatementResult = _globals['DoPutPreparedStatementResult']
+
+# ---------------------------------------------------------------------------
 # Flight.proto action messages (arrow.flight.protocol package)
 #
 # Defines: SessionOptionValue, SetSessionOptionsRequest/Result,
@@ -259,6 +298,8 @@ def _create_flight_client(
     insecure: Optional[bool] = None,
     disable_server_verification: Optional[bool] = None,
     metadata: Optional[Dict[str, str]] = None,
+    username: Optional[str] = None,
+    password: Optional[str] = None,
     **kwargs: Any,
 ) -> Tuple[flight.FlightClient, List[Tuple[bytes, bytes]]]:
     protocol = "tls"
@@ -271,6 +312,11 @@ def _create_flight_client(
     client = flight.FlightClient(url, **kwargs)
 
     headers: List[Tuple[bytes, bytes]] = []
+
+    if username is not None:
+        token = client.authenticate_basic_token(username, password or "")
+        headers.append(token)
+
     for k, v in (metadata or {}).items():
         headers.append((k.encode("utf-8"), v.encode("utf-8")))
 
@@ -306,9 +352,25 @@ class FlightSQLClient:
         headers = list(OrderedDict(self.headers).items())
         return flight.FlightCallOptions(headers=headers)
 
-    def execute(self, query: str) -> flight.FlightInfo:
-        """Execute a query and return FlightInfo for result retrieval."""
-        cmd = CommandStatementQuery(query=query)
+    def execute(self, query_or_stmt) -> flight.FlightInfo:
+        """Execute a query string or a PreparedStatement.
+
+        When given a string, returns FlightInfo for result retrieval.
+        When given a PreparedStatement, executes it using this client's session and returns a pa.Table.
+        """
+        if isinstance(query_or_stmt, PreparedStatement):
+            stmt = query_or_stmt
+            cmd = CommandPreparedStatementQuery(prepared_statement_handle=stmt.handle)
+            descriptor = flight_descriptor(cmd)
+            options = self._flight_call_options()
+            flight_info = self.client.get_flight_info(descriptor, options)
+            tables = []
+            for endpoint in flight_info.endpoints:
+                reader = self.do_get(endpoint.ticket)
+                tables.append(reader.read_all())
+            return pa.concat_tables(tables)
+
+        cmd = CommandStatementQuery(query=query_or_stmt)
         options = self._flight_call_options()
         return self.client.get_flight_info(flight_descriptor(cmd), options)
 
@@ -402,6 +464,45 @@ class FlightSQLClient:
         options = self._flight_call_options()
         return self.client.get_schema(flight_descriptor(cmd), options)
 
+    def prepare(self, query: str) -> "PreparedStatement":
+        """Create a prepared statement via the CreatePreparedStatement action."""
+        req = ActionCreatePreparedStatementRequest(query=query)
+        action = flight.Action("CreatePreparedStatement", req.SerializeToString())
+        results = list(self.client.do_action(action, self._flight_call_options()))
+        result = ActionCreatePreparedStatementResult()
+        result.ParseFromString(results[0].body.to_pybytes())
+
+        dataset_schema = None
+        if result.dataset_schema:
+            dataset_schema = pa.ipc.read_schema(pa.BufferReader(result.dataset_schema))
+
+        parameter_schema = None
+        if result.parameter_schema:
+            parameter_schema = pa.ipc.read_schema(pa.BufferReader(result.parameter_schema))
+
+        return PreparedStatement(
+            client=self,
+            handle=result.prepared_statement_handle,
+            dataset_schema=dataset_schema,
+            parameter_schema=parameter_schema,
+        )
+
+    def close_prepared_statement(self, handle: bytes):
+        """Close a prepared statement via the ClosePreparedStatement action."""
+        req = ActionClosePreparedStatementRequest(prepared_statement_handle=handle)
+        action = flight.Action("ClosePreparedStatement", req.SerializeToString())
+        list(self.client.do_action(action, self._flight_call_options()))
+
+    def close_all_prepared_statements(self):
+        """Close all prepared statements for the current user.
+
+        Sends a ClosePreparedStatement action with an empty handle,
+        which the server interprets as "close all".
+        """
+        req = ActionClosePreparedStatementRequest()
+        action = flight.Action("ClosePreparedStatement", req.SerializeToString())
+        list(self.client.do_action(action, self._flight_call_options()))
+
     def set_session_options(self, options: Dict[str, Any]) -> SetSessionOptionsResult:
         """Set session options via the SetSessionOptions action.
 
@@ -484,3 +585,66 @@ class FlightSQLClient:
         result = PollInfo()
         result.ParseFromString(raw_response)
         return PollResult(result)
+
+
+class PreparedStatement:
+    """Represents a server-side prepared statement."""
+
+    def __init__(self, client: FlightSQLClient, handle: bytes,
+                 dataset_schema: Optional[pa.Schema],
+                 parameter_schema: Optional[pa.Schema]):
+        self.client = client
+        self.handle = handle
+        self.dataset_schema = dataset_schema
+        self.parameter_schema = parameter_schema
+
+    def bind_parameters(self, params: pa.RecordBatch):
+        """Bind parameter values via DoPut with CommandPreparedStatementQuery."""
+        cmd = CommandPreparedStatementQuery(prepared_statement_handle=self.handle)
+        descriptor = flight_descriptor(cmd)
+        options = self.client._flight_call_options()
+        writer, reader = self.client.client.do_put(descriptor, params.schema, options)
+        writer.write_batch(params)
+        writer.done_writing()
+        result_buf = reader.read()
+        writer.close()
+        if result_buf:
+            result = DoPutPreparedStatementResult()
+            result.ParseFromString(result_buf.to_pybytes())
+            if result.HasField('prepared_statement_handle'):
+                self.handle = result.prepared_statement_handle
+
+    def execute(self) -> pa.Table:
+        """Execute the prepared statement query and return the result table."""
+        cmd = CommandPreparedStatementQuery(prepared_statement_handle=self.handle)
+        descriptor = flight_descriptor(cmd)
+        options = self.client._flight_call_options()
+        flight_info = self.client.client.get_flight_info(descriptor, options)
+        tables = []
+        for endpoint in flight_info.endpoints:
+            reader = self.client.do_get(endpoint.ticket)
+            tables.append(reader.read_all())
+        return pa.concat_tables(tables)
+
+    def execute_update(self) -> int:
+        """Execute the prepared statement as an update (INSERT/DDL) and return affected row count."""
+        cmd = CommandPreparedStatementUpdate(prepared_statement_handle=self.handle)
+        descriptor = flight_descriptor(cmd)
+        options = self.client._flight_call_options()
+
+        # DoPut with CommandPreparedStatementUpdate - send empty batch
+        schema = pa.schema([])
+        writer, reader = self.client.client.do_put(descriptor, schema, options)
+        writer.done_writing()
+        result_buf = reader.read()
+        writer.close()
+
+        if result_buf:
+            update_result = DoPutUpdateResult()
+            update_result.ParseFromString(result_buf.to_pybytes())
+            return update_result.record_count
+        return 0
+
+    def close(self):
+        """Close the prepared statement on the server."""
+        self.client.close_prepared_statement(self.handle)

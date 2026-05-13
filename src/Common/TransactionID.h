@@ -87,7 +87,18 @@ struct TransactionID
 
     bool isNonTransactional() const
     {
-        assert((local_tid == Tx::NonTransactionalLocalTID) == (start_csn == Tx::NonTransactionalCSN));
+        /// `Tx::DummyTID` is exactly `{Tx::NonTransactionalCSN, Tx::DummyLocalTID, UUIDHelpers::Nil}` —
+        /// a special marker used by `VersionMetadataOnDisk::loadMetadata` to represent a
+        /// rolled-back part whose `txn_version.txt.tmp` file was left behind by an incomplete
+        /// write. Exclude only this exact shape from the invariant check so
+        /// `wasInvolvedInTransaction` and `validateInfo` can safely inspect such parts during
+        /// part loading. Any other combination — including a `DummyLocalTID` with a non-`Nil`
+        /// `host_id` — indicates corrupted on-disk metadata and must still trip the assertion.
+        assert(
+            (local_tid == Tx::NonTransactionalLocalTID) == (start_csn == Tx::NonTransactionalCSN)
+            || (local_tid == Tx::DummyLocalTID
+                && start_csn == Tx::NonTransactionalCSN
+                && host_id == UUIDHelpers::Nil));
         return local_tid == Tx::NonTransactionalLocalTID;
     }
 

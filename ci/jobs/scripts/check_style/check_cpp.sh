@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|base/base/openpty\.h|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # Pre-compute file lists to avoid repeated find+grep
@@ -42,7 +42,7 @@ rg $@ -n --glob '*.h' --glob '*.cpp' \
     --glob '!**/glibc-compatibility/**' --glob '!**/poco/**' --glob '!**/memcpy/**' \
     --glob '!**/consistent-hashing/**' --glob '!**/*benchmark*' \
     --glob '!**/tests/**/*.cpp' \
-    --glob '!**/base/base/openpty.h' --glob '!**/AvroSchema.h' \
+    --glob '!**/AvroSchema.h' \
     --glob '!**/*Settings.cpp' --glob '!**/FormatFactorySettings.h' \
     --glob '!**/StorageSystemDashboards.cpp' \
     '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|^ {1,3}[^\* ]\S|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' \

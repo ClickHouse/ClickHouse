@@ -456,6 +456,29 @@ void VersionMetadata::validateInfo(const String & object_name, const VersionInfo
 {
     chassert(!info.creation_tid.isEmpty());
 
+    /// A rolled-back part is a transient state produced by `VersionMetadataOnDisk::loadMetadata`
+    /// when only a `txn_version.txt.tmp` file exists on disk (i.e. the previous write was
+    /// interrupted before the atomic rename). In that case `loadMetadata` returns a
+    /// `VersionInfo` with `creation_tid == Tx::DummyTID`, `creation_csn == Tx::RolledBackCSN`,
+    /// and default-constructed removal fields (`removal_tid.isEmpty()` and
+    /// `removal_csn == Tx::UnknownCSN`). Skip the rest of validation only for this exact
+    /// transient shape because:
+    ///  - `DummyTID` has `start_csn == NonTransactionalCSN` but `local_tid == DummyLocalTID`,
+    ///    which would trip the `assert` inside `TransactionID::isNonTransactional` in debug /
+    ///    sanitizer builds and abort the server during startup or `ATTACH`.
+    ///  - The part will be marked `Outdated` immediately after loading (see
+    ///    `MergeTreeData::loadDataPart`) and subsequently cleaned up, so the invariants that
+    ///    `validateInfo` enforces for live parts do not apply here.
+    ///
+    /// Any other shape with `creation_csn == Tx::RolledBackCSN` (for example a regular
+    /// transactional part whose creating transaction was found rolled back by
+    /// `updateCSNIfNeeded`) must still go through the full validation below.
+    if (info.creation_csn == Tx::RolledBackCSN
+        && info.creation_tid == Tx::DummyTID
+        && info.removal_tid.isEmpty()
+        && info.removal_csn == Tx::UnknownCSN)
+        return;
+
     MergeTreeTransactionPtr creating_txn{nullptr};
     if (!info.creation_tid.isNonTransactional())
         creating_txn = TransactionLog::instance().tryGetRunningTransaction(info.creation_tid.getHash());
@@ -569,6 +592,19 @@ void VersionMetadata::loadAndUpdateMetadata()
 bool VersionMetadata::hasValidMetadata()
 {
     auto current_info = getInfo();
+
+    /// Rolled-back parts produced by `VersionMetadataOnDisk::loadMetadata` case 2 exist only
+    /// in-memory: there is no `txn_version.txt` on disk (the previous write was interrupted
+    /// before the atomic rename and `loadMetadata` has since removed the `.tmp` file), so
+    /// `readMetadata()` below would throw `CANNOT_OPEN_FILE`. The in-memory state IS the
+    /// authoritative state for such parts — they are about to be removed from disk — so
+    /// short-circuit with the same shape match used in `validateInfo`.
+    if (current_info.creation_csn == Tx::RolledBackCSN
+        && current_info.creation_tid == Tx::DummyTID
+        && current_info.removal_tid.isEmpty()
+        && current_info.removal_csn == Tx::UnknownCSN)
+        return true;
+
     VersionInfo persisted_info;
     try
     {

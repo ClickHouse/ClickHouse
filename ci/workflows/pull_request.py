@@ -138,6 +138,10 @@ workflow = Workflow.Config(
             job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
+        *[
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.sqlancer_master_jobs
+        ],
         JobConfigs.llvm_coverage_job,
         JobConfigs.sqllogic_test_master_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
