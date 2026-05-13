@@ -6,8 +6,10 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFromJSON.h>
+#include <Parsers/CommonParsers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/Lexer.h>
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -141,14 +143,27 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
     size_t oi = 0; /// Index into orig_sig.
 
     /// Check if two tokens are equivalent.
-    /// Case-insensitive only for BareWord tokens (SQL keywords and identifiers);
-    /// string literals, quoted identifiers, and other tokens must match exactly.
-    auto tokensMatch = [](const SignificantToken & a, const SignificantToken & b) -> bool
+    /// Case-insensitive only for SQL keywords. `BareWord` covers both keywords and
+    /// identifiers at the lexer level, so we explicitly look up the uppercase form
+    /// in the parser's keyword set to distinguish them. Identifiers, string literals,
+    /// quoted identifiers, and other tokens must match exactly to preserve semantics
+    /// for case-sensitive identifier names.
+    const auto & keyword_set = getKeyWordSet();
+    auto isKeyword = [&keyword_set](const SignificantToken & t) -> bool
+    {
+        if (t.type != TokenType::BareWord)
+            return false;
+        String upper(t.text);
+        Poco::toUpperInPlace(upper);
+        return keyword_set.contains(upper);
+    };
+
+    auto tokensMatch = [&isKeyword](const SignificantToken & a, const SignificantToken & b) -> bool
     {
         if (a.text.size() != b.text.size())
             return false;
 
-        bool case_insensitive = (a.type == TokenType::BareWord && b.type == TokenType::BareWord);
+        bool case_insensitive = isKeyword(a) && isKeyword(b);
 
         for (size_t i = 0; i < a.text.size(); ++i)
         {
@@ -198,9 +213,13 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
                 {
                     if (tokensMatch(canon_sig[next_ci + look], orig_sig[next_oi + olook]))
                     {
-                        /// Found re-alignment. Output canonical text for the divergent part.
-                        const char * end = canon_sig[next_ci + look].text.data();
-                        result += std::string_view(start, static_cast<size_t>(end - start));
+                        /// Found re-alignment. Output canonical text for the divergent tokens up to
+                        /// (but not including) the inter-token material before the resync token —
+                        /// that whitespace will be re-emitted from the original on the next iteration.
+                        const auto & last_canon = canon_sig[next_ci + look - 1];
+                        const char * end = last_canon.text.data() + last_canon.text.size();
+                        if (end > start)
+                            result += std::string_view(start, static_cast<size_t>(end - start));
                         ci = next_ci + look;
                         oi = next_oi + olook;
                         resync = true;
