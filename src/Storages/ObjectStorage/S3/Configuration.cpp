@@ -231,13 +231,12 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
 
-    if (collection.getSourceId() == NamedCollection::SourceId::SQL
-        && collection.has("use_environment_credentials")
+    if (collection.has("use_environment_credentials")
         && collection.get<bool>("use_environment_credentials"))
     {
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
-            "Using `use_environment_credentials` in SQL S3 named collections is not allowed");
+            "Using `use_environment_credentials` in S3 named collections is not allowed");
     }
 
     s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
@@ -265,13 +264,12 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     partition_columns_in_data_file = collection.getOrDefault<bool>(
         "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
     s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.getOrDefault<String>("role_arn", "");
-    if (collection.getSourceId() == NamedCollection::SourceId::SQL
-        && !s3_settings->auth_settings[S3AuthSetting::role_arn].value.empty()
+    if (!s3_settings->auth_settings[S3AuthSetting::role_arn].value.empty()
         && !hasExplicitS3Credentials(s3_settings->auth_settings))
     {
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
-            "Using `role_arn` without explicit S3 credentials in SQL S3 named collections is not allowed");
+            "Using `role_arn` without explicit S3 credentials in S3 named collections is not allowed");
     }
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
 

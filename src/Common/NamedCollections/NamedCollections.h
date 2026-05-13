@@ -76,7 +76,7 @@ public:
 
     bool isMutable() const { return is_mutable; }
 
-    virtual SourceId getSourceId() const { return source_id; }
+    virtual SourceId getSourceId() const { return SourceId::NONE; }
 
     virtual String getCreateStatement(bool /*show_secrects*/) { return  {}; }
 
@@ -90,8 +90,7 @@ protected:
     NamedCollection(
         ImplPtr pimpl_,
         const std::string & collection_name,
-        bool is_mutable_,
-        SourceId source_id_ = SourceId::NONE
+        bool is_mutable_
     );
 
     void assertMutable() const;
@@ -100,7 +99,6 @@ protected:
     ImplPtr pimpl;
     const std::string collection_name;
     const bool is_mutable;
-    const SourceId source_id;
     mutable std::mutex mutex;
 };
 
