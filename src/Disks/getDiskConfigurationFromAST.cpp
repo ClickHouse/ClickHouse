@@ -87,7 +87,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
         auto value_str = convertFieldToString(value->as<ASTLiteral>()->value);
 
-        if ((key == "type" || key == "object_storage_type") && value_str == "s3")
+        if ((key == "type" || key == "object_storage_type")
+            && (value_str == "s3" || value_str.starts_with("s3_")))
             is_s3_configuration = true;
         else if (key == "use_environment_credentials")
             has_use_environment_credentials = true;
