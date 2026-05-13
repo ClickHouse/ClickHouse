@@ -153,6 +153,41 @@ if __name__ == "__main__":
     curr_data = _parse_info(CURR)
     print(f"  {len(curr_data)} files in current")
 
+    # Overall coverage delta vs master baseline, computed from the parsed
+    # tracefiles directly. These numbers may diverge from `lcov --summary` by a
+    # rounding-level amount (lcov does some extra normalisation), but the trend
+    # — improved, unchanged, or regressed — is what tests typically move by a
+    # fraction of a percentage point, so 4 decimal places below.
+    def _totals(data: dict) -> tuple[int, int, int, int]:
+        l_tot = l_hit = f_tot = f_hit = 0
+        for v in data.values():
+            for cnt in v["lines"].values():
+                l_tot += 1
+                if cnt > 0:
+                    l_hit += 1
+            for cnt in v["fns"].values():
+                f_tot += 1
+                if cnt > 0:
+                    f_hit += 1
+        return l_tot, l_hit, f_tot, f_hit
+
+    b_lt, b_lh, b_ft, b_fh = _totals(base_data)
+    c_lt, c_lh, c_ft, c_fh = _totals(curr_data)
+    b_lp = (100.0 * b_lh / b_lt) if b_lt else 0.0
+    c_lp = (100.0 * c_lh / c_lt) if c_lt else 0.0
+    b_fp = (100.0 * b_fh / b_ft) if b_ft else 0.0
+    c_fp = (100.0 * c_fh / c_ft) if c_ft else 0.0
+
+    print("\nOverall coverage delta (current vs master baseline):")
+    print(
+        f"  Lines    : {c_lp - b_lp:+.4f} pp  "
+        f"({b_lp:.4f}% -> {c_lp:.4f}%, {c_lh - b_lh:+,} covered)"
+    )
+    print(
+        f"  Functions: {c_fp - b_fp:+.4f} pp  "
+        f"({b_fp:.4f}% -> {c_fp:.4f}%, {c_fh - b_fh:+,} covered)"
+    )
+
     nc_lines: dict[str, list[int]] = defaultdict(list)
     nc_fns: dict[str, list[str]] = defaultdict(list)
 
@@ -238,15 +273,10 @@ if __name__ == "__main__":
                 f"listed line numbers for the full context]"
             )
 
-    if total_fns > 0:
-        print(f"\nNewly covered functions ({min(100, total_fns)} of {total_fns}):")
-        fn_pairs: list[tuple[str, str]] = []
-        for rel, names in nc_fns.items():
-            for name in names:
-                fn_pairs.append((rel, name))
-        fn_pairs.sort()
-        for rel, fn in fn_pairs[:100]:
-            print(f"  {rel}: {fn}")
+    # The per-function listing used to print mangled C++ symbol names verbatim,
+    # which were unreadable (e.g. `_ZNK2DB12_GLOBAL__N_1...`) and added no
+    # signal beyond the per-file function counts already shown in the inventory
+    # above. Removed.
 
     r = Result.create_from(
         name="Newly Covered Code",
