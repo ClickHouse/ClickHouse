@@ -68,10 +68,27 @@ public:
     /// threshold is relaxed to `session_timeout` instead: the heartbeat thread is busy
     /// executing the callback itself, so the "stalled thread" interpretation does not
     /// apply, and the remote lease is still valid for the full session-timeout window.
+    ///
+    /// This check answers "do we hold the lease?" and is used by internal commit paths
+    /// (the takeover-sync callback itself commits parts) and by background-job gates.
+    /// User-facing write paths must use `isLeaderAndWritable` / `assertIsLeaderAndWritable`
+    /// instead so that writes are blocked until the takeover-sync callback finishes
+    /// `loadNewlyAppearedParts` and advances the block-number counter.
     bool isLeader() const;
 
-    /// Throw TABLE_IS_READ_ONLY if not the leader.
+    /// Throw `TABLE_IS_READ_ONLY` if not the leader. See `isLeader` for the semantics.
     void assertIsLeader() const;
+
+    /// Returns true iff this instance holds the lease AND the takeover-sync callback
+    /// has finished. User-facing write paths consult this so that a client `INSERT`
+    /// cannot slip into the window where `is_leader` has been published but the
+    /// callback has not yet refreshed the part view or advanced the block-number
+    /// counter — both prerequisites for safe failover writes.
+    bool isLeaderAndWritable() const;
+
+    /// Throw `TABLE_IS_READ_ONLY` if not the leader or if takeover sync is still in
+    /// progress. Used by user-facing write entry points (`assertNotReadonly`).
+    void assertIsLeaderAndWritable() const;
 
     using CallbackOnLeadershipChange = std::function<void(bool /* is_leader */)>;
 
@@ -138,6 +155,15 @@ private:
 
     std::atomic<bool> is_leader{false};
     std::atomic<bool> stopped{false};
+
+    /// True after the takeover-sync callback has finished and external user writes
+    /// can be served. Distinct from `is_leader`: `is_leader` is published as soon
+    /// as the lease is acquired, but `writes_enabled` is only flipped after
+    /// `loadNewlyAppearedParts` and the block-number counter advance have completed.
+    /// Gating user writes on this flag (rather than `is_leader` alone) prevents a
+    /// client `INSERT` from allocating a stale block number during the takeover
+    /// window — the data-loss race that the failover stress test exercises.
+    std::atomic<bool> writes_enabled{false};
 
     /// True while the heartbeat task is synchronously executing the takeover-sync
     /// callback (`on_leadership_change(true)`). Set via `TakeoverSyncScope`.

@@ -325,6 +325,12 @@ void StorageMergeTree::startup()
                     /// highest block number among them — so advancing `increment` past that
                     /// max is sufficient to avoid block-number reuse.
                     ///
+                    /// User-facing writes are gated by `writes_enabled` in
+                    /// `MergeTreeLeaderElection`, which the election task flips to true only
+                    /// after this callback returns. Until then `assertNotReadonly` rejects
+                    /// `INSERT`s — so the part refresh and counter advance below run with no
+                    /// concurrent user writers competing for block numbers.
+                    ///
                     /// If the refresh fails, refuse to enable writes — running without a fresh
                     /// view is precisely the split-brain case we are guarding against. The
                     /// election task will retry on the next heartbeat.
@@ -3386,7 +3392,14 @@ void StorageMergeTree::assertNotReadonly() const
     if ((*getSettings())[MergeTreeSetting::table_readonly])
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode");
     if (leader_election_ptr)
-        leader_election_ptr->assertIsLeader();
+    {
+        /// User-facing write gate: rejects writes both when we are not the leader and
+        /// when we hold the lease but the post-failover takeover-sync callback is still
+        /// in progress. The latter window is short but must not admit user `INSERT`s —
+        /// they would allocate block numbers from the stale pre-takeover counter and
+        /// race with the new leader's own writes, causing data loss on failover.
+        leader_election_ptr->assertIsLeaderAndWritable();
+    }
 }
 
 Pipe StorageMergeTree::alterPartition(
