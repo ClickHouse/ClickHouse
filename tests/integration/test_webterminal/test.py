@@ -31,6 +31,14 @@ instance_http_handlers = cluster.add_instance(
     "node_http_handlers",
     main_configs=["configs/webterminal_http_handlers.xml"],
 )
+# A third instance exercises the operator-configured `Origin` allowlist
+# (`webterminal_allowed_origins`). This guards the CSWSH protection on
+# the WebSocket upgrade: a request with an allowed `Origin` must succeed,
+# anything else must be rejected with `403` before `101`.
+instance_allowed_origins = cluster.add_instance(
+    "node_allowed_origins",
+    main_configs=["configs/webterminal_allowed_origins.xml"],
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -42,18 +50,25 @@ def started_cluster():
         cluster.shutdown()
 
 
-def _ws_handshake(sock, host, path="/webterminal"):
-    """Send a WebSocket upgrade and read until the end of the response headers."""
+def _ws_handshake(sock, host, path="/webterminal", origin=None):
+    """Send a WebSocket upgrade and read until the end of the response headers.
+
+    `origin`, when set, is sent as the `Origin` request header. This exercises
+    the `Origin` enforcement on the upgrade (same-origin by default, allowlist
+    when `webterminal_allowed_origins` is configured).
+    """
     key = base64.b64encode(secrets.token_bytes(16)).decode()
-    request = (
-        f"GET {path} HTTP/1.1\r\n"
-        f"Host: {host}\r\n"
-        f"Upgrade: websocket\r\n"
-        f"Connection: Upgrade\r\n"
-        f"Sec-WebSocket-Key: {key}\r\n"
-        f"Sec-WebSocket-Version: 13\r\n"
-        f"\r\n"
-    )
+    headers = [
+        f"GET {path} HTTP/1.1",
+        f"Host: {host}",
+        "Upgrade: websocket",
+        "Connection: Upgrade",
+        f"Sec-WebSocket-Key: {key}",
+        "Sec-WebSocket-Version: 13",
+    ]
+    if origin is not None:
+        headers.append(f"Origin: {origin}")
+    request = "\r\n".join(headers) + "\r\n\r\n"
     sock.sendall(request.encode())
 
     response = b""
@@ -124,11 +139,25 @@ def _ws_read_frame(sock, timeout=10.0):
     return opcode, payload
 
 
-def _open_ws(host, port):
+def _open_ws(host, port, origin=None):
     sock = socket.create_connection((host, port), timeout=10)
-    response = _ws_handshake(sock, f"{host}:{port}")
+    response = _ws_handshake(sock, f"{host}:{port}", origin=origin)
     assert response.startswith(b"HTTP/1.1 101"), response
     return sock
+
+
+def _attempt_ws(host, port, origin=None):
+    """Like `_open_ws` but returns the raw status-line response without asserting `101`.
+
+    Used by negative tests that expect the server to reject the upgrade
+    with a non-`101` status (e.g. `403` for `Origin` violations).
+    """
+    sock = socket.create_connection((host, port), timeout=10)
+    try:
+        response = _ws_handshake(sock, f"{host}:{port}", origin=origin)
+    finally:
+        sock.close()
+    return response
 
 
 def test_enabled_endpoint_serves_html():
@@ -219,6 +248,43 @@ def test_http_handlers_config_serves_webterminal_assets():
         assert expected_ct in content_type, f"{path}: unexpected content-type {content_type!r}"
         assert asset_response.content, f"{path}: empty body"
 
+
+
+def test_origin_mismatch_rejected_same_origin():
+    """A WebSocket upgrade with a foreign `Origin` must be rejected with `403` before `101`.
+
+    By default (no `webterminal_allowed_origins`), the handler enforces
+    same-origin: an `Origin` whose scheme + host differs from the request's
+    `Host` is rejected. This is the browser-facing CSWSH protection.
+    """
+    response = _attempt_ws(instance.ip_address, 8123, origin="http://evil.example.com")
+    assert response.startswith(b"HTTP/1.1 403"), response
+
+
+def test_allowed_origin_accepted_with_allowlist():
+    """With `webterminal_allowed_origins` configured, an `Origin` in the list must succeed.
+
+    This complements the same-origin negative test: when the operator opts
+    into an explicit allowlist (typically because the deployment sits
+    behind a TLS-terminating proxy that hides `https` from the server),
+    listed origins must reach the `101` upgrade.
+    """
+    sock = _open_ws(
+        instance_allowed_origins.ip_address, 8123, origin="https://example.com"
+    )
+    sock.close()
+
+
+def test_disallowed_origin_rejected_with_allowlist():
+    """With `webterminal_allowed_origins` configured, an `Origin` outside the list must be `403`.
+
+    Symmetric to the positive case: the allowlist must actually exclude
+    origins it doesn't name.
+    """
+    response = _attempt_ws(
+        instance_allowed_origins.ip_address, 8123, origin="https://evil.example.com"
+    )
+    assert response.startswith(b"HTTP/1.1 403"), response
 
 
 def test_non_auth_first_message_rejected():
