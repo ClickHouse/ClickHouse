@@ -233,6 +233,17 @@ public:
         return std::make_unique<FunctionTokensOverloadResolver>();
     }
 
+    /// `tokens(value [, tokenizer [, ...]])` — splits `value` into a list of
+    /// tokens using the named tokenizer. The optional arguments depend on the
+    /// chosen tokenizer (n-gram length, separator array, sparse-gram bounds).
+    /// The DSL doesn't model the per-tokenizer arity, so the signature is
+    /// permissive — the runtime enforces the exact requirements via
+    /// `validateFunctionArguments` and `createTokenizer`.
+    String getSignatureString() const override
+    {
+        return "(StringOrFixedString, ...) -> Array(String)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
