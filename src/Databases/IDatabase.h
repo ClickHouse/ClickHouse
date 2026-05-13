@@ -180,7 +180,7 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// Some database engines do not support any of ClickHouse internal tables:
+    /// Database engines that do not own ClickHouse table metadata cannot contain arbitrary ClickHouse table engines:
     /// - *MergeTree
     /// - Distributed
     /// - RocksDB
