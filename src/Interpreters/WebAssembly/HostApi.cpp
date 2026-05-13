@@ -20,7 +20,6 @@ namespace DB::WebAssembly
 
 namespace
 {
-/// API exported to guest WebAssembly code.
 
 std::string_view getWasmString(WasmCompartment * compartment, WasmPtr ptr, WasmSizeT size)
 {
@@ -70,7 +69,7 @@ void wasmExportRandom(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT
 /// Decode an AssemblyScript string (UTF-16, length stored in the runtime header at -4
 /// from the payload pointer) into a UTF-8 std::string suitable for inclusion in error messages.
 /// Returns "<null>" for null pointers and tolerates broken / out-of-bounds pointers without throwing.
-static std::string decodeAssemblyScriptString(WasmCompartment * compartment, WasmPtr ptr)
+std::string decodeAssemblyScriptString(WasmCompartment * compartment, WasmPtr ptr)
 {
     if (ptr == 0)
         return "";
@@ -188,6 +187,7 @@ WasmHostFunction makeHostFunction(std::string_view function_name, ReturnType (*h
     return WasmHostFunction(std::move(func_decl), reinterpret_cast<void *>(host_function), &invokeImpl<FuncPtr>);
 }
 
+/// API exported to guest WebAssembly code.
 WasmHostFunction getHostFunction(std::string_view function_name)
 {
     static const std::array exported_functions{
