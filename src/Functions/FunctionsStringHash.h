@@ -54,17 +54,21 @@ public:
             return {1, 2};
     }
 
-    /// Signature opt-in for the fixed-return-type variants:
-    /// - SimHash: `(String, [const UInt]) -> UInt64`
-    /// - MinHash (non-arg): `(String, [const UInt], [const UInt]) -> Tuple(UInt64, UInt64)`
-    /// The MinHashArg variants produce a `Tuple(Tuple(String × num_hashes), Tuple(...))`
-    /// whose inner tuple size depends on the `num_hashes` constant — kept on the
-    /// legacy `getReturnTypeImpl` path. Value bounds (`shingle_size > 0`,
-    /// `num_hashes ≤ 25`, etc.) are still enforced separately at execute time.
+    /// Signature opt-in:
+    /// - SimHash: `(String, [const UInt]) -> UInt64`.
+    /// - MinHash (non-arg): `(String, [const UInt], [const UInt]) ->
+    ///   Tuple(UInt64, UInt64)`.
+    /// - MinHashArg variants: `(String, [const UInt], [const UInt]) ->
+    ///   Tuple(Tuple(String, ...), Tuple(String, ...))` — documentation-only
+    ///   because the inner tuples have `num_hashes` elements, which the DSL
+    ///   can't model without expanding the constant. The
+    ///   `ColumnsWithTypeAndName` path below stays authoritative.
+    /// Value bounds (`shingle_size > 0`, `num_hashes ≤ 25`, etc.) are still
+    /// enforced separately at execute time.
     String getSignatureString() const override
     {
         if constexpr (is_arg)
-            return {};
+            return "(String, [UInt], [UInt]) -> Tuple(Tuple(String, ...), Tuple(String, ...))";
         else if constexpr (is_simhash)
             return "(String, [UInt]) -> UInt64";
         else
