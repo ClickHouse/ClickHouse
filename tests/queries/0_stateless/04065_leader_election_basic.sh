@@ -9,13 +9,29 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_leader_election_s3"
 
 # Create a table with leader_election enabled on a shared-metadata S3 disk
-# (`s3_plain_rewritable` — the only metadata layout where parts written by one
+# (`plain_rewritable` — the only metadata layout where parts written by one
 # node are visible to another). The instance should become leader since it's
 # the only writer.
+#
+# Use an inline disk definition with a per-database endpoint instead of the
+# shared `s3_plain_rewritable` disk from `tests/config/config.d/storage_conf.xml`.
+# The shared disk uses one bucket prefix for all concurrent tests, and its
+# `MetadataStorageFromPlainRewritableObjectStorage` cache is shared across
+# tables on the same disk handle — concurrent activity from unrelated tests
+# can briefly desync the cache view of a freshly inserted part, surfacing as
+# `FILE_DOESNT_EXIST` for `data.bin` on the very next read. A per-database
+# endpoint isolates this test's bucket prefix and metadata cache.
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE test_leader_election_s3 (x UInt64, s String)
     ENGINE = MergeTree ORDER BY x
-    SETTINGS disk = 's3_plain_rewritable', leader_election = true,
+    SETTINGS
+        disk = disk(
+            name = '04065_le_${CLICKHOUSE_DATABASE}',
+            type = s3_plain_rewritable,
+            endpoint = 'http://localhost:11111/test/04065_le_${CLICKHOUSE_DATABASE}/',
+            access_key_id = clickhouse,
+            secret_access_key = clickhouse),
+        leader_election = true,
         leader_election_heartbeat_interval = 1, leader_election_session_timeout = 5
 "
 
