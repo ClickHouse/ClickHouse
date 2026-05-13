@@ -14,12 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-
 /// Find different elements in an array.
 class FunctionArrayDistinct : public IFunction
 {
@@ -44,17 +38,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array but it  has type {}.",
-                getName(), arguments[0]->getName());
-
-        auto nested_type = removeNullable(array_type->getNestedType());
-
-        return std::make_shared<DataTypeArray>(nested_type);
-    }
+    String getSignatureString() const override { return "(Array(T : Any)) -> Array(removeNullable(T))"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 

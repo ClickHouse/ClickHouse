@@ -69,12 +69,16 @@ struct Key
         name.resize(pos - name.data());
     }
 
-    /// Increment index if it exists.
+    /// Increment the iteration index. Both bare (`T`) and indexed (`T1`) names participate:
+    /// at iteration 0 the key is unchanged, so single-shot use like `(T : Any) -> T` still
+    /// resolves to the same variable on both sides. Inside an ellipsis-bound position the
+    /// captured variable becomes `T1`, `T2`, ... — distinct per repetition — which lets a
+    /// signature write `(T : Array(Any), ...) -> leastSupertype(T, ...)` instead of having
+    /// to introduce a `T1, ..., E` chain by hand.
     Key incrementIndex(size_t amount) const
     {
         Key res = *this;
-        if (res.index)
-            res.index += amount;
+        res.index += amount;
         return res;
     }
 };
@@ -643,7 +647,13 @@ public:
     {
         Values args;
 
-        /// Accumulate a group of children to repeat when ellipsis is encountered.
+        /// Accumulate a group of children to repeat when ellipsis is encountered. Children
+        /// participate as long as they belong to the same "iteration index": a bare variable
+        /// like `T` or a constant carries index 0; an indexed variable like `T1` carries
+        /// index 1, etc. When we hit a child whose index differs from the prior group's
+        /// index we restart the group with just that child. This mirrors the same walk-back
+        /// rule used when parsing argument groups, so `leastSupertype(T, ...)` and the older
+        /// `leastSupertype(T1, ..., E)` form both produce the same expansion.
         TypeExpressions group_to_repeat;
         size_t prev_index = 0;
 
@@ -654,10 +664,10 @@ public:
                 args.emplace_back(child->apply(context, iteration, ellipsis_size));
 
                 size_t current_index = child->getIndex();
-                if (!current_index || (prev_index && prev_index != current_index))
+                if (!group_to_repeat.empty() && prev_index != current_index)
                     group_to_repeat.clear();
-                else if (current_index)
-                    group_to_repeat.emplace_back(child);
+                group_to_repeat.emplace_back(child);
+                prev_index = current_index;
             }
             else    /// Ellipsis.
             {
