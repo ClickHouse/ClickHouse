@@ -146,27 +146,11 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        std::array<DataTypePtr, 2> nested_types;
-        for (size_t i = 0; i < 2; ++i)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
-            if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for function {} must be of type Array", getName());
-
-            const auto & nested_type = array_type->getNestedType();
-            if (!isNativeNumber(nested_type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function {} cannot process values of type {}",
-                    getName(),
-                    nested_type->getName());
-
-            nested_types[i] = nested_type;
-        }
-
-        return Kernel::getReturnType(nested_types[0], nested_types[1]);
+        return
+            "(Array(Float32), Array(Float32)) -> Float32"
+            " OR (Array(A : NativeNumber), Array(B : NativeNumber)) -> nativeNumber(nextLargerNativeBits(maxBits(A, B)), anySigned(A, B), anyFloating(A, B))";
     }
 
 #define SUPPORTED_TYPES(ACTION) \
