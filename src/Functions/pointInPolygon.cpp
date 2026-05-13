@@ -136,6 +136,21 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// `pointInPolygon((x, y), ring | rings | nested_rings...)` accepts a single
+    /// point tuple followed by one or more polygon/hole arrays. The polygon
+    /// arrays can be shaped as:
+    ///   Array(Tuple(N, N))                          — simple ring
+    ///   Array(Array(Tuple(N, N)))                   — polygon with holes
+    ///   Array(Array(Array(Tuple(N, N))))            — multi-polygon
+    /// or multiple ring/array arguments. The DSL's `Array` matcher with a bare
+    /// `Any` inner type accepts all of these; the runtime then validates the
+    /// nested shape, the tuple arity (must be 2), and the element types
+    /// (must be `NativeNumber`).
+    String getSignatureString() const override
+    {
+        return "(Tuple(Any, Any), Array(Any), ...) -> UInt8";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
