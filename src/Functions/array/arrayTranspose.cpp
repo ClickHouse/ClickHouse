@@ -38,7 +38,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(A : Array(Array(Any))) -> A";
+        return "(A : Array(Array)) -> A";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

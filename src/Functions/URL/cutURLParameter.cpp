@@ -29,7 +29,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(String, String | Array(Any)) -> String"; }
+    String getSignatureString() const override { return "(String, String | Array) -> String"; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {

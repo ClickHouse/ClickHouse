@@ -51,7 +51,7 @@ public:
     /// argument is the default value.
     String getSignatureString() const override
     {
-        return "(Variant | Array(Any), const String, [Any]) -> Any";
+        return "(Variant | Array, const String, [Any]) -> Any";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

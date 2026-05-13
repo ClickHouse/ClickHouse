@@ -84,7 +84,7 @@ public:
     /// wraps the result in Nullable when the element permits it.
     String getSignatureString() const override
     {
-        return "(Tuple(Any, ...) | Nullable(Tuple(Any, ...)) | Array(Any) | QBit | JSON, Any, [Any]) -> Any";
+        return "(Tuple | Nullable(Tuple) | Array | QBit | JSON, Any, [Any]) -> Any";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

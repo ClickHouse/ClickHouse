@@ -39,7 +39,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Array(Any), Array(Any)) -> UInt8"; }
+    String getSignatureString() const override { return "(Array, Array) -> UInt8"; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {

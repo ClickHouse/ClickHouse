@@ -48,7 +48,7 @@ public:
     /// before this class is built, so Array is not part of this signature.
     String getSignatureString() const override
     {
-        return "(S : StringOrFixedString) -> S OR (T : Tuple(Any, ...)) -> reverseTuple(T)";
+        return "(S : StringOrFixedString) -> S OR (T : Tuple) -> reverseTuple(T)";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

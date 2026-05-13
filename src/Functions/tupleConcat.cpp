@@ -29,7 +29,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(T1 : Tuple(Any, ...), ...) -> concatTuples(T1, ...)";
+        return "(T1 : Tuple, ...) -> concatTuples(T1, ...)";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

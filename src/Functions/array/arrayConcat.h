@@ -21,7 +21,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(T : Array(Any), ...) -> leastSupertype(T, ...)";
+        return "(T : Array, ...) -> leastSupertype(T, ...)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;

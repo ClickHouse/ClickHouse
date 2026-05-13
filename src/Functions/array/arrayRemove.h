@@ -30,7 +30,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(A : Array(Any), Any) -> A";
+        return "(A : Array, Any) -> A";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;

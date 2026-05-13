@@ -82,7 +82,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override { return "(Array(Any), Array(Any)) -> Float64"; }
+    String getSignatureString() const override { return "(Array, Array) -> Float64"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {

@@ -168,8 +168,8 @@ public:
     /// shape and the QBit/element types. Result is always `Float64`.
     String getSignatureString() const override
     {
-        return "(QBit, Array(Any), const UInt8) -> Float64"
-               " OR (FixedString, ..., UInt, Array(Any)) -> Float64";
+        return "(QBit, Array, const UInt8) -> Float64"
+               " OR (FixedString, ..., UInt, Array) -> Float64";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

@@ -705,6 +705,31 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+/// Matches a Tuple with at least one element. The bare `Tuple` matcher accepts
+/// any tuple including the empty `Tuple()`; this matcher is for functions
+/// (e.g. `tupleElement`, `flattenTuple`) that require a non-empty tuple.
+class TypeMatcherNonEmptyTuple : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "NonEmptyTuple"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string & out_reason) const override
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+        if (!tuple_type)
+        {
+            out_reason = "type " + type->getName() + " is not a Tuple";
+            return false;
+        }
+        if (tuple_type->getElements().empty())
+        {
+            out_reason = "expected non-empty Tuple, got empty Tuple()";
+            return false;
+        }
+        return true;
+    }
+    size_t getIndex() const override { return 0; }
+};
+
 /// Matches the `Interval` data type (any `IntervalKind`).
 class TypeMatcherInterval : public ITypeMatcher
 {
@@ -965,6 +990,7 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherBool>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherInterval>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherQBit>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherNonEmptyTuple>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherRepresentedByNumber>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherSet>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDateOrDateTime>(factory);

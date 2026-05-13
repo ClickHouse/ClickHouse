@@ -148,7 +148,7 @@ public:
     /// (must be `NativeNumber`).
     String getSignatureString() const override
     {
-        return "(Tuple(Any, Any), Array(Any), ...) -> UInt8";
+        return "(Tuple(Any, Any), Array, ...) -> UInt8";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

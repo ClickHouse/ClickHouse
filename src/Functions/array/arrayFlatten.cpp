@@ -28,7 +28,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(T : Array(Any)) -> Array(innermostArrayElement(T))";
+        return "(T : Array) -> Array(innermostArrayElement(T))";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
