@@ -263,7 +263,7 @@ public:
 
         for (UInt32 i = 0; i < Base::bucket_count; ++i)
         {
-            const TimestampType current_timestamp = Base::start_timestamp + i * Base::step;
+            const TimestampType current_timestamp = Base::timestampAtIndex(i);
 
             auto bucket_it = buckets.find(i);
             if (bucket_it != buckets.end())
