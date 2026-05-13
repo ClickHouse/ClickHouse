@@ -28,26 +28,29 @@ namespace
 
 /// Checks that passed data types are tuples and have the same size.
 /// Returns size of tuples.
-size_t checkAndGetTuplesSize(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type, const String & function_name = {})
+size_t checkAndGetTuplesSize(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type, const String & function_name = {},
+                             size_t lhs_index = 0, size_t rhs_index = 1)
 {
     const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(lhs_type.get());
     const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(rhs_type.get());
 
     if (!left_tuple)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0{} should be tuple, got {}",
-                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), lhs_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {}{} should be tuple, got {}",
+                        lhs_index, function_name.empty() ? "" : fmt::format(" of function {}", function_name), lhs_type->getName());
 
     if (!right_tuple)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1{}should be tuple, got {}",
-                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), rhs_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {}{} should be tuple, got {}",
+                        rhs_index, function_name.empty() ? "" : fmt::format(" of function {}", function_name), rhs_type->getName());
 
     const auto & left_types = left_tuple->getElements();
     const auto & right_types = right_tuple->getElements();
 
     if (left_types.size() != right_types.size())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Expected tuples of the same size as arguments{}, got {} and {}",
-                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), lhs_type->getName(), rhs_type->getName());
+                        "Expected tuples of the same size as arguments {} and {}{}, got {} and {}",
+                        lhs_index, rhs_index,
+                        function_name.empty() ? "" : fmt::format(" of function {}", function_name),
+                        lhs_type->getName(), rhs_type->getName());
     return left_types.size();
 }
 
@@ -96,7 +99,7 @@ public:
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                 "Function {} requires at least 2 arguments", getName());
         for (size_t i = 1; i < arguments.size(); ++i)
-            checkAndGetTuplesSize(arguments[0].type, arguments[i].type, getName());
+            checkAndGetTuplesSize(arguments[0].type, arguments[i].type, getName(), 0, i);
 
         auto func = FunctionFactory::instance().get(FuncName::name, context);
 
