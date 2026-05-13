@@ -28,6 +28,10 @@ SELECT formatReadableQuantity(1234567, 0);
 SELECT formatReadableQuantity(1234567, 4);
 
 SELECT '--';
+SELECT 'max supported precision is 100';
+SELECT formatReadableSize(1234567, 100);
+
+SELECT '--';
 SELECT 'Decimal input';
 SELECT formatReadableSize(toDecimal64(192851925, 0), 4);
 SELECT formatReadableDecimalSize(toDecimal64(192851925, 0), 4);
@@ -85,3 +89,7 @@ SELECT '--';
 SELECT 'errors: argument count';
 SELECT formatReadableSize(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT formatReadableSize(1024, 2, 3); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '--';
+SELECT 'errors: max precision';
+SELECT formatReadableSize(1234567, 101); -- precision higher than 100 is not supported { serverError CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER }

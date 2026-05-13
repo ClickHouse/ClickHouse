@@ -23,6 +23,9 @@ sibling functions accept precision
 1 million
 1.2346 million
 --
+max supported precision is 100
+1.1773748397827148437500000000000000000000000000000000000000000000000000000000000000000000000000000000 MiB
+--
 Decimal input
 183.9179 MiB
 192.8519 MB
@@ -258,3 +261,5 @@ NULL propagation
 errors: precision argument shape
 --
 errors: argument count
+--
+errors: max precision

@@ -3,15 +3,17 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
-#include <Interpreters/Context_fwd.h>
-
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+}
 
 /** formatReadableSize - prints the transferred size in bytes in form `123.45 GiB`.
   * formatReadableQuantity - prints the quantity in form of 123 million.
@@ -57,6 +59,16 @@ public:
         };
 
         validateFunctionArguments(getName(), arguments, mandatory_arguments, optional_arguments);
+
+        /// 'ToFixed' in 'double-conversion' fails when requested_digits > 'kMaxFixedDigitsAfterPoint' (100);
+        /// the formatter then silently falls back to 'ToShortest', ignoring the requested precision.
+        if (arguments.size() == 2)
+        {
+            const UInt8 precision = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<UInt8>();
+            if (precision > double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint)
+                throw Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+                                   "Too high precision requested, must not be more than 100, got {}", static_cast<uint8_t>(precision));
+        }
 
         return std::make_shared<DataTypeString>();
     }
