@@ -1,3 +1,4 @@
+#include <numeric>
 #include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
@@ -2100,6 +2101,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
+        /// Vector index may be consulted for several skip-index granules; MergeTreeRangeReader expects
+        /// `vector_search_results.rows` as part-global row offsets, so merge all granule-local hits here.
+        std::optional<NearestNeighbours> merged_vector_search_results;
+
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
@@ -2125,10 +2130,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                             skip_index_granularity});
                     }
 
-                    read_hints.vector_search_results = condition->calculateApproximateNearestNeighbors(granule, row_filter);
+                    NearestNeighbours nn = condition->calculateApproximateNearestNeighbors(granule, row_filter);
 
-                    /// We need to sort the result ranges ascendingly
-                    auto rows = read_hints.vector_search_results.value().rows;
+                    /// We need to sort the result ranges ascendingly (granule-local row ids).
+                    auto rows = nn.rows;
                     std::sort(rows.begin(), rows.end());
 #ifndef NDEBUG
                     /// Duplicates should in theory not be possible but better be safe than sorry ...
@@ -2136,8 +2141,22 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (has_duplicates)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
-                    if (!(read_hints.vector_search_results.value().distances.has_value()))
-                        read_hints = {};
+                    if (nn.distances.has_value())
+                    {
+                        if (!merged_vector_search_results.has_value())
+                        {
+                            merged_vector_search_results.emplace();
+                            merged_vector_search_results->distances.emplace();
+                        }
+
+                        const size_t granule_base_row = part->index_granularity->getMarkStartingRow(index_mark * skip_index_granularity);
+                        chassert(nn.rows.size() == nn.distances->size());
+                        for (size_t j = 0; j < nn.rows.size(); ++j)
+                        {
+                            merged_vector_search_results->rows.push_back(granule_base_row + nn.rows[j]);
+                            merged_vector_search_results->distances->push_back((*nn.distances)[j]);
+                        }
+                    }
 
                     for (auto row : rows)
                     {
@@ -2177,6 +2196,33 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             }
 
             last_index_mark = index_range.end - 1;
+        }
+
+        if (index_helper->isVectorSimilarityIndex())
+        {
+            if (merged_vector_search_results.has_value() && merged_vector_search_results->distances.has_value()
+                && !merged_vector_search_results->rows.empty())
+            {
+                auto & rows_out = merged_vector_search_results->rows;
+                auto & distances_out = *merged_vector_search_results->distances;
+                chassert(rows_out.size() == distances_out.size());
+                std::vector<size_t> permutation(rows_out.size());
+                std::iota(permutation.begin(), permutation.end(), 0);
+                std::sort(permutation.begin(), permutation.end(), [&](size_t lhs, size_t rhs) { return rows_out[lhs] < rows_out[rhs]; });
+                std::vector<UInt64> sorted_rows(rows_out.size());
+                std::vector<float> sorted_distances(distances_out.size());
+                for (size_t p = 0; p < permutation.size(); ++p)
+                {
+                    sorted_rows[p] = rows_out[permutation[p]];
+                    sorted_distances[p] = distances_out[permutation[p]];
+                }
+                merged_vector_search_results->rows = std::move(sorted_rows);
+                distances_out = std::move(sorted_distances);
+
+                read_hints.vector_search_results = std::move(merged_vector_search_results);
+            }
+            else
+                read_hints.vector_search_results.reset();
         }
     }
 
