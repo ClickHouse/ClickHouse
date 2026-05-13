@@ -177,6 +177,14 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+class TypeMatcherNativeFloat : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "NativeFloat"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isNativeFloat(); }
+    size_t getIndex() const override { return 0; }
+};
+
 class TypeMatcherFloat : public ITypeMatcher
 {
 public:
@@ -669,6 +677,16 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+/// Matches the bare `Nothing` data type (e.g. the element type of `Array(Nothing)`
+/// produced by `[]`). Different from `Nothing` above which matches `Nullable(Nothing)`.
+class TypeMatcherIsNothing : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "IsNothing"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isNothing(type); }
+    size_t getIndex() const override { return 0; }
+};
+
 class TypeMatcherDynamic : public ITypeMatcher
 {
 public:
@@ -916,12 +934,14 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherEnum8>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherEnum16>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherNULL>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherIsNothing>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherRepresentedByNumber>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherSet>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDateOrDateTime>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherUnambiguouslyRepresentedInContiguousMemoryRegion>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherAny>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherFloat>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherNativeFloat>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherNativeNumber>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDecimal>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDecimal32>(factory);
