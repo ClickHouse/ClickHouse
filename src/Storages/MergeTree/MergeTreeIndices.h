@@ -186,7 +186,7 @@ public:
     /// row_filter restricts keys to pk_ranges; fewer than requested hits is allowed.
     virtual NearestNeighbours calculateApproximateNearestNeighbors(
         MergeTreeIndexGranulePtr /*granule*/,
-        const std::optional<GranuleRowFilter> & row_filter = std::nullopt) const
+        const std::optional<GranuleRowFilter> & row_filter) const
     {
         (void)row_filter;
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
