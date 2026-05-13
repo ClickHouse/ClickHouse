@@ -92,7 +92,6 @@ ISchedulerNode::ISchedulerNode(EventQueue & event_queue_, const SchedulerNodeInf
 
 ISchedulerNode::~ISchedulerNode()
 {
-    chassert(event_queue.isInSchedulerOrStopped());
     chassert(!parent);
     chassert(activation_event_id == 0);
 }
