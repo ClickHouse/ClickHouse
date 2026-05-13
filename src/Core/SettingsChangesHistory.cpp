@@ -115,6 +115,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_rank_dense_rank_arguments", true, false, "New setting. Before 26.5, the `RANK` and `DENSE_RANK` window functions silently ignored any provided arguments (equivalent to `allow_rank_dense_rank_arguments = 1`). From 26.5, they reject arguments by default with `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` because per SQL standard these functions take zero arguments. Set this to `1` to restore the legacy behavior."},
             {"is_aggregate", false, false, "New setting to register a WebAssembly UDF as an aggregate function."},
             {"is_spatial_predicate", false, false, "New setting to mark a WebAssembly UDF as a spatial predicate for pruning."},
+            {"input_format_parquet_spatial_filter_push_down", true, true, "New setting: skip GeoParquet row groups based on spatial predicates and bounding box statistics"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -441,7 +442,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_memory_low_watermark", 2ul << 20, 2ul << 20, "New setting"},
             {"input_format_parquet_memory_high_watermark", 4ul << 30, 4ul << 30, "New setting"},
             {"input_format_parquet_page_filter_push_down", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
-            {"input_format_parquet_spatial_filter_push_down", true, true, "New setting: skip GeoParquet row groups based on spatial predicates and bounding box statistics"},
             {"input_format_parquet_use_offset_index", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
             {"output_format_parquet_enum_as_byte_array", false, true, "Enable writing Enum as byte array in Parquet by default"},
             {"json_type_escape_dots_in_keys", false, false, "Add new setting that allows to escape dots in JSON keys during JSON type parsing"},

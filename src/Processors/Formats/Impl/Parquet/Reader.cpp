@@ -378,8 +378,13 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     const auto & row_level_filter = format_filter_info->row_level_filter;
     const auto & prewhere_info = format_filter_info->prewhere_info;
 
-    /// Process schema. Pass pre-parsed geo_meta so SchemaConverter skips a redundant JSON parse.
-    SchemaConverter schemer(file_metadata, options, &extended_sample_block, std::move(geo_meta));
+    /// Pass pre-parsed geo_meta to SchemaConverter only when allow_geoparquet_parser is set,
+    /// so that spatial_filter_push_down alone does not change column types to Geometry.
+    SchemaConverter schemer(
+        file_metadata,
+        options,
+        &extended_sample_block,
+        options.format.parquet.allow_geoparquet_parser ? std::move(geo_meta) : std::unordered_map<String, DB::GeoColumnMetadata>{});
     auto add_prewhere_outputs = [&](const ActionsDAG & actions)
     {
         for (const auto * node : actions.getOutputs())
@@ -488,13 +493,16 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
 
         /// Check spatial KeyConditions (covering.bbox column stats via hyperrectangle).
+        /// All spatial conditions here come from AND-conjunctive extraction, so if ANY
+        /// single condition cannot be satisfied in this row group, the full conjunction
+        /// cannot be true — prune the row group.
         if (!spatial_key_conditions.empty())
         {
             auto spatial_predicate = [&](const auto & sc)
-           {
-               return !sc->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
-           };
-           if (std::all_of(spatial_key_conditions.begin(), spatial_key_conditions.end(), spatial_predicate))
+            {
+                return !sc->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
+            };
+            if (std::any_of(spatial_key_conditions.begin(), spatial_key_conditions.end(), spatial_predicate))
                 continue;
         }
 
