@@ -3574,12 +3574,17 @@ class TestCase:
         try:
             self._cleanup_database(args, timeout)
         except (ConnectionError, http.client.ImproperConnectionState) as e:
-            # Cleanup is best-effort.  If the server became unreachable
-            # between the test finishing and cleanup running, the test's
-            # database is moot — letting the exception propagate would
-            # downgrade the test's own (already-set) result to FAIL with
-            # SERVER_DIED.  The hung-check or the next test will detect
-            # the dead server and stop the run.
+            # Cleanup is best-effort only when the server is actually dead.
+            # If the server is still alive, this was a real cleanup failure
+            # (leftover state, unfinished DROP) and must propagate so the
+            # outer handler in run() classifies it as CONNECTION_ERROR — a
+            # silent swallow would let a test stay OK while leaving its
+            # database behind, hiding the bug.
+            if check_server_liveness(args):
+                raise
+            # Server died between the test finishing and cleanup running.
+            # The test's database is moot; the hung-check or the next test
+            # will detect the dead server and stop the run.
             print(
                 f"WARNING: cleanup skipped for {self.name}: "
                 f"{type(e).__name__}: {e}",
