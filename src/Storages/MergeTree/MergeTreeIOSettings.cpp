@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -71,13 +72,17 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     bool save_marks_in_cache_,
     bool save_primary_index_in_memory_,
     bool blocks_are_granules_size_)
-    : min_compress_block_size((*storage_settings)[MergeTreeSetting::min_compress_block_size] ? (*storage_settings)[MergeTreeSetting::min_compress_block_size] : global_settings[Setting::min_compress_block_size])
-    , max_compress_block_size((*storage_settings)[MergeTreeSetting::max_compress_block_size] ? (*storage_settings)[MergeTreeSetting::max_compress_block_size] : global_settings[Setting::max_compress_block_size])
+    : min_compress_block_size(std::min<size_t>(
+        (*storage_settings)[MergeTreeSetting::min_compress_block_size] ? (*storage_settings)[MergeTreeSetting::min_compress_block_size] : global_settings[Setting::min_compress_block_size],
+        MAX_COMPRESS_BLOCK_SIZE))
+    , max_compress_block_size(std::min<size_t>(
+        (*storage_settings)[MergeTreeSetting::max_compress_block_size] ? (*storage_settings)[MergeTreeSetting::max_compress_block_size] : global_settings[Setting::max_compress_block_size],
+        MAX_COMPRESS_BLOCK_SIZE))
     , marks_compression_codec((*storage_settings)[MergeTreeSetting::marks_compression_codec])
-    , marks_compress_block_size((*storage_settings)[MergeTreeSetting::marks_compress_block_size])
+    , marks_compress_block_size(std::min<size_t>((*storage_settings)[MergeTreeSetting::marks_compress_block_size], MAX_COMPRESS_BLOCK_SIZE))
     , compress_primary_key((*storage_settings)[MergeTreeSetting::compress_primary_key])
     , primary_key_compression_codec((*storage_settings)[MergeTreeSetting::primary_key_compression_codec])
-    , primary_key_compress_block_size((*storage_settings)[MergeTreeSetting::primary_key_compress_block_size])
+    , primary_key_compress_block_size(std::min<size_t>((*storage_settings)[MergeTreeSetting::primary_key_compress_block_size], MAX_COMPRESS_BLOCK_SIZE))
     , can_use_adaptive_granularity(can_use_adaptive_granularity_)
     , rewrite_primary_key(rewrite_primary_key_)
     , save_marks_in_cache(save_marks_in_cache_)
