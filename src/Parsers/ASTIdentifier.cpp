@@ -73,7 +73,10 @@ ASTPtr ASTIdentifier::getParam() const
 void ASTIdentifier::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "Identifier");
-    w.writeString("name", name());
+    /// For the parametrised form (e.g. `{x:Identifier}`), `name`/`name_parts` may contain
+    /// empty placeholders that correspond to `ASTQueryParameter` children. We always
+    /// serialize the children when present so the round-trip preserves them.
+    w.writeString("name", full_name);
     if (name_parts.size() > 1)
     {
         w.writeKey("name_parts");
@@ -86,27 +89,56 @@ void ASTIdentifier::writeJSON(WriteBuffer & out) const
         }
         o << ']';
     }
+    w.writeChildren(children);
     w.writeAlias(*this);
 }
 
 void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    children = r.readChildren();
     auto parts = r.readStringArray("name_parts");
     if (!parts.empty())
     {
+        size_t empty_parts = 0;
         for (const auto & part : parts)
             if (part.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty element in 'name_parts' array for ASTIdentifier");
+                ++empty_parts;
+        /// Empty entries in `name_parts` are placeholders for `ASTQueryParameter` children
+        /// (see the parametrised-identifier ctor). If they don't match, the AST is malformed.
+        if (empty_parts != children.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ASTIdentifier JSON has {} empty 'name_parts' placeholder(s) but {} child parameter(s)",
+                empty_parts, children.size());
         name_parts = std::move(parts);
-        resetFullName();
+        /// Match the parametrised-compound ctor: leave `full_name` empty when there are
+        /// query-parameter children, otherwise compute it from `name_parts`.
+        if (children.empty())
+            resetFullName();
+        else
+            full_name.clear();
     }
     else
     {
         String name = r.getString("name");
         if (name.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTIdentifier");
-        setShortName(name);
+        {
+            /// Empty short name is only valid for a single-parameter identifier (`{x:Identifier}`).
+            if (children.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ASTIdentifier JSON with empty 'name' must have exactly one parameter child, got {}",
+                    children.size());
+            full_name.clear();
+            name_parts = {""};
+        }
+        else
+        {
+            if (!children.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ASTIdentifier JSON with non-empty 'name' must not have parameter children, got {}",
+                    children.size());
+            setShortName(name);
+        }
     }
     r.readAlias(*this);
 }
@@ -249,7 +281,9 @@ ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const Strin
 void ASTTableIdentifier::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "TableIdentifier");
-    w.writeString("name", name());
+    /// Mirror `ASTIdentifier`: serialize children when present so parametrised
+    /// forms round-trip without loss.
+    w.writeString("name", full_name);
     if (name_parts.size() > 1)
     {
         w.writeKey("name_parts");
@@ -268,27 +302,51 @@ void ASTTableIdentifier::writeJSON(WriteBuffer & out) const
         writeUUIDText(uuid, uuid_buf);
         w.writeString("uuid", uuid_buf.str());
     }
+    w.writeChildren(children);
     w.writeAlias(*this);
 }
 
 void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    children = r.readChildren();
     auto parts = r.readStringArray("name_parts");
     if (!parts.empty())
     {
+        size_t empty_parts = 0;
         for (const auto & part : parts)
             if (part.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty element in 'name_parts' array for ASTTableIdentifier");
+                ++empty_parts;
+        if (empty_parts != children.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ASTTableIdentifier JSON has {} empty 'name_parts' placeholder(s) but {} child parameter(s)",
+                empty_parts, children.size());
         name_parts = std::move(parts);
-        resetFullName();
+        if (children.empty())
+            resetFullName();
+        else
+            full_name.clear();
     }
     else
     {
         String name = r.getString("name");
         if (name.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTTableIdentifier");
-        setShortName(name);
+        {
+            if (children.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ASTTableIdentifier JSON with empty 'name' must have exactly one parameter child, got {}",
+                    children.size());
+            full_name.clear();
+            name_parts = {""};
+        }
+        else
+        {
+            if (!children.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ASTTableIdentifier JSON with non-empty 'name' must not have parameter children, got {}",
+                    children.size());
+            setShortName(name);
+        }
     }
     if (r.has("uuid"))
     {
