@@ -7,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -82,24 +83,39 @@ namespace
         return dropMetricName(std::move(res), context);
     }
 
-    const PQT::InstantSelector * getInstantSelectorArgument(const PQT::Function * function_node)
+    struct InstantSelectorArgument
+    {
+        const PQT::InstantSelector * instant_selector = nullptr;
+        const PQT::Offset * offset = nullptr;
+    };
+
+    InstantSelectorArgument getInstantSelectorArgument(const PQT::Function * function_node)
     {
         const auto & function_arguments = function_node->getArguments();
         if (function_arguments.size() != 1)
-            return nullptr;
+            return {};
 
         const auto * argument_node = function_arguments[0];
-        if (argument_node->node_type != NodeType::InstantSelector)
-            return nullptr;
+        if (argument_node->node_type == NodeType::InstantSelector)
+            return {static_cast<const PQT::InstantSelector *>(argument_node), nullptr};
 
-        return static_cast<const PQT::InstantSelector *>(argument_node);
+        if (argument_node->node_type == NodeType::Offset)
+        {
+            const auto * offset = static_cast<const PQT::Offset *>(argument_node);
+            const auto * expression = offset->getExpression();
+            if (expression->node_type == NodeType::InstantSelector)
+                return {static_cast<const PQT::InstantSelector *>(expression), offset};
+        }
+
+        return {};
     }
 
     SQLQueryPiece makeTimestampResultForInstantSelector(
         const PQT::Function * function_node,
-        const PQT::InstantSelector * instant_selector,
+        const InstantSelectorArgument & selector_argument,
         ConverterContext & context)
     {
+        const auto * instant_selector = selector_argument.instant_selector;
         auto node_range = context.node_range_getter.get(function_node);
         auto selector_range = context.node_range_getter.get(instant_selector);
         if (node_range.empty() || selector_range.empty())
@@ -131,19 +147,23 @@ namespace
                 "timeSeriesLastToGrid",
                 make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
                 make_intrusive<ASTIdentifier>(ColumnNames::Value)),
-            timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(node_range.step, context.timestamp_data_type),
+            timeSeriesTimestampToAST(selector_range.start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(selector_range.end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(selector_range.step, context.timestamp_data_type),
             timeSeriesDurationToAST(selector_range.window, context.timestamp_data_type)));
         grid_builder.select_list.back()->setAlias(ColumnNames::Values);
         grid_builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
         SQLQueryPiece res{function_node, function_node->result_type, StoreMethod::VECTOR_GRID};
         res.select_query = grid_builder.getSelectQuery();
-        res.start_time = node_range.start_time;
-        res.end_time = node_range.end_time;
-        res.step = node_range.step;
+        res.start_time = selector_range.start_time;
+        res.end_time = selector_range.end_time;
+        res.step = selector_range.step;
         res.metric_name_dropped = false;
+
+        if (selector_argument.offset)
+            res = applyOffset(selector_argument.offset, std::move(res), context);
+
         return dropMetricName(std::move(res), context);
     }
 }
@@ -160,8 +180,8 @@ SQLQueryPiece applyFunctionTimestamp(const PQT::Function * function_node, std::v
     checkArgumentTypes(function_node, arguments, context);
 
     auto & argument = arguments[0];
-    if (const auto * instant_selector = getInstantSelectorArgument(function_node))
-        return makeTimestampResultForInstantSelector(function_node, instant_selector, context);
+    if (const auto selector_argument = getInstantSelectorArgument(function_node); selector_argument.instant_selector)
+        return makeTimestampResultForInstantSelector(function_node, selector_argument, context);
 
     SQLQueryPiece res{function_node, function_node->result_type, argument.store_method};
     res.start_time = argument.start_time;
