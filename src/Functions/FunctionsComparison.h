@@ -280,6 +280,28 @@ struct StringComparisonImpl
         }
     }
 
+    /// `String` vector vs constant `FixedString`. `string_vector_constant` uses a plain
+    /// `memcmp`, which respects the constant's trailing NUL padding and disagrees with the
+    /// `String` vs `FixedString` vector path (which uses zero-padded comparison, per SQL
+    /// semantics that `toFixedString('abc', 5) = 'abc'`).
+    static void NO_INLINE stringVectorConstantFixedString(
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
+        PaddedPODArray<UInt8> & c)
+    {
+        size_t size = a_offsets.size();
+        ColumnString::Offset prev_a_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            c[i] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
+                b_data.data(), b_n), 0);
+
+            prev_a_offset = a_offsets[i];
+        }
+    }
+
     static void fixed_string_vector_string_vector( /// NOLINT
         const ColumnString::Chars & a_data, ColumnString::Offset a_n,
         const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
@@ -366,6 +388,14 @@ struct StringComparisonImpl
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant(b_data, b_offsets, a_data, a_size, c);
+    }
+
+    static void constantFixedStringStringVector(
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
+        PaddedPODArray<UInt8> & c)
+    {
+        StringComparisonImpl<typename Op::SymmetricOp>::stringVectorConstantFixedString(b_data, b_offsets, a_data, a_n, c);
     }
 
     static void constant_fixed_string_vector( /// NOLINT
@@ -468,6 +498,30 @@ struct StringEqualsImpl
         }
     }
 
+    /// `String` vector vs constant `FixedString`. See the same-named method in
+    /// `StringComparisonImpl` for the rationale: the constant's trailing NUL padding
+    /// must not be respected, otherwise the result disagrees with the `String` vs
+    /// `FixedString` vector path.
+    static void NO_INLINE stringVectorConstantFixedString(
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
+        PaddedPODArray<UInt8> & c)
+    {
+        size_t size = a_offsets.size();
+        ColumnString::Offset prev_a_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            auto a_size = a_offsets[i] - prev_a_offset;
+
+            c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(
+                a_data.data() + prev_a_offset, a_size,
+                b_data.data(), b_n);
+
+            prev_a_offset = a_offsets[i];
+        }
+    }
+
     static void NO_INLINE fixed_string_vector_fixed_string_vector_16( /// NOLINT
         const ColumnString::Chars & a_data,
         const ColumnString::Chars & b_data,
@@ -551,6 +605,14 @@ struct StringEqualsImpl
         PaddedPODArray<UInt8> & c)
     {
         string_vector_constant(b_data, b_offsets, a_data, a_size, c);
+    }
+
+    static void constantFixedStringStringVector(
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
+        PaddedPODArray<UInt8> & c)
+    {
+        stringVectorConstantFixedString(b_data, b_offsets, a_data, a_n, c);
     }
 
     static void constant_fixed_string_vector( /// NOLINT
@@ -809,6 +871,8 @@ private:
         const ColumnString::Chars * c1_const_chars = nullptr;
         ColumnString::Offset c0_const_size = 0;
         ColumnString::Offset c1_const_size = 0;
+        bool c0_const_is_fixed_string = false;
+        bool c1_const_is_fixed_string = false;
 
         if (c0_const)
         {
@@ -824,6 +888,7 @@ private:
             {
                 c0_const_chars = &c0_const_fixed_string->getChars();
                 c0_const_size = c0_const_fixed_string->getN();
+                c0_const_is_fixed_string = true;
             }
             else
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnConst contains not String nor FixedString column");
@@ -843,6 +908,7 @@ private:
             {
                 c1_const_chars = &c1_const_fixed_string->getChars();
                 c1_const_size = c1_const_fixed_string->getN();
+                c1_const_is_fixed_string = true;
             }
             else
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnConst contains not String nor FixedString column");
@@ -869,6 +935,9 @@ private:
         else if (c0_string && c1_fixed_string)
             StringImpl::string_vector_fixed_string_vector(
                 c0_string->getChars(), c0_string->getOffsets(), c1_fixed_string->getChars(), c1_fixed_string->getN(), c_res->getData());
+        else if (c0_string && c1_const && c1_const_is_fixed_string)
+            StringImpl::stringVectorConstantFixedString(
+                c0_string->getChars(), c0_string->getOffsets(), *c1_const_chars, c1_const_size, c_res->getData());
         else if (c0_string && c1_const)
             StringImpl::string_vector_constant(
                 c0_string->getChars(), c0_string->getOffsets(), *c1_const_chars, c1_const_size, c_res->getData());
@@ -885,6 +954,9 @@ private:
         else if (c0_fixed_string && c1_const)
             StringImpl::fixed_string_vector_constant(
                 c0_fixed_string->getChars(), c0_fixed_string->getN(), *c1_const_chars, c1_const_size, c_res->getData());
+        else if (c0_const && c1_string && c0_const_is_fixed_string)
+            StringImpl::constantFixedStringStringVector(
+                *c0_const_chars, c0_const_size, c1_string->getChars(), c1_string->getOffsets(), c_res->getData());
         else if (c0_const && c1_string)
             StringImpl::constant_string_vector(
                 *c0_const_chars, c0_const_size, c1_string->getChars(), c1_string->getOffsets(), c_res->getData());
