@@ -17,7 +17,8 @@ SETTINGS min_bytes_for_wide_part = 0,
 -- code path through compact storage on the right side of the JOIN case.
 CREATE TABLE t_lazy_narrow (k UInt64, v UInt64, x UInt64)
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS auto_statistics_types = 'minmax',
+SETTINGS min_bytes_for_wide_part = 1073741824,
+         auto_statistics_types = 'minmax',
          refresh_statistics_interval = 0;
 
 INSERT INTO t_lazy SELECT number, number, number, number, number, number FROM numbers(1000);
@@ -44,6 +45,7 @@ FORMAT Null;
 SELECT b, c, d, e FROM t_lazy WHERE b = 42 AND b >= 0
 SETTINGS use_statistics_for_part_pruning = 0, use_statistics = 1,
          optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+         enable_parallel_replicas = 0,
          log_comment = '04209_prewhere_lazy'
 FORMAT Null;
 

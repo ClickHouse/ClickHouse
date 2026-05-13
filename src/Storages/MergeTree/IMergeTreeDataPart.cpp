@@ -1175,35 +1175,37 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_colu
 Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns) const
 {
     const bool load_all = required_columns.empty();
+
+    auto buildResult = [&](const Estimates & source) -> Estimates
+    {
+        if (load_all)
+            return source;
+
+        Estimates result;
+        result.reserve(required_columns.size());
+        for (const auto & column_name : required_columns)
+            if (auto it = source.find(column_name); it != source.end())
+                result.emplace(column_name, it->second);
+        return result;
+    };
+
     Names missing;
 
     {
         std::lock_guard lock(estimates_mutex);
 
-        if (load_all)
-        {
-            if (estimates_fully_loaded)
-                return estimates;
-        }
-        else
-        {
-            if (!estimates_fully_loaded)
-            {
-                for (const auto & column_name : required_columns)
-                    if (!estimates.contains(column_name))
-                        missing.push_back(column_name);
-            }
+        if (load_all && estimates_fully_loaded)
+            return estimates;
 
-            if (missing.empty())
-            {
-                Estimates result;
-                result.reserve(required_columns.size());
-                for (const auto & column_name : required_columns)
-                    if (auto it = estimates.find(column_name); it != estimates.end())
-                        result.emplace(column_name, it->second);
-                return result;
-            }
+        if (!load_all && !estimates_fully_loaded)
+        {
+            for (const auto & column_name : required_columns)
+                if (!estimates.contains(column_name))
+                    missing.push_back(column_name);
         }
+
+        if (!load_all && missing.empty())
+            return buildResult(estimates);
     }
 
     /// Build a fresh map first; commit to `estimates` only after all per-column
@@ -1222,15 +1224,7 @@ Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns) const
     if (load_all)
         estimates_fully_loaded = true;
 
-    if (load_all)
-        return estimates;
-
-    Estimates result;
-    result.reserve(required_columns.size());
-    for (const auto & column_name : required_columns)
-        if (auto it = estimates.find(column_name); it != estimates.end())
-            result.emplace(column_name, it->second);
-    return result;
+    return buildResult(estimates);
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
