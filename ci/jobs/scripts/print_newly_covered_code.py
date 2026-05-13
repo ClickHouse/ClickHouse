@@ -193,9 +193,12 @@ if __name__ == "__main__":
         key=lambda x: (-x[1], -x[2], x[0]),
     )
 
+    # Full file inventory — every file with newly-covered code, ranked by line
+    # count. This is the authoritative list; the snippet section below may be
+    # capped, but this is not.
     if file_stats:
-        print(f"Top {min(20, len(file_stats))} files by newly-covered lines:")
-        for rel, lc, fc in file_stats[:20]:
+        print(f"All {len(file_stats)} file(s) with newly-covered code, ranked by line count:")
+        for rel, lc, fc in file_stats:
             parts = []
             if lc > 0:
                 parts.append(f"{lc} line(s)")
@@ -204,15 +207,19 @@ if __name__ == "__main__":
             print(f"  {rel}: {', '.join(parts)}")
         print()
 
-    # Detailed per-file block preview, capped to avoid runaway logs.
-    MAX_BLOCK_LINES = 400
+    # Detailed per-file snippet preview. Capped to keep the CI job log readable;
+    # the file inventory above always lists every contributor in full, so a
+    # truncation here does not lose data — only the inline context.
+    MAX_BLOCK_LINES = 2000
     printed = 0
+    truncated = False
     if total_lines > 0:
         print("Newly covered code (with context):\n")
         for rel, lc, _ in file_stats:
-            if printed >= MAX_BLOCK_LINES or lc == 0:
-                if lc == 0:
-                    continue
+            if lc == 0:
+                continue
+            if printed >= MAX_BLOCK_LINES:
+                truncated = True
                 break
             print("=" * 80)
             print(rel)
@@ -221,8 +228,15 @@ if __name__ == "__main__":
                 print(out_line)
                 printed += 1
                 if printed >= MAX_BLOCK_LINES:
-                    print("\n[...output truncated; see full coverage report for the rest...]")
+                    truncated = True
                     break
+        if truncated:
+            print(
+                f"\n[snippet preview capped at {MAX_BLOCK_LINES} lines — "
+                f"see the file inventory above for the complete list of "
+                f"files with newly-covered code; open those files at the "
+                f"listed line numbers for the full context]"
+            )
 
     if total_fns > 0:
         print(f"\nNewly covered functions ({min(100, total_fns)} of {total_fns}):")
