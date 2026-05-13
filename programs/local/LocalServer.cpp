@@ -204,6 +204,7 @@ namespace ServerSetting
     extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsString allowed_disks_for_table_engines;
     extern const ServerSettingsUInt32 listen_backlog;
+    extern const ServerSettingsBool listen_try;
     extern const ServerSettingsSeconds keep_alive_timeout;
     extern const ServerSettingsUInt64 max_keep_alive_requests;
     extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
@@ -525,14 +526,21 @@ void LocalServer::startServers(const ServerType & server_type)
     const auto & config = getClientConfiguration();
     const Settings & settings = global_context->getSettingsRef();
 
-    auto listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
+    auto configured_listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
+    auto listen_hosts = configured_listen_hosts;
     if (listen_hosts.empty())
     {
         listen_hosts.emplace_back("::1");
         listen_hosts.emplace_back("127.0.0.1");
     }
 
-    bool listen_try = listen_hosts.size() > 1;
+    /// Mirror `clickhouse-server`'s `getListenTry`: honor an explicit `listen_try` server setting,
+    /// and otherwise fall back to `listen_try=true` only when the user has not configured any
+    /// `listen_host` (so the implicit `::1` + `127.0.0.1` defaults don't fail on a host without
+    /// IPv6). When the user names hosts explicitly with `listen_try=0`, surface bind failures.
+    bool listen_try = server_settings[ServerSetting::listen_try];
+    if (!listen_try)
+        listen_try = configured_listen_hosts.empty();
 
     /// `getServerPort` stores a single value per `port_name`, so an OS-assigned ephemeral
     /// port (`port=0`) combined with multiple `listen_host` values would produce an
