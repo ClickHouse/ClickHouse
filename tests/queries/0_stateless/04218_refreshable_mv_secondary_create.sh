@@ -16,6 +16,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 db="${CLICKHOUSE_DATABASE}_r"
 mv_uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
 
+# Note that `target_tbl` is not replicated.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none <<EOF
 CREATE DATABASE ${db}
     ENGINE = Replicated('/test/{database}/refreshable_mv_secondary_create', 'shard1', 'replica1');
