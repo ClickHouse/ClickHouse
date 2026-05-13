@@ -837,6 +837,31 @@ public:
     std::string name() const override { return "concatTuples"; }
 };
 
+/// `innermostArrayElement(T)` — for a (possibly nested) Array type, returns the
+/// innermost (non-Array) element type. `Array(Array(Int32))` -> `Int32`,
+/// `Array(Int32)` -> `Int32`. Throws if `T` is not an Array.
+class TypeFunctionInnermostArrayElement : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function innermostArrayElement takes 1 argument");
+
+        DataTypePtr current = args.front().type();
+        const auto * array_type = typeid_cast<const DataTypeArray *>(current.get());
+        if (!array_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "innermostArrayElement requires Array(...), got {}", current->getName());
+
+        while (const auto * inner_array = typeid_cast<const DataTypeArray *>(current.get()))
+            current = inner_array->getNestedType();
+        return Value(current);
+    }
+
+    std::string name() const override { return "innermostArrayElement"; }
+};
+
 /// `reverseTuple(T)` — flips the element order of a Tuple, preserving names if
 /// the tuple is named. Used by `reverse` to compute the result type when the
 /// input is a Tuple. Throws if the input is not a Tuple.
@@ -1047,6 +1072,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionAnyNullable>();
     factory.registerElement<TypeFunctionReverseTuple>();
     factory.registerElement<TypeFunctionConcatTuples>();
+    factory.registerElement<TypeFunctionInnermostArrayElement>();
     factory.registerElement<TypeFunctionAnyInteger>();
     factory.registerElement<TypeFunctionSelectIf>();
     factory.registerElement<TypeFunctionIsFloat32OrSmaller>();
