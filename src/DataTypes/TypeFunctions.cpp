@@ -426,6 +426,341 @@ public:
 };
 
 
+/// Helpers used by the arithmetic-promotion type functions below.
+/// Mirrors `NumberTraits::Construct<is_signed, is_floating, bytes>` from
+/// `DataTypes/NumberTraits.h` at runtime — i.e. (bytes, signed?, floating?) → DataType.
+namespace
+{
+
+    /// Byte-size of a native number type. Returns 0 for non-native-number types.
+    size_t nativeNumberBytes(const DataTypePtr & type)
+    {
+        WhichDataType w(type);
+        if (w.isUInt8() || w.isInt8())   return 1;
+        if (w.isUInt16() || w.isInt16()) return 2;
+        if (w.isUInt32() || w.isInt32() || w.isFloat32()) return 4;
+        if (w.isUInt64() || w.isInt64() || w.isFloat64()) return 8;
+        if (w.isUInt128() || w.isInt128()) return 16;
+        if (w.isUInt256() || w.isInt256()) return 32;
+        if (w.isBFloat16()) return 2;
+        return 0;
+    }
+
+    /// Whether the type is a signed native number — for `is_signed` flag.
+    /// (Floats are signed by nature.)
+    bool nativeNumberIsSigned(const DataTypePtr & type)
+    {
+        WhichDataType w(type);
+        return w.isInt() || w.isFloat() || w.isBFloat16();
+    }
+
+    /// Whether the type is a floating-point native number.
+    bool nativeNumberIsFloating(const DataTypePtr & type)
+    {
+        WhichDataType w(type);
+        return w.isFloat() || w.isBFloat16();
+    }
+
+    /// Whether the type is an integer (signed or unsigned, native or big).
+    bool nativeNumberIsInteger(const DataTypePtr & type)
+    {
+        WhichDataType w(type);
+        return w.isInt() || w.isUInt();
+    }
+
+    /// Construct<is_signed, is_floating, bytes> at runtime.
+    DataTypePtr constructNativeNumber(size_t bytes, bool is_signed, bool is_floating)
+    {
+        if (is_floating)
+        {
+            switch (bytes)
+            {
+                case 1: case 2: return std::make_shared<DataTypeBFloat16>();
+                case 4: return std::make_shared<DataTypeFloat32>();
+                case 8: return std::make_shared<DataTypeFloat64>();
+                default:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot construct a floating-point type of {} byte(s)", bytes);
+            }
+        }
+        if (is_signed)
+        {
+            switch (bytes)
+            {
+                case 1:  return std::make_shared<DataTypeInt8>();
+                case 2:  return std::make_shared<DataTypeInt16>();
+                case 4:  return std::make_shared<DataTypeInt32>();
+                case 8:  return std::make_shared<DataTypeInt64>();
+                case 16: return std::make_shared<DataTypeInt128>();
+                case 32: return std::make_shared<DataTypeInt256>();
+                default:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot construct a signed integer of {} byte(s)", bytes);
+            }
+        }
+        switch (bytes)
+        {
+            case 1:  return std::make_shared<DataTypeUInt8>();
+            case 2:  return std::make_shared<DataTypeUInt16>();
+            case 4:  return std::make_shared<DataTypeUInt32>();
+            case 8:  return std::make_shared<DataTypeUInt64>();
+            case 16: return std::make_shared<DataTypeUInt128>();
+            case 32: return std::make_shared<DataTypeUInt256>();
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot construct an unsigned integer of {} byte(s)", bytes);
+        }
+    }
+
+}
+
+
+/// `nativeNumber(bytes, signed_flag, floating_flag)` — the runtime analogue of
+/// `NumberTraits::Construct<signed_flag, floating_flag, bytes>::Type`. `bytes` is
+/// 1, 2, 4, 8, 16, or 32 (floating only supports 1, 2, 4, 8 — 1 and 2 collapse to
+/// `BFloat16`). `signed_flag` and `floating_flag` are 0/1 integer literals.
+/// Example: `nativeNumber(8, 1, 0)` → `Int64`.
+class TypeFunctionNativeNumber : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 3)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Type function nativeNumber takes 3 arguments: (bytes, signed, floating)");
+        size_t bytes = args[0].field().safeGet<UInt64>();
+        bool is_signed = args[1].field().safeGet<UInt64>() != 0;
+        bool is_floating = args[2].field().safeGet<UInt64>() != 0;
+        return Value(constructNativeNumber(bytes, is_signed, is_floating));
+    }
+
+    std::string name() const override { return "nativeNumber"; }
+};
+
+
+/// `makeSigned(T)` — signed counterpart of a native number type. UInt8→Int8,
+/// UInt16→Int16, …, UInt256→Int256. Signed integers and floats pass through.
+class TypeFunctionMakeSigned : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function makeSigned takes 1 argument");
+        const DataTypePtr & type = args.front().type();
+        size_t bytes = nativeNumberBytes(type);
+        if (!bytes)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "makeSigned requires a native number type, got {}", type->getName());
+        return Value(constructNativeNumber(bytes, /*signed*/ true, nativeNumberIsFloating(type)));
+    }
+
+    std::string name() const override { return "makeSigned"; }
+};
+
+
+/// `makeUnsigned(T)` — unsigned counterpart of a native integer type. Int8→UInt8,
+/// …, Int256→UInt256. Unsigned integers pass through. Floating-point types are
+/// rejected (no unsigned float makes sense).
+class TypeFunctionMakeUnsigned : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function makeUnsigned takes 1 argument");
+        const DataTypePtr & type = args.front().type();
+        if (nativeNumberIsFloating(type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "makeUnsigned rejects floating-point type {}", type->getName());
+        size_t bytes = nativeNumberBytes(type);
+        if (!bytes)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "makeUnsigned requires a native integer type, got {}", type->getName());
+        return Value(constructNativeNumber(bytes, /*signed*/ false, /*floating*/ false));
+    }
+
+    std::string name() const override { return "makeUnsigned"; }
+};
+
+
+/// `nextLargerNativeBits(n)` — `NumberTraits::nextSize(n)`: integer doubling
+/// while below 8 bytes, otherwise clamped at the input. Used to widen the
+/// result type for `plus`, `minus`, `multiply` to avoid overflow on the common
+/// max(sizeof(A), sizeof(B)).
+class TypeFunctionNextLargerNativeBits : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function nextLargerNativeBits takes 1 argument");
+        UInt64 n = args[0].field().safeGet<UInt64>();
+        if (n < 8)
+            n *= 2;
+        return Value(Field(n));
+    }
+
+    std::string name() const override { return "nextLargerNativeBits"; }
+};
+
+
+/// `maxBits(T1, T2, ...)` — max byte-size across native-number arguments.
+/// Non-native-number arguments contribute 0. Returns a `UInt64` Field.
+class TypeFunctionMaxBits : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        UInt64 result = 0;
+        for (const auto & arg : args)
+            result = std::max<UInt64>(result, nativeNumberBytes(arg.type()));
+        return Value(Field(result));
+    }
+
+    std::string name() const override { return "maxBits"; }
+};
+
+
+/// `maxSignedBits(T1, ...)` — max byte-size among inputs that are signed
+/// integers/floats. Returns 0 if none are signed.
+class TypeFunctionMaxSignedBits : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        UInt64 result = 0;
+        for (const auto & arg : args)
+            if (nativeNumberIsSigned(arg.type()))
+                result = std::max<UInt64>(result, nativeNumberBytes(arg.type()));
+        return Value(Field(result));
+    }
+
+    std::string name() const override { return "maxSignedBits"; }
+};
+
+
+/// `maxUnsignedBits(T1, ...)` — max byte-size among inputs that are unsigned
+/// native integers. Returns 0 if none are unsigned.
+class TypeFunctionMaxUnsignedBits : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        UInt64 result = 0;
+        for (const auto & arg : args)
+            if (!nativeNumberIsSigned(arg.type()) && nativeNumberIsInteger(arg.type()))
+                result = std::max<UInt64>(result, nativeNumberBytes(arg.type()));
+        return Value(Field(result));
+    }
+
+    std::string name() const override { return "maxUnsignedBits"; }
+};
+
+
+/// `maxIntegerBits(T1, ...)` — max byte-size among integer (signed or unsigned) arguments.
+class TypeFunctionMaxIntegerBits : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        UInt64 result = 0;
+        for (const auto & arg : args)
+            if (nativeNumberIsInteger(arg.type()))
+                result = std::max<UInt64>(result, nativeNumberBytes(arg.type()));
+        return Value(Field(result));
+    }
+
+    std::string name() const override { return "maxIntegerBits"; }
+};
+
+
+/// `maxFloatingBits(T1, ...)` — max byte-size among floating-point arguments.
+class TypeFunctionMaxFloatingBits : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        UInt64 result = 0;
+        for (const auto & arg : args)
+            if (nativeNumberIsFloating(arg.type()))
+                result = std::max<UInt64>(result, nativeNumberBytes(arg.type()));
+        return Value(Field(result));
+    }
+
+    std::string name() const override { return "maxFloatingBits"; }
+};
+
+
+/// `anySigned(T1, ...)` — `1` if any argument is a signed integer or a floating-point
+/// type (which is signed by nature), otherwise `0`.
+class TypeFunctionAnySigned : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        for (const auto & arg : args)
+            if (nativeNumberIsSigned(arg.type()))
+                return Value(Field(UInt64{1}));
+        return Value(Field(UInt64{0}));
+    }
+
+    std::string name() const override { return "anySigned"; }
+};
+
+
+/// `anyFloating(T1, ...)` — `1` if any argument is a floating-point type, otherwise `0`.
+class TypeFunctionAnyFloating : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        for (const auto & arg : args)
+            if (nativeNumberIsFloating(arg.type()))
+                return Value(Field(UInt64{1}));
+        return Value(Field(UInt64{0}));
+    }
+
+    std::string name() const override { return "anyFloating"; }
+};
+
+
+/// `anyInteger(T1, ...)` — `1` if any argument is a native integer type, otherwise `0`.
+class TypeFunctionAnyInteger : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        for (const auto & arg : args)
+            if (nativeNumberIsInteger(arg.type()))
+                return Value(Field(UInt64{1}));
+        return Value(Field(UInt64{0}));
+    }
+
+    std::string name() const override { return "anyInteger"; }
+};
+
+
+/// `selectIf(cond, then_value, else_value)` — picks `then_value` when `cond` is a
+/// non-zero integer Field, otherwise `else_value`. Useful in arithmetic signatures
+/// for cases like `ResultOfBit` where the result width is `8` when any operand is
+/// floating-point and `maxBits(A, B)` otherwise:
+///   `nativeNumber(selectIf(anyFloating(A, B), 8, maxBits(A, B)), anySigned(A, B), 0)`.
+class TypeFunctionSelectIf : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 3)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function selectIf takes 3 arguments: (cond, then, else)");
+        const UInt64 cond = args[0].field().safeGet<UInt64>();
+        return cond ? args[1] : args[2];
+    }
+
+    std::string name() const override { return "selectIf"; }
+};
+
+
 /// IntervalType('week') → DataTypeInterval(Kind::Week). Used by functions that take a
 /// constant string naming an interval unit and return an Interval-typed value, such as
 /// `toInterval(value, 'day')`.
@@ -504,6 +839,19 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionAggregateFunctionType>();
     factory.registerElement<TypeFunctionRemoveNullable>();
     factory.registerElement<TypeFunctionNull>();
+    factory.registerElement<TypeFunctionNativeNumber>();
+    factory.registerElement<TypeFunctionMakeSigned>();
+    factory.registerElement<TypeFunctionMakeUnsigned>();
+    factory.registerElement<TypeFunctionNextLargerNativeBits>();
+    factory.registerElement<TypeFunctionMaxBits>();
+    factory.registerElement<TypeFunctionMaxSignedBits>();
+    factory.registerElement<TypeFunctionMaxUnsignedBits>();
+    factory.registerElement<TypeFunctionMaxIntegerBits>();
+    factory.registerElement<TypeFunctionMaxFloatingBits>();
+    factory.registerElement<TypeFunctionAnySigned>();
+    factory.registerElement<TypeFunctionAnyFloating>();
+    factory.registerElement<TypeFunctionAnyInteger>();
+    factory.registerElement<TypeFunctionSelectIf>();
 
     /// Predicates.
     factory.registerElement<TypeFunctionTuplesHaveSameSize>();
