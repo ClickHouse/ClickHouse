@@ -653,8 +653,48 @@ MergeMutateSelectedEntry::~MergeMutateSelectedEntry()
 
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
 {
-    std::lock_guard lock(currently_processing_in_background_mutex);
-    return startMutation(commands, query_context, lock);
+    /// Choose any disk, because when we load mutations we search them at each disk
+    /// where storage can be placed. See loadMutations().
+    auto disk = getStoragePolicy()->getAnyDisk();
+    TransactionID current_tid = Tx::NonTransactionalTID;
+    String additional_info;
+    auto txn = query_context->getCurrentTransaction();
+    if (txn)
+    {
+        current_tid = txn->tid;
+        additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
+    }
+
+    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
+
+    Int64 version = block_holder->block.number;
+    /// File I/O (`writeFile` + `sync` + `moveFile`) intentionally happens outside
+    /// `currently_processing_in_background_mutex`. The mutex only guards in-memory
+    /// state (`current_mutations_by_version` and `mutation_counters`); holding it
+    /// across the file I/O would block merge selection for the full I/O duration.
+    /// For the `alter` path that additionally needs an atomic
+    /// `(setProperties + mutation registration)` transition, see the private
+    /// overload below — that path holds the lock throughout, which is acceptable
+    /// because `alter` is rare.
+    entry.commit(version);
+    String mutation_id = entry.file_name;
+    if (txn)
+        txn->addMutation(shared_from_this(), mutation_id);
+
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+
+        auto [it, inserted] = current_mutations_by_version.try_emplace(version, std::move(entry));
+        if (!inserted)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
+
+        incrementMutationsCounters(mutation_counters, *it->second.commands);
+    }
+
+    LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
+    background_operations_assignee.trigger();
+    return version;
 }
 
 Int64 StorageMergeTree::startMutation(
@@ -662,8 +702,13 @@ Int64 StorageMergeTree::startMutation(
     ContextPtr query_context,
     const std::lock_guard<std::mutex> & /*currently_processing_in_background_mutex_lock*/)
 {
-    /// Choose any disk, because when we load mutations we search them at each disk
-    /// where storage can be placed. See loadMutations().
+    /// Same as the public overload, but the caller (`alter`) already holds
+    /// `currently_processing_in_background_mutex` to make the
+    /// `(setProperties + current_mutations_by_version insert)` transition atomic
+    /// against background merge selection. File I/O (`entry.commit`) is therefore
+    /// performed under the caller's lock here; this is acceptable because the
+    /// `alter` path is rare and the atomicity is required for correctness (see
+    /// issue #80648).
     auto disk = getStoragePolicy()->getAnyDisk();
     TransactionID current_tid = Tx::NonTransactionalTID;
     String additional_info;
