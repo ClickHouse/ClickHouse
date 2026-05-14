@@ -115,6 +115,16 @@ ColumnPtr getFilteredTables(
             for (; table_it->isValid(); table_it->next())
             {
                 table_column->insert(table_it->table());
+                /// Keep all auxiliary columns in lockstep with `table_column`, otherwise
+                /// `filterBlockWithExpression` below raises a LOGICAL_ERROR on mismatched
+                /// column lengths (issue #102705).
+                if (uuid_column)
+                    uuid_column->insert(table_it->uuid());
+                /// `system.detached_tables` has no `engine` column, so `filter_by_engine`
+                /// is never true for the detached path in practice. Insert a default value
+                /// defensively so the columns stay aligned if that ever changes.
+                if (engine_column)
+                    engine_column->insertDefault();
             }
         }
         else
