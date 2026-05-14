@@ -1452,6 +1452,11 @@ bool applyFunctionChainToColumn(
     else
     {
         result_column = castColumnAccurateOrNull({result_column, result_type, ""}, in_argument_type);
+        /// `castColumnAccurateOrNull` is implemented on top of `FunctionCast` whose wrappers can
+        /// return `ColumnConst` for a 1-row input — same hazard as the post-`func->execute` case
+        /// below. Unwrap defensively so the `assert_cast<const ColumnNullable &>` always sees a
+        /// plain `ColumnNullable`.
+        result_column = result_column->convertToFullColumnIfConst();
         const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
         const auto & null_map_data = result_column_nullable.getNullMapData();
         for (char8_t i : null_map_data)
@@ -1538,6 +1543,14 @@ bool applyFunctionChainToColumn(
         }
         result_column = func->execute({{exec_column, original_argument_type, ""}}, func_result_type, exec_column->size(), /* dry_run = */ false);
         result_column = result_column->convertToFullColumnIfLowCardinality();
+        /// `func->execute` may return `ColumnConst(ColumnNullable(...))` when the function collapses
+        /// a 1-row input to a single constant value — e.g. `floor(NULL, x)` always yields NULL.
+        /// `ColumnConst::isNullable` reports the wrapped column's nullability, so the
+        /// `isNullable()` check below would succeed while `assert_cast<const ColumnNullable &>`
+        /// fails on the outer `ColumnConst`. Strip the outer `Const` here to keep the column
+        /// shape in sync with `result_type` and with the post-strip invariant established at the
+        /// top of this function.
+        result_column = result_column->convertToFullColumnIfConst();
         result_type = removeLowCardinality(func_result_type);
 
         // Transforming nullable columns to the nested ones, in case no nulls found.
