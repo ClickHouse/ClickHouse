@@ -91,6 +91,11 @@ public:
       */
     static void pauseFailPoint(const String & fail_point_name);
 
+    /** Fast-path check used to avoid even local failpoint guards when no failpoint
+      * has ever been enabled in this process.
+      */
+    static bool hasAnyFailPointBeenRegistered();
+
     /** Activate a failpoint so that subsequent hits (via fiu_do_on / pauseFailPoint)
       * will take effect. Creates a FailPointChannel in fail_point_wait_channels.
       * No-op if the failpoint is already enabled.

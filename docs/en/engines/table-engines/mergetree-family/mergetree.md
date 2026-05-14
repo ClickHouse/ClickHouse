@@ -1255,7 +1255,7 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `MinMax` statistics support part pruning. When MinMax statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
+Currently, `MinMax` and `NullCount` statistics support part pruning. When MinMax statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part. When NullCount statistics are defined on a `Nullable` column, ClickHouse tracks the number of NULL values in each part, enabling pruning based on `IS NULL` / `IS NOT NULL` predicates and improving range filter pruning accuracy for columns with NULL values.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
@@ -1308,7 +1308,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 - `NullCount`
 
-    Tracks the number of `NULL` values in `Nullable` columns. Used for accurate selectivity estimation of `IS NULL`/`IS NOT NULL` predicates in PREWHERE optimization.
+    Tracks the number of `NULL` values in `Nullable` columns. Used for accurate selectivity estimation of `IS NULL`/`IS NOT NULL` predicates in PREWHERE optimization and enables part pruning based on NULL presence.
 
     Syntax: `nullcount`
 

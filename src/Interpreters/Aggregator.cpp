@@ -680,6 +680,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
+    cache_settings.enable_prefetch = params.enable_prefetch;
+    cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER

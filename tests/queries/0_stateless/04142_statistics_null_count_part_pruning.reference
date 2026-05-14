@@ -1,0 +1,32 @@
+Test 1: `IS NULL` with `NullCount` prunes no-NULL parts
+1	1
+4
+Test 2: `IS NOT NULL` with `NullCount` prunes all-NULL part
+1	1
+6
+Test 3: `LowCardinality(Nullable)` `IS NULL` uses `NullCount`
+1	1
+4
+Test 4: `LowCardinality(Nullable)` `IS NOT NULL` uses `NullCount`
+1	1
+6
+Test 5: `MinMax` + `NullCount` prunes all-NULL and below-range parts
+1	1
+4
+Test 6: `NOT (value IS NULL)` matches `IS NOT NULL` pruning
+1	1
+6
+Test 7: `IS NULL OR range` combines `NullCount` and `MinMax` pruning
+1	1
+8
+Test 8: `optimize_functions_to_subcolumns = 0` produces correct results without pruning
+1	1
+4
+1	1
+6
+Test 9: `LowCardinality(Nullable(Int64))` with `MinMax` + `NullCount` prunes
+1	1
+4
+Test 10: `LowCardinality(Nullable)` `NOT (IS NULL)` works
+1	1
+6
