@@ -3697,15 +3697,15 @@ CONV_FN(TableEngine, te)
         ret += " PRIMARY KEY ";
         TableKeyToString(ret, te.primary_key());
     }
-    if (te.has_sample_by())
-    {
-        ret += " SAMPLE BY ";
-        TableKeyToString(ret, te.sample_by());
-    }
     if (te.has_unique_key())
     {
         ret += " UNIQUE KEY ";
         TableKeyToString(ret, te.unique_key());
+    }
+    if (te.has_sample_by())
+    {
+        ret += " SAMPLE BY ";
+        TableKeyToString(ret, te.sample_by());
     }
     if (te.has_ttl_expr())
     {

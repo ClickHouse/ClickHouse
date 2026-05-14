@@ -378,6 +378,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_truncate_order_by_after_group_by_keys", trueOrFalseSetting},
        {"optimize_trivial_approximate_count_query", trueOrFalseSetting},
        {"optimize_trivial_count_query", trueOrFalseSetting},
+       {"optimize_trivial_group_by_limit_query", trueOrFalseSetting},
        {"optimize_uniq_to_count", trueOrFalseSetting},
        {"optimize_use_implicit_projections", trueOrFalseSetting},
        {"optimize_use_projections", trueOrFalseSetting},
@@ -569,7 +570,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
              static const DB::Strings choices = {"'best_effort'", "'best_effort_us'", "'basic'"};
              return rg.pickRandomly(choices);
          },
-         {"'best_effort'", "'best_effort_us'", "'basic'"},
+         {},
          false)},
     {"cast_string_to_dynamic_use_inference", trueOrFalseSettingNoOracle},
     {"cast_string_to_variant_use_inference", trueOrFalseSettingNoOracle},

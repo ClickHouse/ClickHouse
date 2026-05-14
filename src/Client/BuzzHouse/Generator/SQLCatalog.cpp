@@ -673,12 +673,13 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             if (catalog == LakeCatalog::None)
             {
                 /// DeltaLake tables on Spark must be on the `spark_catalog` :(
+                /// Paimon uses `.db` suffix for database directories (e.g. test.db/)
                 next_bucket_path = fmt::format(
                     "{}{}{}{}{}{}",
                     isOnLocal() ? fc.lakes_path.generic_string() : "",
                     isOnLocal() ? "/" : "",
                     (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
-                    (integration == IntegrationCall::Dolor) ? "/test/" : "",
+                    (integration == IntegrationCall::Dolor) ? (isAnyPaimonEngine() ? "/test.db/" : "/test/") : "",
                     bname,
                     rg.nextBool() ? "/" : "");
             }

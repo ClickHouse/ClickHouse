@@ -1307,45 +1307,53 @@ def modify_server_settings(
                 ["AcceptCertificateHandler", "RejectCertificateHandler"]
             )
 
-    if root.find("named_collections") is None:
-        modified = True
+    named_collections_xml = root.find("named_collections")
+    if named_collections_xml is None:
         named_collections_xml = ET.SubElement(root, "named_collections")
-        if args.with_minio:
-            s3_xml = ET.SubElement(named_collections_xml, "s3")
-            ET.SubElement(s3_xml, "url").text = (
-                f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/"
-            )
-            ET.SubElement(s3_xml, "access_key_id").text = "minio"
-            ET.SubElement(s3_xml, "secret_access_key").text = cluster.minio_secret_key
-        if args.with_azurite:
-            azure_xml = ET.SubElement(named_collections_xml, "azure")
-            ET.SubElement(azure_xml, "account_name").text = cluster.azurite_account
-            ET.SubElement(azure_xml, "account_key").text = cluster.azurite_key
-            ET.SubElement(azure_xml, "container").text = cluster.azure_container_name
-            ET.SubElement(azure_xml, "storage_account_url").text = (
-                f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}"
-            )
-        if args.with_mysql:
-            mysql_xml = ET.SubElement(named_collections_xml, "mysql_remote")
-            ET.SubElement(mysql_xml, "host").text = cluster.mysql8_host
-            ET.SubElement(mysql_xml, "port").text = str(cluster.mysql8_port)
-            ET.SubElement(mysql_xml, "user").text = "root"
-            ET.SubElement(mysql_xml, "password").text = mysql_pass
-            ET.SubElement(mysql_xml, "database").text = "test"
-        if args.with_postgresql:
-            pg_xml = ET.SubElement(named_collections_xml, "postgres_remote")
-            ET.SubElement(pg_xml, "host").text = cluster.postgres_host
-            ET.SubElement(pg_xml, "port").text = str(cluster.postgres_port)
-            ET.SubElement(pg_xml, "user").text = "postgres"
-            ET.SubElement(pg_xml, "password").text = pg_pass
-            ET.SubElement(pg_xml, "database").text = "test"
-        if args.with_mongodb:
-            mongo_xml = ET.SubElement(named_collections_xml, "mongo_remote")
-            ET.SubElement(mongo_xml, "host").text = cluster.mongo_host
-            ET.SubElement(mongo_xml, "port").text = str(cluster.mongo_port)
-            ET.SubElement(mongo_xml, "user").text = "root"
-            ET.SubElement(mongo_xml, "password").text = mongo_pass
-            ET.SubElement(mongo_xml, "database").text = "test"
+        modified = True
+    if args.with_minio and named_collections_xml.find("s3") is None:
+        modified = True
+        s3_xml = ET.SubElement(named_collections_xml, "s3")
+        ET.SubElement(s3_xml, "url").text = (
+            f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/"
+        )
+        ET.SubElement(s3_xml, "access_key_id").text = "minio"
+        ET.SubElement(s3_xml, "secret_access_key").text = cluster.minio_secret_key
+    if args.with_azurite and named_collections_xml.find("azure") is None:
+        modified = True
+        azure_xml = ET.SubElement(named_collections_xml, "azure")
+        ET.SubElement(azure_xml, "account_name").text = cluster.azurite_account
+        ET.SubElement(azure_xml, "account_key").text = cluster.azurite_key
+        ET.SubElement(azure_xml, "container").text = cluster.azure_container_name
+        ET.SubElement(azure_xml, "storage_account_url").text = (
+            f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}"
+        )
+    if args.with_mysql and named_collections_xml.find("mysql_remote") is None:
+        modified = True
+        mysql_xml = ET.SubElement(named_collections_xml, "mysql_remote")
+        ET.SubElement(mysql_xml, "host").text = cluster.mysql8_host
+        ET.SubElement(mysql_xml, "port").text = str(cluster.mysql8_port)
+        ET.SubElement(mysql_xml, "user").text = "root"
+        ET.SubElement(mysql_xml, "password").text = mysql_pass
+        ET.SubElement(mysql_xml, "database").text = "test"
+    if args.with_postgresql and named_collections_xml.find("postgres_remote") is None:
+        modified = True
+        pg_xml = ET.SubElement(named_collections_xml, "postgres_remote")
+        ET.SubElement(pg_xml, "host").text = cluster.postgres_host
+        ET.SubElement(pg_xml, "port").text = str(cluster.postgres_port)
+        ET.SubElement(pg_xml, "user").text = "postgres"
+        ET.SubElement(pg_xml, "password").text = pg_pass
+        ET.SubElement(pg_xml, "database").text = "test"
+    if args.with_mongodb and named_collections_xml.find("mongo_remote") is None:
+        modified = True
+        mongo_xml = ET.SubElement(named_collections_xml, "mongo_remote")
+        ET.SubElement(mongo_xml, "host").text = cluster.mongo_host
+        ET.SubElement(mongo_xml, "port").text = str(cluster.mongo_port)
+        ET.SubElement(mongo_xml, "user").text = "root"
+        ET.SubElement(mongo_xml, "password").text = mongo_pass
+        ET.SubElement(mongo_xml, "database").text = "test"
+    if named_collections_xml.find("local") is None:
+        modified = True
         ET.SubElement(named_collections_xml, "local")
 
     if "timezone" not in possible_properties:
