@@ -180,7 +180,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
         default_mask= &std::get<RefFilter>(defaults_or_filter).get();
 
     {
-        const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs, ProfileEvents::DictCacheLockReadHoldNs};
+        const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs, ProfileEvents::DictCacheLockWriteHoldNs};
         result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request, default_mask);
     }
 
@@ -291,7 +291,9 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     FetchResult result_of_fetch_from_storage;
 
     {
-        const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs, ProfileEvents::DictCacheLockReadHoldNs};
+        /// Write lock on storage
+        const ProfiledExclusiveLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs, ProfileEvents::DictCacheLockWriteHoldNs};
+
         result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request, /*default_mask*/ nullptr);
     }
 

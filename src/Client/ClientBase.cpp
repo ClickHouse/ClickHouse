@@ -103,7 +103,6 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string.hpp>
 
 #include <Common/config_version.h>
 #include <Common/XDGBaseDirectories.h>
@@ -2972,16 +2971,6 @@ bool ClientBase::processQueryText(const String & text)
         return processMultiQueryFromFile(file_name);
     }
 
-    // Handle `ls` metacommand
-    if (supportsLocalMetaCommands() && boost::iequals(trimmed_input, "ls"))
-    {
-        // Rewrites `ls` into a query that returns the list of all files of the current working directory
-        // TODO: Use the filesystem table engine once https://github.com/ClickHouse/ClickHouse/pull/53610 is merged
-        const String ls_query = "SELECT _file AS file FROM file('*', 'One') ORDER BY file";
-        return executeMultiQuery(ls_query);
-    }
-
-
 #if USE_CLIENT_AI
     // Handle "?? <free_text>" command
     if (text.starts_with("??"))
@@ -3548,7 +3537,10 @@ void ClientBase::runInteractive()
     initQueryIdFormats();
 
 #if USE_CLIENT_AI
-    initAIProvider();
+    /// AI SQL generation is disabled for the embedded client (SSH and WebSocket protocols)
+    /// because it accesses the environment (API keys) which could be a security concern.
+    if (!isEmbeeddedClient())
+        initAIProvider();
 #endif
 
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -3799,13 +3791,15 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     return executeMultiQuery(queries_from_file);
 }
 
+
 void ClientBase::runNonInteractive()
 {
     if (delayed_interactive)
         initQueryIdFormats();
 
 #if USE_CLIENT_AI
-    initAIProvider();
+    if (!isEmbeeddedClient())
+        initAIProvider();
 #endif
 
     if (!buzz_house && !queries_files.empty())

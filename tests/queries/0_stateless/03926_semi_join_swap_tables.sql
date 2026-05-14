@@ -16,7 +16,7 @@ SET enable_analyzer = 1, query_plan_join_swap_table = 'auto';
 SET join_algorithm='hash';
 
 -- swap LEFT SEMI join to RIGHT SEMI join
-SELECT trimLeft(explain)
+SELECT *
 FROM (
     EXPLAIN actions=1
     SELECT *
@@ -24,11 +24,10 @@ FROM (
     LEFT SEMI JOIN rhs
     ON lhs.a = rhs.a
 )
-WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%')
-SETTINGS enable_join_runtime_filters = 1; -- affects hash join plan depth
+WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%');
 
 -- no swapping for PARTIAL_MERGE join
-SELECT trimLeft(explain)
+SELECT *
 FROM (
     EXPLAIN actions=1
     SELECT *
@@ -40,7 +39,7 @@ FROM (
 WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%');
 
 -- no swapping for PREFER_PARTIAL_MERGE join
-SELECT trimLeft(explain)
+SELECT *
 FROM (
     EXPLAIN actions=1
     SELECT *
@@ -52,11 +51,11 @@ FROM (
 WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%');
 
 -- no swapping for AUTO join
-SELECT trimLeft(explain)
+SELECT *
 FROM (
     EXPLAIN actions=1
     SELECT *
-    FROM lhs
+    FROM lhs 
     LEFT SEMI JOIN rhs
     ON lhs.a = rhs.a
     SETTINGS join_algorithm='auto'
@@ -77,7 +76,7 @@ FROM system.query_log
 WHERE log_comment = '03926_left_semi_join_swap_tables' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= NOW() - INTERVAL '10 MINUTE';
 
 -- swap RIGHT SEMI join to LEFT SEMI join
-SELECT trimLeft(explain)
+SELECT *
 FROM (
     EXPLAIN actions=1
     SELECT *
@@ -85,8 +84,7 @@ FROM (
     RIGHT SEMI JOIN rhs
     ON lhs.a = rhs.a
 )
-WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%')
-SETTINGS enable_join_runtime_filters = 1; -- affects hash join plan depth
+WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%');
 
 SELECT *
 FROM lhs
