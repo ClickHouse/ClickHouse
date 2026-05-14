@@ -135,7 +135,7 @@ public:
     };
 
     /// Never call it manually, public for shared_ptr construction only
-    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup);
+    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool is_restore_from_backup);
 
     /// If !attach, creates coordination znodes if needed.
     static OwnedRefreshTask create(
@@ -391,6 +391,7 @@ private:
     /// Look up the IStorage-s for views we depend on and get their in-memory information about latest refreshes.
     /// Returns nonempty list iff there are any dependencies.
     bool collectDependencyStates(AllDependenciesInfo & out, std::unique_lock<std::mutex> & lock);
+    bool collectDependencyStatesUnlocked(AllDependenciesInfo & out, const std::vector<StorageID> & deps);
     void syncDependenciesForRefresh(const std::vector<StorageID> & deps, const ContextPtr & context);
 
     /// Looks at time and dependencies and decides when to do next refresh.

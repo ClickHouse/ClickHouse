@@ -80,9 +80,10 @@ namespace ErrorCodes
 }
 
 RefreshTask::RefreshTask(
-    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup)
+    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool is_restore_from_backup)
     : view(view_)
     , refresh_schedule(strategy)
+    , initial_dependencies(std::move(initial_dependencies_))
     , refresh_append(strategy.append)
 {
     createLogger(view->getStorageID());
@@ -102,9 +103,8 @@ RefreshTask::RefreshTask(
         {
             /// We want `CREATE ... REFRESH DEPENDS ON ... EMPTY` to do first refresh after
             /// dependencies' *next* refresh after this view is created.
-            std::unique_lock lock(mutex);
             AllDependenciesInfo dependencies;
-            collectDependencyStates(dependencies, lock);
+            collectDependencyStatesUnlocked(dependencies, initial_dependencies);
             coordination.root_znode.last_success_dependencies = dependencies;
         }
     }
@@ -190,7 +190,12 @@ OwnedRefreshTask RefreshTask::create(
     bool empty,
     bool is_restore_from_backup)
 {
-    auto task = std::make_shared<RefreshTask>(view, context, strategy, attach, coordinated, empty, is_restore_from_backup);
+    std::vector<StorageID> deps;
+    if (strategy.dependencies)
+        for (auto && dependency : strategy.dependencies->children)
+            deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
+
+    auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, is_restore_from_backup);
 
     task->scheduling_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshSched",
         [self = task.get()] { self->doScheduling(/*is_shutdown=*/ false); });
@@ -204,10 +209,6 @@ OwnedRefreshTask RefreshTask::create(
         w->should_reread_znodes.store(true);
         (*task_waker)(response);
     });
-
-    if (strategy.dependencies)
-        for (auto && dependency : strategy.dependencies->children)
-            task->initial_dependencies.emplace_back(dependency->as<const ASTTableIdentifier &>());
 
     return OwnedRefreshTask(task);
 }
@@ -1165,7 +1166,14 @@ bool RefreshTask::collectDependencyStates(AllDependenciesInfo & out, std::unique
         return true;
 
     lock.unlock();
+    bool ok = collectDependencyStatesUnlocked(out, deps);
+    lock.lock();
 
+    return ok;
+}
+
+bool RefreshTask::collectDependencyStatesUnlocked(AllDependenciesInfo & out, const std::vector<StorageID> & deps)
+{
     const RefreshSet & set = view->getContext()->getRefreshSet();
     bool all_found = true;
     for (const StorageID & id : deps)
@@ -1183,8 +1191,6 @@ bool RefreshTask::collectDependencyStates(AllDependenciesInfo & out, std::unique
         info.database_and_table = id.getFullTableName();
         out.tables.push_back(std::move(info));
     }
-
-    lock.lock();
 
     return all_found;
 }
