@@ -573,6 +573,20 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
 
             try
             {
+                /// Speculatively reserve `additional_memory_tracking_per_thread` against the
+                /// query's MemoryTracker. Each thread otherwise accumulates up to
+                /// `max_untracked_memory` of unreported allocations; this reservation makes the
+                /// global tracker a safe upper bound. The throwing path is intentional: if it
+                /// fires, the surrounding `catch` propagates `MEMORY_LIMIT_EXCEEDED` through
+                /// the pipeline (calling `finish()` so consumers unblock).
+                const int64_t speculative_memory = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
+                if (speculative_memory > 0)
+                    std::ignore = CurrentMemoryTracker::alloc(speculative_memory);
+                SCOPE_EXIT({
+                    if (speculative_memory > 0)
+                        std::ignore = CurrentMemoryTracker::free(speculative_memory);
+                });
+
                 executeSingleThread(thread_num, my_slot.get());
             }
             catch (...)

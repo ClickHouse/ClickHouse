@@ -792,21 +792,13 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         /// Run the job.
         try
         {
-            /// Speculatively account for a fixed amount of per-thread untracked memory.
-            /// Each thread is allowed up to `max_untracked_memory` of allocations without
-            /// reporting them, so with many threads this can sum up to a large under-count.
-            /// We charge this amount before the job and release it after, making the
-            /// global MemoryTracker a safe upper bound on real memory usage.
-            /// The allocation is allowed to throw `MEMORY_LIMIT_EXCEEDED`; in that case the
-            /// job is treated as failed with that exception, which is the same behavior as
-            /// if the job itself had exceeded the memory limit.
-            const int64_t speculative_memory = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
-            if (speculative_memory > 0)
-                std::ignore = CurrentMemoryTracker::alloc(speculative_memory);
-            SCOPE_EXIT({
-                if (speculative_memory > 0)
-                    std::ignore = CurrentMemoryTracker::free(speculative_memory);
-            });
+            /// The speculative per-thread memory reservation that compensates for
+            /// `max_untracked_memory` is performed by each pipeline executor lambda
+            /// AFTER it attaches the query's thread group (`ThreadGroupSwitcher`).
+            /// Doing it here would charge against an unrelated tracker chain and a
+            /// thrown `MEMORY_LIMIT_EXCEEDED` could not be routed back through the
+            /// pipeline's job-level `catch`, causing the pipeline consumer to block
+            /// on the output queue indefinitely.
 
             CurrentMetrics::Increment metric_active_pool_threads(parent_pool.metric_active_threads);
 

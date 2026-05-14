@@ -3,10 +3,11 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
-#include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadPool.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 #include <Poco/Event.h>
 
 namespace DB
@@ -102,6 +103,16 @@ static void threadFunction(
     try
     {
         ThreadGroupSwitcher switcher(thread_group, ThreadName::PUSHING_ASYNC_EXECUTOR);
+
+        /// Speculatively reserve `additional_memory_tracking_per_thread` against the
+        /// query's MemoryTracker. See note in PipelineExecutor::spawnThreads.
+        const int64_t speculative_memory = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
+        if (speculative_memory > 0)
+            std::ignore = CurrentMemoryTracker::alloc(speculative_memory);
+        SCOPE_EXIT({
+            if (speculative_memory > 0)
+                std::ignore = CurrentMemoryTracker::free(speculative_memory);
+        });
 
         data.executor->execute(num_threads, concurrency_control);
     }
