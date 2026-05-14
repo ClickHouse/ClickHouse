@@ -156,7 +156,7 @@ std::pair<String, String> problemInfo(Problem p)
         case P_VALIDATION_INFRASTRUCTURE: return {"validation_infrastructure",
             "exception from validation infrastructure (sorting, Field comparisons, monotonicity checks) rather than the tested function itself"};
         case P_TIMEOUT_NOT_HONORED: return {"timeout_not_honored",
-            "iteration took more than 2x the per-query max_execution_time before stopping; "
+            "iteration ran longer than the configured iteration-too-slow threshold before stopping; "
             "the function is slow and either does not check CurrentThread::isQueryCanceled often enough, "
             "should be made faster, or should reject the offending input shape inside the function itself"};
 
