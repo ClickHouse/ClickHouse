@@ -7,8 +7,6 @@ title: 'Visual Interfaces from Third-party Developers'
 doc_type: 'reference'
 ---
 
-# Visual interfaces from third-party developers
-
 ## Open-source {#open-source}
 
 ### agx {#agx}
