@@ -30,11 +30,6 @@
     Cannot convert type UInt8 to Variant(String, UInt64)
 02990_variant_where_cond
 
-    Bloom filters
-    Needle must not contain whitespace or separator characters: while executing 'FUNCTION hasToken(s : 0, 'abcabcabcabcabcabcabcab\0'_String :: 1) -> hasToken(__table1.s, 'abcabcabcabcabcabcabcab\0'_String) UInt8 : 2': While executing MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread). (BAD_ARGUMENTS) (version 25.1.1.1927 (official build)) (from [::ffff:127.0.0.1]:44318) (comment: 01781_token_extractor_buffer_overflow.sql) (in query: SELECT max(`__table1`.`id`) AS `max(id)` FROM `test_klfow1or`.`bloom_filter` AS `__table1` WHERE hasToken(`__table1`.`s`, 'abcabcabcabcabcabcabcab\0'))
-00945_bloom_filter_index
-
-
     order is never guaranteed
     https://github.com/ClickHouse/ClickHouse/issues/63203
 01513_optimize_aggregation_in_order_memory_long
@@ -131,12 +126,9 @@
 03164_materialize_skip_index
 03166_skip_indexes_vertical_merge_1
 03173_set_transformed_partition_pruning
-03254_system_prewarm_mark_cache
 03257_reverse_sorting_key
 03269_explain_unique_ids
 03272_partition_pruning_monotonic_func_bug
-    profile events
-03273_primary_index_cache_low_cardinality
     profile events
 03279_join_choose_build_table
 03279_join_choose_build_table_statistics
@@ -145,7 +137,6 @@
 03277_json_subcolumns_in_primary_key.gen
 02944_variant_as_common_type
 02417_load_marks_async
-03274_prewarm_primary_index_cache
 03262_filter_push_down_view
 01283_max_threads_simple_query_optimization
 
@@ -189,8 +180,3 @@
 
     investigate failed tests
 03707_statistics_cache
-
-    Non-deterministic row order under parallel replicas: queries without `ORDER BY` over
-    `nullable_minmax_index` return rows in a different order across replicas, and the
-    reference file pins a specific ordering.
-01410_nullable_key_and_index
