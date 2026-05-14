@@ -311,17 +311,6 @@ private:
         if (null_presence.has_null_constant)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        DataTypePtr elem_type = checkAndGetDataType<DataTypeArray>(result_type.get())->getNestedType();
-        WhichDataType which(elem_type);
-
-        if (!which.isDateOrDate32())
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal columns of arguments of function {}, the function only implemented for Date/Date32 types",
-                getName());
-        }
-
         auto throw_if_null_value = [&](const ColumnWithTypeAndName & col)
         {
             if (!col.type->isNullable())
@@ -349,7 +338,7 @@ private:
 
         if (arguments.size() == 3)
         {
-            if (const auto * interval_type = checkAndGetDataType<DataTypeInterval>(removeNullable(arguments[2].type).get()))
+            if (const auto * interval_type = checkAndGetDataType<DataTypeInterval>(arguments[2].type.get()))
                 interval_kind = interval_type->getKind();
 
             step_value = assert_cast<const ColumnConst &>(*arguments[2].column).getValue<Int64>();
@@ -359,6 +348,7 @@ private:
                     ErrorCodes::BAD_ARGUMENTS, "Invalid argument to function {}, the 3rd argument step can't equal to zero", getName());
         }
 
+        DataTypePtr elem_type = checkAndGetDataType<DataTypeArray>(result_type.get())->getNestedType();
         ColumnPtr start_col = castColumn(arguments[0], elem_type)->convertToFullColumnIfConst();
         ColumnPtr end_col = castColumn(arguments[1], elem_type)->convertToFullColumnIfConst();
 
