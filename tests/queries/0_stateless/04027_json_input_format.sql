@@ -1,5 +1,15 @@
 -- Tags: no-async-insert
 
+-- Note on `error N` vs `clientError N` annotations below:
+-- Ambiguous-JSON-field detection raises error 117 (`INCORRECT_DATA`). The error can be
+-- reported client-side (legacy path, when `send_table_structure_on_insert_with_inline_data` = 1
+-- the client converts `FORMAT JSONEachRow` data to a native block before sending) or
+-- server-side (inline path, setting = 0, the server parses the inline JSON directly).
+-- The annotations below use `error 117` rather than the stricter `clientError 117` to
+-- accept both reporting paths. If a future maintainer pins this test to
+-- `send_table_structure_on_insert_with_inline_data` = 1, the stricter `clientError 117`
+-- can be restored.
+
 -- Test auto case
 DROP TABLE IF EXISTS json_test;
 
