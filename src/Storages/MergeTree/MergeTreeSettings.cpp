@@ -1050,7 +1050,7 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Bool, optimize_row_order_if_no_order_by, true, R"(
     Enable row order optimization if table has no ORDER BY
-    )", 1) \
+    )", 0) \
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
     Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
 
