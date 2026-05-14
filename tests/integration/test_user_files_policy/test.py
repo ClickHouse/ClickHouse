@@ -12,7 +12,6 @@ node_local = cluster.add_instance(
     main_configs=["configs/config.d/storage_configuration.xml"],
     tmpfs=[
         "/test_user_files_disk1:size=100M",
-        "/test_user_files_disk2:size=100M",
     ],
 )
 
@@ -32,8 +31,8 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_local_read_file_from_first_disk():
-    """Test that file() function can read files from the first disk in the volume."""
+def test_local_read_file_from_disk():
+    """Test that `file` function can read files from the configured disk."""
     node_local.exec_in_container(
         [
             "bash",
@@ -46,22 +45,8 @@ def test_local_read_file_from_first_disk():
     assert result.strip() == "hello from disk1"
 
 
-def test_local_read_file_from_second_disk():
-    """Test that file() function can read files from the second disk in the volume."""
-    node_local.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "echo 'hello from disk2' > /test_user_files_disk2/test2.csv",
-        ]
-    )
-
-    result = node_local.query("SELECT * FROM file('test2.csv', 'CSV', 'x String')")
-    assert result.strip() == "hello from disk2"
-
-
-def test_local_read_files_from_both_disks():
-    """Test that files from both disks are accessible using globs."""
+def test_local_glob_pattern():
+    """Test that glob patterns match files on the configured disk."""
     node_local.exec_in_container(
         [
             "bash",
@@ -73,7 +58,7 @@ def test_local_read_files_from_both_disks():
         [
             "bash",
             "-c",
-            "echo '2' > /test_user_files_disk2/glob_test_b.csv",
+            "echo '2' > /test_user_files_disk1/glob_test_b.csv",
         ]
     )
 
@@ -83,8 +68,8 @@ def test_local_read_files_from_both_disks():
     assert result.strip() == "1\n2"
 
 
-def test_local_absolute_path_on_first_disk():
-    """Test that absolute paths on the first disk are accepted."""
+def test_local_absolute_path_on_disk():
+    """Test that absolute paths under the configured disk root are accepted."""
     node_local.exec_in_container(
         [
             "bash",
@@ -97,22 +82,6 @@ def test_local_absolute_path_on_first_disk():
         "SELECT * FROM file('/test_user_files_disk1/abs_test.csv', 'CSV', 'x String')"
     )
     assert result.strip() == "abs1"
-
-
-def test_local_absolute_path_on_second_disk():
-    """Test that absolute paths on the second disk are accepted."""
-    node_local.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "echo 'abs2' > /test_user_files_disk2/abs_test.csv",
-        ]
-    )
-
-    result = node_local.query(
-        "SELECT * FROM file('/test_user_files_disk2/abs_test.csv', 'CSV', 'x String')"
-    )
-    assert result.strip() == "abs2"
 
 
 def test_local_absolute_path_outside_disks_rejected():

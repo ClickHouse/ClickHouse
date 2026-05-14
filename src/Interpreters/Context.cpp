@@ -1822,31 +1822,29 @@ void Context::setUserFilesPolicy(const String & policy_name)
 
     VolumePtr volume = policy->getVolume(0);
 
-    if (volume->getDisks().empty())
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No disks in volume for user files");
+    /// `user_files` does not benefit from striping across multiple disks (unlike
+    /// `tmp_policy`, where data can be large), so require exactly one disk. This
+    /// keeps the resolution rule for relative paths unambiguous and avoids the
+    /// complexity of multi-root scanning.
+    if (volume->getDisks().size() != 1)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+            "Policy '{}' is used for user files, its volume must contain exactly one disk", policy_name);
 
-    Strings paths;
-    for (const auto & disk : volume->getDisks())
-    {
-        if (!disk)
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "User files disk is null");
+    const auto & disk = volume->getDisks().front();
+    if (!disk)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "User files disk is null");
 
-        String disk_path = disk->getPath();
-        if (!disk_path.ends_with('/'))
-            disk_path += '/';
-        paths.push_back(disk_path);
+    String disk_path = disk->getPath();
+    if (!disk_path.ends_with('/'))
+        disk_path += '/';
 
-        /// Create the directory on each disk if it does not exist
-        if (!disk->existsDirectory(""))
-            disk->createDirectory("");
-    }
+    if (!disk->existsDirectory(""))
+        disk->createDirectory("");
 
     std::lock_guard lock(shared->mutex);
-    shared->user_files_paths = std::move(paths);
+    shared->user_files_paths = {disk_path};
     shared->user_files_volume = volume;
-    /// Keep user_files_path as the first disk for backward compatibility
-    if (!shared->user_files_paths.empty())
-        shared->user_files_path = shared->user_files_paths.front();
+    shared->user_files_path = disk_path;
 }
 
 void Context::setDictionariesLibPath(const String & path)

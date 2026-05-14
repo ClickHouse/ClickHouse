@@ -1369,8 +1369,8 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```
     )", 0) \
     DECLARE(String, user_files_policy, "", R"(
-    Storage policy for user files directory. When set, user files can reside on any disk in the specified policy's volume.
-    The policy should have exactly one volume. If set, this takes precedence over `user_files_path`.
+    Storage policy for user files directory. When set, user files reside on the disk configured in the specified policy.
+    The policy must have exactly one volume containing exactly one disk. If set, this takes precedence over `user_files_path`.
 
     **Example**
 
@@ -1378,26 +1378,25 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <clickhouse>
     <storage_configuration>
         <disks>
-            <disk1>
-                <path>/disk1/user_files/</path>
-            </disk1>
-            <disk2>
-                <path>/disk2/user_files/</path>
-            </disk2>
+            <user_files_s3>
+                <type>s3_plain</type>
+                <endpoint>https://example.s3.amazonaws.com/user_files/</endpoint>
+                <access_key_id>...</access_key_id>
+                <secret_access_key>...</secret_access_key>
+            </user_files_s3>
         </disks>
         <policies>
-            <user_files_two_disks>
+            <user_files_remote>
                 <volumes>
                     <main>
-                        <disk>disk1</disk>
-                        <disk>disk2</disk>
+                        <disk>user_files_s3</disk>
                     </main>
                 </volumes>
-            </user_files_two_disks>
+            </user_files_remote>
         </policies>
     </storage_configuration>
 
-    <user_files_policy>user_files_two_disks</user_files_policy>
+    <user_files_policy>user_files_remote</user_files_policy>
     </clickhouse>
     ```
     )", 0) \

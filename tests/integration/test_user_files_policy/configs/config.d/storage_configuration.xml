@@ -4,22 +4,18 @@
             <user_files_disk1>
                 <path>/test_user_files_disk1/</path>
             </user_files_disk1>
-            <user_files_disk2>
-                <path>/test_user_files_disk2/</path>
-            </user_files_disk2>
         </disks>
 
         <policies>
-            <user_files_two_disks>
+            <user_files_local>
                 <volumes>
                     <main>
                         <disk>user_files_disk1</disk>
-                        <disk>user_files_disk2</disk>
                     </main>
                 </volumes>
-            </user_files_two_disks>
+            </user_files_local>
         </policies>
     </storage_configuration>
 
-    <user_files_policy>user_files_two_disks</user_files_policy>
+    <user_files_policy>user_files_local</user_files_policy>
 </clickhouse>
