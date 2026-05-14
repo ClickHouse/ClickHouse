@@ -124,6 +124,7 @@ protected:
             std::vector<ColumnCheckpointPtr> checkpoints(col_ptrs.size());
             for (size_t i = 0; i < col_ptrs.size(); ++i)
                 checkpoints[i] = col_ptrs[i]->getCheckpoint();
+            size_t num_rows_checkpoint = num_rows;
 
             try
             {
@@ -178,6 +179,7 @@ protected:
             {
                 for (size_t i = 0; i < col_ptrs.size(); ++i)
                     col_ptrs[i]->rollback(*checkpoints[i]);
+                num_rows = num_rows_checkpoint;
                 /// A broken manifest drops the remainder of this table; rows already emitted from
                 /// earlier manifests of the same table in previous chunks are kept as-is.
                 tryLogCurrentException(log, fmt::format("Ignoring broken manifest in table {}.{}", cur.database_name, cur.table_name));
