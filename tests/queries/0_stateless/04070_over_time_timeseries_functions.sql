@@ -6,7 +6,7 @@
 --
 -- Fixture data: 18 samples, 15 seconds apart; fractional part `.374` is arbitrary sub-second
 -- noise. Aggregates use `toUnixTimestamp(timestamp)`
-
+DROP TABLE IF EXISTS default.ts_raw_data;
 CREATE TABLE ts_raw_data(timestamp DateTime64(3,'UTC'), value Float64) ENGINE = MergeTree() ORDER BY timestamp;
 
 -- First sample unix second is start + 41 (start = 1734955380); spacing between rows is 15s.
@@ -106,4 +106,4 @@ SELECT
     arrayZip(grid, timeSeriesMaxOverTimeToGrid(start, end, step, window)(timestamps, values)) as max_arr
 FORMAT Vertical;
 
-DROP TABLE ts_raw_data;
+DROP TABLE IF EXISTS default.ts_raw_data;
