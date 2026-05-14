@@ -114,7 +114,7 @@ namespace
                     if (auto resolver = factory.tryGet(name, context))
                         signature = resolver->getSignatureString();
                 }
-                catch (...)
+                catch (...) // NOLINT(bugprone-empty-catch)
                 {
                     /// Some functions throw on construction unless certain settings are set
                     /// (e.g. deprecated/error-prone functions). Treat them as having no signature.
