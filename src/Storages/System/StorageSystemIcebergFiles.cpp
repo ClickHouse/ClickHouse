@@ -106,6 +106,9 @@ protected:
             col_file_path.get(), col_file_format.get(), col_record_count.get(), col_file_size_in_bytes.get(),
             col_partition.get(), col_schema_id.get(), col_sequence_number.get(), col_sort_order_id.get(),
             col_null_value_counts.get(), col_column_sizes.get(), col_value_counts.get(), col_equality_ids.get()};
+
+        size_t num_rows = 0;
+
 #if USE_AVRO
         auto get_total_size = [&] -> size_t
         {
@@ -114,8 +117,6 @@ protected:
                 total_size += col->byteSize();
             return total_size;
         };
-
-        size_t num_rows = 0;
 
         /// Appends rows produced by a single manifest list entry of current cursor's table.
         auto process_one_manifest = [&](TableCursor & cur)
@@ -314,7 +315,7 @@ protected:
 private:
     ContextMutablePtr context_copy;
     std::shared_ptr<const ContextAccessWrapper> access;
-    const size_t max_block_size;
+    [[maybe_unused]] const size_t max_block_size;
     ExpressionActionsPtr virtual_columns_filter;
     LoggerPtr log;
     DB::Databases databases;
