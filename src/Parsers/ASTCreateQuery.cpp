@@ -50,6 +50,13 @@ ASTPtr ASTStorage::clone() const
     auto res = make_intrusive<ASTStorage>(*this);
     res->children.clear();
 
+    /// Children must be set in the canonical order used by `formatImpl` and
+    /// `normalizeChildrenOrder` (engine, partition_by, primary_key, order_by,
+    /// unique_key, sample_by, ttl_table, settings).  `IAST::updateTreeHash`
+    /// iterates `children` in sequence, so any deviation here would make
+    /// `getTreeHash` order-dependent under cloning: parse-then-hash and
+    /// parse-then-clone-then-hash would produce different hashes for the same
+    /// storage definition, breaking caches keyed by tree hash.
     if (engine)
         res->set(res->engine, engine->clone());
     if (partition_by)
@@ -58,12 +65,12 @@ ASTPtr ASTStorage::clone() const
         res->set(res->primary_key, primary_key->clone());
     if (order_by)
         res->set(res->order_by, order_by->clone());
+    if (unique_key)
+        res->set(res->unique_key, unique_key->clone());
     if (sample_by)
         res->set(res->sample_by, sample_by->clone());
     if (ttl_table)
         res->set(res->ttl_table, ttl_table->clone());
-    if (unique_key)
-        res->set(res->unique_key, unique_key->clone());
 
     if (settings)
         res->set(res->settings, settings->clone());
