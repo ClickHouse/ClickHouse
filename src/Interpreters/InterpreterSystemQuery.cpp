@@ -2125,6 +2125,8 @@ void InterpreterSystemQuery::syncMerges()
         std::this_thread::sleep_for(std::chrono::milliseconds(poll_delay.getCurrentDelay()));
         poll_delay.up();
     }
+
+    throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Can't wait until all scheduled merges will be completed");
 }
 
 void InterpreterSystemQuery::loadPrimaryKeys()
