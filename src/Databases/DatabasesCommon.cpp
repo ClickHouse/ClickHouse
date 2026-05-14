@@ -587,7 +587,7 @@ void DatabaseWithOwnTablesBase::shutdown()
     shared_pool.initializeWithDefaultSettingsIfNotInitialized();
     auto & pool = shared_pool.get();
     const auto db_name = getDatabaseName();
-    const auto database_uuid = getUUID();
+    chassert(db_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
     const bool should_slow_shutdown_for_tests = !DatabaseCatalog::isPredefinedDatabase(db_name);
 
     /// If a table throws while shutting down (e.g. a ZooKeeper timeout), we must still release the
@@ -641,7 +641,7 @@ void DatabaseWithOwnTablesBase::shutdown()
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::SHUTDOWN_TABLES);
         for (const auto & kv : tables_snapshot)
         {
-            runner.enqueueAndKeepTrack([this, table = kv.second, db_name, database_uuid, should_slow_shutdown_for_tests, &record_error]
+            runner.enqueueAndKeepTrack([this, table = kv.second, should_slow_shutdown_for_tests, &record_error]
             {
                 auto table_id = table->getStorageID();
                 try
@@ -663,7 +663,7 @@ void DatabaseWithOwnTablesBase::shutdown()
                 }
                 if (table_id.hasUUID())
                 {
-                    chassert(db_name == DatabaseCatalog::TEMPORARY_DATABASE || database_uuid != UUIDHelpers::Nil);
+                    chassert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
                     DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
                 }
             });
