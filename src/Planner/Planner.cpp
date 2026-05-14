@@ -103,6 +103,7 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
@@ -599,9 +600,9 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const Settings & settings = query_context->getSettingsRef();
 
     const bool has_row_level_filter = static_cast<bool>(select_query_info.row_level_filter);
-    const bool apply_deleted_mask = settings[Setting::apply_deleted_mask];
+    const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
     const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
-        select_query_info.query, query_context->getCurrentDatabase(), apply_deleted_mask, has_row_level_filter);
+        select_query_info.query, query_context->getCurrentDatabase(), apply_deleted_mask_value, has_row_level_filter);
 
     const auto stats_collecting_params = StatsCollectingParams(
         partial_aggregate_semantic_key,

@@ -139,6 +139,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool allow_experimental_query_deduplication;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool compile_sort_description;
@@ -2918,9 +2919,9 @@ static Aggregator::Params getAggregatorParams(
     size_t group_by_two_level_threshold_bytes)
 {
     const bool has_row_level_filter = static_cast<bool>(select_query_info.row_level_filter);
-    const bool apply_deleted_mask = settings[Setting::apply_deleted_mask];
+    const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
     const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
-        query_ptr, context.getCurrentDatabase(), apply_deleted_mask, has_row_level_filter);
+        query_ptr, context.getCurrentDatabase(), apply_deleted_mask_value, has_row_level_filter);
 
     const auto stats_collecting_params = StatsCollectingParams(
         partial_aggregate_semantic_key,
