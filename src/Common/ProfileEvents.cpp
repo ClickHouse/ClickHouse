@@ -984,6 +984,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperReadSnapshot, "Number of completed snapshot reads", ValueType::Number) \
     M(KeeperReadSnapshotObject, "Number of snapshot objects sent to followers", ValueType::Number) \
     M(KeeperReadSnapshotFailed, "Number of failed snapshot reads", ValueType::Number) \
+    M(KeeperReadSnapshotDeferred, "Number of snapshot reads deferred because the requested snapshot is no longer available locally; NuRaft will retry the latest snapshot.", ValueType::Number) \
     M(KeeperSnapshotRemoteLoaderErrors, "Number of remote read errors in RemoteSnapshotLoader while serving a snapshot to a follower", ValueType::Number) \
     M(KeeperSaveSnapshotObject, "Number of snapshot objects received from leader", ValueType::Number) \
     M(KeeperSaveSnapshotFailed, "Number of failed snapshot saves", ValueType::Number) \
