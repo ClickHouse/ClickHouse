@@ -197,6 +197,9 @@ public:
 
     const Params & getParams() const { return params; }
 
+    /// Byte size of one aggregate-state row (all aggregate functions); used for memory estimates.
+    size_t getTotalSizeOfAggregateStates() const { return total_size_of_aggregate_states; }
+
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(Columns columns,
         size_t row_begin, size_t row_end,

@@ -1104,7 +1104,8 @@ void AggregatingTransform::tryFlushPartialAggregateMissBuffersIfNeeded()
         }
         distinct_group_rows_sum += local_variants.sizeWithoutOverflowRow();
     }
-    const size_t aggregate_state_bytes_lower_bound = distinct_group_rows_sum * params->params.total_size_of_aggregate_states;
+    const size_t aggregate_state_bytes_lower_bound
+        = distinct_group_rows_sum * params->aggregator.getTotalSizeOfAggregateStates();
     const size_t miss_aggregation_state_proxy_bytes = std::max(arena_allocated_sum, aggregate_state_bytes_lower_bound);
 
     /// Cap cold-cache miss buffering: part count, raw input bytes through miss path, and aggregation-state proxy.
