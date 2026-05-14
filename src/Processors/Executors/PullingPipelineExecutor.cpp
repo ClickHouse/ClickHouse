@@ -146,7 +146,14 @@ PipelineExecutor::ExecutionStatus PullingPipelineExecutor::getExecutionStatus() 
     if (status == PipelineExecutor::ExecutionStatus::NotStarted && pipeline.process_list_element)
     {
         if (pipeline.process_list_element->isKilled())
+        {
+            /// `cancelQuery` is used for both user-initiated kills and `CancellationChecker` timeouts,
+            /// and `is_killed` itself does not differentiate. Read the recorded `CancelReason` so a
+            /// timeout cancellation is not downgraded to `CancelledByUser`.
+            if (pipeline.process_list_element->getCancelReason() == CancelReason::TIMEOUT)
+                return PipelineExecutor::ExecutionStatus::CancelledByTimeout;
             return PipelineExecutor::ExecutionStatus::CancelledByUser;
+        }
         if (!pipeline.process_list_element->checkTimeLimitSoft())
             return PipelineExecutor::ExecutionStatus::CancelledByTimeout;
     }
