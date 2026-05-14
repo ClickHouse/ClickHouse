@@ -136,7 +136,13 @@ void CombinedPatchBuilder::build()
     }
 
     for (size_t i = 0; i < all_patch_blocks.size(); ++i)
-        versions[i] = &getColumnUInt64Data(all_patch_blocks[i], PartDataVersionColumn::name);
+    {
+        /// `versions` holds const pointers, so call the const overload of `getColumnUInt64Data`.
+        /// The non-const overload uses `assumeMutableRef` which trips
+        /// `chassert(use_count() == 1)` when patch blocks are shared between concurrent applies.
+        const Block & const_patch_block = all_patch_blocks[i];
+        versions[i] = &getColumnUInt64Data(const_patch_block, PartDataVersionColumn::name);
+    }
 
     enum class RowOp
     {
