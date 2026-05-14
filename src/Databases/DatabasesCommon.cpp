@@ -587,7 +587,10 @@ void DatabaseWithOwnTablesBase::shutdown()
     shared_pool.initializeWithDefaultSettingsIfNotInitialized();
     auto & pool = shared_pool.get();
     const auto db_name = getDatabaseName();
-    chassert(db_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+    /// If our tables carry UUIDs (Atomic-style), the database must too. Memory-backed
+    /// databases like `system` or `information_schema` have neither and skip the check.
+    if (!tables_snapshot.empty() && tables_snapshot.begin()->second->getStorageID().hasUUID())
+        chassert(db_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
     const bool should_slow_shutdown_for_tests = !DatabaseCatalog::isPredefinedDatabase(db_name);
 
     /// If a table throws while shutting down (e.g. a ZooKeeper timeout), we must still release the
