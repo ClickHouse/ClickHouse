@@ -165,12 +165,12 @@ StorageTimeSeries::StorageTimeSeries(
         target.table_id = initTarget(target_kind, target_info, local_context, getStorageID(), columns, *storage_settings, mode);
         target.is_inner_table = target_info && target_info->table_id.empty();
 
-        if (target_kind == ViewTarget::Metrics && !target.is_inner_table)
+        /// Validate the external metrics table only at CREATE time, mirroring the
+        /// `validator.validateColumns` gating above. During `ATTACH`/server startup the
+        /// target table may not be loaded yet, and re-validating then would make the
+        /// outcome attach-order dependent.
+        if (target_kind == ViewTarget::Metrics && !target.is_inner_table && mode < LoadingStrictnessLevel::ATTACH)
         {
-            /// During `ATTACH`/server startup the external metrics table may not be
-            /// loaded yet — `tryGetTable` returns `nullptr`. Skip the column check in
-            /// that case; if there really is a `LowCardinality` column it will be
-            /// caught the next time the table is created.
             if (auto table = DatabaseCatalog::instance().tryGetTable(target.table_id, getContext()))
             {
                 auto metadata = table->getInMemoryMetadataPtr(getContext(), false);
