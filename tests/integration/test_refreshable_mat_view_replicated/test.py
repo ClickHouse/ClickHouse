@@ -652,7 +652,7 @@ def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_appe
         )
         node.query(
             "CREATE MATERIALIZED VIEW parent_v "
-            "REFRESH EVERY 1 SECOND APPEND TO parent_tbl EMPTY AS "
+            "REFRESH AFTER 1 YEAR APPEND TO parent_tbl EMPTY AS "
             "SELECT v FROM sync_src"
         )
         # syncForDependentRefresh in APPEND mode: SYNC REPLICA on parent_tbl before child refresh.
@@ -661,7 +661,7 @@ def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_appe
         # Parent is non-APPEND with its own atomically-swapped Replicated inner table.
         node.query(
             "CREATE MATERIALIZED VIEW parent_v "
-            "REFRESH EVERY 1 SECOND ENGINE = ReplicatedMergeTree ORDER BY v EMPTY AS "
+            "REFRESH AFTER 1 YEAR ENGINE = ReplicatedMergeTree ORDER BY v EMPTY AS "
             "SELECT v FROM sync_src"
         )
         # syncForDependentRefresh in non-APPEND mode: wait for the new inner-table UUID to appear.
@@ -675,11 +675,11 @@ def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_appe
     # Pin parent to node1 only, child to node2 only. Child on node1 must be PAUSED (not STOPPED)
     # so that subsequent SYSTEM START VIEW would resume it; STOP would also work for this test
     # but PAUSE exercises the same code path the test description targets.
-    node2.query("SYSTEM STOP VIEW parent_v")
     node.query("SYSTEM PAUSE VIEW child_v")
 
     # First wave: parent runs on node1, child runs on node2.
     node.query("INSERT INTO sync_src VALUES (1)")
+    node.query("SYSTEM REFRESH VIEW parent_v")
     # Wait for parent on node1 to complete a refresh.
     get_rmv_info(
         node,
@@ -725,6 +725,8 @@ def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_appe
         "SELECT last_success_time FROM system.view_refreshes WHERE view='child_v'"
     ).strip()
     node.query("INSERT INTO sync_src VALUES (2)")
+    time.sleep(1.5) # make sure the two refreshes get different %H:%M:%S timestamps
+    node.query("SYSTEM REFRESH VIEW parent_v")
 
     get_rmv_info(
         node,
