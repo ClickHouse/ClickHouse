@@ -417,10 +417,13 @@ void LocalServer::initialize(Poco::Util::Application & self)
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
 
+    /// Clamp to >= 1: with 0 threads, the pool would accept tasks but never run them, so
+    /// DatabaseWithOwnTablesBase::shutdown would block forever waiting on them.
+    const size_t shutdown_concurrency = std::max<UInt64>(1, server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]);
     getDatabaseCatalogShutdownTablesThreadPool().initialize(
-        server_settings[ServerSetting::database_catalog_shutdown_table_concurrency],
+        shutdown_concurrency,
         0, // Threads are only needed during server shutdown.
-        server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]);
+        shutdown_concurrency);
 
     getMergeTreePrefixesDeserializationThreadPool().initialize(
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
