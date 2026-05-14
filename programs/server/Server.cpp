@@ -2354,6 +2354,7 @@ try
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setMessageQueueDisableInsertion(new_server_settings[ServerSetting::message_queue_disable_insertion]);
 
             global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
 

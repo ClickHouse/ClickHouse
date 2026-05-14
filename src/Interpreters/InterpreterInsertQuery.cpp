@@ -1019,7 +1019,7 @@ BlockIO InterpreterInsertQuery::execute()
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
     }
 
-    if (context->getServerSettings()[ServerSetting::message_queue_disable_insertion]
+    if (context->getMessageQueueDisableInsertion()
         && table->isMessageQueue()
         && no_destination)
     {
