@@ -3856,87 +3856,94 @@ def test_message_queue_disable_insertion(kafka_cluster):
         ).strip()
     )
 
-    # Enable message_queue_disable_insertion via config replacement + reload
-    instance.replace_in_config(
-        "/etc/clickhouse-server/config.d/disable_insertion.xml",
-        "0",
-        "1",
-    )
-    instance.query("SYSTEM RELOAD CONFIG")
+    try:
+        # Enable message_queue_disable_insertion via config replacement + reload
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "0",
+            "1",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
 
-    assert (
-        "true"
-        == instance.query(
-            "SELECT getServerSetting('message_queue_disable_insertion')"
-        ).strip()
-    )
+        assert (
+            "true"
+            == instance.query(
+                "SELECT getServerSetting('message_queue_disable_insertion')"
+            ).strip()
+        )
 
-    # Create Kafka table, destination MergeTree table, and MV
-    instance.query(
-        f"""
-        CREATE TABLE test.{kafka_table} (key UInt64, value UInt64)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = '{topic_name}',
-                     kafka_group_name = '{topic_name}',
-                     kafka_format = 'JSONEachRow',
-                     kafka_flush_interval_ms = 1000;
-        CREATE TABLE test.{kafka_table}_dst (key UInt64, value UInt64)
-            ENGINE = MergeTree()
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW test.{kafka_table}_mv TO test.{kafka_table}_dst AS
-            SELECT * FROM test.{kafka_table};
-    """
-    )
+        # Create Kafka table, destination MergeTree table, and MV
+        instance.query(
+            f"""
+            CREATE TABLE test.{kafka_table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{topic_name}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_flush_interval_ms = 1000;
+            CREATE TABLE test.{kafka_table}_dst (key UInt64, value UInt64)
+                ENGINE = MergeTree()
+                ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{kafka_table}_mv TO test.{kafka_table}_dst AS
+                SELECT * FROM test.{kafka_table};
+        """
+        )
 
-    # Produce messages while streaming is disabled
-    messages = [json.dumps({"key": i, "value": i}) for i in range(10)]
-    k.kafka_produce(kafka_cluster, topic_name, messages)
+        # Produce messages while insertion is disabled
+        messages = [json.dumps({"key": i, "value": i}) for i in range(10)]
+        k.kafka_produce(kafka_cluster, topic_name, messages)
 
-    # Wait a bit — no rows should appear because streaming is disabled
-    time.sleep(10)
-    assert 0 == int(
-        instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
-    )
-
-    assert instance.contains_in_log("Message queue insertion is disabled")
-
-    # Re-enable insertion
-    instance.replace_in_config(
-        "/etc/clickhouse-server/config.d/disable_insertion.xml",
-        "1",
-        "0",
-    )
-    instance.query("SYSTEM RELOAD CONFIG")
-
-    assert (
-        "false"
-        == instance.query(
-            "SELECT getServerSetting('message_queue_disable_insertion')"
-        ).strip()
-    )
-
-    # Rows should now flow through
-    expected_rows = 10
-    for _ in range(100):
-        count = int(
+        # Wait a bit — no rows should appear because insertion is disabled
+        time.sleep(10)
+        assert 0 == int(
             instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
         )
-        if count == expected_rows:
-            break
-        time.sleep(1)
 
-    assert expected_rows == int(
-        instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
-    )
+        assert instance.contains_in_log("Message queue insertion is disabled")
 
-    instance.query(
-        f"""
-        DROP TABLE test.{kafka_table}_mv;
-        DROP TABLE test.{kafka_table}_dst;
-        DROP TABLE test.{kafka_table};
-    """
-    )
+        # Re-enable insertion
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "1",
+            "0",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+
+        assert (
+            "false"
+            == instance.query(
+                "SELECT getServerSetting('message_queue_disable_insertion')"
+            ).strip()
+        )
+
+        # Rows should now flow through
+        expected_rows = 10
+        for _ in range(100):
+            count = int(
+                instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
+            )
+            if count == expected_rows:
+                break
+            time.sleep(1)
+
+        assert expected_rows == int(
+            instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
+        )
+    finally:
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "1",
+            "0",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.{kafka_table}_mv;
+            DROP TABLE IF EXISTS test.{kafka_table}_dst;
+            DROP TABLE IF EXISTS test.{kafka_table};
+        """
+        )
 
 
 if __name__ == "__main__":
