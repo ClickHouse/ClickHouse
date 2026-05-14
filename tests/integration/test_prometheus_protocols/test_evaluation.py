@@ -1,3 +1,6 @@
+import json
+from datetime import datetime, timezone
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -200,6 +203,23 @@ def send_test_data():
 
     send_data(
         [
+            ({"__name__": "special_l", "case": "nan"}, {100: float("nan")}),
+            ({"__name__": "special_l", "case": "posinf"}, {100: float("inf")}),
+            ({"__name__": "special_l", "case": "neginf"}, {100: float("-inf")}),
+            ({"__name__": "special_l", "case": "zero"}, {100: 0}),
+            ({"__name__": "special_l", "case": "one"}, {100: 1}),
+            ({"__name__": "special_l", "case": "minus"}, {100: -1}),
+            ({"__name__": "special_r", "case": "nan"}, {100: float("nan")}),
+            ({"__name__": "special_r", "case": "posinf"}, {100: float("inf")}),
+            ({"__name__": "special_r", "case": "neginf"}, {100: float("-inf")}),
+            ({"__name__": "special_r", "case": "zero"}, {100: 0}),
+            ({"__name__": "special_r", "case": "one"}, {100: 1}),
+            ({"__name__": "special_r", "case": "minus"}, {100: -1}),
+        ]
+    )
+
+    send_data(
+        [
             (
                 {"__name__": "http_errors", "http_code": "401"},
                 {
@@ -271,6 +291,44 @@ def start_cluster():
 
 
 # Evaluates the same query in Prometheus and in ClickHouse and compare the results.
+def prometheus_vector_result(timestamp, samples):
+    return json.dumps(
+        {
+            "resultType": "vector",
+            "result": [
+                {"metric": metric, "value": [timestamp, value]}
+                for metric, value in samples
+            ],
+        }
+    )
+
+
+def clickhouse_vector_rows(timestamp, samples):
+    def label_set(metric):
+        if not metric:
+            return "[]"
+        return "[" + ",".join([f"('{name}','{value}')" for name, value in metric.items()]) + "]"
+
+    def clickhouse_value(value):
+        return {"NaN": "nan", "+Inf": "inf", "-Inf": "-inf"}.get(value, value)
+
+    clickhouse_timestamp = datetime.fromtimestamp(timestamp, timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    return [[label_set(metric), clickhouse_timestamp, clickhouse_value(value)] for metric, value in samples]
+
+
+SPECIAL_VALUE_CASES = ["minus", "nan", "neginf", "one", "posinf", "zero"]
+
+
+def special_value_samples(values, metric_name=None):
+    samples = []
+    for case in SPECIAL_VALUE_CASES:
+        metric = {"case": case}
+        if metric_name is not None:
+            metric = {"__name__": metric_name, "case": case}
+        samples.append((metric, values[case]))
+    return samples
+
+
 def do_query_test(
     query,
     timestamp,
@@ -291,6 +349,41 @@ def do_query_test(
         http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
         == clickhouse_http_api_result_is_same_as_prometheus
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+
+
+def canonical_prometheus_result(response):
+    result = json.loads(response)
+    if result.get("resultType") in {"vector", "matrix"}:
+        result["result"] = sorted(
+            result["result"], key=lambda sample: json.dumps(sample["metric"], sort_keys=True)
+        )
+    return result
+
+
+def canonical_tsv_rows(rows):
+    if isinstance(rows, str):
+        return sorted(line.strip() for line in rows.splitlines() if line.strip())
+    return sorted("\t".join(map(str, row)) if isinstance(row, list) else str(row) for row in rows)
+
+
+def do_query_test_order_insensitive(query, timestamp, result, chresult):
+    expected_prometheus_result = canonical_prometheus_result(result)
+    assert canonical_prometheus_result(
+        execute_query_in_prometheus_reader(query, timestamp)
+    ) == expected_prometheus_result
+    assert canonical_prometheus_result(
+        execute_query_in_prometheus_receiver(query, timestamp)
+    ) == expected_prometheus_result
+
+    actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
+    assert canonical_tsv_rows(actual_chresult) == canonical_tsv_rows(chresult), (
+        f"actual result: {actual_chresult}, expected: {chresult}"
+    )
+
+    actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
+    assert canonical_prometheus_result(actual_result_from_http_api) == expected_prometheus_result, (
+        f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+    )
 
 
 def do_query_test_expect_error(
@@ -1731,6 +1824,208 @@ def test_math_binary_operators():
         ],
     )
 
+    # Behavior: Prometheus vector arithmetic matches on labels other than `__name__`,
+    # applies IEEE addition, keeps `NaN` and infinities, and drops the metric name.
+    do_query_test_order_insensitive(
+        "special_l + special_r",
+        100,
+        prometheus_vector_result(
+            100,
+            special_value_samples(
+                {
+                    "minus": "-2",
+                    "nan": "NaN",
+                    "neginf": "-Inf",
+                    "one": "2",
+                    "posinf": "+Inf",
+                    "zero": "0",
+                }
+            ),
+        ),
+        clickhouse_vector_rows(
+            100,
+            special_value_samples(
+                {
+                    "minus": "-2",
+                    "nan": "NaN",
+                    "neginf": "-Inf",
+                    "one": "2",
+                    "posinf": "+Inf",
+                    "zero": "0",
+                }
+            ),
+        ),
+    )
+
+    # Behavior: Prometheus keeps arithmetic `NaN` results produced by IEEE subtraction instead of filtering them.
+    do_query_test_order_insensitive(
+        "special_l - special_r",
+        100,
+        prometheus_vector_result(
+            100,
+            special_value_samples(
+                {
+                    "minus": "0",
+                    "nan": "NaN",
+                    "neginf": "NaN",
+                    "one": "0",
+                    "posinf": "NaN",
+                    "zero": "0",
+                }
+            ),
+        ),
+        clickhouse_vector_rows(
+            100,
+            special_value_samples(
+                {
+                    "minus": "0",
+                    "nan": "NaN",
+                    "neginf": "NaN",
+                    "one": "0",
+                    "posinf": "NaN",
+                    "zero": "0",
+                }
+            ),
+        ),
+    )
+
+    # Behavior: Prometheus applies IEEE multiplication and keeps infinities and `NaN` in vector arithmetic results.
+    do_query_test_order_insensitive(
+        "special_l * special_r",
+        100,
+        prometheus_vector_result(
+            100,
+            special_value_samples(
+                {
+                    "minus": "1",
+                    "nan": "NaN",
+                    "neginf": "+Inf",
+                    "one": "1",
+                    "posinf": "+Inf",
+                    "zero": "0",
+                }
+            ),
+        ),
+        clickhouse_vector_rows(
+            100,
+            special_value_samples(
+                {
+                    "minus": "1",
+                    "nan": "NaN",
+                    "neginf": "+Inf",
+                    "one": "1",
+                    "posinf": "+Inf",
+                    "zero": "0",
+                }
+            ),
+        ),
+    )
+
+    # Behavior: Prometheus division by zero follows Go `float64` semantics and keeps the resulting sample.
+    do_query_test_order_insensitive(
+        "special_l / 0",
+        100,
+        prometheus_vector_result(
+            100,
+            special_value_samples(
+                {
+                    "minus": "-Inf",
+                    "nan": "NaN",
+                    "neginf": "-Inf",
+                    "one": "+Inf",
+                    "posinf": "+Inf",
+                    "zero": "NaN",
+                }
+            ),
+        ),
+        clickhouse_vector_rows(
+            100,
+            special_value_samples(
+                {
+                    "minus": "-Inf",
+                    "nan": "NaN",
+                    "neginf": "-Inf",
+                    "one": "+Inf",
+                    "posinf": "+Inf",
+                    "zero": "NaN",
+                }
+            ),
+        ),
+    )
+
+    # Behavior: Prometheus modulo uses Go `math.Mod`, so modulo by zero yields `NaN` and keeps each sample.
+    do_query_test_order_insensitive(
+        "special_l % 0",
+        100,
+        prometheus_vector_result(
+            100,
+            special_value_samples(
+                {
+                    "minus": "NaN",
+                    "nan": "NaN",
+                    "neginf": "NaN",
+                    "one": "NaN",
+                    "posinf": "NaN",
+                    "zero": "NaN",
+                }
+            ),
+        ),
+        clickhouse_vector_rows(
+            100,
+            special_value_samples(
+                {
+                    "minus": "NaN",
+                    "nan": "NaN",
+                    "neginf": "NaN",
+                    "one": "NaN",
+                    "posinf": "NaN",
+                    "zero": "NaN",
+                }
+            ),
+        ),
+    )
+
+    # Behavior: Prometheus exponentiation uses Go `math.Pow` and keeps special-float results.
+    do_query_test_order_insensitive(
+        "special_l ^ 2",
+        100,
+        prometheus_vector_result(
+            100,
+            special_value_samples(
+                {
+                    "minus": "1",
+                    "nan": "NaN",
+                    "neginf": "+Inf",
+                    "one": "1",
+                    "posinf": "+Inf",
+                    "zero": "0",
+                }
+            ),
+        ),
+        clickhouse_vector_rows(
+            100,
+            special_value_samples(
+                {
+                    "minus": "1",
+                    "nan": "NaN",
+                    "neginf": "+Inf",
+                    "one": "1",
+                    "posinf": "+Inf",
+                    "zero": "0",
+                }
+            ),
+        ),
+    )
+
+    # Behavior: Prometheus preserves negative zero through division by positive one.
+    do_query_test(
+        "vector(-0) / 1",
+        100,
+        prometheus_vector_result(100, [({}, "-0")]),
+        clickhouse_vector_rows(100, [({}, "-0")]),
+    )
+
+    # Behavior: arithmetic keeps finite and infinite samples while dropping the metric name.
     do_query_test(
         "(special_values + 1)[30:10]",
         130,
@@ -1743,6 +2038,7 @@ def test_math_binary_operators():
         ],
     )
 
+    # Behavior: `bool` comparison rewrites matching samples to 1 or 0 rather than filtering them.
     do_query_test(
         "(special_values > bool 0)[30:10]",
         130,
@@ -1755,6 +2051,7 @@ def test_math_binary_operators():
         ],
     )
 
+    # Behavior: equality with infinities remains true under the `bool` modifier.
     do_query_test(
         "(special_values == bool special_values)[30:10]",
         130,
@@ -2042,6 +2339,134 @@ def test_comparison_operators_with_bool_modifier():
         [["[]", "1970-01-01 00:01:40.000", 0]],
     )
 
+    # Behavior: Prometheus `bool` comparisons rewrite matched true/false vector-vector results to 1 or 0 and drop the metric name.
+    do_query_test_order_insensitive(
+        "special_l == bool special_r",
+        100,
+        prometheus_vector_result(
+            100,
+            special_value_samples(
+                {
+                    "minus": "1",
+                    "nan": "0",
+                    "neginf": "1",
+                    "one": "1",
+                    "posinf": "1",
+                    "zero": "1",
+                }
+            ),
+        ),
+        clickhouse_vector_rows(
+            100,
+            special_value_samples(
+                {
+                    "minus": "1",
+                    "nan": "0",
+                    "neginf": "1",
+                    "one": "1",
+                    "posinf": "1",
+                    "zero": "1",
+                }
+            ),
+        ),
+    )
+
+    # Behavior: Prometheus `bool` comparisons still use Go `NaN` inequality semantics and drop the metric name.
+    do_query_test_order_insensitive(
+        "special_l != bool special_r",
+        100,
+        prometheus_vector_result(
+            100,
+            special_value_samples(
+                {
+                    "minus": "0",
+                    "nan": "1",
+                    "neginf": "0",
+                    "one": "0",
+                    "posinf": "0",
+                    "zero": "0",
+                }
+            ),
+        ),
+        clickhouse_vector_rows(
+            100,
+            special_value_samples(
+                {
+                    "minus": "0",
+                    "nan": "1",
+                    "neginf": "0",
+                    "one": "0",
+                    "posinf": "0",
+                    "zero": "0",
+                }
+            ),
+        ),
+    )
+
+    # Behavior: `bool` comparison to scalar `NaN` emits matched vector samples with false rewritten to 0.
+    do_query_test_order_insensitive(
+        "special_l == bool NaN",
+        100,
+        prometheus_vector_result(
+            100,
+            special_value_samples(
+                {
+                    "minus": "0",
+                    "nan": "0",
+                    "neginf": "0",
+                    "one": "0",
+                    "posinf": "0",
+                    "zero": "0",
+                }
+            ),
+        ),
+        clickhouse_vector_rows(
+            100,
+            special_value_samples(
+                {
+                    "minus": "0",
+                    "nan": "0",
+                    "neginf": "0",
+                    "one": "0",
+                    "posinf": "0",
+                    "zero": "0",
+                }
+            ),
+        ),
+    )
+
+    # Behavior: `bool` inequality to scalar `NaN` emits matched vector samples with true rewritten to 1.
+    do_query_test_order_insensitive(
+        "special_l != bool NaN",
+        100,
+        prometheus_vector_result(
+            100,
+            special_value_samples(
+                {
+                    "minus": "1",
+                    "nan": "1",
+                    "neginf": "1",
+                    "one": "1",
+                    "posinf": "1",
+                    "zero": "1",
+                }
+            ),
+        ),
+        clickhouse_vector_rows(
+            100,
+            special_value_samples(
+                {
+                    "minus": "1",
+                    "nan": "1",
+                    "neginf": "1",
+                    "one": "1",
+                    "posinf": "1",
+                    "zero": "1",
+                }
+            ),
+        ),
+    )
+
     # Compare two instant vectors.
     do_query_test(
         "(foo == bool bar)[50:10]",
@@ -2233,6 +2658,88 @@ def test_comparison_operators_with_bool_modifier():
 
 
 def test_comparison_operators():
+    # Behavior: Prometheus treats `NaN == NaN` as false and non-`bool` comparisons filter instead of rewriting values.
+    do_query_test_order_insensitive(
+        "special_l == special_r",
+        100,
+        prometheus_vector_result(
+            100,
+            [
+                ({"__name__": "special_l", "case": "minus"}, "-1"),
+                ({"__name__": "special_l", "case": "neginf"}, "-Inf"),
+                ({"__name__": "special_l", "case": "one"}, "1"),
+                ({"__name__": "special_l", "case": "posinf"}, "+Inf"),
+                ({"__name__": "special_l", "case": "zero"}, "0"),
+            ],
+        ),
+        clickhouse_vector_rows(
+            100,
+            [
+                ({"__name__": "special_l", "case": "minus"}, "-1"),
+                ({"__name__": "special_l", "case": "neginf"}, "-Inf"),
+                ({"__name__": "special_l", "case": "one"}, "1"),
+                ({"__name__": "special_l", "case": "posinf"}, "+Inf"),
+                ({"__name__": "special_l", "case": "zero"}, "0"),
+            ],
+        ),
+    )
+
+    # Behavior: Prometheus treats `NaN != NaN` as true and keeps the original LHS sample for non-`bool` comparisons.
+    do_query_test_order_insensitive(
+        "special_l != special_r",
+        100,
+        prometheus_vector_result(
+            100,
+            [({"__name__": "special_l", "case": "nan"}, "NaN")],
+        ),
+        clickhouse_vector_rows(
+            100,
+            [({"__name__": "special_l", "case": "nan"}, "NaN")],
+        ),
+    )
+
+    # Behavior: equality comparisons with scalar `NaN` are false for every vector sample.
+    do_query_test_order_insensitive(
+        "special_l == NaN",
+        100,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    # Behavior: inequality comparisons with scalar `NaN` are true for every vector sample and retain the LHS value.
+    do_query_test_order_insensitive(
+        "special_l != NaN",
+        100,
+        prometheus_vector_result(
+            100,
+            special_value_samples(
+                {
+                    "minus": "-1",
+                    "nan": "NaN",
+                    "neginf": "-Inf",
+                    "one": "1",
+                    "posinf": "+Inf",
+                    "zero": "0",
+                },
+                metric_name="special_l",
+            ),
+        ),
+        clickhouse_vector_rows(
+            100,
+            special_value_samples(
+                {
+                    "minus": "-1",
+                    "nan": "NaN",
+                    "neginf": "-Inf",
+                    "one": "1",
+                    "posinf": "+Inf",
+                    "zero": "0",
+                },
+                metric_name="special_l",
+            ),
+        ),
+    )
+
     # Compare instant vector with scalar (filter mode): keeps left values where condition is true.
     do_query_test(
         "(foo == 4)[50:10]",
