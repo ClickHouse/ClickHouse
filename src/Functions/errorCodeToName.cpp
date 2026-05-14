@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 /** errorCodeToName() - returns the variable name for the error code.
   */
 class FunctionErrorCodeToName : public IFunction

@@ -15,10 +15,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-}
 
 using namespace GatherUtils;
 
