@@ -311,6 +311,12 @@ void MaterializedPostgreSQLConsumer::readTupleData(
 {
     Int16 num_columns = readInt16(message, pos, size);
 
+    const auto & buffer_columns = storage_data.getLastBuffer().columns;
+    if (size_t(num_columns + 2) != buffer_columns.size())
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Unexpected num_columns {} in tuple, buffer has {}",
+            num_columns, buffer_columns.size() - 2);
+
     auto process_column_value = [&](Int8 identifier, Int16 column_idx)
     {
         switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
