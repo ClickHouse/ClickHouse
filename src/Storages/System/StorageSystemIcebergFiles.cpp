@@ -106,7 +106,7 @@ protected:
             col_file_path.get(), col_file_format.get(), col_record_count.get(), col_file_size_in_bytes.get(),
             col_partition.get(), col_schema_id.get(), col_sequence_number.get(), col_sort_order_id.get(),
             col_null_value_counts.get(), col_column_sizes.get(), col_value_counts.get(), col_equality_ids.get()};
-
+#if USE_AVRO
         auto get_total_size = [&] -> size_t
         {
             size_t total_size = 0;
@@ -117,7 +117,6 @@ protected:
 
         size_t num_rows = 0;
 
-#if USE_AVRO
         /// Appends rows produced by a single manifest list entry of current cursor's table.
         auto process_one_manifest = [&](TableCursor & cur)
         {
