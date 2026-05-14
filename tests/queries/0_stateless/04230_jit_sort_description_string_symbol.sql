@@ -16,14 +16,19 @@ SET min_count_to_compile_sort_description = 0;
 SELECT toString(number) AS s
 FROM numbers(100)
 ORDER BY s, number
+SETTINGS log_comment = '04230_jit_sort_description_check'
 FORMAT Null;
 
 -- Assert JIT actually compiled the comparator. Without this, the test would
 -- pass whenever JIT silently doesn't trigger (e.g., optimizer drops ORDER BY,
 -- or a future setting change disables compilation), giving a false negative.
-SYSTEM FLUSH LOGS;
+-- Filtering by the unique `log_comment` above isolates the assertion to
+-- exactly the JIT query and ignores anything else in the shared log.
+SYSTEM FLUSH LOGS query_log;
 
-SELECT sum(ProfileEvents['CompileFunction']) > 0
+SELECT ProfileEvents['CompileFunction'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish';
+WHERE log_comment = '04230_jit_sort_description_check'
+  AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
