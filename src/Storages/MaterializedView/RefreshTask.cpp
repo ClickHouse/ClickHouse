@@ -93,7 +93,21 @@ RefreshTask::RefreshTask(
 
     coordination.root_znode.randomize();
     if (empty)
+    {
+        /// To skip initial refresh, set the initial scheduling-related state as if this view was just refreshed.
+
         coordination.root_znode.last_completed_timeslot = std::chrono::floor<std::chrono::seconds>(currentTime());
+
+        if (coordinated || !attach)
+        {
+            /// We want `CREATE ... REFRESH DEPENDS ON ... EMPTY` to do first refresh after
+            /// dependencies' *next* refresh after this view is created.
+            std::unique_lock lock(mutex);
+            AllDependenciesInfo dependencies;
+            collectDependencyStates(dependencies, lock);
+            coordination.root_znode.last_success_dependencies = dependencies;
+        }
+    }
     if (coordinated)
     {
         coordination.coordinated = true;
@@ -262,15 +276,25 @@ void RefreshTask::shutdown()
     /// This matters because a table may get dropped and immediately created again with the same name,
     /// while the old table's IStorage still exists (pinned by ongoing queries).
     /// (Also, RefreshSet holds a shared_ptr to us.)
-    std::lock_guard guard(mutex);
-    set_handle.reset();
-
-    view = nullptr;
+    ContextPtr context;
+    StorageID storage_id = StorageID::createEmpty();
+    {
+        std::lock_guard guard(mutex);
+        storage_id = set_handle.getID();
+        set_handle.reset();
+        if (view)
+            context = view->getContext();
+        view = nullptr;
+    }
 
     /// Wake up any threads blocked in wait(), so they can see !view and throw TABLE_IS_DROPPED.
     /// Without this, wait() would block forever after deactivate() prevents the background task
-    /// from running (and therefore from ever notifying refresh_cv).
-    refresh_cv.notify_all();
+    /// from running (and therefore from ever notifying wait_cv).
+    wait_cv.notify_all();
+
+    if (context)
+        /// If another view DEPENDS ON this one, let it know that its dependency is missing now.
+        context->getRefreshSet().notifyDependents(storage_id);
 }
 
 void RefreshTask::drop(ContextPtr context, bool is_shared_db)
@@ -311,18 +335,26 @@ void RefreshTask::drop(ContextPtr context, bool is_shared_db)
 void RefreshTask::rename(StorageID new_id, StorageID new_inner_table_id)
 {
     ContextPtr context;
+    StorageID old_id = StorageID::createEmpty();
     {
         std::lock_guard guard(mutex);
         createLogger(new_id);
         if (set_handle)
+        {
+            old_id = set_handle.getID();
             set_handle.rename(new_id, refresh_append ? std::nullopt : std::make_optional(new_inner_table_id));
+        }
         if (view)
             context = view->getContext();
     }
     if (context)
+    {
         /// If another view DEPENDS ON the new name of this view, let it know that a view with such
         /// name now exists.
         context->getRefreshSet().notifyDependents(new_id);
+        if (!old_id.empty())
+            context->getRefreshSet().notifyDependents(old_id);
+    }
 }
 
 void RefreshTask::checkAlterIsPossible(const DB::ASTRefreshStrategy & new_strategy)
@@ -464,7 +496,7 @@ void RefreshTask::wait(const ContextPtr & context)
     /// Complicated wait logic to make sure SYSTEM WAIT VIEW behaves intuitively in various cases, e.g.:
     ///  * After SYSTEM REFRESH VIEW - wait for the requested refresh (out_of_schedule_refresh_requested).
     ///     - If SYSTEM REFRESH VIEW happened when another refresh was in progress, wait for both
-    ///       refreshes. (That's why there are two refresh_cv.wait calls here.)
+    ///       refreshes. (That's why there are two wait_cv.wait calls here.)
     ///  * After SYSTEM START VIEW - if it starts a refresh right away (e.g. the view was paused for
     ///    longer than refresh period), wait for that refresh.
     ///    (That's why we set state to Scheduling in start().)
@@ -472,18 +504,18 @@ void RefreshTask::wait(const ContextPtr & context)
     ///    waiting (except in the out_of_schedule_refresh_requested case per above).
     ///    (That's why we check for last_success_end_time and attempt_number change.)
     /// Perhaps this could be simplified e.g. by adding a global refresh attempt counter; but note
-    /// that we'd still need two refresh_cv.wait calls.
+    /// that we'd still need two wait_cv.wait calls.
 
     /// If an out-of-schedule refresh was requested, wait for that requested refresh to *start*
     /// (or for the view to be stopped / shut down).
-    refresh_cv.wait(lock, [&]
+    wait_cv.wait(lock, [&]
         {
             return !scheduling.out_of_schedule_refresh_requested || !view || state == RefreshState::Disabled;
         });
     /// Wait for currently running refresh to complete.
     auto seen_success_end_time = coordination.root_znode.last_success_end_time;
     Int64 seen_attempt_number = coordination.root_znode.attempt_number;
-    refresh_cv.wait(lock, [&] {
+    wait_cv.wait(lock, [&] {
         if (!view)
             /// Table was dropped, or server shutdown. Stop waiting.
             return true;
@@ -579,7 +611,7 @@ bool RefreshTask::tryJoinBackgroundTask(std::chrono::steady_clock::time_point de
     /// (Manually clamping to 0 because the standard library used to have (and possibly still has?)
     ///  a bug that wait_until would wait forever if the timestamp is in the past.)
     duration = std::max(duration, std::chrono::steady_clock::duration(0));
-    return refresh_cv.wait_for(lock, duration, [&]
+    return wait_cv.wait_for(lock, duration, [&]
         {
             return state != RefreshState::Running && state != RefreshState::Scheduling;
         });
@@ -799,7 +831,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
         chassert(lock.owns_lock());
 
         auto start_time = currentTime();
-        auto [when, start_znode] = determineNextRefreshTime(start_time, dependencies, lock);
+        auto [when, waiting_for_dependencies, start_znode] = determineNextRefreshTime(start_time, dependencies, lock);
         next_refresh_time = when;
         bool out_of_schedule = scheduling.out_of_schedule_refresh_requested;
         if (out_of_schedule)
@@ -807,9 +839,12 @@ void RefreshTask::doScheduling(bool is_shutdown)
             chassert(start_znode.attempt_number > 0);
             start_znode.attempt_number -= 1;
         }
-        else if (start_time < when)
+        else if (start_time < when || waiting_for_dependencies)
         {
-            if (when == std::chrono::system_clock::time_point::max())
+            /// If we're not refreshing for two reasons at once (dependencies not satisfied,
+            /// scheduled time not arrived yet), we'd like system.view_refreshes to show
+            /// state Scheduled rather than WaitingForDependencies.
+            if (when == std::chrono::system_clock::time_point::max() || start_time >= when || !dependencies_ok)
             {
                 if (dependencies_ok)
                     setState(RefreshState::WaitingForDependencies, lock);
@@ -1170,7 +1205,7 @@ static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings 
     return std::chrono::milliseconds(delay_ms);
 }
 
-std::tuple<std::chrono::system_clock::time_point, RefreshTask::CoordinationZnode>
+std::tuple<std::chrono::system_clock::time_point, bool /*waiting_for_dependencies*/, RefreshTask::CoordinationZnode>
 RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now, const AllDependenciesInfo & dependencies, const std::unique_lock<std::mutex> & lock)
 {
     chassert(lock.owns_lock());
@@ -1183,6 +1218,7 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
     }
 
     std::chrono::system_clock::time_point when = std::chrono::system_clock::time_point::max();
+    bool waiting_for_dependencies = false;
     if (znode.attempt_number != 0)
     {
         /// Retrying refresh. Ignore schedule and dependencies.
@@ -1238,14 +1274,11 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
         if (refresh_schedule.kind == RefreshScheduleKind::EVERY)
         {
             auto timeslot = refresh_schedule.advance(znode.last_completed_timeslot);
-            bool dependencies_satisfied;
+            when = timeslot;
             if (all_kind_every)
-                dependencies_satisfied = timeslot < min_next_refresh_timeslot;
+                waiting_for_dependencies = min_next_refresh_timeslot <= timeslot;
             else
-                dependencies_satisfied = all_advanced;
-
-            if (dependencies_satisfied)
-                when = timeslot;
+                waiting_for_dependencies = !all_advanced;
         }
         else
         {
@@ -1261,7 +1294,9 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
         }
     }
 
-    if (when != std::chrono::system_clock::time_point::max())
+    if (when == std::chrono::system_clock::time_point::max())
+        waiting_for_dependencies = true;
+    else
         when = refresh_schedule.addRandomSpread(when, znode.randomness);
 
     znode.previous_attempt_error = "";
@@ -1280,7 +1315,7 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
     znode.last_attempt_succeeded = false;
     znode.refresh_running = true;
 
-    return {when, znode};
+    return {when, waiting_for_dependencies, znode};
 }
 
 void RefreshTask::scheduleRefresh(std::lock_guard<std::mutex> &)
@@ -1294,8 +1329,8 @@ void RefreshTask::setState(RefreshState s, std::unique_lock<std::mutex> & lock)
 {
     chassert(lock.owns_lock());
     state = s;
-    if (s != RefreshState::Running && s != RefreshState::Scheduling)
-        refresh_cv.notify_all();
+    if (s != RefreshState::Scheduling)
+        wait_cv.notify_all();
 }
 
 void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock)
@@ -1344,6 +1379,7 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     coordination.paused_znode_exists = responses[2].error == Coordination::Error::ZOK;
 
     notifyDependentsIfNeeded(lock);
+    wait_cv.notify_all();
 }
 
 bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode)
@@ -1401,6 +1437,7 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
     coordination.running_znode_exists = running;
 
     notifyDependentsIfNeeded(lock);
+    wait_cv.notify_all();
 
     return true;
 }

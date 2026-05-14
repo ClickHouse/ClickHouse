@@ -179,7 +179,7 @@ public:
     IAST * rename_to = nullptr;
 
     /// For MODIFY REFRESH
-    ASTPtr refresh;
+    IAST * refresh = nullptr;
 
     bool detach = false;        /// true for DETACH PARTITION
 

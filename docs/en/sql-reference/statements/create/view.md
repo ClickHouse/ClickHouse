@@ -183,6 +183,8 @@ where `interval` is a sequence of simple intervals:
 number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 ```
 
+The `REFRESH` clause must specify at least one of `EVERY`, `AFTER`, or `DEPENDS ON`. Bare `REFRESH` (with none of these) is rejected. `REFRESH DEPENDS ON ...` without `EVERY`/`AFTER` is shorthand for `REFRESH AFTER 0 SECOND DEPENDS ON ...`; see [Refresh Dependencies](#refresh-dependencies) below.
+
 Periodically runs the corresponding query and stores its result into a table.
 * If `APPEND` is specified, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular `INSERT INTO ... SELECT` query.
 * Otherwise, each refresh atomically replaces the table's previous contents.
@@ -219,7 +221,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 At most one refresh may be running at a time, for a given view. E.g. if a view with `REFRESH EVERY 1 MINUTE` takes 2 minutes to refresh, it'll just be refreshing every 2 minutes. If it then becomes faster and starts refreshing in 10 seconds, it'll go back to refreshing every minute. (In particular, it won't refresh every 10 seconds to catch up with a backlog of missed refreshes - there's no such backlog.)
 
-Additionally, a refresh is started immediately after the materialized view is created, unless `EMPTY` is specified in the `CREATE` query. If `EMPTY` is specified, the first refresh happens according to schedule.
+Typically the first refresh is started immediately after the materialized view is created: time since last refresh is infinity, so any schedule says it's time to refresh now. If `EMPTY` is specified, this initial refresh is skipped, and the first refresh happens at the next scheduled time; e.g. for `EVERY 1 HOUR` the first refresh will happen at the end of current hour.
 
 ### In Replicated DB {#in-replicated-db}
 

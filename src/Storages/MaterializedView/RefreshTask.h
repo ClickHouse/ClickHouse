@@ -348,8 +348,8 @@ private:
     SchedulingState scheduling;
 
     RefreshState state = RefreshState::Scheduling;
-    /// Notified when `state` changes away from Running/Scheduling.
-    std::condition_variable refresh_cv;
+    /// Notified when wait() needs to wake up: when `state` or `root_znode` changes, and on shutdown.
+    std::condition_variable wait_cv;
     std::chrono::system_clock::time_point next_refresh_time {}; // just for observability
 
     /// If we're in a Replicated database, and another replica performed a refresh, we have to do an
@@ -396,12 +396,14 @@ private:
     /// Looks at time and dependencies and decides when to do next refresh.
     /// Returns:
     ///  * When to refresh, according to schedule. The caller may ignore it and refresh right away.
-    ///    If <= now, start right away. If max(), we're waiting for dependencies.
-    ///  * What RefreshState to use if we don't refresh right away: Scheduled or WaitingForDependencies.
+    ///    If max(), we're waiting for dependencies.
+    ///  * Whether we shouldn't actually refresh now because dependencies are not satisfied.
+    ///    This is separate from the time_point::max() above because we'd like system.view_refreshes
+    ///    to show next scheduled refresh time even if dependencies are not satisfied yet.
     ///  * What to write to zookeeper if we do start a refresh.
     ///    Valid regardless of the scheduled time as the caller may ignore schedule and refresh anyway,
     ///    e.g. on SYSTEM REFRESH VIEW.
-    std::tuple<std::chrono::system_clock::time_point, CoordinationZnode>
+    std::tuple<std::chrono::system_clock::time_point, bool /*waiting_for_dependencies*/, CoordinationZnode>
     determineNextRefreshTime(std::chrono::system_clock::time_point now, const AllDependenciesInfo & dependencies, const std::unique_lock<std::mutex> & lock);
 
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
