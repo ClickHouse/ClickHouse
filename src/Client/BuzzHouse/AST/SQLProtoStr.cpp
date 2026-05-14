@@ -2259,13 +2259,6 @@ CONV_FN(PostgreSQLFunc, pfunc)
             ret += "database=";
         appendSQLStringLiteral(ret, pfunc.rdatabase());
     }
-    if (pfunc.has_rschema())
-    {
-        ret += sep();
-        if (kv)
-            ret += "schema=";
-        appendSQLStringLiteral(ret, pfunc.rschema());
-    }
     if (pfunc.has_rtable())
     {
         ret += sep();
@@ -2286,6 +2279,13 @@ CONV_FN(PostgreSQLFunc, pfunc)
         if (kv)
             ret += "password=";
         appendSQLStringLiteral(ret, pfunc.password());
+    }
+    if (pfunc.has_rschema())
+    {
+        ret += sep();
+        if (kv)
+            ret += "schema=";
+        appendSQLStringLiteral(ret, pfunc.rschema());
     }
     ret += ")";
 }
