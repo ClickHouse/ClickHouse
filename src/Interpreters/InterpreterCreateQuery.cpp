@@ -28,6 +28,9 @@
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
 
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
+
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
@@ -1640,6 +1643,23 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.has_attach_from_path)
     {
         chassert(!ddl_guard);
+
+        /// `ATTACH TABLE ... FROM '/path'` resolves `data_path` through `fs::exists`
+        /// and copies the attached data via local-filesystem APIs in the storage
+        /// engine that opens it. With `user_files_policy` configured on a non-local
+        /// disk (e.g. `s3_plain`), those local APIs cannot reach the disk root.
+        /// Reject up front instead of silently producing wrong results.
+        if (auto user_files_volume = getContext()->getUserFilesVolume())
+        {
+            for (const auto & disk : user_files_volume->getDisks())
+            {
+                if (disk->isRemote())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "ATTACH TABLE ... FROM is not supported "
+                                    "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                                    disk->getName());
+            }
+        }
 
         const auto user_files_paths = getContext()->getUserFilesPaths();
         fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
