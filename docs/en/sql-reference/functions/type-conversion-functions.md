@@ -6,8 +6,6 @@ title: 'Type conversion functions'
 doc_type: 'reference'
 ---
 
-# Type conversion functions
-
 ## Common issues with data conversion {#common-issues-with-data-conversion}
 
 ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
