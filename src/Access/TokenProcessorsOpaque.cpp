@@ -1,7 +1,9 @@
 #include "TokenProcessors.h"
 
 #if USE_JWT_CPP
+#include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -59,6 +61,26 @@ namespace
         return value.get<ValueType>();
     }
 
+    /// Bound every IdP-bound HTTP call (OIDC discovery, userinfo, introspection)
+    /// to a known limit. Without this, Poco's default `HTTPSession` timeout of
+    /// 60 seconds applies, and because `ExternalAuthenticators::mutex` is held
+    /// for the entire duration of `checkTokenCredentials` -- including the
+    /// outbound call this function makes -- a single slow or hung IdP would
+    /// stall the whole auth subsystem (LDAP, Kerberos, HTTP basic, every other
+    /// token auth) for up to a full minute per request.
+    ///
+    /// 10 seconds is a deliberately conservative cap: well above any healthy
+    /// IdP latency, well below the default. Operators who need a different
+    /// value would have to expose this via per-processor config; for now it
+    /// is hard-coded so deployments inherit the bounded behavior automatically.
+    constexpr int kIdpHttpTimeoutSeconds = 10;
+
+    void applyIdpSessionTimeouts(Poco::Net::HTTPClientSession & session)
+    {
+        const Poco::Timespan timeout(kIdpHttpTimeoutSeconds, 0);
+        session.setTimeout(timeout, timeout, timeout);
+    }
+
     picojson::object getObjectFromURI(const Poco::URI & uri, const String & token = "")
     {
         Poco::Net::HTTPResponse response;
@@ -70,12 +92,14 @@ namespace
 
         if (uri.getScheme() == "https") {
             Poco::Net::HTTPSClientSession session(uri.getHost(), uri.getPort());
+            applyIdpSessionTimeouts(session);
             session.sendRequest(request);
             Poco::StreamCopier::copyStream(session.receiveResponse(response), responseString);
         }
         else
         {
             Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
+            applyIdpSessionTimeouts(session);
             session.sendRequest(request);
             Poco::StreamCopier::copyStream(session.receiveResponse(response), responseString);
         }
@@ -96,6 +120,28 @@ namespace
     }
 }
 
+GoogleTokenProcessor::GoogleTokenProcessor(const String & processor_name_,
+                                           UInt64 token_cache_lifetime_,
+                                           const String & username_claim_,
+                                           const String & groups_claim_,
+                                           const String & expected_audience_)
+    : ITokenProcessor(processor_name_, token_cache_lifetime_, username_claim_, groups_claim_)
+    , expected_audience(expected_audience_)
+{
+    /// Without an audience pin, this processor accepts any Google access token
+    /// that authenticates the user against Google -- including tokens minted for
+    /// completely unrelated OAuth clients (a classic confused-deputy scenario).
+    /// Operators who actually want token-based auth almost always want it bound
+    /// to their own client_id; surface this gap loudly at startup so it can't
+    /// stay silently un-enforced.
+    if (expected_audience.empty())
+        LOG_WARNING(getLogger("TokenAuthentication"),
+                    "{}: 'expected_audience' is not configured for Google token processor. "
+                    "Any valid Google access token (regardless of issuing client) will be accepted; "
+                    "set 'expected_audience' to the OAuth client_id this processor should accept.",
+                    processor_name);
+}
+
 bool GoogleTokenProcessor::resolveAndValidate(TokenCredentials & credentials) const
 {
     const String & token = credentials.getToken();
@@ -113,9 +159,41 @@ bool GoogleTokenProcessor::resolveAndValidate(TokenCredentials & credentials) co
 
     String user_name = user_info[username_claim];
 
+    auto token_info = getObjectFromURI(Poco::URI("https://www.googleapis.com/oauth2/v3/tokeninfo"), token);
+
+    /// Audience binding (H-10): the Google /tokeninfo endpoint authoritatively
+    /// reports the OAuth client_id the access token was issued for in its 'aud'
+    /// field. Without this check, a token minted for any other Google OAuth
+    /// client (the user's mobile app, a third-party tool) would authenticate
+    /// here too -- because Google /userinfo will happily honor any valid token.
+    /// Refusing tokens whose 'aud' does not match the configured client pin is
+    /// what makes the binding strict.
+    if (!expected_audience.empty())
+    {
+        const auto aud = getValueByKey<std::string, false>(token_info, "aud").value_or("");
+        if (aud != expected_audience)
+        {
+            LOG_TRACE(getLogger("TokenAuthentication"),
+                      "{}: Google access token audience '{}' does not match configured 'expected_audience' '{}'; rejecting",
+                      processor_name, aud, expected_audience);
+            return false;
+        }
+    }
+
+    /// Reject empty resolved username (M-27). `TokenCredentials::setUserName`
+    /// leaves `is_ready=false` for empty input but the function would still
+    /// return true; the cache would then accept an entry under user_name "",
+    /// collapsing every empty-username token across all IdPs into the same
+    /// dynamic ClickHouse user.
+    if (user_name.empty())
+    {
+        LOG_TRACE(getLogger("TokenAuthentication"),
+                  "{}: Resolved username from token is empty; rejecting", processor_name);
+        return false;
+    }
+
     credentials.setUserName(user_name);
 
-    auto token_info = getObjectFromURI(Poco::URI("https://www.googleapis.com/oauth2/v3/tokeninfo"), token);
     if (token_info.contains("exp"))
     {
         /// picojson stores all numerics as double; we need to validate the
@@ -159,20 +237,43 @@ bool GoogleTokenProcessor::resolveAndValidate(TokenCredentials & credentials) co
                 }
 
                 auto group_data = group.get<picojson::object>();
-                String group_name = getValueByKey<std::string, false>(group_data["groupKey"].get<picojson::object>(), "id").value_or("");
+
+                /// Guard against a missing or non-object `groupKey`. Without
+                /// these checks `group_data["groupKey"].get<picojson::object>()`
+                /// would auto-insert a null `picojson::value` (because picojson
+                /// objects are `std::map<string, picojson::value>` and `[]`
+                /// default-constructs on a missing key) and then throw
+                /// `std::bad_cast` on the `.get<picojson::object>()` call --
+                /// which the `catch (const Exception &)` below does NOT
+                /// catch (`std::bad_cast` is `std::exception`-derived, not
+                /// `DB::Exception`-derived). The uncaught exception used to
+                /// propagate out of `resolveAndValidate` and abort auth.
+                auto group_key_it = group_data.find("groupKey");
+                if (group_key_it == group_data.end() || !group_key_it->second.is<picojson::object>())
+                {
+                    LOG_TRACE(getLogger("TokenAuthentication"),
+                              "{}: Group entry without a 'groupKey' object; skipping", processor_name);
+                    continue;
+                }
+
+                String group_name = getValueByKey<std::string, false>(group_key_it->second.get<picojson::object>(), "id").value_or("");
                 if (!group_name.empty())
                 {
                     external_groups_names.insert(group_name);
                     LOG_TRACE(getLogger("TokenAuthentication"),
-                              "{}: User {}: new external group {}", processor_name, user_name, group_name);
+                              "{}: User {}: new external group {}",
+                              processor_name, quoteString(user_name), quoteString(group_name));
                 }
             }
 
             credentials.setGroups(external_groups_names);
         }
-        catch (const Exception & e)
+        catch (const std::exception & e)
         {
-            /// Could not get groups info. Log it and skip it.
+            /// Defense in depth: catch `std::exception` (not just `DB::Exception`)
+            /// so picojson's `std::bad_cast` and `std::runtime_error` -- and any
+            /// other future deviation -- degrade to "no roles mapped" rather
+            /// than aborting the whole authentication.
             LOG_TRACE(getLogger("TokenAuthentication"),
                       "{}: Failed to get Google groups, no external roles will be mapped. reason: {}", processor_name, e.what());
             return true;
@@ -180,6 +281,27 @@ bool GoogleTokenProcessor::resolveAndValidate(TokenCredentials & credentials) co
     }
 
     return true;
+}
+
+AzureTokenProcessor::AzureTokenProcessor(const String & processor_name_,
+                                         UInt64 token_cache_lifetime_,
+                                         const String & username_claim_,
+                                         const String & groups_claim_,
+                                         const String & expected_audience_)
+    : ITokenProcessor(processor_name_, token_cache_lifetime_, username_claim_, groups_claim_)
+    , expected_audience(expected_audience_)
+{
+    /// Without an audience pin, this processor accepts any Azure AD access token
+    /// that Microsoft Graph happens to honor -- which includes tokens minted for
+    /// other applications inside the same tenant. Surface the gap so operators
+    /// can lock the processor to their own application's audience.
+    if (expected_audience.empty())
+        LOG_WARNING(getLogger("TokenAuthentication"),
+                    "{}: 'expected_audience' is not configured for Azure token processor. "
+                    "Any Azure access token Microsoft Graph accepts will authenticate here, "
+                    "regardless of which application it was issued for; set 'expected_audience' "
+                    "to the audience this processor should accept.",
+                    processor_name);
 }
 
 bool AzureTokenProcessor::resolveAndValidate(TokenCredentials & credentials) const
@@ -192,21 +314,65 @@ bool AzureTokenProcessor::resolveAndValidate(TokenCredentials & credentials) con
 
     const String & token = credentials.getToken();
 
+    String username;
     try
     {
         picojson::object user_info_json = getObjectFromURI(Poco::URI("https://graph.microsoft.com/oidc/userinfo"), token);
-        String username = getValueByKey(user_info_json, username_claim).value();
-
-        if (!username.empty())
-            credentials.setUserName(username);
-        else
-            LOG_TRACE(getLogger("TokenAuthentication"), "{}: Failed to get username with token", processor_name);
-
+        username = getValueByKey(user_info_json, username_claim).value();
     }
     catch (...)
     {
         return false;
     }
+
+    /// Audience binding (H-10): only after Microsoft Graph has accepted the
+    /// token (proving it is a real, signed Azure AD token) do we trust its
+    /// claims. We then enforce that the 'aud' claim matches the operator-pinned
+    /// audience -- without this check, *any* token issued for *any* application
+    /// in the tenant that has Graph access would authenticate. With the check,
+    /// tokens minted for other applications are rejected even though Graph
+    /// itself would honor them.
+    if (!expected_audience.empty())
+    {
+        try
+        {
+            auto decoded_token = jwt::decode(token);
+            if (!decoded_token.has_audience())
+            {
+                LOG_TRACE(getLogger("TokenAuthentication"),
+                          "{}: Azure access token has no 'aud' claim; cannot enforce 'expected_audience' '{}'; rejecting",
+                          processor_name, expected_audience);
+                return false;
+            }
+            const auto auds = decoded_token.get_audience();
+            if (auds.find(expected_audience) == auds.end())
+            {
+                LOG_TRACE(getLogger("TokenAuthentication"),
+                          "{}: Azure access token audience does not contain configured 'expected_audience' '{}'; rejecting",
+                          processor_name, expected_audience);
+                return false;
+            }
+        }
+        catch (const std::exception & e)
+        {
+            LOG_TRACE(getLogger("TokenAuthentication"),
+                      "{}: Failed to decode Azure access token while enforcing 'expected_audience': {}; rejecting",
+                      processor_name, e.what());
+            return false;
+        }
+    }
+
+    /// Reject empty resolved username (M-27). Previously this branch only
+    /// logged the gap and proceeded to return true at the end of the function,
+    /// which would cache an entry under user_name "" and collapse every
+    /// empty-username token across all IdPs into the same dynamic user.
+    if (username.empty())
+    {
+        LOG_TRACE(getLogger("TokenAuthentication"),
+                  "{}: Resolved username from token is empty; rejecting", processor_name);
+        return false;
+    }
+    credentials.setUserName(username);
 
     try
     {
@@ -244,20 +410,43 @@ bool AzureTokenProcessor::resolveAndValidate(TokenCredentials & credentials) con
             }
 
             auto group_data = group.get<picojson::object>();
-            if (!group_data.contains("displayName"))
+
+            /// Use the immutable `id` (GUID), not the mutable `displayName`,
+            /// for role-mapping. `displayName` can be renamed by an Azure AD
+            /// admin -- and on rename, every ClickHouse role-mapping regex
+            /// that referenced the old name silently stops matching, while
+            /// every regex that matches the new name silently starts. Two
+            /// distinct AAD groups can also share a display name and merge
+            /// into a single ClickHouse group; deleting and recreating a
+            /// group with the same name silently inherits the old grants.
+            /// `id` is a GUID assigned by AAD at group creation; it never
+            /// changes, never collides, and is never reused.
+            ///
+            /// Operators upgrading from a build that emitted `displayName`
+            /// must update their `roles_filter` / `roles_transform` regex
+            /// to reference the GUIDs Azure AD assigns to the groups they
+            /// want to map. The role identifier is not human-friendly --
+            /// that is the cost of using an immutable handle.
+            if (!group_data.contains("id"))
                 continue;
 
-            String group_name = getValueByKey<std::string, false>(group_data, "displayName").value_or("");
+            String group_name = getValueByKey<std::string, false>(group_data, "id").value_or("");
             if (!group_name.empty())
             {
                 external_groups_names.insert(group_name);
-                LOG_TRACE(getLogger("TokenAuthentication"), "{}: User {}: new external group {}", processor_name, credentials.getUserName(), group_name);
+                String display_name = getValueByKey<std::string, false>(group_data, "displayName").value_or("<unknown>");
+                LOG_TRACE(getLogger("TokenAuthentication"),
+                          "{}: User {}: new external group id={} (displayName={})",
+                          processor_name, quoteString(credentials.getUserName()),
+                          quoteString(group_name), quoteString(display_name));
             }
         }
     }
-    catch (const Exception & e)
+    catch (const std::exception & e)
     {
-        /// Could not get groups info. Log it and skip it.
+        /// Defense in depth (M-10 sibling): broadened to `std::exception` so a
+        /// picojson `std::bad_cast` from a malformed response degrades to "no
+        /// roles mapped" rather than aborting the whole authentication.
         LOG_TRACE(getLogger("TokenAuthentication"),
                   "{}: Failed to get Azure groups, no external roles will be mapped. reason: {}", processor_name, e.what());
         return true;
@@ -282,15 +471,35 @@ OpenIdTokenProcessor::OpenIdTokenProcessor(const String & processor_name_,
         : ITokenProcessor(processor_name_, token_cache_lifetime_, username_claim_, groups_claim_),
           userinfo_endpoint(userinfo_endpoint_), token_introspection_endpoint(token_introspection_endpoint_)
 {
+    /// Without `jwks_uri`, no `jwt_validator` is created and so `expected_issuer`
+    /// / `expected_audience` cannot be enforced anywhere on the validation path
+    /// -- the runtime falls straight to the userinfo endpoint, which only
+    /// answers "the IdP describes this user", not "the token's `iss`/`aud`
+    /// match what this deployment pinned". Refuse to load with that combination
+    /// rather than silently dropping the operator's bindings.
+    if (jwks_uri_.empty() && (!expected_issuer_.empty() || !expected_audience_.empty()))
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "{}: 'expected_issuer' / 'expected_audience' are configured but no 'jwks_uri' is provided. "
+                        "These bindings can only be enforced via local JWT validation against a JWKS; the userinfo "
+                        "fallback alone cannot enforce them. Configure 'jwks_uri' (or, if you intentionally want "
+                        "userinfo-only validation, clear 'expected_issuer'/'expected_audience').",
+                        processor_name);
+
     if (!jwks_uri_.empty())
     {
         LOG_TRACE(getLogger("TokenAuthentication"), "{}: JWKS URI set, local JWT processing will be attempted", processor_name_);
+        /// `expected_typ` is left empty here: OpenID's JWT-fastpath inherits no
+        /// `typ` enforcement from the operator config (the parser doesn't surface
+        /// `expected_typ` for the `openid` processor type yet). Operators who
+        /// want strict `typ` enforcement should use `jwt_static_jwks` /
+        /// `jwt_dynamic_jwks` directly instead of `openid`.
         jwt_validator.emplace(processor_name_ + "jwks_val",
                               token_cache_lifetime_,
                               username_claim_,
                               groups_claim_,
                               expected_issuer_,
                               expected_audience_,
+                              /*expected_typ=*/"",
                               allow_no_expiration_,
                               "",
                               verifier_leeway_,
@@ -308,26 +517,169 @@ OpenIdTokenProcessor::OpenIdTokenProcessor(const String & processor_name_,
                                            bool allow_no_expiration_,
                                            const String & openid_config_endpoint_,
                                            UInt64 verifier_leeway_,
-                                           UInt64 jwks_cache_lifetime_)
+                                           UInt64 jwks_cache_lifetime_,
+                                           const RemoteHostFilter & remote_host_filter_,
+                                           bool allow_http_discovery_urls_)
     : ITokenProcessor(processor_name_, token_cache_lifetime_, username_claim_, groups_claim_)
 {
+    /// Defense in depth: the discovery endpoint itself was already validated by
+    /// the parser, but re-check here in case this constructor is reached via a
+    /// future code path that bypasses parseTokenProcessor.
+    try
+    {
+        remote_host_filter_.checkURL(Poco::URI(openid_config_endpoint_));
+    }
+    catch (const Exception & e)
+    {
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "{}: 'configuration_endpoint' URL '{}' is not in <remote_url_allow_hosts>: {}",
+                        processor_name, openid_config_endpoint_, e.message());
+    }
+
     const picojson::object openid_config = getObjectFromURI(Poco::URI(openid_config_endpoint_));
 
-    if (!openid_config.contains("userinfo_endpoint") || !openid_config.contains("introspection_endpoint"))
-        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "{}: Cannot extract userinfo_endpoint or introspection_endpoint from OIDC configuration, consider manual configuration.", processor_name);
+    /// Only `userinfo_endpoint` is mandatory: it backs the runtime userinfo
+    /// fallback (and is the sole user-info source when no JWKS is configured).
+    /// `introspection_endpoint` is currently unused at runtime -- it's plumbed
+    /// for a future RFC 7662 introspection feature -- so a discovery document
+    /// that omits it should not block processor construction.
+    if (!openid_config.contains("userinfo_endpoint"))
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                        "{}: Cannot extract userinfo_endpoint from OIDC configuration at '{}'; consider manual configuration.",
+                        processor_name, openid_config_endpoint_);
+
+    /// The discovery document is untrusted: even with the issuer-anchor check
+    /// below (H-08), a poisoned or misdirected response can still try to point
+    /// trust-chain endpoints (jwks_uri, userinfo_endpoint, introspection_endpoint)
+    /// at hosts the operator never approved. Refuse to load the processor when
+    /// any returned URL is outside <remote_url_allow_hosts>; this prevents the
+    /// server from reaching out to attacker-controlled endpoints during token
+    /// validation.
+    ///
+    /// Additionally, refuse non-HTTPS schemes on discovery-returned URLs.
+    /// Without this, an attacker who can MITM the discovery fetch (operator
+    /// typed an `http://` configuration_endpoint, or any TLS interception path)
+    /// can substitute a discovery doc whose `jwks_uri` is `http://169.254.169.254/...`
+    /// (cloud metadata), `http://127.0.0.1:...` (local admin ports), or
+    /// `http://kubernetes.default.svc:...` -- and the server issues a one-shot
+    /// HTTP GET under its own process identity. `<remote_url_allow_hosts>` is
+    /// the primary defense, but not every deployment configures it; an
+    /// HTTPS-only rule on returned URLs is a cheap, orthogonal layer that
+    /// blocks all three of those targets independently. Operators who run an
+    /// IdP over plain HTTP intentionally can wire the trust chain manually
+    /// (`userinfo_endpoint`/`token_introspection_endpoint`/`jwks_uri` directly)
+    /// instead of relying on discovery, or opt out of this check by setting
+    /// `<allow_http_discovery_urls>true</allow_http_discovery_urls>` on the
+    /// processor (false by default; <remote_url_allow_hosts> still applies).
+    if (allow_http_discovery_urls_)
+        LOG_WARNING(getLogger("TokenAuthentication"),
+                    "{}: 'allow_http_discovery_urls' is enabled; HTTPS check on URLs returned by OIDC discovery "
+                    "is suppressed. Make sure <remote_url_allow_hosts> restricts which targets the server may "
+                    "be redirected to via a poisoned discovery document.",
+                    processor_name);
+    auto require_allowed_discovery_url = [&](const std::string & url, const char * field)
+    {
+        Poco::URI parsed_uri(url);
+        if (!allow_http_discovery_urls_ && parsed_uri.getScheme() != "https")
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "{}: OIDC discovery at '{}' returned non-HTTPS '{}' URL '{}' (scheme '{}'). "
+                            "The trust-chain URLs from discovery must use HTTPS so a poisoned discovery "
+                            "document cannot redirect token validation through internal endpoints "
+                            "(cloud metadata, localhost, in-cluster service IPs). If the IdP genuinely "
+                            "runs over plain HTTP, either configure the trust chain manually instead of "
+                            "using 'configuration_endpoint', or set "
+                            "'<allow_http_discovery_urls>true</allow_http_discovery_urls>' on this processor.",
+                            processor_name, openid_config_endpoint_, field, url, parsed_uri.getScheme());
+
+        try
+        {
+            remote_host_filter_.checkURL(parsed_uri);
+        }
+        catch (const Exception & e)
+        {
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "{}: OIDC discovery at '{}' returned '{}' URL '{}' which is not in "
+                            "<remote_url_allow_hosts>: {}",
+                            processor_name, openid_config_endpoint_, field, url, e.message());
+        }
+    };
+
+    require_allowed_discovery_url(getValueByKey(openid_config, "userinfo_endpoint").value(), "userinfo_endpoint");
+    if (openid_config.contains("introspection_endpoint"))
+        require_allowed_discovery_url(getValueByKey(openid_config, "introspection_endpoint").value(), "introspection_endpoint");
+    if (openid_config.contains("jwks_uri"))
+        require_allowed_discovery_url(getValueByKey(openid_config, "jwks_uri").value(), "jwks_uri");
+
+    /// Anchor the discovery document to a known issuer when one is configured.
+    ///
+    /// OIDC Discovery 1.0 §4.3 / RFC 8414 §3.3 require the metadata's "issuer"
+    /// to be tied to the URL used to fetch it. Without this anchor a poisoned
+    /// or misdirected discovery response can redirect the entire trust chain
+    /// (jwks_uri, userinfo_endpoint, introspection_endpoint) to URLs the
+    /// operator never approved -- and because the embedded JWT verifier only
+    /// enforces the `iss` claim when expected_issuer is non-empty, JWTs signed
+    /// by the attacker's keys would be silently accepted at runtime.
+    ///
+    /// Policy:
+    ///   - expected_issuer configured => discovery's "issuer" MUST match it
+    ///                                   (refuse to construct on mismatch or
+    ///                                   absence). Verifier is pinned to it.
+    ///   - expected_issuer empty      => log a warning so the gap is visible
+    ///                                   in operator logs, then proceed with
+    ///                                   the historical (lax) behavior. The
+    ///                                   verifier is left without an issuer
+    ///                                   pin to preserve compatibility.
+    const auto issuer_from_discovery = getValueByKey<std::string, false>(openid_config, "issuer").value_or("");
+
+    if (!expected_issuer_.empty())
+    {
+        if (issuer_from_discovery.empty())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "{}: OIDC discovery document at '{}' does not advertise an 'issuer'; "
+                            "cannot verify it against the configured 'expected_issuer' '{}'.",
+                            processor_name, openid_config_endpoint_, expected_issuer_);
+
+        if (issuer_from_discovery != expected_issuer_)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "{}: OIDC discovery 'issuer' mismatch: configured 'expected_issuer' is '{}' "
+                            "but discovery document at '{}' returned issuer '{}'. Refusing to load the "
+                            "processor to avoid trusting metadata that belongs to a different issuer.",
+                            processor_name, expected_issuer_, openid_config_endpoint_, issuer_from_discovery);
+    }
+    else
+    {
+        LOG_WARNING(getLogger("TokenAuthentication"),
+                    "{}: 'expected_issuer' is not configured for OIDC discovery at '{}'. "
+                    "The JWT 'iss' claim will NOT be enforced.", processor_name, openid_config_endpoint_);
+    }
 
     userinfo_endpoint = Poco::URI(getValueByKey(openid_config, "userinfo_endpoint").value());
-    token_introspection_endpoint = Poco::URI(getValueByKey(openid_config, "introspection_endpoint").value());
+    if (openid_config.contains("introspection_endpoint"))
+        token_introspection_endpoint = Poco::URI(getValueByKey(openid_config, "introspection_endpoint").value());
+
+    /// See manual-constructor comment: `expected_issuer` / `expected_audience`
+    /// can only be enforced via local JWT validation. If the discovery document
+    /// does not advertise a `jwks_uri`, no `jwt_validator` will be created and
+    /// the userinfo fallback alone cannot enforce these bindings. Refuse the
+    /// configuration rather than silently dropping them.
+    if (!openid_config.contains("jwks_uri") && (!expected_issuer_.empty() || !expected_audience_.empty()))
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "{}: OIDC discovery at '{}' did not advertise a 'jwks_uri', but 'expected_issuer' / "
+                        "'expected_audience' are configured. These bindings can only be enforced via local JWT "
+                        "validation against a JWKS; userinfo cannot enforce them. Refusing to load.",
+                        processor_name, openid_config_endpoint_);
 
     if (openid_config.contains("jwks_uri"))
     {
         LOG_TRACE(getLogger("TokenAuthentication"), "{}: JWKS URI set, local JWT processing will be attempted", processor_name_);
+        /// `expected_typ` empty for the same reason as the manual constructor.
         jwt_validator.emplace(processor_name_ + "jwks_val",
                               token_cache_lifetime_,
                               username_claim_,
                               groups_claim_,
                               expected_issuer_,
                               expected_audience_,
+                              /*expected_typ=*/"",
                               allow_no_expiration_,
                               "",
                               verifier_leeway_,
@@ -342,8 +694,34 @@ bool OpenIdTokenProcessor::resolveAndValidate(TokenCredentials & credentials) co
     String username;
     picojson::object user_info_json;
 
-    if (jwt_validator.has_value() && jwt_validator.value().resolveAndValidate(credentials))
+    if (jwt_validator.has_value())
     {
+        /// When a `jwt_validator` is configured, it owns the operator's
+        /// `expected_issuer` / `expected_audience` / `allow_no_expiration`
+        /// bindings. If it rejects the token we MUST NOT fall back to the
+        /// userinfo endpoint: userinfo only confirms "the IdP describes this
+        /// user", it has no notion of the operator-pinned audience or issuer
+        /// and does not enforce the local expiration policy. Falling back here
+        /// would silently bypass exactly the bindings the operator opted into,
+        /// e.g. a JWT with the wrong `aud` would still authenticate because
+        /// the IdP's own userinfo accepts it for itself.
+        if (!jwt_validator.value().resolveAndValidate(credentials))
+        {
+            /// DEBUG, not TRACE: this is the binding-rejection path. Operators
+            /// running with DEBUG enabled will see a clear signal that the
+            /// JWT-fastpath (which enforces `expected_issuer` / `expected_audience`
+            /// / `allow_no_expiration`) rejected a token. The auth failure itself
+            /// is also visible to the client, but the log line tells the operator
+            /// *why* it was rejected on the local side.
+            LOG_DEBUG(getLogger("TokenAuthentication"),
+                      "{}: Local JWT validation rejected the token. Refusing to fall back to "
+                      "userinfo: the operator-configured bindings (expected_issuer / expected_audience / "
+                      "allow_no_expiration) cannot be enforced by userinfo, and a fallback would silently "
+                      "bypass them.",
+                      processor_name);
+            return false;
+        }
+
         try
         {
             auto decoded_token = jwt::decode(token);
@@ -356,11 +734,32 @@ bool OpenIdTokenProcessor::resolveAndValidate(TokenCredentials & credentials) co
         }
         catch (const std::exception & ex)
         {
-            LOG_TRACE(getLogger("TokenAuthentication"), "{}: Failed to process token as JWT: {}", processor_name, ex.what());
+            /// WARNING: validation passed but extracting the payload locally
+            /// failed -- a genuinely rare condition (the same token was just
+            /// successfully verified, so its bytes ARE a valid JWT). The
+            /// processor is about to fall back to userinfo for username
+            /// extraction. Bindings were already enforced by `jwt_validator`,
+            /// so this fallback is safe -- but the underlying mismatch
+            /// (decode failure on a verified token) usually means an IdP
+            /// behavioral change, a clock skew, or a payload-format drift,
+            /// and operators should know about it loudly.
+            LOG_WARNING(getLogger("TokenAuthentication"),
+                        "{}: JWT validation succeeded but payload extraction failed: {}. "
+                        "Falling back to userinfo for username; the operator-configured "
+                        "bindings have ALREADY been enforced by JWT validation, so this "
+                        "fallback is safe -- but the decode failure indicates an unexpected "
+                        "JWT shape from the IdP.",
+                        processor_name, ex.what());
         }
     }
 
-    /// If username or user info is empty -- local validation failed, trying introspection via provider
+    /// Userinfo path: only reachable when no `jwt_validator` is configured
+    /// (the constructor guarantees that combination is incompatible with any
+    /// `expected_issuer` / `expected_audience` pin), or when local JWT validation
+    /// passed but extracting the username/payload from the decoded token failed
+    /// for an unrelated reason -- in which case the bindings have already been
+    /// enforced by `jwt_validator` and userinfo is just being asked for the user
+    /// identity.
     if (username.empty() || user_info_json.empty())
     {
         try

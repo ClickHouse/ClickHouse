@@ -83,7 +83,7 @@ namespace
             bool expect_ssl_cert_subjects = false;
             bool expect_public_ssh_key = false;
             bool expect_http_auth_server = false;
-            bool expect_claims = false;   // NOLINT
+            bool expect_jwt_args = false;
 
             auto parse_non_password_based_type = [&](auto check_type)
             {
@@ -105,8 +105,7 @@ namespace
                     else if (check_type == AuthenticationType::HTTP)
                         expect_http_auth_server = true;
                     else if (check_type == AuthenticationType::JWT)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE USER is not supported for JWT");
-                        // expect_claims = true;
+                        expect_jwt_args = true;
                     else if (check_type != AuthenticationType::NO_PASSWORD)
                         expect_password = true;
 
@@ -167,6 +166,7 @@ namespace
             ASTPtr http_auth_scheme;
             ASTPtr ssl_cert_subjects;
             std::optional<String> ssl_cert_subject_type;
+            ASTPtr jwt_processor;
             ASTPtr jwt_claims;
 
             if (expect_password || expect_hash)
@@ -232,12 +232,30 @@ namespace
                         return false;
                 }
             }
-            else if (expect_claims)
+            else if (expect_jwt_args)
             {
-                if (ParserKeyword{Keyword::CLAIMS}.ignore(pos, expected))
+                /// IDENTIFIED WITH jwt accepts two optional clauses, in either order:
+                ///   PROCESSOR '<name>'  -- pin to a specific token_processor
+                ///   CLAIMS    '<json>'  -- per-user claims requirement
+                /// Either, both, or neither may appear. Pinning a processor is what
+                /// gates SQL-declared JWT users out of the iterate-all-processors
+                /// auto-discovery path.
+                for (size_t i = 0; i < 2; ++i)
                 {
-                    if (!ParserStringAndSubstitution{}.parse(pos, jwt_claims, expected))
-                        return false;
+                    if (!jwt_processor && ParserKeyword{Keyword::PROCESSOR}.ignore(pos, expected))
+                    {
+                        if (!ParserStringAndSubstitution{}.parse(pos, jwt_processor, expected))
+                            return false;
+                    }
+                    else if (!jwt_claims && ParserKeyword{Keyword::CLAIMS}.ignore(pos, expected))
+                    {
+                        if (!ParserStringAndSubstitution{}.parse(pos, jwt_claims, expected))
+                            return false;
+                    }
+                    else
+                    {
+                        break;
+                    }
                 }
             }
 
@@ -265,8 +283,17 @@ namespace
             if (http_auth_scheme)
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
+            if (jwt_processor)
+            {
+                auth_data->has_jwt_processor = true;
+                auth_data->children.push_back(std::move(jwt_processor));
+            }
+
             if (jwt_claims)
+            {
+                auth_data->has_jwt_claims = true;
                 auth_data->children.push_back(std::move(jwt_claims));
+            }
 
             parseValidUntil(pos, expected, auth_data->valid_until);
 

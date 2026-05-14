@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/MemoryAccessStorage.h>
+#include <Access/Common/AllowedClientHosts.h>
 #include <Access/Credentials.h>
 #include <Access/SettingsProfile.h>
 #include <Common/re2.h>
@@ -49,12 +50,25 @@ private:
 
     String provider_name;
     std::optional<re2::RE2> roles_filter = std::nullopt;
-    std::optional<String> roles_transform_pattern = std::nullopt;
+    /// `roles_transform` regex compiled once at construction. Storing the
+    /// compiled `re2::RE2` (instead of the pattern string) avoids per-call
+    /// recompilation and -- more importantly -- makes parse-time validation
+    /// possible: an invalid regex now fails the storage construction loudly
+    /// rather than silently no-op'ing every transform at runtime (which would
+    /// admit ungroomed role names; symmetric with the `roles_filter` fail-
+    /// closed handling).
+    std::optional<re2::RE2> roles_transform_pattern = std::nullopt;
     std::optional<String> roles_transform_replacement = std::nullopt;
     bool roles_transform_global = false;
 
     std::set<String> common_role_names;                         // role name that should be granted to all users at all times
     String default_profile_name;                                // settings profile name that should be assigned to all users
+    /// Optional IP allowlist applied to auto-provisioned users at creation
+    /// time. When unset, auto-created users inherit the default `AnyHostTag`
+    /// (current behavior, no breakage). When set, only clients whose source
+    /// address matches this allowlist can authenticate as a token-auto-created
+    /// user, regardless of the IdP's verdict on the token.
+    std::optional<AllowedClientHosts> auto_user_allowed_hosts;
     mutable std::map<String, std::set<String>> user_external_roles;
     mutable std::map<String, std::set<String>> users_per_roles; // role name -> user names (...it should be granted to; may but don't have to exist for common roles)
     mutable std::map<String, std::set<String>> roles_per_users; // user name -> role names (...that should be granted to it; may but don't have to include common roles)
@@ -70,7 +84,6 @@ private:
     void applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name);
     void assignRolesNoLock(User & user, const std::set<String> & external_roles) const;
     void assignProfileNoLock(User & user) const;
-    void updateAssignedRolesNoLock(const UUID & id, const String & user_name, const std::set<String> & external_roles) const;
 
 protected:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;

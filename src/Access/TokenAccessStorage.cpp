@@ -1,4 +1,5 @@
 #include <Access/TokenAccessStorage.h>
+#include <Access/AccessChangesNotifier.h>
 #include <Access/AccessControl.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/User.h>
@@ -106,24 +107,17 @@ namespace
         return result;
     }
 
-    String applyTransform(const String & input, const String & pattern, const String & replacement, bool global)
+    String applyTransform(const String & input, const re2::RE2 & re, const String & replacement, bool global)
     {
-        if (pattern.empty())
-            return input;
-
-        re2::RE2 re(pattern);
-        if (!re.ok())
-            return input;
-
+        /// `re` is precompiled at storage construction (the constructor refuses
+        /// to load with an invalid pattern, so by the time we get here the
+        /// regex is guaranteed to be `ok()`). No per-call recompilation; no
+        /// silent no-op on a bad pattern.
         String result = input;
         if (global)
-        {
             RE2::GlobalReplace(&result, re, replacement);
-        }
         else
-        {
             RE2::Replace(&result, re, replacement);
-        }
         return result;
     }
 }
@@ -137,13 +131,51 @@ TokenAccessStorage::TokenAccessStorage(const String & storage_name_, AccessContr
     const String prefix_str = (prefix.empty() ? "" : prefix + ".");
 
     if (config.has(prefix_str + "roles_filter"))
-        roles_filter.emplace(config.getString(prefix_str + "roles_filter"));
+    {
+        const String filter_pattern = config.getString(prefix_str + "roles_filter");
+        roles_filter.emplace(filter_pattern);
+
+        /// Fail closed on invalid regex. RE2 does not throw on bad patterns -- it
+        /// constructs an object with ok()==false and silently fails every match.
+        /// Reject the configuration up front so the
+        /// storage cannot be instantiated in a permissive state.
+        if (!roles_filter->ok())
+        {
+            const String error = roles_filter->error();
+            roles_filter.reset();
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid 'roles_filter' regex for Token user directory '{}': {}. "
+                            "Refusing to start with a misconfigured filter to avoid granting "
+                            "all token groups as roles.",
+                            storage_name_, error);
+        }
+    }
 
     if (config.has(prefix_str + "roles_transform"))
     {
         String transform = config.getString(prefix_str + "roles_transform");
         ParsedTransform parsed = parseSedTransform(transform);
-        roles_transform_pattern = parsed.pattern;
+
+        /// Compile and validate the regex up front. If we deferred compilation
+        /// to runtime (the previous behavior), an invalid regex would silently
+        /// return the input unchanged on every call -- meaning every role name
+        /// from the IdP would flow into role-mapping ungroomed, defeating the
+        /// purpose of `roles_transform`. Fail loudly at construction so the
+        /// misconfiguration is visible at startup.
+        if (!parsed.pattern.empty())
+        {
+            roles_transform_pattern.emplace(parsed.pattern);
+            if (!roles_transform_pattern->ok())
+            {
+                const String error = roles_transform_pattern->error();
+                roles_transform_pattern.reset();
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid 'roles_transform' regex for Token user directory '{}': {}. "
+                                "Refusing to start with a misconfigured transform to avoid admitting "
+                                "ungroomed role names from the IdP.",
+                                storage_name_, error);
+            }
+        }
         roles_transform_replacement = parsed.replacement;
         roles_transform_global = parsed.global;
     }
@@ -164,6 +196,35 @@ TokenAccessStorage::TokenAccessStorage(const String & storage_name_, AccessContr
 
     if (config.has(prefix_str + "default_profile"))
         default_profile_name = config.getString(prefix_str + "default_profile");
+
+    /// Optional IP allowlist for auto-provisioned users. Mirrors the
+    /// `users.xml` `<networks>` shape: `<ip>SUBNET</ip>` /
+    /// `<host>NAME</host>` / `<host_regexp>REGEX</host_regexp>` children.
+    /// Without this, every auto-created token user defaults to `AnyHost` and
+    /// admins have no way to restrict token-auth by network through standard
+    /// access-control config.
+    const auto networks_config_path = prefix_str + "networks";
+    if (config.has(networks_config_path))
+    {
+        AllowedClientHosts hosts;
+        Poco::Util::AbstractConfiguration::Keys network_keys;
+        config.keys(networks_config_path, network_keys);
+        for (const String & key : network_keys)
+        {
+            const String value = config.getString(networks_config_path + "." + key);
+            if (key.starts_with("ip"))
+                hosts.addSubnet(value);
+            else if (key.starts_with("host_regexp"))
+                hosts.addNameRegexp(value);
+            else if (key.starts_with("host"))
+                hosts.addName(value);
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Token user directory '{}': unknown <networks> entry '{}'; expected 'ip', 'host', or 'host_regexp'.",
+                                storage_name_, key);
+        }
+        auto_user_allowed_hosts = std::move(hosts);
+    }
 
     user_external_roles.clear();
     users_per_roles.clear();
@@ -466,28 +527,6 @@ void TokenAccessStorage::assignProfileNoLock(User & user) const
     }
 }
 
-void TokenAccessStorage::updateAssignedRolesNoLock(const UUID & id, const String & user_name, const std::set<String> & external_roles) const
-{
-    // Map and grant the roles from scratch only if the list of external role has changed.
-    const auto it = user_external_roles.find(user_name);
-    if (it != user_external_roles.end() && it->second == external_roles)
-        return;
-
-    auto update_func = [this, &external_roles] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
-    {
-        if (auto user = typeid_cast<std::shared_ptr<const User>>(entity_))
-        {
-            auto changed_user = typeid_cast<std::shared_ptr<User>>(user->clone());
-            assignRolesNoLock(*changed_user, external_roles);
-            return changed_user;
-        }
-        return entity_;
-    };
-
-    memory_storage.update(id, update_func);
-}
-
-
 std::optional<AuthResult> TokenAccessStorage::authenticateImpl(
         const Credentials & credentials,
         const Poco::Net::IPAddress & address,
@@ -498,10 +537,28 @@ std::optional<AuthResult> TokenAccessStorage::authenticateImpl(
         bool /* allow_plaintext_password */) const
 {
     std::lock_guard lock(mutex);
+
+    /// Reject mismatched credential types BEFORE the typeid_cast that would
+    /// throw a `LOGICAL_ERROR`. The reference-form `typeid_cast` is fatal on
+    /// mismatch, and `MultipleAccessStorage::authenticateImpl` does not catch
+    /// per-storage exceptions -- so a single Basic / SSL-cert / Kerberos / SSH
+    /// login attempt would propagate that exception out of the chain and abort
+    /// authentication for every later storage in `user_directories`. Concretely,
+    /// listing `<token>` ahead of `<users.xml>` would lock out every Basic-auth
+    /// user. Return nullopt cleanly, matching the LDAP-side idiom in
+    /// `LDAPAccessStorage::areLDAPCredentialsValidNoLock`.
+    const auto * token_credentials_ptr = dynamic_cast<const TokenCredentials *>(&credentials);
+    if (!token_credentials_ptr)
+    {
+        if (throw_if_user_not_exists)
+            throwNotFound(AccessEntityType::USER, credentials.getUserName(), getStorageName());
+        return {};
+    }
+
     auto id = memory_storage.find<User>(credentials.getUserName());
     UserPtr user = id ? memory_storage.read<User>(*id) : nullptr;
 
-    const auto & token_credentials = typeid_cast<const TokenCredentials &>(credentials);
+    const auto & token_credentials = *token_credentials_ptr;
 
     if (!external_authenticators.checkTokenCredentials(token_credentials, provider_name))
     {
@@ -519,6 +576,17 @@ std::optional<AuthResult> TokenAccessStorage::authenticateImpl(
         new_user = std::make_shared<User>();
         new_user->setName(credentials.getUserName());
         new_user->authentication_methods.emplace_back(AuthenticationType::JWT);
+        /// Stamp the storage's pinned processor onto the auth method so the
+        /// per-request validity check (`Session::checkIfUserIsStillValid`)
+        /// can detect when an admin removes that processor and terminate
+        /// active sessions whose tokens were issued through it (M-28).
+        new_user->authentication_methods.back().setTokenProcessorName(provider_name);
+        /// If the operator configured a network allowlist for this storage,
+        /// stamp it onto the auto-created user so `isAddressAllowed` checks it
+        /// below. Without this, every auto-provisioned token user inherits
+        /// `AnyHostTag` and there is no way to restrict token auth by network.
+        if (auto_user_allowed_hosts.has_value())
+            new_user->allowed_client_hosts = *auto_user_allowed_hosts;
         user = new_user;
     }
 
@@ -526,20 +594,35 @@ std::optional<AuthResult> TokenAccessStorage::authenticateImpl(
         throwAddressNotAllowed(address);
 
     std::set<String> external_roles;
-    if (roles_filter.has_value() && roles_filter.value().ok())
+    if (roles_filter.has_value())
     {
-        LOG_TRACE(getLogger(), "{}: External role filter found, applying only matching groups", getStorageName());
-        for (const auto & group: token_credentials.getGroups()) {
-            if (RE2::FullMatch(group, roles_filter.value()))
-            {
-                String transformed_group = group;
-                if (roles_transform_pattern.has_value() && roles_transform_replacement.has_value())
+        /// Defensive: a broken regex must NEVER cause a fall-through to the
+        /// permissive "grant all groups" branch. Parse-time validation in the
+        /// constructor already rejects invalid patterns; this guard ensures the
+        /// invariant still holds if any future code path constructs the filter
+        /// without the parse-time check (e.g. config reload).
+        if (!roles_filter->ok())
+        {
+            LOG_ERROR(getLogger(),
+                      "{}: Configured 'roles_filter' is invalid ('{}'); refusing to map any "
+                      "external roles for user '{}' to avoid granting all token groups.",
+                      getStorageName(), roles_filter->error(), credentials.getUserName());
+        }
+        else
+        {
+            LOG_TRACE(getLogger(), "{}: External role filter found, applying only matching groups", getStorageName());
+            for (const auto & group: token_credentials.getGroups()) {
+                if (RE2::FullMatch(group, roles_filter.value()))
                 {
-                    transformed_group = applyTransform(group, roles_transform_pattern.value(), roles_transform_replacement.value(), roles_transform_global);
-                    LOG_TRACE(getLogger(), "{}: Transformed group '{}' to '{}'", getStorageName(), group, transformed_group);
+                    String transformed_group = group;
+                    if (roles_transform_pattern.has_value() && roles_transform_replacement.has_value())
+                    {
+                        transformed_group = applyTransform(group, roles_transform_pattern.value(), roles_transform_replacement.value(), roles_transform_global);
+                        LOG_TRACE(getLogger(), "{}: Transformed group '{}' to '{}'", getStorageName(), group, transformed_group);
+                    }
+                    external_roles.insert(transformed_group);
+                    LOG_TRACE(getLogger(), "{}: Granted role (group) {} to user", getStorageName(), transformed_group);
                 }
-                external_roles.insert(transformed_group);
-                LOG_TRACE(getLogger(), "{}: Granted role (group) {} to user", getStorageName(), transformed_group);
             }
         }
     }
@@ -566,21 +649,74 @@ std::optional<AuthResult> TokenAccessStorage::authenticateImpl(
     }
     else
     {
-        // Just in case external_roles are changed.
-        updateAssignedRolesNoLock(*id, user->getName(), external_roles);
-
-        // Also update profile if needed
-        memory_storage.update(*id, [this] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
+        /// Apply role-set and profile changes atomically under a single
+        /// `memory_storage.update`. Splitting them into two separate updates
+        /// (the prior shape) opened a reader-observable window between
+        /// "new roles, old profile" and "new roles, new profile" -- a query
+        /// from another thread that read the user via `AccessControl::read`
+        /// would observe a mid-state, since `MemoryAccessStorage`'s lock is
+        /// independent of `TokenAccessStorage::mutex` (M-31).
+        ///
+        /// Preserve the existing early-return optimization: skip the update
+        /// when external_roles haven't changed AND the profile is already
+        /// assigned. The `assignRolesNoLock` cleanup still has to run if
+        /// the role set changes, so it lives inside the update lambda.
+        const bool roles_changed = [&]
         {
-            if (auto user_entity = typeid_cast<std::shared_ptr<const User>>(entity_))
+            const auto it = user_external_roles.find(user->getName());
+            return it == user_external_roles.end() || it->second != external_roles;
+        }();
+
+        if (roles_changed)
+        {
+            memory_storage.update(*id, [this, &external_roles] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
             {
-                auto changed_user = typeid_cast<std::shared_ptr<User>>(user_entity->clone());
-                assignProfileNoLock(*changed_user);
-                return changed_user;
-            }
-            return entity_;
-        });
+                if (auto user_entity = typeid_cast<std::shared_ptr<const User>>(entity_))
+                {
+                    auto changed_user = typeid_cast<std::shared_ptr<User>>(user_entity->clone());
+                    assignRolesNoLock(*changed_user, external_roles);
+                    assignProfileNoLock(*changed_user);
+                    return changed_user;
+                }
+                return entity_;
+            });
+        }
+        else
+        {
+            /// Roles are stable; just refresh the profile in case it was
+            /// added/changed in config since the last auth.
+            memory_storage.update(*id, [this] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
+            {
+                if (auto user_entity = typeid_cast<std::shared_ptr<const User>>(entity_))
+                {
+                    auto changed_user = typeid_cast<std::shared_ptr<User>>(user_entity->clone());
+                    assignProfileNoLock(*changed_user);
+                    return changed_user;
+                }
+                return entity_;
+            });
+        }
     }
+
+    /// Flush queued user-entity events from this storage's `memory_storage` so
+    /// subscribers observe the freshly-resolved roles and profile right away.
+    ///
+    /// `memory_storage.insert` / `update` only enqueue `onEntityAdded` /
+    /// `onEntityUpdated` on the shared `AccessChangesNotifier`; without an
+    /// explicit `sendNotifications` they sit on the queue until some unrelated
+    /// access mutation (a SQL DDL on access entities, a config reload, a
+    /// replicated-storage sync) happens to trigger a drain. During that window
+    /// any existing `ContextAccess` bound to this user UUID keeps serving its
+    /// previously-cached authorization state -- a freshly-revoked role appears
+    /// "still granted" until the next unrelated trigger.
+    ///
+    /// Note: `applyRoleChangeNoLock` (the storage's other mutation site) does
+    /// NOT need an explicit flush -- it only runs inside `processRoleChange`,
+    /// which is itself dispatched from a `sendNotifications` drain; the events
+    /// it queues are picked up by the very loop that called it. Only
+    /// `authenticateImpl` runs outside of any drain and so is the one site
+    /// that has to flush explicitly.
+    access_control.getChangesNotifier().sendNotifications();
 
     if (id)
         return AuthResult{ .user_id = *id, .authentication_data = AuthenticationData(AuthenticationType::JWT), .user_name = user->getName() };

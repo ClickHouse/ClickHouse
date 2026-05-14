@@ -257,7 +257,15 @@ bool authenticateUserByHTTP(
         const auto token_credentials = TokenCredentials(bearer_token);
         const auto & external_authenticators = access_control.getExternalAuthenticators();
 
-        if (!external_authenticators.checkTokenCredentials(token_credentials))
+        /// Pre-user-lookup token validation. Pass `prime_cache_on_success=false`
+        /// so this unconstrained call (no processor pin, no JWT claims) does not
+        /// populate the token cache. The cache is reserved for entries produced
+        /// by the per-user authentication path (`Authentication::areCredentialsValid`),
+        /// which applies the user's pinned processor and per-user claims.
+        /// Without this, a user whose `<jwt>` block omits `<processor>` would
+        /// satisfy a later cache lookup with empty `processor_name` -- silently
+        /// inheriting whichever processor happened to win this auto-discovery race.
+        if (!external_authenticators.checkTokenCredentials(token_credentials, /*processor_name=*/"", /*jwt_claims=*/"", /*prime_cache_on_success=*/false))
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: Token could not be verified.");
 
         current_credentials = std::make_unique<TokenCredentials>(token_credentials);

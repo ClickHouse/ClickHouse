@@ -2081,7 +2081,12 @@ void TCPHandler::receiveHello()
 
         const auto & external_authenticators = access_control.getExternalAuthenticators();
 
-        if (!external_authenticators.checkTokenCredentials(credentials))
+        /// Pre-user-lookup token validation. Pass `prime_cache_on_success=false`
+        /// so this unconstrained call (no processor pin, no JWT claims) does not
+        /// populate the token cache; the per-user authentication path is the only
+        /// site allowed to populate it, after applying the user's pinned processor
+        /// and per-user claims. See `ExternalAuthenticators::checkTokenCredentials`.
+        if (!external_authenticators.checkTokenCredentials(credentials, /*processor_name=*/"", /*jwt_claims=*/"", /*prime_cache_on_success=*/false))
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Token is invalid");
 
         session->authenticate(credentials, getClientAddress(client_info), socket().peerAddress());

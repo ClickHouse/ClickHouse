@@ -300,7 +300,11 @@ void ExternalAuthenticators::reset()
     resetImpl();
 }
 
-void parseTokenProcessors(std::unordered_map<String, std::unique_ptr<ITokenProcessor>> & token_processors,
+/// Parse all token processors as an all-or-nothing operation.
+///
+/// Throws if ANY processor fails to parse. The caller is expected to react by
+/// disabling token authentication for this configuration cycle (fail-closed).
+void parseTokenProcessors(std::map<String, std::shared_ptr<ITokenProcessor>> & token_processors,
                         const Poco::Util::AbstractConfiguration & config,
                         const String & token_processors_config,
                         LoggerPtr log)
@@ -308,26 +312,42 @@ void parseTokenProcessors(std::unordered_map<String, std::unique_ptr<ITokenProce
     Poco::Util::AbstractConfiguration::Keys token_processors_keys;
     config.keys(token_processors_config, token_processors_keys);
 
-    token_processors.clear();
+    /// Build into a local map first so the live set is never observed in a partially-constructed state.
+    /// Ordered so the auto-discovery iteration order in `checkTokenCredentials` is stable.
+    std::map<String, std::shared_ptr<ITokenProcessor>> parsed;
 
     for (const auto & processor : token_processors_keys)
     {
         String prefix = fmt::format("{}.{}", token_processors_config, processor);
         try
         {
-            token_processors[processor] = ITokenProcessor::parseTokenProcessor(config, prefix, processor);
+            parsed[processor] = ITokenProcessor::parseTokenProcessor(config, prefix, processor);
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Could not parse token processor" + backQuote(processor));
+            tryLogCurrentException(log, "Could not parse token processor " + backQuote(processor));
+            /// Re-throw so the caller fails.
+            throw;
         }
     }
+
+    token_processors = std::move(parsed);
 }
 
 bool ExternalAuthenticators::isTokenAuthEnabled() const
 {
     std::lock_guard lock(mutex);
     return token_auth_enabled;
+}
+
+bool ExternalAuthenticators::hasTokenProcessor(const String & name) const
+{
+    std::lock_guard lock(mutex);
+    if (!token_auth_enabled)
+        return false;
+    if (name.empty())
+        return true;
+    return token_processors.contains(name);
 }
 
 void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, LoggerPtr log, bool token_auth_enabled_)
@@ -435,7 +455,22 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     }
 
     if (token_auth_enabled)
-        parseTokenProcessors(token_processors, config, token_processors_config, log);
+    {
+        try
+        {
+            parseTokenProcessors(token_processors, config, token_processors_config, log);
+        }
+        catch (...)
+        {
+            /// Fail closed: if any token processor failed to parse, refuse to
+            /// activate token auth at all for this config cycle.
+            tryLogCurrentException(log,
+                "One or more token processors failed to parse; "
+                "disabling token authentication entirely until the configuration is fixed");
+            token_processors.clear();
+            token_auth_enabled = false;
+        }
+    }
     else
         LOG_INFO(log, "Token authentication is disabled, skipping token processors configuration");
 }
@@ -619,113 +654,233 @@ HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const S
 bool ExternalAuthenticators::checkCredentialsAgainstProcessor(const ITokenProcessor & processor,
                                                               TokenCredentials & credentials) const
 {
-    if (processor.resolveAndValidate(credentials))
+    if (!processor.resolveAndValidate(credentials))
     {
-        TokenCacheEntry cache_entry;
-        cache_entry.user_name = credentials.getUserName();
-        cache_entry.external_roles = credentials.getGroups();
-
-        auto default_expiration_ts = std::chrono::system_clock::now()
-                                     + std::chrono::seconds(processor.getTokenCacheLifetime());
-
-        if (credentials.getExpiresAt().has_value())
-        {
-            if (credentials.getExpiresAt().value() < default_expiration_ts)
-                cache_entry.expires_at = credentials.getExpiresAt().value();
-            else
-            {
-                LOG_TRACE(getLogger("AccessTokenAuthentication"), "Token for user {} expires after default cache lifetime; using default TTL by {}", credentials.getUserName(), processor.getProcessorName());
-                cache_entry.expires_at = default_expiration_ts;
-            }
-        }
-        else
-        {
-            cache_entry.expires_at = default_expiration_ts;
-        }
-
-        LOG_DEBUG(getLogger("AccessTokenAuthentication"), "Authenticated user {} with access token by {}", credentials.getUserName(), processor.getProcessorName());
-
-        // CHeck if a cache entry for the same user but with another token exists -- old cache entry is considered outdated and removed
-        auto old_token_iter = username_to_access_token_cache.find(cache_entry.user_name);
-        if (old_token_iter != username_to_access_token_cache.end())
-        {
-            access_token_to_username_cache.erase(old_token_iter->second);
-            username_to_access_token_cache.erase(old_token_iter);
-        }
-
-        access_token_to_username_cache[credentials.getToken()] = cache_entry;
-        username_to_access_token_cache[cache_entry.user_name] = credentials.getToken();
-        LOG_TRACE(getLogger("AccessTokenAuthentication"), "Cache entry for user {} added", cache_entry.user_name);
-
-        return true;
+        LOG_TRACE(getLogger("AccessTokenAuthentication"), "Failed authentication with access token by {}", processor.getProcessorName());
+        return false;
     }
-    LOG_TRACE(getLogger("AccessTokenAuthentication"), "Failed authentication with access token by {}", processor.getProcessorName());
 
-    return false;
+    /// Clamp the credentials' expires_at to the processor's cache lifetime so
+    /// upper layers (notably `Session`) bind their lifetime to whichever is
+    /// shorter -- the token's own expiry or the operator-configured TTL. This
+    /// is a *post-validation finalization* of the credentials, not a cache
+    /// write; the actual token-cache entry is written by `primeTokenCache`,
+    /// and only after any per-user `jwt_claims` policy has also accepted the
+    /// token (see `checkTokenCredentials`).
+    auto default_expiration_ts = std::chrono::system_clock::now()
+                                 + std::chrono::seconds(processor.getTokenCacheLifetime());
+
+    if (credentials.getExpiresAt().has_value())
+    {
+        if (credentials.getExpiresAt().value() >= default_expiration_ts)
+        {
+            LOG_TRACE(getLogger("AccessTokenAuthentication"), "Token for user {} expires after default cache lifetime; using default TTL by {}", credentials.getUserName(), processor.getProcessorName());
+            credentials.setExpiresAt(default_expiration_ts);
+        }
+    }
+    else
+    {
+        credentials.setExpiresAt(default_expiration_ts);
+    }
+
+    LOG_DEBUG(getLogger("AccessTokenAuthentication"), "Authenticated user {} with access token by {}", quoteString(credentials.getUserName()), processor.getProcessorName());
+    return true;
 }
 
-bool ExternalAuthenticators::checkTokenCredentials(const TokenCredentials & credentials, const String & processor_name, const String & jwt_claims) const
+void ExternalAuthenticators::primeTokenCache(const ITokenProcessor & processor,
+                                             const TokenCredentials & credentials) const
 {
-    std::lock_guard lock{mutex};
+    /// Build a cache entry from the credentials state that
+    /// `checkCredentialsAgainstProcessor` finalized. The caller is responsible
+    /// for invoking this only after both processor validation AND the per-user
+    /// `jwt_claims` policy have accepted the token -- caching before claims
+    /// have been evaluated would let later unconstrained lookups (e.g. the
+    /// HTTP/TCP pre-user-lookup call which passes empty `jwt_claims`) hit a
+    /// cache entry that never actually satisfied the user's policy.
+    TokenCacheEntry cache_entry;
+    cache_entry.user_name = credentials.getUserName();
+    cache_entry.external_roles = credentials.getGroups();
+    cache_entry.processor_name = processor.getProcessorName();
+    cache_entry.expires_at = credentials.getExpiresAt().value_or(
+        std::chrono::system_clock::now() + std::chrono::seconds(processor.getTokenCacheLifetime()));
 
-    if (!token_auth_enabled)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Token authentication is disabled");
+    /// If the same token already has a forward entry that maps to a DIFFERENT
+    /// user_name, clean up the stale reverse entry for that other user before
+    /// we overwrite the forward entry. This happens when two processors extract
+    /// different `username_claim` values from the same token (e.g. processor X
+    /// uses `sub`, processor Y uses `email`): without this, the rotation step
+    /// below would not see the old user's entry in the reverse map and the
+    /// bi-map would diverge -- forward saying token -> new_user while a stale
+    /// reverse says old_user -> token, surfacing later as a dangling reverse
+    /// pointer that breaks the single-token-per-user invariant.
+    auto existing_forward = access_token_to_username_cache.find(credentials.getToken());
+    if (existing_forward != access_token_to_username_cache.end()
+        && existing_forward->second.user_name != cache_entry.user_name)
+    {
+        auto stale_reverse = username_to_access_token_cache.find(existing_forward->second.user_name);
+        if (stale_reverse != username_to_access_token_cache.end()
+            && stale_reverse->second == credentials.getToken())
+            username_to_access_token_cache.erase(stale_reverse);
+    }
 
-    if (token_processors.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Token authentication is not configured");
+    /// If a previous entry exists for the same user under a different token,
+    /// drop it -- the user has rotated tokens and the old one is now stale.
+    auto old_token_iter = username_to_access_token_cache.find(cache_entry.user_name);
+    if (old_token_iter != username_to_access_token_cache.end())
+    {
+        access_token_to_username_cache.erase(old_token_iter->second);
+        username_to_access_token_cache.erase(old_token_iter);
+    }
 
-    /// Per-user claims restriction applies only to JWT processors; opaque/access token processors ignore it.
+    access_token_to_username_cache[credentials.getToken()] = cache_entry;
+    username_to_access_token_cache[cache_entry.user_name] = credentials.getToken();
+    LOG_TRACE(getLogger("AccessTokenAuthentication"), "Cache entry for user {} added", quoteString(cache_entry.user_name));
+}
+
+bool ExternalAuthenticators::checkTokenCredentials(const TokenCredentials & credentials,
+                                                   const String & processor_name,
+                                                   const String & jwt_claims,
+                                                   bool prime_cache_on_success) const
+{
+    /// Per-user claims restriction is binding: when a user is configured with `jwt_claims`,
+    /// authentication is only allowed via processors that can actually evaluate those claims
+    /// (i.e. JWT processors). If the resolving processor cannot enforce the restriction we
+    /// must deny -- silently treating it as "no restriction" would let an opaque/access-token
+    /// processor authenticate a token that fails the user's per-user policy.
     auto check_claims_if_required = [&](const ITokenProcessor & processor) -> bool
     {
         if (jwt_claims.empty())
             return true;
         if (!processor.supportsJwtClaimsRestriction())
-            return true;
+        {
+            LOG_TRACE(getLogger("AccessTokenAuthentication"),
+                      "Processor {} does not support per-user JWT claims restriction; "
+                      "denying authentication that requires claims to be checked",
+                      processor.getProcessorName());
+            return false;
+        }
         return processor.checkClaims(credentials, jwt_claims);
     };
 
-    /// lookup token in local cache if not expired.
-    auto cached_entry_iter = access_token_to_username_cache.find(credentials.getToken());
-    if (cached_entry_iter != access_token_to_username_cache.end())
+    /// Snapshot the processor set under the mutex, then run the expensive
+    /// crypto verify WITHOUT the mutex (M-20). `shared_ptr` keeps each
+    /// processor alive even if a config reload swaps `token_processors` in
+    /// the middle of validation. Cache lookup stays under the mutex.
+    std::map<String, std::shared_ptr<ITokenProcessor>> processors_snapshot;
+
     {
-        if (cached_entry_iter->second.expires_at <= std::chrono::system_clock::now()) // Token found in cache, but already outdated -- need to remove it.
+        std::lock_guard lock{mutex};
+
+        if (!token_auth_enabled)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Token authentication is disabled");
+
+        if (token_processors.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Token authentication is not configured");
+
+        /// lookup token in local cache if not expired.
+        auto cached_entry_iter = access_token_to_username_cache.find(credentials.getToken());
+        if (cached_entry_iter != access_token_to_username_cache.end())
         {
-            const auto expired_user_name = cached_entry_iter->second.user_name;
-            LOG_TRACE(getLogger("AccessTokenAuthentication"), "Cache entry for user {} expired, removing", expired_user_name);
-            access_token_to_username_cache.erase(cached_entry_iter);
-            username_to_access_token_cache.erase(expired_user_name);
-        }
-        else
-        {
-            const auto & user_data = cached_entry_iter->second;
-            const_cast<TokenCredentials &>(credentials).setUserName(user_data.user_name);
-            const_cast<TokenCredentials &>(credentials).setGroups(user_data.external_roles);
-            LOG_TRACE(getLogger("AccessTokenAuthentication"), "Cache entry for user {} found, using it to authenticate", cached_entry_iter->second.user_name);
-            if (!jwt_claims.empty())
+            if (cached_entry_iter->second.expires_at <= std::chrono::system_clock::now()) // Token found in cache, but already outdated -- need to remove it.
             {
-                if (processor_name.empty())
-                    return false;
-                const auto it = token_processors.find(processor_name);
-                if (it == token_processors.end() || !check_claims_if_required(*it->second))
-                    return false;
+                const auto expired_user_name = cached_entry_iter->second.user_name;
+                const auto expired_token = cached_entry_iter->first;
+                LOG_TRACE(getLogger("AccessTokenAuthentication"), "Cache entry for user {} expired, removing", quoteString(expired_user_name));
+                access_token_to_username_cache.erase(cached_entry_iter);
+
+                /// Only unlink the reverse mapping if it currently points at the token
+                /// we just evicted. The bi-map invariant is maintained by
+                /// `primeTokenCache`, but if a reverse entry is somehow stale (or if a
+                /// concurrent rotation under the same mutex hold has already pointed
+                /// the user's reverse mapping at a fresh, still-valid token), erasing
+                /// blindly here would unlink that fresh token's reverse entry --
+                /// silently breaking the single-token-per-user invariant and extending
+                /// the stale token's effective retention.
+                auto reverse_it = username_to_access_token_cache.find(expired_user_name);
+                if (reverse_it != username_to_access_token_cache.end() && reverse_it->second == expired_token)
+                    username_to_access_token_cache.erase(reverse_it);
             }
-            return true;
+            /// Enforce the per-user processor pin even on cache hit. A cache entry produced by
+            /// processor A must NOT be used to satisfy an authentication request that is pinned
+            /// to a different processor B.When the caller did not pin a processor (processor_name is
+            /// empty) any cached entry is acceptable.
+            else if (processor_name.empty() || processor_name == cached_entry_iter->second.processor_name)
+            {
+                /// Evaluate per-user claims FIRST, before mutating the outer
+                /// `TokenCredentials`. The `const_cast`-ed `setUserName`/`setGroups`/
+                /// `setExpiresAt` writes below would otherwise leak the cached
+                /// identity into the caller's credentials object even on rejection.
+                if (!jwt_claims.empty())
+                {
+                    const auto it = token_processors.find(cached_entry_iter->second.processor_name);
+                    if (it == token_processors.end() || !check_claims_if_required(*it->second))
+                        return false;
+                }
+
+                const auto & user_data = cached_entry_iter->second;
+                const_cast<TokenCredentials &>(credentials).setUserName(user_data.user_name);
+                const_cast<TokenCredentials &>(credentials).setGroups(user_data.external_roles);
+                const_cast<TokenCredentials &>(credentials).setExpiresAt(user_data.expires_at);
+                LOG_TRACE(getLogger("AccessTokenAuthentication"), "Cache entry for user {} found, using it to authenticate", quoteString(user_data.user_name));
+                return true;
+            }
+            else
+            {
+                LOG_TRACE(getLogger("AccessTokenAuthentication"),
+                          "Cached token entry was produced by processor {}, but authentication is pinned to {}; "
+                          "ignoring cache and re-authenticating via the pinned processor",
+                          cached_entry_iter->second.processor_name, processor_name);
+            }
         }
+
+        processors_snapshot = token_processors;
     }
+
+    /// Validation path runs WITHOUT the mutex. RSA/ECDSA verifies and any
+    /// expensive claim matching no longer serialize the auth subsystem.
+    auto try_processor = [&](const std::shared_ptr<ITokenProcessor> & proc) -> std::optional<bool>
+    {
+        if (!checkCredentialsAgainstProcessor(*proc, const_cast<TokenCredentials &>(credentials)))
+            return std::nullopt;
+        if (!check_claims_if_required(*proc))
+            return false;
+        if (prime_cache_on_success)
+        {
+            std::lock_guard lock{mutex};
+            primeTokenCache(*proc, credentials);
+        }
+        return true;
+    };
 
     if (processor_name.empty())
     {
-        for (const auto & it : token_processors)
+        for (const auto & [name, proc] : processors_snapshot)
         {
-            if (checkCredentialsAgainstProcessor(*it.second, const_cast<TokenCredentials &>(credentials)))
-                return check_claims_if_required(*it.second);
+            if (!jwt_claims.empty() && !proc->supportsJwtClaimsRestriction())
+            {
+                LOG_TRACE(getLogger("AccessTokenAuthentication"),
+                          "Skipping processor {} during auto-discovery: it cannot enforce per-user JWT claims",
+                          proc->getProcessorName());
+                continue;
+            }
+            if (auto result = try_processor(proc); result.has_value())
+                return *result;
         }
     }
     else
     {
-        const auto it = token_processors.find(processor_name);
-        if (it != token_processors.end() && checkCredentialsAgainstProcessor(*it->second, const_cast<TokenCredentials &>(credentials)))
-            return check_claims_if_required(*it->second);
+        const auto it = processors_snapshot.find(processor_name);
+        if (it == processors_snapshot.end())
+            return false;
+        if (!jwt_claims.empty() && !it->second->supportsJwtClaimsRestriction())
+        {
+            LOG_TRACE(getLogger("AccessTokenAuthentication"),
+                      "Pinned processor {} cannot enforce per-user JWT claims; denying authentication",
+                      it->second->getProcessorName());
+            return false;
+        }
+        if (auto result = try_processor(it->second); result.has_value())
+            return *result;
     }
 
     return false;

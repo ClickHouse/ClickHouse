@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <jwt-cpp/jwt.h>
 #include <jwt-cpp/traits/kazuho-picojson/traits.h>
+#include <filesystem>
 #include <shared_mutex>
 
 #include <Poco/URI.h>
@@ -44,7 +45,14 @@ private:
 
     std::shared_mutex mutex;
     std::optional<JWKSType> cached_jwks;
-    std::chrono::time_point<std::chrono::high_resolution_clock> last_request_send;
+    /// `steady_clock` (not `system_clock`): refresh-cooldown is an elapsed-time
+    /// measurement; a wall-clock jump must not skip or freeze it.
+    /// `std::nullopt` means "no fetch has ever been attempted" -- needed to
+    /// distinguish a never-attempted state from a recently-failed one, because
+    /// the steady-clock epoch may sit only a short distance in the past on
+    /// freshly-booted hosts / containers with isolated CLOCK_MONOTONIC, making
+    /// a zero-initialized time_point look like a "recent" attempt.
+    std::optional<std::chrono::time_point<std::chrono::steady_clock>> last_request_send;
 };
 
 struct StaticJWKSParams
@@ -60,12 +68,25 @@ class StaticJWKS : public IJWKSProvider
 public:
     explicit StaticJWKS(const StaticJWKSParams &params);
 
-private:
-    JWKSType getJWKS() override
-    {
-        return jwks;
-    }
+    /// Reload the JWKS from disk if `static_jwks_file` was specified and the
+    /// file's mtime has advanced since the last load. Inline `static_jwks`
+    /// (no file path) is returned from the in-memory copy without I/O.
+    /// Without this, rotating the underlying file did NOT refresh the
+    /// in-memory keys -- admins had to trigger a full
+    /// `setExternalAuthenticatorsConfig` reload to pick up the new file.
+    JWKSType getJWKS() override;
 
+private:
+    void reloadFromFileIfChangedNoLock();
+
+    /// Source path -- empty when JWKS came from inline `<static_jwks>` config.
+    String static_jwks_file;
+    /// `mtime` of the file at the most recent successful load. Used to detect
+    /// rotation. `file_time_type::min()` means "not loaded from a file" or
+    /// "never seen the file yet".
+    std::filesystem::file_time_type last_loaded_mtime = std::filesystem::file_time_type::min();
+
+    mutable std::shared_mutex mutex;
     JWKSType jwks;
 };
 

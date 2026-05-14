@@ -127,8 +127,14 @@ private:
     std::vector<UUID> external_roles;
     AuthenticationData user_authenticated_with;
 
+<<<<<<< HEAD
     /// TLS client certificate presented on this connection, if any.
     std::optional<ClientCertificateInfo> certificate_info;
+=======
+    /// When the user was authenticated with a bearer/access token, this holds the
+    /// effective token expiry captured at authentication time.
+    std::optional<std::chrono::system_clock::time_point> auth_token_expires_at;
+>>>>>>> 52e87d75685 (Merge pull request #1777 from Altinity/fix/antalya-26.3/oauth-address-audit)
 
     ContextMutablePtr session_context;
     mutable bool query_context_created = false;

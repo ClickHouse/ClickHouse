@@ -699,6 +699,12 @@ void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const Strin
 
 void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
+    /// Re-read `enable_token_auth` on every config reload. `setupFromMainConfig`
+    /// runs only once at startup, so without this re-sync flipping the flag in
+    /// the config and triggering a reload would silently leave the previous
+    /// value in place -- operators who toggle token auth off in response to an
+    /// IdP outage or a credential leak would see no effect until restart.
+    setTokenAuthEnabled(config.getBool("enable_token_auth", true));
     external_authenticators->setConfiguration(config, getLogger(), isTokenAuthEnabled());
 }
 

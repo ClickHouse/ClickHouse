@@ -9,10 +9,12 @@
             <verifier_leeway>60</verifier_leeway>
         </keycloak_jwks>
 
-        <!-- Validate JWT via OIDC discovery document -->
+        <!-- Validate JWT via OIDC discovery document. The test Keycloak speaks
+             plain HTTP, so we opt out of the HTTPS-on-discovery-URLs check. -->
         <keycloak_discovery>
             <type>openid</type>
             <configuration_endpoint>http://keycloak:8080/realms/clickhouse-test/.well-known/openid-configuration</configuration_endpoint>
+            <allow_http_discovery_urls>true</allow_http_discovery_urls>
             <username_claim>preferred_username</username_claim>
             <verifier_leeway>60</verifier_leeway>
         </keycloak_discovery>

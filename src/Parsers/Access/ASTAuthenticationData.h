@@ -41,7 +41,20 @@ public:
 
     bool contains_password = false;
     bool contains_hash = false;
+<<<<<<< HEAD
     bool jwt_use_authenticator = false;
+=======
+    /// IDENTIFIED WITH jwt accepts two optional clauses:
+    ///   PROCESSOR '<token-processor-name>'
+    ///   CLAIMS    '<json>'
+    /// Both are stored in `children` in this order; flags below tell which slots
+    /// are populated (children layout depends on which were specified). The
+    /// processor pin is what protects against the H-14 / H-17 cache-priming
+    /// bypass for SQL-declared JWT users; without it the per-user lookup goes
+    /// through the iterate-all-processors auto-discovery path with empty pin.
+    bool has_jwt_processor = false;
+    bool has_jwt_claims = false;
+>>>>>>> 52e87d75685 (Merge pull request #1777 from Altinity/fix/antalya-26.3/oauth-address-audit)
     ASTPtr valid_until;
 
 protected:

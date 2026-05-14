@@ -12,6 +12,8 @@
 namespace DB
 {
 
+class RemoteHostFilter;
+
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
@@ -81,6 +83,12 @@ struct StaticKeyJwtParams
 
     /// JWT claims to validate (optional)
     String claims;
+
+    /// Clock-drift tolerance for `exp`/`nbf`/`iat` checks, in seconds.
+    /// jwt-cpp's default is 0, which rejects tokens on any client/server skew.
+    /// 60 seconds matches the OpenID processor's default and standard
+    /// industry practice (RFC 7519 §4.1.4 hints at "small leeway").
+    UInt64 verifier_leeway = 60;
 };
 
 class StaticKeyJwtProcessor : public ITokenProcessor
@@ -92,6 +100,7 @@ public:
                                    const String & groups_claim_,
                                    const String & expected_issuer_,
                                    const String & expected_audience_,
+                                   const String & expected_typ_,
                                    bool allow_no_expiration_,
                                    const StaticKeyJwtParams & params);
 
@@ -103,6 +112,8 @@ private:
     const String claims;
     const String expected_issuer;
     const String expected_audience;
+    /// Required JWT `typ` header (RFC 8725 §3.11). Empty = no enforcement.
+    const String expected_typ;
     const bool allow_no_expiration;
     jwt::verifier<jwt::default_clock, jwt::traits::kazuho_picojson> verifier = jwt::verify();
 };
@@ -117,13 +128,11 @@ public:
                               const String & groups_claim_,
                               const String & expected_issuer_,
                               const String & expected_audience_,
+                              const String & expected_typ_,
                               bool allow_no_expiration_,
                               const String & claims_,
                               size_t verifier_leeway_,
-                              std::shared_ptr<IJWKSProvider> provider_)
-                              : ITokenProcessor(processor_name_, token_cache_lifetime_, username_claim_, groups_claim_),
-                                claims(claims_), expected_issuer(expected_issuer_), expected_audience(expected_audience_),
-                                allow_no_expiration(allow_no_expiration_), provider(provider_), verifier_leeway(verifier_leeway_) {}
+                              std::shared_ptr<IJWKSProvider> provider_);
 
     explicit JwksJwtProcessor(const String & processor_name_,
                               UInt64 token_cache_lifetime_,
@@ -131,6 +140,7 @@ public:
                               const String & groups_claim_,
                               const String & expected_issuer_,
                               const String & expected_audience_,
+                              const String & expected_typ_,
                               bool allow_no_expiration_,
                               const String & claims_,
                               size_t verifier_leeway_,
@@ -142,6 +152,7 @@ public:
                                                  groups_claim_,
                                                  expected_issuer_,
                                                  expected_audience_,
+                                                 expected_typ_,
                                                  allow_no_expiration_,
                                                  claims_,
                                                  verifier_leeway_,
@@ -155,8 +166,13 @@ private:
     const String claims;
     const String expected_issuer;
     const String expected_audience;
+    /// Required JWT `typ` header (RFC 8725 §3.11). Empty = no enforcement.
+    const String expected_typ;
     const bool allow_no_expiration;
-    mutable jwt::verifier<jwt::default_clock, jwt::traits::kazuho_picojson> verifier = jwt::verify();
+    /// Verifier is built fresh per call inside `resolveAndValidate` (it depends
+    /// on the current JWT's `kid` -> JWKS-resolved key, which can rotate). A
+    /// local-per-call verifier also makes the function thread-safe so callers
+    /// can invoke it without holding the global `ExternalAuthenticators::mutex`.
     std::shared_ptr<IJWKSProvider> provider;
     const size_t verifier_leeway;
 };
@@ -169,10 +185,13 @@ public:
     GoogleTokenProcessor(const String & processor_name_,
                          UInt64 token_cache_lifetime_,
                          const String & username_claim_,
-                         const String & groups_claim_)
-            : ITokenProcessor(processor_name_, token_cache_lifetime_, username_claim_, groups_claim_) {}
+                         const String & groups_claim_,
+                         const String & expected_audience_);
 
     bool resolveAndValidate(TokenCredentials & credentials) const override;
+
+private:
+    const String expected_audience;
 };
 
 class AzureTokenProcessor : public ITokenProcessor
@@ -181,10 +200,13 @@ public:
     AzureTokenProcessor(const String & processor_name_,
                         UInt64 token_cache_lifetime_,
                         const String & username_claim_,
-                        const String & groups_claim_)
-            : ITokenProcessor(processor_name_, token_cache_lifetime_, username_claim_, groups_claim_) {}
+                        const String & groups_claim_,
+                        const String & expected_audience_);
 
     bool resolveAndValidate(TokenCredentials & credentials) const override;
+
+private:
+    const String expected_audience;
 };
 
 class OpenIdTokenProcessor : public ITokenProcessor
@@ -214,7 +236,9 @@ public:
                          bool allow_no_expiration_,
                          const String & openid_config_endpoint_,
                          UInt64 verifier_leeway_,
-                         UInt64 jwks_cache_lifetime_);
+                         UInt64 jwks_cache_lifetime_,
+                         const RemoteHostFilter & remote_host_filter_,
+                         bool allow_http_discovery_urls_);
 
     bool resolveAndValidate(TokenCredentials & credentials) const override;
 private:
