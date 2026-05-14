@@ -11,6 +11,9 @@ on: # yamllint disable-line rule:truthy
     - cron: '0 * * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   CherryPick:
     runs-on: [self-hosted, style-checker-aarch64]
