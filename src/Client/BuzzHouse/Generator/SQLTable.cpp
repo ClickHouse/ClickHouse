@@ -2649,7 +2649,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
                   else
                   {
                       dsd->set_host(sc.server_hostname);
-                      dsd->set_port(std::to_string(sc.port));
+                      dsd->set_port(std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
                       dsd->set_user(sc.user);
                       dsd->set_password(sc.password);
                   }
