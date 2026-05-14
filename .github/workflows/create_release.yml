@@ -128,6 +128,17 @@ jobs:
         run: |
           python3 ./tests/ci/create_release.py --set-progress-started --progress "update changelog, docker version, security"
 
+          # On a rerun the PR may already be open or merged (the branch is deleted
+          # on merge, so a branch-existence check is not sufficient).
+          # Closed-without-merge does not count — regenerate in that case.
+          if gh pr list --repo "${{ github.repository }}" \
+              --head "auto/${{ env.RELEASE_TAG }}" --state all \
+              --json number,state --jq '.[] | select(.state == "OPEN" or .state == "MERGED") | .number' \
+              2>/dev/null | grep -q .; then
+            echo "ChangeLog PR for auto/${{ env.RELEASE_TAG }} already exists or was merged — skipping generation on rerun"
+            exit 0
+          fi
+
           # git checkout master  # in case WF started from feature branch
           echo "List versions"
           ./utils/list-versions/list-versions.sh > ./utils/list-versions/version_date.tsv

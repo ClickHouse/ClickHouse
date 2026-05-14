@@ -18,6 +18,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
@@ -66,8 +67,8 @@ struct DeleteFileWriteResult
 {
     /// Metadata path (e.g. "wasb://container@account/table/data/uuid-deletes.parquet")
     Iceberg::IcebergPathFromMetadata path;
-    Int32 total_rows;
-    Int32 total_bytes;
+    Int64 total_rows;
+    Int64 total_bytes;
 };
 
 using DataFileWriteResultByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher>;
@@ -371,9 +372,9 @@ static bool writeMetadataFiles(
     if (metadata->has(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
-    Int32 total_rows = 0;
-    Int32 total_bytes = 0;
-    Int32 total_files = 0;
+    Int64 total_rows = 0;
+    Int64 total_bytes = 0;
+    Int64 total_files = 0;
     for (const auto & [_, delete_filename] : delete_filenames.delete_file)
     {
         total_rows += delete_filename.total_rows;
@@ -457,6 +458,8 @@ static bool writeMetadataFiles(
                     partition_key,
                     chunk_partitioner ? chunk_partitioner->getResultTypes() : std::vector<DataTypePtr>{},
                     {delete_filename.path},
+                    {static_cast<UInt64>(delete_filename.total_rows)},
+                    {static_cast<UInt64>(delete_filename.total_bytes)},
                     delete_filenames.delete_statistic.at(partition_key),
                     sample_block,
                     new_snapshot,
@@ -593,6 +596,7 @@ void mutate(
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations are supported only for the second version of iceberg format");
         auto partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
@@ -619,15 +623,28 @@ void mutate(
             }
         }
 
-        const auto sample_block = std::make_shared<const Block>(storage_metadata->getSampleBlock());
+        TableStateSnapshot current_iceberg_snapshot;
+        current_iceberg_snapshot.metadata_file_path = metadata_path;
+        current_iceberg_snapshot.metadata_version = last_version;
+        current_iceberg_snapshot.schema_id = static_cast<Int32>(current_schema_id);
+        if (metadata->has(Iceberg::f_current_snapshot_id))
+        {
+            Int64 snapshot_id_val = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+            if (snapshot_id_val >= 0)
+                current_iceberg_snapshot.snapshot_id = snapshot_id_val;
+        }
+        auto fresh_storage_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_metadata);
+        fresh_storage_metadata->setDataLakeTableState(DataLakeTableStateSnapshot{current_iceberg_snapshot});
+
+        const auto sample_block = std::make_shared<const Block>(fresh_storage_metadata->getSampleBlock());
         std::optional<ChunkPartitioner> chunk_partitioner;
         if (partititon_spec->has(Iceberg::f_fields) && partititon_spec->getArray(Iceberg::f_fields)->size() > 0)
-            chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
+            chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema->getArray(Iceberg::f_fields), context, sample_block);
 
         auto mutation_files = writeDataFiles(
             commands,
             context,
-            storage_metadata,
+            fresh_storage_metadata,
             storage_id,
             object_storage,
             write_format,
@@ -703,7 +720,8 @@ void alter(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
     size_t i = 0;
-    while (i++ < MAX_TRANSACTION_RETRIES)
+    bool succeeded = false;
+    while (i < MAX_TRANSACTION_RETRIES)
     {
         auto log = getLogger("IcebergMutations");
         auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
@@ -761,11 +779,20 @@ void alter(
                 object_storage,
                 context,
                 data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+        {
+            succeeded = true;
             break;
+        }
+        ++i;
     }
 
-    if (i == MAX_TRANSACTION_RETRIES)
+    if (!succeeded)
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
+
+    /// Invalidate the metadata files cache so that subsequent operations on this table see the
+    /// schema we just wrote. See `PersistentTableComponents::invalidateMetadataCache` for the
+    /// rationale.
+    persistent_table_components.invalidateMetadataCache();
 }
 
 #endif

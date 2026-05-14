@@ -292,27 +292,65 @@ struct BinaryOperation
     template <OpCase op_case>
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr)
     {
+        /// No mainstream ISA has SIMD integer division (see `DivideIntegralImpl`).
+        /// The compiler "vectorizes" by extracting each element, doing scalar div,
+        /// and re-inserting — bloating the loop ~3-5x for no benefit. Operations
+        /// that use div/mod set `no_vectorize` to opt out.
+        static constexpr bool disable_vectorization = requires { requires bool(Op::no_vectorize); };
+
         if constexpr (op_case == OpCase::RightConstant)
         {
             if (right_nullmap && (*right_nullmap)[0])
                 return;
 
-            for (size_t i = 0; i < size; ++i)
-                c[i] = Op::template apply<ResultType>(a[i], *b);
+            if constexpr (disable_vectorization)
+            {
+                #pragma clang loop vectorize(disable)
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = Op::template apply<ResultType>(a[i], *b);
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = Op::template apply<ResultType>(a[i], *b);
+            }
         }
         else
         {
             if (right_nullmap)
             {
-                for (size_t i = 0; i < size; ++i)
-                    if ((*right_nullmap)[i])
-                        c[i] = ResultType();
-                    else
-                        apply<op_case>(a, b, c, i);
+                if constexpr (disable_vectorization)
+                {
+                    #pragma clang loop vectorize(disable)
+                    for (size_t i = 0; i < size; ++i)
+                        if ((*right_nullmap)[i])
+                            c[i] = ResultType();
+                        else
+                            apply<op_case>(a, b, c, i);
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        if ((*right_nullmap)[i])
+                            c[i] = ResultType();
+                        else
+                            apply<op_case>(a, b, c, i);
+                }
             }
             else
-                for (size_t i = 0; i < size; ++i)
-                    apply<op_case>(a, b, c, i);
+            {
+                if constexpr (disable_vectorization)
+                {
+                    #pragma clang loop vectorize(disable)
+                    for (size_t i = 0; i < size; ++i)
+                        apply<op_case>(a, b, c, i);
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        apply<op_case>(a, b, c, i);
+                }
+            }
         }
     }
 
@@ -829,6 +867,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
 
     ContextPtr context;
+
     bool check_decimal_overflow = true;
 
     static bool castType(const IDataType * type, auto && f)
@@ -889,8 +928,11 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
     {
+        if (!context_)
+            return {};
+
         bool first_arg_is_date_or_time_or_datetime_or_string = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type0) || isString(type0);
         bool second_arg_is_date_or_time_or_datetime_or_string = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type1) || isString(type1);
 
@@ -942,12 +984,15 @@ class FunctionBinaryArithmetic : public IFunction
                 function_name = is_plus ? "addSeconds" : "subtractSeconds";
         }
 
-        return FunctionFactory::instance().get(function_name, context);
+        return FunctionFactory::instance().get(function_name, context_);
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForDateTupleOfIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    getFunctionForDateTupleOfIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
     {
+        if (!context_)
+            return {};
+
         bool first_arg_is_date_or_datetime = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type0);
         bool second_arg_is_date_or_datetime = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type1);
 
@@ -977,12 +1022,15 @@ class FunctionBinaryArithmetic : public IFunction
             function_name = "subtractTupleOfIntervals";
         }
 
-        return FunctionFactory::instance().get(function_name, context);
+        return FunctionFactory::instance().get(function_name, context_);
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForMergeIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    getFunctionForMergeIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
     {
+        if (!context_)
+            return {};
+
         /// Special case when the function is plus or minus, first argument is Interval or Tuple of Intervals
         ///  and the second argument is the Interval of a different kind.
         /// We construct another function (example: addIntervals) and call it
@@ -1018,12 +1066,15 @@ class FunctionBinaryArithmetic : public IFunction
             function_name = "subtractInterval";
         }
 
-        return FunctionFactory::instance().get(function_name, context);
+        return FunctionFactory::instance().get(function_name, context_);
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
     {
+        if (!context_)
+            return {};
+
         if (!isTuple(removeNullable(type0)) || !isTuple(removeNullable(type1)))
             return {};
 
@@ -1047,12 +1098,15 @@ class FunctionBinaryArithmetic : public IFunction
             function_name = "dotProduct";
         }
 
-        return FunctionFactory::instance().get(function_name, context);
+        return FunctionFactory::instance().get(function_name, context_);
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
     {
+        if (!context_)
+            return {};
+
         if (!(isTuple(removeNullable(type0)) && isNumber(removeNullable(type1)))
             && !(isTuple(removeNullable(type1)) && isNumber(removeNullable(type0))))
             return {};
@@ -1096,7 +1150,7 @@ class FunctionBinaryArithmetic : public IFunction
             }
         }
 
-        return FunctionFactory::instance().get(function_name, context);
+        return FunctionFactory::instance().get(function_name, context_);
     }
 
     static bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1)
@@ -1207,6 +1261,21 @@ class FunctionBinaryArithmetic : public IFunction
 
         /// We use exponentiation by squaring algorithm to perform multiplying aggregate states by N in O(log(N)) operations
         /// https://en.wikipedia.org/wiki/Exponentiation_by_squaring
+        ///
+        /// The squaring step computes vec_from[i] := vec_from[i] + vec_from[i].
+        /// Calling `function->merge(state, state)` directly is undefined behaviour:
+        /// many aggregate function `merge` implementations append the source's
+        /// internal storage to the destination's. When `src == dst` and the
+        /// destination reallocates, the source iterators (pointing to the freed
+        /// buffer) are dereferenced, producing a heap-use-after-free. We avoid
+        /// the alias by copying `vec_from` into an independent column first.
+        ///
+        /// The temporary column is constructed inside the squaring branch so
+        /// that its arena is released at the end of each iteration. Re-using a
+        /// single column across iterations would leak per-iteration state
+        /// memory into the column's monotonic arena (`popBack` decrements the
+        /// row count but does not free arena allocations), causing the
+        /// temporary footprint to grow with the multiplier.
         while (m)
         {
             if (m % 2)
@@ -1217,8 +1286,15 @@ class FunctionBinaryArithmetic : public IFunction
             }
             else
             {
+                auto column_temp = ColumnAggregateFunction::create(function);
+                column_temp->reserve(size);
                 for (size_t i = 0; i < size; ++i)
-                    function->merge(vec_from[i], vec_from[i], arena.get());
+                    column_temp->insertFrom(vec_from[i]);
+                auto & vec_temp = column_temp->getData();
+
+                for (size_t i = 0; i < size; ++i)
+                    function->merge(vec_from[i], vec_temp[i], arena.get());
+
                 m /= 2;
             }
         }
@@ -1963,11 +2039,11 @@ class FunctionBinaryArithmetic : public IFunction
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBinaryArithmetic>(context_); }
 
     explicit FunctionBinaryArithmetic(ContextPtr context_)
     :   context(context_),
-        check_decimal_overflow(decimalCheckArithmeticOverflow(context))
+        check_decimal_overflow(decimalCheckArithmeticOverflow(context_))
     {}
 
     String getName() const override { return name; }
@@ -1997,7 +2073,7 @@ public:
         return getReturnTypeImplStatic(arguments, context);
     }
 
-    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context_)
     {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
@@ -2027,7 +2103,7 @@ public:
                     isIPv4(arguments[1]) ? std::make_shared<DataTypeUInt32>() : arguments[1],
             };
 
-            return getReturnTypeImplStatic2(new_arguments, context);
+            return getReturnTypeImplStatic2(new_arguments, context_);
         }
 
         /// Special case -one argument is IPv6 and the other is Ipv4 or an integer
@@ -2039,7 +2115,7 @@ public:
                     isIPv6(arguments[1]) ? std::make_shared<DataTypeUInt128>() : arguments[1],
             };
 
-            return getReturnTypeImplStatic2(new_arguments, context);
+            return getReturnTypeImplStatic2(new_arguments, context_);
         }
 
 
@@ -2051,7 +2127,7 @@ public:
                         static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
                         static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
                 };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
+                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
             }
         }
 
@@ -2133,7 +2209,7 @@ public:
                         static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
                         arguments[1],
                 };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
+                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
             }
             if (isNumber(arguments[0]) && isArray(arguments[1]))
             {
@@ -2141,17 +2217,17 @@ public:
                         arguments[0],
                         static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
                 };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
+                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
             }
         }
 
-        return getReturnTypeImplStatic2(arguments, context);
+        return getReturnTypeImplStatic2(arguments, context_);
     }
 
-    static DataTypePtr getReturnTypeImplStatic2(const DataTypes & arguments, ContextPtr context)
+    static DataTypePtr getReturnTypeImplStatic2(const DataTypes & arguments, ContextPtr context_)
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
-        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
+        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context_))
         {
             ColumnsWithTypeAndName new_arguments(2);
 
@@ -2170,7 +2246,7 @@ public:
         }
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
-        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], arguments[1], context))
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], arguments[1], context_))
         {
             ColumnsWithTypeAndName new_arguments(2);
 
@@ -2182,7 +2258,7 @@ public:
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
-        if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(arguments[0], arguments[1], context))
+        if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(arguments[0], arguments[1], context_))
         {
             ColumnsWithTypeAndName new_arguments(2);
 
@@ -2198,7 +2274,7 @@ public:
         }
 
         /// Special case when the function is plus or minus, one of arguments is Interval/Tuple of Intervals and another is Interval.
-        if (auto function_builder = getFunctionForMergeIntervalsArithmetic(arguments[0], arguments[1], context))
+        if (auto function_builder = getFunctionForMergeIntervalsArithmetic(arguments[0], arguments[1], context_))
         {
             ColumnsWithTypeAndName new_arguments(2);
 
@@ -2210,7 +2286,7 @@ public:
         }
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
-        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0], arguments[1], context))
+        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0], arguments[1], context_))
         {
             ColumnsWithTypeAndName new_arguments(2);
 
@@ -2302,7 +2378,7 @@ public:
                     {
                         if constexpr (is_division)
                         {
-                            if (decimalCheckArithmeticOverflow(context))
+                            if (decimalCheckArithmeticOverflow(context_))
                             {
                                 /// Check overflow by using operands scale (based on big decimal division implementation details):
                                 /// big decimal arithmetic is based on big integers, decimal operands are converted to big integers
@@ -2864,15 +2940,24 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
         /// Process special case when operation is divide, intDiv or modulo and denominator
         /// is Nullable(Something) to prevent division by zero error.
-        if (division_by_nullable && !right_nullmap)
+        ///
+        /// `division_by_nullable` is captured at build time from the original arguments. When the
+        /// function is invoked recursively with already-stripped element types (e.g. from
+        /// `executeArrayWithNumericImpl` for `intDiv(Array, Nullable(N))`, where the framework
+        /// wraps a non-Nullable `Array` result), `right_argument.type` is no longer Nullable.
+        /// The Nullable special-case has already been handled by the outer call, so skip it here.
+        if (division_by_nullable && !right_nullmap && right_argument.type->isNullable())
         {
-            assert(right_argument.type->isNullable());
             bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
 
             const auto & null_bytemap = nullable_column->getNullMapData();
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
+            /// When the framework declared a non-Nullable result type (e.g. `Array` via `makeNullableSafe`),
+            /// `wrapInNullable` would produce a `ColumnNullable` that disagrees with `result_type`.
+            if (!result_type->isNullable())
+                return res;
             return wrapInNullable(res, arguments, result_type, input_rows_count);
         }
 
@@ -3126,9 +3211,9 @@ public:
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        ContextPtr context)
+        ContextPtr context_)
     {
-        return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context);
+        return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context_);
     }
 
     FunctionBinaryArithmeticWithConstants(
@@ -3432,9 +3517,9 @@ class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionOverloadResolverPtr create(ContextPtr context)
+    static FunctionOverloadResolverPtr create(ContextPtr context_)
     {
-        return std::make_unique<BinaryArithmeticOverloadResolver>(context);
+        return std::make_unique<BinaryArithmeticOverloadResolver>(context_);
     }
 
     explicit BinaryArithmeticOverloadResolver(ContextPtr context_) : context(context_) {}
