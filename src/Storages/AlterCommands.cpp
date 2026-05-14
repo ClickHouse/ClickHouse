@@ -973,6 +973,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 metadata.dropImplicitIndicesForColumn(column.name);
                 metadata.addImplicitIndicesForColumn(column, context);
             }
+            metadata.dropImplicitIndicesForVirtualColumns();
             metadata.addImplicitIndicesForVirtualColumns(context);
         }
     }

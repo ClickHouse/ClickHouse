@@ -944,6 +944,21 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
     }
 }
 
+void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column_name)
+{
+    for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
+    {
+        /// We check the index name rather than column_names because for ALIAS columns,
+        /// the column_names contains the resolved underlying expression columns, not the alias name.
+        /// For example, for `alias UInt64 ALIAS value>0`, the implicit index is named
+        /// `auto_minmax_index_alias` but its column_names contains `["value"]`, not `["alias"]`.
+        if (index_it->isImplicitlyCreated() && index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
+            index_it = secondary_indices.erase(index_it);
+        else
+            ++index_it;
+    }
+}
+
 void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr context)
 {
     auto add_for = [&](const String & column_name, bool enabled)
@@ -966,18 +981,24 @@ void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr con
     add_for(BlockOffsetColumn::name, add_minmax_index_for_block_offset_column);
 }
 
-void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column_name)
+void StorageInMemoryMetadata::dropImplicitIndicesForVirtualColumns()
 {
     for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
     {
-        /// We check the index name rather than column_names because for ALIAS columns,
-        /// the column_names contains the resolved underlying expression columns, not the alias name.
-        /// For example, for `alias UInt64 ALIAS value>0`, the implicit index is named
-        /// `auto_minmax_index_alias` but its column_names contains `["value"]`, not `["alias"]`.
-        if (index_it->isImplicitlyCreated() && index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
+        if (!index_it->isImplicitlyCreated())
+            continue;
+
+        if (index_it->type != "minmax")
+            continue;
+
+        if (index_it->column_names.size() != 1)
+            continue;
+
+        if (isVirtualColumn(index_it->column_names.front()))
             index_it = secondary_indices.erase(index_it);
         else
             ++index_it;
     }
 }
+
 }

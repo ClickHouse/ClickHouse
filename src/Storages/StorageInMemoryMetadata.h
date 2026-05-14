@@ -332,8 +332,10 @@ struct StorageInMemoryMetadata
     NameSet getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const;
 
     void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
-    void addImplicitIndicesForVirtualColumns(ContextPtr context);
     void dropImplicitIndicesForColumn(const String & column_name);
+
+    void addImplicitIndicesForVirtualColumns(ContextPtr context);
+    void dropImplicitIndicesForVirtualColumns();
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
