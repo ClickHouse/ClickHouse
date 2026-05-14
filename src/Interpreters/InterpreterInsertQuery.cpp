@@ -103,7 +103,6 @@ namespace MergeTreeSetting
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
-    extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
