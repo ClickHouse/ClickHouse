@@ -8,6 +8,7 @@
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
@@ -466,6 +467,28 @@ void StorageMergeTree::alter(
     }
     else
     {
+        /// Validate the resulting CREATE query BEFORE entering the
+        /// `currently_processing_in_background_mutex` (M1) critical section below.
+        /// `validateCreateQuery` (called from `applyMetadataChangesToCreateQuery`)
+        /// runs `validateColumnsDefaultsAndGetSampleBlock` -> `QueryAnalyzer`, which
+        /// acquires `QueryMetadataCache::storage_snapshot_cache_mutex` (M0) via
+        /// `MergeTreeData::getStorageSnapshot`. Query resolution paths take the
+        /// locks in the opposite order — M0 first, then M1 via `getMutationsSnapshot`
+        /// at `StorageMergeTree.cpp:getMutationsSnapshot` — so running validation
+        /// under M1 caused TSan lock-order inversion (STID 4119-5a23) and a real
+        /// cross-thread deadlock seen as `server died` in `03404_dynamic_in_interval_bug`.
+        ///
+        /// Doing the validation upfront (no locks held) catches the same errors
+        /// (e.g. `MULTIPLE_EXPRESSIONS_FOR_ALIAS` from `concat(str, 'b' AS a)` when an
+        /// existing column already binds alias `a` to a different expression — see
+        /// `tests/queries/0_stateless/03224_invalid_alter.sql` and
+        /// `03274_aliases_in_udf.sql`) without touching M0 from inside M1. Mirrors
+        /// the pattern in `StorageReplicatedMergeTree::alter`.
+        {
+            auto create_ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, local_context);
+            applyMetadataChangesToCreateQuery(create_ast, new_metadata, local_context);
+        }
+
         if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
         {
             int64_t prev_mutation = 0;
@@ -500,18 +523,11 @@ void StorageMergeTree::alter(
             /// find no file, and fill `d1` with default values — losing the renamed
             /// column's data. See issue #80648.
             ///
-            /// Pass `validate_new_create_query=false` to `alterTable` because the
-            /// validation it would otherwise run (`validateCreateQuery` ->
-            /// `validateColumnsDefaultsAndGetSampleBlock` -> `QueryAnalyzer`) acquires
-            /// `QueryMetadataCache::storage_snapshot_cache_mutex` (via
-            /// `MergeTreeData::getStorageSnapshot`) which is also taken (in the opposite
-            /// order) by query resolution paths that later call `getMutationsSnapshot`
-            /// and re-acquire this same `currently_processing_in_background_mutex`.
-            /// The new metadata is already validated upstream by
-            /// `AlterCommands::validate` (which runs the equivalent
-            /// `validateColumnsDefaultsAndGetSampleBlock` before `alter` is called),
-            /// so the redundant in-`alterTable` validation can be skipped. This
-            /// matches the pattern in `StorageReplicatedMergeTree`.
+            /// `alterTable` is called with `validate_new_create_query=false` because we
+            /// already validated the new CREATE query above (outside the M1 critical
+            /// section). Re-running that validation here would re-trigger the M0/M1
+            /// lock-order inversion described above. This mirrors the pattern in
+            /// `StorageReplicatedMergeTree::setTableStructure`.
             std::lock_guard background_lock(currently_processing_in_background_mutex);
 
             /// Reinitialize primary key because primary key column types might have changed.
