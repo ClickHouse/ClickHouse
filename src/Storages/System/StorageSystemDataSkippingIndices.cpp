@@ -8,6 +8,7 @@
 #include <Databases/IDatabase.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Storages/System/tryGetInMemoryMetadataPtrForSystemTable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -121,7 +122,7 @@ protected:
                 const auto table = tables_it->table();
                 if (!table)
                     continue;
-                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+                StorageMetadataPtr metadata_snapshot = tryGetInMemoryMetadataPtrForSystemTable(table, context);
                 if (!metadata_snapshot)
                     continue;
                 const auto indices = metadata_snapshot->getSecondaryIndices();

@@ -108,11 +108,7 @@ public:
 
     StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override
     {
-        auto target = tryGetTargetTable();
-        if (!target)
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
-
-        return target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        return getTargetTable()->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
     }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;

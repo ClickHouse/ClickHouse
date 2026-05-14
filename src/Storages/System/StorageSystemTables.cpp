@@ -29,6 +29,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Storages/System/tryGetInMemoryMetadataPtrForSystemTable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -294,7 +295,7 @@ protected:
     {
         if (table)
         {
-            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            StorageMetadataPtr metadata_snapshot = tryGetInMemoryMetadataPtrForSystemTable(table, context);
             if (!metadata_snapshot)
             {
                 columns[res_index++]->insertDefault();
@@ -597,7 +598,7 @@ protected:
 
                 StorageMetadataPtr metadata_snapshot;
                 if (table)
-                    metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+                    metadata_snapshot = tryGetInMemoryMetadataPtrForSystemTable(table, context);
 
                 if (columns_mask[src_index++])
                 {

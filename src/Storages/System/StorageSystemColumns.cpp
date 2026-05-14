@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Storages/System/tryGetInMemoryMetadataPtrForSystemTable.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
@@ -155,7 +156,9 @@ protected:
                     continue;
                 }
 
-                StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+                StorageMetadataPtr metadata_snapshot = tryGetInMemoryMetadataPtrForSystemTable(storage, context);
+                if (!metadata_snapshot)
+                    continue;
                 columns = metadata_snapshot->getColumns();
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.

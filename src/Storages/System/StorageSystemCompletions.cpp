@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/System/StorageSystemCompletions.h>
+#include <Storages/System/tryGetInMemoryMetadataPtrForSystemTable.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -88,7 +89,9 @@ void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    StorageMetadataPtr snapshot = table->getInMemoryMetadataPtr(context, false);
+    StorageMetadataPtr snapshot = tryGetInMemoryMetadataPtrForSystemTable(table, context);
+    if (!snapshot)
+        return; // dangling Alias with missing target; the table row above stays, columns are skipped
     const auto & columns = snapshot->getColumns();
     for (const auto & column : columns)
     {
