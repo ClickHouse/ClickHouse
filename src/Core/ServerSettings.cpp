@@ -1973,6 +1973,11 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "include",
         "include_endpoint",
 
+        /// Obsolete settings that may still appear in long-lived configurations
+        /// (e.g., cloud installations carrying historical settings). Kept here so
+        /// that upgrading installations don't fail to start due to leftover keys.
+        "format_alter_operations_with_parentheses",
+
         /// Background pool settings (legacy, moved to merge_tree section)
         "background_processing_pool_thread_sleep_seconds",
         "background_processing_pool_thread_sleep_seconds_if_nothing_to_do",
