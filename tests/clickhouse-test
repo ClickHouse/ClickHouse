@@ -941,6 +941,9 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
+_LLDB_INSTALL_ATTEMPTED = False
+
+
 def _ensure_lldb_installed():
     """Make sure `lldb` is on PATH, installing it on the fly if not.
 
@@ -955,16 +958,30 @@ def _ensure_lldb_installed():
     install fails (no sudo, no network, no `brew`, ...), let
     `shell_get_output` return "" so the surrounding diagnostic flow keeps
     going instead of crashing during an already-broken run.
+
+    Bounded and idempotent: each subprocess call has a hard timeout so a
+    stalled package mirror cannot wedge stacktrace collection for minutes,
+    and a process-wide flag ensures only the first call attempts the
+    install — `print_c_stacktraces` iterates over every server PID, and we
+    must not pay the install cost (or timeout) for each one if the first
+    attempt already failed.
     """
+    global _LLDB_INSTALL_ATTEMPTED
     if shutil.which("lldb"):
         return
+    if _LLDB_INSTALL_ATTEMPTED:
+        return
+    _LLDB_INSTALL_ATTEMPTED = True
     try:
         if platform.system() == "Darwin":
-            subprocess.run(["brew", "install", "llvm"], check=True)
+            subprocess.run(["brew", "install", "llvm"], check=True, timeout=180)
         else:
             env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
-            subprocess.run(["apt-get", "update"], check=True, env=env)
-            subprocess.run(["apt-get", "install", "-y", "lldb"], check=True, env=env)
+            subprocess.run(["apt-get", "update"], check=True, env=env, timeout=60)
+            subprocess.run(
+                ["apt-get", "install", "-y", "lldb"],
+                check=True, env=env, timeout=120,
+            )
     except Exception as e:
         print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
 
