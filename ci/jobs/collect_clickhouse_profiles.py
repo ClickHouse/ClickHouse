@@ -155,7 +155,12 @@ def start_server(server_dir, port=9000, keeper_port=9181, raft_port=9234):
     )
 
     log_fd = open(log_file, "w")
-    proc = subprocess.Popen(cmd, stderr=subprocess.STDOUT, stdout=log_fd, shell=True)
+    # Start in a new session so the spawned shell becomes the leader of its own
+    # process group; otherwise `terminate_process_group(proc.pid)` in `stop_server`
+    # could target the entire job's process group instead of just the server tree.
+    proc = subprocess.Popen(
+        cmd, stderr=subprocess.STDOUT, stdout=log_fd, shell=True, start_new_session=True
+    )
     time.sleep(2)
     if proc.poll() is not None:
         log_fd.close()
@@ -238,7 +243,11 @@ def configure_datasets(server_dir, port=9000):
         f"--tcp_port {port}"
     )
     log_fd = open(f"{server_dir}/preconfig.log", "w")
-    proc = subprocess.Popen(cmd, stderr=subprocess.STDOUT, stdout=log_fd, shell=True)
+    # See note in `start_server`: dedicated session keeps `terminate_process_group`
+    # scoped to the server tree.
+    proc = subprocess.Popen(
+        cmd, stderr=subprocess.STDOUT, stdout=log_fd, shell=True, start_new_session=True
+    )
     time.sleep(2)
     for attempt in range(30):
         res, out, _ = Shell.get_res_stdout_stderr(
