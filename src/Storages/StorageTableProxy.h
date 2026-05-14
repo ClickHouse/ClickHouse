@@ -143,6 +143,19 @@ public:
         getNested()->checkTableCanBeDropped(query_context);
     }
 
+    bool dropSkipsDataDirectoryCleanup() const override
+    {
+        /// `drop()` may have already consumed `get_nested` without storing
+        /// `nested`, so unconditionally delegating through `getNested()` here
+        /// would invoke an empty `std::function` and throw. Fall back to the
+        /// safe default (perform per-disk cleanup) when the proxy has nothing
+        /// loaded to ask.
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->dropSkipsDataDirectoryCleanup();
+        return false;
+    }
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override
     {
         std::lock_guard lock{nested_mutex};
