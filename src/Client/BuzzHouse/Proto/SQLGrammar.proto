@@ -2690,6 +2690,9 @@ message MySQLFunc {
     optional string named_collection = 1;
     optional string rdatabase = 2;
     optional string rtable = 3;
+    optional string address = 4;
+    optional string user = 5;
+    optional string password = 6;
 }
 
 message PostgreSQLFunc {
@@ -2697,6 +2700,9 @@ message PostgreSQLFunc {
     optional string rdatabase = 2;
     optional string rschema = 3;
     optional string rtable = 4;
+    optional string address = 5;
+    optional string user = 6;
+    optional string password = 7;
 }
 
 message SQLiteFunc {
@@ -2718,6 +2724,9 @@ message MongoDBFunc {
     optional string database = 2;
     optional string collection = 3;
     optional Expr structure = 4;
+    optional string address = 5;
+    optional string user = 6;
+    optional string password = 7;
 }
 
 message ObjectStoreFunc {

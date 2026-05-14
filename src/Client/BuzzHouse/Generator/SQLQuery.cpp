@@ -238,7 +238,15 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         mfunc->set_rdatabase(sc.database);
         mfunc->set_rtable(t.getBaseName());
         if (!sc.named_collection.empty())
+        {
             mfunc->set_named_collection(sc.named_collection);
+        }
+        else
+        {
+            mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+            mfunc->set_user(sc.user);
+            mfunc->set_password(sc.password);
+        }
     }
     else if (
         (usage == TableFunctionUsage::EngineReplace && t.isPostgreSQLEngine())
@@ -247,11 +255,19 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         const ServerCredentials & sc = fc.postgresql_server.value();
         PostgreSQLFunc * pfunc = tfunc->mutable_postgresql();
 
-        if (!sc.named_collection.empty())
-            pfunc->set_named_collection(sc.named_collection);
         pfunc->set_rdatabase(sc.database);
         pfunc->set_rschema("test");
         pfunc->set_rtable(t.getBaseName());
+        if (!sc.named_collection.empty())
+        {
+            pfunc->set_named_collection(sc.named_collection);
+        }
+        else
+        {
+            pfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
+            pfunc->set_user(sc.user);
+            pfunc->set_password(sc.password);
+        }
     }
     else if (
         (usage == TableFunctionUsage::EngineReplace && t.isSQLiteEngine()) || (usage == TableFunctionUsage::PeerTable && t.hasSQLitePeer()))
@@ -428,9 +444,19 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             mfunc->set_collection(t.getBaseName());
             if (fc.mongodb_server.has_value())
             {
-                mfunc->set_database(fc.mongodb_server.value().database);
-                if (!fc.mongodb_server.value().named_collection.empty())
-                    mfunc->set_named_collection(fc.mongodb_server.value().named_collection);
+                const ServerCredentials & sc = fc.mongodb_server.value();
+
+                mfunc->set_database(sc.database);
+                if (!sc.named_collection.empty())
+                {
+                    mfunc->set_named_collection(sc.named_collection);
+                }
+                else
+                {
+                    mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
+                    mfunc->set_user(sc.user);
+                    mfunc->set_password(sc.password);
+                }
             }
             structure = rg.nextMediumNumber() < 96 ? mfunc->mutable_structure() : nullptr;
         }

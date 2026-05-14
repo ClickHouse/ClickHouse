@@ -2211,6 +2211,16 @@ CONV_FN(MySQLFunc, mfunc)
         ret += mfunc.named_collection();
         need_comma = true;
     }
+    if (mfunc.has_address())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "host=";
+        appendSQLStringLiteral(ret, mfunc.address());
+        need_comma = true;
+    }
     if (mfunc.has_rdatabase())
     {
         if (need_comma)
@@ -2229,6 +2239,26 @@ CONV_FN(MySQLFunc, mfunc)
         }
         ret += "table=";
         appendSQLStringLiteral(ret, mfunc.rtable());
+        need_comma = true;
+    }
+    if (mfunc.has_user())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "user=";
+        appendSQLStringLiteral(ret, mfunc.user());
+        need_comma = true;
+    }
+    if (mfunc.has_password())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "password=";
+        appendSQLStringLiteral(ret, mfunc.password());
     }
     ret += ")";
 }
@@ -2241,6 +2271,16 @@ CONV_FN(PostgreSQLFunc, pfunc)
     if (pfunc.has_named_collection())
     {
         ret += pfunc.named_collection();
+        need_comma = true;
+    }
+    if (pfunc.has_address())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "host=";
+        appendSQLStringLiteral(ret, pfunc.address());
         need_comma = true;
     }
     if (pfunc.has_rdatabase())
@@ -2271,6 +2311,26 @@ CONV_FN(PostgreSQLFunc, pfunc)
         }
         ret += "table=";
         appendSQLStringLiteral(ret, pfunc.rtable());
+        need_comma = true;
+    }
+    if (pfunc.has_user())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "user=";
+        appendSQLStringLiteral(ret, pfunc.user());
+        need_comma = true;
+    }
+    if (pfunc.has_password())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "password=";
+        appendSQLStringLiteral(ret, pfunc.password());
     }
     ret += ")";
 }
@@ -2323,6 +2383,16 @@ CONV_FN(MongoDBFunc, mfunc)
         ret += mfunc.named_collection();
         need_comma = true;
     }
+    if (mfunc.has_address())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "host=";
+        appendSQLStringLiteral(ret, mfunc.address());
+        need_comma = true;
+    }
     if (mfunc.has_database())
     {
         if (need_comma)
@@ -2341,6 +2411,26 @@ CONV_FN(MongoDBFunc, mfunc)
         }
         ret += "collection=";
         appendSQLStringLiteral(ret, mfunc.collection());
+        need_comma = true;
+    }
+    if (mfunc.has_user())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "user=";
+        appendSQLStringLiteral(ret, mfunc.user());
+        need_comma = true;
+    }
+    if (mfunc.has_password())
+    {
+        if (need_comma)
+        {
+            ret += ", ";
+        }
+        ret += "password=";
+        appendSQLStringLiteral(ret, mfunc.password());
         need_comma = true;
     }
     if (mfunc.has_structure())
