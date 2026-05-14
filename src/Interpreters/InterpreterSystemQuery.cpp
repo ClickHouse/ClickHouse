@@ -2107,8 +2107,9 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    const auto start_ts = std::chrono::steady_clock::now();
-    while (std::chrono::steady_clock::now() - start_ts < std::chrono::seconds(30))
+    const auto timeout = getContext()->getSettingsRef()[Setting::receive_timeout];
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout.totalMilliseconds());
+    while (std::chrono::steady_clock::now() < deadline)
     {
         if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
             throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
@@ -2126,7 +2127,7 @@ void InterpreterSystemQuery::syncMerges()
         poll_delay.up();
     }
 
-    throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Can't wait until all scheduled merges will be completed");
+    throw DB::Exception(DB::ErrorCodes::TIMEOUT_EXCEEDED, "SYNC MERGES {}: command timed out. See the 'receive_timeout' setting", table_id.getNameForLogs());
 }
 
 void InterpreterSystemQuery::loadPrimaryKeys()
