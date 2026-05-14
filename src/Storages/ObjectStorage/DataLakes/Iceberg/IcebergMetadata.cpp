@@ -167,9 +167,17 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
 {
     /// UUID may be known ahead of time (e.g. from REST catalog inline response); use it to hit the metadata cache.
     std::optional<String> known_uuid;
-    const auto & settings_uuid = configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_metadata_table_uuid];
-    if (settings_uuid.changed && !settings_uuid.value.empty())
-        known_uuid = normalizeUuid(settings_uuid.value);
+    if (!configuration->catalog_uuid_hint.empty())
+    {
+        /// Hint from catalog: cache key only — does not trigger O(N) UUID-based file selection.
+        known_uuid = normalizeUuid(configuration->catalog_uuid_hint);
+    }
+    else
+    {
+        const auto & settings_uuid = configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_metadata_table_uuid];
+        if (settings_uuid.changed && !settings_uuid.value.empty())
+            known_uuid = normalizeUuid(settings_uuid.value);
+    }
 
     const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), known_uuid, CompressionMethod::None, true);

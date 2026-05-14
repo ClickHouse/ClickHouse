@@ -100,7 +100,6 @@ namespace Setting
 namespace DataLakeStorageSetting
 {
     extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
-    extern const DataLakeStorageSettingsString iceberg_metadata_table_uuid;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 }
 
@@ -598,6 +597,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
 
+    String catalog_uuid_hint;
     if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
         table_specific_properties.has_value())
     {
@@ -609,11 +609,11 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
         (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
 
-        if (!table_specific_properties->iceberg_table_uuid.empty())
-            (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_table_uuid] = table_specific_properties->iceberg_table_uuid;
+        catalog_uuid_hint = table_specific_properties->iceberg_table_uuid;
     }
 
     const auto configuration = getConfiguration(storage_type, storage_settings);
+    configuration->catalog_uuid_hint = catalog_uuid_hint;
 
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(context_);

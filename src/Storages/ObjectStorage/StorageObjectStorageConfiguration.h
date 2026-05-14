@@ -307,6 +307,10 @@ public:
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
+    /// UUID supplied by a REST catalog inline response. Used to warm the
+    /// metadata cache on first access without triggering O(N) UUID-based
+    /// metadata-file scanning. Not a user-settable parameter.
+    String catalog_uuid_hint;
     PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
     /// Whether partition column values are contained in the actual data.
     /// And alternative is with hive partitioning, when they are contained in file path.
