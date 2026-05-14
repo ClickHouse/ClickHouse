@@ -273,6 +273,27 @@ public:
     std::string name() const override { return "typeFromString"; }
 };
 
+/// `subcolumnTypeOf(T, const name)` — looks up the type of a named subcolumn
+/// (or tuple element, or variant element, …) of `T`. Throws if `T` does not
+/// expose a subcolumn with that name. Used by:
+///   getSubcolumn(any, const name String) -> subcolumnTypeOf(any, name)
+///   tupleElement(Tuple(...), const name String) -> subcolumnTypeOf(t, name)
+///   variantElement(Variant(...), const name String) -> subcolumnTypeOf(v, name)
+class TypeFunctionSubcolumnTypeOf : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function subcolumnTypeOf takes 2 arguments");
+        const DataTypePtr & container = args[0].type();
+        const String & name = args[1].field().safeGet<String>();
+        return Value(container->getSubcolumnType(name));  // throws `ILLEGAL_COLUMN` if absent
+    }
+
+    std::string name() const override { return "subcolumnTypeOf"; }
+};
+
 class TypeFunctionDifference : public ITypeFunction
 {
 private:
@@ -1095,6 +1116,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionMax>();
     factory.registerElement<TypeFunctionDifference>();
     factory.registerElement<TypeFunctionTypeFromString>();
+    factory.registerElement<TypeFunctionSubcolumnTypeOf>();
     factory.registerElement<TypeFunctionNullable>();
     factory.registerElement<TypeFunctionLowCardinality>();
     factory.registerElement<TypeFunctionDictionaryTypeOf>();

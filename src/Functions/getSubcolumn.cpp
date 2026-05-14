@@ -28,17 +28,11 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    /// Documentation-only — the result type is the subcolumn type of the
-    /// first argument, looked up dynamically from the const-string subcolumn name.
+    /// Declarative signature — looks up the named subcolumn's type on the
+    /// first argument via the `subcolumnTypeOf` type function.
     String getSignatureString() const override
     {
-        return "(Any, const String) -> Any";
-    }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        auto subcolumn_name = getSubcolumnName(arguments);
-        return arguments[0].type->getSubcolumnType(subcolumn_name);
+        return "(T : Any, const name String) -> subcolumnTypeOf(T, name)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
