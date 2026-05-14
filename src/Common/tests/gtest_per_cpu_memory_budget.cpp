@@ -37,7 +37,7 @@ TEST(PerCPUMemoryBudget, Basic)
     if (cpu < 0)
         GTEST_SKIP() << "Per-CPU machinery unavailable on this platform";
 
-#if USE_LIBRSEQ
+#if OS_LINUX
     EXPECT_TRUE(PerCPUMemoryBudget::isRSeqReady());
 #endif
 }

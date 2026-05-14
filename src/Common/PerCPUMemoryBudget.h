@@ -15,7 +15,7 @@
 #    include <unistd.h>
 #endif
 
-#if USE_LIBRSEQ
+#if defined(OS_LINUX)
 #    include <rseq/rseq.h>
 #endif
 
@@ -81,7 +81,7 @@ inline const int slot_count = []
 
 const std::unique_ptr<Slot[]> slots = std::make_unique<Slot[]>(slot_count);
 
-#if USE_LIBRSEQ
+#if defined(OS_LINUX)
 inline const bool rseq_ready = []
 {
     return rseq_init() == RSEQ_INIT_OK && rseq_size > 0;
@@ -90,7 +90,7 @@ inline const bool rseq_ready = []
 
 inline bool isRSeqReady()
 {
-#if USE_LIBRSEQ
+#if defined(OS_LINUX)
     return rseq_ready;
 #else
     return false;
@@ -102,7 +102,7 @@ inline bool isRSeqReady()
 /// (`chargeAlloc`/`chargeFree`) reads the CPU itself.
 ALWAYS_INLINE inline int currentCPU()
 {
-#if USE_LIBRSEQ
+#if defined(OS_LINUX)
     if (likely(rseq_ready))
     {
         int cpu = static_cast<int>(rseq_cpu_start());
@@ -143,7 +143,7 @@ ALWAYS_INLINE bool charge(Int64 size, PerCPUMemoryBudgetState & state)
     int cpu;
     UInt64 next;
 
-#if USE_LIBRSEQ
+#if defined(OS_LINUX)
     if (likely(rseq_ready))
     {
         cpu = static_cast<int>(rseq_cpu_start());
