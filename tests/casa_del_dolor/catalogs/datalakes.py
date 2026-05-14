@@ -309,7 +309,6 @@ logger.jetty.level = warn
             "org.apache.iceberg:iceberg-azure-bundle:1.10.0",
             "org.apache.iceberg:iceberg-spark-extensions-4.0_2.13:1.10.0",
             "org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:1.10.0",
-            "org.apache.paimon:paimon-spark-4.0:1.1.1",
             "org.apache.spark:spark-hadoop-cloud_2.13:4.0.1",
             # Derby jars
             "org.apache.derby:derby:10.14.2.0",
@@ -331,6 +330,7 @@ logger.jetty.level = warn
                 else "org.apache.spark.sql.delta.catalog.DeltaCatalog"
             )
         elif lake == LakeFormat.Paimon:
+            all_jars.append("org.apache.paimon:paimon-spark-4.0_2.13:1.4.1")
             catalog_extension = (
                 "org.apache.paimon.spark.extensions.PaimonSparkSessionExtensions"
             )

@@ -344,6 +344,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             ofunc->set_fname(val);
             if (cluster.has_value() && val != ObjectStoreFunc_FName::ObjectStoreFunc_FName_gcs
                 && val != ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeLocal
+                && val != ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonLocal
                 && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
             {
                 ofunc->set_cluster_func(true);

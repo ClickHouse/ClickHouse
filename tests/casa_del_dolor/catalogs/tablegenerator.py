@@ -1122,20 +1122,55 @@ class PaimonTableGenerator(LakeTableGenerator):
     ) -> str:
         return ""
 
+    def generate_table_properties(
+        self,
+        table: SparkTable,
+    ) -> dict[str, str]:
+        properties = super().generate_table_properties(table)
+        flat_cols = list(table.flat_columns().keys())
+        has_pk = "primary-key" in properties
+        if not has_pk:
+            for key in (
+                "merge-engine",
+                "changelog-producer",
+                "sequence.field",
+                "deletion-vectors.enabled",
+                "deletion-vectors.bitmap64",
+            ):
+                properties.pop(key, None)
+        if "deletion-vectors.bitmap64" in properties and properties.get("deletion-vectors.enabled") != "true":
+            del properties["deletion-vectors.bitmap64"]
+        if "bucket-key" in properties and "bucket" not in properties:
+            del properties["bucket-key"]
+        elif "bucket" in properties and "bucket-key" not in properties:
+            properties["bucket-key"] = random.choice(flat_cols)
+        return properties
+
     def generate_table_properties_impl(
         self,
         table: SparkTable,
     ) -> dict[str, Parameter]:
+        flat_cols = list(table.flat_columns().keys())
         next_properties = {
+            "primary-key": lambda: ",".join(
+                random.sample(flat_cols, k=random.randint(1, min(3, len(flat_cols))))
+            ),
             "bucket": lambda: str(random.choice([1, 2, 4, 8, 16])),
-            "bucket-key": lambda: random.choice(list(table.columns.keys())),
+            "bucket-key": lambda: random.choice(flat_cols),
             "changelog-producer": lambda: random.choice(
                 ["none", "input", "full-compaction", "lookup"]
             ),
             "merge-engine": lambda: random.choice(
-                ["deduplicate", "partial-update", "first-row"]
+                ["deduplicate", "partial-update", "first-row", "aggregation"]
             ),
-            "sequence.field": lambda: random.choice(list(table.columns.keys())),
+            "sequence.field": lambda: random.choice(flat_cols),
+            "metadata.iceberg.storage": lambda: "hadoop-catalog",
+            "metadata.iceberg.format-version": lambda: random.choice(["1", "2", "3"]),
+            "deletion-vectors.enabled": true_false_lambda,
+            "deletion-vectors.bitmap64": true_false_lambda,
+            "compaction.optimization-interval": lambda: random.choice(
+                ["1ms", "1s", "1min", "1h"]
+            ),
             "snapshot.time-retained": lambda: random.choice(["1s", "1min", "1h", "1d"]),
             "snapshot.num-retained.min": lambda: str(random.choice([1, 2, 5, 10])),
             "snapshot.num-retained.max": lambda: str(random.choice([5, 10, 50, 100])),
