@@ -7,8 +7,6 @@ title: 'Testing ClickHouse'
 doc_type: 'guide'
 ---
 
-# Testing ClickHouse
-
 ## Test types {#test-types}
 
 There are following tests in ClickHouse:
