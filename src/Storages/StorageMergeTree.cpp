@@ -81,6 +81,7 @@ namespace FailPoints
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_replace_partition_from_empty_source;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -2593,6 +2594,24 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         src_parts = src_data.getVisibleDataPartsVector(local_context);
     else
         src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+
+    /// REPLACE PARTITION FROM a source that has no parts in the requested partition would
+    /// silently drop the destination partition's data without writing anything in its place
+    /// (see #23727). Reject by default; users who actually want this behavior (e.g. to clear
+    /// the destination partition using an empty source) must opt in via the
+    /// `allow_replace_partition_from_empty_source` setting, or use `DROP PARTITION` instead.
+    /// The check is skipped for `is_all` because `REPLACE PARTITION ALL` is already rejected
+    /// above with `SUPPORT_IS_DISABLED`.
+    if (replace && !is_all && src_parts.empty()
+        && !local_context->getSettingsRef()[Setting::allow_replace_partition_from_empty_source])
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Source table {} has no parts in partition {} — refusing `REPLACE PARTITION` because it would "
+            "silently drop the destination partition's data. "
+            "Set `allow_replace_partition_from_empty_source = 1` to restore the previous behavior, "
+            "or use `ALTER TABLE ... DROP PARTITION` if you intend to drop the destination data.",
+            source_table->getStorageID().getNameForLogs(), partition_id);
+    }
 
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;

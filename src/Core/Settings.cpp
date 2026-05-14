@@ -4214,6 +4214,13 @@ Possible values:
     DECLARE(Bool, allow_drop_detached, false, R"(
 Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 )", 0) \
+    DECLARE(Bool, allow_replace_partition_from_empty_source, false, R"(
+Allow `ALTER TABLE ... REPLACE PARTITION ... FROM ...` to silently drop the destination partition when the source has no parts in that partition.
+
+By default this is disallowed: `REPLACE PARTITION` from a source that has no data in the requested partition raises an exception, because in this case the operation effectively becomes a silent `DROP PARTITION` on the destination (the destination's data is removed and nothing replaces it) — a common cause of accidental data loss (see [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
+
+Enable this setting to restore the previous behavior, for example when you intentionally use an empty source partition to clear data in the destination. For an unconditional drop, prefer `ALTER TABLE ... DROP PARTITION ...` instead.
+)", 0) \
     DECLARE(Bool, dynamic_disk_allow_from_env, false, R"(
 Allow using `from_env` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
 Disabled by default to prevent users from reading arbitrary environment variables when defining table storage.
