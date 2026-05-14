@@ -15,6 +15,7 @@
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/Streaming/SubscriptionManager.h>
 #include <Common/ActionLock.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
@@ -285,12 +286,15 @@ private:
 
     /// Multiversion storage metadata. Allows to read/write storage metadata without locks.
     MultiVersionStorageMetadataPtr metadata;
+    mutable StreamSubscriptionManager subscription_manager;
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const Poco::Timespan & acquire_timeout) const;
 
 public:
+    StreamSubscriptionManager & getStreamSubscriptionManager() const { return subscription_manager; }
+
     /// Lock table for share. This lock must be acquired if you want to be sure,
     /// that table will be not dropped while you holding this lock. It's used in
     /// variety of cases starting from SELECT queries to background merges in
