@@ -9,8 +9,6 @@ title: 'Memory table engine'
 doc_type: 'reference'
 ---
 
-# Memory table engine
-
 :::note
 When using the Memory table engine on ClickHouse Cloud, data is not replicated across all nodes (by design). To guarantee that all queries are routed to the same node and that the Memory table engine works as expected, you can do one of the following:
 - Execute all operations in the same session
