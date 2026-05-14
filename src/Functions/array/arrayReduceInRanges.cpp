@@ -346,12 +346,12 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    /// Documentation-only — like `arrayReduce`, but applied per-range, so the
-    /// result is `Array(R)` where `R` is the named aggregator's result type.
-    /// The aggregate-function-name lookup isn't reachable from the DSL.
+    /// Declarative signature — like `arrayReduce` but per-range; the result
+    /// is `Array(R)` where `R` is the named aggregator's finalised return
+    /// type computed over the array element types.
     String getSignatureString() const override
     {
-        return "(const String, Array(Tuple(UInt, UInt)), Array, ...) -> Array";
+        return "(const a String, Array(Tuple(UInt, UInt)), Array(T1 : Any), ...) -> Array(aggregateFunctionReturnType(AggregateFunction(a, T1, ...)))";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

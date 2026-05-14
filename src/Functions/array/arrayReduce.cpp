@@ -192,13 +192,14 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    /// Documentation-only — the result type is the named aggregate function's
-    /// result type (resolved from the const-string first argument plus the
-    /// element types of the input arrays), which the DSL can't reach without
-    /// the aggregate-function registry.
+    /// Declarative signature — the result is the named aggregator's
+    /// finalised return type computed over the array element types:
+    /// `AggregateFunction(name, T1, T2, ...)` builds the aggregator state,
+    /// `aggregateFunctionReturnType` extracts what `finalizeAggregation`
+    /// of that state would produce.
     String getSignatureString() const override
     {
-        return "(const String, Array, ...) -> Any";
+        return "(const a String, Array(T1 : Any), ...) -> aggregateFunctionReturnType(AggregateFunction(a, T1, ...))";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
