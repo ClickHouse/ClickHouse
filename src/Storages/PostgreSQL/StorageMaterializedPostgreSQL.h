@@ -138,6 +138,8 @@ private:
 
     static VirtualColumnsDescription createVirtuals();
 
+    ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
+
     String getNestedTableName() const;
 
     LoggerPtr log;

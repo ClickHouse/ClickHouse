@@ -45,7 +45,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationObject.h>
@@ -1764,7 +1763,7 @@ public:
         , typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
         , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(type_of_nested_objects))
-        , dynamic_serialization(DataTypeDynamic().getDefaultSerialization())
+        , dynamic_serialization(std::make_shared<SerializationDynamic>())
     {
         sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
         std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
@@ -2285,7 +2284,7 @@ private:
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
-    SerializationPtr dynamic_serialization;
+    std::shared_ptr<SerializationDynamic> dynamic_serialization;
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
 
