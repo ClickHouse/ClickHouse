@@ -24,8 +24,6 @@ public:
     bool isCovered(Int64 block_number) const;
     std::optional<BlockNumberRange> getNext(Int64 block_number) const;
 
-    Int64 getMaxBlockNumber() const;
-
     String dumpStructure() const;
 
 private:
@@ -40,8 +38,6 @@ public:
     MergeTreeCursorPromoter(std::set<Int64> committing_parts_, PartBlockNumberRanges virtual_parts_);
 
     bool canPromote(Int64 block_number, Int64 left) const;
-
-    Int64 getMaxBlockNumber() const;
 
     String dumpStructure() const;
 

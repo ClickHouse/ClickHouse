@@ -1,37 +1,28 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/Streaming/CursorPromoter.h>
-#include <Storages/Streaming/IStreamSubscription.h>
+#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
+
+#include <base/types.h>
+
+#include <map>
+#include <set>
+#include <vector>
 
 namespace DB
 {
 
-struct RangesInDataPart;
+using LocalPartsByPartition = std::map<String, std::vector<MergeTreePartInfo>>;
 
-using PartsByPartitionAndBlockNumber = std::map<String, std::map<Int64, MergeTreeData::DataPartPtr>>;
-using RangesByPartitionAndBlockNumber = std::map<String, std::map<Int64, RangesInDataPart>>;
-
-/// Walk parts in block-number order per partition; push parts whose partition
-/// hashes to this subscription, advancing the per-partition cursor.
-/// Returns true if at least one range was pushed.
+/// Advance the subscription's `safe_block_number` to the highest block reachable without crossing a
+/// not-fetched/committing block.
 bool enrichSubscription(
-    StreamSubscriptionPtr subscription,
-    const MergeTreeData & storage,
-    const PartsByPartitionAndBlockNumber & data_parts,
+    MergeTreeBoundsSubscription & subscription,
+    const LocalPartsByPartition & local_parts,
     const CursorPromotersMap & promoters);
 
-bool enrichSubscription(
-    StreamSubscriptionPtr subscription,
-    const MergeTreeData & storage,
-    const RangesByPartitionAndBlockNumber & data_parts,
-    const CursorPromotersMap & promoters);
-
-/// Build the `{partition_id → {max_block → part}}` index used by enrichSubscription.
-PartsByPartitionAndBlockNumber buildRightPartsIndex(MergeTreeData::DataPartsVector data_parts);
-RangesByPartitionAndBlockNumber buildRightPartsIndex(RangesInDataParts ranges);
-
-/// Construct per-partition promoters.
+/// Build the per-partition cursor promoter map for streaming reads.
 CursorPromotersMap constructPromoters(
     std::map<String, std::set<Int64>> committing_block_numbers,
     std::map<String, PartBlockNumberRanges> partition_ranges);
