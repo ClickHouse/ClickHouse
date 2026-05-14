@@ -163,6 +163,7 @@ public:
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableCanBeDropped(query_context); }
 
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
+    bool dropSkipsDataDirectoryCleanup() const override { return getNested()->dropSkipsDataDirectoryCleanup(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }
