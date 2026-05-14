@@ -1,6 +1,6 @@
 CREATE MATERIALIZED VIEW default.zero_after\nREFRESH AFTER 0 SECOND\n(\n    `x` Int8\n)\nENGINE = Memory\nDEFINER = default SQL SECURITY DEFINER\nAS SELECT x\nFROM default.src
 CREATE MATERIALIZED VIEW default.after_with_deps\nREFRESH AFTER 1 HOUR DEPENDS ON default.zero_after\n(\n    `x` Int8\n)\nENGINE = Memory\nDEFINER = default SQL SECURITY DEFINER\nAS SELECT x\nFROM default.src
-CREATE MATERIALIZED VIEW default.shorthand_deps\nREFRESH AFTER 0 SECOND DEPENDS ON default.zero_after\n(\n    `x` Int8\n)\nENGINE = Memory\nDEFINER = default SQL SECURITY DEFINER\nAS SELECT x\nFROM default.src
+CREATE MATERIALIZED VIEW default.shorthand_deps\nREFRESH DEPENDS ON default.zero_after\n(\n    `x` Int8\n)\nENGINE = Memory\nDEFINER = default SQL SECURITY DEFINER\nAS SELECT x\nFROM default.src
 <1: missing>	MissingDependencies	1	0
 <2: still missing>	MissingDependencies
 <3: recovered>	1	1

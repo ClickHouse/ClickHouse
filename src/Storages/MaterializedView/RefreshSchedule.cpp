@@ -8,7 +8,9 @@ namespace DB
 RefreshSchedule::RefreshSchedule(const ASTRefreshStrategy & strategy)
 {
     kind = strategy.schedule_kind;
-    period = strategy.period->interval;
+    chassert(kind != RefreshScheduleKind::UNKNOWN);
+    if (strategy.period)
+        period = strategy.period->interval;
     if (strategy.offset)
         offset = strategy.offset->interval;
     if (strategy.spread)

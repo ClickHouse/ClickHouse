@@ -89,9 +89,6 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         /// `REFRESH DEPENDS ON` is a shorthand for `REFRESH AFTER 0 SECOND DEPENDS ON`.
         refresh->schedule_kind = RefreshScheduleKind::AFTER;
-        auto period = make_intrusive<ASTTimeInterval>();
-        period->interval = CalendarTimeInterval();
-        refresh->set(refresh->period, period);
     }
 
     // Refresh SETTINGS

@@ -522,7 +522,6 @@ void RefreshTask::wait(const ContextPtr & context)
         });
     /// Wait for currently running refresh to complete.
     auto seen_success_end_time = coordination.root_znode.last_success_end_time;
-    Int64 seen_attempt_number = coordination.root_znode.attempt_number;
     wait_cv.wait(lock, [&] {
         if (!view)
             /// Table was dropped, or server shutdown. Stop waiting.
@@ -532,8 +531,7 @@ void RefreshTask::wait(const ContextPtr & context)
             return false;
         if (state == RefreshState::Running || state == RefreshState::RunningOnAnotherReplica)
         {
-            if (coordination.root_znode.last_success_end_time > seen_success_end_time ||
-                coordination.root_znode.attempt_number != seen_attempt_number)
+            if (coordination.root_znode.last_success_end_time > seen_success_end_time)
                 /// Refresh completed, and immediately another one started.
                 return true;
             /// Wait for refresh to complete.
