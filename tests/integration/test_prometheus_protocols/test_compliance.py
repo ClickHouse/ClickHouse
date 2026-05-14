@@ -356,8 +356,11 @@ CLICKHOUSE_PROMQL_REGRESSION_CASES = [
         ('absent(demo_memory_usage_bytes{type="missing"})', [], False),
         ('absent(demo_memory_usage_bytes{type=~"missing"})', [], False),
         ('absent(nonexistent_metric_name{type!="free"})', [], False),
+        ('absent(demo_no_such_metric{job!="missing", job="api"})', [], False),
+        ('absent(demo_no_such_metric{job="api", job!="missing"})', [], False),
         ('absent_over_time(demo_memory_usage_bytes{type="missing"}[5m])', [], False),
         ('absent_over_time(demo_memory_usage_bytes{type=~"missing"}[5m])', [], False),
+        ('absent_over_time(demo_no_such_metric{job!="missing", job="api"}[5m])', [], False),
     ]),
 
     *_with_risk(RISK_SUBQUERY_ALIGNMENT, [

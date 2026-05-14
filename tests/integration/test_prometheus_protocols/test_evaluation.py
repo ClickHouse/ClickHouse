@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -179,6 +181,17 @@ def send_test_data():
                     500: 0.5,
                     600: 1,
                     700: 2,
+                },
+            ),
+        ]
+    )
+
+    send_data(
+        [
+            (
+                {"__name__": "special_l", "case": "nan"},
+                {
+                    100: math.nan,
                 },
             ),
         ]
@@ -585,46 +598,108 @@ def test_function_over_time():
 
 
 def test_absent_functions():
+    # Behavior: Prometheus returns empty output when the argument vector has any sample.
     do_query_test(
-        "absent(test)",
+        "absent(foo)",
         130,
         '{"resultType": "vector", "result": []}',
         [],
     )
 
+    # Behavior: regular NaN samples count as present for absence functions.
     do_query_test(
-        "absent(nonexistent_metric)",
+        'absent(special_l{case="nan"})',
+        100,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Behavior: Prometheus returns one `{}` sample with value 1 when the argument vector is empty.
+    do_query_test(
+        "absent(no_such_metric)",
         130,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
         [["[]", "1970-01-01 00:02:10.000", 1]],
     )
 
+    # Behavior: Prometheus synthesizes labels from exact equality matchers on direct selectors.
     do_query_test(
-        'absent(foo{shape="hexagon", size="xl"})',
+        'absent(no_such_metric{shape="circle", job="api"})',
         130,
-        '{"resultType": "vector", "result": [{"metric": {"shape": "hexagon", "size": "xl"}, "value": [130, "1"]}]}',
-        [["[('shape','hexagon'),('size','xl')]", "1970-01-01 00:02:10.000", 1]],
+        '{"resultType": "vector", "result": [{"metric": {"job": "api", "shape": "circle"}, "value": [130, "1"]}]}',
+        [["[('job','api'),('shape','circle')]", "1970-01-01 00:02:10.000", 1]],
     )
 
+    # Behavior: `__name__` never appears in absent-function output labels.
     do_query_test(
-        'absent(foo{shape=~"hex.*"})',
+        'absent({__name__="ignored", shape="circle"})',
         130,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
-        [["[]", "1970-01-01 00:02:10.000", 1]],
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [130, "1"]}]}',
+        [["[('shape','circle')]", "1970-01-01 00:02:10.000", 1]],
     )
 
-    do_query_test(
-        'absent(nonexistent_metric{shape!="square"})',
+    # Behavior: Prometheus absent label synthesis is order-dependent; a later exact
+    # equality matcher can contribute a label if earlier matchers for that label were non-equality.
+    do_clickhouse_only_query_test(
+        'absent(no_such_metric{shape!="square", shape="circle"})',
         130,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
-        [["[]", "1970-01-01 00:02:10.000", 1]],
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [130, "1"]}]}',
+        [["[('shape','circle')]", "1970-01-01 00:02:10.000", 1]],
     )
 
     do_clickhouse_only_query_test(
-        'absent(nonexistent_metric{shape!="square", shape="circle"})',
+        'absent(no_such_metric{shape=~"square", shape="circle"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [130, "1"]}]}',
+        [["[('shape','circle')]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    # Behavior: Prometheus absent label synthesis deletes a label after duplicate or mixed matchers
+    # that follow the first exact equality matcher.
+    do_query_test(
+        'absent(no_such_metric{shape="circle", shape!="square"})',
         130,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
         [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
+        'absent(no_such_metric{shape="circle", shape="circle"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
+        'absent(no_such_metric{shape="circle", shape="square"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    # Behavior: Prometheus synthesizes no labels for non-selector absent arguments even
+    # when selectors appear inside the expression.
+    do_query_test(
+        'absent(sum(no_such_metric{shape="circle"}))',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
+        'absent(no_such_metric{shape="circle"} + 1)',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    # Behavior: Prometheus preprocessing unwraps parentheses around function arguments
+    # before absent label synthesis.
+    do_query_test(
+        'absent((no_such_metric{shape="circle"}))',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [130, "1"]}]}',
+        [["[('shape','circle')]", "1970-01-01 00:02:10.000", 1]],
     )
 
     do_query_test(
@@ -648,46 +723,62 @@ def test_absent_functions():
         ],
     )
 
+    # Behavior: Prometheus returns empty output when any sample exists in the selected range.
     do_query_test(
-        "absent_over_time(test[20s])",
-        140,
+        "absent_over_time(test[45s])",
+        210,
         '{"resultType": "vector", "result": []}',
         [],
     )
 
+    # Behavior: regular NaN samples count as present for absence functions.
     do_query_test(
-        "absent_over_time(test[20s])",
-        170,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [170, "1"]}]}',
-        [["[]", "1970-01-01 00:02:50.000", 1]],
+        'absent_over_time(special_l{case="nan"}[10s])',
+        100,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Behavior: Prometheus synthesizes labels from direct matrix selectors when the range has no samples.
+    do_query_test(
+        'absent_over_time(no_such_metric{shape="circle"}[45s])',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [210, "1"]}]}',
+        [["[('shape','circle')]", "1970-01-01 00:03:30.000", 1]],
+    )
+
+    # Behavior: Prometheus absent_over_time label synthesis follows the same order-dependent matcher rules.
+    do_clickhouse_only_query_test(
+        'absent_over_time(no_such_metric{job!="missing", job="api"}[20s])',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [210, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:03:30.000", 1]],
     )
 
     do_query_test(
-        'absent_over_time(test{job="missing"}[20s])',
-        130,
-        '{"resultType": "vector", "result": [{"metric": {"job": "missing"}, "value": [130, "1"]}]}',
-        [["[('job','missing')]", "1970-01-01 00:02:10.000", 1]],
+        'absent_over_time(no_such_metric{job="api", job!="missing"}[20s])',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "1"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 1]],
     )
 
+    # Behavior: Prometheus synthesizes `{}` for non-selector matrix expressions.
     do_query_test(
-        'absent_over_time(test{job=~"missing"}[20s])',
-        130,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
-        [["[]", "1970-01-01 00:02:10.000", 1]],
+        'absent_over_time(rate(no_such_metric[5m])[5m:])',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "1"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 1]],
     )
 
+    # Behavior: Prometheus emits absent samples only at grid steps whose range window is empty;
+    # it does not emit 0 for present windows.
     do_range_query_test(
-        "absent_over_time(test[20s])",
+        "absent_over_time(test[5s])",
+        110,
         130,
-        190,
-        10,
-        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[160, "1"], [170, "1"], [180, "1"]]}]}',
-        [
-            [
-                "[]",
-                "[('1970-01-01 00:02:40.000',1),('1970-01-01 00:02:50.000',1),('1970-01-01 00:03:00.000',1)]",
-            ]
-        ],
+        5,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[115, "1"], [125, "1"]]}]}',
+        [["[]", "[('1970-01-01 00:01:55.000',1),('1970-01-01 00:02:05.000',1)]"]],
     )
 
 
