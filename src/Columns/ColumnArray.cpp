@@ -32,6 +32,26 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
+namespace
+{
+    /// Filter `nested` in place when it is uniquely owned; otherwise deep-clone via
+    /// `IColumn::mutate` and replace, so we never silently mutate a column that is
+    /// shared with another owner.
+    void filterNestedInPlaceOrReplace(ColumnPtr & nested, const IColumn::Filter & filt)
+    {
+        if (nested->use_count() > 1)
+        {
+            auto cloned = IColumn::mutate(std::move(nested));
+            cloned->filter(filt);
+            nested = std::move(cloned);
+        }
+        else
+        {
+            const_cast<IColumn *>(nested.get())->filter(filt);
+        }
+    }
+}
+
 /** Obtaining array as Field can be slow for large arrays and consume vast amount of memory.
   * Just don't allow to do it.
   * You can increase the limit if the following query:
@@ -1058,10 +1078,17 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
     if (tuple_size == 0)
         return filterGeneric(filt, result_size_hint);
 
+    /// `tuple.getColumns()[i]` is owned by `tuple`, and `getOffsetsPtr()` is owned by
+    /// `this` — both have `use_count() > 1`. Build the temporary array via the static
+    /// `ColumnArray::create(const ColumnPtr &, const ColumnPtr &)` overload which
+    /// bypasses the `assumeMutableRef` assertion on shared inputs, then invoke the
+    /// const `filter` overload on it.
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i]->assumeMutable(), getOffsetsPtr()->assumeMutable())
-                .filter(filt, result_size_hint);
+    {
+        auto array = ColumnArray::create(tuple.getColumns()[i], getOffsetsPtr());
+        temporary_arrays[i] = array->filter(filt, result_size_hint);
+    }
 
     Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
@@ -1183,12 +1210,19 @@ void ColumnArray::filterTuple(const Filter & filt)
             memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
     }
 
-    /// Filter each tuple element in place. `tuple` is owned uniquely by `this->data`
-    /// (per the contract of non-const `filter`), and each `tuple.columns[i]` is owned
-    /// only by the tuple — bypass the assertion in `chameleon_ptr::operator->` via
-    /// const_cast to invoke the in-place filter on the element.
+    /// Filter each tuple element. `tuple` is owned uniquely by `this->data` (per the
+    /// contract of non-const `filter`), but a tuple element may still be shared with
+    /// another owner — e.g. when the outer column came from
+    /// `ColumnArray::create(const ColumnPtr &, ...)`. `filterNestedInPlaceOrReplace`
+    /// deep-clones such elements before mutating to preserve the COW invariant.
+    /// `tuple.getColumns()[i]` returns a reference to a `WrappedPtr`; convert to the
+    /// underlying `ColumnPtr &` via `WrappedPtr::operator immutable_ptr<T> &`.
+    auto & mutable_tuple_columns = const_cast<std::remove_const_t<std::remove_reference_t<decltype(tuple_columns)>> &>(tuple_columns);
     for (size_t i = 0; i < tuple_size; ++i)
-        const_cast<IColumn *>(tuple_columns[i].get())->filter(nested_filt);
+    {
+        ColumnPtr & nested_ref = mutable_tuple_columns[i];
+        filterNestedInPlaceOrReplace(nested_ref, nested_filt);
+    }
 
     /// Update the outer array offsets in place.
     Offsets & res_offsets = getOffsets();
@@ -1235,15 +1269,28 @@ void ColumnArray::filterNullable(const Filter & filt)
             memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
     }
 
-    /// Filter the inner nested column in place — it is owned only by the
-    /// `ColumnNullable`. Const-cast bypasses the `chameleon_ptr::operator->`
-    /// assertion; the underlying use_count is 1.
-    const_cast<IColumn *>(nullable_elems.getNestedColumnPtr().get())->filter(nested_filt);
+    /// `nullable_elems` is owned uniquely by `this->data`, but its nested column and
+    /// null map can be shared elsewhere (e.g. when the outer column came from
+    /// `ColumnArray::create(const ColumnPtr &, ...)`). `filterNestedInPlaceOrReplace`
+    /// deep-clones in those cases to preserve the COW invariant.
+    auto & mutable_nullable = const_cast<ColumnNullable &>(nullable_elems);
+    filterNestedInPlaceOrReplace(mutable_nullable.getNestedColumnPtr(), nested_filt);
 
-    /// Filter the null map and update outer offsets in place.
+    /// Filter the null map and update outer offsets in place. The null map needs the
+    /// same shared-check treatment.
     Offsets & res_offsets = getOffsets();
-    filterArraysImplInPlace<UInt8>(
-        const_cast<ColumnNullable &>(nullable_elems).getNullMapData(), res_offsets, filt);
+    ColumnPtr & null_map_ptr = mutable_nullable.getNullMapColumnPtr();
+    if (null_map_ptr->use_count() > 1)
+    {
+        auto cloned_null_map = IColumn::mutate(std::move(null_map_ptr));
+        filterArraysImplInPlace<UInt8>(
+            assert_cast<ColumnUInt8 &>(*cloned_null_map).getData(), res_offsets, filt);
+        null_map_ptr = std::move(cloned_null_map);
+    }
+    else
+    {
+        filterArraysImplInPlace<UInt8>(mutable_nullable.getNullMapData(), res_offsets, filt);
+    }
 }
 
 void ColumnArray::filterGeneric(const Filter & filt)
