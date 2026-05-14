@@ -895,7 +895,6 @@ void RemoteQueryExecutor::finish()
                 break;
 
             case Protocol::Server::Exception:
-                got_exception_from_replica = true;
                 /// We just called `tryCancel` above before entering this drain loop, which sends
                 /// `Cancel` to the replicas. A replica that was actively processing responds with
                 /// `QUERY_WAS_CANCELLED_BY_CLIENT` (or `QUERY_WAS_CANCELLED` when the cancel is
@@ -905,6 +904,12 @@ void RemoteQueryExecutor::finish()
                 /// before the cancellation — producing `rows_read = 0` in JSON/XML statistics.
                 /// Swallow these expected exceptions, log them, and let the loop continue so the
                 /// remaining replicas' trailing packets can still be drained.
+                ///
+                /// Do not set `got_exception_from_replica` for filtered cancellations: it would
+                /// make `hasThrownException` true, causing the `SCOPE_EXIT` above to mark
+                /// `finished = true` even on the abort path (`drain_should_stop`) with replicas
+                /// still active, and would cause subsequent `finish` / `cancelUnlocked` calls to
+                /// return early as if a real replica error had occurred.
                 if (packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
                     || packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED)
                 {
@@ -912,6 +917,7 @@ void RemoteQueryExecutor::finish()
                         LOG_TRACE(log, "Replica reported expected cancellation during drain: {}", packet.exception->displayText());
                     break;
                 }
+                got_exception_from_replica = true;
                 packet.exception->rethrow();
                 break;
 
