@@ -47,19 +47,22 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
 
     if (context->getApplicationType() == Context::ApplicationType::SERVER)
     {
-        /// `WriteBufferFromFile` requires a local-filesystem destination. When
-        /// `user_files_policy` is configured, the first disk is what
-        /// `getUserFilesPaths().front()` resolves to; if that disk is remote
-        /// (e.g. `s3_plain`), reject with a clear error rather than attempting
-        /// to write through local APIs to a path that does not exist locally.
+        /// `WriteBufferFromFile` requires a local-filesystem destination, but the
+        /// resolved `errors_file_path` is validated against the full
+        /// `user_files_paths` list. With a mixed policy (some disks local, some
+        /// remote), an absolute `input_format_record_errors_file_path` under a
+        /// remote disk's root would pass the boundary check yet then fail in
+        /// local I/O. Reject up front if any configured disk is remote.
         if (auto user_files_volume = context->getUserFilesVolume())
         {
-            auto first_disk = user_files_volume->getDisks().front();
-            if (first_disk->isRemote())
-                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                                "input_format_record_errors_file_path is not supported "
-                                "with non-local `user_files_policy` disks (first disk `{}` is remote)",
-                                first_disk->getName());
+            for (const auto & disk : user_files_volume->getDisks())
+            {
+                if (disk->isRemote())
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                                    "input_format_record_errors_file_path is not supported "
+                                    "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                                    disk->getName());
+            }
         }
         const auto user_files_paths = context->getUserFilesPaths();
         /// Resolve against the first user_files_path
