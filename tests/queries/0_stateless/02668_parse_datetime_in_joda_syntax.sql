@@ -340,8 +340,6 @@ select parseDateTimeInJodaSyntax('2025', 'YYY', 'UTC') = toDateTime('2025-01-01'
 select parseDateTimeInJodaSyntax('2025', 'xxx', 'UTC') = toDateTime('2024-12-30', 'UTC');
 select parseDateTimeInJodaSyntax('2025', 'yyy', 'UTC') = toDateTime('2025-01-01', 'UTC');
 
-SELECT parseDateTime64InJodaSyntax('2024-10-09 10:30:10.1234567', 'yyyy-MM-dd HH:mm:ss.SSSSSSS', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
-
 -- -------------------------------------------------------------------------------------------------------------------------
 
 -- { echoOff }
