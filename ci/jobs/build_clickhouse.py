@@ -168,14 +168,16 @@ def main():
 
     # PGO is best-effort: keep a PGO-free command ready so we can retry without
     # profile-guided optimization if cmake/build fails with a stale/incompatible
-    # profile. BOLT has a similar fallback path applied after linking.
+    # profile. BOLT has a similar fallback path applied after linking. Apply BOLT
+    # before snapshotting `cmake_cmd_no_pgo` so the retry preserves `--emit-relocs`
+    # and the later `llvm-bolt` step still has a relocatable binary to operate on.
+    if use_bolt:
+        print(f"BOLT profile found at {bolt_profile}, enabling BOLT post-link optimization")
+        cmake_cmd += " -DENABLE_CLICKHOUSE_BOLT=ON"
     cmake_cmd_no_pgo = cmake_cmd
     if use_pgo:
         print(f"PGO profile found at {pgo_profile}, enabling profile-guided optimization")
         cmake_cmd += f" -DCLICKHOUSE_PGO_PROFILE_PATH={pgo_profile}"
-    if use_bolt:
-        print(f"BOLT profile found at {bolt_profile}, enabling BOLT post-link optimization")
-        cmake_cmd += " -DENABLE_CLICKHOUSE_BOLT=ON"
 
     cmake_cmd += f" {repo_path_normalized} -B {build_dir_normalized}"
     cmake_cmd_no_pgo += f" {repo_path_normalized} -B {build_dir_normalized}"
