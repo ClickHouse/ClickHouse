@@ -32,8 +32,6 @@ namespace ErrorCodes
 {
 extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int ILLEGAL_COLUMN;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int BAD_ARGUMENTS;
 }
 
@@ -91,65 +89,64 @@ private:
         return std::make_shared<DataTypeDate32>();
     }
 
+    /// Type validator for `start` / `end`: accepts Date, Date32, or String, with optional Nullable wrapper.
+    static bool isDateOrDate32OrStringMaybeNullable(const IDataType & type)
+    {
+        const IDataType & inner = type.isNullable()
+            ? *static_cast<const DataTypeNullable &>(type).getNestedType()
+            : type;
+        return isDate(inner) || isDate32(inner) || isString(inner);
+    }
+
+    /// Type validator for `step`: accepts only Interval kinds that make sense for date ranges
+    /// (Day, Week, Month, Quarter, Year), with optional Nullable wrapper.
+    static bool isDateIntervalForRange(const IDataType & type)
+    {
+        const IDataType & inner = type.isNullable()
+            ? *static_cast<const DataTypeNullable &>(type).getNestedType()
+            : type;
+        const auto * interval = checkAndGetDataType<DataTypeInterval>(&inner);
+        if (!interval)
+            return false;
+        switch (interval->getKind())
+        {
+            case IntervalKind::Kind::Day:
+            case IntervalKind::Kind::Week:
+            case IntervalKind::Kind::Month:
+            case IntervalKind::Kind::Quarter:
+            case IntervalKind::Kind::Year:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 2 || arguments.size() > 3)
-        {
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs 2..3 arguments; passed {}.", getName(), arguments.size());
-        }
-
-        /// If any argument is NULL, returns NULL
+        /// If any argument is NULL, returns NULL.
         if (std::find_if(arguments.cbegin(), arguments.cend(), [](const auto & arg) { return arg.type->onlyNull(); }) != arguments.cend())
             return makeNullable(std::make_shared<DataTypeNothing>());
 
+        FunctionArgumentDescriptors mandatory_args{
+            {"start", &isDateOrDate32OrStringMaybeNullable, nullptr, "Date, Date32, or String"},
+            {"end", &isDateOrDate32OrStringMaybeNullable, nullptr, "Date, Date32, or String"},
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"step", &isDateIntervalForRange, nullptr, "IntervalDay | IntervalWeek | IntervalMonth | IntervalQuarter | IntervalYear"},
+        };
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
         DataTypes arg_types;
-        for (size_t i = 0, size = arguments.size(); i < size; ++i)
+        for (size_t i = 0; i < 2; ++i)
         {
             DataTypePtr type_no_nullable = removeNullable(arguments[i].type);
-            if (i == 2)
-            {
-                if (!isInterval(type_no_nullable))
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument of function {}. Expected an interval type.",
-                        arguments[i].type->getName(),
-                        getName());
-
-                const auto * data_type_interval = checkAndGetDataType<DataTypeInterval>(type_no_nullable.get());
-                switch (data_type_interval->getKind())
-                {
-                    case IntervalKind::Kind::Day:
-                    case IntervalKind::Kind::Week:
-                    case IntervalKind::Kind::Month:
-                    case IntervalKind::Kind::Quarter:
-                    case IntervalKind::Kind::Year:
-                        break;
-                    default:
-                        throw Exception(
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal type {} of argument of function {}. Expected an interval type of day, week, month, quarter or year "
-                            "kind.",
-                            arguments[i].type->getName(),
-                            getName());
-                }
-            }
+            if (isString(type_no_nullable))
+                /// For string arguments, inspect the constant value to pick the smallest
+                /// fitting date type (Date or Date32). Non-constant string columns default
+                /// to Date32 since their values are not visible at type-resolution time.
+                arg_types.push_back(resolveStringArgType(arguments[i]));
             else
-            {
-                DataTypePtr resolved;
-                if (isString(type_no_nullable))
-                {
-                    /// For string arguments, inspect the constant value to pick the smallest
-                    /// fitting date type (Date or Date32). Non-constant string columns default
-                    /// to Date32 since their values are not visible at type-resolution time.
-                    resolved = resolveStringArgType(arguments[i]);
-                }
-                else
-                {
-                    resolved = type_no_nullable;
-                }
-                arg_types.push_back(resolved);
-            }
+                arg_types.push_back(type_no_nullable);
         }
 
         DataTypePtr common_type = getLeastSupertype(arg_types);

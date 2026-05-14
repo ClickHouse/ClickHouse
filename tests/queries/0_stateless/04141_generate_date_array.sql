@@ -79,8 +79,8 @@ SELECT generate_date_array(materialize('1900-01-01'), materialize('2299-12-31'),
 SELECT generate_date_array('2024-01-01'::Date, '2024-01-07'::Date, toIntervalDay(number + 1)) FROM numbers(1); -- { serverError ILLEGAL_COLUMN }
 -- ILLEGAL_TYPE_OF_ARGUMENT errors
 -- Non-date argument types (DateTime, integers) are not supported
-SELECT generate_date_array(toDateTime('2016-10-05 00:00:00'), toDateTime('2016-10-08 00:00:00')); -- { serverError ILLEGAL_COLUMN }
-SELECT generate_date_array(1, 5); -- { serverError ILLEGAL_COLUMN }
+SELECT generate_date_array(toDateTime('2016-10-05 00:00:00'), toDateTime('2016-10-08 00:00:00')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT generate_date_array(1, 5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- Invalid interval kind (sub-day intervals are not allowed)
 SELECT generate_date_array('2016-10-05'::Date, '2016-10-06'::Date, INTERVAL 1 HOUR); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT generate_date_array('2016-10-05'::Date, '2016-10-06'::Date, INTERVAL 1 MINUTE); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
