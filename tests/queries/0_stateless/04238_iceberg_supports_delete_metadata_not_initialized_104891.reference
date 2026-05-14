@@ -1,0 +1,3 @@
+INSERT failed as expected
+DELETE FROM did not crash with Logical error
+1

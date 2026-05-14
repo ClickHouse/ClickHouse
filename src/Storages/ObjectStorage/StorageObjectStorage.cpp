@@ -361,6 +361,28 @@ IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
     return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
 }
 
+bool StorageObjectStorage::supportsDelete() const
+{
+    /// For data lake configurations the answer depends on `current_metadata`, which is loaded
+    /// lazily. `InterpreterDeleteQuery::execute` calls `supportsDelete()` BEFORE
+    /// `checkMutationIsPossible` (which performs lazy-init), so without forcing init here we
+    /// would hit `assertInitialized()` and raise a logical error for a freshly-attached table
+    /// whose metadata has not been loaded yet.
+    if (configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsDelete();
+}
+
+bool StorageObjectStorage::supportsParallelInsert() const
+{
+    /// Same lazy-init concern as `supportsDelete()`. `InsertDependenciesBuilder` queries this
+    /// while building the INSERT pipeline, which may run before any other code path on the
+    /// storage has loaded the data lake metadata.
+    if (configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsParallelInsert();
+}
+
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
     if (!configuration->isDataLakeConfiguration())
