@@ -223,9 +223,10 @@ private:
     ///
     /// if constexpr eliminates the dead branch entirely at compile time, so both
     /// instantiations have the same performance as the original separate functions.
-    template <typename T, bool IsDayBased>
+    template <typename T>
     ColumnPtr executeGeneric(
-        const IColumn * start_col, const IColumn * end_col, Int64 step_value, IntervalKind interval_kind, size_t input_rows_count) const
+        const IColumn * start_col, const IColumn * end_col, Int64 step_value, IntervalKind interval_kind, size_t input_rows_count,
+        bool is_day_based) const
     {
         auto start_column = checkAndGetColumn<ColumnVector<T>>(start_col);
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_col);
@@ -240,7 +241,7 @@ private:
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            if constexpr (IsDayBased)
+            if (is_day_based)
             {
                 row_length[row_idx] = getDaysCount(Int64(start_data[row_idx]), Int64(end_data[row_idx]), step_value);
             }
@@ -273,7 +274,7 @@ private:
             for (size_t idx = 0; idx < len; ++idx)
             {
                 out_data[offset + idx] = current;
-                if constexpr (IsDayBased)
+                if (is_day_based)
                 {
                     current += step_value;
                 }
@@ -292,14 +293,14 @@ private:
     template <typename T>
     ColumnPtr executeGenericDays(const IColumn * start_col, const IColumn * end_col, Int64 step_value, size_t input_rows_count) const
     {
-        return executeGeneric<T, true>(start_col, end_col, step_value, IntervalKind::Kind::Day, input_rows_count);
+        return executeGeneric<T>(start_col, end_col, step_value, IntervalKind::Kind::Day, input_rows_count, true);
     }
 
     template <typename T>
     ColumnPtr executeGenericCalendar(
         const IColumn * start_col, const IColumn * end_col, Int64 step_value, IntervalKind interval_kind, size_t input_rows_count) const
     {
-        return executeGeneric<T, false>(start_col, end_col, step_value, interval_kind, input_rows_count);
+        return executeGeneric<T>(start_col, end_col, step_value, interval_kind, input_rows_count, false);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
