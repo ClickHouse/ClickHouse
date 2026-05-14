@@ -355,8 +355,12 @@ public:
     public:
         Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_);
 
-        DataPartsVector commit();
-        DataPartsVector commit(DataPartsLock & lock);
+        /// `is_refresh` skips `assertCanCommitTransaction`. Used by `loadNewlyAppearedParts`
+        /// to add parts discovered on shared storage into the in-memory part set on follower
+        /// replicas under `leader_election`, where the leadership assertion would otherwise
+        /// reject the commit even though no new data is being produced.
+        DataPartsVector commit(bool is_refresh = false);
+        DataPartsVector commit(DataPartsLock & lock, bool is_refresh = false);
 
         /// Rename should be done explicitly, before calling commit(), to
         /// guarantee that no lock held during rename (since rename is IO

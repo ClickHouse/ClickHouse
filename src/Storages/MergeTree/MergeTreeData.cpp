@@ -301,6 +301,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsSeconds refresh_statistics_interval;
+    extern const MergeTreeSettingsBool leader_election;
+    extern const MergeTreeSettingsSeconds leader_election_heartbeat_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
@@ -2564,7 +2566,16 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     data_parts_loading_finished = true;
 
     auto refresh_parts_interval = (*settings)[MergeTreeSetting::refresh_parts_interval].totalMilliseconds();
-    if (all_disks_are_readonly && refresh_parts_interval && !refresh_parts_task)
+
+    /// Under `leader_election`, followers must periodically scan shared object storage so that
+    /// `SELECT` sees parts the current leader has committed since this replica started up.
+    /// Use the heartbeat cadence as the default refresh interval — staleness on followers is then
+    /// bounded by the same cadence the leader uses to renew its lease.
+    bool leader_election_follower_refresh = (*settings)[MergeTreeSetting::leader_election];
+    if (leader_election_follower_refresh && refresh_parts_interval == 0)
+        refresh_parts_interval = (*settings)[MergeTreeSetting::leader_election_heartbeat_interval].totalMilliseconds();
+
+    if ((all_disks_are_readonly || leader_election_follower_refresh) && refresh_parts_interval && !refresh_parts_task)
     {
         refresh_parts_task = getContext()->getSchedulePool().createTask(
             getStorageID(), "MergeTreeData::refreshDataParts",
@@ -2574,7 +2585,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 refreshDataParts(refresh_parts_interval);
             });
 
-        refresh_parts_task->scheduleAfter(refresh_parts_interval);
+        /// For `leader_election` tables we leave scheduling to the leadership-change callback in
+        /// `StorageMergeTree::startup`: the task runs only while we are a follower.
+        if (!leader_election_follower_refresh)
+            refresh_parts_task->scheduleAfter(refresh_parts_interval);
     }
 }
 
@@ -2662,7 +2676,7 @@ size_t MergeTreeData::loadNewlyAppearedParts()
                 auto part_lock = lockParts();
                 Transaction transaction(*this, nullptr);
                 preparePartForCommit(res.part, transaction, part_lock, false, false);
-                transaction.commit(part_lock);
+                transaction.commit(part_lock, /* is_refresh = */ true);
             }
 
             bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
@@ -2706,15 +2720,19 @@ try
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
 
-    /// The periodic refresh task is only scheduled when every disk is read-only.
-    /// Verify that invariant — the synchronous `loadNewlyAppearedParts` is the
-    /// entry point for writable shared-storage scenarios such as `leader_election`.
-    for (const auto & disk_ptr : getStoragePolicy()->getDisks())
+    /// The periodic refresh task is scheduled either when every disk is read-only, or when
+    /// `leader_election` is enabled and this replica is a follower. In both cases the
+    /// replica must not write to shared storage. Verify the invariant.
+    bool is_leader_election = (*getSettings())[MergeTreeSetting::leader_election];
+    if (!is_leader_election)
     {
-        if (disk_ptr->isBroken())
-            continue;
-        if (!disk_ptr->isReadOnly())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::refreshDataParts should only be called if all disks are readonly");
+        for (const auto & disk_ptr : getStoragePolicy()->getDisks())
+        {
+            if (disk_ptr->isBroken())
+                continue;
+            if (!disk_ptr->isReadOnly())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::refreshDataParts should only be called if all disks are readonly or `leader_election` is enabled");
+        }
     }
 
     loadNewlyAppearedParts();
@@ -8651,15 +8669,20 @@ void MergeTreeData::Transaction::renameParts()
     precommitted_parts_need_rename.clear();
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
+MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(bool is_refresh)
 {
     auto lock = data.lockParts();
-    return commit(lock);
+    return commit(lock, is_refresh);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock)
+MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock, bool is_refresh)
 {
-    data.assertCanCommitTransaction();
+    /// Refresh-path commits (`loadNewlyAppearedParts`) only add parts that already exist on
+    /// shared storage to the local in-memory index; they do not produce new data. Followers
+    /// under `leader_election` must be able to run this path to keep their part view fresh,
+    /// so the leadership assertion is skipped in that case.
+    if (!is_refresh)
+        data.assertCanCommitTransaction();
 
     DataPartsVector total_covered_parts;
 

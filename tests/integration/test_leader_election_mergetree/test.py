@@ -549,6 +549,7 @@ SHARED_UUID_BLOCKNUM = "12345678-abcd-abcd-abcd-12345678ab01"
 SHARED_UUID_ALTER = "12345678-abcd-abcd-abcd-12345678ab02"
 SHARED_UUID_RENAME = "12345678-abcd-abcd-abcd-12345678ab03"
 SHARED_UUID_VISIBILITY = "12345678-abcd-abcd-abcd-12345678ab04"
+SHARED_UUID_FOLLOWER_REFRESH = "12345678-abcd-abcd-abcd-12345678ab05"
 
 
 def ensure_node_up(node, timeout=60):
@@ -721,6 +722,66 @@ def test_local_metadata_rejects_leader_election(started_cluster):
         "MergeTree with leader_election=1 on an S3 disk with local metadata "
         "should have been rejected at CREATE"
     )
+
+
+def test_follower_sees_leader_writes(started_cluster):
+    """
+    Regression: a follower must periodically re-scan shared object storage so that
+    `SELECT` observes parts the current leader has committed since the follower
+    started up. Without the follower-side refresh, follower reads would lag
+    indefinitely until takeover or restart.
+    """
+    for n in (node1, node2):
+        ensure_node_up(n)
+    table = "test_follower_refresh"
+    try:
+        create_table_on_first_node(node1, table, SHARED_UUID_FOLLOWER_REFRESH)
+        attach_table_on_second_node(node2, table, SHARED_UUID_FOLLOWER_REFRESH)
+
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        follower = followers[0]
+        logging.info(f"Leader: {leader.name}, Follower: {follower.name}")
+
+        leader.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+
+        # The follower's refresh task runs at the heartbeat cadence (1 s in
+        # `TABLE_SETTINGS`). Allow several cycles before failing.
+        deadline = time.monotonic() + 60
+        follower_count = 0
+        while time.monotonic() < deadline:
+            follower_count = int(
+                follower.query(f"SELECT count() FROM {table} WHERE x > 0").strip()
+            )
+            if follower_count >= 3:
+                break
+            time.sleep(1)
+
+        assert follower_count >= 3, (
+            f"Follower did not observe leader's parts after refresh interval "
+            f"(saw {follower_count} rows, expected at least 3)"
+        )
+
+        # A second batch from the leader must also become visible on the follower.
+        leader.query(f"INSERT INTO {table} VALUES (4), (5)")
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            follower_count = int(
+                follower.query(f"SELECT count() FROM {table} WHERE x > 0").strip()
+            )
+            if follower_count >= 5:
+                break
+            time.sleep(1)
+
+        assert follower_count >= 5, (
+            f"Follower did not observe the leader's second batch after refresh "
+            f"(saw {follower_count} rows, expected at least 5)"
+        )
+    finally:
+        for n in (node1, node2):
+            try:
+                n.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
 
 
 def test_replicated_mergetree_rejects_leader_election(started_cluster):

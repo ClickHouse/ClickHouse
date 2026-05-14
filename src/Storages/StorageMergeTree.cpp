@@ -314,6 +314,14 @@ void StorageMergeTree::startup()
                 {
                     LOG_INFO(log, "Became leader, syncing shared storage and starting background operations");
 
+                    /// Stop the follower refresh task before issuing the forced disk refresh
+                    /// below so the two paths cannot interleave `disk->refresh` calls or
+                    /// `loadNewlyAppearedParts` updates against the same disk metadata cache.
+                    /// `deactivate` waits for any in-flight refresh execution to finish, so the
+                    /// takeover sync that follows observes a quiesced follower-state.
+                    if (refresh_parts_task)
+                        refresh_parts_task->deactivate();
+
                     /// Before accepting any writes, refresh the local view of parts and
                     /// advance the block-number counter past anything the previous leader
                     /// committed on shared storage. The constructor has already validated that
@@ -354,8 +362,14 @@ void StorageMergeTree::startup()
                     catch (...)
                     {
                         /// If we cannot read shared storage, do not enable writes — leadership
-                        /// without a fresh view of parts is exactly the split-brain case we are
+                        /// without a fresh view is precisely the split-brain case we are
                         /// guarding against. The election task will retry on the next tick.
+                        ///
+                        /// Reactivate the follower refresh task so `SELECT` keeps observing the
+                        /// current leader's parts during the retry window. Without this, a single
+                        /// takeover failure would leave the follower's view permanently frozen.
+                        if (refresh_parts_task)
+                            refresh_parts_task->activateAndSchedule();
                         tryLogCurrentException(log, "Failed to sync parts from shared storage on leadership acquisition, refusing to enable writes");
                         throw;
                     }
@@ -391,8 +405,22 @@ void StorageMergeTree::startup()
                     background_operations_assignee.finish();
                     background_moves_assignee.finish();
                     cleanup_thread.stop();
+
+                    /// Followers periodically re-scan shared object storage so that `SELECT`
+                    /// observes parts the current leader has committed since this replica
+                    /// started up. The task is created in `MergeTreeData::loadDataParts` and
+                    /// is owned by `MergeTreeData::refresh_parts_task`.
+                    if (refresh_parts_task)
+                        refresh_parts_task->activateAndSchedule();
                 }
             });
+
+            /// Begin serving follower reads immediately. The leadership callback fires only
+            /// on transitions, so a replica that never becomes leader would otherwise leave
+            /// the refresh task dormant and serve stale `SELECT`s. If we later acquire
+            /// leadership, the `became_leader=true` branch above deactivates this task.
+            if (refresh_parts_task)
+                refresh_parts_task->activateAndSchedule();
 
             leader_election_ptr->start();
         }
