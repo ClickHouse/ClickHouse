@@ -237,7 +237,8 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
 
         mfunc->set_rdatabase(sc.database);
         mfunc->set_rtable(t.getBaseName());
-        mfunc->set_named_collection(sc.named_collection);
+        if (!sc.named_collection.empty())
+            mfunc->set_named_collection(sc.named_collection);
     }
     else if (
         (usage == TableFunctionUsage::EngineReplace && t.isPostgreSQLEngine())
@@ -246,7 +247,8 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         const ServerCredentials & sc = fc.postgresql_server.value();
         PostgreSQLFunc * pfunc = tfunc->mutable_postgresql();
 
-        pfunc->set_named_collection(sc.named_collection);
+        if (!sc.named_collection.empty())
+            pfunc->set_named_collection(sc.named_collection);
         pfunc->set_rdatabase(sc.database);
         pfunc->set_rschema("test");
         pfunc->set_rtable(t.getBaseName());
@@ -427,7 +429,8 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             if (fc.mongodb_server.has_value())
             {
                 mfunc->set_database(fc.mongodb_server.value().database);
-                mfunc->set_named_collection(fc.mongodb_server.value().named_collection);
+                if (!fc.mongodb_server.value().named_collection.empty())
+                    mfunc->set_named_collection(fc.mongodb_server.value().named_collection);
             }
             structure = rg.nextMediumNumber() < 96 ? mfunc->mutable_structure() : nullptr;
         }

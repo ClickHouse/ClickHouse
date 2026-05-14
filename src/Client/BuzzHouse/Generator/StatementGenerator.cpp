@@ -1113,9 +1113,8 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
               const auto is_url = tableOrFunctionRef(rg, t, true, dt->mutable_tof());
               UNUSED(is_url);
               this->entries.clear();
-              /// Exercise the `DESCRIBE TEMPORARY TABLE` syntax half the time when the
-              /// picked target is actually a temporary table.
-              dt->set_temporary(t.get().is_temp && rg.nextBool());
+              /// TEMPORARY is only valid for plain table names, not table functions
+              dt->set_temporary(dt->tof().has_est() && t.get().is_temp && rg.nextBool());
           }},
          {desc_view,
           [&]
