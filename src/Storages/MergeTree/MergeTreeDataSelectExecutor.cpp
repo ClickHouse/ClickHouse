@@ -2,6 +2,7 @@
 #include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
+#include <unordered_map>
 #include <unordered_set>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
@@ -2105,6 +2106,19 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// `vector_search_results.rows` as part-global row offsets, so merge all granule-local hits here.
         std::optional<NearestNeighbours> merged_vector_search_results;
         bool skip_vector_distance_hints = false;
+        std::unordered_map<size_t, MarkRanges> pk_ranges_by_index_mark;
+        std::unordered_map<size_t, NearestNeighbours> vector_search_results_by_index_mark;
+        std::unordered_set<size_t> merged_hints_index_marks;
+
+        if (index_helper->isVectorSimilarityIndex() && !all_match)
+        {
+            for (size_t i = 0; i < ranges_size; ++i)
+            {
+                const MarkRange & index_range = index_ranges[i];
+                for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+                    pk_ranges_by_index_mark[index_mark].push_back(ranges[i]);
+            }
+        }
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
@@ -2119,19 +2133,24 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
-                    MarkRanges pk_ranges_single;
-                    std::optional<IMergeTreeIndexCondition::GranuleRowFilter> row_filter;
-                    if (!all_match)
+                    auto search_result_it = vector_search_results_by_index_mark.find(index_mark);
+                    if (search_result_it == vector_search_results_by_index_mark.end())
                     {
-                        pk_ranges_single.push_back(ranges[i]);
-                        row_filter.emplace(IMergeTreeIndexCondition::GranuleRowFilter{
-                            part->index_granularity.get(),
-                            std::move(pk_ranges_single),
-                            index_mark,
-                            skip_index_granularity});
-                    }
+                        std::optional<IMergeTreeIndexCondition::GranuleRowFilter> row_filter;
+                        if (!all_match)
+                        {
+                            row_filter.emplace(IMergeTreeIndexCondition::GranuleRowFilter{
+                                part->index_granularity.get(),
+                                pk_ranges_by_index_mark.at(index_mark),
+                                index_mark,
+                                skip_index_granularity});
+                        }
 
-                    NearestNeighbours nn = condition->calculateApproximateNearestNeighbors(granule, row_filter);
+                        search_result_it = vector_search_results_by_index_mark.emplace(
+                            index_mark,
+                            condition->calculateApproximateNearestNeighbors(granule, row_filter)).first;
+                    }
+                    const NearestNeighbours & nn = search_result_it->second;
 
                     /// We need to sort the result ranges ascendingly (granule-local row ids).
                     auto rows = nn.rows;
@@ -2142,27 +2161,30 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (has_duplicates)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
-                    if (!nn.distances.has_value())
+                    if (merged_hints_index_marks.insert(index_mark).second)
                     {
-                        /// Fail-close: `_distance` path requires paired distances; if any granule lacks them,
-                        /// drop accumulated hints for this part (conservative, matches legacy `read_hints = {}` intent).
-                        skip_vector_distance_hints = true;
-                        merged_vector_search_results.reset();
-                    }
-                    else if (!skip_vector_distance_hints)
-                    {
-                        if (!merged_vector_search_results.has_value())
+                        if (!nn.distances.has_value())
                         {
-                            merged_vector_search_results.emplace();
-                            merged_vector_search_results->distances.emplace();
+                            /// Fail-close: `_distance` path requires paired distances; if any granule lacks them,
+                            /// drop accumulated hints for this part (conservative, matches legacy `read_hints = {}` intent).
+                            skip_vector_distance_hints = true;
+                            merged_vector_search_results.reset();
                         }
-
-                        const size_t granule_base_row = part->index_granularity->getMarkStartingRow(index_mark * skip_index_granularity);
-                        chassert(nn.rows.size() == nn.distances->size());
-                        for (size_t j = 0; j < nn.rows.size(); ++j)
+                        else if (!skip_vector_distance_hints)
                         {
-                            merged_vector_search_results->rows.push_back(granule_base_row + nn.rows[j]);
-                            merged_vector_search_results->distances->push_back((*nn.distances)[j]);
+                            if (!merged_vector_search_results.has_value())
+                            {
+                                merged_vector_search_results.emplace();
+                                merged_vector_search_results->distances.emplace();
+                            }
+
+                            const size_t granule_base_row = part->index_granularity->getMarkStartingRow(index_mark * skip_index_granularity);
+                            chassert(nn.rows.size() == nn.distances->size());
+                            for (size_t j = 0; j < nn.rows.size(); ++j)
+                            {
+                                merged_vector_search_results->rows.push_back(granule_base_row + nn.rows[j]);
+                                merged_vector_search_results->distances->push_back((*nn.distances)[j]);
+                            }
                         }
                     }
 
