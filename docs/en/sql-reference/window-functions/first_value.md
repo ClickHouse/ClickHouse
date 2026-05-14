@@ -4,8 +4,9 @@ sidebar_label: 'first_value'
 sidebar_position: 3
 slug: /sql-reference/window-functions/first_value
 title: 'first_value'
-doc_type: 'reference'
 ---
+
+# first_value
 
 Returns the first value evaluated within its ordered frame. By default, NULL arguments are skipped, however the `RESPECT NULLS` modifier can be used to override this behaviour.
 

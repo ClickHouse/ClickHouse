@@ -4,8 +4,9 @@ sidebar_label: 'rank'
 sidebar_position: 6
 slug: /sql-reference/window-functions/rank
 title: 'rank'
-doc_type: 'reference'
 ---
+
+# rank
 
 Ranks the current row within its partition with gaps. In other words, if the value of any row it encounters is equal to the value of a previous row then it will receive the same rank as that previous row.
 The rank of the next row is then equal to the rank of the previous row plus a gap equal to the number of times the previous rank was given.

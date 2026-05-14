@@ -4,8 +4,9 @@ sidebar_label: 'sqlite'
 sidebar_position: 185
 slug: /sql-reference/table-functions/sqlite
 title: 'sqlite'
-doc_type: 'reference'
 ---
+
+# sqlite Table Function
 
 Allows to perform queries on data stored in a [SQLite](../../engines/database-engines/sqlite.md) database.
 
@@ -45,4 +46,3 @@ Result:
 ## Related {#related}
 
 - [SQLite](../../engines/table-engines/integrations/sqlite.md) table engine
-- [SQLite database engine](../../engines/database-engines/sqlite.md) — Data types support section

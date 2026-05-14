@@ -3,8 +3,9 @@ description: 'Documentation for DISTINCT Clause'
 sidebar_label: 'DISTINCT'
 slug: /sql-reference/statements/select/distinct
 title: 'DISTINCT Clause'
-doc_type: 'reference'
 ---
+
+# DISTINCT Clause
 
 If `SELECT DISTINCT` is specified, only unique rows will remain in a query result. Thus, only a single row will remain out of all the sets of fully matching rows in the result.
 

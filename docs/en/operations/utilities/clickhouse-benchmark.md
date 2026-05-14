@@ -4,8 +4,9 @@ sidebar_label: 'clickhouse-benchmark'
 sidebar_position: 61
 slug: /operations/utilities/clickhouse-benchmark
 title: 'clickhouse-benchmark'
-doc_type: 'reference'
 ---
+
+# clickhouse-benchmark 
 
 Connects to a ClickHouse server and repeatedly sends specified queries.
 
@@ -40,14 +41,10 @@ Then pass this file to a standard input of `clickhouse-benchmark`:
 clickhouse-benchmark [keys] < queries_file;
 ```
 
-## Command-line options {#clickhouse-benchmark-command-line-options}
+## Keys {#clickhouse-benchmark-keys}
 
 - `--query=QUERY` — Query to execute. If this parameter is not passed, `clickhouse-benchmark` will read queries from standard input.
-- `--query_id=ID` — Query Id.
-- `--query_id_prefix=ID_PREFIX` — Query Id Prefix.
 - `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
-- `-C N`, `--max_concurrency=N` — Gradually increases number of parallel queries up to specified value, making one report for every concurrency level.
-- `--precise` — Enables precise per-interval reporting with weighted metrics.
 - `-d N`, `--delay=N` — Interval in seconds between intermediate reports (to disable reports set 0). Default value: 1.
 - `-h HOST`, `--host=HOST` — Server host. Default value: `localhost`. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-h` keys.
 - `-i N`, `--iterations=N` — Total number of queries. Default value: 0 (repeat forever).
@@ -60,23 +57,12 @@ clickhouse-benchmark [keys] < queries_file;
 - `--database=DATABASE_NAME` — ClickHouse database name. Default value: `default`.
 - `--user=USERNAME` — ClickHouse user name. Default value: `default`.
 - `--password=PSWD` — ClickHouse user password. Default value: empty string.
-- `--stacktrace` — Stack traces output. When the key is set, `clickhouse-benchmark` outputs stack traces of exceptions.
+- `--stacktrace` — Stack traces output. When the key is set, `clickhouse-bencmark` outputs stack traces of exceptions.
 - `--stage=WORD` — Query processing stage at server. ClickHouse stops query processing and returns an answer to `clickhouse-benchmark` at the specified stage. Possible values: `complete`, `fetch_columns`, `with_mergeable_state`. Default value: `complete`.
-- `--roundrobin` — Instead of comparing queries for different `--host`/`--port` just pick one random `--host`/`--port` for every query and send query to it.
-- `--reconnect=N` — Control reconnection behaviour. Possible values 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries). Default value: 0.
-- `--max-consecutive-errors=N` — Number of allowed consecutive errors. Default value: 0.
-- `--ignore-error`,`--continue_on_errors` — Continue testing even if queries failed.
-- `--client-side-time` — Display the time including network communication instead of server-side time; Note that for server versions before 22.8 we always display client-side time.
-- `--proto-caps` — Enable/disable chunking in data transfer. choices (can be comma-separated): `chunked_optional`, `notchunked`, `notchunked_optional`, `send_chunked`, `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`. Default value: `notchunked`.
+- `--reconnect=N` - Control reconnection behaviour. Possible values 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries). Default value: 0.
 - `--help` — Shows the help message.
-- `--verbose` — Increase help message verbosity.
 
 If you want to apply some [settings](/operations/settings/overview) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
-
-## Environment variable options {#clickhouse-benchmark-environment-variable-options}
-
-The user name, password and host can be set via environment variables `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` and `CLICKHOUSE_HOST`.  
-Command line arguments `--user`, `--password` or `--host` take precedence over environment variables.
 
 ## Output {#clickhouse-benchmark-output}
 

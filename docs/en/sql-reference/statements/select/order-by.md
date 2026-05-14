@@ -3,8 +3,9 @@ description: 'Documentation for ORDER BY Clause'
 sidebar_label: 'ORDER BY'
 slug: /sql-reference/statements/select/order-by
 title: 'ORDER BY Clause'
-doc_type: 'reference'
 ---
+
+# ORDER BY Clause
 
 The `ORDER BY` clause contains
 

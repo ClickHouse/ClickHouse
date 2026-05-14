@@ -6,8 +6,9 @@ sidebar_position: 51
 slug: /sql-reference/statements/alter/comment
 title: 'ALTER TABLE ... MODIFY COMMENT'
 keywords: ['ALTER TABLE', 'MODIFY COMMENT']
-doc_type: 'reference'
 ---
+
+# ALTER TABLE ... MODIFY COMMENT
 
 Adds, modifies, or removes a table comment, regardless of whether it was set 
 before or not. The comment change is reflected in both [`system.tables`](../../../operations/system-tables/tables.md) 

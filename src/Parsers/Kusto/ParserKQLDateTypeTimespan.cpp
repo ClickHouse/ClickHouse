@@ -129,9 +129,13 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
     }
     else if (*(ptr + number_len) == '\0')
     {
-        /// A plain number without any suffix or colon is NOT a timespan literal.
-        /// In KQL, a timespan must have a suffix (d, h, m, s, ms, etc.) or colon format (d.hh:mm:ss).
-        return false;
+        if (sign)
+            time_span = -(std::stoi(String(ptr, ptr + number_len))) * 86400;
+        else
+            time_span = std::stoi(String(ptr, ptr + number_len)) * 86400;
+
+        time_span_unit = KQLTimespanUint::second;
+        return true;
     }
     else
     {
@@ -144,7 +148,7 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
         String timespan_suffix(ptr + number_len, ptr + text.size());
 
         trim(timespan_suffix);
-        if (!timespan_suffixes.contains(timespan_suffix))
+        if (timespan_suffixes.find(timespan_suffix) == timespan_suffixes.end())
             return false;
 
         time_span = std::stod(String(ptr, ptr + number_len));
@@ -189,7 +193,7 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
         }
     }
     auto exponent = 9 - sec_scale_len; // max supported length of fraction of seconds is 9
-    nanoseconds = nanoseconds * std::pow(10, exponent);
+    nanoseconds = nanoseconds * pow(10, exponent);
 
     if (sign)
         time_span = -(days * 86400 + hours * 3600 + minutes * 60 + seconds + (nanoseconds / 1000000000));

@@ -9,7 +9,6 @@
 #include <Common/SettingSource.h>
 #include <IO/WriteHelpers.h>
 
-#include <bitset>
 #include <string_view>
 #include <unordered_map>
 
@@ -18,9 +17,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_ddl;
-    extern const SettingsBool dynamic_disk_allow_from_env;
-    extern const SettingsBool dynamic_disk_allow_include;
-    extern const SettingsBool dynamic_disk_allow_from_zk;
     extern const SettingsUInt64 readonly;
 }
 
@@ -219,7 +215,12 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
 
 void SettingsConstraints::check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
 {
-    checkOrClamp(current_settings, changes, THROW_ON_VIOLATION, source);
+    std::erase_if(
+        changes,
+        [&](SettingChange & change) -> bool
+        {
+            return !checkImpl(current_settings, change, THROW_ON_VIOLATION, source);
+        });
 }
 
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
@@ -235,32 +236,24 @@ void SettingsConstraints::check(const MergeTreeSettings & current_settings, cons
 
 void SettingsConstraints::clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
 {
-    checkOrClamp(current_settings, changes, CLAMP_ON_VIOLATION, source);
+    std::erase_if(
+        changes,
+        [&](SettingChange & change) -> bool
+        {
+            return !checkImpl(current_settings, change, CLAMP_ON_VIOLATION, source);
+        });
 }
 
-void SettingsConstraints::checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const
-{
-    /// If we filter out settings that match the current default here, `compatibility` will silently override them.
-    /// So when `compatibility` is present, we keep unchanged settings so they are applied after `compatibility`.
-    bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr;
-    std::erase_if(changes, [&](SettingChange & change)
-    {
-        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/has_compatibility_setting);
-    });
-}
-
-/// Casts `change.value` to the setting's declared type and returns the result. Returns Null if we should skip the setting: either because
-/// the value is unchanged (when `ignore_unchanged_settings` is false) or because the cast failed (when `throw_on_failure` is false).
 template <typename SettingsT>
-Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange & change, bool ignore_unchanged_settings, bool throw_on_failure)
+bool getNewValueToCheck(const SettingsT & current_settings, SettingChange & change, Field & new_value, bool throw_on_failure)
 {
     Field current_value;
     bool has_current_value = current_settings.tryGet(change.name, current_value);
 
-    if (!ignore_unchanged_settings && has_current_value && change.value == current_value)
-        return {};
+    /// Setting isn't checked if value has not changed.
+    if (has_current_value && change.value == current_value)
+        return false;
 
-    Field new_value;
     if (throw_on_failure)
         new_value = SettingsT::castValueUtil(change.name, change.value);
     else
@@ -269,23 +262,23 @@ Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange
         {
             new_value = SettingsT::castValueUtil(change.name, change.value);
         }
-        catch (const Exception &)
+        catch (...)
         {
-            return {};
+            return false;
         }
     }
 
-    if (!ignore_unchanged_settings && has_current_value && new_value == current_value)
-        return {};
+    /// Setting isn't checked if value has not changed.
+    if (has_current_value && new_value == current_value)
+        return false;
 
-    return new_value;
+    return true;
 }
 
 bool SettingsConstraints::checkImpl(const Settings & current_settings,
                                     SettingChange & change,
                                     ReactionOnViolation reaction,
-                                    SettingSource source,
-                                    bool ignore_unchanged_settings) const
+                                    SettingSource source) const
 {
     std::string_view setting_name = Settings::resolveName(change.name);
 
@@ -313,24 +306,17 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
     else if (!access_control->isSettingNameAllowed(setting_name))
         return false;
 
-    Field new_value = getNewValueToCheck(current_settings, change, ignore_unchanged_settings, reaction == THROW_ON_VIOLATION);
-    if (new_value.isNull())
+    Field new_value;
+    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
-
-    if (ignore_unchanged_settings)
-    {
-        Field current_value;
-        if (current_settings.tryGet(change.name, current_value) && new_value == current_value)
-            return true;
-    }
 
     return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);
 }
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
-    Field new_value = getNewValueToCheck(current_settings, change, /*ignore_unchanged_settings=*/false, reaction == THROW_ON_VIOLATION);
-    if (new_value.isNull())
+    Field new_value;
+    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
     return getMergeTreeChecker(change.name).check(change, new_value, reaction, SettingSource::QUERY);
 }
@@ -357,7 +343,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
         {
             return accurateLess(left, right);
         }
-        catch (const Exception &)
+        catch (...)
         {
             return true;
         }
@@ -371,7 +357,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
         {
             return accurateEquals(left, right);
         }
-        catch (const Exception &)
+        catch (...)
         {
             return true;
         }

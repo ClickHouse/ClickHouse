@@ -4,8 +4,9 @@ sidebar_label: 'CONSTRAINT'
 sidebar_position: 43
 slug: /sql-reference/statements/alter/constraint
 title: 'Manipulating Constraints'
-doc_type: 'reference'
 ---
+
+# Manipulating Constraints
 
 Constraints could be added or deleted using following syntax:
 
