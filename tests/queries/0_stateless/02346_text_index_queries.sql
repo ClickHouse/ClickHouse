@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: long, no-fasttest
 -- no-fasttest: It can be slow
 
 SET log_queries = 1;

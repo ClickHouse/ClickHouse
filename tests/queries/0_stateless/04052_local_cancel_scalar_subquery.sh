@@ -10,7 +10,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_LOCAL} --query="SELECT (SELECT max(number) FROM system.numbers) + 1 SETTINGS max_rows_to_read = 0, max_bytes_to_read = 0" >/dev/null 2>&1 &
 local_pid=$!
 
-sleep 1
+# clickhouse-local startup is slow under sanitizers on ARM
+sleep 4
 
 # Send SIGINT to cancel the query
 kill -INT $local_pid 2>/dev/null
