@@ -21,6 +21,7 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <base/range.h>
+#include <base/scope_guard.h>
 #include <base/unaligned.h>
 
 
@@ -161,11 +162,16 @@ public:
         if (is_nullable)
             nested_column_nullable = nullptr;
 
+        /// Restore the invariant even if `callback` or recursive descent throws,
+        /// so the column does not stay in an inconsistent state.
+        SCOPE_EXIT({
+            reverse_index.setColumn(getRawColumnPtr());
+            if (is_nullable)
+                nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+        });
+
         callback(*column_holder);
         column_holder->forEachMutableSubcolumnRecursively(callback);
-        reverse_index.setColumn(getRawColumnPtr());
-        if (is_nullable)
-            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
 
     bool structureEquals(const IColumn & rhs) const override
