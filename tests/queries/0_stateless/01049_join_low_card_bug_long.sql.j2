@@ -1,5 +1,6 @@
--- Tags: long, no-msan, no-random-detach
+-- Tags: long, no-msan, no-random-detach, no-flaky-check
 -- no-random-detach: long test, DETACH/ATTACH adds too much overhead
+-- no-flaky-check: long test consistently times out in the flaky check (which reruns each test many times)
 
 DROP TABLE IF EXISTS l;
 DROP TABLE IF EXISTS r;
