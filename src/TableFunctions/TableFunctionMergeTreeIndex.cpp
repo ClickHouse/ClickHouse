@@ -165,7 +165,7 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         for (const auto & column : MergeTreeData::getMinMaxColumns(partition_key, merge_tree->getSettings()))
-            columns.add({fmt::format("minmax_{}", column.name), makeNullableSafe(column.type)});
+            columns.add({fmt::format("minmax_{}", column.name), std::make_shared<DataTypeTuple>(DataTypes{makeNullableSafe(column.type), makeNullableSafe(column.type)})});
     }
 
     for (const auto & column : metadata_snapshot->getPrimaryKey().sample_block)
