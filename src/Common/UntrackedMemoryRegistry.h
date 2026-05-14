@@ -2,15 +2,15 @@
 
 #include <atomic>
 #include <mutex>
-#include <unordered_set>
 
 #include <base/types.h>
+#include <boost/intrusive/list.hpp>
 
 
 namespace DB
 {
 
-class UntrackedMemoryCounter
+class UntrackedMemoryCounter : public boost::intrusive::list_base_hook<>
 {
 public:
     UntrackedMemoryCounter();
@@ -43,7 +43,7 @@ private:
     UntrackedMemoryRegistry() = default;
 
     mutable std::mutex mutex;
-    std::unordered_set<UntrackedMemoryCounter *> counters;
+    boost::intrusive::list<UntrackedMemoryCounter> counters;
 };
 
 }

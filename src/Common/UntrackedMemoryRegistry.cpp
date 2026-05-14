@@ -1,4 +1,5 @@
 #include <Common/UntrackedMemoryRegistry.h>
+#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -24,21 +25,24 @@ UntrackedMemoryRegistry & UntrackedMemoryRegistry::instance()
 void UntrackedMemoryRegistry::add(UntrackedMemoryCounter * counter)
 {
     std::lock_guard lock(mutex);
-    counters.insert(counter);
+    DENY_ALLOCATIONS_IN_SCOPE;
+    counters.push_back(*counter);
 }
 
 void UntrackedMemoryRegistry::remove(UntrackedMemoryCounter * counter)
 {
     std::lock_guard lock(mutex);
-    counters.erase(counter);
+    DENY_ALLOCATIONS_IN_SCOPE;
+    counters.erase(counters.iterator_to(*counter));
 }
 
 Int64 UntrackedMemoryRegistry::sum() const
 {
-    Int64 total = 0;
     std::lock_guard lock(mutex);
-    for (const UntrackedMemoryCounter * counter : counters)
-        total += counter->load();
+    DENY_ALLOCATIONS_IN_SCOPE;
+    Int64 total = 0;
+    for (const auto & counter : counters)
+        total += counter.load();
     return total;
 }
 
