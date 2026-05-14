@@ -123,7 +123,7 @@ SELECT trimLeft(explain) FROM (
 )
 WHERE explain LIKE '%vector_similarity%';
 
-SELECT '-- Additional WHERE clauses present, 2 full parts selected by partition key / 1 part partially selected by PK, index usage not expected';
+SELECT '-- Additional WHERE clauses present, 2 full parts selected by partition key / 1 part partially selected by PK, expect index usage';
 SELECT id
 FROM tab
 WHERE date = '2025-01-03' AND id <= 9
