@@ -316,17 +316,24 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// and SchemaConverter (geo type resolution). Parsing here avoids a redundant second parse
     /// in the SchemaConverter constructor when both allow_geoparquet_parser and
     /// spatial_filter_push_down are on.
-    std::unordered_map<String, DB::GeoColumnMetadata> geo_meta;
+    ///
+    /// std::optional distinguishes three states for SchemaConverter:
+    ///   nullopt      — not parsed here; SchemaConverter parses if its own setting allows
+    ///   Some(empty)  — parsed (or failed); SchemaConverter must not re-parse (avoids rethrow
+    ///                  on malformed metadata when the try/catch above already issued a warning)
+    ///   Some(map)    — parsed successfully with geo columns; use directly
+    std::optional<std::unordered_map<String, DB::GeoColumnMetadata>> geo_meta;
     if (options.format.parquet.allow_geoparquet_parser
         || options.format.parquet.spatial_filter_push_down)
     {
+        geo_meta.emplace(); // Mark as "parsed" upfront; filled in on success, left empty on failure.
         for (const auto & kv : file_metadata.key_value_metadata)
         {
             if (kv.key != "geo")
                 continue;
             try
             {
-                geo_meta = DB::parseGeoMetadataEncoding(&kv.value);
+                *geo_meta = DB::parseGeoMetadataEncoding(&kv.value);
             }
             catch (...)
             {
@@ -351,8 +358,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         auto float64 = std::make_shared<DataTypeFloat64>();
         for (const auto & sf : all_spatial_filters)
         {
-            auto geo_it = geo_meta.find(sf.geometry_column_name);
-            if (geo_it == geo_meta.end() || !geo_it->second.covering_bbox.has_value())
+            auto geo_it = geo_meta->find(sf.geometry_column_name);
+            if (geo_it == geo_meta->end() || !geo_it->second.covering_bbox.has_value())
             { geostats_spatial_filters.push_back(sf); continue; }
 
             const auto & bbox_cov = *geo_it->second.covering_bbox;
@@ -388,11 +395,13 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// Pass pre-parsed geo_meta to SchemaConverter only when allow_geoparquet_parser is set,
     /// so that spatial_filter_push_down alone does not change column types to Geometry.
     /// geo_meta is not moved so Phase B can still look up covering_bbox entries directly.
+    /// Pass std::nullopt when allow_geoparquet_parser is disabled so SchemaConverter skips
+    /// geo type resolution entirely (it will not re-parse).
     SchemaConverter schemer(
         file_metadata,
         options,
         &extended_sample_block,
-        options.format.parquet.allow_geoparquet_parser ? geo_meta : std::unordered_map<String, DB::GeoColumnMetadata>{});
+        options.format.parquet.allow_geoparquet_parser ? geo_meta : std::nullopt);
     auto add_prewhere_outputs = [&](const ActionsDAG & actions)
     {
         for (const auto * node : actions.getOutputs())
@@ -445,8 +454,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         {
             for (const auto & sf : all_spatial_filters)
             {
-                auto geo_it = geo_meta.find(sf.geometry_column_name);
-                if (geo_it == geo_meta.end() || !geo_it->second.covering_bbox.has_value())
+                auto geo_it = geo_meta->find(sf.geometry_column_name);
+                if (geo_it == geo_meta->end() || !geo_it->second.covering_bbox.has_value())
                     continue; // already in geostats_spatial_filters
 
                 const auto & bbox_cov = *geo_it->second.covering_bbox;

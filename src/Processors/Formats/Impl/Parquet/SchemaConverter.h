@@ -36,11 +36,13 @@ struct SchemaConverter
     /// The key is the parquet column name, without ColumnMapper.
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
 
-    /// If precomputed_geo_columns is non-empty it is used directly and the constructor skips
-    /// parsing the "geo" key-value metadata (avoids a second JSON parse when Reader.cpp has
-    /// already done it for spatial filter pushdown).
+    /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
+    /// and the constructor skips parsing the "geo" key-value metadata. This ensures that a
+    /// failed parse caught by the caller (which leaves an empty map) does not cause
+    /// SchemaConverter to re-parse and rethrow. Pass std::nullopt to let SchemaConverter
+    /// parse according to its own settings.
     SchemaConverter(const parq::FileMetaData &, const ReadOptions &, const Block *,
-                    std::unordered_map<String, GeoColumnMetadata> precomputed_geo_columns = {});
+                    std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt);
 
     void prepareForReading();
     NamesAndTypesList inferSchema();
