@@ -191,9 +191,8 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     if (metadata_object->has(Iceberg::f_table_uuid))
     {
         table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
-        /// The initial fetch bypassed the cache (UUID was unknown). Now that we have the UUID,
-        /// retroactively populate the cache so subsequent queries avoid the network round-trip.
-        if (cache_ptr)
+        /// Retroactively populate the cache when getMetadataJSONObject did not already insert this key.
+        if (cache_ptr && known_uuid != table_uuid)
         {
             auto cache_key = IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path);
             cache_ptr->getOrSetTableMetadata(cache_key, [json = std::move(raw_metadata_json)]() mutable { return std::move(json); });
