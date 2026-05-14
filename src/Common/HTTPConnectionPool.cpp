@@ -902,15 +902,32 @@ private:
 #endif
             catch (const Poco::Net::NetException &)
             {
-                if (retry_resolved_addresses)
-                    address.setFail();
-                else
-                    address.setUnused();
                 ProfileEvents::increment(getMetrics().errors);
                 (*connection).reset();
                 if (!retry_resolved_addresses)
+                {
+                    address.setUnused();
                     throw;
+                }
+                /// Capture the original connect exception before any bookkeeping that
+                /// may itself throw, so the retry loop still has a meaningful error to
+                /// rethrow if every resolved address fails.
                 last_net_error = std::current_exception();
+                try
+                {
+                    /// `Entry::setFail` invokes `HostResolver::setFail`, which calls
+                    /// `HostResolver::update` and can throw on DNS errors (NXDOMAIN,
+                    /// empty result). The per-address failure has already been recorded
+                    /// in the resolver's records before `update` runs, and `Entry`
+                    /// already suppresses its `setSuccess` callback as the first thing
+                    /// `setFail` does - so swallowing the exception here is safe and
+                    /// lets us still try the next already-resolved address.
+                    address.setFail();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during retry");
+                }
             }
             catch (const Poco::TimeoutException &)
             {
@@ -922,15 +939,22 @@ private:
                 /// dual-stack hosts whose first resolved address is blackholed. Treat it
                 /// as a per-address routing failure with the same `setFail`/`setUnused`
                 /// policy as the `NetException` path above.
-                if (retry_resolved_addresses)
-                    address.setFail();
-                else
-                    address.setUnused();
                 ProfileEvents::increment(getMetrics().errors);
                 (*connection).reset();
                 if (!retry_resolved_addresses)
+                {
+                    address.setUnused();
                     throw;
+                }
                 last_net_error = std::current_exception();
+                try
+                {
+                    address.setFail();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during retry");
+                }
             }
             catch (...)
             {
