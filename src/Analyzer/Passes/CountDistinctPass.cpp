@@ -54,6 +54,10 @@ public:
         /// Check only local table. The rewrite must not apply to remote storages
         /// (e.g. `Distributed` or `remote(...)` table function), where distributed
         /// aggregation already handles `count(DISTINCT)` correctly.
+        /// Fail-close: only allow direct `TableNode`/`TableFunctionNode` join-tree
+        /// roots. A subquery wrapper (`QueryNode`/`UnionNode`) could hide a remote
+        /// source from this check, which would reintroduce the divergence the
+        /// guard is meant to prevent.
         auto & join_tree = query_node->getJoinTree();
         if (auto * table_node = join_tree->as<TableNode>())
         {
@@ -65,6 +69,8 @@ public:
             if (table_function_node->getStorageOrThrow()->isRemote())
                 return;
         }
+        else
+            return;
 
         /// Check that query has only single node in projection
         auto & projection_nodes = query_node->getProjection().getNodes();

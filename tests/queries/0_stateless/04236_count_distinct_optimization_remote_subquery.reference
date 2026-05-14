@@ -1,0 +1,7 @@
+subquery over remote()
+1	0
+subquery over local table
+1
+results
+3
+3
