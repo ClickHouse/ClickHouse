@@ -234,6 +234,7 @@ void StorageMergeTree::startup()
     {
         cleanup_thread.start();
         background_operations_assignee.start();
+        background_streaming_assignee.start();
         startBackgroundMovesIfNeeded();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
         startStatisticsCache();
@@ -269,6 +270,7 @@ void StorageMergeTree::flushAndPrepareForShutdown()
 
     background_operations_assignee.finish();
     background_moves_assignee.finish();
+    background_streaming_assignee.finish();
 
     cleanup_thread.stop();
 
@@ -355,37 +357,21 @@ void StorageMergeTree::read(
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
         && local_context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 
-    QueryPlanPtr plan;
-    if (query_info.isStream())
-    {
-        plan = MergeTreeDataSelectExecutor(*this).streamingRead(
-            column_names,
-            storage_snapshot,
-            query_info,
-            local_context,
-            max_block_size,
-            num_streams,
-            local_context->getPartitionIdToMaxBlock(getStorageID().uuid),
-            enable_parallel_reading);
-    }
-    else
-    {
-        plan = MergeTreeDataSelectExecutor(*this).read(
-            column_names,
-            storage_snapshot,
-            query_info,
-            local_context,
-            max_block_size,
-            num_streams,
-            local_context->getPartitionIdToMaxBlock(getStorageID().uuid),
-            enable_parallel_reading);
-    }
+    QueryPlanPtr plan = MergeTreeDataSelectExecutor(*this).read(
+        column_names,
+        storage_snapshot,
+        query_info,
+        local_context,
+        max_block_size,
+        num_streams,
+        local_context->getPartitionIdToMaxBlock(getStorageID().uuid),
+        enable_parallel_reading);
 
     if (plan)
         query_plan = std::move(*plan);
 }
 
-CursorPromotersMap StorageMergeTree::buildPromoters() const
+CursorPromotersMap StorageMergeTree::buildPromoters()
 {
     const auto data_parts = getDataPartsVectorForInternalUsage();
     std::map<String, PartBlockNumberRanges> partition_ranges;

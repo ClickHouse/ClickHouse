@@ -63,7 +63,7 @@ public:
 
     bool supportsStreaming() const override { return true; }
 
-    CursorPromotersMap buildPromoters() const override;
+    CursorPromotersMap buildPromoters() override;
 
     bool supportsTransactions() const override { return support_transaction; }
 

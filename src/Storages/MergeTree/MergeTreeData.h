@@ -1204,7 +1204,8 @@ public:
     virtual MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const = 0;
 
     /// Per-partition promoters for streaming reads.
-    virtual CursorPromotersMap buildPromoters() const { return {}; }
+    virtual CursorPromotersMap buildPromoters() = 0;
+    void triggerStreamingSubscriptionEnrichment() const;
 
     /// Computes snapshot-related part statistics in a single pass:
     /// min metadata version, per-partition min data version, and whether any part has a lightweight delete mask.
@@ -1325,6 +1326,8 @@ public:
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
     bool areBackgroundMovesNeeded() const;
 
+    /// Schedules continuation jobs for in-fly streaming queries.
+    bool scheduleStreamingJob(BackgroundJobsAssignee & assignee) override;
 
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
@@ -1552,8 +1555,9 @@ protected:
     /// Another explanation is that moving operations are common for Replicated and Plain MergeTree classes.
     /// Task that schedules this operations is executed with its own timetable and triggered in a specific places in code.
     /// And for ReplicatedMergeTree we don't have LogEntry type for this operation.
-    BackgroundJobsAssignee background_operations_assignee;
-    BackgroundJobsAssignee background_moves_assignee;
+    mutable BackgroundJobsAssignee background_operations_assignee;
+    mutable BackgroundJobsAssignee background_moves_assignee;
+    mutable BackgroundJobsAssignee background_streaming_assignee;
 
     /// Strongly connected with two fields above.
     /// Every task that is finished will ask to assign a new one into an executor.
