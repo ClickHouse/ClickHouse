@@ -236,14 +236,16 @@ void MaterializedPostgreSQLConsumer::insertDefaultValue(StorageData & storage_da
 
 void MaterializedPostgreSQLConsumer::readString(const char * message, size_t & pos, size_t size, String & result)
 {
-    assert(size > pos + 2);
-    char current = unhex2(message + pos);
-    pos += 2;
-    while (pos < size && current != '\0')
+    while (true)
     {
-        result += current;
-        current = unhex2(message + pos);
+        if (pos + 2 > size)
+            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "Cannot read string from replication message: position {} + 2 exceeds message size {}", pos, size);
+        char current = unhex2(message + pos);
         pos += 2;
+        if (current == '\0')
+            return;
+        result += current;
     }
 }
 
@@ -259,33 +261,41 @@ T MaterializedPostgreSQLConsumer::unhexN(const char * message, size_t pos, size_
     return result;
 }
 
-Int64 MaterializedPostgreSQLConsumer::readInt64(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+Int64 MaterializedPostgreSQLConsumer::readInt64(const char * message, size_t & pos, size_t size)
 {
-    assert(size >= pos + 16);
+    if (pos + 16 > size)
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot read Int64 from replication message: position {} + 16 exceeds message size {}", pos, size);
     Int64 result = unhexN<Int64>(message, pos, 8);
     pos += 16;
     return result;
 }
 
-Int32 MaterializedPostgreSQLConsumer::readInt32(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+Int32 MaterializedPostgreSQLConsumer::readInt32(const char * message, size_t & pos, size_t size)
 {
-    assert(size >= pos + 8);
+    if (pos + 8 > size)
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot read Int32 from replication message: position {} + 8 exceeds message size {}", pos, size);
     Int32 result = unhexN<Int32>(message, pos, 4);
     pos += 8;
     return result;
 }
 
-Int16 MaterializedPostgreSQLConsumer::readInt16(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+Int16 MaterializedPostgreSQLConsumer::readInt16(const char * message, size_t & pos, size_t size)
 {
-    assert(size >= pos + 4);
+    if (pos + 4 > size)
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot read Int16 from replication message: position {} + 4 exceeds message size {}", pos, size);
     Int16 result = unhexN<Int16>(message, pos, 2);
     pos += 4;
     return result;
 }
 
-Int8 MaterializedPostgreSQLConsumer::readInt8(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+Int8 MaterializedPostgreSQLConsumer::readInt8(const char * message, size_t & pos, size_t size)
 {
-    assert(size >= pos + 2);
+    if (pos + 2 > size)
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot read Int8 from replication message: position {} + 2 exceeds message size {}", pos, size);
     Int8 result = unhex2(message + pos);
     pos += 2;
     return result;

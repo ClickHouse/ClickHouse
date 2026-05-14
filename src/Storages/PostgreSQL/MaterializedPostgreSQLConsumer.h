@@ -9,6 +9,8 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 
+class MaterializedPostgreSQLConsumerReadHelpers_ThrowOnOverrun_Test;
+
 namespace DB
 {
 struct SettingChange;
@@ -125,6 +127,8 @@ private:
     static Int32 readInt32(const char * message, size_t & pos, size_t size);
     static Int16 readInt16(const char * message, size_t & pos, size_t size);
     static Int8 readInt8(const char * message, size_t & pos, size_t size);
+
+    friend class ::MaterializedPostgreSQLConsumerReadHelpers_ThrowOnOverrun_Test;
 
     void markTableAsSkipped(Int32 relation_id, const String & relation_name);
 
