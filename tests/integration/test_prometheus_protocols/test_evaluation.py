@@ -244,6 +244,19 @@ def send_test_data():
         ]
     )
 
+    send_data(
+        [
+            (
+                {"__name__": "label_dup", "idx": "a", "keep": "x"},
+                {100: 1},
+            ),
+            (
+                {"__name__": "label_dup", "idx": "b", "keep": "x"},
+                {100: 2},
+            ),
+        ]
+    )
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -534,6 +547,7 @@ def test_label_functions():
         [["[('__name__','foo'),('kind','are-squ'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
     )
 
+    # Behavior: writing `__name__` through label_replace preserves the generated metric name instead of dropping it.
     do_query_test(
         'label_replace(foo{shape="square"}, "__name__", "renamed_$1", "shape", "(.*)")',
         130,
@@ -548,10 +562,108 @@ def test_label_functions():
         [["[('__name__','foo'),('metric_copy','foo_metric'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
     )
 
-    do_clickhouse_only_query_test_expect_error(
+    # Behavior: current Prometheus validates destination label names with UTF-8 rules, so legacy-invalid names like `~invalid` are accepted.
+    do_query_test(
         'label_replace(foo{shape="square"}, "~invalid", "$1", "shape", "(.*)")',
         130,
-        "invalid destination label name in label_replace()",
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s", "~invalid": "square"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s'),('~invalid','square')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: label_replace uses Go regexp.ExpandString semantics; `$0` expands to the whole match.
+    do_query_test(
+        'label_replace(foo{shape="square"}, "whole", "$0", "shape", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s", "whole": "square"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s'),('whole','square')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: label_replace uses Go regexp.ExpandString semantics; `${0}` also expands to the whole match.
+    do_query_test(
+        'label_replace(foo{shape="square"}, "whole", "${0}", "shape", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s", "whole": "square"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s'),('whole','square')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: `$1x` is parsed as the group/name `1x`, not group `1` followed by literal `x`; the missing group expands to empty and deletes `kind`.
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "$1x", "shape", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: `${1}x` expands group `1` and then appends the literal `x`.
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "${1}x", "shape", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "kind": "squarex", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('kind','squarex'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: `$10` names group `10`, not group `1` followed by literal `0`; the missing group expands to empty and deletes `kind`.
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "$10", "shape", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: named capture groups expand in `$name` form.
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "$name", "shape", "(?P<name>.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "kind": "square", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('kind','square'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: named capture groups expand in `${name}` form.
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "${name}", "shape", "(?P<name>.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "kind": "square", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('kind','square'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: `$$` emits a literal dollar before the following replacement expansion.
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "$$${1}", "shape", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "kind": "$square", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('kind','$square'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: non-ASCII replacement names are still parsed as references by Go regexp.ExpandString; missing names expand to empty.
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "$é", "shape", "(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: Prometheus wraps label_replace regexes in `^(?s:...)$`, so partial matches do not replace labels.
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "$1", "shape", "squ")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: a full-string match with a capturing suffix applies the replacement.
+    do_query_test(
+        'label_replace(foo{shape="square"}, "kind", "$1", "shape", "squ(.*)")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "kind": "are", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('kind','are'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: label_replace does not validate the source label name and reads missing source labels as empty strings.
+    do_query_test(
+        'label_replace(foo{shape="square"}, "copied", "$0", "missing", ".*")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
     )
 
     do_query_test(
@@ -575,6 +687,14 @@ def test_label_functions():
         [["[('__name__','foo'),('shape','s-'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
     )
 
+    # Behavior: missing source labels contribute `""` in positional joins.
+    do_query_test(
+        'label_join(foo{shape="square"}, "joined", ":", "missing", "shape")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "joined": ":square", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('joined',':square'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
     do_query_test(
         'label_join(foo{shape="square"}, "joined", "/", "missing1", "missing2")',
         130,
@@ -582,6 +702,39 @@ def test_label_functions():
         [["[('__name__','foo'),('joined','/'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
     )
 
+    # Behavior: current Prometheus applies the same UTF-8 destination-label validation to label_join.
+    do_query_test(
+        'label_join(foo{shape="square"}, "~invalid", ":", "shape")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s", "~invalid": "square"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s'),('~invalid','square')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: Prometheus validates source label names but missing source labels contribute empty strings.
+    do_query_test(
+        'label_join(foo{shape="square"}, "joined", ":", "~missing")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: Prometheus permits zero source labels; joining an empty source list sets an empty value and deletes the destination label.
+    do_query_test(
+        'label_join(foo{shape="square"}, "shape", ", ")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: setting a newly generated label to an empty value leaves it absent.
+    do_query_test(
+        'label_join(foo{shape="square"}, "new_label", ", ")',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: writing `__name__` through label_join preserves the generated metric name instead of dropping it.
     do_query_test(
         'label_join(foo{shape="square"}, "__name__", "_", "shape", "size")',
         130,
@@ -594,6 +747,22 @@ def test_label_functions():
         130,
         '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "joined": "foo/square", "shape": "square", "size": "s"}, "value": [130, "40"]}]}',
         [["[('__name__','foo'),('joined','foo/square'),('shape','square'),('size','s')]", "1970-01-01 00:02:10.000", 40]],
+    )
+
+    # Behavior: Prometheus errors after label_replace if two output series have the same labelset at the same timestamp.
+    do_query_test_expect_error(
+        'label_replace(label_dup, "idx", "same", "idx", ".*")',
+        100,
+        "vector cannot contain metrics with the same labelset",
+        "Multiple series have the same tags",
+    )
+
+    # Behavior: Prometheus errors after label_join if two output series have the same labelset at the same timestamp.
+    do_query_test_expect_error(
+        'label_join(label_dup, "idx", "", "keep")',
+        100,
+        "vector cannot contain metrics with the same labelset",
+        "Multiple series have the same tags",
     )
 
     do_range_query_test(
@@ -610,6 +779,7 @@ def test_label_functions():
         ],
     )
 
+    # Behavior: empty destination label names fail current Prometheus UTF-8 validation.
     do_query_test_expect_error(
         'label_replace(foo{shape="square"}, "", "$1", "shape", "(.*)")',
         130,
@@ -624,6 +794,7 @@ def test_label_functions():
         "invalid regular expression in label_replace(): (.*",
     )
 
+    # Behavior: empty destination label names fail current Prometheus UTF-8 validation.
     do_query_test_expect_error(
         'label_join(foo{shape="square"}, "", ":", "shape")',
         130,
@@ -631,12 +802,7 @@ def test_label_functions():
         "invalid destination label name in label_join()",
     )
 
-    do_clickhouse_only_query_test_expect_error(
-        'label_join(foo{shape="square"}, "~invalid", ":", "shape")',
-        130,
-        "invalid destination label name in label_join()",
-    )
-
+    # Behavior: empty source label names fail current Prometheus UTF-8 validation.
     do_query_test_expect_error(
         'label_join(foo{shape="square"}, "joined", ":", "")',
         130,

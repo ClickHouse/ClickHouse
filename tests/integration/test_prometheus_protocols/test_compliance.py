@@ -295,18 +295,45 @@ CLICKHOUSE_PROMQL_REGRESSION_CASES = [
         ('label_replace(demo_num_cpus, "job", "value-$1", "instance", "non-matching-regex")', [], False),
         ('label_replace(demo_num_cpus, "job", "", "dst", ".*")', [], False),
         ('label_replace(demo_num_cpus, "job", "value-$1", "src", "(.*")', [], True),
-        ('label_replace(demo_num_cpus, "~invalid", "", "src", "(.*)")', [], True),
+        # Behavior: current Prometheus validates destination label names with UTF-8 rules, so legacy-invalid names like `~invalid` are accepted.
+        ('label_replace(demo_num_cpus, "~invalid", "$1", "instance", "demo.promlabs.com:(.*)")', [], False),
+        # Behavior: empty destination label names fail current Prometheus UTF-8 validation.
         ('label_replace(demo_num_cpus, "", "", "src", "(.*)")', [], True),
-        # Replacing instance with an empty value collapses multiple input series to the same label set.
+        # Behavior: label_replace uses Go regexp.ExpandString, including whole-match, named-group, maximal-name, braced, and escaped-dollar rules.
+        ('label_replace(demo_num_cpus{instance="demo.promlabs.com:10000"}, "whole", "$0", "instance", "demo.promlabs.com:(.*)")', [], False),
+        ('label_replace(demo_num_cpus{instance="demo.promlabs.com:10000"}, "whole", "${0}", "instance", "demo.promlabs.com:(.*)")', [], False),
+        ('label_replace(demo_num_cpus{instance="demo.promlabs.com:10000"}, "kind", "$1x", "instance", "demo.promlabs.com:(.*)")', [], False),
+        ('label_replace(demo_num_cpus{instance="demo.promlabs.com:10000"}, "kind", "${1}x", "instance", "demo.promlabs.com:(.*)")', [], False),
+        ('label_replace(demo_num_cpus{instance="demo.promlabs.com:10000"}, "kind", "$10", "instance", "demo.promlabs.com:(.*)")', [], False),
+        ('label_replace(demo_num_cpus{instance="demo.promlabs.com:10000"}, "kind", "$name", "instance", "demo.promlabs.com:(?P<name>.*)")', [], False),
+        ('label_replace(demo_num_cpus{instance="demo.promlabs.com:10000"}, "kind", "${name}", "instance", "demo.promlabs.com:(?P<name>.*)")', [], False),
+        ('label_replace(demo_num_cpus{instance="demo.promlabs.com:10000"}, "kind", "$$${1}", "instance", "demo.promlabs.com:(.*)")', [], False),
+        # Behavior: Prometheus wraps label_replace regexes in `^(?s:...)$`, so partial matches do not replace labels.
+        ('label_replace(demo_num_cpus{instance="demo.promlabs.com:10000"}, "kind", "$1", "instance", "demo")', [], False),
+        ('label_replace(demo_num_cpus{instance="demo.promlabs.com:10000"}, "kind", "$1", "instance", "demo.promlabs.com:(.*)")', [], False),
+        # Behavior: label_replace does not validate the source label name and reads missing source labels as empty strings.
+        ('label_replace(demo_num_cpus{instance="demo.promlabs.com:10000"}, "copied", "$0", "~missing", ".*")', [], False),
+        # Behavior: replacing instance with an empty value collapses multiple input series to the same label set.
         ('label_replace(demo_num_cpus, "instance", "", "", "")', [], True),
 
         # label_join
         ('label_join(demo_num_cpus, "new_label", "-", "instance", "job")', [], False),
         ('label_join(demo_num_cpus, "job", "-", "instance", "job")', [], False),
         ('label_join(demo_num_cpus, "job", "-", "instance")', [], False),
-        ('label_join(demo_num_cpus, "~invalid", "-", "instance")', [], True),
+        # Behavior: current Prometheus applies the same UTF-8 destination-label validation to label_join.
+        ('label_join(demo_num_cpus, "~invalid", "-", "instance")', [], False),
+        # Behavior: Prometheus validates source label names but missing source labels contribute empty strings.
+        ('label_join(demo_num_cpus{instance="demo.promlabs.com:10000"}, "new_label", "-", "~missing")', [], False),
+        # Behavior: Prometheus permits zero source labels; joining an empty source list sets an empty value.
+        ('label_join(demo_num_cpus{instance="demo.promlabs.com:10000"}, "instance", "-")', [], False),
+        ('label_join(demo_num_cpus{instance="demo.promlabs.com:10000"}, "new_label", "-")', [], False),
+        # Behavior: missing source labels contribute `""` in positional joins.
+        ('label_join(demo_num_cpus{instance="demo.promlabs.com:10000"}, "new_label", ":", "missing", "instance")', [], False),
+        # Behavior: empty destination/source label names fail current Prometheus UTF-8 validation.
         ('label_join(demo_num_cpus, "", "-", "instance")', [], True),
         ('label_join(demo_num_cpus, "new_label", "-", "")', [], True),
+        # Behavior: label_join errors after label transforms if two output series have the same labelset at the same timestamp.
+        ('label_join(demo_num_cpus, "instance", "", "job")', [], True),
     ]),
 
     *_with_risk(RISK_DATE_FUNCTIONS, [

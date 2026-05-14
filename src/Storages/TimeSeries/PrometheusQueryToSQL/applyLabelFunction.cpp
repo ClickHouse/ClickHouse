@@ -1,7 +1,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelFunction.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
+#include <Common/isValidUTF8.h>
 #include <Common/re2.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -28,13 +28,7 @@ namespace
 
     bool isValidPrometheusLabelName(std::string_view label_name)
     {
-        if (label_name.empty())
-            return false;
-
-        if (!isAlphaASCII(label_name.front()) && label_name.front() != '_')
-            return false;
-
-        return std::ranges::all_of(label_name.substr(1), [](char c) { return isAlphaNumericASCII(c) || c == '_'; });
+        return !label_name.empty() && UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size());
     }
 
     String makePrometheusRegex(std::string_view regex)
@@ -171,13 +165,13 @@ namespace
         }
         else if (function_name == "label_join")
         {
-            if (arguments.size() < 4)
+            if (arguments.size() < 3)
             {
                 throw Exception(
                     ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
                     "Function '{}' expects at least {} arguments, but was called with {} arguments",
                     function_name,
-                    4,
+                    3,
                     arguments.size());
             }
 

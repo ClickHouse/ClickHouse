@@ -3,13 +3,17 @@
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/re2.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <Poco/Unicode.h>
 #include <boost/container_hash/hash.hpp>
 #include <city.h>
+
+#include <cctype>
 
 
 namespace DB
@@ -540,47 +544,64 @@ namespace
                     addTextFragment(replacement_.substr(pos, next_dollar - pos));
                     pos = next_dollar;
                 }
-                else if (pos + 1 == replacement_.length())
-                {
-                    addTextFragment(replacement_[pos++]);
-                }
-                else if (replacement_[pos + 1] == '$')
+                else if ((pos + 1 != replacement_.length()) && (replacement_[pos + 1] == '$'))
                 {
                     addTextFragment("$");
                     pos += 2;
                 }
-                else if (std::isdigit(replacement_[pos + 1]))
-                {
-                    addCapturingGroupFragment(replacement_[pos + 1] - '0');
-                    pos += 2;
-                }
-                else if (std::isalnum(replacement_[pos + 1]) || replacement_[pos + 1] == '_')
-                {
-                    size_t i = pos + 2;
-                    while ((i < replacement_.length()) && (std::isalnum(replacement_[i]) || (replacement_[i] == '_')))
-                        ++i;
-                    size_t after_name = i;
-                    addCapturingGroupFragment(replacement_.substr(pos + 1, after_name - pos - 1));
-                    pos = after_name;
-                }
-                else if (replacement_[pos + 1] != '{')
-                {
-                    addTextFragment(replacement_[pos++]);
-                }
-                else if (size_t closing_brace = replacement_.find('}', pos + 2); closing_brace == String::npos)
-                {
-                    addTextFragment(replacement_[pos++]);
-                }
                 else
                 {
-                    std::string_view between_braces = replacement_.substr(pos + 2, closing_brace - pos - 2);
-                    if ((between_braces.length() == 1) && std::isdigit(between_braces[0]))
-                        addCapturingGroupFragment(between_braces[0] - '0');
-                    else
-                        addCapturingGroupFragment(between_braces);
-                    pos = closing_brace + 1;
+                    size_t reference_begin = pos + 1;
+                    bool braced = (reference_begin != replacement_.length()) && (replacement_[reference_begin] == '{');
+                    if (braced)
+                        ++reference_begin;
+
+                    size_t reference_end = reference_begin;
+                    while ((reference_end != replacement_.length()) && tryReadReplacementReferenceChar(replacement_, reference_end))
+                    {
+                    }
+
+                    bool malformed = (reference_end == reference_begin);
+                    if (braced && (!malformed && ((reference_end == replacement_.length()) || (replacement_[reference_end] != '}'))))
+                        malformed = true;
+
+                    if (malformed)
+                    {
+                        addTextFragment(replacement_[pos++]);
+                        continue;
+                    }
+
+                    addCapturingGroupFragment(replacement_.substr(reference_begin, reference_end - reference_begin));
+                    pos = braced ? (reference_end + 1) : reference_end;
                 }
             }
+        }
+
+        static bool tryReadReplacementReferenceChar(std::string_view replacement, size_t & pos)
+        {
+            UInt8 first_octet = static_cast<UInt8>(replacement[pos]);
+            if (first_octet < 0x80)
+            {
+                char c = replacement[pos];
+                if (!std::isalnum(static_cast<unsigned char>(c)) && (c != '_'))
+                    return false;
+                ++pos;
+                return true;
+            }
+
+            size_t sequence_length = UTF8::seqLength(first_octet);
+            if (sequence_length > replacement.size() - pos)
+                return false;
+
+            auto code_point = UTF8::convertUTF8ToCodePoint(replacement.data() + pos, sequence_length);
+            if (!code_point)
+                return false;
+
+            if (!Poco::Unicode::isAlpha(*code_point) && !Poco::Unicode::isDigit(*code_point))
+                return false;
+
+            pos += sequence_length;
+            return true;
         }
 
         void addTextFragment(std::string_view text)
@@ -604,10 +625,28 @@ namespace
                 replacement_fragments.emplace_back().capturing_group = capturing_group;
         }
 
-        void addCapturingGroupFragment(std::string_view named_capturing_group)
+        void addCapturingGroupFragment(std::string_view capturing_group)
         {
+            int numeric_group = 0;
+            bool is_numeric_group = !capturing_group.empty() && ((capturing_group.size() == 1) || (capturing_group.front() != '0'));
+            for (char c : capturing_group)
+            {
+                if (!std::isdigit(static_cast<unsigned char>(c)) || (numeric_group >= 100000000))
+                {
+                    is_numeric_group = false;
+                    break;
+                }
+                numeric_group = numeric_group * 10 + (c - '0');
+            }
+
+            if (is_numeric_group)
+            {
+                addCapturingGroupFragment(numeric_group);
+                return;
+            }
+
             const auto & groups = regex.NamedCapturingGroups();
-            auto it = groups.find(String{named_capturing_group});
+            auto it = groups.find(String{capturing_group});
             if (it != groups.end())
                 addCapturingGroupFragment(it->second);
         }
