@@ -6,9 +6,7 @@
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -116,6 +114,7 @@ namespace ErrorCodes
     extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
     extern const int SAMPLING_NOT_SUPPORTED;
+    extern const int ILLEGAL_STREAM;
 }
 
 
@@ -178,6 +177,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     bool enable_parallel_reading) const
 {
+    if (query_info.isStream() && enable_parallel_reading)
+        throw Exception(ErrorCodes::ILLEGAL_STREAM,
+            "STREAM is not supported with parallel replicas");
+
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
     auto step = readFromParts(
@@ -196,47 +199,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     auto plan = std::make_unique<QueryPlan>();
     if (step)
         plan->addStep(std::move(step));
-    return plan;
-}
-
-QueryPlanPtr MergeTreeDataSelectExecutor::streamingRead(
-    const Names & column_names_to_return,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    const UInt64 max_block_size,
-    const size_t num_streams,
-    PartitionIdToMaxBlockPtr max_block_numbers_to_read,
-    bool enable_parallel_reading) const
-{
-    chassert(query_info.isStream());
-    auto cursor = buildMergeTreeCursor(query_info.table_expression_modifiers->getStreamSettings()->cursor_tree);
-
-    /// Ensure the filter expression can reference `_partition_id`, `_block_number`, `_block_offset`.
-    Names columns_to_read = column_names_to_return;
-    for (const auto & aux_name : {String("_partition_id"), BlockNumberColumn::name, BlockOffsetColumn::name})
-        if (std::ranges::find(columns_to_read, aux_name) == columns_to_read.end())
-            columns_to_read.push_back(aux_name);
-
-    auto plan = read(
-        columns_to_read,
-        storage_snapshot,
-        query_info,
-        context,
-        max_block_size,
-        num_streams,
-        max_block_numbers_to_read,
-        enable_parallel_reading);
-
-    if (auto filter = convertCursorToFilter(cursor, query_info))
-    {
-        plan->addStep(std::make_unique<FilterStep>(
-            plan->getCurrentHeader(),
-            std::move(filter->actions),
-            filter->column_name,
-            filter->do_remove_column));
-    }
-
     return plan;
 }
 
