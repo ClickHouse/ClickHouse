@@ -155,31 +155,10 @@ public:
         size_t row_end);
 
     /// Insert a column into the cache.
-    void set(const Key & key, const MappedPtr & mapped)
-    {
-        /// Hold interval_index_mutex across both operations so that clearAll()
-        /// cannot run between them and leave an orphaned Base entry.
-        /// Insert into base cache first, then publish to interval_index.
-        /// This order ensures there is no window where a key is visible in the index
-        /// but not yet in the cache (which would cause getIntersecting to classify it
-        /// as stale and erase it).
-        std::lock_guard lock(interval_index_mutex);
-        Base::set(key, mapped);
-
-        PartIdentifier part_id{key.table_uuid, key.part_name};
-        auto & intervals = interval_index[part_id][key.column_name];
-        intervals[{key.row_begin, key.row_end}] = key;
-
-        /// Eviction in `Base` happens via a callback that does not provide the key,
-        /// so `interval_index` retains entries for evicted keys. Sweep periodically
-        /// so that metadata memory cannot grow unboundedly when evicted entries are
-        /// never queried again (which would skip the lazy cleanup in `getIntersecting`).
-        if (++sets_since_compaction >= COMPACT_INTERVAL_INDEX_EVERY_N_SETS)
-        {
-            compactIntervalIndex();
-            sets_since_compaction = 0;
-        }
-    }
+    /// Maintains a non-overlapping invariant on the per-column interval map so
+    /// that `getIntersecting` runs in O(log N) instead of scanning every entry
+    /// before `lower_bound`. See implementation for details.
+    void set(const Key & key, const MappedPtr & mapped);
 
     /// Remove all cached entries for a specific data part.
     /// Should be called when a part is dropped, merged, or mutated.

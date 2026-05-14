@@ -113,19 +113,14 @@ ColumnsCache::getIntersecting(
 
         /// Collect all intervals that intersect with [row_begin, row_end).
         /// An interval [a, b) intersects if a < row_end AND b > row_begin.
-        /// The map is sorted by (range_begin, range_end). Use lower_bound to find
-        /// the first interval with range_begin >= row_begin, then walk forward and
-        /// stop once range_begin >= row_end. Predecessors (range_begin < row_begin)
-        /// must also be inspected because their range_end can still extend into the
-        /// query range. Cache writers normally cache disjoint task ranges so the
-        /// number of predecessors that need to be checked is small, but concurrent
-        /// writers may legitimately leave deeper overlap (for example a wide range
-        /// and a nested narrower range for the same column). Scanning the immediate
-        /// predecessor only would miss a wide covering interval hidden behind a
-        /// closer non-overlapping one, so all predecessors are inspected.
+        /// The map is sorted by (range_begin, range_end). `set` maintains a
+        /// non-overlapping invariant on this map, so at most one predecessor
+        /// can extend into the query range; we only need to inspect that one.
+        /// Then walk forward from `lower_bound` until range_begin >= row_end.
         auto it = intervals.lower_bound({row_begin, 0});
-        for (auto prev_it = intervals.begin(); prev_it != it; ++prev_it)
+        if (it != intervals.begin())
         {
+            auto prev_it = std::prev(it);
             if (prev_it->second.row_end > row_begin)
                 intersecting_keys.push_back(prev_it->second);
         }
@@ -166,6 +161,65 @@ ColumnsCache::getIntersecting(
         removeStaleKeys(stale_keys);
 
     return result;
+}
+
+void ColumnsCache::set(const Key & key, const MappedPtr & mapped)
+{
+    /// Hold interval_index_mutex across all updates so getIntersecting / clearAll
+    /// observe a consistent view, and so that overlap detection cannot race with
+    /// concurrent writers. Lock order matches removePart / clearAll / removeStaleKeys:
+    /// interval_index_mutex first, then briefly the CacheBase internal mutex
+    /// (taken inside Base::set / Base::remove). No lock-order cycle.
+    std::lock_guard lock(interval_index_mutex);
+
+    PartIdentifier part_id{key.table_uuid, key.part_name};
+    auto & intervals = interval_index[part_id][key.column_name];
+
+    /// Maintain a non-overlapping invariant on the per-column interval map.
+    /// This keeps getIntersecting O(log N): with non-overlap, at most one
+    /// predecessor can extend into the query range, so the lookup only needs
+    /// to check the immediate predecessor instead of scanning from begin().
+    ///
+    /// When an existing interval fully contains the new range, the existing
+    /// entry is preserved (a wider cached range is more useful for future
+    /// lookups). Otherwise all overlapping entries are evicted from both
+    /// `interval_index` and `Base` before inserting the new one.
+    auto it = intervals.lower_bound({key.row_begin, 0});
+
+    if (it != intervals.begin())
+    {
+        auto prev = std::prev(it);
+        const auto & prev_key = prev->second;
+        if (prev_key.row_end > key.row_begin)
+        {
+            if (prev_key.row_begin <= key.row_begin && prev_key.row_end >= key.row_end)
+                return;
+            Base::remove(prev_key);
+            it = intervals.erase(prev);
+        }
+    }
+
+    while (it != intervals.end() && it->first.first < key.row_end)
+    {
+        Base::remove(it->second);
+        it = intervals.erase(it);
+    }
+
+    /// Insert into base cache first so there is no window where the index
+    /// references a key that the cache does not yet contain (which would
+    /// cause getIntersecting to classify it as stale and erase it).
+    Base::set(key, mapped);
+    intervals[{key.row_begin, key.row_end}] = key;
+
+    /// Eviction in `Base` happens via a callback that does not provide the key,
+    /// so `interval_index` retains entries for evicted keys. Sweep periodically
+    /// so that metadata memory cannot grow unboundedly when evicted entries are
+    /// never queried again (which would skip the lazy cleanup in `getIntersecting`).
+    if (++sets_since_compaction >= COMPACT_INTERVAL_INDEX_EVERY_N_SETS)
+    {
+        compactIntervalIndex();
+        sets_since_compaction = 0;
+    }
 }
 
 void ColumnsCache::removeTable(const UUID & table_uuid)
