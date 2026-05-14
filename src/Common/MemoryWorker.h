@@ -66,6 +66,14 @@ public:
 
     void start();
 
+    /// Update the ceiling that the dynamic hard-limit adjustment must not exceed.
+    /// Server.cpp / LocalServer.cpp call this with the configured `max_server_memory_usage`
+    /// (after applying the ratio). A value <= 0 disables the cap (i.e. unlimited).
+    /// Until this is called for the first time, the dynamic adjustment is suppressed,
+    /// so the worker cannot inflate the hard limit before the server has had a chance
+    /// to load its memory settings.
+    void setExternalHardLimit(Int64 limit);
+
     ~MemoryWorker();
 private:
     uint64_t getMemoryUsage(bool log_error);
@@ -95,11 +103,27 @@ private:
 
     double dynamic_hard_limit_ratio = 0.0;
 
+    /// Ceiling for the dynamic hard limit, set by Server.cpp / LocalServer.cpp.
+    /// Initial value -1 means "not configured yet"; the dynamic adjustment then skips this tick.
+    std::atomic<Int64> external_hard_limit{-1};
+
+    /// Amount of memory that may still be allocated by ClickHouse, used as input to the
+    /// dynamic hard-limit formula. Prefers the cgroup view (`memory.max` minus the cgroup's
+    /// `memory.current`-equivalent via `cgroups_reader`) when running in a cgroup with a
+    /// finite limit; otherwise falls back to `/proc/meminfo`'s `MemFree + Cached`.
+    /// Returns 0 if no source is available.
+    uint64_t readAvailableForDynamicLimit();
+
     /// Reads `MemFree + Cached` from /proc/meminfo. Returns 0 if the file can't be read.
     /// The lazily-opened buffer is owned by `updateResidentMemoryThread`, which is the only caller.
     uint64_t readSystemFreePlusCachedMemory();
     std::unique_ptr<ReadBufferFromFile> meminfo_buf;
     bool meminfo_warnings_printed = false;
+
+    /// Open file for the cgroup's memory limit (`memory.max` on v2, `memory.limit_in_bytes` on v1).
+    /// Set in the constructor when `cgroups_reader` is set. Empty otherwise.
+    std::unique_ptr<ReadBufferFromFile> cgroup_memory_max_buf;
+    bool cgroup_memory_max_warnings_printed = false;
 
     MemoryUsageSource source{MemoryUsageSource::None};
 

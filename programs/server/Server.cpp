@@ -2287,6 +2287,11 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+            /// Inform `MemoryWorker` of the configured ceiling so its dynamic adjustment
+            /// (which only sees `MemFree + Cached` or cgroup memory) cannot exceed the
+            /// explicit `max_server_memory_usage`.
+            memory_worker.setExternalHardLimit(static_cast<Int64>(max_server_memory_usage));
+
             size_t merges_mutations_memory_usage_soft_limit = new_server_settings[ServerSetting::merges_mutations_memory_usage_soft_limit];
 
             const double merges_mutations_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio];

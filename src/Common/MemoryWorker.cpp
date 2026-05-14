@@ -296,6 +296,24 @@ MemoryWorker::MemoryWorker(
             if (rss_update_period_ms == 0)
                 rss_update_period_ms = cgroups_memory_usage_tick_ms;
 
+            /// Also keep an open file for the cgroup's memory limit so the dynamic
+            /// hard-limit adjustment can read it cheaply on each tick. v1 and v2 use
+            /// different file names.
+            fs::path memory_max_path = fs::path(cgroup_path) / "memory.max";
+            if (!fs::exists(memory_max_path))
+                memory_max_path = fs::path(cgroup_path) / "memory.limit_in_bytes";
+            if (fs::exists(memory_max_path))
+            {
+                try
+                {
+                    cgroup_memory_max_buf = std::make_unique<ReadBufferFromFile>(memory_max_path.string());
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Cannot open cgroup memory limit file");
+                }
+            }
+
             return;
         }
         catch (...)
@@ -399,6 +417,42 @@ namespace
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch());
 }
 
+}
+
+void MemoryWorker::setExternalHardLimit(Int64 limit)
+{
+    external_hard_limit.store(limit, std::memory_order_relaxed);
+}
+
+uint64_t MemoryWorker::readAvailableForDynamicLimit()
+{
+#if defined(OS_LINUX)
+    /// When running in a cgroup with a finite limit, the host-wide `/proc/meminfo` is
+    /// the wrong source: the cgroup may be much smaller than the host, and other
+    /// processes in the cgroup count toward our budget. Use the cgroup view instead,
+    /// the same way `AsynchronousMetrics` reports `CGroupMemoryTotal` / `CGroupMemoryUsed`.
+    if (cgroups_reader && cgroup_memory_max_buf)
+    {
+        try
+        {
+            cgroup_memory_max_buf->rewind();
+            uint64_t limit_bytes = 0;
+            if (tryReadIntText(limit_bytes, *cgroup_memory_max_buf) && limit_bytes > 0)
+            {
+                /// `memory.max` value `"max"` means "no limit"; in that case `tryReadIntText`
+                /// fails to parse, we drop through to the meminfo fallback below.
+                uint64_t used = cgroups_reader->readMemoryUsage();
+                return (limit_bytes > used) ? (limit_bytes - used) : 0;
+            }
+        }
+        catch (...)
+        {
+            if (!std::exchange(cgroup_memory_max_warnings_printed, true))
+                tryLogCurrentException(log, "Cannot read cgroup memory limit; falling back to /proc/meminfo");
+        }
+    }
+#endif
+    return readSystemFreePlusCachedMemory();
 }
 
 uint64_t MemoryWorker::readSystemFreePlusCachedMemory()
@@ -578,28 +632,43 @@ void MemoryWorker::updateResidentMemoryThread()
 
             if (dynamic_hard_limit_ratio > 0.0)
             {
-                uint64_t free_plus_cached = readSystemFreePlusCachedMemory();
-                if (free_plus_cached > 0)
+                /// Suppress the adjustment until the server has had a chance to call
+                /// `setExternalHardLimit`. Otherwise we'd inflate the hard limit during
+                /// the brief window between `MemoryWorker::start` and the first config
+                /// reload that computes `max_server_memory_usage`.
+                Int64 ceiling = external_hard_limit.load(std::memory_order_relaxed);
+                if (ceiling >= 0)
                 {
-                    Int64 tracked = std::max<Int64>(0, total_memory_tracker.get());
-                    /// `tracked + free_plus_cached` is the upper bound of memory we could potentially own:
-                    /// what we already use plus what the OS has not committed to other processes.
-                    /// Scaling by `ratio < 1` leaves headroom for other processes on the host.
-                    auto new_hard_limit = static_cast<Int64>(
-                        static_cast<double>(static_cast<uint64_t>(tracked) + free_plus_cached) * dynamic_hard_limit_ratio);
-
-                    Int64 current_hard_limit = total_memory_tracker.getHardLimit();
-                    if (new_hard_limit != current_hard_limit)
+                    uint64_t available = readAvailableForDynamicLimit();
+                    if (available > 0)
                     {
-                        LOG_TRACE(
-                            log,
-                            "Adjusting total memory hard limit from {} to {} (tracked: {}, system free+cached: {}, ratio: {})",
-                            formatReadableSizeWithBinarySuffix(current_hard_limit),
-                            formatReadableSizeWithBinarySuffix(new_hard_limit),
-                            formatReadableSizeWithBinarySuffix(tracked),
-                            formatReadableSizeWithBinarySuffix(free_plus_cached),
-                            dynamic_hard_limit_ratio);
-                        total_memory_tracker.setHardLimit(new_hard_limit);
+                        Int64 tracked = std::max<Int64>(0, total_memory_tracker.get());
+                        /// `tracked + available` is the upper bound of memory we could potentially own:
+                        /// what we already use plus what is still free in our cgroup (or on the host).
+                        /// Scaling by `ratio < 1` leaves headroom for other processes on the host.
+                        auto new_hard_limit = static_cast<Int64>(
+                            static_cast<double>(static_cast<uint64_t>(tracked) + available) * dynamic_hard_limit_ratio);
+
+                        /// Never exceed the configured `max_server_memory_usage`. The dynamic
+                        /// adjustment may only shrink the budget further, not raise it above the
+                        /// explicit user setting.
+                        if (ceiling > 0)
+                            new_hard_limit = std::min(new_hard_limit, ceiling);
+
+                        Int64 current_hard_limit = total_memory_tracker.getHardLimit();
+                        if (new_hard_limit != current_hard_limit)
+                        {
+                            LOG_TRACE(
+                                log,
+                                "Adjusting total memory hard limit from {} to {} (tracked: {}, available: {}, ceiling: {}, ratio: {})",
+                                formatReadableSizeWithBinarySuffix(current_hard_limit),
+                                formatReadableSizeWithBinarySuffix(new_hard_limit),
+                                formatReadableSizeWithBinarySuffix(tracked),
+                                formatReadableSizeWithBinarySuffix(available),
+                                formatReadableSizeWithBinarySuffix(ceiling),
+                                dynamic_hard_limit_ratio);
+                            total_memory_tracker.setHardLimit(new_hard_limit);
+                        }
                     }
                 }
             }
