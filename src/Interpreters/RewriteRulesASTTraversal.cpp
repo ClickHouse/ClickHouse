@@ -124,6 +124,43 @@ bool astTraversal(ASTPtr &ast, ContextPtr context)
                     queue_rule.push(child);
                 }
             }
+            else
+            {
+                /// Trees are structurally identical at this node. If the rule template
+                /// contains a query parameter at this position (because the incoming
+                /// query is also parameterized with the same name and type), the hashes
+                /// match and the branch above does not record a binding. Without a
+                /// binding, applyRule throws REWRITE_RULE_UNKNOWN_QUERY_PARAMETER when
+                /// substituting the parameter in the resulting query template.
+                auto * query_parameter = top2->as<ASTQueryParameter>();
+                if (!query_parameter
+                    && top2->as<ASTExpressionList>() && top2->children.size() == 1)
+                {
+                    query_parameter = top2->children[0]->as<ASTQueryParameter>();
+                }
+                if (query_parameter)
+                {
+                    if (matching_map.contains(query_parameter->name))
+                    {
+                        throw Exception(
+                            ErrorCodes::REWRITE_RULE_DUPLICATED_QUERY_PARAMETER,
+                            "Query parameter duplicate in rewrite rule template: {}\n",
+                            query_parameter->name
+                        );
+                    }
+                    matching_map.emplace(query_parameter->name, top1->clone());
+                    continue;
+                }
+                /// Deeper parameters may exist below — continue BFS into children.
+                for (const auto& child : top1->children)
+                {
+                    queue_query.push(child);
+                }
+                for (const auto& child : top2->children)
+                {
+                    queue_rule.push(child);
+                }
+            }
         }
         if (is_template)
         {
