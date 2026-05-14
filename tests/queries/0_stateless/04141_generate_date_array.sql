@@ -1,5 +1,5 @@
-/* From the documentation */
-/* From the function documentation examples */
+-- From the documentation
+-- From the function documentation examples
 -- Daily step (default)
 SELECT generate_date_array('2024-01-01', '2024-01-05') AS example;
 -- Monthly step
@@ -18,7 +18,7 @@ FROM (SELECT toDate('2024-01-01') AS date_start, toDate('2024-01-07') AS date_en
       UNION ALL SELECT toDate('2024-02-15') AS date_start, toDate('2024-02-21') AS date_end
 ) ORDER BY date_range;
 
-/* Taken from Big Query docs and extended */
+-- Taken from Big Query docs and extended
 -- Default step of 1 day
 SELECT generate_date_array('2016-10-05'::Date, '2016-10-08'::Date) AS example;
 -- User-specified step of 2 days
@@ -46,7 +46,7 @@ FROM (
   UNION ALL SELECT DATE '2024-10-01', DATE '2024-10-31'
 ) AS items ORDER BY date_range;
 
-/* String inputs (no explicit cast required) */
+-- String inputs (no explicit cast required)
 -- Both strings, defaults to Array(Date)
 SELECT generate_date_array('2016-10-05', '2016-10-08') AS example;
 -- Strings are converted to Date32 if these do not fit into Date range (pre-1970), resulting in Array(Date32)
@@ -59,7 +59,7 @@ SELECT generate_date_array('2016-10-05', '2016-10-09', INTERVAL 2 DAY) AS exampl
 SELECT generate_date_array('2016-10-05', '2016-10-08'::Date32) AS example;
 SELECT toTypeName(generate_date_array('2016-10-05', '2016-10-08'::Date32)) AS type;
 
-/* Date32 and Mixed input types */
+-- Date32 and Mixed input types
 -- Date32 with default step
 SELECT generate_date_array('2016-10-05'::Date32, '2016-10-08'::Date32) AS example;
 -- Date32 with explicit interval
@@ -70,10 +70,10 @@ SELECT generate_date_array('2016-01-01'::Date32, '2016-06-30'::Date32, INTERVAL 
 SELECT generate_date_array('2016-10-05'::Date, '2016-10-08'::Date32) AS example;
 SELECT toTypeName(generate_date_array('2016-10-05'::Date, '2016-10-08'::Date32)) AS type;
 
-/* Error states */
+-- Error states
 -- ARGUMENT_OUT_OF_BOUND errors
--- Range too large (override max to a small value to trigger the error)
-SELECT generate_date_array('2000-01-01'::Date, '2100-01-01'::Date, INTERVAL 1 DAY) SETTINGS function_generate_date_array_max_elements_in_block = 100; -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- Range too large (over 500M entries). Need to bypass constant folding to trigger it
+SELECT generate_date_array(materialize('1900-01-01'), materialize('2299-12-31'), INTERVAL 1 DAY) FROM numbers(3500) ; -- { serverError ARGUMENT_OUT_OF_BOUND }
 -- ILLEGAL_COLUMN errors
 -- Non-constant step (column reference) is not allowed
 SELECT generate_date_array('2024-01-01'::Date, '2024-01-07'::Date, toIntervalDay(number + 1)) FROM numbers(1); -- { serverError ILLEGAL_COLUMN }

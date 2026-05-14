@@ -5,7 +5,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -28,10 +27,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-extern const SettingsUInt64 function_generate_date_array_max_elements_in_block;
-}
 
 namespace ErrorCodes
 {
@@ -51,27 +46,20 @@ class FunctionGenerateDateArray : public IFunction
 {
 public:
     static constexpr auto name = "generate_date_array";
+    static constexpr size_t max_elements = 500'000'000;
 
-    const size_t max_elements;
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGenerateDateArray>(std::move(context_)); }
-    explicit FunctionGenerateDateArray(ContextPtr context)
-        : max_elements(context->getSettingsRef()[Setting::function_generate_date_array_max_elements_in_block])
-    {
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGenerateDateArray>(); }
 
 private:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
-    // While any null in the input should cause it to return NULL,
-    //  it seems (from the documentation) that if some arguments are nullable, the code still gets called
-    //  So we would still need to write code that is "safe" regardless of what is passed
-    //  At the very least, this would cause massive allocation and inefficient execution
+    /// While any null in the input should cause it to return NULL,
+    ///  it seems (from the documentation) that if some arguments are nullable, the code still gets called
+    ///  So we would still need to write code that is "safe" regardless of what is passed
+    ///  At the very least, this would cause massive allocation and inefficient execution
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// The step argument must always be a compile-time constant expression.
-    /// Declaring it here keeps it as ColumnConst in executeImpl even when the
-    /// default-implementation-for-constants path fires for the other arguments.
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -111,7 +99,7 @@ private:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs 2..3 arguments; passed {}.", getName(), arguments.size());
         }
 
-        // If any argument is NULL, returns NULL
+        /// If any argument is NULL, returns NULL
         if (std::find_if(arguments.cbegin(), arguments.cend(), [](const auto & arg) { return arg.type->onlyNull(); }) != arguments.cend())
             return makeNullable(std::make_shared<DataTypeNothing>());
 
@@ -151,9 +139,9 @@ private:
                 DataTypePtr resolved;
                 if (isString(type_no_nullable))
                 {
-                    // For string arguments, inspect the constant value to pick the smallest
-                    // fitting date type (Date or Date32). Non-constant string columns default
-                    // to Date32 since their values are not visible at type-resolution time.
+                    /// For string arguments, inspect the constant value to pick the smallest
+                    /// fitting date type (Date or Date32). Non-constant string columns default
+                    /// to Date32 since their values are not visible at type-resolution time.
                     resolved = resolveStringArgType(arguments[i]);
                 }
                 else
@@ -201,7 +189,7 @@ private:
                 current = addCalendarInterval(current, kind, step);
                 ++count;
                 if (count > max_elements)
-                    return count; // caller will throw
+                    return count; /// caller will throw
             }
         }
         else
@@ -211,7 +199,7 @@ private:
                 current = addCalendarInterval(current, kind, step);
                 ++count;
                 if (count > max_elements)
-                    return count; // caller will throw
+                    return count; /// caller will throw
             }
         }
         return count;
@@ -355,7 +343,7 @@ private:
         for (size_t i = 0; i < arguments.size(); ++i)
             throw_if_null_value(arguments[i]);
 
-        // Extract interval kind and constant step value.
+        /// Default interval kind and constant step value.
         IntervalKind interval_kind = IntervalKind::Kind::Day;
         Int64 step_value = 1;
 
@@ -379,7 +367,7 @@ private:
 
         if (is_day_based)
         {
-            // Convert weeks to days once, outside any loop.
+            /// Convert weeks to days once, outside any loop.
             Int64 day_step = step_value * (interval_kind == IntervalKind::Kind::Week ? 7 : 1);
             if ((res = executeGenericDays<UInt16>(start_col.get(), end_col.get(), day_step, input_rows_count))
                 || (res = executeGenericDays<Int32>(start_col.get(), end_col.get(), day_step, input_rows_count)))
@@ -410,22 +398,23 @@ Returns an array of dates from `start` to `end` (inclusive) incremented by `step
 - If `step` is positive the sequence is ascending. If `step` is negative the sequence is descending.
 - If `end` is unreachable in the given direction, an empty array is returned.
 - Returns `NULL` if any argument is of type `Nullable(Nothing)` (i.e. a bare `NULL` literal). Throws an exception if any argument has a runtime `NULL` value inside a `Nullable` column.
-- Throws an exception if the total number of elements produced exceeds the limit set by [`function_generate_date_array_max_elements_in_block`](../../operations/settings/settings.md#function_generate_date_array_max_elements_in_block).
+- Throws an exception if the total number of elements produced exceeds 500 million.
     )";
     FunctionDocumentation::Syntax syntax = "generate_date_array(start, end[, step])";
     FunctionDocumentation::Arguments arguments = {
         {"start",
          "The first date of the array. `Date`, `Date32`, or a string literal implicitly cast to `Date` or `Date32` depending on the "
-         "value."},
+         "value.", {"String", "Date", "Date32", "NULL"}},
         {"end",
          "The last date of the array (inclusive). `Date`, `Date32`, or a string literal implicitly cast to `Date` or `Date32` depending on "
-         "the value."},
+         "the value.", {"String", "Date", "Date32", "NULL"}},
         {"step",
          "Optional. A **constant** interval between consecutive dates. Must be `IntervalDay`, `IntervalWeek`, `IntervalMonth`, "
-         "`IntervalQuarter`, or `IntervalYear`. Must not be zero. Cannot be a column reference. Default value: `INTERVAL 1 DAY`."},
+         "`IntervalQuarter`, or `IntervalYear`. Must not be zero. Cannot be a column reference. Default value: `INTERVAL 1 DAY`.",
+        {"Interval"}},
     };
     FunctionDocumentation::ReturnedValue returned_value
-        = {"Array of dates from `start` to `end` (inclusive) by `step`.", {"Array(Date)", "Array(Date32)"}};
+        = {"Array of dates from `start` to `end` (inclusive) by `step`.", {"Array(Date)", "Array(Date32)", "NULL"}};
     FunctionDocumentation::Examples examples = {
         {"Daily step (default)", "SELECT generate_date_array('2024-01-01', '2024-01-05');", R"(
 ┌─generate_date_array('2024-01-01', '2024-01-05')────────────────────┐
@@ -477,7 +466,7 @@ FROM (
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
         )"},
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 0};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
