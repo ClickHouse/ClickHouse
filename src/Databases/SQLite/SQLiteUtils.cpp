@@ -53,11 +53,39 @@ String validateSQLiteDatabasePath(const String & path, const Strings & user_file
 
     if (need_check)
     {
-        /// Use a path-aware boundary check (`pathStartsWith`) instead of raw string-prefix
-        /// matching. Plain `starts_with` would incorrectly accept sibling roots that share a
+        /// Use a path-aware boundary check that catches both sibling roots sharing a
         /// textual prefix (e.g. allowed `/var/lib/clickhouse/user_files` vs input
-        /// `/var/lib/clickhouse/user_files_evil/db.sqlite`).
-        if (!pathStartsWith(absolute_path, user_files_paths))
+        /// `/var/lib/clickhouse/user_files_evil/db.sqlite`) and in-root symlinks
+        /// escaping the allowed prefix (e.g. `<user_files>/escape -> /etc` accessed
+        /// as `escape/db.sqlite`).
+        ///
+        /// `fs::weakly_canonical` resolves symlinks for the longest existing prefix
+        /// of the path and lexically appends the rest. We invoke it explicitly so
+        /// the symlink-resolution step is visible at the call site - the security
+        /// property of this check should not depend on subtle library behavior of
+        /// `fs::relative` (which `pathStartsWith` would otherwise call internally).
+        std::error_code ec;
+        const fs::path resolved = fs::weakly_canonical(fs::path(absolute_path), ec);
+        if (ec)
+        {
+            processSQLiteError(fmt::format("Cannot resolve SQLite database path '{}': {}", path, ec.message()), throw_on_error);
+            return "";
+        }
+
+        bool inside = false;
+        for (const auto & ufp : user_files_paths)
+        {
+            const fs::path resolved_root = fs::weakly_canonical(fs::path(ufp), ec);
+            if (ec)
+                continue;
+            if (pathStartsWith(resolved, resolved_root))
+            {
+                inside = true;
+                break;
+            }
+        }
+
+        if (!inside)
         {
             processSQLiteError(fmt::format("SQLite database file path '{}' must be inside 'user_files' directory", path), throw_on_error);
             return "";
