@@ -771,20 +771,7 @@ namespace
                 }
                 else
                 {
-                    /// Use `castColumn` (not `convertFieldToType` + `insert`) so the conversion is
-                    /// performed at the column level with full source type information. The `Field`
-                    /// abstraction collapses some types -- e.g. `FixedString` and `String` both
-                    /// become `String`, and `Enum` becomes its underlying integer -- losing the
-                    /// context needed to do a proper cast such as `FixedString -> String` (which
-                    /// trims trailing zeros) or `Enum -> String` (which uses the value's name).
-                    /// Without this, `transform(x, src, dst, default)` returns different bytes for
-                    /// the default branch than `cast(default AS result_type)` and than the matched
-                    /// `dst` branch (which already uses `castColumn` for `cache->to_column`), even
-                    /// though all three should agree.
-                    auto casted = castColumn(arguments[3], result_type)->cut(0, 1);
-                    if (isColumnConst(*casted))
-                        casted = casted->convertToFullColumnIfConst();
-                    cache->default_column = std::move(casted);
+                    cache->default_column = castColumn(arguments[3], result_type)->cloneResized(1)->convertToFullColumnIfConst();
                 }
             }
         }
