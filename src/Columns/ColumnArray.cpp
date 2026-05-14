@@ -1176,6 +1176,18 @@ void ColumnArray::filterTuple(const Filter & filt)
     if (getOffsets().empty())
         return;
 
+    /// `data` (the `ColumnTuple`) may itself be shared with another `ColumnArray`
+    /// constructed via `ColumnArray::create(const ColumnPtr &, ...)`. In that case
+    /// writing back to `tuple_columns[i]` (or filtering a nested element in place)
+    /// would leak the mutation to the other owner — and a nested column may have
+    /// `use_count() == 1` even when the parent tuple is shared, so the per-element
+    /// guard in `filterNestedInPlaceOrReplace` is not enough on its own. Deep-clone
+    /// `data` first so subsequent in-place updates stay confined to the local
+    /// `ColumnTuple`. Read through `std::as_const` to avoid the non-const
+    /// `WrappedPtr::operator->`, which `chassert(use_count() == 1)`.
+    if (std::as_const(data)->use_count() > 1)
+        data = IColumn::mutate(std::move(data).detach());
+
     /// Read the inner tuple via the const path: a non-const `WrappedPtr::operator*`
     /// goes through `assumeMutableRef`, which `chassert(use_count() == 1)`.
     /// The previous implementation built a temporary `ColumnArray` whose `data`
@@ -1245,6 +1257,15 @@ void ColumnArray::filterNullable(const Filter & filt)
 {
     if (getOffsets().empty())
         return;
+
+    /// As in `filterTuple` above, `data` itself (the `ColumnNullable`) may be shared
+    /// with another `ColumnArray` constructed via `ColumnArray::create(const ColumnPtr &, ...)`.
+    /// Filtering the nested column or null map in place — or writing the
+    /// cloned null map back through `getNullMapColumnPtr()` — would leak the mutation
+    /// to the other owner if the parent nullable is shared (even when the nested
+    /// columns have `use_count() == 1`). Deep-clone `data` first.
+    if (std::as_const(data)->use_count() > 1)
+        data = IColumn::mutate(std::move(data).detach());
 
     /// Read the inner `ColumnNullable` via the const path; see the rationale in
     /// `filterTuple` above. The previous implementation built a temporary
