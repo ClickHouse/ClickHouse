@@ -1,5 +1,3 @@
-SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic';
-
 CREATE TABLE datetime_date_table (
     col_date Date,
     col_datetime DateTime,

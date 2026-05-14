@@ -7,6 +7,8 @@ title: 'UUID'
 doc_type: 'reference'
 ---
 
+# UUID
+
 A Universally Unique Identifier (UUID) is a 16-byte value used to identify records. For detailed information about UUIDs, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
 While different UUID variants exist, e.g. UUIDv4 and UUIDv7 (see [here](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis)), ClickHouse does not validate that inserted UUIDs conform to a particular variant.
@@ -39,11 +41,7 @@ Example:
 ```sql
 CREATE TABLE tab (uuid UUID) ENGINE = MergeTree PRIMARY KEY (uuid);
 
-INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
-INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
-INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
-INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
-INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(50);
 SELECT * FROM tab;
 ```
 
@@ -51,18 +49,18 @@ Result:
 
 ```text
 ┌─uuid─────────────────────────────────┐
-│ 019d2555-7874-7e9d-a284-9b45a0b2f165 │
-│ 019d2555-7874-7e9d-a284-9b46c3353be7 │
-│ 019d2555-7878-77fc-a36f-4081aa58ec2b │
-│ 019d2555-7878-77fc-a36f-40826555fb9b │
-│ 019d2555-7870-7432-ba62-5250ac595328 │
-│ 019d2555-7870-7432-ba62-5251da22bd19 │
-│ 019d2555-786c-73e9-a031-4a7936df7d56 │
-│ 019d2555-786c-73e9-a031-4a7a35a9544f │
-│ 019d2555-7868-7333-89d1-2bd1639899c3 │
-│ 019d2555-7868-7333-89d1-2bd297eb7d42 │
+│ 36a0b67c-b74a-4640-803b-e44bb4547e3c │
+│ 3a00aeb8-2605-4eec-8215-08c0ecb51112 │
+│ 3fda7c49-282e-421a-85ab-c5684ef1d350 │
+│ 16ab55a7-45f6-44a8-873c-7a0b44346b3e │
+│ e3776711-6359-4f22-878d-bf290d052c85 │
+│                [...]                 │
+│ 9eceda2f-6946-40e3-b725-16f2709ca41a │
+│ 03644f74-47ba-4020-b865-be5fd4c8c7ff │
+│ ce3bc93d-ab19-4c74-b8cc-737cb9212099 │
+│ b7ad6c91-23d6-4b5e-b8e4-a52297490b56 │
+│ 06892f64-cc2d-45f3-bf86-f5c5af5768a9 │
 └──────────────────────────────────────┘
-
 ```
 
 As a workaround, the UUID can be converted to a timestamp extracted from the second half:
@@ -71,30 +69,8 @@ As a workaround, the UUID can be converted to a timestamp extracted from the sec
 CREATE TABLE tab (uuid UUID) ENGINE = MergeTree PRIMARY KEY (UUIDv7ToDateTime(uuid));
 -- Or alternatively:                      [...] PRIMARY KEY (toStartOfHour(UUIDv7ToDateTime(uuid)));
 
-INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
-INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
-INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
-INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
-INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(50);
 SELECT * FROM tab;
-```
-
-Result (assuming same data is inserted):
-
-```text
-┌─uuid─────────────────────────────────┐
-│ 019d2555-7868-7333-89d1-2bd1639899c3 │
-│ 019d2555-7868-7333-89d1-2bd297eb7d42 │
-│ 019d2555-786c-73e9-a031-4a7936df7d56 │
-│ 019d2555-786c-73e9-a031-4a7a35a9544f │
-│ 019d2555-7870-7432-ba62-5250ac595328 │
-│ 019d2555-7870-7432-ba62-5251da22bd19 │
-│ 019d2555-7874-7e9d-a284-9b45a0b2f165 │
-│ 019d2555-7874-7e9d-a284-9b46c3353be7 │
-│ 019d2555-7878-77fc-a36f-4081aa58ec2b │
-│ 019d2555-7878-77fc-a36f-40826555fb9b │
-└──────────────────────────────────────┘
-
 ```
 
 ORDER BY (UUIDv7ToDateTime(uuid), uuid)

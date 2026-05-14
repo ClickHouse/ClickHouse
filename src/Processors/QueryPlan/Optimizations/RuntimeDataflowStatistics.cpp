@@ -110,7 +110,7 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
-bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows)
+bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows) const
 {
     // Empty blocks produced during planning, when we calculate output headers. Skip them.
     if (!block_rows)
@@ -119,45 +119,32 @@ bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & stati
     return counter % 5 == 0 && counter < 25;
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols)
+void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
 {
     Stopwatch watch;
 
-    size_t block_bytes = 0;
-    for (const auto & col : cols)
-        block_bytes += col.column->byteSize();
-
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
-    if (shouldSampleBlock(statistics, num_rows))
+    auto & statistics = output_bytes_statistics[OutputStatisticsType::OutputChunk];
+    if (shouldSampleBlock(statistics, chunk.getNumRows()))
     {
-        for (const auto & col : cols)
+        chassert(chunk.getNumColumns() == header.columns());
+        for (size_t i = 0; i < chunk.getNumColumns(); ++i)
         {
-            auto [sample, compressed] = estimateCompressedColumnSize(col);
+            auto [sample, compressed] = estimateCompressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
             sample_bytes += sample;
             compressed_bytes += compressed;
         }
     }
 
     std::lock_guard lock(statistics.mutex);
-    statistics.bytes += block_bytes;
+    statistics.bytes += chunk.bytes();
     if (compressed_bytes)
     {
         statistics.sample_bytes += sample_bytes;
         statistics.compressed_bytes += compressed_bytes;
     }
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();
-}
-
-void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
-{
-    chassert(chunk.getNumColumns() == header.columns());
-    const auto & columns = chunk.getColumns();
-    ColumnsWithTypeAndName cols;
-    cols.reserve(columns.size());
-    for (size_t i = 0; i < columns.size(); ++i)
-        cols.emplace_back(columns[i], header.getByPosition(i).type, "");
-    recordColumns(output_bytes_statistics[OutputStatisticsType::OutputChunk], chunk.getNumRows(), cols);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket)
@@ -187,33 +174,47 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
     const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types)
 {
-    const auto & columns = chunk.getColumns();
-    ColumnsWithTypeAndName cols;
-    cols.reserve(keys_positions.size());
-    for (size_t i = 0; i < keys_positions.size(); ++i)
-        cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols);
-}
+    Stopwatch watch;
 
-void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
-    const Chunk & chunk, const ColumnNumbers & keys_positions, const Block & header)
-{
     const auto & columns = chunk.getColumns();
 
-    /// Mark key columns so we can skip them — only non-key columns are aggregate states.
-    std::vector<bool> is_key(columns.size(), false);
-    for (auto pos : keys_positions)
-        is_key[pos] = true;
-
-    ColumnsWithTypeAndName cols;
-    cols.reserve(columns.size());
-    for (size_t i = 0; i < columns.size(); ++i)
+    auto get_key_column_sizes = [&](bool compress)
     {
-        if (is_key[i])
-            continue;
-        cols.emplace_back(columns[i], header.getByPosition(i).type, "");
+        size_t sample_bytes = 0;
+        size_t compressed_bytes = 0;
+        for (size_t i = 0; i < keys_positions.size(); ++i)
+        {
+            const auto & col = columns[keys_positions[i]];
+            if (compress)
+            {
+                auto [sample, compressed] = estimateCompressedColumnSize({col, key_types[i], ""});
+                sample_bytes += sample;
+                compressed_bytes += compressed;
+            }
+            else
+            {
+                sample_bytes += col->byteSize();
+                compressed_bytes += col->byteSize();
+            }
+        }
+        return std::make_pair(sample_bytes, compressed_bytes);
+    };
+
+    const auto block_bytes = get_key_column_sizes(/*compressed=*/false).first;
+    size_t sample_bytes = 0;
+    size_t compressed_bytes = 0;
+    auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationKeys];
+    if (shouldSampleBlock(statistics, chunk.getNumRows()))
+        std::tie(sample_bytes, compressed_bytes) = get_key_column_sizes(/*compressed=*/true);
+
+    std::lock_guard lock(statistics.mutex);
+    statistics.bytes += block_bytes;
+    if (compressed_bytes)
+    {
+        statistics.sample_bytes += sample_bytes;
+        statistics.compressed_bytes += compressed_bytes;
     }
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationState], chunk.getNumRows(), cols);
+    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
