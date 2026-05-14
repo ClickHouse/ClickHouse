@@ -67,7 +67,7 @@ namespace FunctionSignatures
   * Goals:
   * - signatures should be comprehensible by non-programmers;
   * - close to pseudo-code in documentation;
-  * - useable in system tables and documentation directly.
+  * - usable in system tables and documentation directly.
   */
 class FunctionSignature
 {
