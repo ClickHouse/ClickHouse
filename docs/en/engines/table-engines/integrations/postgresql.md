@@ -8,8 +8,6 @@ title: 'PostgreSQL table Engine'
 doc_type: 'guide'
 ---
 
-# PostgreSQL table engine
-
 The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
 
 :::note
