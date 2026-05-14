@@ -458,7 +458,12 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 for (const String * col : bbox_col_ptrs)
                     for (auto & pc : primitive_columns)
                         if (pc.name == *col)
+                        {
                             pc.used_by_key_condition = true;
+                            /// SIZE_MAX prevents ReadManager from scheduling data decoding for these
+                            /// columns — they are only needed for row-group statistics, not output.
+                            pc.first_step_to_calculate = SIZE_MAX;
+                        }
             }
         }
         else

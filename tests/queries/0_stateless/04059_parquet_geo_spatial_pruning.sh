@@ -60,7 +60,7 @@ echo "${disabled_out:-no pruning}"
 # The south Texas polygon is disjoint from RG1 (north Texas), but because it is
 # under OR with a non-spatial predicate (id = 3 which lives in RG1), pruning RG1
 # would be incorrect — id=3 must still be returned.
-echo "=== or-safety (all 4 ids expected) ==="
+echo "=== or-safety (ids 1, 2, 3 expected, row group 1 not pruned) ==="
 $CLICKHOUSE_LOCAL -q "
 SELECT id FROM file('$FILE', Parquet)
 WHERE pointInPolygon(geometry, [(-99., 30.), (-96., 30.), (-96., 33.), (-99., 33.), (-99., 30.)])

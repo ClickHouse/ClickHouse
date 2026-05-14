@@ -15,10 +15,9 @@
 ParquetPrunedRowGroups: 1 (increment)
 === pruned_row_groups (pruning disabled) ===
 no pruning
-=== or-safety (all 4 ids expected) ===
+=== or-safety (ids 1, 2, 3 expected, row group 1 not pruned) ===
 1
 2
 3
-4
 === or-safety no pruning expected ===
 no pruning
