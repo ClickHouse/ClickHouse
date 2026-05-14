@@ -6,13 +6,13 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <unordered_map>
 
 
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -81,13 +81,6 @@ namespace
                                 function_name, i + 1, ResultType::SCALAR,
                                 getPromQLText(arguments[i], context), arguments[i].type);
             }
-
-            if (arguments[i].store_method == StoreMethod::SCALAR_GRID)
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                                "Function '{}' with a non-constant scalar parameter is not supported",
-                                function_name);
-            }
         }
     }
 
@@ -101,6 +94,15 @@ namespace
         return min_arg.store_method == StoreMethod::CONST_SCALAR
             && max_arg.store_method == StoreMethod::CONST_SCALAR
             && max_arg.scalar_value < min_arg.scalar_value;
+    }
+
+    bool clampMayHaveEmptyResultAtRuntime(const std::vector<SQLQueryPiece> & arguments, ClampKind kind)
+    {
+        if (kind != ClampKind::Both)
+            return false;
+
+        return arguments[1].store_method != StoreMethod::CONST_SCALAR
+            || arguments[2].store_method != StoreMethod::CONST_SCALAR;
     }
 
     ASTPtr keepNullSamplesSparse(ASTPtr value, ASTPtr clamped_value)
@@ -189,6 +191,9 @@ SQLQueryPiece applyClampFunction(const PQT::Function * function_node, std::vecto
 
     if (constantClampHasEmptyResult(arguments, impl_info->kind))
         return SQLQueryPiece{function_node, function_node->result_type, StoreMethod::EMPTY};
+
+    if (clampMayHaveEmptyResultAtRuntime(arguments, impl_info->kind))
+        arguments[0] = toVectorGrid(std::move(arguments[0]), context);
 
     auto apply_function_to_ast = [&](ASTs args) -> ASTPtr
     {

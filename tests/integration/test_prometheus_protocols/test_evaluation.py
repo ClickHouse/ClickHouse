@@ -785,8 +785,10 @@ def test_conversion_functions():
         ],
     )
 
+    # Behavior: Prometheus evaluates `time()` at each range/subquery grid timestamp,
+    # not once at query end or wall-clock time.
     do_query_test(
-        "vector(time())[40:10]",
+        "vector(time())[40s:10s]",
         180,
         '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "150"], [160, "160"], [170, "170"], [180, "180"]]}]}',
         [
@@ -852,15 +854,24 @@ def test_conversion_functions():
         ],
     )
 
+    # Behavior: Prometheus `timestamp` over a direct selector returns the selected
+    # source sample timestamp even when output steps vary.
     do_query_test(
-        "scalar(vector(1))",
+        "timestamp(test @ 145)[40s:10s]",
         180,
-        '{"resultType": "scalar", "result": [180, "1"]}',
-        [["1970-01-01 00:03:00.000", 1]],
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "140"], [160, "140"], [170, "140"], [180, "140"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',140),('1970-01-01 00:02:40.000',140),('1970-01-01 00:02:50.000',140),('1970-01-01 00:03:00.000',140)]",
+            ]
+        ],
     )
 
+    # Behavior: Prometheus `timestamp` over a computed vector returns the
+    # evaluation-grid timestamp, not the wrapped selector timestamp.
     do_query_test(
-        "vector(scalar(vector(time())))[40:10]",
+        "timestamp(abs(test @ 145))[40s:10s]",
         180,
         '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "150"], [160, "160"], [170, "170"], [180, "180"]]}]}',
         [
@@ -871,6 +882,68 @@ def test_conversion_functions():
         ],
     )
 
+    # Behavior: nested `timestamp` receives a computed vector, so the outer value
+    # is the outer evaluation timestamp.
+    do_query_test(
+        "timestamp(timestamp(test @ 145))[40s:10s]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "150"], [160, "160"], [170, "170"], [180, "180"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',150),('1970-01-01 00:02:40.000',160),('1970-01-01 00:02:50.000',170),('1970-01-01 00:03:00.000',180)]",
+            ]
+        ],
+    )
+
+    # Behavior: positive `offset` shifts the selector reference time backward
+    # while `timestamp` reports the selected source sample timestamp.
+    do_query_test(
+        "timestamp(test offset 30s)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "140"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 140]],
+    )
+
+    # Behavior: negative `offset` shifts the selector reference time forward
+    # while `timestamp` reports the selected source sample timestamp.
+    do_query_test(
+        "timestamp(test offset -30s)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "210"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 210]],
+    )
+
+    # Behavior: Prometheus `scalar` returns the only float sample value.
+    do_query_test(
+        "scalar(vector(1))",
+        180,
+        '{"resultType": "scalar", "result": [180, "1"]}',
+        [["1970-01-01 00:03:00.000", 1]],
+    )
+
+    # Behavior: Prometheus scalars can be scalar grids; `scalar` is re-evaluated per step.
+    do_query_test(
+        "vector(scalar(vector(time())))[40s:10s]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "150"], [160, "160"], [170, "170"], [180, "180"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',150),('1970-01-01 00:02:40.000',160),('1970-01-01 00:02:50.000',170),('1970-01-01 00:03:00.000',180)]",
+            ]
+        ],
+    )
+
+    # Behavior: Prometheus `scalar` returns `NaN` for zero or multiple float samples.
+    do_query_test(
+        "scalar(foo)",
+        130,
+        '{"resultType": "scalar", "result": [130, "NaN"]}',
+        [["1970-01-01 00:02:10.000", "nan"]],
+    )
+
+    # Behavior: Prometheus `scalar` returns `NaN` for zero or multiple float samples.
     do_query_test(
         "vector(scalar({http_code='404'}))[80:10]",
         180,
@@ -921,6 +994,29 @@ def test_conversion_functions():
 
 
 def test_date_time_functions():
+    # Behavior: Prometheus no-arg date functions use the current evaluation timestamp in UTC.
+    do_query_test(
+        "day_of_week()",
+        0,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [0, "4"]}]}',
+        [["[]", "1970-01-01 00:00:00.000", 4]],
+    )
+
+    # Behavior: Prometheus no-arg date functions use the current evaluation timestamp in UTC.
+    do_query_test(
+        "minute()[40s:10s]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "2"], [160, "2"], [170, "2"], [180, "3"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',2),('1970-01-01 00:02:40.000',2),('1970-01-01 00:02:50.000',2),('1970-01-01 00:03:00.000',3)]",
+            ]
+        ],
+    )
+
+    # Behavior: Prometheus date functions interpret each float sample value as
+    # Unix seconds in UTC and drop the metric name.
     do_query_test(
         "day_of_week(vector(time()))",
         1770582640,
@@ -964,6 +1060,20 @@ def test_date_time_functions():
         1770582640,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "28"]}]}',
         [["[]", "2026-02-08 20:30:40.000", 28]],
+    )
+
+    do_query_test(
+        "days_in_month(vector(1454284800))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "29"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 29]],
+    )
+
+    do_query_test(
+        "days_in_month(vector(1485907200))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "28"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 28]],
     )
 
     do_query_test(
@@ -1168,6 +1278,79 @@ def test_math_functions():
         500,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "6"]}]}',
         [["[]", "1970-01-01 00:08:20.000", 6]],
+    )
+
+    # Behavior: Prometheus `round` uses the reciprocal formula and ties round toward `+Inf`.
+    do_query_test(
+        "round(vector(0.15), 0.1)",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "0.2"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", 0.2]],
+    )
+
+    do_query_test(
+        "round(vector(0.3), 0.2)",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "0.4"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", 0.4]],
+    )
+
+    do_query_test(
+        "round(vector(-2.5))",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "-2"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", -2]],
+    )
+
+    do_query_test(
+        "round(vector(2.5))",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "3"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", 3]],
+    )
+
+    # Behavior: Prometheus permits scalar-grid clamp bounds and applies the per-step lower bound.
+    do_query_test(
+        "clamp_min(vector(0), time() - 160)[40s:10s]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "0"], [160, "0"], [170, "10"], [180, "20"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',0),('1970-01-01 00:02:40.000',0),('1970-01-01 00:02:50.000',10),('1970-01-01 00:03:00.000',20)]",
+            ]
+        ],
+    )
+
+    # Behavior: Prometheus permits scalar-grid upper bounds and applies them per step.
+    do_query_test(
+        "clamp_max(vector(0), 160 - time())[40s:10s]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "0"], [160, "0"], [170, "-10"], [180, "-20"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',0),('1970-01-01 00:02:40.000',0),('1970-01-01 00:02:50.000',-10),('1970-01-01 00:03:00.000',-20)]",
+            ]
+        ],
+    )
+
+    # Behavior: Prometheus returns an empty vector only at steps where `max < min`;
+    # other steps still emit samples.
+    do_query_test(
+        "clamp(vector(0), time() - 160, 0)[40s:10s]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "0"], [160, "0"]]}]}',
+        [["[]", "[('1970-01-01 00:02:30.000',0),('1970-01-01 00:02:40.000',0)]"]],
+    )
+
+    # Behavior: Prometheus propagates `NaN` through Go `math.Min`/`math.Max`
+    # rather than rejecting or dropping the sample.
+    do_query_test(
+        "clamp(vector(1), NaN, 2)",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "NaN"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", "nan"]],
     )
 
     do_query_test(

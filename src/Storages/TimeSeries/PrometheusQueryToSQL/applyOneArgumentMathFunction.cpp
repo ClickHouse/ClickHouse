@@ -97,16 +97,19 @@ namespace
                  [](ASTs args) -> ASTPtr
                  {
                      /// PromQL round(v, to_nearest=1) resolves ties by rounding up.
+                     /// Use the same reciprocal formula as Prometheus because decimal
+                     /// cases such as round(0.15, 0.1) can differ from v / to_nearest.
                      ASTPtr to_nearest = (args.size() == 2) ? std::move(args[1]) : make_intrusive<ASTLiteral>(1.0);
+                     ASTPtr to_nearest_inverse = makeASTFunction("divide", make_intrusive<ASTLiteral>(1.0), std::move(to_nearest));
                      return makeASTFunction(
-                         "multiply",
+                         "divide",
                          makeASTFunction(
                              "floor",
                              makeASTFunction(
                                  "plus",
-                                 makeASTFunction("divide", std::move(args[0]), to_nearest->clone()),
+                                 makeASTFunction("multiply", std::move(args[0]), to_nearest_inverse->clone()),
                                  make_intrusive<ASTLiteral>(0.5))),
-                         std::move(to_nearest));
+                         std::move(to_nearest_inverse));
                  },
              }},
         };

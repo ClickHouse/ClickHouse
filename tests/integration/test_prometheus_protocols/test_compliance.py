@@ -334,6 +334,11 @@ CLICKHOUSE_PROMQL_REGRESSION_CASES = [
     *_with_risk(RISK_SCALAR_GRID, [
         ("vector(1.23)", [], False),
         ("vector(time())", [], False),
+        ("vector(scalar(vector(time())))", [], False),
+        ("clamp_min(vector(0), time() - 1700000000)", [], False),
+        ("clamp(vector(0), time() - 1700000000, 0)", [], False),
+        ("timestamp(demo_memory_usage_bytes @ 1700000000)", [], False),
+        ("timestamp(abs(demo_memory_usage_bytes @ 1700000000))", [], False),
     ]),
 
     *_with_risk(RISK_CLASSIC_HISTOGRAM_QUANTILE, [
