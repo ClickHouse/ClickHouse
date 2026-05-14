@@ -419,5 +419,43 @@ TEST(S3CommonTest, SanitizeAwsArnsInErrorMessages)
     ASSERT_EQ("[REDACTED_AWS_ARN]", sanitizeS3ErrorMessage("arn:"));
 }
 
+TEST(S3CommonTest, SanitizePreformattedMessage)
+{
+    using namespace DB;
+
+    /// `sanitizeS3PreformattedMessage` must redact ARNs in both `text` and
+    /// every element of `format_string_args` (these get propagated into
+    /// structured logs / telemetry), and must NOT touch `format_string`.
+    PreformattedMessage msg{
+        .text = "User: arn:aws:iam::123456789012:role/Admin is not authorized to use arn:aws:iam::999:role/Other",
+        .format_string = "User: {} is not authorized to use {}",
+        .format_string_args = {
+            "arn:aws:iam::123456789012:role/Admin",
+            "arn:aws:iam::999:role/Other",
+        },
+    };
+
+    PreformattedMessage sanitized = sanitizeS3PreformattedMessage(std::move(msg));
+
+    ASSERT_EQ(
+        "User: [REDACTED_AWS_ARN] is not authorized to use [REDACTED_AWS_ARN]",
+        sanitized.text);
+    ASSERT_EQ("User: {} is not authorized to use {}", sanitized.format_string);
+    ASSERT_EQ(2u, sanitized.format_string_args.size());
+    ASSERT_EQ("[REDACTED_AWS_ARN]", sanitized.format_string_args[0]);
+    ASSERT_EQ("[REDACTED_AWS_ARN]", sanitized.format_string_args[1]);
+
+    /// Args that don't contain ARNs are passed through unchanged.
+    PreformattedMessage no_arn{
+        .text = "AccessDenied: bucket nonexistent",
+        .format_string = "{}: bucket {}",
+        .format_string_args = {"AccessDenied", "nonexistent"},
+    };
+    PreformattedMessage no_arn_sanitized = sanitizeS3PreformattedMessage(std::move(no_arn));
+    ASSERT_EQ("AccessDenied: bucket nonexistent", no_arn_sanitized.text);
+    ASSERT_EQ("AccessDenied", no_arn_sanitized.format_string_args[0]);
+    ASSERT_EQ("nonexistent", no_arn_sanitized.format_string_args[1]);
+}
+
 }
 #endif

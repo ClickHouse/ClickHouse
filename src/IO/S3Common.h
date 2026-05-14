@@ -28,8 +28,8 @@ struct Settings;
 
 String sanitizeS3ErrorMessage(String message);
 
-/// Returns `msg` with `text` replaced by its sanitized version. Preserves `format_string`
-/// and `format_string_args` so anonymized error reporting (`Exception::callback`,
+/// Returns `msg` with `text` and every element of `format_string_args` sanitized.
+/// `format_string` is preserved so anonymized error reporting (`Exception::callback`,
 /// `ErrorCodes` statistics) keeps working for `S3Exception`.
 PreformattedMessage sanitizeS3PreformattedMessage(PreformattedMessage msg);
 

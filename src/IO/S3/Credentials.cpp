@@ -1260,7 +1260,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     auto outcome = client->assumeRole(request);
     if (!outcome.IsSuccess())
     {
-        LOG_WARNING(logger, "Failed to get credentials using AssumeRule. Error: {}", sanitizeS3ErrorMessage(outcome.GetError().GetMessage()));
+        LOG_WARNING(logger, "Failed to get credentials using AssumeRole. Error: {}", sanitizeS3ErrorMessage(outcome.GetError().GetMessage()));
         return;
     }
 

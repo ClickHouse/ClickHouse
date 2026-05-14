@@ -53,6 +53,15 @@ String sanitizeS3ErrorMessage(String message)
 PreformattedMessage sanitizeS3PreformattedMessage(PreformattedMessage msg)
 {
     msg.text = sanitizeS3ErrorMessage(std::move(msg.text));
+    /// `format_string_args` holds stringified argument values that get
+    /// propagated into structured logs / telemetry (e.g.
+    /// `Exception::message_format_string_args`,
+    /// `system.query_log.exception_format_string_args`). Redact AWS ARNs in
+    /// each arg too, otherwise they leak through that channel even after the
+    /// human-readable `text` is sanitized. `format_string` is a literal
+    /// template (e.g. `"{}"`), so it is left untouched.
+    for (auto & arg : msg.format_string_args)
+        arg = sanitizeS3ErrorMessage(std::move(arg));
     return msg;
 }
 
