@@ -61,7 +61,7 @@ private:
 
         /// It is possible to SIMD optimize this loop. By no need for that in practice.
 
-        Dst prev{};
+        Src prev{};
         bool has_prev_value = false;
 
         for (size_t i = 0; i < size; ++i)
@@ -72,17 +72,21 @@ private:
                 continue;
             }
 
+            Src cur = src[i];
             if (!has_prev_value)
             {
-                dst[i] = is_first_line_zero ? static_cast<Dst>(0) : static_cast<Dst>(src[i]);
-                prev = static_cast<Dst>(src[i]);
+                dst[i] = is_first_line_zero ? static_cast<Dst>(0) : static_cast<Dst>(cur);
+                prev = cur;
                 has_prev_value = true;
             }
             else
             {
-                auto cur = static_cast<Dst>(src[i]);
-                /// Overflow is Ok.
-                dst[i] = cur - prev;
+                /// Compute the difference in the source domain so that unsigned
+                /// inputs use well-defined modular subtraction. The explicit
+                /// static_cast to Dst avoids -Wdouble-promotion for floating
+                /// types. Signed overflow is intentionally tolerated via
+                /// NO_SANITIZE_UNDEFINED.
+                dst[i] = static_cast<Dst>(cur - prev);
                 prev = cur;
             }
         }
