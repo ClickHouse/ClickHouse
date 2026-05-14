@@ -409,7 +409,18 @@ public:
         /// containing `QueryNode`'s WHERE during the recursive step.
         cte_join_keys = collectCTEJoinKeys(*recursive_query, recursive_table_nodes);
         for (const auto & key : cte_join_keys)
-            original_wheres.emplace(key.containing_query_node, key.containing_query_node->getWhere());
+        {
+            /// Snapshot `WHERE`, `HAVING`, and `QUALIFY` together. The planner
+            /// mutates all three in place when building the pipeline: it can
+            /// merge `QUALIFY` into `HAVING` (no window functions) and `HAVING`
+            /// into `WHERE` (no aggregation), clearing the source clause in
+            /// each case (see `Planner::buildPlanForQueryNode`). Restoring only
+            /// `WHERE` between steps would drop those merged predicates on
+            /// step 3+, because on step 2 they get moved into the WHERE we
+            /// then overwrite with the snapshot.
+            auto * qn = key.containing_query_node;
+            original_clauses.emplace(qn, OriginalClauses{qn->getWhere(), qn->getHaving(), qn->getQualify()});
+        }
     }
 
     Chunk generate()
@@ -461,7 +472,7 @@ private:
     ///
     /// Returns true on success, false if the join-key cardinality exceeded the
     /// configured cap for some key — in that case the recursive step runs
-    /// without any CTE-derived filter (the caller restores original WHEREs).
+    /// without any CTE-derived filter (the caller restores original clauses).
     bool injectFiltersIntoRecursiveQuery(size_t max_in_filter_cardinality)
     {
         if (cte_join_keys.empty() || max_in_filter_cardinality == 0)
@@ -495,7 +506,7 @@ private:
 
             auto cte_filter = conjoinPredicates(std::move(predicates), recursive_query_context);
 
-            const auto & original_where = original_wheres.at(query_node);
+            const auto & original_where = original_clauses.at(query_node).where;
             if (original_where)
                 query_node->getWhere() = conjoinPredicates({original_where, std::move(cte_filter)}, recursive_query_context);
             else
@@ -507,10 +518,14 @@ private:
         return injected_any;
     }
 
-    void restoreOriginalWheres()
+    void restoreOriginalClauses()
     {
-        for (auto & [query_node, original_where] : original_wheres)
-            query_node->getWhere() = original_where;
+        for (auto & [query_node, original] : original_clauses)
+        {
+            query_node->getWhere() = original.where;
+            query_node->getHaving() = original.having;
+            query_node->getQualify() = original.qualify;
+        }
     }
 
     void buildStepExecutor()
@@ -585,14 +600,14 @@ private:
         }
         catch (...)
         {
-            restoreOriginalWheres();
+            restoreOriginalClauses();
             throw;
         }
 
         /// The pipeline was built and captured the (filter-injected) state of
         /// the query tree. The tree itself is reused across steps, so restore
-        /// the original WHEREs now to leave it pristine for the next step.
-        restoreOriginalWheres();
+        /// the original clauses now to leave it pristine for the next step.
+        restoreOriginalClauses();
     }
 
     void truncateTemporaryTable(StoragePtr & temporary_table)
@@ -623,10 +638,19 @@ private:
     std::optional<PullingAsyncPipelineExecutor> executor;
 
     std::vector<CTEJoinKey> cte_join_keys;
-    /// Pristine `WHERE` clauses captured at construction time, one per affected
-    /// `QueryNode`. The recursive step rebuilds `WHERE = original AND in(...)`
-    /// from these and restores them once the pipeline has been built.
-    std::map<QueryNode *, QueryTreeNodePtr> original_wheres;
+    /// Pristine `WHERE`, `HAVING`, and `QUALIFY` clauses captured at
+    /// construction time, one entry per affected `QueryNode`. The recursive
+    /// step rebuilds `WHERE = original_where AND in(...)` from these, then
+    /// restores all three after the pipeline has been built — the planner
+    /// folds `QUALIFY` into `HAVING` and `HAVING` into `WHERE` in place, and
+    /// not restoring `HAVING`/`QUALIFY` would lose those clauses on step 3+.
+    struct OriginalClauses
+    {
+        QueryTreeNodePtr where;
+        QueryTreeNodePtr having;
+        QueryTreeNodePtr qualify;
+    };
+    std::map<QueryNode *, OriginalClauses> original_clauses;
 
     size_t recursive_step = 0;
     size_t read_rows_during_recursive_step = 0;

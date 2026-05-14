@@ -175,6 +175,29 @@ SELECT current_id FROM walk ORDER BY current_id;
 
 DROP TABLE narrow;
 
+-- A recursive branch with `HAVING` against the joined real table. The planner
+-- folds non-aggregating `HAVING` into `WHERE` in place on the `QueryNode`, so
+-- the recursive source has to snapshot/restore `HAVING` alongside `WHERE`.
+-- Otherwise the predicate is lost on step 3+ and recursion runs past the
+-- intended depth (here, past `to_id <= 2`).
+DROP TABLE IF EXISTS edges_having;
+CREATE TABLE edges_having (from_id UInt64, to_id UInt64)
+ENGINE = MergeTree ORDER BY from_id;
+INSERT INTO edges_having SELECT number, number + 1 FROM numbers(10);
+
+WITH RECURSIVE walk_having AS
+(
+    SELECT CAST(0 AS UInt64) AS id
+  UNION ALL
+    SELECT e.to_id AS id
+    FROM edges_having AS e
+    INNER JOIN walk_having AS w ON e.from_id = w.id
+    HAVING e.to_id <= 2
+)
+SELECT id FROM walk_having ORDER BY id;
+
+DROP TABLE edges_having;
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;
