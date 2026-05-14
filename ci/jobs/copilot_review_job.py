@@ -1,20 +1,26 @@
 """
-Copilot-based automated PR code review job.
+AI-based automated PR code review job.
 
---pre: review code only (Code Review job, runs at start of CI)
---post: review CI failures (CI Results Review job, runs at end of CI)
+Two backends are supported, selected by flag:
 
-Copilot errors are logged as warnings only. Posting the review comment is
-done by the job script itself (not copilot) and fails the job if it does not work.
+  --codex    OpenAI Codex CLI       (auth: OPENAI_API_KEY from `/ci/llm/openai_api_key`)
+  --copilot  GitHub Copilot CLI     (auth: gh robot token from `/ci/robot-ch-test-poll-copilot`)
 
-Copilot writes the review to REVIEW_FILE; the job script then posts it via
-`python3 -m ci.praktika.gh post-or-update --tag review` so the comment is
-always posted as the pre-authenticated app, not the Copilot robot.
+Both agents shell out to `gh` to post inline review comments, so the gh CLI is
+always authenticated against a temporary `GH_CONFIG_DIR` with the robot token
+regardless of which backend runs the review itself.
 
-The Copilot CLI occasionally hits transient GitHub authorization errors mid-run
+The agent writes a free-form Markdown summary to `REVIEW_FILE`. The job script
+then posts that summary via `python3 -m ci.praktika.gh post-or-update --tag review`
+so the top-level comment is always authored by the pre-authenticated app, not
+the agent's robot account.
+
+Each agent occasionally hits transient GitHub authorization errors mid-run
 ("Authorization error, you may need to run /login"). The whole `gh auth` +
-`copilot` sequence is wrapped in a retry loop with exponential backoff so a
-single transient API failure does not fail the Code Review job.
+agent sequence is wrapped in a retry loop with exponential backoff so a single
+transient API failure does not fail the Code Review job. Authorization-style
+failures do not always surface as a Python exception — they show up as a
+non-zero exit code and a missing/empty review file — so both are checked here.
 """
 
 import os
@@ -34,17 +40,26 @@ from ci.praktika.result import Result
 REVIEW_FILE = "./ci/tmp/copilot_review.md"
 GH_PREFIX = "env -u GH_CONFIG_DIR"
 
-# Number of attempts at the full gh-auth + copilot run. The Copilot CLI
-# fetches auth state and makes GitHub API calls during execution; either
-# layer can hit a transient 5xx / authorization error that no single inner
-# subprocess controls. Re-authing and retrying the whole sequence is the
-# only reliable way to recover.
-COPILOT_MAX_ATTEMPTS = 3
+# Number of attempts at the full gh-auth + agent run. The agents fetch
+# auth state and make GitHub / model-provider API calls during execution;
+# either layer can hit a transient 5xx / authorization error that no
+# single inner subprocess controls. Re-authing and retrying the whole
+# sequence is the only reliable way to recover.
+MAX_ATTEMPTS = 3
 
+# Robot gh tokens. Used by both backends — Copilot authenticates against
+# GitHub with one of these directly; Codex needs gh authed so the agent's
+# shelled-out `gh` calls (for posting inline comments) succeed. Each
+# attempt picks one in a randomised rotation so a single robot's rate
+# limit or token issue does not fail every attempt.
 ROBOT_NAMES = [
     "/ci/robot-ch-test-poll-copilot",
     "/ci/robot-ch-test-poll-1-copilot",
 ]
+
+# OpenAI API key for the Codex CLI, written into `$CODEX_HOME/auth.json`
+# via `codex login --with-api-key`.
+OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
 
 
 def _join_prompt(*sections):
@@ -97,7 +112,7 @@ Tools:
 - Fetch inline review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh list-pr-review-threads --pr {pr_number} --repo {repo_name}`.
   The command returns JSON; each thread carries its node `id`, `isResolved`, `path`, `line`, and
-  `comments.nodes` with author, body, and `databaseId`.
+  `comments.nodes` with author, body, `databaseId`, and `createdAt`.
 - Fetch top-level conversation with:
   `{GH_PREFIX} gh api '/repos/{repo_name}/issues/{pr_number}/comments' --paginate`.
 - Reply on an existing thread with:
@@ -126,8 +141,8 @@ Procedure:
    and line, not by trusting the author's reply.
 6. For existing live threads, summarize the issue by default instead of replying on the thread. Reply
    only when the thread is marked as resolved, someone replied saying it is not an issue and you
-   believe it still is, or your last comment is older than two days. When replying, restate the concern
-   with the relevant code and explain why the previous answer does not resolve it.
+   believe it still is, or your last comment's `createdAt` is older than two days. When replying,
+   restate the concern with the relevant code and explain why the previous answer does not resolve it.
 7. Resolve or re-open only threads you created yourself: that means threads where the first comment in
    `comments.nodes` was authored by `clickhouse-gh[bot]`. If a bot-authored thread is open and the issue
    no longer holds in the current code, resolve it. If a bot-authored thread was resolved but the
@@ -161,48 +176,11 @@ def _pre_review_prompt(info):
     )
 
 
-def _post_review_tools(ci_report_url):
-    return f"""\
-Tools:
-- Fetch CI results with:
-  `node .claude/tools/fetch_ci_report.js '{ci_report_url}' --failed --links`.
-- Use `--all`, `--test <name>`, or `--download-logs` for deeper investigation.
-"""
-
-
-def _post_review_procedure(pr_url):
-    return f"""\
-Procedure:
-1. If all checks passed, stop.
-2. Otherwise review the PR {pr_url} diff and match each failure to the code changes.
-3. Do not post inline comments.
-"""
-
-
-def _post_review_output():
-    return f"""\
-Output:
-Write a self-contained summary as plain Markdown to {REVIEW_FILE}:
-start with `---
-### AI Review`, then use #### headers for sections only if needed.
-Do NOT post the summary yourself: the job script will post it after you finish.
-"""
-
-
-def _post_review_prompt(info, ci_report_url):
-    return _join_prompt(
-        _review_target(info),
-        _post_review_tools(ci_report_url),
-        _post_review_procedure(info.pr_url),
-        _post_review_output(),
-    )
-
-
 def _reauth_gh():
     """Force re-auth of the main gh context (outside any GH_CONFIG_DIR override).
 
     Called at job start regardless of current auth status, so the token is
-    always fresh when copilot invokes `env -u GH_CONFIG_DIR`.
+    always fresh when the agent invokes `env -u GH_CONFIG_DIR`.
     """
     from ci.praktika.gh_auth import GHAuth
 
@@ -220,31 +198,34 @@ def _post_review():
     )
 
 
-def _run_copilot_once(prompt, robot_name):
-    """Run a single attempt of `gh auth login` + `copilot` for one robot.
-
-    Removes any stale REVIEW_FILE first so a successful prior attempt's
-    artifact cannot be mistaken for the result of a later failed attempt.
-    Returns the praktika ``Result`` of the copilot subprocess.
-    """
+def _drop_stale_review_file():
+    """Remove any leftover REVIEW_FILE so a prior attempt's artifact cannot
+    be mistaken for the result of a later failed attempt."""
     if os.path.exists(REVIEW_FILE):
         try:
             os.unlink(REVIEW_FILE)
         except OSError as e:
             print(f"WARNING: Failed to remove stale {REVIEW_FILE}: {e}")
 
+
+def _gh_auth_with_robot_token(gh_config_dir, robot_name):
+    """Authenticate gh CLI in a scoped GH_CONFIG_DIR using the given robot token."""
+    print(f"Using robot: {robot_name}")
+    token = Secret.Config(
+        name=robot_name, type=Secret.Type.AWS_SSM_PARAMETER
+    ).get_value()
+    subprocess.run(
+        ["gh", "auth", "login", "--with-token"],
+        input=token, text=True, check=True,
+        env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},
+    )
+
+
+def _run_copilot_once(prompt, robot_name):
+    """Run a single attempt of `gh auth login` + `copilot` for one robot."""
+    _drop_stale_review_file()
     with tempfile.TemporaryDirectory() as gh_config_dir:
-        print(f"Using robot: {robot_name}")
-        token = Secret.Config(
-            name=robot_name,
-            type=Secret.Type.AWS_SSM_PARAMETER,
-        ).get_value()
-        subprocess.run(
-            ["gh", "auth", "login", "--with-token"],
-            input=token, text=True, check=True,
-            env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},
-        )
-        token = None
+        _gh_auth_with_robot_token(gh_config_dir, robot_name)
         return Result.from_commands_run(
             name="copilot review",
             # --allow-all: enable all permissions; --allow-all-tools alone hits
@@ -261,57 +242,106 @@ def _run_copilot_once(prompt, robot_name):
         )
 
 
-def _run(prompt):
-    """Run Copilot with retries, then post the review comment.
+def _run_codex_once(prompt, robot_name):
+    """Run a single attempt of `gh auth login` + `codex login` + `codex exec`.
 
-    Each attempt re-fetches the secret, re-auths the temporary
-    ``GH_CONFIG_DIR``, and re-runs Copilot. The attempt counts as success
-    only if the copilot subprocess exits 0 AND ``REVIEW_FILE`` was written
-    with non-empty content. Authorization-style failures inside Copilot do
-    not surface as a Python exception — they show up as a non-zero exit
-    code and a missing review file — so both have to be checked here.
+    Codex stores credentials in `$CODEX_HOME/auth.json` and does NOT consult
+    `OPENAI_API_KEY` directly when invoked — you have to run
+    `codex login --with-api-key` first, which reads the key from stdin and
+    writes it into `auth.json`. `CODEX_HOME` is scoped to a per-attempt
+    temporary directory under `./ci/tmp` (not `/tmp`, which codex refuses
+    to use for helper binaries) so the API key never lands on global runner
+    state.
+    """
+    _drop_stale_review_file()
+    with tempfile.TemporaryDirectory() as gh_config_dir, \
+         tempfile.TemporaryDirectory(dir="./ci/tmp") as codex_home:
+        _gh_auth_with_robot_token(gh_config_dir, robot_name)
+
+        openai_key = Secret.Config(
+            name=OPENAI_KEY_SECRET, type=Secret.Type.AWS_SSM_PARAMETER
+        ).get_value()
+        subprocess.run(
+            ["codex", "login", "--with-api-key"],
+            input=openai_key, text=True, check=True,
+            env={**os.environ, "CODEX_HOME": codex_home},
+        )
+
+        return Result.from_commands_run(
+            name="codex review",
+            # -m gpt-5.3-codex: same model the Copilot CLI used, so
+            #   review quality stays comparable across backends.
+            # -s workspace-write: writable workspace + /tmp + CODEX_HOME,
+            #   read-only elsewhere; sufficient for review output and
+            #   the gh CLI's /tmp config dir.
+            # sandbox_workspace_write.network_access=true: the agent
+            #   shells out to `gh` to post inline comments, which needs
+            #   network.
+            # approval_policy=never: codex `exec` is non-interactive,
+            #   but the approval policy still applies; "never" lets the
+            #   agent execute without blocking on an approval request.
+            # --color never: no ANSI codes in the job log.
+            command=f"CODEX_HOME={shlex.quote(codex_home)} "
+                    f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
+                    f"codex exec "
+                    f"-m gpt-5.3-codex -c 'model_reasoning_effort=xhigh' "
+                    f"-s workspace-write "
+                    f"-c sandbox_workspace_write.network_access=true "
+                    f"-c approval_policy=never "
+                    f"--color never "
+                    f"{shlex.quote(prompt)}",
+            with_info=True,
+        )
+
+
+def _run(prompt, run_once, agent_name):
+    """Run the chosen agent with retries, then post the review comment.
+
+    Each attempt re-fetches secrets, re-auths the temporary `GH_CONFIG_DIR`,
+    and re-runs the agent. The attempt counts as success only if the
+    subprocess exits 0 AND `REVIEW_FILE` was written with non-empty content.
     """
     last_error = None
     robots = ROBOT_NAMES.copy()
     random.shuffle(robots)
-    for attempt in range(1, COPILOT_MAX_ATTEMPTS + 1):
+    for attempt in range(1, MAX_ATTEMPTS + 1):
         robot_name = robots[(attempt - 1) % len(robots)]
         try:
-            result = _run_copilot_once(prompt, robot_name)
+            result = run_once(prompt, robot_name)
             if not result.is_ok():
                 last_error = (
-                    f"copilot subprocess exited with non-OK status [{result.status}]"
+                    f"{agent_name} subprocess exited with non-OK status [{result.status}]"
                 )
-                print(f"WARNING: Copilot attempt {attempt}/{COPILOT_MAX_ATTEMPTS} failed: {last_error}")
+                print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
             elif not os.path.exists(REVIEW_FILE):
-                last_error = f"Copilot did not write {REVIEW_FILE}"
-                print(f"WARNING: Copilot attempt {attempt}/{COPILOT_MAX_ATTEMPTS} failed: {last_error}")
+                last_error = f"{agent_name} did not write {REVIEW_FILE}"
+                print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
             elif os.path.getsize(REVIEW_FILE) == 0:
                 last_error = f"{REVIEW_FILE} is empty"
-                print(f"WARNING: Copilot attempt {attempt}/{COPILOT_MAX_ATTEMPTS} failed: {last_error}")
+                print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
             else:
                 last_error = None
                 break
         except Exception as e:  # noqa: BLE001 — broad catch: any exception is retryable here
             last_error = f"{type(e).__name__}: {e}"
-            print(f"WARNING: Copilot attempt {attempt}/{COPILOT_MAX_ATTEMPTS} raised: {last_error}")
+            print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} raised: {last_error}")
             traceback.print_exc()
 
-        if attempt < COPILOT_MAX_ATTEMPTS:
+        if attempt < MAX_ATTEMPTS:
             delay = min(2 ** attempt, 60)
-            print(f"Retrying Copilot in {delay}s ...")
+            print(f"Retrying {agent_name} in {delay}s ...")
             time.sleep(delay)
 
     if last_error is not None:
         raise RuntimeError(
-            f"Copilot review failed after {COPILOT_MAX_ATTEMPTS} attempts: {last_error}"
+            f"{agent_name} review failed after {MAX_ATTEMPTS} attempts: {last_error}"
         )
 
     # Post the summary from the job script so the job fails loudly if anything is broken.
     _post_review()
 
 
-def pre():
+def review(run_once, agent_name):
     info = Info()
     if not info.pr_number:
         print("Not a PR, skipping")
@@ -320,44 +350,26 @@ def pre():
     _reauth_gh()
     os.makedirs("./ci/tmp", exist_ok=True)
     prompt = _pre_review_prompt(info)
-    _run(prompt)
-
-
-def post():
-    info = Info()
-    if not info.pr_number:
-        print("Not a PR, skipping")
-        return
-
-    _reauth_gh()
-    os.makedirs("./ci/tmp", exist_ok=True)
-    ci_report_url = info.get_report_url()
-
-    prompt = _post_review_prompt(info, ci_report_url)
-    _run(prompt)
+    _run(prompt, run_once, agent_name)
 
 
 if __name__ == "__main__":
+    if "--codex" in sys.argv:
+        run_once, agent_name = _run_codex_once, "Codex"
+    elif "--copilot" in sys.argv:
+        run_once, agent_name = _run_copilot_once, "Copilot"
+    else:
+        print("Usage: copilot_review_job.py --codex | --copilot")
+        sys.exit(1)
+
     status = Result.Status.OK
     info = ""
-    if "--pre" in sys.argv:
-        try:
-            pre()
-        except Exception as e:
-            info = f"ERROR: {e}"
-            print(info)
-            traceback.print_exc()
-            status = Result.Status.FAIL
-    elif "--post" in sys.argv:
-        try:
-            post()
-        except Exception as e:
-            info = f"ERROR: {e}"
-            print(info)
-            traceback.print_exc()
-            status = Result.Status.FAIL
-    else:
-        print("Usage: copilot_review_job.py --pre | --post")
-        sys.exit(1)
+    try:
+        review(run_once, agent_name)
+    except Exception as e:
+        info = f"ERROR: {e}"
+        print(info)
+        traceback.print_exc()
+        status = Result.Status.FAIL
 
     Result.create_from(status=status, info=info).complete_job()
