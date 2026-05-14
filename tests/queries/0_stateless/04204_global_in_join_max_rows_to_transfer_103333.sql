@@ -58,9 +58,9 @@ SETTINGS max_rows_to_transfer = 0;
 -- `ColumnConst` regression: a subquery producing N rows of a single constant
 -- value must be counted as the materialized N * sizeof(value) payload, not
 -- as the single stored value. This guards against
--- https://github.com/ClickHouse/ClickHouse/pull/104119#discussion_r... where
--- `chunk.bytes()` was reading the unmaterialized `ColumnConst` (one stored
--- entry only) and silently bypassed `max_bytes_to_transfer`.
+-- https://github.com/ClickHouse/ClickHouse/pull/104119#discussion_r3189697129
+-- where `chunk.bytes()` was reading the unmaterialized `ColumnConst` (one
+-- stored entry only) and silently bypassed `max_bytes_to_transfer`.
 --
 -- The constants below sum to ~24 bytes per row when materialized (4-byte
 -- `Int32` + 20-byte `String`), times 1000 rows = ~24000 bytes >> 100.
