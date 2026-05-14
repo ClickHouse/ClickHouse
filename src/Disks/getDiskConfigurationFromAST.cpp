@@ -54,10 +54,26 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 
     const auto & settings = context->getSettingsRef();
     bool is_s3_configuration = false;
+    /// True if the resolved disk type cannot be determined statically here
+    /// because it comes from `from_env`/`from_zk` substitution on the `type`
+    /// key, or because the config is augmented by an `include` directive that
+    /// could supply (or override) the type after this function returns. In
+    /// either case we conservatively treat the disk as potentially S3 so the
+    /// credential hardening below cannot be bypassed by indirection.
+    bool type_resolution_is_indirect = false;
     bool has_use_environment_credentials = false;
     bool has_role_arn = false;
-    bool has_access_key_id = false;
-    bool has_secret_access_key = false;
+    /// "Explicit" here means the value is a literal in the SQL — not a
+    /// `from_env`/`from_zk` reference. Indirect values must not count as the
+    /// user-supplied keys that authorize a `role_arn`, since they could
+    /// resolve to credentials configured by the operator.
+    bool has_explicit_access_key_id = false;
+    bool has_explicit_secret_access_key = false;
+
+    auto is_indirect_value = [](const std::string & v)
+    {
+        return startsWith(v, "from_env") || startsWith(v, "from_zk");
+    };
 
     for (const auto & arg : disk_args)
     {
@@ -87,17 +103,23 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
         auto value_str = convertFieldToString(value->as<ASTLiteral>()->value);
 
-        if ((key == "type" || key == "object_storage_type")
-            && (value_str == "s3" || value_str.starts_with("s3_")))
-            is_s3_configuration = true;
+        if (key == "type" || key == "object_storage_type")
+        {
+            if (value_str == "s3" || value_str.starts_with("s3_"))
+                is_s3_configuration = true;
+            else if (is_indirect_value(value_str))
+                type_resolution_is_indirect = true;
+        }
+        else if (key == "include")
+            type_resolution_is_indirect = true;
         else if (key == "use_environment_credentials")
             has_use_environment_credentials = true;
         else if (key == "role_arn" && !value_str.empty())
             has_role_arn = true;
-        else if (key == "access_key_id" && !value_str.empty())
-            has_access_key_id = true;
-        else if (key == "secret_access_key" && !value_str.empty())
-            has_secret_access_key = true;
+        else if (key == "access_key_id" && !value_str.empty() && !is_indirect_value(value_str))
+            has_explicit_access_key_id = true;
+        else if (key == "secret_access_key" && !value_str.empty() && !is_indirect_value(value_str))
+            has_explicit_secret_access_key = true;
 
         if (key == "include")
         {
@@ -134,12 +156,20 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         }
     }
 
-    if (!is_loading_from_existing_metadata && is_s3_configuration && has_use_environment_credentials)
+    /// Apply the S3 hardening checks whenever this disk is, or could resolve
+    /// to, an S3 disk. `type_resolution_is_indirect` covers the case where
+    /// the literal `s3`/`s3_*` value never appears here because `type` is
+    /// fetched from an env variable / ZooKeeper, or the configuration is
+    /// augmented by an `include` that could supply the type itself.
+    const bool apply_s3_credential_checks = is_s3_configuration || type_resolution_is_indirect;
+
+    if (!is_loading_from_existing_metadata && apply_s3_credential_checks && has_use_environment_credentials)
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "Using `use_environment_credentials` in dynamic S3 disk configuration is not allowed");
 
-    if (!is_loading_from_existing_metadata && is_s3_configuration && has_role_arn && (!has_access_key_id || !has_secret_access_key))
+    if (!is_loading_from_existing_metadata && apply_s3_credential_checks && has_role_arn
+        && (!has_explicit_access_key_id || !has_explicit_secret_access_key))
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "Using `role_arn` without explicit S3 credentials in dynamic disk configuration is not allowed");

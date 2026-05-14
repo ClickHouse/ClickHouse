@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: exercises the `s3` table function / `S3` storage / `BACKUP TO S3`,
+# which are not compiled into the fast-test build.
+#
 # Verify that user SQL cannot make S3 clients use the server's environment
 # (IMDS/IRSA/STS) credentials, and that user SQL cannot trigger STS AssumeRole
 # without supplying explicit S3 credentials.
@@ -215,6 +219,69 @@ $CLICKHOUSE_CLIENT -q "
         object_storage_type = s3,
         endpoint = 'http://localhost:11111/test/${DB}_g/',
         access_key_id = 'key',
+        role_arn = '${ROLE_ARN}')
+    -- { serverError ACCESS_DENIED }
+"
+
+# `disk()` where `type` is supplied indirectly via `from_env` must still be
+# treated as potentially S3, so `use_environment_credentials = 1` must be
+# rejected even though the literal `s3` token never appears here.
+$CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(
+        name = '${DISK}_indirect_env',
+        type = 'from_env ${DB}_DISK_TYPE',
+        endpoint = 'http://localhost:11111/test/${DB}_indirect_env/',
+        use_environment_credentials = 1)
+    -- { serverError ACCESS_DENIED }
+"
+
+# Same as above for `from_zk` indirection on `type`.
+$CLICKHOUSE_CLIENT --dynamic_disk_allow_from_zk=1 -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(
+        name = '${DISK}_indirect_zk',
+        type = 'from_zk /${DB}/disk_type',
+        endpoint = 'http://localhost:11111/test/${DB}_indirect_zk/',
+        use_environment_credentials = 1)
+    -- { serverError ACCESS_DENIED }
+"
+
+# Same as above for `from_env` indirection on `object_storage_type`.
+$CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(
+        name = '${DISK}_indirect_obj',
+        type = object_storage,
+        object_storage_type = 'from_env ${DB}_OST',
+        endpoint = 'http://localhost:11111/test/${DB}_indirect_obj/',
+        use_environment_credentials = 1)
+    -- { serverError ACCESS_DENIED }
+"
+
+# `disk()` with an `include` directive could pull in S3 keys from an XML
+# config we cannot inspect here, so the credential checks must still apply.
+$CLICKHOUSE_CLIENT --dynamic_disk_allow_include=1 -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(
+        name = '${DISK}_include',
+        include = '${DB}_some_disk',
+        use_environment_credentials = 1)
+    -- { serverError ACCESS_DENIED }
+"
+
+# `disk(... type = s3 ..., role_arn = ..., access_key_id = 'from_env X',
+# secret_access_key = 'from_env Y')` — the supposed "authorizing" keys are
+# themselves indirect, so they must NOT count as user-supplied credentials.
+$CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(
+        name = '${DISK}_role_indirect_keys',
+        type = object_storage,
+        object_storage_type = s3,
+        endpoint = 'http://localhost:11111/test/${DB}_role_indirect_keys/',
+        access_key_id = 'from_env ${DB}_AKID',
+        secret_access_key = 'from_env ${DB}_SAK',
         role_arn = '${ROLE_ARN}')
     -- { serverError ACCESS_DENIED }
 "
