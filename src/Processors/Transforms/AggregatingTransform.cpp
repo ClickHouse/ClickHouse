@@ -1,5 +1,9 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <base/defines.h>
+#include <Core/Block.h>
+#include <Interpreters/Cache/PartialAggregateInfo.h>
+#include <Interpreters/Cache/PartialAggregatePlanHitInfo.h>
 #include <Common/CurrentThread.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
@@ -26,15 +30,15 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
-    extern const Event ExternalAggregationMerge;
+extern const Event ExternalAggregationMerge;
 }
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
-    extern const int LOGICAL_ERROR;
+extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
+extern const int LOGICAL_ERROR;
 }
 
 ManyAggregatedData::~ManyAggregatedData()
@@ -106,45 +110,46 @@ Chunk convertToChunk(Aggregator::AggregatedChunk && agg_chunk)
 
 namespace
 {
-    const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
-    {
-        auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
-        if (!agg_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo.");
+const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
+{
+    auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+    if (!agg_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo.");
 
-        return agg_info.get();
+    return agg_info.get();
+}
+
+/// Reads chunks from file in native format. Provide chunks with aggregation info.
+class SourceFromNativeStream final : public ISource
+{
+public:
+    explicit SourceFromNativeStream(SharedHeader header, TemporaryBlockStreamReaderHolder tmp_stream_)
+        : ISource(header)
+        , tmp_stream(std::move(tmp_stream_))
+    {
     }
 
-    /// Reads chunks from file in native format. Provide chunks with aggregation info.
-    class SourceFromNativeStream final : public ISource
+    String getName() const override { return "SourceFromNativeStream"; }
+
+    Chunk generate() override
     {
-    public:
-        explicit SourceFromNativeStream(SharedHeader header, TemporaryBlockStreamReaderHolder tmp_stream_)
-            : ISource(header)
-            , tmp_stream(std::move(tmp_stream_))
-        {}
+        if (!tmp_stream)
+            return {};
 
-        String getName() const override { return "SourceFromNativeStream"; }
-
-        Chunk generate() override
+        auto block = tmp_stream->read();
+        if (block.empty())
         {
-            if (!tmp_stream)
-                return {};
-
-            auto block = tmp_stream->read();
-            if (block.empty())
-            {
-                tmp_stream.reset();
-                return {};
-            }
-            return convertToChunk(block);
+            tmp_stream.reset();
+            return {};
         }
+        return convertToChunk(block);
+    }
 
-        std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
+    std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
 
-    private:
-        TemporaryBlockStreamReaderHolder tmp_stream;
-    };
+private:
+    TemporaryBlockStreamReaderHolder tmp_stream;
+};
 }
 
 /// Worker which merges states for single-level aggregation of FixedHashMap.
@@ -159,7 +164,12 @@ public:
 
     using SharedDataPtr = std::shared_ptr<SharedData>;
 
-    ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, UInt32 thread_index_, UInt32 num_threads_, Arena * arena_)
+    ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap(
+        AggregatingTransformParamsPtr params_,
+        ManyAggregatedDataVariantsPtr data_,
+        UInt32 thread_index_,
+        UInt32 num_threads_,
+        Arena * arena_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
@@ -273,7 +283,9 @@ class ConvertingAggregatedToChunksSource final : public ISource
 {
 public:
     ConvertingAggregatedToChunksSource(AggregatingTransformParamsPtr params_, AggregatedDataVariantsPtr variant_)
-        : ISource(std::make_shared<const Block>(params_->getHeader()), false), params(params_), variant(variant_)
+        : ISource(std::make_shared<const Block>(params_->getHeader()), false)
+        , params(params_)
+        , variant(variant_)
     {
     }
 
@@ -325,9 +337,7 @@ public:
     String getName() const override { return "FlattenChunksToMergeTransform"; }
 
 private:
-    void work() override
-    {
-    }
+    void work() override { }
 
     void process(Chunk && chunk)
     {
@@ -512,10 +522,7 @@ public:
         return prepareTwoLevel();
     }
 
-    void onCancel() noexcept override
-    {
-        shared_data->is_cancelled.store(true, std::memory_order_seq_cst);
-    }
+    void onCancel() noexcept override { shared_data->is_cancelled.store(true, std::memory_order_seq_cst); }
 
 private:
     bool worthParallelMergeSingleLevel()
@@ -748,11 +755,12 @@ private:
         if (updater) \
             updater->recordAggregationStateSizes(*first, /*bucket=*/-1); \
     }
-            if (false) {} // NOLINT
+            if (false)
+            {
+            } // NOLINT
             APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
-            else
-                throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+            else throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
         }
 
         auto agg_chunks = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
@@ -795,7 +803,8 @@ private:
         AggregatedDataVariantsPtr & first = data->at(0);
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
-            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, thread, num_threads, first->aggregates_pools.at(thread).get());
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(
+                params, data, thread, num_threads, first->aggregates_pools.at(thread).get());
             processors.emplace_back(std::move(source));
         }
     }
@@ -806,7 +815,7 @@ AggregatingTransform::AggregatingTransform(
     : AggregatingTransform(
           std::move(header),
           std::move(params_),
-          std::make_unique<ManyAggregatedData>(1),
+          std::make_shared<ManyAggregatedData>(1),
           0,
           1,
           1,
@@ -948,10 +957,106 @@ IProcessor::PipelineUpdate AggregatingTransform::updatePipeline()
 
 void AggregatingTransform::consume(Chunk chunk)
 {
+    /// Plan hit: embedded states from `PartialAggregatePlanHitChunkSource` (no `PartialAggregateCache::get` here).
+    if (!params->params.only_merge && params->partial_aggregate_query_hash.has_value())
+    {
+        if (const auto plan_hit = chunk.getChunkInfos().get<PartialAggregatePlanHitInfo>())
+        {
+            /// Must match the hash `ReadFromMergeTree` used for this plan-hit pipe.
+            chassert(plan_hit->cache_key.query_hash == *params->partial_aggregate_query_hash);
+
+            if (partial_aggregate_cache_parts_served.contains(plan_hit->cache_key))
+                return;
+
+            if (!is_consume_started)
+            {
+                LOG_TRACE(log, "Aggregating");
+                is_consume_started = true;
+            }
+
+            Block block = materializeBlock(plan_hit->cached_partial_states);
+            if (!params->aggregator.mergeOnBlock(block.getColumns(), block.rows(), false, variants, no_more_keys, is_cancelled))
+                is_consume_finished = true;
+            partial_aggregate_cache_parts_served.insert(plan_hit->cache_key);
+            return;
+        }
+    }
+
     const UInt64 num_rows = chunk.getNumRows();
 
     if (num_rows == 0 && params->params.empty_result_for_aggregation_by_empty_set)
         return;
+
+    /// Execution-time cache when `PartialAggregateInfo` is set: `get` / miss buffers / `put` in `flushPartialAggregateMissBuffers`.
+    if (!params->params.only_merge && params->partial_aggregate_query_hash.has_value() && params->partial_aggregate_cache)
+    {
+        if (const auto part_info = chunk.getChunkInfos().get<PartialAggregateInfo>())
+        {
+            PartialAggregateCache::Key key;
+            key.query_hash = *params->partial_aggregate_query_hash;
+            key.table_uuid = part_info->table_uuid;
+            key.part_name = part_info->part_name;
+            key.part_mutation_version = part_info->part_mutation_version;
+
+            if (partial_aggregate_cache_parts_served.contains(key))
+                return;
+
+            /// One execution-time `get` per part per step unless plan-time already missed (`skip_execution_time_cache_lookup`).
+            bool should_lookup_execution_cache = false;
+            if (!part_info->skip_execution_time_cache_lookup)
+            {
+                std::lock_guard lock(params->partial_aggregate_cache_lookup_done_mutex);
+                should_lookup_execution_cache = params->partial_aggregate_cache_lookup_done.insert(key).second;
+            }
+
+            if (should_lookup_execution_cache)
+            {
+                if (auto cached = params->partial_aggregate_cache->get(key))
+                {
+                    if (!is_consume_started)
+                    {
+                        LOG_TRACE(log, "Aggregating");
+                        is_consume_started = true;
+                    }
+
+                    Block block = materializeBlock(*cached);
+                    if (!params->aggregator.mergeOnBlock(block.getColumns(), block.rows(), false, variants, no_more_keys, is_cancelled))
+                        is_consume_finished = true;
+                    partial_aggregate_cache_parts_served.insert(key);
+                    return;
+                }
+            }
+
+            /// Miss: aggregate this part incrementally and store its intermediate state in flushPartialAggregateMissBuffers().
+            if (!is_consume_started)
+            {
+                LOG_TRACE(log, "Aggregating");
+                is_consume_started = true;
+            }
+            if (rows_before_aggregation)
+                rows_before_aggregation->add(num_rows);
+            src_rows += num_rows;
+            src_bytes += chunk.bytes();
+            partial_aggregate_miss_buffered_input_bytes += chunk.bytes();
+            auto & buf = partial_aggregate_miss_buffers[key];
+            if (!buf.local_aggregator)
+                buf.local_aggregator = std::make_unique<Aggregator>(getInputs().front().getHeader(), params->params);
+
+            ColumnRawPtrs local_key_columns(params->params.keys_size);
+            Aggregator::AggregateColumns local_aggregate_columns(params->params.aggregates_size);
+            if (!buf.local_aggregator->executeOnBlock(
+                    chunk.detachColumns(),
+                    0,
+                    num_rows,
+                    buf.local_variants,
+                    local_key_columns,
+                    local_aggregate_columns,
+                    buf.local_no_more_keys))
+                is_consume_finished = true;
+            tryFlushPartialAggregateMissBuffersIfNeeded();
+            return;
+        }
+    }
 
     if (!is_consume_started)
     {
@@ -976,10 +1081,68 @@ void AggregatingTransform::consume(Chunk chunk)
     }
 }
 
+void AggregatingTransform::tryFlushPartialAggregateMissBuffersIfNeeded()
+{
+    if (!params->partial_aggregate_cache || !params->partial_aggregate_query_hash.has_value())
+        return;
+    if (partial_aggregate_miss_buffers.empty())
+        return;
+
+    /// Cap how many per-part local aggregation maps we hold on cold-cache misses (memory vs streaming trade-off).
+    /// Values are heuristic: enough headroom before `initGenerate`, cheap to evaluate (no per-part memory walk).
+    /// Many small parts can hit the part-count bound early (more early flushes, fewer `put`s for those keys);
+    /// few huge parts are bounded by input bytes. TODO: expose as settings if tuning is needed in production.
+    static constexpr size_t max_miss_buffers = 64;
+    static constexpr size_t max_miss_buffered_input_bytes = 256ull * 1024 * 1024;
+
+    if (partial_aggregate_miss_buffers.size() < max_miss_buffers && partial_aggregate_miss_buffered_input_bytes < max_miss_buffered_input_bytes)
+        return;
+
+    flushPartialAggregateMissBuffers(/*allow_cache_put=*/false);
+}
+
+void AggregatingTransform::flushPartialAggregateMissBuffers(bool allow_cache_put)
+{
+    if (!params->partial_aggregate_cache || !params->partial_aggregate_query_hash.has_value() || partial_aggregate_miss_buffers.empty())
+        return;
+
+    for (auto & [key, buf] : partial_aggregate_miss_buffers)
+    {
+        if (!buf.local_aggregator)
+            continue;
+
+        /// Intermediate states as chunks (not Block): convertToChunks + mergeBlocks(AggregatedChunks&, ...).
+        Aggregator::AggregatedChunks chunks = buf.local_aggregator->convertToChunks(buf.local_variants, /*final=*/false);
+        if (chunks.empty())
+            continue;
+
+        auto merged_agg_chunk = buf.local_aggregator->mergeBlocks(chunks, /*final=*/false, is_cancelled, /*dataflow_cache_updater=*/nullptr);
+        if (!merged_agg_chunk.chunk.getNumRows())
+            continue;
+
+        Block merged = params->getCustomHeader(false).cloneWithColumns(merged_agg_chunk.chunk.getColumns());
+        Block materialized = materializeBlock(merged);
+        /// `mergeBlocks` can stop mid-merge when cancellation is set and still return a chunk; do not cache partial states.
+        if (!allow_cache_put)
+        {
+            partial_aggregate_skip_cache_put_keys.insert(key);
+        }
+        if (allow_cache_put && !isCancelled() && !partial_aggregate_skip_cache_put_keys.contains(key))
+            params->partial_aggregate_cache->put(key, Block(materialized));
+        if (!params->aggregator.mergeOnBlock(materialized.getColumns(), materialized.rows(), false, variants, no_more_keys, is_cancelled))
+            is_consume_finished = true;
+    }
+
+    partial_aggregate_miss_buffers.clear();
+    partial_aggregate_miss_buffered_input_bytes = 0;
+}
+
 void AggregatingTransform::initGenerate()
 {
     if (is_generate_initialized.test_and_set())
         return;
+
+    flushPartialAggregateMissBuffers(/*allow_cache_put=*/true);
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
@@ -994,9 +1157,14 @@ void AggregatingTransform::initGenerate()
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = variants.sizeWithoutOverflowRow();
 
-    LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({:.3f} rows/sec., {}/sec.)",
-        src_rows, rows, ReadableSize(src_bytes),
-        elapsed_seconds, static_cast<double>(src_rows) / elapsed_seconds,
+    LOG_TRACE(
+        log,
+        "Aggregated. {} to {} rows (from {}) in {} sec. ({:.3f} rows/sec., {}/sec.)",
+        src_rows,
+        rows,
+        ReadableSize(src_bytes),
+        elapsed_seconds,
+        static_cast<double>(src_rows) / elapsed_seconds,
         ReadableSize(static_cast<double>(src_bytes) / elapsed_seconds));
 
     if (params->aggregator.hasTemporaryData())
@@ -1023,9 +1191,9 @@ void AggregatingTransform::initGenerate()
     {
         return params->aggregator.hasTemporaryData()
             || std::any_of(
-                params->aggregator_list_ptr->begin(),
-                params->aggregator_list_ptr->end(),
-                [](const Aggregator & aggregator) { return aggregator.hasTemporaryData(); });
+                   params->aggregator_list_ptr->begin(),
+                   params->aggregator_list_ptr->end(),
+                   [](const Aggregator & aggregator) { return aggregator.hasTemporaryData(); });
     };
     if (!aggregator_has_temporary_data())
     {
@@ -1121,7 +1289,8 @@ void AggregatingTransform::initGenerate()
                 auto stat = tmp_stream.finishWriting();
                 compressed_size += stat.compressed_size;
                 uncompressed_size += stat.uncompressed_size;
-                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(std::make_shared<const Block>(tmp_stream.getHeader()), tmp_stream.getReadStream())));
+                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(
+                    std::make_shared<const Block>(tmp_stream.getHeader()), tmp_stream.getReadStream())));
             }
 
             tmp_files.splice(tmp_files.end(), new_tmp_files);

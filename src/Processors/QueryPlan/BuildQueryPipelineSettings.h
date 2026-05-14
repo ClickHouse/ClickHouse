@@ -3,8 +3,10 @@
 #include <Core/Block.h>
 #include <IO/Progress.h>
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <Parsers/IASTHash.h>
 
 #include <cstddef>
+#include <optional>
 
 
 namespace DB
@@ -34,6 +36,12 @@ struct BuildQueryPipelineSettings
     size_t min_outstreams_per_resize_after_split;
     size_t max_streams_for_union_step;
     double max_streams_for_union_step_to_max_threads_ratio;
+
+    bool use_partial_aggregate_cache;
+    bool partial_aggregate_cache_allow_parallel_aggregation_streams;
+
+    /// Plan-time `PartialAggregateCache` probe in `ReadFromMergeTree`. Unset for `GROUPING SETS` or multiple plain `AggregatingStep`s.
+    std::optional<IASTHash> partial_aggregate_cache_query_hash;
 
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
 };

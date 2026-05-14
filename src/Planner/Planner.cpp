@@ -43,6 +43,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
@@ -597,8 +598,13 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
 
+    const bool has_row_level_filter = static_cast<bool>(select_query_info.row_level_filter);
+    const bool apply_deleted_mask = settings[Setting::apply_deleted_mask];
+    const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
+        select_query_info.query, query_context->getCurrentDatabase(), apply_deleted_mask, has_row_level_filter);
+
     const auto stats_collecting_params = StatsCollectingParams(
-        calculateCacheKey(select_query_info.query),
+        partial_aggregate_semantic_key,
         settings[Setting::collect_hash_table_stats_during_aggregation],
         query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
@@ -613,6 +619,10 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     auto tmp_data_scope = query_context->getTempDataOnDisk();
     if (tmp_data_scope)
         tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
+    const bool has_nondeterministic_functions
+        = astContainsNonDeterministicFunctions(select_query_info.query, query_context->getGlobalContext());
+    const UInt64 partial_cache_semantic_key = has_nondeterministic_functions ? 0 : partial_aggregate_semantic_key;
+
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
@@ -638,7 +648,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
-        settings[Setting::serialize_string_in_memory_with_zero_byte]);
+        settings[Setting::serialize_string_in_memory_with_zero_byte],
+        partial_cache_semantic_key);
 
     return aggregator_params;
 }

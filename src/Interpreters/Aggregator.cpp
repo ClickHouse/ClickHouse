@@ -348,7 +348,8 @@ Aggregator::Params::Params(
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
     bool enable_producing_buckets_out_of_order_in_aggregation_,
-    bool serialize_string_with_zero_byte_)
+    bool serialize_string_with_zero_byte_,
+    UInt64 query_semantic_hash_for_partial_cache_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -373,6 +374,7 @@ Aggregator::Params::Params(
     , stats_collecting_params(stats_collecting_params_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
+    , query_semantic_hash_for_partial_cache(query_semantic_hash_for_partial_cache_)
 {
 }
 
@@ -4024,6 +4026,26 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
         hash.update(where->getTreeHash(/*ignore_aliases=*/true));
     if (const auto group_by = select.groupBy())
         hash.update(group_by->getTreeHash(/*ignore_aliases=*/true));
+    return hash.get64();
+}
+
+UInt64 partialAggregateCacheSemanticKey(
+    const DB::ASTPtr & select_query,
+    const String & current_database,
+    bool apply_deleted_mask,
+    bool has_row_level_filter)
+{
+    if (has_row_level_filter)
+        return 0;
+
+    const UInt64 base = calculateCacheKey(select_query);
+    if (base == 0)
+        return 0;
+
+    SipHash hash;
+    hash.update(base);
+    hash.update(current_database);
+    hash.update(static_cast<UInt8>(apply_deleted_mask));
     return hash.get64();
 }
 }

@@ -2,6 +2,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/Cache/PartialAggregateCache.h>
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
@@ -9,6 +10,13 @@
 #include <Common/Stopwatch.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+
+#include <Parsers/IASTHash.h>
+
+#include <optional>
+#include <mutex>
+#include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -65,6 +73,15 @@ struct AggregatingTransformParams
     Block getHeader() const { return params.getHeader(header, final); }
 
     Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
+
+    /// Per-part partial aggregate cache (MergeTree, use_partial_aggregate_cache).
+    std::shared_ptr<PartialAggregateCache> partial_aggregate_cache;
+    std::optional<IASTHash> partial_aggregate_query_hash;
+
+    /// Parts for which execution-time `PartialAggregateCache::get` already ran in this query step (hit or miss).
+    /// Shared by all `AggregatingTransform` instances created from this params object.
+    std::mutex partial_aggregate_cache_lookup_done_mutex;
+    std::unordered_set<PartialAggregateCache::Key, PartialAggregateCache::KeyHasher> partial_aggregate_cache_lookup_done;
 };
 
 struct ManyAggregatedData
@@ -72,7 +89,8 @@ struct ManyAggregatedData
     ManyAggregatedDataVariants variants;
     std::atomic<UInt32> num_finished = 0;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
+    explicit ManyAggregatedData(size_t num_threads = 0)
+        : variants(num_threads)
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
@@ -173,6 +191,24 @@ private:
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
+    /// Part keys already merged (plan-time hits via `PartialAggregatePlanHitInfo` or execution-time `PartialAggregateCache::get` hits).
+    std::unordered_set<PartialAggregateCache::Key, PartialAggregateCache::KeyHasher> partial_aggregate_cache_parts_served;
+
+    /// Per-part incremental aggregation on execution-time cache miss; `flushPartialAggregateMissBuffers` then `put` and merges into main variants.
+    struct PartialAggregateMissBuffer
+    {
+        std::unique_ptr<Aggregator> local_aggregator;
+        AggregatedDataVariants local_variants;
+        bool local_no_more_keys = false;
+    };
+    std::unordered_map<PartialAggregateCache::Key, PartialAggregateMissBuffer, PartialAggregateCache::KeyHasher> partial_aggregate_miss_buffers;
+    /// Keys flushed early before end-of-part; never `put` to cache to avoid storing incomplete per-part states.
+    std::unordered_set<PartialAggregateCache::Key, PartialAggregateCache::KeyHasher> partial_aggregate_skip_cache_put_keys;
+    /// Input bytes accumulated across parts in `partial_aggregate_miss_buffers` (for early flush).
+    size_t partial_aggregate_miss_buffered_input_bytes = 0;
+
+    void tryFlushPartialAggregateMissBuffersIfNeeded();
+    void flushPartialAggregateMissBuffers(bool allow_cache_put);
     void initGenerate();
 };
 
