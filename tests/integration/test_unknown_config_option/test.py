@@ -28,6 +28,17 @@ node_static_config_ref = cluster_ok.add_instance(
     main_configs=["configs/config.d/static_handler_config_ref.xml"],
 )
 
+# Positive case: a `config://` reference can carry Poco's bracket-index path
+# syntax (e.g. `my_indexed_payload[1]` to address the second instance of a
+# repeated top-level key). The validator must normalize the recorded key by
+# stripping the bracket suffix so the corresponding `top_level_keys` (which
+# Poco yields with `[N]` suffixes) match.
+cluster_indexed_ref = ClickHouseCluster(__file__, name="indexed_ref")
+node_static_config_ref_indexed = cluster_indexed_ref.add_instance(
+    "node_static_config_ref_indexed",
+    main_configs=["configs/config.d/static_handler_config_ref_indexed.xml"],
+)
+
 # Positive case: a custom top-level handlers section referenced via
 # <protocols>...<handlers>NAME</handlers>...</protocols> must be accepted.
 cluster_protocols = ClickHouseCluster(__file__, name="protocols")
@@ -89,6 +100,13 @@ def start_ok_cluster():
 
 
 @pytest.fixture(scope="module")
+def start_indexed_ref_cluster():
+    cluster_indexed_ref.start()
+    yield
+    cluster_indexed_ref.shutdown()
+
+
+@pytest.fixture(scope="module")
 def start_protocols_cluster():
     cluster_protocols.start()
     yield
@@ -120,6 +138,19 @@ def test_config_ref_in_http_handler_accepted(start_ok_cluster):
     response = node_static_config_ref.http_request("my_static_response", method="GET")
     assert response.status_code == 200
     assert response.text == "Hello from config://"
+
+
+def test_config_ref_with_bracket_index_accepted(start_indexed_ref_cluster):
+    # If the unknown-key validator failed to normalize `my_indexed_payload[1]`
+    # to `my_indexed_payload` before recording it as referenced, the node
+    # would have refused to start (the repeated top-level key is yielded by
+    # Poco as `my_indexed_payload` and `my_indexed_payload[1]`, both of which
+    # must be matched against the normalized reference).
+    response = node_static_config_ref_indexed.http_request(
+        "my_indexed_response", method="GET"
+    )
+    assert response.status_code == 200
+    assert response.text == "Second payload"
 
 
 def test_protocols_custom_handlers_accepted(start_protocols_cluster):

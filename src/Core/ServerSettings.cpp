@@ -2076,9 +2076,12 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     if (value.starts_with(config_prefix))
                     {
                         String ref = value.substr(config_prefix.size());
-                        auto dot_pos = ref.find('.');
-                        if (dot_pos != String::npos)
-                            ref.resize(dot_pos);
+                        /// Normalize by stripping at the first `.` or `[` so the inserted
+                        /// key matches the normalization applied to `top_level_keys` below
+                        /// (e.g. `config://my_payload[1].field` -> `my_payload`).
+                        auto sep_pos = ref.find_first_of(".[");
+                        if (sep_pos != String::npos)
+                            ref.resize(sep_pos);
                         if (!ref.empty())
                             referenced_keys.insert(ref);
                     }
