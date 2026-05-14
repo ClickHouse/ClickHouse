@@ -1,3 +1,4 @@
+#include <Common/ProfileEvents.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -34,6 +35,11 @@
 #include <Storages/removeGroupingFunctionSpecializations.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event Shards;
+}
+
 namespace DB
 {
 namespace Setting
@@ -65,6 +71,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsOverflowMode timeout_overflow_mode;
@@ -369,6 +376,22 @@ void executeQuery(
     new_context->increaseDistributedDepth();
 
     const size_t shards = cluster->getShardCount();
+    ProfileEvents::increment(ProfileEvents::Shards, shards);
+
+    /// Tracker is shared between local-missing-table skip path in SelectStreamFactory and
+    /// remote unavailable-shard skip path in ReadFromRemote so max_skip_unavailable_shards_num
+    /// and max_skip_unavailable_shards_ratio are enforced uniformly across both paths.
+    UnavailableShardTrackerPtr unavailable_shard_tracker;
+    {
+        const auto & new_settings_ref = new_context->getSettingsRef();
+        if (new_settings_ref[Setting::skip_unavailable_shards])
+        {
+            size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
+            Float64 max_ratio = new_settings_ref[Setting::max_skip_unavailable_shards_ratio];
+            if (max_num > 0 || max_ratio > 0)
+                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
+        }
+    }
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
@@ -405,7 +428,8 @@ void executeQuery(
                 remote_shards,
                 static_cast<UInt32>(shards),
                 parallel_replicas_enabled,
-                shard_filter_generator);
+                shard_filter_generator,
+                unavailable_shard_tracker);
         }
     }
     else
@@ -444,7 +468,8 @@ void executeQuery(
                 remote_shards,
                 static_cast<UInt32>(shards),
                 parallel_replicas_enabled,
-                shard_filter_generator);
+                shard_filter_generator,
+                unavailable_shard_tracker);
         }
     }
 
@@ -454,16 +479,6 @@ void executeQuery(
         scalars.emplace(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
         auto external_tables = context->getExternalTables();
-
-        UnavailableShardTrackerPtr unavailable_shard_tracker;
-        const auto & new_settings_ref = new_context->getSettingsRef();
-        if (new_settings_ref[Setting::skip_unavailable_shards])
-        {
-            size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
-            Float64 max_ratio = new_settings_ref[Setting::max_skip_unavailable_shards_ratio];
-            if (max_num > 0 || max_ratio > 0)
-                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
-        }
 
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(
@@ -696,7 +711,9 @@ void executeQueryWithParallelReplicas(
 
     const auto & settings = new_context->getSettingsRef();
     /// do not build local plan for distributed queries for now (address it later)
-    if (settings[Setting::allow_experimental_analyzer] && settings[Setting::parallel_replicas_local_plan] && !shard_num)
+    /// when parallel_replicas_prefer_local_replica is false, skip local plan to allow the load balancer to pick any replica
+    if (settings[Setting::allow_experimental_analyzer] && settings[Setting::parallel_replicas_local_plan]
+        && settings[Setting::parallel_replicas_prefer_local_replica] && !shard_num)
     {
         auto local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
 

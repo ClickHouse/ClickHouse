@@ -192,7 +192,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         ASTStorage & storage_ast = *ast_create_query.storage;
 
         bool is_extended_storage_def
-            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.sample_by || storage_ast.settings;
+            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.unique_key || storage_ast.sample_by || storage_ast.settings;
 
         if (is_extended_storage_def)
         {
@@ -206,6 +206,11 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
                 storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
             else if (storage_ast.sample_by != nullptr) /// SAMPLE BY was removed
                 storage_ast.reset(storage_ast.sample_by);
+
+            if (metadata.unique_key.definition_ast)
+                storage_ast.set(storage_ast.unique_key, metadata.unique_key.definition_ast);
+            else if (storage_ast.unique_key != nullptr) /// UNIQUE KEY was removed
+                storage_ast.reset(storage_ast.unique_key);
 
             if (metadata.table_ttl.definition_ast)
                 storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);

@@ -33,7 +33,7 @@ ColumnsDescription HistogramMetricLogElement::getColumnsDescription()
                 "Metric labels."});
     result.add({"histogram",
                 std::make_shared<DataTypeMap>(std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeUInt64>()),
-                "Cumulative histogram: maps bucket upper bound to number of observations <= that bound; includes +inf as the final bucket."});
+                "Cumulative histogram: maps bucket upper bound to number of observations ≤ that bound; includes +inf as the final bucket."});
     result.add({"count", std::make_shared<DataTypeUInt64>(), "Total number of observations, equals histogram[+inf]."});
     result.add({"sum", std::make_shared<DataTypeFloat64>(), "Sum of all observed values."});
 
