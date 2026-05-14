@@ -499,6 +499,19 @@ void StorageMergeTree::alter(
             /// such a merge would read the old parts with the new column name (`d1`),
             /// find no file, and fill `d1` with default values — losing the renamed
             /// column's data. See issue #80648.
+            ///
+            /// Pass `validate_new_create_query=false` to `alterTable` because the
+            /// validation it would otherwise run (`validateCreateQuery` ->
+            /// `validateColumnsDefaultsAndGetSampleBlock` -> `QueryAnalyzer`) acquires
+            /// `QueryMetadataCache::storage_snapshot_cache_mutex` (via
+            /// `MergeTreeData::getStorageSnapshot`) which is also taken (in the opposite
+            /// order) by query resolution paths that later call `getMutationsSnapshot`
+            /// and re-acquire this same `currently_processing_in_background_mutex`.
+            /// The new metadata is already validated upstream by
+            /// `AlterCommands::validate` (which runs the equivalent
+            /// `validateColumnsDefaultsAndGetSampleBlock` before `alter` is called),
+            /// so the redundant in-`alterTable` validation can be skipped. This
+            /// matches the pattern in `StorageReplicatedMergeTree`.
             std::lock_guard background_lock(currently_processing_in_background_mutex);
 
             /// Reinitialize primary key because primary key column types might have changed.
@@ -506,7 +519,7 @@ void StorageMergeTree::alter(
 
             try
             {
-                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/false);
             }
             catch (...)
             {
