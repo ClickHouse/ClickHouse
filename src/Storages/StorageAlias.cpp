@@ -77,7 +77,6 @@ public:
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , WithContext(context_)
         , storage(storage_)
-        , non_materialized_header(metadata_snapshot_->getSampleBlockNonMaterialized())
     {
     }
 
@@ -89,10 +88,6 @@ public:
             return;
 
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
-
-        Block non_materialized_block;
-        for (const auto & col : non_materialized_header)
-            non_materialized_block.insert(block.getByName(col.name));
 
         StoragePtr target = storage.getTargetTable();
         StorageID target_id = target->getStorageID();
@@ -115,13 +110,12 @@ public:
         BlockIO block_io = interpreter.execute();
         PushingPipelineExecutor executor(block_io.pipeline);
         executor.start();
-        executor.push(std::move(non_materialized_block));
+        executor.push(std::move(block));
         executor.finish();
     }
 
 private:
     StorageAlias & storage;
-    Block non_materialized_header;
 };
 
 void StorageAlias::read(
@@ -139,7 +133,7 @@ void StorageAlias::read(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
 
     target_storage->read(
@@ -163,7 +157,7 @@ SinkToStoragePtr StorageAlias::write(
     bool /*async_insert*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::INSERT});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
 
     /// Use AliasSink which executes full INSERT pipeline on target
     /// Therefore it will trigger the MV on the target
@@ -186,7 +180,7 @@ void StorageAlias::truncate(
     TableExclusiveLockHolder & table_lock_holder)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
 }
 
@@ -201,7 +195,7 @@ bool StorageAlias::optimize(
     ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::OPTIMIZE});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     return target_storage->optimize(query, target_metadata, partition, final, deduplicate,
                                     deduplicate_by_columns, cleanup, local_context);
 }
@@ -212,7 +206,7 @@ Pipe StorageAlias::alterPartition(
     ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     return target_storage->alterPartition(target_metadata, commands, local_context);
 }
 
@@ -223,7 +217,7 @@ void StorageAlias::checkAlterPartitionIsPossible(
     ContextPtr local_context) const
 {
     auto target_storage = getTargetTable();
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     target_storage->checkAlterPartitionIsPossible(commands, target_metadata, settings, local_context);
 }
 
@@ -292,7 +286,7 @@ QueryProcessingStage::Enum StorageAlias::getQueryProcessingStage(
     SelectQueryInfo & query_info) const
 {
     auto target_storage = getTargetTable();
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
     return target_storage->getQueryProcessingStage(local_context, to_stage, target_snapshot, query_info);
 }

@@ -13,7 +13,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 ## SYSTEM RELOAD EMBEDDED DICTIONARIES {#reload-embedded-dictionaries}
 
-Reload all [Internal dictionaries](./create/dictionary/overview.md).
+Reload all [Internal dictionaries](./create/dictionary/index.md).
 By default, internal dictionaries are disabled.
 Always returns `Ok.` regardless of the result of the internal dictionary update.
 
@@ -100,10 +100,6 @@ Clears the mark cache.
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Clears the iceberg metadata cache.
-
-## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
-
-Clears the parquet metadata cache.
 
 ## SYSTEM CLEAR|DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
@@ -684,11 +680,23 @@ SYSTEM UNLOAD PRIMARY KEY [db.]name
 SYSTEM UNLOAD PRIMARY KEY
 ```
 
-## Managing Refreshable Materialized Views {#managing-refreshable-materialized-views}
+## Managing Refreshable Materialized Views {#refreshable-materialized-views}
 
 Commands to control background tasks performed by [Refreshable Materialized Views](../../sql-reference/statements/create/view.md#refreshable-materialized-view)
 
 Keep an eye on [`system.view_refreshes`](../../operations/system-tables/view_refreshes.md) while using them.
+
+### SYSTEM REFRESH VIEW {#refresh-view}
+
+Trigger an immediate out-of-schedule refresh of a given view.
+
+```sql
+SYSTEM REFRESH VIEW [db.]name
+```
+
+### SYSTEM WAIT VIEW {#wait-view}
+
+Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
 
 ### SYSTEM STOP [REPLICATED] VIEW, STOP VIEWS {#stop-view-stop-views}
 
@@ -712,7 +720,7 @@ SYSTEM STOP VIEWS
 
 Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
 
-If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`.
+If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`. `START VIEW` also undoes the effect of `PAUSE VIEW`.
 
 ```sql
 SYSTEM START VIEW [db.]name
@@ -721,24 +729,23 @@ SYSTEM START VIEW [db.]name
 SYSTEM START VIEWS
 ```
 
-### SYSTEM REFRESH VIEW {#refresh-view}
+### SYSTEM PAUSE VIEW, PAUSE VIEWS {#pause-view-pause-views}
 
-Trigger an immediate out-of-schedule refresh of a given view.
+Disable periodic refreshing of the given view or all refreshable views.
+Unlike `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEW` does not interrupt a refresh that is already in progress: the running refresh is allowed to finish, and only subsequent refreshes are prevented.
+
+Undo with `SYSTEM START VIEW` or `SYSTEM START VIEWS`.
+
+:::note
+The paused state does not persist across server restarts. After a restart, views will resume their configured refresh schedules.
+In Replicated or Shared databases, `SYSTEM PAUSE VIEW` only affects the current replica.
+:::
 
 ```sql
-SYSTEM REFRESH VIEW [db.]name
+SYSTEM PAUSE VIEW [db.]name
 ```
-
-### SYSTEM WAIT VIEW {#wait-view}
-
-Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
-
-Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
-
-If the view is in a Replicated or Shared database, and refresh is running on another replica, waits for that refresh to complete.
-
 ```sql
-SYSTEM WAIT VIEW [db.]name
+SYSTEM PAUSE VIEWS
 ```
 
 ### SYSTEM CANCEL VIEW {#cancel-view}
@@ -749,10 +756,14 @@ If there's a refresh in progress for the given view on the current replica, inte
 SYSTEM CANCEL VIEW [db.]name
 ```
 
-## SYSTEM FLUSH OBJECT STORAGE QUEUE {#flush-object-storage-queue}
+### SYSTEM WAIT VIEW {#system-wait-view}
 
-Blocks until the given file has been processed or permanently failed by the given [S3Queue](../../engines/table-engines/integrations/s3queue.md) or [AzureQueue](../../engines/table-engines/integrations/azure-queue.md) table. Returns immediately if the file was already processed. Raises an error if the file has permanently failed (all retries exhausted).
+Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
+
+Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
+
+If the view is in a Replicated or Shared database, and refresh is running on another replica, waits for that refresh to complete.
 
 ```sql
-SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
+SYSTEM WAIT VIEW [db.]name
 ```

@@ -1,7 +1,6 @@
 import copy
 import dataclasses
 import datetime
-import errno
 import io
 import json
 import os
@@ -70,9 +69,6 @@ class Result(MetaClasses.Serializable):
         FAIL = "FAIL"
         SKIPPED = "SKIPPED"
         ERROR = "ERROR"
-        UNKNOWN = "UNKNOWN"
-        XFAIL = "XFAIL"  # expected failure: test failed as expected, not a problem
-        XPASS = "XPASS"  # unexpected pass: test was expected to fail but passed
 
     class Label:
         OK_ON_RETRY = "retry_ok"
@@ -112,8 +108,11 @@ class Result(MetaClasses.Serializable):
                 "WARNING: No results and no status provided - setting status to error"
             )
             status = Result.Status.ERROR
-        if not name:
-            name = _Environment.get().JOB_NAME
+        # if not name:
+        #     name = _Environment.get().JOB_NAME
+        #     if not name:
+        #         print("ERROR: Failed to guess the .name")
+        #         raise
         start_time = None
         duration = None
         if not stopwatch:
@@ -143,7 +142,6 @@ class Result(MetaClasses.Serializable):
                     Result.Status.SKIPPED,
                     Result.StatusExtended.OK,
                     Result.StatusExtended.SKIPPED,
-                    Result.StatusExtended.XFAIL,
                 ):
                     continue
                 elif result.status in (
@@ -155,8 +153,6 @@ class Result(MetaClasses.Serializable):
                 elif result.status in (
                     Result.Status.FAILED,
                     Result.StatusExtended.FAIL,
-                    Result.StatusExtended.UNKNOWN,
-                    Result.StatusExtended.XPASS,
                 ):
                     result_status = Result.Status.FAILED
                 else:
@@ -212,14 +208,13 @@ class Result(MetaClasses.Serializable):
             Result.Status.SUCCESS,
             Result.StatusExtended.OK,
             Result.StatusExtended.SKIPPED,
-            Result.StatusExtended.XFAIL,
         )
 
     def is_success(self):
-        return self.status in (Result.Status.SUCCESS, Result.StatusExtended.OK, Result.StatusExtended.XFAIL)
+        return self.status in (Result.Status.SUCCESS, Result.StatusExtended.OK)
 
     def is_failure(self):
-        return self.status in (Result.Status.FAILED, Result.StatusExtended.FAIL, Result.StatusExtended.XPASS)
+        return self.status in (Result.Status.FAILED, Result.StatusExtended.FAIL)
 
     def is_error(self):
         return self.status in (Result.Status.ERROR, Result.StatusExtended.ERROR)
@@ -227,27 +222,9 @@ class Result(MetaClasses.Serializable):
     def is_dropped(self):
         return self.status in (Result.Status.DROPPED,)
 
-    def _dump_if_persisted(self) -> "Result":
-        """Dump only if a result file already exists on disk.
-
-        Setters use this so that job-level results (already dumped by `complete_job`
-        or `copy_result_to_s3`) are kept up-to-date, while sub-results (tasks) never
-        create their own files — avoiding `OSError: File name too long` when a result
-        name is derived from a long error message.
-        """
-        try:
-            exists = Path(self.file_name()).is_file()
-        except OSError as e:
-            if e.errno == errno.ENAMETOOLONG:
-                return self
-            raise
-        if exists:
-            self.dump()
-        return self
-
     def set_status(self, status) -> "Result":
         self.status = status
-        self._dump_if_persisted()
+        self.dump()
         return self
 
     def set_success(self) -> "Result":
@@ -261,7 +238,7 @@ class Result(MetaClasses.Serializable):
 
     def set_results(self, results: List["Result"]) -> "Result":
         self.results = results
-        self._dump_if_persisted()
+        self.dump()
         return self
 
     def set_files(self, files, strict=True) -> "Result":
@@ -281,7 +258,7 @@ class Result(MetaClasses.Serializable):
                 )
                 files.remove(file)
         self.files += files
-        self._dump_if_persisted()
+        self.dump()
         return self
 
     def set_on_error_hook(self, hook: str) -> "Result":
@@ -312,12 +289,12 @@ class Result(MetaClasses.Serializable):
         if self.info:
             self.info += "\n"
         self.info += info
-        self._dump_if_persisted()
+        self.dump()
         return self
 
     def set_link(self, link) -> "Result":
         self.links.append(link)
-        self._dump_if_persisted()
+        self.dump()
         return self
 
     def _add_job_summary_to_info(self):
@@ -334,7 +311,26 @@ class Result(MetaClasses.Serializable):
 
     @classmethod
     def file_name_static(cls, name):
-        return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
+        if not name:
+            return cls.experimental_file_name_static()
+        else:
+            return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
+
+    @classmethod
+    def experimental_file_name_static(cls):
+        return f"{Settings.TEMP_DIR}/result_job.json"
+
+    @classmethod
+    def experimental_from_fs(cls, name):
+        # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
+        Shell.check(
+            f"cp {cls.experimental_file_name_static()} {cls.file_name_static(name)}",
+            verbose=True,
+        )
+        result = Result.from_fs(name)
+        result.name = name
+        result.dump()
+        return result
 
     @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
@@ -585,7 +581,6 @@ class Result(MetaClasses.Serializable):
                 self.Status.FAILED,
                 self.Status.DROPPED,
                 self.StatusExtended.FAIL,
-                self.StatusExtended.UNKNOWN,
             ):
                 has_failed = True
         if has_running:
@@ -987,35 +982,18 @@ class Result(MetaClasses.Serializable):
     def to_event(self, info: "Info"):
         result_dict = Result.to_dict(self)
 
-        def _prune_result_for_feed(result):
-            """Strip result down to fields used by the Slack feed.
-
-            The feed only needs ``name`` and ``status`` from each sub-result,
-            plus ``report_url`` from the top-level ``ext``.  Everything else
-            (links, storage_usage, files, assets, nested results, …) is dead
-            weight that bloats the per-user JSON on S3.
-            """
+        def _prune_result_info(result):
             if not isinstance(result, dict):
                 return
-
-            for key in ("info", "start_time", "duration", "files", "assets", "links"):
-                result.pop(key, None)
+            result.pop("info", None)
 
             results = result.get("results")
-            if isinstance(results, list):
-                result["results"] = [
-                    {"name": r.get("name", ""), "status": r.get("status", "")}
-                    for r in results
-                    if isinstance(r, dict)
-                ]
+            if not isinstance(results, list):
+                return
+            for r in results:
+                _prune_result_info(r)
 
-            # Keep only report_url from ext
-            ext = result.get("ext")
-            if isinstance(ext, dict):
-                report_url = ext.get("report_url", "")
-                result["ext"] = {"report_url": report_url} if report_url else {}
-
-        _prune_result_for_feed(result_dict)
+        _prune_result_info(result_dict)
 
         return Event(
             type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
@@ -1074,7 +1052,7 @@ class _ResultS3:
         result.dump()
         env = _Environment.get()
         result_file_path = result.file_name()
-        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/{Path(result_file_path).name}"
+        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{Path(result_file_path).name}"
         if clean:
             S3.delete(s3_path)
         # gzip is supported by most browsers
@@ -1099,14 +1077,14 @@ class _ResultS3:
     def copy_result_from_s3(cls, local_path):
         env = _Environment.get()
         file_name = Path(local_path).name
-        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/{file_name}"
+        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{file_name}"
         S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path)
 
     @classmethod
     def copy_result_from_s3_with_version(cls, local_path):
         env = _Environment.get()
         file_name = Path(local_path).name
-        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}"
+        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
         s3_file = f"{s3_path}/{file_name}"
 
         return S3.copy_file_from_s3_with_version(s3_path=s3_file, local_path=local_path)
@@ -1116,7 +1094,7 @@ class _ResultS3:
         result.dump()
         filename = Path(result.file_name()).name
         env = _Environment.get()
-        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/"
+        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
         s3_file = f"{s3_path}{filename}"
 
         return S3.copy_file_to_s3_with_version(
@@ -1193,27 +1171,19 @@ class _ResultS3:
             if asset_paths:
                 common_root = os.path.commonpath([p.parent for p in asset_paths])
                 env = _Environment.get()
-                base_s3_prefix = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/{s3_subprefix}".replace(
+                base_s3_prefix = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{s3_subprefix}".replace(
                     "//", "/"
                 )
 
                 print(
                     f"INFO: Uploading {len(asset_paths)} assets to {base_s3_prefix} in parallel"
                 )
-                with ThreadPoolExecutor(max_workers=50) as executor:
-                    futures = {
-                        executor.submit(
-                            S3.upload_asset_streaming,
-                            asset,
-                            f"{base_s3_prefix}/{asset.relative_to(common_root)}",
-                        ): asset
-                        for asset in asset_paths
-                    }
-                for future, asset in futures.items():
-                    try:
-                        future.result()
-                    except Exception as e:
-                        print(f"ERROR: Failed to upload asset [{asset}]: {e}")
+                print(asset_paths)
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    for asset in asset_paths:
+                        rel_path = asset.relative_to(common_root)
+                        s3_path = f"{base_s3_prefix}/{rel_path}"
+                        executor.submit(S3.upload_asset_streaming, asset, s3_path)
         result.assets = []
 
         if result.results:
@@ -1724,33 +1694,20 @@ class ResultTranslator:
                                         # Be resilient to unexpected shapes
                                         pass
 
-                            # In pytest 8.x, xfail outcomes are not reported via the
-                            # "outcome" field directly. Instead they appear as:
-                            #   xfailed: outcome="skipped" + wasxfail field present
-                            #   xpassed: outcome="passed"  + wasxfail field present
-                            # Normalize those here so the mapping below handles both
-                            # pytest 7.x ("xfailed"/"xpassed") and pytest 8.x.
-                            if entry.get("wasxfail") is not None:
-                                if outcome == "skipped":
-                                    outcome = "xfailed"
-                                elif outcome == "passed":
-                                    outcome = "xpassed"
-
                             # Map pytest outcome to Result status
                             status = {
                                 "passed": Result.StatusExtended.OK,
                                 "failed": Result.StatusExtended.FAIL,
                                 "skipped": Result.StatusExtended.SKIPPED,
-                                "xfailed": Result.StatusExtended.XFAIL,  # expected failure: OK
-                                "xpassed": Result.StatusExtended.XPASS,  # unexpected pass: fails job
+                                # "xfailed": Result.StatusExtended.OK,  # expected failure
+                                # "xpassed": Result.StatusExtended.FAIL,   # unexpected pass
                                 "error": Result.StatusExtended.ERROR,
                             }.get(outcome, Result.StatusExtended.ERROR)
 
-                            # Track failures by phase (XFAIL is not a failure)
+                            # Track failures by phase
                             if status in (
                                 Result.StatusExtended.FAIL,
                                 Result.StatusExtended.ERROR,
-                                Result.StatusExtended.XPASS,
                             ):
                                 if node_id not in test_failures:
                                     test_failures[node_id] = {}
@@ -1794,13 +1751,10 @@ class ResultTranslator:
                                 test_results[node_id].duration += duration
 
                                 # Always override with a failure, or keep existing failure
-                                _failure_statuses = (
-                                    Result.StatusExtended.FAIL,
-                                    Result.StatusExtended.XPASS,
-                                )
                                 if (
-                                    status in _failure_statuses
-                                    or test_results[node_id].status in _failure_statuses
+                                    status == Result.StatusExtended.FAIL
+                                    or test_results[node_id].status
+                                    == Result.StatusExtended.FAIL
                                 ):
                                     test_results[node_id].status = status
                                 # Update info if we now have traceback
@@ -1817,7 +1771,6 @@ class ResultTranslator:
                                 elif test_results[node_id].status not in (
                                     Result.StatusExtended.FAIL,
                                     Result.StatusExtended.ERROR,
-                                    Result.StatusExtended.XPASS,
                                 ):
                                     # For non-failures, prefer 'call' phase over others
                                     if when == "call":
@@ -1842,11 +1795,8 @@ class ResultTranslator:
             R = Result.create_from(name=name, results=list(test_results.values()))
 
             if session_exitstatus == 0:
-                # pytest exit code 0 means all tests passed or xfailed (from pytest's perspective).
-                # We additionally treat XPASS as a failure, so FAILED is also valid here.
-                assert R.status in (
-                    Result.Status.SUCCESS,
-                    Result.Status.FAILED,
+                assert (
+                    R.status == Result.Status.SUCCESS
                 ), f"pytest session exit code 0 does not match autogenerated status [{R.status}]"
                 return R
 

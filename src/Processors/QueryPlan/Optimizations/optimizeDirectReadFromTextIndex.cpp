@@ -1,6 +1,4 @@
 #include <Common/FieldVisitorToString.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -289,17 +287,6 @@ public:
 
         /// Cache for added input nodes for each virtual column.
         std::unordered_map<String, const ActionsDAG::Node *> virtual_column_to_node;
-
-        /// Pre-populate the cache with any text-index virtual column inputs that are already present in this DAG from a previous
-        /// optimization pass. This prevents them from being re-added to `added_columns` when the same DAG is processed again.
-        ///
-        /// See: https://github.com/ClickHouse/ClickHouse/issues/101913#issuecomment-4198784580
-        for (const auto * input : actions_dag.getInputs())
-        {
-            if (input->result_name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
-                virtual_column_to_node.emplace(input->result_name, input);
-        }
-
         /// Copy pointers to nodes to avoid the modification of nodes in the dag while iterating over them.
         auto nodes_ptrs = actions_dag.getNodesPointers();
 
@@ -362,12 +349,12 @@ private:
 
     static bool needApplyTokenizer(const String & function_name)
     {
-        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        return function_name == "hasAllTokens" || function_name == "hasAnyTokens";
     }
 
     static bool needApplyPreprocessor(const String & function_name)
     {
-        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
     }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node)
@@ -508,8 +495,7 @@ private:
             new_children.push_back(&actions_dag.addColumn(std::move(arg)));
 
             /// Convert needles to array if they are a string by applying a tokenizer.
-            /// For hasPhrase the phrase must stay as a string — tokenization is done inside hasPhrase itself.
-            if (function_name != "hasPhrase" && needles_field.getType() == Field::Types::String)
+            if (needles_field.getType() == Field::Types::String)
             {
                 std::vector<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
@@ -574,7 +560,7 @@ private:
                 else if (condition.search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));
 
-                VirtualColumnDescription virtual_column(condition.virtual_column_name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, condition.index_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader);
+                VirtualColumnDescription virtual_column(condition.virtual_column_name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, condition.index_name, VirtualsKind::Ephemeral);
                 virtual_column.default_desc.kind = ColumnDefaultKind::Default;
                 virtual_column.default_desc.expression = std::move(default_expression);
 
