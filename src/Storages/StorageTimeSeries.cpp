@@ -167,12 +167,18 @@ StorageTimeSeries::StorageTimeSeries(
 
         if (target_kind == ViewTarget::Metrics && !target.is_inner_table)
         {
-            auto table = DatabaseCatalog::instance().tryGetTable(target.table_id, getContext());
-            auto metadata = table->getInMemoryMetadataPtr(getContext(), false);
+            /// During `ATTACH`/server startup the external metrics table may not be
+            /// loaded yet — `tryGetTable` returns `nullptr`. Skip the column check in
+            /// that case; if there really is a `LowCardinality` column it will be
+            /// caught the next time the table is created.
+            if (auto table = DatabaseCatalog::instance().tryGetTable(target.table_id, getContext()))
+            {
+                auto metadata = table->getInMemoryMetadataPtr(getContext(), false);
 
-            for (const auto & column : metadata->columns)
-                if (column.type->lowCardinality())
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External metrics table cannot have LowCardnality columns for now.");
+                for (const auto & column : metadata->columns)
+                    if (column.type->lowCardinality())
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External metrics table cannot have LowCardnality columns for now.");
+            }
         }
 
         has_inner_tables |= target.is_inner_table;
