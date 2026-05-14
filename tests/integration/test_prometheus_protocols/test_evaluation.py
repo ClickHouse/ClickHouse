@@ -298,9 +298,12 @@ def tsv_close_to_ignoring_row_order(result, expected, eps=0):
 
 
 def do_query_test_ignoring_result_order(query, timestamp, result, chresult, eps=0):
-    assert normalized_result_order(
-        execute_query_in_prometheus(query, timestamp)
-    ) == normalized_result_order(result)
+    actual_result_from_prometheus_reader = execute_query_in_prometheus_reader(query, timestamp)
+    actual_result_from_prometheus_receiver = execute_query_in_prometheus_receiver(query, timestamp)
+    assert normalized_result_order(actual_result_from_prometheus_reader) == normalized_result_order(
+        actual_result_from_prometheus_receiver
+    )
+    assert normalized_result_order(actual_result_from_prometheus_reader) == normalized_result_order(result)
 
     actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
     assert tsv_close_to_ignoring_row_order(
@@ -1626,89 +1629,149 @@ def test_alignment_with_subquery_step():
 
 
 def test_set_binary_operators():
-    do_query_test(
-        'foo{shape="circle"} and bar{shape="circle"}',
-        150,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}]}',
-        [["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16]],
-    )
-
-    do_query_test(
-        'foo{shape="triangle"} and bar{shape="triangle"}',
-        150,
-        '{"resultType": "vector", "result": []}',
-        "",
-    )
-
-    do_query_test(
-        'foo{shape="triangle"} and on(shape) bar{shape="triangle"}',
-        150,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
-        [["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80]],
-    )
-
-    do_query_test(
-        'foo{shape="triangle"} and ignoring(size) bar{shape="triangle"}',
-        150,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
-        [["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80]],
-    )
-
-    do_query_test(
-        'foo{shape="circle"} and on(__name__, shape, size) bar{shape="circle"}',
-        150,
-        '{"resultType": "vector", "result": []}',
-        "",
-    )
-
-    do_query_test(
-        'foo{shape="circle"} and on(size) bar',
-        150,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}]}',
-        [["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16]],
-    )
-
-    do_query_test(
-        'foo{shape="circle"} unless bar{shape="circle"}',
-        150,
-        '{"resultType": "vector", "result": []}',
-        "",
-    )
-
-    do_query_test(
-        'foo{shape="triangle"} unless bar{shape="triangle"}',
-        150,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
-        [["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80]],
-    )
-
-    do_query_test(
-        'foo{shape="circle"} or bar{shape="circle"}',
-        150,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}]}',
-        [["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16]],
-    )
-
+    # Behavior: Prometheus `and` returns original LHS samples whose default match signature, all labels except `__name__`, exists on RHS.
     do_query_test_ignoring_result_order(
-        'foo{shape="circle"} or on(__name__, shape, size) bar{shape="circle"}',
+        "foo and bar",
         150,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}, {"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "value": [150, "1000"]}]}',
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [150, "40"]}]}',
         [
             ["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16],
-            ["[('__name__','bar'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 1000],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 40],
         ],
     )
 
+    # Behavior: Prometheus `or` keeps all original LHS samples and only RHS samples whose default signature is absent from LHS.
     do_query_test_ignoring_result_order(
-        'foo{shape="triangle"} or bar{shape="triangle"}',
+        "foo or bar",
         150,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "value": [150, "30"]}]}',
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "value": [150, "90"]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "value": [150, "30"]}, {"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [150, "40"]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
         [
-            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80],
+            ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "1970-01-01 00:02:30.000", 90],
             ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "1970-01-01 00:02:30.000", 30],
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 40],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80],
         ],
     )
 
+    # Behavior: Prometheus `unless` returns original LHS samples whose default match signature is absent from RHS.
+    do_query_test(
+        "foo unless bar",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
+        [["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80]],
+    )
+
+    # Behavior: `on(shape)` changes only the match key and preserves original LHS labels and values.
+    do_query_test_ignoring_result_order(
+        "foo and on(shape) bar",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [150, "40"]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
+        [
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 40],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80],
+        ],
+    )
+
+    # Behavior: `unless on(shape)` removes each LHS series whose `shape` appears on RHS.
+    do_query_test(
+        "foo unless on(shape) bar",
+        150,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    # Behavior: `or on(shape)` keeps all LHS samples and admits only RHS signatures absent by `shape`.
+    do_query_test_ignoring_result_order(
+        "foo or on(shape) bar",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "value": [150, "90"]}, {"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [150, "40"]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
+        [
+            ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "1970-01-01 00:02:30.000", 90],
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 40],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80],
+        ],
+    )
+
+    # Behavior: `ignoring(size)` removes `size` from the match key but preserves original LHS labels including `size`.
+    do_query_test_ignoring_result_order(
+        "foo and ignoring(size) bar",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [150, "40"]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
+        [
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 40],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80],
+        ],
+    )
+
+    # Behavior: default matching ignores `__name__` but still requires all other labels to match, so `vector(1)` has no matching labels.
+    do_query_test(
+        "foo and vector(1)",
+        150,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    # Behavior: `on()` uses the empty signature, so every LHS series matches a non-empty RHS.
+    do_query_test_ignoring_result_order(
+        "foo and on() vector(1)",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [150, "40"]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
+        [
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 40],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80],
+        ],
+    )
+
+    # Behavior: `unless on()` removes every LHS series when RHS has any sample.
+    do_query_test(
+        "foo unless on() vector(1)",
+        150,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    # Behavior: `or on()` gives every LHS and RHS sample the same empty signature, so LHS suppresses RHS.
+    do_query_test_ignoring_result_order(
+        "foo or on() vector(1)",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [150, "40"]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
+        [
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 40],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80],
+        ],
+    )
+
+    # Behavior: `on(__name__, shape)` explicitly includes metric name in the match key, so `foo` does not match `bar`.
+    do_query_test(
+        "foo and on(__name__, shape) bar",
+        150,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    # Behavior: with `__name__` in the key, no `foo` signature overlaps `bar`, so `or` keeps both sides unchanged.
+    do_query_test_ignoring_result_order(
+        "foo or on(__name__, shape) bar",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "value": [150, "1000"]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "value": [150, "90"]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "value": [150, "700"]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "value": [150, "30"]}, {"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [150, "16"]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [150, "40"]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "value": [150, "80"]}]}',
+        [
+            ["[('__name__','bar'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 1000],
+            ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "1970-01-01 00:02:30.000", 90],
+            ["[('__name__','bar'),('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 700],
+            ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "1970-01-01 00:02:30.000", 30],
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 16],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 40],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "1970-01-01 00:02:30.000", 80],
+        ],
+    )
+
+    # Behavior: if RHS is empty, `and` returns an empty vector.
     do_query_test(
         "foo and no_such_metric",
         150,
@@ -1716,20 +1779,55 @@ def test_set_binary_operators():
         "",
     )
 
+    # Behavior: Prometheus set operators are vector-vector only, so scalar operands are invalid.
     do_query_test_expect_error(
         "foo and 1",
         150,
-        "set operator \\\"and\\\" not allowed in binary scalar expression",
+        'set operator "and" not allowed in binary scalar expression',
         "Set binary operator 'and' expects two arguments of type INSTANT_VECTOR",
     )
 
+    # Behavior: Prometheus set operators are vector-vector only, so scalar operands are invalid.
+    do_query_test_expect_error(
+        "foo or 1",
+        150,
+        'set operator "or" not allowed in binary scalar expression',
+        "Set binary operator 'or' expects two arguments of type INSTANT_VECTOR",
+    )
+
+    # Behavior: Prometheus set operators are vector-vector only, so scalar operands are invalid.
+    do_query_test_expect_error(
+        "foo unless 1",
+        150,
+        'set operator "unless" not allowed in binary scalar expression',
+        "Set binary operator 'unless' expects two arguments of type INSTANT_VECTOR",
+    )
+
+    # Behavior: set operators are many-to-many and Prometheus rejects grouping modifiers.
     do_query_test_expect_error(
         "foo and on(shape) group_left bar",
         150,
-        "no grouping allowed for \\\"and\\\" operation",
+        'no grouping allowed for "and" operation',
         "Set binary operator 'and' does not support group modifiers",
     )
 
+    # Behavior: set operators are many-to-many and Prometheus rejects grouping modifiers.
+    do_query_test_expect_error(
+        "foo or on(shape) group_right bar",
+        150,
+        'no grouping allowed for "or" operation',
+        "Set binary operator 'or' does not support group modifiers",
+    )
+
+    # Behavior: set operators are many-to-many and Prometheus rejects grouping modifiers.
+    do_query_test_expect_error(
+        "foo unless on(shape) group_left bar",
+        150,
+        'no grouping allowed for "unless" operation',
+        "Set binary operator 'unless' does not support group modifiers",
+    )
+
+    # Behavior: Prometheus rejects the `bool` modifier on set operators because it only applies to comparisons.
     do_query_test_expect_error(
         "foo and bool bar",
         150,
@@ -1737,6 +1835,7 @@ def test_set_binary_operators():
         "while parsing PromQL query: foo and bool bar",
     )
 
+    # Behavior: range subqueries apply `and` independently per step and preserve original LHS series labels and values.
     do_query_test(
         "(last_over_time(foo[10]) and last_over_time(bar[10]))[50:10]",
         150,
@@ -1750,6 +1849,7 @@ def test_set_binary_operators():
         ],
     )
 
+    # Behavior: range subqueries apply `unless` independently per step, so a series can be retained only on steps without RHS presence.
     do_query_test(
         "(last_over_time(foo[10]) unless last_over_time(bar[10]))[50:10]",
         150,
@@ -1763,6 +1863,7 @@ def test_set_binary_operators():
         ],
     )
 
+    # Behavior: range subquery `or` gives LHS precedence on overlapping per-step signatures and keeps unmatched RHS steps.
     do_query_test_ignoring_result_order(
         '(last_over_time(foo{shape="circle"}[10]) or last_over_time(bar{shape="circle"}[10]))[50:10]',
         150,

@@ -200,7 +200,9 @@ ASTPtr selectLeftMaskedByPresence(const String & left, const String & presence, 
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     builder.join_kind = JoinKind::Inner;
-    builder.join_strictness = JoinStrictness::Any;
+    /// The presence side has one row per join group, but several original series can share that group (for example `on()`).
+    /// Use ALL to keep every matching LHS series even if the optimizer reorders the join.
+    builder.join_strictness = JoinStrictness::All;
     builder.join_table = presence;
     builder.join_on = makeASTFunction(
         "equals",
