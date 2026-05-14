@@ -46,8 +46,7 @@ FilterDAGInfo buildPartitionFilter(
     Int64 safe_block_number,
     SelectQueryInfo & query_info)
 {
-    /// TODO(michicosun): what to do if query was stopped in the middle of the block.
-    chassert(safe_block_number > last_emitted_position.block_number);
+    chassert(safe_block_number >= last_emitted_position.block_number);
 
     auto & planner_context = query_info.planner_context;
     const auto & query_context = planner_context->getQueryContext();

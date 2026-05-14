@@ -58,21 +58,6 @@ Names extendWithAuxiliaryColumns(Names requested_columns)
     return requested_columns;
 }
 
-bool canConstructReadingPipeline(const std::map<String, Int64> & safe_block_numbers, const MergeTreeCursor & last_emitted_positions)
-{
-    for (const auto & [partition_id, safe_block_number] : safe_block_numbers)
-    {
-        auto it = last_emitted_positions.find(partition_id);
-        if (it == last_emitted_positions.end())
-            return true;
-
-        if (it->second.block_number < safe_block_number)
-            return true;
-    }
-
-    return false;
-}
-
 std::vector<std::string> getPartitionsCanBeRead(const std::map<String, Int64> & safe_block_numbers, const MergeTreeCursor & last_emitted_positions)
 {
     std::vector<std::string> partitions_to_read;
@@ -83,11 +68,16 @@ std::vector<std::string> getPartitionsCanBeRead(const std::map<String, Int64> & 
         if (it == last_emitted_positions.end())
             partitions_to_read.push_back(partition_id);
 
-        else if (it->second.block_number < safe_block_number)
+        else if (it->second.block_number <= safe_block_number)
             partitions_to_read.push_back(partition_id);
     }
 
     return partitions_to_read;
+}
+
+bool canConstructReadingPipeline(const std::map<String, Int64> & safe_block_numbers, const MergeTreeCursor & last_emitted_positions)
+{
+    return !getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions).empty();
 }
 
 struct PipeWithResources
@@ -313,13 +303,28 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
     return Status::Ready;
 }
 
+void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()
+{
+    for (const auto & [partition_id, safe_block_number] : reading_up_to_block_numbers)
+    {
+        auto & position = last_emitted_positions[partition_id];
+        position.block_number = safe_block_number + 1;
+        position.block_offset = -1;
+    }
+
+    reading_up_to_block_numbers.clear();
+}
+
 IProcessor::Status MergeTreeCommitOrderSequentialSource::prepare()
 {
     const bool has_running_sub_pipeline = !inputs.empty() && !inputs.front().isFinished();
     if (has_running_sub_pipeline)
         return handleRunningPipeline();
-    else
-        return handleReconfiguration();
+
+    if (!pending_snapshot.has_value())
+        handlePipelineEnd();
+
+    return handleReconfiguration();
 }
 
 void MergeTreeCommitOrderSequentialSource::work()
@@ -341,6 +346,10 @@ void MergeTreeCommitOrderSequentialSource::work()
         }
     }
 
+    const auto partitions_to_read = getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions);
+    for (const auto & partition_id : partitions_to_read)
+        reading_up_to_block_numbers[partition_id] = safe_block_numbers.at(partition_id);
+
     auto result = buildNextSnapshotReadingPipeline(
         safe_block_numbers,
         last_emitted_positions,
@@ -354,19 +363,8 @@ void MergeTreeCommitOrderSequentialSource::work()
 
     if (result)
     {
-        /// Read from prepared pipeline if it was created
         pending_snapshot = std::move(result->pipe);
         resources.append(result->resources);
-    }
-    else
-    {
-        /// There are no data should be read from the next snapshot - just promote positions.
-        for (const auto & partition_id : getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions))
-        {
-            auto & position = last_emitted_positions[partition_id];
-            position.block_number = safe_block_numbers.at(partition_id);
-            position.block_offset = std::numeric_limits<Int64>::max();
-        }
     }
 }
 

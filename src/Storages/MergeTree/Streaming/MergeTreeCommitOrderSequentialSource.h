@@ -18,6 +18,7 @@ class MergeTreeCommitOrderSequentialSource final : public IProcessor
 {
     Status handleRunningPipeline();
     Status handleReconfiguration();
+    void handlePipelineEnd();
 
 public:
     MergeTreeCommitOrderSequentialSource(
@@ -53,9 +54,13 @@ private:
 
     /// Runtime information
     MergeTreeCursor last_emitted_positions;
+
     Processors current_sub_pipeline;
+    std::map<String, Int64> reading_up_to_block_numbers;
+
     std::optional<Pipe> pending_snapshot;
     QueryPlanResourceHolder resources;
+
 };
 
 }
