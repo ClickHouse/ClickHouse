@@ -49,3 +49,16 @@ FROM numbers(3)
 GROUP BY number
 WITH ROLLUP
 ORDER BY number ASC NULLS LAST;
+
+-- Nested correlated subquery where the outermost query has `group_by_use_nulls`
+-- + ROLLUP/CUBE on a column with the SAME NAME as a column source in the middle
+-- query. `nullable_group_by_keys` is keyed by query-tree structure (column name,
+-- ignoring source and types), so without the source-scope stop condition the
+-- inner expression could pick up the outer query's nullable-key entry and
+-- wrongly convert the middle table's column to `Nullable`.
+SELECT a.number,
+       (SELECT (SELECT b.number) FROM numbers(2) AS b LIMIT 1) AS val
+FROM numbers(3) AS a
+GROUP BY a.number
+WITH ROLLUP
+ORDER BY a.number ASC NULLS FIRST;

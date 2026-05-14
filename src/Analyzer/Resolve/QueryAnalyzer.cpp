@@ -3262,6 +3262,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     /// by the outer post-aggregation step, where the correlated column has
     /// already become `Nullable`.
     bool is_correlated_column_node = false;
+    QueryTreeNodePtr correlated_column_source;
     if (auto * column_node = node->as<ColumnNode>())
     {
         auto column_source = column_node->getColumnSourceOrNull();
@@ -3278,6 +3279,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     if (isQueryOrUnionNode(sp->scope_node))
                     {
                         is_correlated_column_node = true;
+                        correlated_column_source = column_source;
                         break;
                     }
                 }
@@ -3312,9 +3314,17 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             }
 
             /// For local references stop at the first surrounding QUERY scope.
-            /// For correlated references continue traversing to ancestor scopes
-            /// to apply the outer query's `nullable_group_by_keys`.
             if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY && !is_correlated_column_node)
+                break;
+
+            /// For correlated references stop once we have reached the scope that
+            /// owns the column source. `nullable_group_by_keys` is keyed by query-tree
+            /// structure, not pointer identity, so continuing past the source scope
+            /// could match an unrelated ancestor key whose table/column shape happens
+            /// to coincide with this column.
+            if (is_correlated_column_node && correlated_column_source
+                && (scope_ptr->registered_table_expression_nodes.contains(correlated_column_source)
+                    || scope_ptr->table_expressions_in_resolve_process.contains(correlated_column_source.get())))
                 break;
         }
     }
