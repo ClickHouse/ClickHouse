@@ -15,6 +15,22 @@ const std::unordered_map<JoinType, std::vector<JoinConst>> StatementGenerator::j
        {J_PASTE, {}},
        {J_CROSS, {}}};
 
+bool StatementGenerator::rowPolicyForOracle(const SQLPolicy & p) const
+{
+    if (!(p.is_row && p.where_expr.has_value() && p.targets_oracle_role))
+        return false;
+    size_t siblings_targeting_oracle = 0;
+    for (const auto & [_, other] : policies)
+    {
+        if (other.is_row && other.targets_oracle_role && other.table_key == p.table_key)
+        {
+            if (++siblings_targeting_oracle > 1)
+                return false;
+        }
+    }
+    return siblings_targeting_oracle == 1;
+}
+
 StatementGenerator::StatementGenerator(
     RandomGenerator & rg, FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool supports_cloud_features_)
     : fc(fuzzc)

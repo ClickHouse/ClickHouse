@@ -892,28 +892,7 @@ public:
         = [](const SQLDictionary & d) { return d.isAttached() && d.is_deterministic; };
     const std::function<bool(const SQLView &)> attached_views_to_compare_content
         = [](const SQLView & v) { return v.isAttached() && v.is_deterministic; };
-    /// Eligible row policies for the oracle: the policy is a *row* policy (not column),
-    /// has a stored USING predicate, and targets the oracle role. We also require that the
-    /// policy is the only policy on its table that targets the oracle role — otherwise the
-    /// effective filter is `(OR of permissives) AND (AND of restrictives)` of all of them,
-    /// not just this one's USING, and the oracle's "Q2 WHERE = this policy's USING"
-    /// invariant would produce false positives (see debug2.sql case with two permissive
-    /// policies on t0: effective filter `c0=2 OR TRUE` = TRUE, but the oracle picks one).
-    const std::function<bool(const SQLPolicy &)> row_policies_for_oracle = [this](const SQLPolicy & p) -> bool
-    {
-        if (!(p.is_row && p.where_expr.has_value() && p.targets_oracle_role))
-            return false;
-        size_t siblings_targeting_oracle = 0;
-        for (const auto & [_, other] : this->policies)
-        {
-            if (other.is_row && other.targets_oracle_role && other.table_key == p.table_key)
-            {
-                if (++siblings_targeting_oracle > 1)
-                    return false;
-            }
-        }
-        return siblings_targeting_oracle == 1;
-    };
+    bool rowPolicyForOracle(const SQLPolicy & p) const;
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->isDettached(); };

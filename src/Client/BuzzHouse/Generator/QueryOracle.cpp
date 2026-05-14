@@ -475,7 +475,8 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
     // FROM db.t [FINAL]
     JoinedTableOrFunction * jtf2 = ssc2->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
     /// Pick an existing row policy with a USING predicate on a suitable table
-    const SQLPolicy & policy = rg.pickRandomly(gen.filterCollection<SQLPolicy>(gen.row_policies_for_oracle));
+    const SQLPolicy & policy
+        = rg.pickRandomly(gen.filterCollection<SQLPolicy>([&gen](const SQLPolicy & p) { return gen.rowPolicyForOracle(p); }));
     if (gen.hasTable(policy.table_key))
     {
         const SQLTable & t = gen.lookupTable(policy.table_key);

@@ -78,7 +78,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #if USE_BUZZHOUSE
-#    include <Client/BuzzHouse/Generator/RandomGenerator.h>
+#include <Client/BuzzHouse/Generator/RandomGenerator.h>
 namespace BuzzHouse
 {
 extern std::unordered_map<String, CHSetting> performanceSettings;

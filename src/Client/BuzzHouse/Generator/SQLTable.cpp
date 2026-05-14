@@ -2002,11 +2002,11 @@ void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase 
     chassert(this->ids.empty());
     if (b.is_deterministic && !b.is_temp && !b.isExternalDistributedEngine())
     {
-        if (!b.isMySQLEngine() && connections.hasMySQLConnection())
+        if (!b.isMySQLEngine() && connections.hasMySQLConnection() && !fc.mysql_server.value().named_collection.empty())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::MySQL));
         }
-        if (!b.isPostgreSQLEngine() && connections.hasPostgreSQLConnection())
+        if (!b.isPostgreSQLEngine() && connections.hasPostgreSQLConnection() && !fc.postgresql_server.value().named_collection.empty())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::PostgreSQL));
         }
@@ -2083,8 +2083,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
     const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
-    const bool allow_mysql_tbl = connections.hasMySQLConnection() && (fc.engine_mask & allow_mysql) != 0;
-    const bool allow_postgresql_tbl = connections.hasPostgreSQLConnection() && (fc.engine_mask & allow_postgresql) != 0;
+    const bool allow_mysql_tbl
+        = connections.hasMySQLConnection() && !fc.mysql_server.value().named_collection.empty() && (fc.engine_mask & allow_mysql) != 0;
+    const bool allow_postgresql_tbl = connections.hasPostgreSQLConnection() && !fc.postgresql_server.value().named_collection.empty()
+        && (fc.engine_mask & allow_postgresql) != 0;
 
     if ((fc.engine_mask & allow_file) != 0)
     {
@@ -2181,12 +2183,9 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(MySQL);
         }
-        if (connections.hasPostgreSQLConnection())
+        if (allow_postgresql_tbl)
         {
-            if (allow_postgresql_tbl)
-            {
-                this->ids.emplace_back(PostgreSQL);
-            }
+            this->ids.emplace_back(PostgreSQL);
             if ((fc.engine_mask & allow_materialized_postgresql) != 0)
             {
                 this->ids.emplace_back(MaterializedPostgreSQL);
@@ -2196,7 +2195,8 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(SQLite);
         }
-        if (connections.hasMongoDBConnection() && (fc.engine_mask & allow_mongodb) != 0)
+        if (connections.hasMongoDBConnection() && !fc.mongodb_server.value().named_collection.empty()
+            && (fc.engine_mask & allow_mongodb) != 0)
         {
             this->ids.emplace_back(MongoDB);
         }
@@ -2622,7 +2622,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
                   est->mutable_database()->set_value(sc.database);
                   est->mutable_table()->set_value(t.getBaseName());
-                  dsd->set_named_collection(sc.named_collection);
+                  if (!sc.named_collection.empty())
+                  {
+                      dsd->set_named_collection(sc.named_collection);
+                  }
+                  else
+                  {
+                      dsd->set_host(sc.server_hostname);
+                      dsd->set_port(std::to_string(sc.port));
+                      dsd->set_user(sc.user);
+                      dsd->set_password(sc.password);
+                  }
                   dsd->set_source(DictionarySourceDetails::POSTGRESQL);
               }
               else if (t.isMySQLEngine() && fc.mysql_server.has_value() && rg.nextSmallNumber() < 8)
@@ -2632,7 +2642,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
                   est->mutable_database()->set_value(sc.database);
                   est->mutable_table()->set_value(t.getBaseName());
-                  dsd->set_named_collection(sc.named_collection);
+                  if (!sc.named_collection.empty())
+                  {
+                      dsd->set_named_collection(sc.named_collection);
+                  }
+                  else
+                  {
+                      dsd->set_host(sc.server_hostname);
+                      dsd->set_port(std::to_string(sc.port));
+                      dsd->set_user(sc.user);
+                      dsd->set_password(sc.password);
+                  }
                   dsd->set_source(DictionarySourceDetails::MYSQL);
               }
               else if (t.isMongoDBEngine() && fc.mongodb_server.has_value() && rg.nextSmallNumber() < 8)
@@ -2642,7 +2662,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
                   est->mutable_database()->set_value(sc.database);
                   est->mutable_table()->set_value(t.getBaseName());
-                  dsd->set_named_collection(sc.named_collection);
+                  if (!sc.named_collection.empty())
+                  {
+                      dsd->set_named_collection(sc.named_collection);
+                  }
+                  else
+                  {
+                      dsd->set_host(sc.server_hostname);
+                      dsd->set_port(std::to_string(sc.port));
+                      dsd->set_user(sc.user);
+                      dsd->set_password(sc.password);
+                  }
                   dsd->set_source(DictionarySourceDetails::MONGODB);
               }
               else if (t.isFileEngine() && rg.nextSmallNumber() < 8)

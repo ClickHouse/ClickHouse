@@ -1023,7 +1023,7 @@ bool Client::buzzHouse()
                     {30
                          * static_cast<uint32_t>(
                              fuzz_config->allow_client_restarts && fuzz_config->allow_query_oracles
-                             && gen.collectionHas<BuzzHouse::SQLPolicy>(gen.row_policies_for_oracle)),
+                             && gen.collectionHas<BuzzHouse::SQLPolicy>([&gen](const BuzzHouse::SQLPolicy & p) { return gen.rowPolicyForOracle(p); })),
                      [&]()
                      {
                          /// Row policy oracle: an existing catalog row policy USING pred must be equivalent to WHERE pred.
