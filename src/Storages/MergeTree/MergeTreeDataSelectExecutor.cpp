@@ -2196,6 +2196,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                             std::max(ranges[i].begin, (index_mark * skip_index_granularity) + num_marks),
                             std::min(ranges[i].end, (index_mark * skip_index_granularity) + num_marks + 1));
 
+                        if (data_range.begin >= data_range.end)
+                            continue;
+
                         if (!res.empty() && data_range.end == res.back().end)
                             /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
                             continue;
