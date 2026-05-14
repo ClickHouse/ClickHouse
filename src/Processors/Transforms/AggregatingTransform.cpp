@@ -15,6 +15,7 @@
 #include <base/types.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/Arena.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -1088,14 +1089,33 @@ void AggregatingTransform::tryFlushPartialAggregateMissBuffersIfNeeded()
     if (partial_aggregate_miss_buffers.empty())
         return;
 
-    /// Cap how many per-part local aggregation maps we hold on cold-cache misses (memory vs streaming trade-off).
-    /// Values are heuristic: enough headroom before `initGenerate`, cheap to evaluate (no per-part memory walk).
-    /// Many small parts can hit the part-count bound early (more early flushes, fewer `put`s for those keys);
-    /// few huge parts are bounded by input bytes. TODO: expose as settings if tuning is needed in production.
+    /// Conservative proxy for per-part `local_variants` memory: aggregate-function arenas plus a lower bound from
+    /// distinct groups × aggregate state row size (hash table key / node overhead is not fully captured).
+    size_t arena_allocated_sum = 0;
+    size_t distinct_group_rows_sum = 0;
+    for (const auto & [key, buf] : partial_aggregate_miss_buffers)
+    {
+        (void)key;
+        const auto & local_variants = buf.local_variants;
+        for (const auto & pool_ptr : local_variants.aggregates_pools)
+        {
+            if (pool_ptr)
+                arena_allocated_sum += pool_ptr->allocatedBytes();
+        }
+        distinct_group_rows_sum += local_variants.sizeWithoutOverflowRow();
+    }
+    const size_t aggregate_state_bytes_lower_bound = distinct_group_rows_sum * params->params.total_size_of_aggregate_states;
+    const size_t miss_aggregation_state_proxy_bytes = std::max(arena_allocated_sum, aggregate_state_bytes_lower_bound);
+
+    /// Cap cold-cache miss buffering: part count, raw input bytes through miss path, and aggregation-state proxy.
+    /// TODO: expose thresholds as settings if needed.
     static constexpr size_t max_miss_buffers = 64;
     static constexpr size_t max_miss_buffered_input_bytes = 256ull * 1024 * 1024;
+    static constexpr size_t max_miss_state_proxy_bytes = 256ull * 1024 * 1024;
 
-    if (partial_aggregate_miss_buffers.size() < max_miss_buffers && partial_aggregate_miss_buffered_input_bytes < max_miss_buffered_input_bytes)
+    if (partial_aggregate_miss_buffers.size() < max_miss_buffers
+        && partial_aggregate_miss_buffered_input_bytes < max_miss_buffered_input_bytes
+        && miss_aggregation_state_proxy_bytes < max_miss_state_proxy_bytes)
         return;
 
     flushPartialAggregateMissBuffers(/*allow_cache_put=*/false);
