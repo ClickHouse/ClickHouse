@@ -1020,6 +1020,12 @@ def test_cancel_during_commit_on_select(started_cluster):
             "polling_max_timeout_ms": 100,
             "polling_min_timeout_ms": 100,
             "commit_on_select": 1,
+            # Disable hash-ring batching so the FileIterator does not hold pre-fetched
+            # file metadata after we throw from the failpoint. Without this, the
+            # iterator destructor runs after the source has thrown, and the
+            # file_metadata destructor hits a `checkProcessingOwnership` chassert.
+            # See the same workaround in `test_failed_commit_after_success_select`.
+            "enable_hash_ring_filtering": 0,
         },
     )
 
