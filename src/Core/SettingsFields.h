@@ -249,7 +249,7 @@ struct SettingFieldTimespan final
     using Unit = SettingFieldTimespanUnit;
     static constexpr Unit unit = unit_;
     static constexpr UInt64 microseconds_per_unit = (unit == SettingFieldTimespanUnit::Millisecond) ? 1000 : 1000000;
-    Poco::Timespan::TimeDiff microseconds = 0;
+    Int64 microseconds = 0;
     bool changed = false;
 
     explicit SettingFieldTimespan() = default;
@@ -257,12 +257,12 @@ struct SettingFieldTimespan final
     SettingFieldTimespan(const SettingFieldTimespan &) = default;
     SettingFieldTimespan & operator=(const SettingFieldTimespan &) = default;
 
-    explicit SettingFieldTimespan(UInt64 x) : microseconds(static_cast<Poco::Timespan::TimeDiff>(x * microseconds_per_unit)) {}
+    explicit SettingFieldTimespan(UInt64 x) : microseconds(static_cast<Int64>(x * microseconds_per_unit)) {}
     explicit SettingFieldTimespan(const Field & f);
 
     SettingFieldTimespan & operator =(const Poco::Timespan & x) { microseconds = x.totalMicroseconds(); changed = true; return *this; }
 
-    SettingFieldTimespan & operator =(UInt64 x) { microseconds = static_cast<Poco::Timespan::TimeDiff>(x * microseconds_per_unit); changed = true; return *this; }
+    SettingFieldTimespan & operator =(UInt64 x) { microseconds = static_cast<Int64>(x * microseconds_per_unit); changed = true; return *this; }
     SettingFieldTimespan & operator =(const Field & f);
 
     bool isChanged() const { return changed; }
@@ -270,12 +270,12 @@ struct SettingFieldTimespan final
 
     operator Poco::Timespan() const { return Poco::Timespan(microseconds); } /// NOLINT
 
-    explicit operator UInt64() const { return microseconds / static_cast<Poco::Timespan::TimeDiff>(microseconds_per_unit); }
+    explicit operator UInt64() const { return microseconds / static_cast<Int64>(microseconds_per_unit); }
     explicit operator Field() const;
 
-    Poco::Timespan::TimeDiff totalMicroseconds() const { return microseconds; }
-    Poco::Timespan::TimeDiff totalMilliseconds() const { return microseconds / 1000; }
-    Poco::Timespan::TimeDiff totalSeconds() const { return microseconds / 1000000; }
+    Int64 totalMicroseconds() const { return microseconds; }
+    Int64 totalMilliseconds() const { return microseconds / 1000; }
+    Int64 totalSeconds() const { return microseconds / 1000000; }
 
     String toString() const;
     void parseFromString(const String & str);
