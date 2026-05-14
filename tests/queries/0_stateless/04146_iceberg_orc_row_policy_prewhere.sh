@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel-replicas
+# `no-parallel-replicas`: see comment in `04071_iceberg_orc_prewhere_crash.sh`.
+# `StorageObjectStorageCluster` (used when `parallel_replicas_for_cluster_engines = 1`,
+# default) does not delegate `supportsPrewhere` to its underlying configuration,
+# so explicit `PREWHERE` against `icebergLocal` is rejected by the analyzer.
 #
 # Regression test for transform-ordering correctness in the Iceberg ORC PREWHERE
 # fallback path. When an Iceberg table is configured with format `Parquet`

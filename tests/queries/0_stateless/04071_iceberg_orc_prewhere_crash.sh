@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel-replicas
 # Reproduces https://github.com/ClickHouse/ClickHouse/issues/96829
+#
+# `no-parallel-replicas` is strictly necessary here: when
+# `parallel_replicas_for_cluster_engines = 1` (default) and
+# `cluster_for_parallel_replicas` is set, `TableFunctionObjectStorage` wraps the
+# `icebergLocal` storage in `StorageObjectStorageCluster`, which currently does
+# not override `supportsPrewhere` and therefore inherits the default `false`
+# from `IStorage`. The analyzer then throws `ILLEGAL_PREWHERE` for any explicit
+# `PREWHERE` on the resulting cluster storage. This is a separate engine bug
+# (cluster wrapper missing `supportsPrewhere` delegation to the underlying
+# configuration) that should be fixed in a follow-up.
 # When an Iceberg table has ORC data files but is read with format='Parquet'
 # (which enables PREWHERE), the server crashes with:
 #   Logical error: 'PREWHERE passed to format that doesn't support it'
