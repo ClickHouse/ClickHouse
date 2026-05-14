@@ -10,6 +10,22 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT" | sed 's/--session_timezone[= ][^ ]*//g'`"
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --allow_materialized_view_with_bad_select=0 --session_timezone Etc/UTC"`"
 
+# system.view_refreshes briefly reports the transient internal state 'Scheduling' between
+# state transitions of the refresh task. Use this helper for SELECTs that read the status
+# column: it retries until no row reports 'Scheduling'.
+query_no_scheduling() {
+    local out
+    while :
+    do
+        out=$($CLICKHOUSE_CLIENT -q "$1")
+        if ! grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$out"; then
+            echo "$out"
+            return
+        fi
+        sleep 0.2
+    done
+}
+
 $CLICKHOUSE_CLIENT -q "create view refreshes as select * from system.view_refreshes where database = '$CLICKHOUSE_DATABASE' order by view"
 
 
@@ -63,9 +79,9 @@ done
 # Rename.
 $CLICKHOUSE_CLIENT -q "
     rename table rmv_e to rmv_f;
-    select '<24: rename during refresh>', * from rmv_f;
-    select '<25: rename during refresh>', view, status from refreshes where view = 'rmv_f';
-    alter table rmv_f modify refresh after 10 year settings refresh_retries = 0;"
+    select '<24: rename during refresh>', * from rmv_f;"
+query_no_scheduling "select '<25: rename during refresh>', view, status from refreshes where view = 'rmv_f'"
+$CLICKHOUSE_CLIENT -q "alter table rmv_f modify refresh after 10 year settings refresh_retries = 0;"
 sleep 1 # make it likely that at least one row was processed
 # Cancel.
 $CLICKHOUSE_CLIENT -q "
@@ -75,18 +91,16 @@ do
     sleep 0.5
 done
 # Check that another refresh doesn't immediately start after the cancelled one.
-$CLICKHOUSE_CLIENT -q "
-    select '<27: cancelled>', view, status, exception from refreshes where view = 'rmv_f';
-    system refresh view rmv_f;"
+query_no_scheduling "select '<27: cancelled>', view, status, exception != '' from refreshes where view = 'rmv_f'"
+$CLICKHOUSE_CLIENT -q "system refresh view rmv_f;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'rmv_f' -- $LINENO" | xargs`" != 'Running' ]
 do
     sleep 0.5
 done
 # Drop.
-$CLICKHOUSE_CLIENT -q "
-    drop table rmv_f;
-    select '<28: drop during refresh>', view, status from refreshes;
-    select '<28: drop during refresh>', countIf(name like '%tmp%'), countIf(name like '%.inner%') from system.tables where database = currentDatabase()"
+$CLICKHOUSE_CLIENT -q "drop table rmv_f;"
+query_no_scheduling "select '<28: drop during refresh>', view, status from refreshes"
+$CLICKHOUSE_CLIENT -q "select '<28: drop during refresh>', countIf(name like '%tmp%'), countIf(name like '%.inner%') from system.tables where database = currentDatabase()"
 
 # Try OFFSET and RANDOMIZE FOR.
 $CLICKHOUSE_CLIENT -q "
@@ -165,8 +179,8 @@ while [ "`$CLICKHOUSE_CLIENT -q "select sum(last_success_time is null) from refr
 do
     sleep 0.5
 done
+query_no_scheduling "select '<32: empty>', view, status, last_success_time is null, retry from refreshes order by view"
 $CLICKHOUSE_CLIENT -q "
-    select '<32: empty>', view, status, last_success_time is null, retry from refreshes order by view;
     drop table rmv_i;
     drop table rmv_j;"
 

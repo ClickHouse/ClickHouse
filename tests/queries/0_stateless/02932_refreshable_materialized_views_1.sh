@@ -10,6 +10,22 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT" | sed 's/--session_timezone[= ][^ ]*//g'`"
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --session_timezone Etc/UTC"`"
 
+# system.view_refreshes briefly reports the transient internal state 'Scheduling' between
+# state transitions of the refresh task. Use this helper for SELECTs that read the status
+# column: it retries until no row reports 'Scheduling'.
+query_no_scheduling() {
+    local out
+    while :
+    do
+        out=$($CLICKHOUSE_CLIENT -q "$1")
+        if ! grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$out"; then
+            echo "$out"
+            return
+        fi
+        sleep 0.2
+    done
+}
+
 $CLICKHOUSE_CLIENT -q "create view refreshes as select * from system.view_refreshes where database = '$CLICKHOUSE_DATABASE' order by view"
 
 
@@ -60,13 +76,14 @@ $CLICKHOUSE_CLIENT -q "
     system test view rmv_a set fake time '2050-01-01 00:00:01';
     system wait view rmv_a;
     system refresh view rmv_a;
-    system wait view rmv_a;
-    select '<4.1: fake clock>', status, last_success_time, next_refresh_time, progress, read_rows, total_rows, written_rows, retry from refreshes;
+    system wait view rmv_a;"
+query_no_scheduling "select '<4.1: fake clock>', status, last_success_time, next_refresh_time, progress, read_rows, total_rows, written_rows, retry from refreshes"
+$CLICKHOUSE_CLIENT -q "
     alter table rmv_a modify refresh every 2 year;
     alter table rmv_a modify query select x*2 as x from src;
-    system wait view rmv_a;
-    select '<4.5: altered>', status, last_success_time, next_refresh_time from refreshes;
-    show create rmv_a;"
+    system wait view rmv_a;"
+query_no_scheduling "select '<4.5: altered>', status, last_success_time, next_refresh_time from refreshes"
+$CLICKHOUSE_CLIENT -q "show create rmv_a;"
 # Advance time to trigger the refresh.
 $CLICKHOUSE_CLIENT -q "
     select '<5: no refresh>', count() from rmv_a;
@@ -75,9 +92,8 @@ while [ "`$CLICKHOUSE_CLIENT -q "select last_success_time, status from refreshes
 do
     sleep 0.5
 done
-$CLICKHOUSE_CLIENT -q "
-    select '<6: refreshed>', * from rmv_a;
-    select '<7: refreshed>', status, last_success_time, next_refresh_time from refreshes;"
+$CLICKHOUSE_CLIENT -q "select '<6: refreshed>', * from rmv_a;"
+query_no_scheduling "select '<7: refreshed>', status, last_success_time, next_refresh_time from refreshes"
 
 # Create a dependent view, refresh it once.
 $CLICKHOUSE_CLIENT -q "
@@ -88,10 +104,9 @@ $CLICKHOUSE_CLIENT -q "
     system wait view rmv_b;
     select '<7.5: created dependent>', last_success_time from refreshes where view = 'rmv_b';"
 # Next refresh shouldn't start until the dependency refreshes.
-$CLICKHOUSE_CLIENT -q "
-    select '<8: refreshed>', * from rmv_b;
-    select '<9: refreshed>', view, status, next_refresh_time from refreshes;
-    system test view rmv_b set fake time '2054-01-24 23:22:21';"
+$CLICKHOUSE_CLIENT -q "select '<8: refreshed>', * from rmv_b;"
+query_no_scheduling "select '<9: refreshed>', view, status, next_refresh_time from refreshes"
+$CLICKHOUSE_CLIENT -q "system test view rmv_b set fake time '2054-01-24 23:22:21';"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'rmv_b' -- $LINENO" | xargs`" != 'WaitingForDependencies' ]
 do
     sleep 0.5
@@ -108,8 +123,8 @@ $CLICKHOUSE_CLIENT -q "
 
 # Create the source table again, check that refresh succeeds (in particular that tables are looked
 # up by name rather than uuid).
+query_no_scheduling "select '<10: creating>', view, status, next_refresh_time from refreshes"
 $CLICKHOUSE_CLIENT -q "
-    select '<10: creating>', view, status, next_refresh_time from refreshes;
     create table src (x Int16) engine Memory as select 2;
     system test view rmv_a set fake time '2054-01-01 00:00:01';"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'rmv_b' -- $LINENO" | xargs`" != 'Scheduled' ]
@@ -119,8 +134,8 @@ done
 # Both tables should've refreshed.
 $CLICKHOUSE_CLIENT -q "
     select '<11: chain-refreshed rmv_a>', * from rmv_a;
-    select '<12: chain-refreshed rmv_b>', * from rmv_b;
-    select '<13: chain-refreshed>', view, status, last_success_time, last_refresh_time, next_refresh_time, exception == '' from refreshes;"
+    select '<12: chain-refreshed rmv_b>', * from rmv_b;"
+query_no_scheduling "select '<13: chain-refreshed>', view, status, last_success_time, last_refresh_time, next_refresh_time, exception == '' from refreshes"
 
 $CLICKHOUSE_CLIENT -q "
     system test view rmv_b set fake time '2061-01-01 00:00:00';
@@ -133,8 +148,8 @@ do
 done
 $CLICKHOUSE_CLIENT -q "
     select '<15: chain-refreshed rmv_a>', * from rmv_a;
-    select '<16: chain-refreshed rmv_b>', * from rmv_b;
-    select '<17: chain-refreshed>', view, status, next_refresh_time from refreshes;"
+    select '<16: chain-refreshed rmv_b>', * from rmv_b;"
+query_no_scheduling "select '<17: chain-refreshed>', view, status, next_refresh_time from refreshes"
 
 # Get to WaitingForDependencies state and remove the depencency.
 $CLICKHOUSE_CLIENT -q "
@@ -149,9 +164,8 @@ while [ "`$CLICKHOUSE_CLIENT -q "select status, last_refresh_time from refreshes
 do
     sleep 0.5
 done
-$CLICKHOUSE_CLIENT -q "
-    select '<18: removed dependency>', view, status, last_success_time, last_refresh_time, next_refresh_time from refreshes where view = 'rmv_b';
-    show create rmv_b;"
+query_no_scheduling "select '<18: removed dependency>', view, status, last_success_time, last_refresh_time, next_refresh_time from refreshes where view = 'rmv_b'"
+$CLICKHOUSE_CLIENT -q "show create rmv_b;"
 
 # Can't use the same time unit multiple times.
 $CLICKHOUSE_CLIENT -q "

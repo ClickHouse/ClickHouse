@@ -5,7 +5,8 @@
 <23: simple refresh>	1
 <24: rename during refresh>	1
 <25: rename during refresh>	rmv_f	Running
-<27: cancelled>	rmv_f	Scheduled	cancelled
+<27: cancelled>	rmv_f	Scheduled	1
+
 <28: drop during refresh>	0	0
 CREATE MATERIALIZED VIEW default.rmv_g\nREFRESH EVERY 1 WEEK OFFSET 3 DAY 4 HOUR RANDOMIZE FOR 4 DAY 1 HOUR\n(\n    `x` Int64\n)\nENGINE = Memory\nDEFINER = default SQL SECURITY DEFINER\nAS SELECT 42 AS x
 <29: randomize>	1	1

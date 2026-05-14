@@ -394,6 +394,13 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         if (view)
             view_storage_id = view->getStorageID();
     }
+
+    /// In case refresh period changed.
+    if (view_storage_id)
+    {
+        const auto & refresh_set = Context::getGlobalContextInstance()->getRefreshSet();
+        refresh_set.notifyDependents(view_storage_id);
+    }
 }
 
 RefreshTask::Info RefreshTask::getInfo() const

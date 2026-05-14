@@ -254,13 +254,13 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
 `DEPENDS ON` only works between refreshable materialized views. In particular, if the dependency view uses `TO <table>`, make sure to use the name of the view rather than the table. If the `DEPENDS ON` list contains a regular table or non-refreshable view or has a typo, the view will never refresh and will show state `MissingDependencies` in `system.view_refreshes`. Dependencies can be changed or removed using `ALTER`, see [Changing Refresh Parameters](#changing-refresh-parameters).
 :::
 
-#### Using DEPENDS ON for consistent propagation latency
+#### Using DEPENDS ON for consistent propagation latency {#using-depends-on-for-consistent-propagation-latency}
 
 If both views use `REFRESH EVERY` with the same period, the dependency applies in each timeslot.
 
 E.g. suppose views X and Y both use `REFRESH EVERY 1 HOUR`, and Y reads from X's output table. Without dependencies, Y would usually see X's data from previous hour's refresh. With `DEPENDS ON X`, Y's 11:00 refresh will start only after the X's 11:00 refresh completes.
 
-```
+```text
            10:00            11:00            12:00
            │                │                │
   X:        [run]┐           [run]┐           [run]┐
@@ -270,7 +270,7 @@ E.g. suppose views X and Y both use `REFRESH EVERY 1 HOUR`, and Y reads from X's
 
 Both dependency and dependent may independently skip timeslots if refreshes run for longer than the refresh period. There's no guarantee that the dependent refreshes exactly once for each dependency refresh.
 
-```
+```text
            10:00          11:00          12:00          13:00
            │              │              │              |
   X:        [run]┐         [run]┐         [run]┐         [run]┐
@@ -278,7 +278,7 @@ Both dependency and dependent may independently skip timeslots if refreshes run 
   Y:             └►[10:00 ru------un]└►[11:00 ru---------------un]└►[13:00 run]
 ```
 
-#### Using DEPENDS ON for batched stream processing
+#### Using DEPENDS ON for batched stream processing {#using-depends-on-for-batched-stream-processing}
 
 If `REFRESH EVERY` is not used, the dependent view X refreshes if all its dependencies refreshed at least once since X's last refresh. `REFRESH AFTER T` adds a delay: the dependent will start refresh T time after the dependency completes a refresh.
 
@@ -287,7 +287,7 @@ Circular dependencies are allowed and useful. Consider this graph of refreshable
  2. Then Y and Z both read from that table, do different aggregation, and append results to other tables.
  3. After the batch is fully processed, X takes the next batch, and the cycle repeats.
 
-```
+```text
             source
                │
                ▼

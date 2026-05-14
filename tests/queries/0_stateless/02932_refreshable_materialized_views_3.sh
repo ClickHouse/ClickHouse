@@ -17,6 +17,22 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT" | sed 's/--session_timezone[= ][^ ]*//g'`"
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --session_timezone Etc/UTC"`"
 
+# system.view_refreshes briefly reports the transient internal state 'Scheduling' between
+# state transitions of the refresh task. Use this helper for SELECTs that read the status
+# column: it retries until no row reports 'Scheduling'.
+query_no_scheduling() {
+    local out
+    while :
+    do
+        out=$($CLICKHOUSE_CLIENT -q "$1")
+        if ! grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$out"; then
+            echo "$out"
+            return
+        fi
+        sleep 0.2
+    done
+}
+
 $CLICKHOUSE_CLIENT -q "create view refreshes as select * from system.view_refreshes where database = '$CLICKHOUSE_DATABASE' order by view"
 
 
@@ -60,16 +76,15 @@ while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'miss
 do
     sleep 0.5
 done
+query_no_scheduling "select '<1: missing>', status, last_success_time is null, next_refresh_time is null from refreshes where view = 'miss'"
 $CLICKHOUSE_CLIENT -q "
-    select '<1: missing>', status, last_success_time is null, next_refresh_time is null from refreshes where view = 'miss';
-
     -- Modify dependency to a typo / non-existent name. Still MissingDependencies.
     alter table miss modify refresh every 1 year depends on nonexistent;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'miss' -- $LINENO" | xargs`" != 'MissingDependencies' ]
 do
     sleep 0.5
 done
-$CLICKHOUSE_CLIENT -q "select '<2: still missing>', status from refreshes where view = 'miss';"
+query_no_scheduling "select '<2: still missing>', status from refreshes where view = 'miss'"
 
 # Now create a refreshable view named 'nonexistent'. 'miss' should pick up the dependency.
 $CLICKHOUSE_CLIENT -q "
@@ -89,8 +104,8 @@ while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'miss
 do
     sleep 0.5
 done
+query_no_scheduling "select '<4: dep dropped>', status, next_refresh_time is null from refreshes where view = 'miss'"
 $CLICKHOUSE_CLIENT -q "
-    select '<4: dep dropped>', status, next_refresh_time is null from refreshes where view = 'miss';
     drop table miss;
     drop table src2;
     drop table plain;"
