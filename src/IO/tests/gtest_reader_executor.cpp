@@ -443,7 +443,6 @@ private:
 /// Lets us read per-test ProfileEvents without interference from other tests.
 struct TestThreadGroup
 {
-    DB::ThreadStatus thread_status;
     DB::ThreadGroupPtr thread_group = DB::ThreadGroup::createForQuery(getContext().context);
     DB::ThreadGroupSwitcher switcher{thread_group, ThreadName::UNKNOWN};
 
