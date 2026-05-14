@@ -443,6 +443,8 @@ private:
 /// Lets us read per-test ProfileEvents without interference from other tests.
 struct TestThreadGroup
 {
+    /// Create ThreadStatus if none exists (debug build has one, ASan may not).
+    std::optional<DB::ThreadStatus> thread_status_holder{current_thread ? std::nullopt : std::optional<DB::ThreadStatus>(std::in_place)};
     DB::ThreadGroupPtr thread_group = DB::ThreadGroup::createForQuery(getContext().context);
     DB::ThreadGroupSwitcher switcher{thread_group, ThreadName::UNKNOWN};
 
