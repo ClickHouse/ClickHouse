@@ -43,8 +43,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(Array(Integer | NativeFloat | Decimal | IsNothing)) -> Array(Float64)"
-               " OR (Array(Integer | NativeFloat | Decimal | IsNothing), NativeInteger) -> Array(Float64)";
+        return "(Array(Integer | NativeFloat | Decimal | IsNothing), [NativeInteger]) -> Array(Float64)";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
