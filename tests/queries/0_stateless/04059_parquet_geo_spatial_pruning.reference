@@ -26,3 +26,8 @@ no pruning
 2	-97.5
 === user-selected bbox column pruning count ===
 ParquetPrunedRowGroups: 1 (increment)
+=== bbox col in WHERE filter only ===
+1
+2
+=== bbox col in WHERE filter only - pruning count ===
+ParquetPrunedRowGroups: 1 (increment)

@@ -340,6 +340,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// SchemaConverter runs, so the bbox primitives get proper idx_in_output_block and stats support.
     std::vector<SpatialFilter> all_spatial_filters;
     std::vector<SpatialFilter> geostats_spatial_filters;
+    /// Tracks bbox column names that Phase A actually injected (not already present in
+    /// extended_sample_block). Used in Phase B to suppress data decoding for those columns:
+    /// they exist only for row-group statistics, not for query output or filter evaluation.
+    std::unordered_set<String> injected_bbox_columns;
     if (options.format.parquet.spatial_filter_push_down && format_filter_info->filter_actions_dag)
     {
         all_spatial_filters = extractSpatialFilters(*format_filter_info->filter_actions_dag, extended_sample_block);
@@ -370,7 +374,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
             for (const String * col : bbox_col_ptrs)
                 if (!extended_sample_block.has(*col))
+                {
                     extended_sample_block.insert({float64->createColumn(), float64, *col});
+                    injected_bbox_columns.insert(*col);
+                }
         }
     }
 
@@ -460,12 +467,13 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                         if (pc.name == *col)
                         {
                             pc.used_by_key_condition = true;
-                            /// For columns that were injected into extended_sample_block solely for
-                            /// covering.bbox statistics (not user-requested outputs), suppress data
-                            /// decoding: ReadManager never matches SIZE_MAX as a step index, so the
-                            /// column's data is never read. User-requested columns (idx <
-                            /// sample_block->columns()) keep their normal scheduling unchanged.
-                            if (pc.idx_in_output_block >= sample_block->columns())
+                            /// Columns that Phase A injected are statistics-only: they are not
+                            /// user outputs and not needed for filter evaluation. Suppress data
+                            /// decoding by using SIZE_MAX as a sentinel step index that
+                            /// ReadManager never matches. Columns already present before Phase A
+                            /// (user-selected or used in WHERE/PREWHERE) are not in
+                            /// injected_bbox_columns and keep their normal scheduling.
+                            if (injected_bbox_columns.contains(*col))
                                 pc.first_step_to_calculate = SIZE_MAX;
                         }
             }

@@ -87,3 +87,18 @@ $CLICKHOUSE_LOCAL --print-profile-events -q "
 SELECT id, bbox_xmin FROM file('$FILE', Parquet)
 WHERE pointInPolygon(geometry, [(-99., 30.), (-96., 30.), (-96., 33.), (-99., 33.), (-99., 30.)])
 ORDER BY id" 2>&1 | grep 'ParquetPrunedRowGroups' | sed 's/^.*] //'
+
+# bbox column used only in WHERE (not SELECT): covering.bbox column must be decoded for
+# filter evaluation even though it is not a user output. Pruning must still prune RG1.
+echo "=== bbox col in WHERE filter only ==="
+$CLICKHOUSE_LOCAL -q "
+SELECT id FROM file('$FILE', Parquet)
+WHERE bbox_xmin > -98.5
+  AND pointInPolygon(geometry, [(-99., 30.), (-96., 30.), (-96., 33.), (-99., 33.), (-99., 30.)])
+ORDER BY id"
+echo "=== bbox col in WHERE filter only - pruning count ==="
+$CLICKHOUSE_LOCAL --print-profile-events -q "
+SELECT id FROM file('$FILE', Parquet)
+WHERE bbox_xmin > -98.5
+  AND pointInPolygon(geometry, [(-99., 30.), (-96., 30.), (-96., 33.), (-99., 33.), (-99., 30.)])
+ORDER BY id" 2>&1 | grep 'ParquetPrunedRowGroups' | sed 's/^.*] //'

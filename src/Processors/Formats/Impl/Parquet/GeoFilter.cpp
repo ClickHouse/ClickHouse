@@ -142,27 +142,39 @@ bool trySpatialFilterFromNode(
         return false;
 
     const DB::ActionsDAG::Node * col_node = nullptr;
-    const DB::ActionsDAG::Node * const_node = nullptr;
     for (const auto * child : node.children)
-    {
         if (child->type == DB::ActionsDAG::ActionType::INPUT && !col_node)
             col_node = child;
-        else if (child->type == DB::ActionsDAG::ActionType::COLUMN
-                 && child->column
-                 && child->is_deterministic_constant
-                 && !const_node)
-            const_node = child;
-    }
-    if (!col_node || !const_node)
-        return false;
-    if (!sample_block.has(col_node->result_name))
+    if (!col_node || !sample_block.has(col_node->result_name))
         return false;
 
-    double xmin = 0;
-    double ymin = 0;
-    double xmax = 0;
-    double ymax = 0;
-    if (!tryExtractConstBbox(const_node, xmin, ymin, xmax, ymax))
+    /// Compute the union bbox across all constant geometry arguments. For variadic predicates
+    /// like pointInPolygon(pt, poly1, poly2, ...), a row group is only prunable if it is
+    /// disjoint from ALL polygons; the union bbox covers this correctly.
+    double xmin = std::numeric_limits<double>::infinity();
+    double ymin = std::numeric_limits<double>::infinity();
+    double xmax = -std::numeric_limits<double>::infinity();
+    double ymax = -std::numeric_limits<double>::infinity();
+    bool found_const = false;
+    for (const auto * child : node.children)
+    {
+        if (child->type != DB::ActionsDAG::ActionType::COLUMN
+            || !child->column
+            || !child->is_deterministic_constant)
+            continue;
+        double cxmin = 0;
+        double cymin = 0;
+        double cxmax = 0;
+        double cymax = 0;
+        if (!tryExtractConstBbox(child, cxmin, cymin, cxmax, cymax))
+            continue;
+        xmin = std::min(xmin, cxmin);
+        ymin = std::min(ymin, cymin);
+        xmax = std::max(xmax, cxmax);
+        ymax = std::max(ymax, cymax);
+        found_const = true;
+    }
+    if (!found_const)
         return false;
 
     SpatialFilter filter;
