@@ -4443,6 +4443,16 @@ Possible values:
    - 0 — Optimization disabled.
    - 1 — Optimization enabled.
 )", 0) \
+    DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
+Enables or disables the optimization of a trivial query `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (with no aggregate functions in the projection, no `HAVING`/`ORDER BY`/`LIMIT BY`/window clauses, and no `GROUP BY` modifiers) by setting `max_rows_to_group_by = n + offset` with `group_by_overflow_mode = 'any'`. The aggregation stops once `n + offset` distinct keys are produced.
+
+The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), and when the user has already set a tighter `max_rows_to_group_by` (the optimization would be a no-op).
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+)", 0) \
     DECLARE(Bool, optimize_count_from_files, true, R"(
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
@@ -5927,6 +5937,15 @@ Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enabl
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 :::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_top_k_through_join, true, R"(
+Toggles a query-plan-level optimization which pushes `ORDER BY ... LIMIT n` down through a join when the sort key only references columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows the preserved-side input must produce before joining.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 Possible values:
 
