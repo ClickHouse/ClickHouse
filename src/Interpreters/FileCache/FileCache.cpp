@@ -2532,23 +2532,34 @@ bool FileCache::doDynamicResizeImpl(
         for (const auto & candidate : key_candidates)
         {
             const auto & file_segment = candidate->file_segment;
+            const auto restored_size = candidate->size();
 
             LOG_DEBUG(
-                log, "Adding back file segment after failed eviction: {}:{}, size: {}",
-                file_segment->key(), file_segment->offset(), file_segment->getDownloadedSize());
+                log, "Adding back file segment after failed eviction: {}:{}, restored size: {}, downloaded size: {}",
+                file_segment->key(), file_segment->offset(), restored_size, file_segment->getDownloadedSize());
 
             auto original_queue_type = eviction_candidates.getOriginalQueueType(candidate.get());
 
+            /// Restore the queue entry with the exact size that was removed in
+            /// `removeQueueEntries`. `FileSegmentMetadata::size` returns
+            /// `getReservedSize`, which is what `LRUFileCachePriority::collectCandidatesForEviction`
+            /// accounted for and what `FileSegment::assertCorrectnessUnlocked`
+            /// expects on the priority entry (`entry.size == reserved_size`).
+            /// Passing `getDownloadedSize` here is wrong for `PARTIALLY_DOWNLOADED`
+            /// segments with `reserved_size > downloaded_size`.
             auto main_priority_iterator = main_priority->addForRestore(
                 key_metadata,
                 file_segment->offset(),
-                file_segment->getDownloadedSize(),
+                restored_size,
                 original_queue_type,
                 cache_write_lock,
                 &state_lock);
 
             candidate->setRemovedFlag(*locked_key, /* value */false);
-            file_segment->setQueueIterator(main_priority_iterator);
+            {
+                auto seg_lock = file_segment->lock();
+                file_segment->restoreQueueIteratorAfterDelayedRemoval(main_priority_iterator, seg_lock);
+            }
         }
     }
 
