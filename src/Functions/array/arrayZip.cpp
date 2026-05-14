@@ -42,6 +42,8 @@ public:
 
     String getSignatureString() const override
     {
+        /// Same "T was not captured" issue as `array()` — the zero-arg case
+        /// stays a separate alternative.
         if (allow_unaligned)
             return "() -> Array(Tuple()) OR (Array(T), ...) -> Array(Tuple(Nullable(T), ...))";
         return "() -> Array(Tuple()) OR (Array(T), ...) -> Array(Tuple(T, ...))";

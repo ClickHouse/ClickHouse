@@ -49,6 +49,10 @@ public:
     /// is enabled (the default).
     String getSignatureString() const override
     {
+        /// The zero-arg overload can't be folded into the variadic form: with
+        /// `[T1], ...` the "skip optional" branch leaves `T1` unbound and the
+        /// return expression `leastSupertype(T1, ...)` fails as "T1 was not
+        /// captured." Keep the two alternatives separate.
         if (use_variant_as_common_type)
             return "() -> Array(Nothing) OR (T1, ...) -> Array(leastSupertypeOrVariant(T1, ...))";
         return "() -> Array(Nothing) OR (T1, ...) -> Array(leastSupertype(T1, ...))";
