@@ -341,7 +341,8 @@ class GH:
         Each thread carries its node ``id`` (the value to pass to the
         resolve/unresolve mutations), ``isResolved``, ``isOutdated``,
         ``path``, ``line``, and the full list of comments under it (with
-        ``databaseId`` for use as ``in_reply_to`` when replying). Both
+        ``databaseId`` for use as ``in_reply_to`` when replying, and
+        ``createdAt`` for per-comment timestamps). Both
         the thread list and each thread's comments are paginated, so
         long PRs do not silently truncate. Raises ``RuntimeError`` on
         any transport / parse failure: a failure to read prior
@@ -362,7 +363,7 @@ class GH:
             "nodes{id isResolved isOutdated path line "
             "comments(first:50){"
             "pageInfo{hasNextPage endCursor}"
-            "nodes{databaseId author{login} body path line originalLine}"
+            "nodes{databaseId createdAt author{login} body path line originalLine}"
             "}}}}}}"
         )
         comments_query = (
@@ -370,7 +371,7 @@ class GH:
             "node(id:$id){... on PullRequestReviewThread{"
             "comments(first:50,after:$after){"
             "pageInfo{hasNextPage endCursor}"
-            "nodes{databaseId author{login} body path line originalLine}"
+            "nodes{databaseId createdAt author{login} body path line originalLine}"
             "}}}}"
         )
 

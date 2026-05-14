@@ -489,6 +489,10 @@ function_arg_constraints = {
     {"randomStringUTF8", {{0, {.integer_at_most = 50}}}},
     {"arrayWithConstant", {{0, {.integer_at_most = 20}}}},
     {"arrayResize", {{1, {.integer_at_most = 1000}}}},
+    /// `isProbablePrime` runs Miller-Rabin on UInt128/UInt256, which can take seconds per row under
+    /// sanitizer + ThreadFuzzer instrumentation - long enough for the stress test's stop timeout to
+    /// classify the worker as stuck. The cap forces the function through its fast bitmap/UInt64 path.
+    {"isProbablePrime", {{0, {.integer_at_most = 1000}}}},
 };
 
 constexpr size_t MEMORY_LIMIT_BYTES_PER_THREAD = 256 << 20;
