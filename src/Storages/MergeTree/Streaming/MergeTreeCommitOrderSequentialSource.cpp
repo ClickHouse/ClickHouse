@@ -11,7 +11,10 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <IO/WriteBufferFromString.h>
+
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/printPipeline.h>
 
 #include <Planner/PlannerContext.h>
 
@@ -98,7 +101,8 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
     const Names & inner_columns,
     size_t requested_num_streams,
     UInt64 max_block_size,
-    const SharedHeader & output_header)
+    const SharedHeader & output_header,
+    const LoggerPtr & log)
 {
     /// Clone query_info; the inner read is bounded, not streaming.
     SelectQueryInfo inner_info = query_info;
@@ -156,9 +160,26 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
     /// TODO(michicosun): somehow force projection usage here
     plan.optimize(opt_settings);
 
+    if (log->test())
+    {
+        WriteBufferFromOwnString plan_buffer;
+        ExplainPlanOptions explain_options{.header = true, .actions = true, .indexes = true, .compact = true, .pretty = true};
+        plan.explainPlan(plan_buffer, explain_options);
+        LOG_TEST(log, "Snapshot subplan for partition '{}' (safe_block_number={}):\n{}", partition_id, safe_block_number, plan_buffer.str());
+    }
+
     auto builder = plan.buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context));
+
     PipeWithResources result;
     result.pipe = QueryPipelineBuilder::getPipe(std::move(*builder), result.resources);
+
+    if (log->test())
+    {
+        WriteBufferFromOwnString pipeline_buffer;
+        printPipeline(result.pipe.getProcessors(), pipeline_buffer);
+        LOG_TEST(log, "Snapshot pipeline for partition '{}' (safe_block_number={}):\n{}", partition_id, safe_block_number, pipeline_buffer.str());
+    }
+
     return result;
 }
 
@@ -171,10 +192,13 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     const Names & user_requested_columns,
     size_t requested_num_streams,
     UInt64 max_block_size,
-    const SharedHeader & output_header)
+    const SharedHeader & output_header,
+    const LoggerPtr & log)
 {
     const auto partitions_to_read = getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions);
     chassert(!partitions_to_read.empty());
+
+    LOG_DEBUG(log, "Building new snapshot for {} partition(s): [{}]", partitions_to_read.size(), fmt::join(partitions_to_read, ", "));
 
     /// Fresh storage snapshot reused by every per-partition subplan in this iteration.
     const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
@@ -203,7 +227,8 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
             columns_to_read,
             requested_num_streams,
             max_block_size,
-            output_header);
+            output_header,
+            log);
 
         if (result)
         {
@@ -275,6 +300,7 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
         auto & position = last_emitted_positions[cursor->partition_id];
         position.block_number = cursor->last_block_number;
         position.block_offset = cursor->last_block_offset;
+        LOG_TEST(log, "Cursor for partition '{}' updated from chunk to ({}, {})", cursor->partition_id, position.block_number, position.block_offset);
     }
 
     output.push(std::move(chunk));
@@ -310,6 +336,7 @@ void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()
         auto & position = last_emitted_positions[partition_id];
         position.block_number = safe_block_number + 1;
         position.block_offset = -1;
+        LOG_TEST(log, "Cursor for partition '{}' promoted on pipeline end to ({}, {})", partition_id, position.block_number, position.block_offset);
     }
 
     reading_up_to_block_numbers.clear();
@@ -359,7 +386,8 @@ void MergeTreeCommitOrderSequentialSource::work()
         user_requested_columns,
         requested_num_streams,
         max_block_size,
-        header);
+        header,
+        log);
 
     if (result)
     {
