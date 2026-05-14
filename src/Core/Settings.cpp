@@ -4214,6 +4214,18 @@ Possible values:
     DECLARE(Bool, allow_drop_detached, false, R"(
 Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 )", 0) \
+    DECLARE(Bool, dynamic_disk_allow_from_env, false, R"(
+Allow using `from_env` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
+Disabled by default to prevent users from reading arbitrary environment variables when defining table storage.
+)", 0) \
+    DECLARE(Bool, dynamic_disk_allow_include, false, R"(
+Allow using `include` in the dynamic disk configuration (i.e. in the `disk()` function arguments).
+Disabled by default.
+)", 0) \
+    DECLARE(Bool, dynamic_disk_allow_from_zk, false, R"(
+Allow using `from_zk` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
+Disabled by default.
+)", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
@@ -4705,6 +4717,9 @@ Maximum parser backtracking (how many times it tries different alternatives in t
 )", 0) \
     DECLARE(UInt64, max_recursive_cte_evaluation_depth, DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, R"(
 Maximum limit on recursive CTE evaluation depth
+)", 0) \
+    DECLARE(UInt64, recursive_cte_max_steps_in_type_inference, 10, R"(
+Maximum number of iterations for inferring column types in recursive CTEs. Column types are determined by iteratively applying `getLeastSupertype` across the non-recursive and recursive sides of the UNION ALL until convergence. Set to 0 to disable type widening and use the types from the non-recursive part only.
 )", 0) \
     DECLARE(Bool, allow_settings_after_format_in_insert, false, R"(
 Control whether `SETTINGS` after `FORMAT` in `INSERT` queries is allowed or not. It is not recommended to use this, since this may interpret part of `SETTINGS` as values.
@@ -7026,7 +7041,7 @@ Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recomm
     DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
 Use types inference during String to Variant conversion.
 )", 0) \
-    DECLARE(DateTimeInputFormat, cast_string_to_date_time_mode, "basic", R"(
+    DECLARE(DateTimeInputFormat, cast_string_to_date_time_mode, "best_effort", R"(
 Allows choosing a parser of the text representation of date and time during cast from String.
 
 Possible values:
@@ -7739,6 +7754,9 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_unique_key, false, R"(
+Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
@@ -8350,8 +8368,9 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     /// we should remove it from settings_changed_by_compatibility_setting,
     /// otherwise the next time we will change compatibility setting
     /// this setting will be changed too (and we don't want it).
-    else if (settings_changed_by_compatibility_setting.contains(name))
-        settings_changed_by_compatibility_setting.erase(name);
+    /// Resolve aliases so the lookup matches the canonical names stored in the set.
+    else if (auto final_name = SettingsTraits::resolveName(name); settings_changed_by_compatibility_setting.contains(final_name))
+        settings_changed_by_compatibility_setting.erase(final_name);
 
     BaseSettings::set(name, value);
 }
