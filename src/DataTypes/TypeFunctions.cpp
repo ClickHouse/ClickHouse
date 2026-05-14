@@ -361,7 +361,10 @@ public:
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function Nullable");
 
-        return Value(makeNullable(args.front().type()));
+        /// For `LowCardinality(T)` the only well-formed nullable shape is `LowCardinality(Nullable(T))`,
+        /// since `Nullable(LowCardinality(...))` is not a valid SQL type. Mirror the convention used by
+        /// hand-written `getReturnTypeImpl` in functions affected by `join_use_nulls`.
+        return Value(makeNullableOrLowCardinalityNullable(args.front().type()));
     }
 
     std::string name() const override { return "Nullable"; }
