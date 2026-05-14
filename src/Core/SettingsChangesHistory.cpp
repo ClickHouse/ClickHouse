@@ -116,6 +116,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"is_aggregate", false, false, "New setting to register a WebAssembly UDF as an aggregate function."},
             {"is_spatial_predicate", false, false, "New setting to mark a WebAssembly UDF as a spatial predicate for pruning."},
             {"input_format_parquet_spatial_filter_push_down", true, true, "New setting: skip GeoParquet row groups based on spatial predicates and bounding box statistics"},
+            {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups based on spatial predicates and bounding box statistics"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
