@@ -930,10 +930,13 @@ void LocalServer::processConfig()
             .dynamic_hard_limit_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio],
         };
         memory_worker.emplace(memory_worker_config, global_context->getPageCache());
-        /// Inform `MemoryWorker` of the configured ceiling so its dynamic adjustment
-        /// (which only sees `MemFree + Cached` or cgroup memory) cannot exceed the
-        /// explicit `max_server_memory_usage`.
-        memory_worker->setExternalHardLimit(static_cast<Int64>(max_server_memory_usage));
+        /// Inform `MemoryWorker` of the configured ceiling and the ratio so its dynamic
+        /// adjustment (which only sees `MemFree + Cached` or cgroup memory) cannot exceed
+        /// the explicit `max_server_memory_usage`. `clickhouse-local` does not currently
+        /// support config reload, so the ratio is set once here.
+        memory_worker->setDynamicHardLimitSettings(
+            static_cast<Int64>(max_server_memory_usage),
+            server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio]);
         memory_worker->start();
     }
 

@@ -419,9 +419,13 @@ namespace
 
 }
 
-void MemoryWorker::setExternalHardLimit(Int64 limit)
+void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
 {
-    external_hard_limit.store(limit, std::memory_order_relaxed);
+    /// Order matters: write the ratio first. The worker thread reads `external_hard_limit`
+    /// first, and only proceeds with the adjustment when it is >= 0. By the time the
+    /// adjustment is enabled (ceiling becomes >= 0), the new ratio is already visible.
+    dynamic_hard_limit_ratio.store(ratio, std::memory_order_relaxed);
+    external_hard_limit.store(ceiling, std::memory_order_relaxed);
 }
 
 uint64_t MemoryWorker::readAvailableForDynamicLimit()
@@ -630,10 +634,11 @@ void MemoryWorker::updateResidentMemoryThread()
                 MemoryTracker::updateAllocated(resident, /*log_change=*/false);
 #endif
 
-            if (dynamic_hard_limit_ratio > 0.0)
+            const double ratio = dynamic_hard_limit_ratio.load(std::memory_order_relaxed);
+            if (ratio > 0.0)
             {
                 /// Suppress the adjustment until the server has had a chance to call
-                /// `setExternalHardLimit`. Otherwise we'd inflate the hard limit during
+                /// `setDynamicHardLimitSettings`. Otherwise we'd inflate the hard limit during
                 /// the brief window between `MemoryWorker::start` and the first config
                 /// reload that computes `max_server_memory_usage`.
                 Int64 ceiling = external_hard_limit.load(std::memory_order_relaxed);
@@ -642,12 +647,19 @@ void MemoryWorker::updateResidentMemoryThread()
                     uint64_t available = readAvailableForDynamicLimit();
                     if (available > 0)
                     {
-                        Int64 tracked = std::max<Int64>(0, total_memory_tracker.get());
-                        /// `tracked + available` is the upper bound of memory we could potentially own:
+                        /// Use `resident` (jemalloc RSS or cgroup `memory.current`) as the baseline
+                        /// of "memory we already own", not the MemoryTracker counter. The tracker
+                        /// only counts allocations it sees through `Allocator`; jemalloc-internal
+                        /// fragmentation, mmap'd pages, page cache, and any untracked allocation
+                        /// are excluded. Under load `tracked` can be orders of magnitude smaller
+                        /// than the actual RSS, which makes `(tracked + available) * ratio` compute
+                        /// a hard limit close to current RSS and reject every subsequent allocation.
+                        Int64 used = std::max<Int64>(0, resident);
+                        /// `used + available` is the upper bound of memory we could potentially own:
                         /// what we already use plus what is still free in our cgroup (or on the host).
                         /// Scaling by `ratio < 1` leaves headroom for other processes on the host.
                         auto new_hard_limit = static_cast<Int64>(
-                            static_cast<double>(static_cast<uint64_t>(tracked) + available) * dynamic_hard_limit_ratio);
+                            static_cast<double>(static_cast<uint64_t>(used) + available) * ratio);
 
                         /// Never exceed the configured `max_server_memory_usage`. The dynamic
                         /// adjustment may only shrink the budget further, not raise it above the
@@ -656,17 +668,23 @@ void MemoryWorker::updateResidentMemoryThread()
                             new_hard_limit = std::min(new_hard_limit, ceiling);
 
                         Int64 current_hard_limit = total_memory_tracker.getHardLimit();
-                        if (new_hard_limit != current_hard_limit)
+                        /// Refuse to shrink the limit to (or below) current RSS. The server cannot
+                        /// release memory instantly, and setting `hard_limit <= RSS` immediately
+                        /// rejects every allocation, breaking in-flight queries. The whole point of
+                        /// the adjustment is to leave room for *other* processes, not to throttle
+                        /// our own work. If the formula gives a value too close to `used`, skip the
+                        /// adjustment for this tick and keep the previous limit.
+                        if (new_hard_limit > used && new_hard_limit != current_hard_limit)
                         {
                             LOG_TRACE(
                                 log,
-                                "Adjusting total memory hard limit from {} to {} (tracked: {}, available: {}, ceiling: {}, ratio: {})",
+                                "Adjusting total memory hard limit from {} to {} (resident: {}, available: {}, ceiling: {}, ratio: {})",
                                 formatReadableSizeWithBinarySuffix(current_hard_limit),
                                 formatReadableSizeWithBinarySuffix(new_hard_limit),
-                                formatReadableSizeWithBinarySuffix(tracked),
+                                formatReadableSizeWithBinarySuffix(used),
                                 formatReadableSizeWithBinarySuffix(available),
                                 formatReadableSizeWithBinarySuffix(ceiling),
-                                dynamic_hard_limit_ratio);
+                                ratio);
                             total_memory_tracker.setHardLimit(new_hard_limit);
                         }
                     }

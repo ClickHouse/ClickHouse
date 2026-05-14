@@ -6,6 +6,7 @@
 #include <Common/PageCache.h>
 #include <IO/ReadBufferFromFile.h>
 
+#include <atomic>
 #include <filesystem>
 #include <memory>
 
@@ -66,13 +67,17 @@ public:
 
     void start();
 
-    /// Update the ceiling that the dynamic hard-limit adjustment must not exceed.
-    /// Server.cpp / LocalServer.cpp call this with the configured `max_server_memory_usage`
-    /// (after applying the ratio). A value <= 0 disables the cap (i.e. unlimited).
-    /// Until this is called for the first time, the dynamic adjustment is suppressed,
-    /// so the worker cannot inflate the hard limit before the server has had a chance
-    /// to load its memory settings.
-    void setExternalHardLimit(Int64 limit);
+    /// Update the dynamic hard-limit settings from a config reload.
+    ///   * `ceiling` is the configured `max_server_memory_usage` (after applying the ratio);
+    ///     the dynamic adjustment may never set the hard limit above this. A value <= 0
+    ///     disables the cap (i.e. unlimited).
+    ///   * `ratio` is the `max_server_memory_usage_to_ram_ratio`; setting it to 0 disables
+    ///     the dynamic adjustment entirely.
+    ///
+    /// Until this is called for the first time, the dynamic adjustment is suppressed, so
+    /// the worker cannot inflate the hard limit before the server has had a chance to load
+    /// its memory settings. Re-calling it on config reload keeps both values in sync.
+    void setDynamicHardLimitSettings(Int64 ceiling, double ratio);
 
     ~MemoryWorker();
 private:
@@ -101,7 +106,11 @@ private:
     uint64_t page_size = 0;
     std::chrono::milliseconds decay_adjustment_period_ms{0};
 
-    double dynamic_hard_limit_ratio = 0.0;
+    /// Scaling factor the dynamic adjustment applies to `resident + available` to compute
+    /// the new hard limit. Mirrors `max_server_memory_usage_to_ram_ratio` and is refreshed
+    /// on each config reload via `setDynamicHardLimitSettings`. A value <= 0 disables the
+    /// dynamic adjustment.
+    std::atomic<double> dynamic_hard_limit_ratio{0.0};
 
     /// Ceiling for the dynamic hard limit, set by Server.cpp / LocalServer.cpp.
     /// Initial value -1 means "not configured yet"; the dynamic adjustment then skips this tick.
