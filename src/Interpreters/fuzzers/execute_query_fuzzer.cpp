@@ -34,7 +34,7 @@
 using namespace DB;
 namespace fs = std::filesystem;
 
-extern "C" int LLVMFuzzerInitialize(int *, char ***);
+extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv);
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
@@ -49,7 +49,7 @@ const char * config_xml = "<clickhouse></clickhouse>";
 ContextMutablePtr context;
 
 // Helper function to check if this is a merge run
-bool isMerge(int argc, char ** argv)
+static bool isMerge(int argc, char ** argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -63,7 +63,7 @@ bool isMerge(int argc, char ** argv)
 }
 
 // Helper function to parse settings from command line arguments
-std::map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv)
+static std::map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv)
 {
     std::map<std::string, std::string> settings;
     bool ignore_remaining = false;
