@@ -47,6 +47,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
@@ -191,6 +192,7 @@ namespace MergeTreeSetting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsUInt64 additional_memory_tracking_per_thread;
     extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
     extern const ServerSettingsUInt32 asynchronous_metrics_update_period_s;
@@ -2256,6 +2258,9 @@ try
             new_server_settings.loadSettingsFromConfig(config());
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
+            additional_memory_tracking_per_thread.store(
+                static_cast<int64_t>(new_server_settings[ServerSetting::additional_memory_tracking_per_thread]),
+                std::memory_order_relaxed);
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
             const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];

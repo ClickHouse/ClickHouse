@@ -1,5 +1,6 @@
 #include <Common/ThreadPool.h>
 
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
@@ -29,6 +30,11 @@ namespace CurrentMetrics
     extern const Metric GlobalThreadActive;
     extern const Metric GlobalThreadScheduled;
 }
+
+/// Server-level setting `additional_memory_tracking_per_thread`.
+/// Updated from the server configuration in programs/server/Server.cpp.
+/// The default mirrors the default of `max_untracked_memory`: 4 MiB.
+std::atomic<int64_t> additional_memory_tracking_per_thread = 4 * 1024 * 1024;
 
 namespace ProfileEvents
 {
@@ -786,6 +792,22 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         /// Run the job.
         try
         {
+            /// Speculatively account for a fixed amount of per-thread untracked memory.
+            /// Each thread is allowed up to `max_untracked_memory` of allocations without
+            /// reporting them, so with many threads this can sum up to a large under-count.
+            /// We charge this amount before the job and release it after, making the
+            /// global MemoryTracker a safe upper bound on real memory usage.
+            /// The allocation is allowed to throw `MEMORY_LIMIT_EXCEEDED`; in that case the
+            /// job is treated as failed with that exception, which is the same behavior as
+            /// if the job itself had exceeded the memory limit.
+            const int64_t speculative_memory = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
+            if (speculative_memory > 0)
+                std::ignore = CurrentMemoryTracker::alloc(speculative_memory);
+            SCOPE_EXIT({
+                if (speculative_memory > 0)
+                    std::ignore = CurrentMemoryTracker::free(speculative_memory);
+            });
+
             CurrentMetrics::Increment metric_active_pool_threads(parent_pool.metric_active_threads);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD

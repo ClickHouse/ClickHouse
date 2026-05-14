@@ -414,6 +414,11 @@ using ThreadFromGlobalPoolWithoutTraceCollector = ThreadFromGlobalPoolImpl<true,
 ///
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;
 
+/// Server-level setting `additional_memory_tracking_per_thread`.
+/// Speculatively charged to the MemoryTracker around every job executed in a ThreadPool worker.
+/// See ServerSettings.cpp for details.
+extern std::atomic<int64_t> additional_memory_tracking_per_thread;
+
 /// Enables fault injections globally for all thread pools
 class CannotAllocateThreadFaultInjector
 {
