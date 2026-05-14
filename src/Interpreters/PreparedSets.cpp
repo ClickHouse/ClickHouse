@@ -146,30 +146,28 @@ FutureSetFromTuple::FutureSetFromTuple(
 DataTypes FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
 FutureSet::Hash FutureSetFromTuple::getHash() const { return hash; }
 
-Columns FutureSetFromTuple::getKeyColumns()
+void FutureSetFromTuple::fillSetElementsOnce()
 {
-    if (!set->hasExplicitSetElements())
+    callOnce(fill_set_elements_once, [this]
     {
         set->fillSetElements();
         set->appendSetElements(set_key_columns);
-    }
+    });
+}
 
+Columns FutureSetFromTuple::getKeyColumns()
+{
+    fillSetElementsOnce();
     return set->getSetElements();
 }
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 {
-    if (set->hasExplicitSetElements())
-        return set;
-
     const auto & settings = context->getSettingsRef();
     size_t max_values = settings[Setting::use_index_for_in_with_subqueries_max_values];
     bool too_many_values = max_values && max_values < set->getTotalRowCount();
     if (!too_many_values)
-    {
-        set->fillSetElements();
-        set->appendSetElements(set_key_columns);
-    }
+        fillSetElementsOnce();
 
     return set;
 }
