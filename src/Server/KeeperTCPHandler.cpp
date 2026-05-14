@@ -475,7 +475,7 @@ void KeeperTCPHandler::runImpl()
         compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4",{}));
     }
 
-    auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper, dispatcher = keeper_dispatcher.get()](
+    auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request) -> bool
     {
         if (request)

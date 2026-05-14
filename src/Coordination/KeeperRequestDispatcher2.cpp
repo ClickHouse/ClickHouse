@@ -176,8 +176,10 @@ void KeeperRequestDispatcher2::startup()
 void KeeperRequestDispatcher2::shutdown(bool closed_all_connections)
 {
     shutting_down.store(true);
-    dispatch_thread.join();
-    response_thread.join();
+    if (dispatch_thread.joinable())
+        dispatch_thread.join();
+    if (response_thread.joinable())
+        response_thread.join();
 
     stream.reset();
 
@@ -293,7 +295,8 @@ bool KeeperRequestDispatcher2::putRequest(const Coordination::ZooKeeperRequestPt
             if (try_push())
                 break;
 
-            if (std::chrono::steady_clock::now() - start_time > std::chrono::milliseconds(keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
+            std::chrono::milliseconds operation_timeout(keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
+            if (std::chrono::steady_clock::now() - start_time > operation_timeout)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
         }
     }
@@ -499,7 +502,7 @@ void KeeperRequestDispatcher2::dispatchThread()
             {
                 last_stuck_check_time = now;
                 size_t idx = head_idx.load();
-                if (tail_idx.load() > idx && now > in_flight_batches[idx % in_flight_batches.size()].start_time + std::chrono::milliseconds(operation_timeout_ms))
+                if (tail_idx.load() > idx && now > in_flight_batches[idx % in_flight_batches.size()].start_time + std::chrono::milliseconds(operation_timeout_ms * 10))
                 {
                     if (server->isLeaderAlive())
                         LOG_ERROR(log, "Detected stuck or reordered requests. Dropping. This may indicate a bug.");
@@ -571,8 +574,9 @@ void KeeperRequestDispatcher2::dispatchThread()
                 /// No requests to process. Busy-wait here too.
                 /// TODO: Perhaps we should replace this with a futex wait to improve throughput on
                 ///       latency-bound workloads. E.g. one client doing blocking requests in a loop.
-                std::this_thread::sleep_for(std::chrono::microseconds(
-                    keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_sleep_us]));
+                std::chrono::microseconds dispatch_busy_wait_sleep(
+                    keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_sleep_us]);
+                std::this_thread::sleep_for(dispatch_busy_wait_sleep);
                 continue;
             }
 
@@ -788,8 +792,8 @@ void KeeperRequestDispatcher2::dispatchThread()
 
             if (!requests.empty())
             {
-                HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, batch_subrequests);
-                HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, batch_bytes);
+                HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, static_cast<HistogramMetrics::Value>(batch_subrequests));
+                HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, static_cast<HistogramMetrics::Value>(batch_bytes));
                 ProfileEvents::increment(ProfileEvents::KeeperWriteBatchCount);
                 ProfileEvents::increment(ProfileEvents::KeeperWriteBatchTotalRequests, requests.size());
 

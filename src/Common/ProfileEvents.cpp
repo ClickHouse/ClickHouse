@@ -971,10 +971,10 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperReadRequestQueueLockWaitMicroseconds, "Time spent waiting for acquiring Keeper read request queue lock", ValueType::Microseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds, "Time spent waiting for acquiring Keeper process and responses lock", ValueType::Microseconds) \
     M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Microseconds) \
-    M(KeeperBatchMaxCount, "Number of batcher that hit max_requests_batch_size limit", ValueType::Number) \
-    M(KeeperBatchMaxTotalSize, "Number of batcher that hit max_requests_batch_bytes_size limit", ValueType::Number) \
-    M(KeeperBatchMaxReadCount, "Number of batcher that hit max_read_batch_size limit", ValueType::Number) \
-    M(KeeperBatchMaxReadTotalSize, "Number of batcher that hit max_read_batch_bytes_size limit", ValueType::Number) \
+    M(KeeperBatchMaxCount, "Number of batches that hit max_requests_batch_size limit", ValueType::Number) \
+    M(KeeperBatchMaxTotalSize, "Number of batches that hit max_requests_batch_bytes_size limit", ValueType::Number) \
+    M(KeeperBatchMaxReadCount, "Number of batches that hit max_read_batch_size limit", ValueType::Number) \
+    M(KeeperBatchMaxReadTotalSize, "Number of batches that hit max_read_batch_bytes_size limit", ValueType::Number) \
     M(KeeperReadBatchCount, "Number of read request batches processed by Keeper", ValueType::Number) \
     M(KeeperReadBatchTotalRequests, "Total number of read requests processed in batches by Keeper", ValueType::Number) \
     M(KeeperWriteBatchCount, "Number of write request batches processed by Keeper", ValueType::Number) \
