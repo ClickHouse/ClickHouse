@@ -170,19 +170,35 @@ public:
     const Poco::JSON::Object & getObject() const { return obj; }
 
     /// Get a nested JSON array.
+    /// Returns nullptr when the key is absent.
+    /// Throws `BAD_ARGUMENTS` when the key exists but its value is not a JSON array,
+    /// so callers using the `if (arr)` / `if (!arr) return;` shapes do not silently
+    /// drop malformed input by treating wrong-type values as if the key were missing.
     Poco::JSON::Array::Ptr getArray(const char * key) const
     {
         if (!obj.has(key))
             return nullptr;
-        return obj.getArray(key);
+        auto arr = obj.getArray(key);
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected JSON array for key '{}' during AST JSON deserialization", key);
+        return arr;
     }
 
     /// Get a nested JSON object.
+    /// Returns nullptr when the key is absent.
+    /// Throws `BAD_ARGUMENTS` when the key exists but its value is not a JSON object,
+    /// so callers do not silently accept malformed input by treating wrong-type values
+    /// as if the key were missing.
     Poco::JSON::Object::Ptr getNestedObject(const char * key) const
     {
         if (!obj.has(key))
             return nullptr;
-        return obj.getObject(key);
+        auto nested = obj.getObject(key);
+        if (!nested)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected JSON object for key '{}' during AST JSON deserialization", key);
+        return nested;
     }
 
     static Field readFieldFromObject(const Poco::JSON::Object & field_obj);
