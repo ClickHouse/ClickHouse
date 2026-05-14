@@ -303,7 +303,13 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     if (!handler_installed)
     {
         struct sigaction sa = {};
+        /// `glibc` defines `sa_sigaction` as a recursive macro
+        /// `#define sa_sigaction __sigaction_handler.sa_sigaction`,
+        /// which trips `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         sa.sa_sigaction = fuzzerSigalrmHandler;
+#pragma clang diagnostic pop
         sa.sa_flags = SA_SIGINFO;
         sigaction(SIGALRM, &sa, &original_sigalrm_action);
         handler_installed = true;
@@ -334,7 +340,13 @@ void DB::ClientBase::runLibFuzzer()
     /// Install SIGUSR1 handler on the runner thread for stack trace dumping.
     {
         struct sigaction sa = {};
+        /// `glibc` defines `sa_sigaction` as a recursive macro
+        /// `#define sa_sigaction __sigaction_handler.sa_sigaction`,
+        /// which trips `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         sa.sa_sigaction = runnerStackTraceHandler;
+#pragma clang diagnostic pop
         sa.sa_flags = SA_SIGINFO;
         (void)sigaction(SIGUSR1, &sa, nullptr);
     }
