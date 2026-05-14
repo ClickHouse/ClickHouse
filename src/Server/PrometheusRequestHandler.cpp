@@ -429,7 +429,11 @@ public:
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
-            if (uri.starts_with("/api/v1/query_range"))
+            String uri_path = uri;
+            if (const auto query_pos = uri_path.find('?'); query_pos != String::npos)
+                uri_path.resize(query_pos);
+
+            if (uri_path.ends_with("/api/v1/query_range"))
             {
                 String query = params->get("query", "");
                 String start = params->get("start", "");
@@ -441,7 +445,7 @@ public:
                 /// - limit=<number>: Maximum number of returned series
                 /// - lookback_delta=<number>: Override for the lookback period for this query.
 
-                PrometheusHTTPProtocolAPI::Params params
+                PrometheusHTTPProtocolAPI::Params query_params
                 {
                     .type = PrometheusHTTPProtocolAPI::Type::Range,
                     .promql_query = query,
@@ -451,16 +455,16 @@ public:
                     .step_param = step,
                 };
 
-                protocol.executePromQLQuery(getOutputStream(response), params);
+                protocol.executePromQLQuery(getOutputStream(response), query_params);
             }
-            else if (uri.starts_with("/api/v1/query"))
+            else if (uri_path.ends_with("/api/v1/query"))
             {
                 String query = params->get("query", "");
                 String time = params->get("time", "");
 
                 /// TODO: Support optional parameters same as for the range query.
 
-                PrometheusHTTPProtocolAPI::Params params
+                PrometheusHTTPProtocolAPI::Params query_params
                 {
                     .type = PrometheusHTTPProtocolAPI::Type::Instant,
                     .promql_query = query,
@@ -470,17 +474,17 @@ public:
                     .step_param = "",
                 };
 
-                protocol.executePromQLQuery(getOutputStream(response), params);
+                protocol.executePromQLQuery(getOutputStream(response), query_params);
             }
-            else if (uri.starts_with("/api/v1/format_query"))
+            else if (uri_path.ends_with("/api/v1/format_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
             }
-            else if (uri.starts_with("/api/v1/parse_query"))
+            else if (uri_path.ends_with("/api/v1/parse_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
             }
-            else if (uri.starts_with("/api/v1/series"))
+            else if (uri_path.ends_with("/api/v1/series"))
             {
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
@@ -490,7 +494,7 @@ public:
 
                 protocol.getSeries(getOutputStream(response), match, start, end);
             }
-            else if (uri.starts_with("/api/v1/labels"))
+            else if (uri_path.ends_with("/api/v1/labels"))
             {
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
@@ -498,12 +502,12 @@ public:
 
                 protocol.getLabels(getOutputStream(response), match, start, end);
             }
-            else if (uri.find("/api/v1/label/") != String::npos && uri.ends_with("/values"))
+            else if (uri_path.contains("/api/v1/label/") && uri_path.ends_with("/values"))
             {
                 // Extract label name from URI: /api/v1/label/<name>/values
-                size_t start_pos = uri.find("/api/v1/label/") + 14; // length of "/api/v1/label/"
-                size_t end_pos = uri.find("/values");
-                String label_name = uri.substr(start_pos, end_pos - start_pos);
+                size_t start_pos = uri_path.find("/api/v1/label/") + 14; // length of "/api/v1/label/"
+                size_t end_pos = uri_path.find("/values");
+                String label_name = uri_path.substr(start_pos, end_pos - start_pos);
 
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");

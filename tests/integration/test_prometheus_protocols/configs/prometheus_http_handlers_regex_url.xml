@@ -1,0 +1,11 @@
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <url>regex:/api/v1/write</url>
+            <handler>
+                <type>prometheus</type>
+                <table>default.prometheus</table>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>

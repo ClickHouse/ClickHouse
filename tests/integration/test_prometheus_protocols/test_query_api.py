@@ -1,4 +1,5 @@
 import pytest
+import requests
 
 from helpers.cluster import ClickHouseCluster
 import urllib
@@ -18,12 +19,19 @@ from .prometheus_test_utils import (
 
 cluster = ClickHouseCluster(__file__)
 
+MAIN_HTTP_PORT = 8123
+
 node = cluster.add_instance(
     "node",
     main_configs=["configs/prometheus.xml"],
     user_configs=["configs/allow_experimental_time_series_table.xml"],
     handle_prometheus_remote_read=(9093, "/read"),
     handle_prometheus_remote_write=(9093, "/write"),
+)
+node_main_http = cluster.add_instance(
+    "node_main_http",
+    main_configs=["configs/prometheus_http_handlers_prefixed.xml"],
+    user_configs=["configs/allow_experimental_time_series_table.xml"],
 )
 
 
@@ -48,12 +56,60 @@ def send_test_data():
     )
 
 
+def send_main_http_test_data():
+    protobuf = convert_time_series_to_protobuf(
+        [({"__name__": "main_http_fixture_metric", "job": "test"}, {1000.0: 1.0, 1001.0: 2.0})]
+    )
+    send_protobuf_to_remote_write(
+        node_main_http.ip_address,
+        MAIN_HTTP_PORT,
+        "/prometheus/api/v1/write",
+        protobuf,
+    )
+
+
+def _metric_names_in_read_response(read_response):
+    metric_names = []
+    for result in read_response.results:
+        for time_series in result.timeseries:
+            for label in time_series.labels:
+                if label.name == "__name__":
+                    metric_names.append(label.value)
+    return metric_names
+
+
+def _write_main_http_metric(metric_name, timestamp, value, write_path):
+    protobuf = convert_time_series_to_protobuf(
+        [({"__name__": metric_name}, {timestamp: value})]
+    )
+    send_protobuf_to_remote_write(
+        node_main_http.ip_address,
+        MAIN_HTTP_PORT,
+        write_path,
+        protobuf,
+    )
+
+
+def _read_main_http_metric(metric_name, start_timestamp, end_timestamp, read_path):
+    read_request = convert_read_request_to_protobuf(
+        "^{}$".format(metric_name), start_timestamp, end_timestamp
+    )
+    return receive_protobuf_from_remote_read(
+        node_main_http.ip_address,
+        MAIN_HTTP_PORT,
+        read_path,
+        read_request,
+    )
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
         cluster.start()
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
         send_test_data()
+        node_main_http.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+        send_main_http_test_data()
         yield cluster
     finally:
         cluster.shutdown()
@@ -230,3 +286,178 @@ def test_table_query_param():
         params={"database": "other"}, expect_error=True,
     )
     assert "cannot be overridden" in error
+
+
+def test_main_http_prefixed_remote_write():
+    timestamp = 1_700_001_000.0
+    metric_name = "main_http_prefixed_write_target"
+    before = int(node_main_http.query("SELECT count() FROM timeSeriesData(prometheus)").strip())
+
+    _write_main_http_metric(
+        metric_name,
+        timestamp,
+        11.0,
+        "/prometheus/api/v1/write",
+    )
+
+    after = int(node_main_http.query("SELECT count() FROM timeSeriesData(prometheus)").strip())
+    assert after > before
+
+
+def test_main_http_prefixed_remote_read():
+    timestamp = 1_700_001_100.0
+    metric_name = "main_http_prefixed_read_target"
+
+    _write_main_http_metric(
+        metric_name,
+        timestamp,
+        12.0,
+        "/prometheus/api/v1/write",
+    )
+
+    read_response = _read_main_http_metric(
+        metric_name,
+        timestamp - 1,
+        timestamp + 1,
+        "/prometheus/api/v1/read",
+    )
+    assert metric_name in _metric_names_in_read_response(read_response)
+
+
+def test_main_http_prefixed_query_api():
+    timestamp = 1_700_001_200.0
+    metric_name = "main_http_prefixed_query_target"
+
+    _write_main_http_metric(
+        metric_name,
+        timestamp,
+        13.0,
+        "/prometheus/api/v1/write",
+    )
+
+    data = execute_query_via_http_api(
+        node_main_http.ip_address,
+        MAIN_HTTP_PORT,
+        "/prometheus/api/v1/query",
+        metric_name,
+        timestamp=timestamp,
+    )
+    assert metric_name in data
+
+
+def test_main_http_bare_remote_write():
+    timestamp = 1_700_001_300.0
+    metric_name = "main_http_bare_write_target"
+    before = int(node_main_http.query("SELECT count() FROM timeSeriesData(prometheus)").strip())
+
+    _write_main_http_metric(
+        metric_name,
+        timestamp,
+        14.0,
+        "/api/v1/write",
+    )
+
+    after = int(node_main_http.query("SELECT count() FROM timeSeriesData(prometheus)").strip())
+    assert after > before
+
+
+def test_main_http_bare_remote_read():
+    timestamp = 1_700_001_400.0
+    metric_name = "main_http_bare_read_target"
+
+    _write_main_http_metric(
+        metric_name,
+        timestamp,
+        15.0,
+        "/api/v1/write",
+    )
+
+    read_response = _read_main_http_metric(
+        metric_name,
+        timestamp - 1,
+        timestamp + 1,
+        "/api/v1/read",
+    )
+    assert metric_name in _metric_names_in_read_response(read_response)
+
+
+def test_main_http_bare_query_api():
+    timestamp = 1_700_001_500.0
+    metric_name = "main_http_bare_query_target"
+
+    _write_main_http_metric(
+        metric_name,
+        timestamp,
+        16.0,
+        "/api/v1/write",
+    )
+
+    data = execute_query_via_http_api(
+        node_main_http.ip_address,
+        MAIN_HTTP_PORT,
+        "/api/v1/query",
+        metric_name,
+        timestamp=timestamp,
+    )
+    assert metric_name in data
+
+
+def test_main_http_prefixed_and_bare_share_table():
+    timestamp = 1_700_001_600.0
+    prefixed_metric = "main_http_coexist_prefixed"
+    bare_metric = "main_http_coexist_bare"
+
+    _write_main_http_metric(
+        prefixed_metric,
+        timestamp,
+        17.0,
+        "/prometheus/api/v1/write",
+    )
+    prefixed_read = _read_main_http_metric(
+        prefixed_metric,
+        timestamp - 1,
+        timestamp + 1,
+        "/api/v1/read",
+    )
+    assert prefixed_metric in _metric_names_in_read_response(prefixed_read)
+
+    _write_main_http_metric(
+        bare_metric,
+        timestamp + 1,
+        18.0,
+        "/api/v1/write",
+    )
+    bare_read = _read_main_http_metric(
+        bare_metric,
+        timestamp,
+        timestamp + 2,
+        "/prometheus/api/v1/read",
+    )
+    assert bare_metric in _metric_names_in_read_response(bare_read)
+
+
+def test_main_http_unknown_path_returns_404():
+    response = requests.get(
+        "http://{}:{}/not/a/known/path".format(node_main_http.ip_address, MAIN_HTTP_PORT),
+        timeout=10,
+    )
+    assert response.status_code == requests.codes.not_found
+
+
+def test_main_http_rejects_regex_url_for_prometheus_type():
+    invalid_cluster = ClickHouseCluster(__file__ + "_regex_invalid_url")
+    invalid_node = invalid_cluster.add_instance(
+        "node_regex_url",
+        main_configs=["configs/prometheus_http_handlers_regex_url.xml"],
+        user_configs=["configs/allow_experimental_time_series_table.xml"],
+    )
+    try:
+        try:
+            invalid_cluster.start()
+        except Exception:
+            assert invalid_node.contains_in_log("regex:", from_host=True)
+            assert invalid_node.contains_in_log("canonical Prometheus endpoint", from_host=True)
+        else:
+            pytest.fail("expected startup to fail for regex <url>")
+    finally:
+        invalid_cluster.shutdown()
