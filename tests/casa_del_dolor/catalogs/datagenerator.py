@@ -50,7 +50,6 @@ from .clickhousetospark import ClickHouseTypeMapper
 
 from .laketables import SparkTable
 
-
 SOME_STRINGS = [
     "",
     "0",

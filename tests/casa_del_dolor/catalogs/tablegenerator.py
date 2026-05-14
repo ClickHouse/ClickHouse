@@ -34,11 +34,11 @@ class LakeTableGenerator:
 
     @staticmethod
     def get_next_generator(lake: LakeFormat):
-        return (
-            IcebergTableGenerator()
-            if lake == LakeFormat.Iceberg
-            else DeltaLakePropertiesGenerator()
-        )
+        if lake == LakeFormat.Iceberg:
+            return IcebergTableGenerator()
+        if lake == LakeFormat.Paimon:
+            return PaimonTableGenerator()
+        return DeltaLakePropertiesGenerator()
 
     @abstractmethod
     def generate_table_properties_impl(
@@ -1083,4 +1083,105 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             if len(timestamps) > 0:
                 return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{random.choice(timestamps)}';"
             return f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF 1;"
+        return ""
+
+
+class PaimonTableGenerator(LakeTableGenerator):
+
+    def __init__(self):
+        super().__init__()
+
+    def get_format(self) -> str:
+        return "paimon"
+
+    def set_basic_properties(self) -> dict[str, str]:
+        properties = {}
+        out_format = FileFormat.file_to_str(self.write_format)
+        if out_format.lower() not in ("parquet", "orc"):
+            out_format = random.choice(["parquet", "orc"])
+            self.write_format = FileFormat.file_from_str(out_format)
+        properties["file.format"] = out_format
+        return properties
+
+    def add_partition_clauses(self, table: SparkTable) -> list[str]:
+        res = []
+        for k in table.columns.keys():
+            res.append(k)
+        return res
+
+    def add_generated_col(
+        self, columns: dict[str, SparkColumn], col: sp.DataType
+    ) -> str:
+        return ""
+
+    def create_catalog_table(
+        self,
+        catalog_impl,
+        columns: list[dict[str, str]],
+        table: SparkTable,
+    ) -> str:
+        return ""
+
+    def generate_table_properties_impl(
+        self,
+        table: SparkTable,
+    ) -> dict[str, Parameter]:
+        next_properties = {
+            "bucket": lambda: str(random.choice([1, 2, 4, 8, 16])),
+            "bucket-key": lambda: random.choice(list(table.columns.keys())),
+            "changelog-producer": lambda: random.choice(
+                ["none", "input", "full-compaction", "lookup"]
+            ),
+            "merge-engine": lambda: random.choice(
+                ["deduplicate", "partial-update", "first-row"]
+            ),
+            "sequence.field": lambda: random.choice(list(table.columns.keys())),
+            "snapshot.time-retained": lambda: random.choice(["1s", "1min", "1h", "1d"]),
+            "snapshot.num-retained.min": lambda: str(random.choice([1, 2, 5, 10])),
+            "snapshot.num-retained.max": lambda: str(random.choice([5, 10, 50, 100])),
+            "write-buffer-size": lambda: random.choice(
+                ["64kb", "256kb", "1mb", "64mb", "256mb"]
+            ),
+            "page-size": lambda: random.choice(["4kb", "64kb", "1mb"]),
+            "target-file-size": lambda: random.choice(
+                ["1mb", "32mb", "128mb", "256mb"]
+            ),
+            "compaction.min.file-num": lambda: str(random.choice([3, 5, 10])),
+            "compaction.max.file-num": lambda: str(random.choice([5, 10, 50])),
+            "compaction.early-max.file-num": lambda: str(random.choice([4, 8, 16])),
+            "num-sorted-run.compaction-trigger": lambda: str(random.choice([3, 5, 10])),
+            "num-sorted-run.stop-trigger": lambda: str(random.choice([10, 20, 50])),
+            "write-only": true_false_lambda,
+        }
+        if self.write_format == FileFormat.ORC:
+            next_properties.update(
+                {
+                    "orc.compress": lambda: random.choice(
+                        ["zlib", "snappy", "zstd", "lz4", "none"]
+                    ),
+                }
+            )
+        elif self.write_format == FileFormat.Parquet:
+            next_properties.update(
+                {
+                    "parquet.compression": lambda: random.choice(
+                        ["snappy", "gzip", "zstd", "lz4", "uncompressed"]
+                    ),
+                }
+            )
+        return next_properties
+
+    def generate_extra_statement(
+        self,
+        spark: SparkSession,
+        table: SparkTable,
+    ) -> str:
+        next_option = random.randint(1, 3)
+
+        if next_option == 1:
+            return f"CALL `{table.catalog_name}`.sys.compact(table => '{table.get_namespace_path()}');"
+        if next_option == 2:
+            return f"CALL `{table.catalog_name}`.sys.expire_snapshots(table => '{table.get_namespace_path()}', retain_max => {random.choice([1, 2, 5, 10])});"
+        if next_option == 3:
+            return f"CALL `{table.catalog_name}`.sys.create_tag(table => '{table.get_namespace_path()}', tag => 'tag_{random.randint(1, 1000)}');"
         return ""

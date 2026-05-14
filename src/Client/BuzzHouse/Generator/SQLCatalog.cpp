@@ -612,11 +612,11 @@ String SQLBase::getFullName(const bool setdbname) const
 
 String SQLBase::getSparkCatalogName() const
 {
-    chassert(isAnyIcebergEngine() || isAnyDeltaLakeEngine());
+    chassert(isAnyLakeEngine());
     if (getLakeCatalog() == LakeCatalog::None)
     {
         /// DeltaLake tables on Spark must be on the `spark_catalog` :(
-        return isAnyIcebergEngine() ? getBaseName(false) : "spark_catalog";
+        return isAnyDeltaLakeEngine() ? "spark_catalog" : getBaseName(false);
     }
     return db->getSparkCatalogName();
 }
@@ -653,7 +653,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         const String bname = rg.nextSmallNumber() < 4 ? name : ("t" + std::to_string(counter));
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool())
+        if (has_dolor && isAnyLakeEngine() && rg.nextBool())
         {
             integration = IntegrationCall::Dolor;
         }
