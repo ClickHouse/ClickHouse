@@ -63,16 +63,18 @@ namespace
                     /// timestamp + INTERVAL x MILLISECONDS
                     chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
                     /// Round up the scale to next number divisible by 3.
-                    UInt32 scale = std::max<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
+                    UInt32 scale = std::min<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
                     Decimal64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale);
 
                     static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
                     std::string_view to_interval_function = to_interval_functions[scale / 3];
 
-                    new_timestamp = makeASTFunction(
-                        "plus",
-                        make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
-                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value)));
+                    new_timestamp = timeSeriesTimestampASTCast(
+                        makeASTFunction(
+                            "plus",
+                            make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
+                            makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(static_cast<Int64>(scaled_offset_value)))),
+                        context.timestamp_data_type);
                 }
                 else
                 {
@@ -105,7 +107,8 @@ namespace
     SQLQueryPiece setEvaluationTime(const PQT::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
     {
         /// <expression> is expected to be calculated at a fixed evaluation time.
-        if (expression.start_time != expression.end_time)
+        const auto expression_range = context.node_range_getter.get(offset_node->getExpression());
+        if (expression_range.start_time != expression_range.end_time)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Expression {} is expected to be calculated at a fixed evaluation time",
@@ -175,33 +178,8 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT group,
-                ///        arrayJoin(timeSeriesRange(<start_time>, <end_time>, <step>)) AS timestamp,
-                ///        value
-                /// FROM <raw_data>
-                SelectQueryBuilder builder;
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-                auto new_timestamp = makeASTFunction(
-                    "arrayJoin",
-                    makeASTFunction(
-                        "timeSeriesRange",
-                        timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
-                        timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
-                        timeSeriesDurationToAST(node_range.step, context.timestamp_data_type)));
-
-                new_timestamp->setAlias(ColumnNames::Timestamp);
-                builder.select_list.push_back(std::move(new_timestamp));
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-
-                auto & subqueries = context.subqueries;
-                subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
-                builder.from_table = subqueries.back().name;
-
-                expression.select_query = builder.getSelectQuery();
-
+                /// Keep raw sample timestamps at the fixed `@` evaluation time. Range functions that
+                /// consume this piece decide how to project the fixed result onto the outer query grid.
                 return std::move(expression);
             }
         }
