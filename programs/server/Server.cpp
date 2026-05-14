@@ -325,6 +325,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsBool memory_worker_use_cgroup;
+    extern const ServerSettingsDouble memory_worker_rss_speculative_reserve_ratio;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
@@ -1506,6 +1507,7 @@ try
         .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
         .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
         .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+        .rss_speculative_reserve_ratio = server_settings[ServerSetting::memory_worker_rss_speculative_reserve_ratio],
     };
 
     MemoryWorker memory_worker(memory_worker_config, global_context->getPageCache());

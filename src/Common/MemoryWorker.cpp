@@ -270,6 +270,7 @@ MemoryWorker::MemoryWorker(
     , purge_total_memory_threshold_ratio(config.purge_total_memory_threshold_ratio)
     , purge_dirty_pages_threshold_ratio(config.purge_dirty_pages_threshold_ratio)
     , decay_adjustment_period_ms(config.decay_adjustment_period_ms)
+    , rss_speculative_reserve_ratio(config.rss_speculative_reserve_ratio)
     , page_cache(page_cache_)
 {
 #if USE_JEMALLOC
@@ -429,7 +430,23 @@ void MemoryWorker::updateResidentMemoryThread()
             Stopwatch total_watch;
 
             Int64 resident = getMemoryUsage(first_run);
-            MemoryTracker::updateRSS(resident);
+
+            /// Speculatively reserve `(resident - tracked) * ratio` on top of the observed RSS.
+            /// `resident - tracked` is the amount of memory we observed during the last tick that
+            /// had not yet flowed into the tracker; treat it as a lower bound on what may grow in
+            /// the next tick as well. With the default ratio = 1.0 we reserve one full delta of
+            /// headroom, so `MemoryTracker::allocImpl` will throw `MEMORY_LIMIT_EXCEEDED` (via the
+            /// global `will_be_rss > current_hard_limit` branch) before the kernel OOM-killer
+            /// closes the gap. Setting the ratio to 0 disables the speculation entirely.
+            Int64 speculative_rss = resident;
+            if (rss_speculative_reserve_ratio > 0.0)
+            {
+                Int64 tracked = total_memory_tracker.get();
+                Int64 delta = resident - tracked;
+                if (delta > 0)
+                    speculative_rss += static_cast<Int64>(static_cast<double>(delta) * rss_speculative_reserve_ratio);
+            }
+            MemoryTracker::updateRSS(speculative_rss);
 
             if (page_cache)
                 page_cache->autoResize(std::max(resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
