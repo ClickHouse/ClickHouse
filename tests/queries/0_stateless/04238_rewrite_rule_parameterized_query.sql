@@ -15,8 +15,6 @@ INSERT INTO rewrite_rule_param_dst VALUES ('today', 1337, 'first');
 
 SET query_rules = 1;
 
-DROP RULE IF EXISTS rewrite_rule_param_rule;
-
 CREATE RULE rewrite_rule_param_rule AS
 (
     SELECT date, sum(hits) FROM rewrite_rule_param_src WHERE page = {name:String} GROUP BY date
