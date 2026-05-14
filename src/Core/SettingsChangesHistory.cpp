@@ -82,6 +82,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
+            {"use_partial_aggregate_cache", false, false, "New experimental setting for caching partial aggregates at the MergeTree part level."},
+            {"partial_aggregate_cache_allow_parallel_aggregation_streams", false, false, "New experimental setting to keep multiple aggregation input streams when partial aggregate cache is enabled (disables execution-time cache if streams > 1)."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -225,7 +227,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"check_conversion_from_numbers_to_enum", false, true, "New setting"},
             {"allow_experimental_nullable_tuple_type", false, false, "New experimental setting"},
             {"use_skip_indexes_on_data_read", true, true, "Default enable"},
-            {"check_conversion_from_numbers_to_enum", false, false, "New setting"},
             {"archive_adaptive_buffer_max_size_bytes", 8 * 1024 * 1024, 8 * 1024 * 1024, "New setting"},
             {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, false, "Add a new setting to allow duplicated paths in JSON type with literal and nested object"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
@@ -984,7 +985,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_compression_zstd_window_log", 0, 0, "Allow to change zstd window log in the query output when zstd compression is used"},
             {"enable_zstd_qat_codec", false, false, "Add new ZSTD_QAT codec"},
             {"enable_vertical_final", false, true, "Use vertical final by default"},
-            {"output_format_arrow_use_64_bit_indexes_for_dictionary", false, false, "Allow to use 64 bit indexes type in Arrow dictionaries"},
             {"max_rows_in_set_to_optimize_join", 100000, 0, "Disable join optimization as it prevents from read in order optimization"},
             {"output_format_pretty_color", true, "auto", "Setting is changed to allow also for auto value, disabling ANSI escapes if output is not a tty"},
             {"function_visible_width_behavior", 0, 1, "We changed the default behavior of `visibleWidth` to be more precise"},
@@ -1369,7 +1369,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             /// Release closed. Please use 25.2
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas", false, false, "New setting to fetch parts data from other replicas"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "Added new setting to limit max bytes for min_age_to_force_merge."},
-            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "New setting"},
             {"add_minmax_index_for_numeric_columns", false, false, "New setting"},
             {"add_minmax_index_for_string_columns", false, false, "New setting"},
             {"materialize_skip_indexes_on_merge", true, true, "New setting"},
