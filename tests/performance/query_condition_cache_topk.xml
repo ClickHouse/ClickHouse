@@ -7,25 +7,30 @@
          and subsequent runs of the same query reuse the cached granule
          decisions and skip the granules dropped by the WHERE filter.
 
-         The benchmark is shaped to make the QCC speedup unambiguous in the
-         comparison harness:
+         The benchmark is shaped so the QCC speedup dominates over the perf
+         framework's per-query overhead (planning, network, etc.). With a small
+         or highly-compressible payload column the cache savings are dwarfed by
+         setup cost; this test uses an incompressible wide payload so every
+         granule scan reads enough bytes that skipping all granules is a clearly
+         measurable win in CI.
 
-           * 100M rows, `index_granularity = 8192` → ~12 200 granules.
-           * `v` is `number`, so `ORDER BY v ASC LIMIT 10` would normally
-             return the first ten rows, but the WHERE predicate is chosen
-             to match no rows in the table (`payload = 'no_such_value'`).
-             That means every granule is `0/N` after the WHERE filter, so
-             the prewarm run writes a "skip me" entry for every granule.
-           * `payload` is a small fixed-length string that is never equal
-             to `'no_such_value'`, so the WHERE predicate is determined
-             at the per-row level (no minmax pruning).
+           * 10M rows × `FixedString(256)` payload filled with `randomFixedString`
+             (incompressible, ~2.5 GB on disk). Every granule has to read and
+             decompress a meaningful chunk of payload bytes.
+           * The WHERE predicate `payload = 'no_match'` matches no rows (the
+             payload is random). Every granule is `0/N` after the WHERE filter,
+             so the prewarm run writes a "skip me" entry for every granule.
+           * `ORDER BY v ASC LIMIT 10` engages `tryOptimizeTopK`'s dynamic
+             filtering branch; `__topKFilter` is added as PREWHERE and the WHERE
+             predicate is the QCC entry's deterministic part. The QCC salt
+             partitions the cache by TopK plan parameters.
            * On the prewarm run, the QCC is empty and the full table is
              scanned. On every subsequent measured run, the QCC tells the
              reader to skip all granules, so the query returns immediately
              — that's the speedup the QCC-enabled query measures here. -->
 
     <create_query>
-        CREATE TABLE qcc_topk_test (id UInt32, v UInt32, payload FixedString(8)) ENGINE = MergeTree ORDER BY id
+        CREATE TABLE qcc_topk_test (id UInt32, v UInt32, payload FixedString(256)) ENGINE = MergeTree ORDER BY id
         SETTINGS index_granularity = 8192,
                  min_bytes_for_wide_part = 0,
                  min_bytes_for_full_part_storage = 0,
@@ -34,8 +39,9 @@
     </create_query>
 
     <fill_query>
-        INSERT INTO qcc_topk_test SELECT rand(), number, toFixedString(toString(rand() % 1000), 8)
-        FROM numbers(100000000)
+        INSERT INTO qcc_topk_test
+        SELECT rand(), number, randomFixedString(256)
+        FROM numbers(10000000)
     </fill_query>
 
     <settings>
