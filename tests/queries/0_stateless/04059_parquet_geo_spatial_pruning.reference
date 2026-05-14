@@ -21,3 +21,8 @@ no pruning
 3
 === or-safety no pruning expected ===
 no pruning
+=== user-selected bbox column with spatial filter ===
+1	-98
+2	-97.5
+=== user-selected bbox column pruning count ===
+ParquetPrunedRowGroups: 1 (increment)

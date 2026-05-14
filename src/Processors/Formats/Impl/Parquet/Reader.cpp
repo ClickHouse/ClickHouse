@@ -460,9 +460,13 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                         if (pc.name == *col)
                         {
                             pc.used_by_key_condition = true;
-                            /// SIZE_MAX prevents ReadManager from scheduling data decoding for these
-                            /// columns — they are only needed for row-group statistics, not output.
-                            pc.first_step_to_calculate = SIZE_MAX;
+                            /// For columns that were injected into extended_sample_block solely for
+                            /// covering.bbox statistics (not user-requested outputs), suppress data
+                            /// decoding: ReadManager never matches SIZE_MAX as a step index, so the
+                            /// column's data is never read. User-requested columns (idx <
+                            /// sample_block->columns()) keep their normal scheduling unchanged.
+                            if (pc.idx_in_output_block >= sample_block->columns())
+                                pc.first_step_to_calculate = SIZE_MAX;
                         }
             }
         }

@@ -74,3 +74,16 @@ WHERE pointInPolygon(geometry, [(-99., 30.), (-96., 30.), (-96., 33.), (-99., 33
    OR id = 3
 ORDER BY id" 2>&1 | grep 'ParquetPrunedRowGroups' | sed 's/^.*] //')
 echo "${or_pruned:-no pruning}"
+
+# User-selected bbox column: bbox_xmin is both a covering.bbox column and a user output.
+# Pruning must still prune RG1, AND bbox_xmin values must be decoded and returned correctly.
+echo "=== user-selected bbox column with spatial filter ==="
+$CLICKHOUSE_LOCAL -q "
+SELECT id, bbox_xmin FROM file('$FILE', Parquet)
+WHERE pointInPolygon(geometry, [(-99., 30.), (-96., 30.), (-96., 33.), (-99., 33.), (-99., 30.)])
+ORDER BY id"
+echo "=== user-selected bbox column pruning count ==="
+$CLICKHOUSE_LOCAL --print-profile-events -q "
+SELECT id, bbox_xmin FROM file('$FILE', Parquet)
+WHERE pointInPolygon(geometry, [(-99., 30.), (-96., 30.), (-96., 33.), (-99., 33.), (-99., 30.)])
+ORDER BY id" 2>&1 | grep 'ParquetPrunedRowGroups' | sed 's/^.*] //'
