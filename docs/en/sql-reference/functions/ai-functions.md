@@ -6,8 +6,6 @@ title: 'AI Functions'
 doc_type: 'reference'
 ---
 
-# AI functions
-
 AI Functions are built-in functions in ClickHouse that you can use to call AI or generate embeddings to work with your data, extract information, classify data, etc...
 
 :::note
