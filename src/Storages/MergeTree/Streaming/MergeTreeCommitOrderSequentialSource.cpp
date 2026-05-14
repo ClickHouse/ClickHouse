@@ -173,7 +173,7 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
 }
 
 std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
-    const MergeTreeBoundsSubscription & subscription,
+    const std::map<String, Int64> & safe_block_numbers,
     const MergeTreeCursor & last_emitted_positions,
     const MergeTreeData & storage,
     const SelectQueryInfo & query_info,
@@ -183,7 +183,6 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     UInt64 max_block_size,
     const SharedHeader & output_header)
 {
-    const auto safe_block_numbers = subscription.snapshot();
     const auto partitions_to_read = getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions);
     chassert(!partitions_to_read.empty());
 
@@ -223,11 +222,8 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
         }
     }
 
-    /// TODO(michicosun): Do not throw here, promote cursors
     if (per_partition_pipes.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "All per-partition snapshot subplans returned empty for an eligible bound set; "
-            "subscription/storage state is inconsistent");
+        return std::nullopt;
 
     Pipe united = Pipe::unitePipes(std::move(per_partition_pipes));
     united.resize(1);
@@ -330,19 +326,23 @@ void MergeTreeCommitOrderSequentialSource::work()
 {
     chassert(!pending_snapshot.has_value());
 
+    auto safe_block_numbers = subscription->snapshot();
     if (subscription->fd())
     {
-        if (!canConstructReadingPipeline(subscription->snapshot(), last_emitted_positions))
+        if (!canConstructReadingPipeline(safe_block_numbers, last_emitted_positions))
             return;
     }
     else
     {
-        while (!canConstructReadingPipeline(subscription->snapshot(), last_emitted_positions))
+        while (!canConstructReadingPipeline(safe_block_numbers, last_emitted_positions))
+        {
             subscription->wait();
+            safe_block_numbers = subscription->snapshot();
+        }
     }
 
     auto result = buildNextSnapshotReadingPipeline(
-        *subscription,
+        safe_block_numbers,
         last_emitted_positions,
         storage,
         query_info,
@@ -354,8 +354,19 @@ void MergeTreeCommitOrderSequentialSource::work()
 
     if (result)
     {
+        /// Read from prepared pipeline if it was created
         pending_snapshot = std::move(result->pipe);
         resources.append(result->resources);
+    }
+    else
+    {
+        /// There are no data should be read from the next snapshot - just promote positions.
+        for (const auto & partition_id : getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions))
+        {
+            auto & position = last_emitted_positions[partition_id];
+            position.block_number = safe_block_numbers.at(partition_id);
+            position.block_offset = std::numeric_limits<Int64>::max();
+        }
     }
 }
 

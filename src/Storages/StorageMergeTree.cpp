@@ -379,8 +379,6 @@ CursorPromotersMap StorageMergeTree::buildPromoters()
     for (const auto & part : data_parts)
         partition_ranges[part->info.getPartitionId()].addPart(part->info.min_block, part->info.max_block);
 
-    /// Regular MergeTree allocates block number for new part and renames part on disk (commits it)
-    /// atomically. So there can not be in-fly committing block numbers.
     return constructPromoters(/*committing_block_numbers=*/{}, std::move(partition_ranges));
 }
 
