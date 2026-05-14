@@ -7,8 +7,6 @@ title: 'Manipulating Sampling-Key Expressions'
 doc_type: 'reference'
 ---
 
-# Manipulating SAMPLE BY expression
-
 The following operations are available:
 
 ## MODIFY {#modify}

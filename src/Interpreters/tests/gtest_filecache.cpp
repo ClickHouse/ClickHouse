@@ -23,6 +23,9 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/Cache/OvercommitFileCachePriority.h>
+#endif
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/hex.h>
@@ -66,6 +69,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 boundary_alignment;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
+    extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
@@ -1539,6 +1543,103 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
     /// Verify cache usage is within new limits.
     ASSERT_LE(cache->getUsedCacheSize(), 8);
     ASSERT_LE(cache->getFileSegmentsNum(), 6);
+}
+
+TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
+{
+    /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/104307
+    ///
+    /// `SLRUFileCachePriority::collectEvictionInfo` is invoked from
+    /// `FileCache::freeSpaceRatioKeepingThreadFunc` (driven by the
+    /// `keep_free_space_size(elements)_ratio` features) with `is_total_space_cleanup=true`.
+    /// With a high enough free-space target the function used to `chassert` that we
+    /// evict at least one element/byte from the probationary queue. This is wrong when
+    /// entries have all been promoted to the protected queue and the probationary queue
+    /// is empty: the function must still be able to evict from the protected queue.
+    /// Without the fix, the assertion aborts the server in debug/sanitizer builds and
+    /// throws a `LOGICAL_ERROR` in release.
+    ///
+    /// We exercise `SLRUFileCachePriority::collectEvictionInfo` directly rather than
+    /// going through `FileCache::freeSpaceRatioKeepingThreadFunc` to avoid the timing
+    /// race with the asynchronous background eviction task that `FileCache` schedules
+    /// when `keep_free_space_*_ratio` is set: that task evicts entries between the
+    /// populate and assert steps, especially on slow builds (e.g. coverage), which
+    /// makes the higher-level test inherently flaky. The unit-level test below
+    /// reproduces the exact bug condition deterministically and on every build flavor.
+
+    ServerUUID::setRandomForUnitTests();
+
+    /// Match the parameters of the original repro: 30 bytes / 6 elements with
+    /// slru_size_ratio = 0.5 yields protected = 15 bytes / 3 elements and probationary
+    /// = 15 bytes / 3 elements.
+    const size_t max_size = 30;
+    const size_t max_elements = 6;
+    const double slru_size_ratio = 0.5;
+    SLRUFileCachePriority priority(max_size, max_elements, slru_size_ratio, "test_104307");
+
+    const std::string cache_path = caches_dir / "test_slru_104307";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path,
+                                 /* background_download_queue_size_limit */0,
+                                 /* background_download_threads */0,
+                                 /* write_cache_per_user_directory */false);
+
+    const auto key = DB::FileCacheKey::fromPath("104307_protected_only_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    /// Add 3 entries of 5 bytes each (15 bytes total) directly to the protected queue,
+    /// leaving probationary empty. This is the precondition that used to trigger the
+    /// chassert in `collectEvictionInfo`.
+    {
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        priority.addForRestore(key_metadata, /* offset */0, /* size */5,
+                               IFileCachePriority::QueueEntryType::SLRU_Protected,
+                               write_lock, &state_lock);
+        priority.addForRestore(key_metadata, /* offset */5, /* size */5,
+                               IFileCachePriority::QueueEntryType::SLRU_Protected,
+                               write_lock, &state_lock);
+        priority.addForRestore(key_metadata, /* offset */10, /* size */5,
+                               IFileCachePriority::QueueEntryType::SLRU_Protected,
+                               write_lock, &state_lock);
+    }
+
+    /// Verify the precondition: 3 entries / 15 bytes total, all in protected,
+    /// probationary empty. The total counters alone would still pass if entries
+    /// leaked into probationary, so we also assert per-queue contents explicitly --
+    /// the empty-probationary assertion is what proves the regression precondition.
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getSize(state_guard.lock()), 15);
+    ASSERT_EQ(priority.getProtectedElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getProtectedSize(state_guard.lock()), 15);
+    ASSERT_EQ(priority.getProbationaryElementsCount(state_guard.lock()), 0);
+    ASSERT_EQ(priority.getProbationarySize(state_guard.lock()), 0);
+
+    /// Call `collectEvictionInfo` with `is_total_space_cleanup=true` and a request
+    /// covering everything currently in the cache. This is what the background thread
+    /// invokes when `desired_size`/`desired_elements_num` is below the current usage
+    /// (i.e. `keep_free_space_size(elements)_ratio` is set high enough to drain the cache).
+    ///
+    /// Without the fix, this aborts via the chassert in debug/sanitizer builds.
+    /// With the fix, the function routes the full request to the protected queue
+    /// (since probationary is empty) and returns a valid eviction info.
+    EvictionInfoPtr eviction_info;
+    ASSERT_NO_THROW({
+        eviction_info = priority.collectEvictionInfo(
+            /* size */15,
+            /* elements */3,
+            /* reservee */nullptr,
+            /* is_total_space_cleanup */true,
+            origin,
+            state_guard.lock());
+    });
+
+    ASSERT_NE(eviction_info, nullptr);
+    ASSERT_TRUE(eviction_info->requiresEviction());
 }
 
 TEST_F(FileCacheTest, FileCacheGetOrSet)
