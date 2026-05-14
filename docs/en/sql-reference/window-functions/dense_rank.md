@@ -7,8 +7,6 @@ title: 'dense_rank'
 doc_type: 'reference'
 ---
 
-# dense_rank
-
 Ranks the current row within its partition without gaps. In other words, if the value of any new row encountered is equal to the value of one of the previous rows then it will receive the next successive rank without any gaps in ranking.
 
 The [rank](./rank.md) function provides the same behaviour, but with gaps in ranking.

@@ -7,8 +7,6 @@ title: 'clickhouse-local'
 doc_type: 'reference'
 ---
 
-# clickhouse-local
-
 ## When to use clickhouse-local vs. ClickHouse {#when-to-use-clickhouse-local-vs-clickhouse}
 
 `clickhouse-local` is an easy-to-use version of ClickHouse that is ideal for developers who need to perform fast processing on local and remote files using SQL without having to install a full database server. With `clickhouse-local`, developers can use SQL commands (using the [ClickHouse SQL dialect](../../sql-reference/index.md) directly from the command line, providing a simple and efficient way to access ClickHouse features without the need for a full ClickHouse installation. One of the main benefits of `clickhouse-local` is that it is already included when installing [clickhouse-client](/operations/utilities/clickhouse-local). This means that developers can get started with `clickhouse-local` quickly, without the need for a complex installation process.

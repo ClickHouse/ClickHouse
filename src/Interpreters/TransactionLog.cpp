@@ -9,6 +9,7 @@
 #include <base/defines.h>
 #include <base/sort.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
@@ -25,6 +26,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_STATUS_OF_TRANSACTION;
+}
+
+namespace FailPoints
+{
+    extern const char transaction_force_unknown_state_after_commit[];
 }
 
 static void tryWriteEventToSystemLog(LoggerPtr log, ContextPtr context,
@@ -435,6 +441,15 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
             auto res = current_zookeeper->multi(requests, /* check_session_valid */ true);
 
             csn_path_created = dynamic_cast<const Coordination::CreateResponse *>(res.back().get())->path_created;
+
+            fiu_do_on(FailPoints::transaction_force_unknown_state_after_commit,
+            {
+                /// CSN znode is already created in ZK; simulate the response being lost.
+                /// The catch block below will postpone finalization to runUpdatingThread,
+                /// reproducing the fault_probability_after_commit code path deterministically.
+                throw Coordination::Exception::fromMessage(Coordination::Error::ZOPERATIONTIMEOUT,
+                    "Fault injected: forced unknown state after commit");
+            });
         }
         catch (const Coordination::Exception & e)
         {

@@ -7,8 +7,6 @@ title: 'first_value'
 doc_type: 'reference'
 ---
 
-# first_value
-
 Returns the first value evaluated within its ordered frame. By default, NULL arguments are skipped, however the `RESPECT NULLS` modifier can be used to override this behaviour.
 
 **Syntax**

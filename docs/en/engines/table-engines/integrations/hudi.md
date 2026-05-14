@@ -8,8 +8,6 @@ title: 'Hudi table engine'
 doc_type: 'reference'
 ---
 
-# Hudi table engine
-
 This engine provides a read-only integration with existing Apache [Hudi](https://hudi.apache.org/) tables in Amazon S3.
 
 ## Create table {#create-table}

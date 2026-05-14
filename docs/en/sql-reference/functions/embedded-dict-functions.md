@@ -6,8 +6,6 @@ title: 'Functions for Working with Embedded Dictionaries'
 doc_type: 'reference'
 ---
 
-# Functions for Working with Embedded Dictionaries
-
 :::note
 In order for the functions below to work, the server config must specify the paths and addresses for getting all the embedded dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can't be loaded, an exception is thrown.
 

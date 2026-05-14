@@ -7,8 +7,6 @@ title: 'Continuous Integration (CI)'
 doc_type: 'reference'
 ---
 
-# Continuous Integration (CI)
-
 When you submit a pull request, some automated checks are ran for your code by the ClickHouse [continuous integration (CI) system](tests.md#test-automation).
 This happens after a repository maintainer (someone from ClickHouse team) has screened your code and added the `can be tested` label to your pull request.
 The results of the checks are listed on the GitHub pull request page as described in the [GitHub checks documentation](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-status-checks).

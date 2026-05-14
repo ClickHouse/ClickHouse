@@ -7,8 +7,6 @@ title: 'Manipulating Constraints'
 doc_type: 'reference'
 ---
 
-# Manipulating Constraints
-
 Constraints could be added or deleted using following syntax:
 
 ```sql

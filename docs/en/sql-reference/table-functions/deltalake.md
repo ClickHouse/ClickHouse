@@ -8,8 +8,6 @@ title: 'deltaLake'
 doc_type: 'reference'
 ---
 
-# deltaLake table function
-
 Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system, supporting both reads and writes (from v25.10)
 
 ## Syntax {#syntax}

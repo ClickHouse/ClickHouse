@@ -8,8 +8,6 @@ title: 'VersionedCollapsingMergeTree table engine'
 doc_type: 'reference'
 ---
 
-# VersionedCollapsingMergeTree table engine
-
 This engine:
 
 - Allows quick writing of object states that are continually changing.

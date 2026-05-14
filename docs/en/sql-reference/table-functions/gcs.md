@@ -9,8 +9,6 @@ title: 'gcs'
 doc_type: 'reference'
 ---
 
-# gcs Table Function
-
 Provides a table-like interface to `SELECT` and `INSERT` data from [Google Cloud Storage](https://cloud.google.com/storage/). Requires the [`Storage Object User` IAM role](https://cloud.google.com/storage/docs/access-control/iam-roles).
 
 This is an alias of the [s3 table function](../../sql-reference/table-functions/s3.md).

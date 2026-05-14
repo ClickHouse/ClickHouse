@@ -7,8 +7,6 @@ title: 'AzureBlobStorage table engine'
 doc_type: 'reference'
 ---
 
-# AzureBlobStorage table engine
-
 This engine provides an integration with [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) ecosystem.
 
 ## Create table {#create-table}

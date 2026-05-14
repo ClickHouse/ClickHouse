@@ -7,8 +7,6 @@ title: 'Clickhouse-disks'
 doc_type: 'reference'
 ---
 
-# Clickhouse-disks
-
 A utility providing filesystem-like operations for ClickHouse disks. It can work in both interactive and not interactive modes.
 
 ## Program-wide options {#program-wide-options}

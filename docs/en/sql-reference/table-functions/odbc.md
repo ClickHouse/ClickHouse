@@ -7,8 +7,6 @@ title: 'odbc'
 doc_type: 'reference'
 ---
 
-# odbc Table Function
-
 Returns table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
 ## Syntax {#syntax}

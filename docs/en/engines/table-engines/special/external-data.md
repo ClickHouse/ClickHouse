@@ -9,8 +9,6 @@ title: 'External data for query processing'
 doc_type: 'reference'
 ---
 
-# External data for query processing
-
 ClickHouse allows sending a server the data that is needed for processing a query, together with a `SELECT` query. This data is put in a temporary table (see the section "Temporary tables") and can be used in the query (for example, in `IN` operators).
 
 For example, if you have a text file with important user identifiers, you can upload it to the server along with a query that uses filtration by this list.

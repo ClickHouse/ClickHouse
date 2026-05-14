@@ -6,8 +6,6 @@ title: 'UNION Clause'
 doc_type: 'reference'
 ---
 
-# UNION Clause
-
 You can use `UNION` with explicitly specifying `UNION ALL` or `UNION DISTINCT`.
 
 If you don't specify `ALL` or `DISTINCT`, it will depend on the `union_default_mode` setting. The difference between `UNION ALL` and `UNION DISTINCT` is that `UNION DISTINCT` will do a distinct transform for union result, it is equivalent to `SELECT DISTINCT` from a subquery containing `UNION ALL`.

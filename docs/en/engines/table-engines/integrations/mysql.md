@@ -7,8 +7,6 @@ title: 'MySQL table engine'
 doc_type: 'reference'
 ---
 
-# MySQL table engine
-
 The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.
 
 ## Creating a table {#creating-a-table}

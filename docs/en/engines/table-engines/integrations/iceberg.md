@@ -8,8 +8,6 @@ title: 'Iceberg table engine'
 doc_type: 'reference'
 ---
 
-# Iceberg table engine {#iceberg-table-engine}
-
 :::warning 
 We recommend using the [Iceberg Table Function](/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
 

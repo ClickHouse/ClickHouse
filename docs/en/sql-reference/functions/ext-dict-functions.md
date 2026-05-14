@@ -6,8 +6,6 @@ title: 'Functions for Working with Dictionaries'
 doc_type: 'reference'
 ---
 
-# Functions for Working with Dictionaries
-
 :::note
 For dictionaries created with [DDL queries](../statements/create/dictionary/overview.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
 :::

@@ -6,8 +6,6 @@ title: 'Array Functions'
 doc_type: 'reference'
 ---
 
-# Array functions
-
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.

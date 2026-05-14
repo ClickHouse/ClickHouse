@@ -7,8 +7,6 @@ doc_type: 'reference'
 keywords: ['string replacement']
 ---
 
-# Functions for string replacement
-
 [General strings functions](string-functions.md) and [functions for searching in strings](string-search-functions.md) are described separately.
 
 :::note

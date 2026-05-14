@@ -7,8 +7,6 @@ title: 'Custom Partitioning Key'
 doc_type: 'guide'
 ---
 
-# Custom partitioning key
-
 :::note
 In most cases you do not need a partition key, and in most other cases you do not need a partition key more granular than by month, unless targeting an observability use case where partitioning by day is common.
 

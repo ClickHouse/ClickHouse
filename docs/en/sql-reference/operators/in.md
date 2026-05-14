@@ -6,8 +6,6 @@ title: 'IN Operators'
 doc_type: 'reference'
 ---
 
-# IN Operators
-
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 
 The left side of the operator is either a single column or a tuple.

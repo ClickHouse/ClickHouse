@@ -6,8 +6,6 @@ title: 'FROM Clause'
 doc_type: 'reference'
 ---
 
-# FROM Clause
-
 The `FROM` clause specifies the source to read data from:
 
 - [Table](../../../engines/table-engines/index.md)

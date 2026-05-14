@@ -7,8 +7,6 @@ keywords: ['REPLACE', 'modifier']
 doc_type: 'reference'
 ---
 
-# Replace modifier {#replace}
-
 > Allows you to specify one or more [expression aliases](/sql-reference/syntax#expression-aliases). 
 
 Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches 

@@ -6,8 +6,6 @@ title: 'ORDER BY Clause'
 doc_type: 'reference'
 ---
 
-# ORDER BY Clause
-
 The `ORDER BY` clause contains
 
 - a list of expressions, e.g. `ORDER BY visits, search_phrase`,

@@ -8,8 +8,6 @@ title: 'AzureQueue table engine'
 doc_type: 'reference'
 ---
 
-# AzureQueue table engine
-
 This engine provides an integration with the [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) ecosystem, allowing streaming data import.
 
 ## Create table {#creating-a-table}

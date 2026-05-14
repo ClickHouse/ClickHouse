@@ -8,8 +8,6 @@ title: 'Enum'
 doc_type: 'reference'
 ---
 
-# Enum
-
 Enumerated type consisting of named values.
 
 Named values can be declared as `'string' = integer` pairs or `'string'` names . ClickHouse stores only numbers, but supports operations with the values through their names.

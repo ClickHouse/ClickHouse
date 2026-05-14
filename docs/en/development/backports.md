@@ -7,8 +7,6 @@ title: 'Backport System'
 doc_type: 'reference'
 ---
 
-# Backport System {#backport-system}
-
 This document describes the ClickHouse backport policy and the automated system that implements it.
 
 ## Release Model {#release-model}

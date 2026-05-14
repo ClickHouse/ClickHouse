@@ -8,8 +8,6 @@ title: 'hudiCluster Table Function'
 doc_type: 'reference'
 ---
 
-# hudiCluster Table Function
-
 This is an extension to the [hudi](sql-reference/table-functions/hudi.md) table function.
 
 Allows processing files from Apache [Hudi](https://hudi.apache.org/) tables in Amazon S3 in parallel with many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.

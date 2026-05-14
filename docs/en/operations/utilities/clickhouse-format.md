@@ -5,8 +5,6 @@ title: 'clickhouse-format'
 doc_type: 'reference'
 ---
 
-# clickhouse-format utility
-
 Allows formatting input queries.
 
 Keys:

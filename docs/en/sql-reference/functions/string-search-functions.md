@@ -6,8 +6,6 @@ title: 'Functions for Searching in Strings'
 doc_type: 'reference'
 ---
 
-# Functions for Searching in Strings
-
 All functions in this section search case-sensitively by default. Case-insensitive search is usually provided by separate function variants.
 
 :::note

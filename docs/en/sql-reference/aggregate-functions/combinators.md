@@ -7,8 +7,6 @@ title: 'Aggregate Function Combinators'
 doc_type: 'reference'
 ---
 
-# Aggregate function combinators
-
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 
 ## -If {#-if}

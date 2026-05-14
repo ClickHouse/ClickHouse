@@ -7,8 +7,6 @@ title: 'Array(T)'
 doc_type: 'reference'
 ---
 
-# Array(T)
-
 An array of `T`-type items, with the starting array index as 1. `T` can be any data type, including an array.
 
 ## Creating an Array {#creating-an-array}

@@ -8,8 +8,6 @@ title: 'Null table engine'
 doc_type: 'reference'
 ---
 
-# Null table engine 
-
 When writing data to a `Null` table, data is ignored.
 When reading from a `Null` table, the response is empty.
 

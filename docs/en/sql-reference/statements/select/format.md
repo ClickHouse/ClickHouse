@@ -6,8 +6,6 @@ title: 'FORMAT Clause'
 doc_type: 'reference'
 ---
 
-# FORMAT Clause
-
 ClickHouse supports a wide range of [serialization formats](../../../interfaces/formats.md) that can be used on query results among other things. There are multiple ways to choose a format for `SELECT` output, one of them is to specify `FORMAT format` at the end of query to get resulting data in any specific format.
 
 Specific format might be used either for convenience, integration with other systems or performance gain.

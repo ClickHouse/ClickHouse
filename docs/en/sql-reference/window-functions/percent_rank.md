@@ -7,8 +7,6 @@ title: 'percent_rank'
 doc_type: 'reference'
 ---
 
-# percent_rank
-
 returns the relative rank (i.e. percentile) of rows within a window partition.
 
 **Syntax**

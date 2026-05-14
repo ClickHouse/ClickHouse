@@ -7,8 +7,6 @@ title: 'SELECT Query'
 doc_type: 'reference'
 ---
 
-# SELECT Query
-
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../../sql-reference/statements/insert-into.md) it can be forwarded to a different table.
 
 ## Syntax {#syntax}

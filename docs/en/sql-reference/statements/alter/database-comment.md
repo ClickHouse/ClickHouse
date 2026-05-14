@@ -9,8 +9,6 @@ keywords: ['ALTER DATABASE', 'MODIFY COMMENT']
 doc_type: 'reference'
 ---
 
-# ALTER DATABASE ... MODIFY COMMENT
-
 Adds, modifies, or removes a database comment, regardless of whether it was set
 before or not. The comment change is reflected in both [`system.databases`](/operations/system-tables/databases.md) 
 and the `SHOW CREATE DATABASE` query.

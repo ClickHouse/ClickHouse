@@ -8,8 +8,6 @@ title: 'File table engine'
 doc_type: 'reference'
 ---
 
-# File table engine
-
 The File table engine keeps the data in a file in one of the supported [file formats](/interfaces/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
 
 Usage scenarios:

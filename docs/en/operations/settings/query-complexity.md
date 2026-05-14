@@ -7,8 +7,6 @@ title: 'Restrictions on query complexity'
 doc_type: 'reference'
 ---
 
-# Restrictions on query complexity
-
 ## Overview {#overview}
 
 As part of the [settings](/operations/settings/overview), ClickHouse offers

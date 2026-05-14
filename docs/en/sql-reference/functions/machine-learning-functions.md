@@ -6,8 +6,6 @@ title: 'Machine Learning Functions'
 doc_type: 'reference'
 ---
 
-# Machine learning functions
-
 ## evalMLMethod {#evalmlmethod}
 
 Prediction using fitted regression models uses `evalMLMethod` function. See link in `linearRegression`.

@@ -8,8 +8,6 @@ title: 'hudi'
 doc_type: 'reference'
 ---
 
-# hudi Table Function
-
 Provides a read-only table-like interface to Apache [Hudi](https://hudi.apache.org/) tables in Amazon S3.
 
 ## Syntax {#syntax}

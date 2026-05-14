@@ -8,8 +8,6 @@ title: 'postgresql'
 doc_type: 'reference'
 ---
 
-# postgresql Table Function
-
 Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote PostgreSQL server.
 
 ## Syntax {#syntax}

@@ -8,8 +8,6 @@ title: 'mysql'
 doc_type: 'reference'
 ---
 
-# mysql Table Function
-
 Allows `SELECT` and `INSERT` queries to be performed on data that are stored on a remote MySQL server.
 
 ## Syntax {#syntax}

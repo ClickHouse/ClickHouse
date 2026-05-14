@@ -8,8 +8,6 @@ toc_hidden_folder: true
 doc_type: 'reference'
 ---
 
-# Manipulating Data Skipping Indices
-
 The following operations are available:
 
 ## ADD INDEX {#add-index}

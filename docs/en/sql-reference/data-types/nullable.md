@@ -7,8 +7,6 @@ title: 'Nullable(T)'
 doc_type: 'reference'
 ---
 
-# Nullable(T)
-
 Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that denotes "missing value" alongside normal values allowed by `T`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
 
 `T` can't be any of the following composite data types:

@@ -7,8 +7,6 @@ title: 'Redis table engine'
 doc_type: 'guide'
 ---
 
-# Redis table engine
-
 This engine allows integrating ClickHouse with [Redis](https://redis.io/). For Redis takes kv model, we strongly recommend you only query it in a point way, such as `where k=xx` or `where k in (xx, xx)`.
 
 ## Creating a table {#creating-a-table}

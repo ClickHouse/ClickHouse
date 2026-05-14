@@ -8,8 +8,6 @@ title: 'Architecture Overview'
 doc_type: 'reference'
 ---
 
-# Architecture Overview
-
 ClickHouse is a true column-oriented DBMS. Data is stored by columns, and during the execution of arrays (vectors or chunks of columns).
 Whenever possible, operations are dispatched on arrays, rather than on individual values.
 It is called "vectorized query execution" and it helps lower the cost of actual data processing.

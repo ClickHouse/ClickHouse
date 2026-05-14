@@ -7,8 +7,6 @@ title: 'leadInFrame'
 doc_type: 'reference'
 ---
 
-# leadInFrame
-
 Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
 :::warning

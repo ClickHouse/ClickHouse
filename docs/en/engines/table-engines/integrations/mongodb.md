@@ -8,8 +8,6 @@ title: 'MongoDB table engine'
 doc_type: 'reference'
 ---
 
-# MongoDB table engine
-
 MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
 
 Only MongoDB v3.6+ servers are supported.

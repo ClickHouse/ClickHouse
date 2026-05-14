@@ -1168,6 +1168,16 @@ public:
         }
         checkValidValue(rhs);
 
+        /// The Float64 conversion below silently clamps to UInt64::max via `float64ToUInt64`.
+        /// Reject UInt64 above Int64::max to stay consistent with `initializeFromVectorAndValue`
+        /// and the other scalar pointwise ops (see PR #102546).
+        if constexpr (std::is_same_v<ValueType, UInt64>)
+        {
+            if (rhs > std::numeric_limits<Int64>::max())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Value {} does not fit in Int64. It should, even when using UInt64.", rhs);
+        }
+
         auto lhs_non_zero_indexes = lhs.getAllNonZeroIndex();
 
         PaddedPODArray<UInt32> indexes(65536);
@@ -1335,6 +1345,13 @@ public:
             if (scaled >= int64_upper || scaled < -int64_upper)
                 return std::make_shared<Roaring>(); /// Out of representable range, no element can match.
             scaled_value = static_cast<Int64>(rhs * static_cast<ValueType>(scaling));
+        }
+        else if constexpr (std::is_same_v<ValueType, UInt64>)
+        {
+            if (rhs > std::numeric_limits<Int64>::max())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Value {} does not fit in Int64. It should, even when using UInt64.", rhs);
+            scaled_value = static_cast<Int64>(rhs);
         }
         else
         {

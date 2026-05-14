@@ -7,8 +7,6 @@ title: 'sqlite'
 doc_type: 'reference'
 ---
 
-# sqlite Table Function
-
 Allows to perform queries on data stored in a [SQLite](../../engines/database-engines/sqlite.md) database.
 
 ## Syntax {#syntax}

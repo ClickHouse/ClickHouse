@@ -8,8 +8,6 @@ title: 'mergeTreeIndex'
 doc_type: 'reference'
 ---
 
-# mergeTreeIndex Table Function
-
 Represents the contents of index and marks files of MergeTree tables. It can be used for introspection.
 
 ## Syntax {#syntax}
