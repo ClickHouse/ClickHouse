@@ -45,9 +45,7 @@ struct NameBitWrapperFunc { static constexpr auto name = "__bitWrapperFunc"; };
 class FunctionBitWrapperFunc : public FunctionUnaryArithmetic<BitWrapperFuncImpl, NameBitWrapperFunc, false>
 {
 public:
-    using FunctionUnaryArithmetic::FunctionUnaryArithmetic;
-
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBitWrapperFunc>(context_); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitWrapperFunc>(); }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
