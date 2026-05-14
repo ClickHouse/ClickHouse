@@ -52,8 +52,8 @@ public:
     std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
     TypeIndex getDataType() const override { return TypeIndex::Nullable; }
     MutableColumnPtr cloneResized(size_t size) const override;
-    size_t size() const override { return assert_cast<const ColumnUInt8 &>(*null_map).size(); }
-    bool isNullAt(size_t n) const override { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
+    size_t size() const final { return assert_cast<const ColumnUInt8 &>(*null_map).size(); }
+    bool isNullAt(size_t n) const final { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
@@ -139,6 +139,7 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
