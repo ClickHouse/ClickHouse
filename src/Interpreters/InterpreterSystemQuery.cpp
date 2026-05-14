@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <DataTypes/DataTypesNumber.h>
+#include <chrono>
 #include <csignal>
 #include <filesystem>
 #include <utility>
@@ -80,6 +81,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ThreadPool.h>
+#include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/getRandomASCIIString.h>
@@ -170,6 +172,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int DELTA_KERNEL_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace FailPoints
@@ -2104,8 +2107,12 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    while (true)
+    const auto start_ts = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - start_ts < std::chrono::seconds(30))
     {
+        if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+            throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
         merge_tree.triggerBackgroundOperations();
 
         ActiveDataPartSet active_set;
