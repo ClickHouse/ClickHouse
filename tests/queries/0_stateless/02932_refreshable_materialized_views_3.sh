@@ -118,7 +118,7 @@ $CLICKHOUSE_CLIENT -q "
     create table src3 (x Int64) engine Memory as select 100;
     create materialized view every_dep refresh every 1 year (x Int64) engine Memory as select x from src3;
     system wait view every_dep;
-    create materialized view after_dep refresh depends on every_dep (x Int64) engine Memory empty as select x*2 as x from every_dep;"
+    create materialized view after_dep refresh depends on every_dep (x Int64) engine Memory as select x*2 as x from every_dep;"
 while [ "`$CLICKHOUSE_CLIENT -q "select last_success_time is null from refreshes where view = 'after_dep' -- $LINENO" | xargs`" != '0' ]
 do
     sleep 0.5
