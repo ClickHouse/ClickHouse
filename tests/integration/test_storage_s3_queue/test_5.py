@@ -1061,6 +1061,115 @@ def test_cancel_during_commit_on_select(started_cluster):
     node.query(f"DROP TABLE {table_name} SYNC")
 
 
+def test_shutdown_dedup_off_no_duplicates(started_cluster):
+    """
+    With `deduplication_v2 = 0` (or `deduplicate_blocks_in_dependent_materialized_views = 0`)
+    a mid-file shutdown must NOT abort the in-flight file. Without dedup, retrying a file
+    on restart would duplicate any rows already inserted before shutdown, so the source
+    preserves the old contract of reading the in-flight file to EOF before exiting.
+
+    Uses the `object_storage_queue_sleep_in_generate` failpoint to park the source
+    in `generateImpl` after the first row of a file, then issues a server restart so
+    `shutdown_called` is set while the file is still in `Processing` state. On the
+    next loop iteration the source enters the shutdown branch in the dedup-off
+    configuration; the gate must keep reading to EOF instead of throwing.
+
+    Asserts the destination has exactly `files * rows_per_file` rows after restart:
+    - With the gate: file finishes, marked Processed, no retry, exact row count.
+    - Without the gate (regression): file marked Cancelled, retried on restart,
+      partial-write rows duplicated, destination > expected row count.
+    """
+    node = started_cluster.instances["instance"]
+    table_name = f"test_shutdown_dedup_off_{generate_random_string()}"
+    dst_table_name = f"a_{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    format = "column1 Int32, column2 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 100,
+            "polling_min_timeout_ms": 100,
+            "deduplication_v2": 0,
+        },
+    )
+
+    # One file large enough to require multiple `reader->pull` calls — so the
+    # failpoint sleep below lands BETWEEN pulls (file still in Processing state
+    # when shutdown is observed at the top of the next loop iteration). With
+    # default `max_block_size = 65536`, 500000 rows means ~8 pulls per file.
+    files_to_generate = 1
+    rows_per_file = 500000
+    table_name_suffix = f"{uuid.uuid4()}"
+    for i in range(files_to_generate):
+        file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
+        s3_function = (
+            f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+            f"{started_cluster.minio_bucket}/{files_path}/{file_name}',"
+            f" 'minio', '{minio_secret_key}')"
+        )
+        node.query(
+            f"INSERT INTO FUNCTION {s3_function} "
+            f"select number, randomString(100) FROM numbers({rows_per_file})"
+        )
+
+    expected_rows = files_to_generate * rows_per_file
+
+    # Enable the failpoint *before* streaming starts so the source parks inside
+    # generateImpl on the first file with at least one row read.
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_sleep_in_generate")
+
+    mv_table_name = f"{table_name}_mv"
+    create_mv(
+        node,
+        table_name,
+        dst_table_name,
+        mv_name=mv_table_name,
+        format=format,
+    )
+
+    # Give the streaming task time to start the first file and hit the 5-second
+    # parking point before restart_clickhouse fires shutdown.
+    time.sleep(1)
+    node.restart_clickhouse()
+
+    # Wait for all files to reach Processed state after the restart.
+    processed = 0
+    for _ in range(120):
+        node.query("SYSTEM FLUSH LOGS system.s3queue_log")
+        processed = int(
+            node.query(
+                f"SELECT count() FROM system.s3queue_log "
+                f"WHERE table = '{table_name}' and status = 'Processed'"
+            )
+        )
+        if processed >= files_to_generate:
+            break
+        time.sleep(1)
+    assert processed >= files_to_generate, (
+        f"Only {processed}/{files_to_generate} files reached Processed state"
+    )
+
+    # No duplicates: destination row count must equal exactly the inserted count.
+    actual_rows = int(node.query(f"SELECT count() FROM {dst_table_name}"))
+    assert actual_rows == expected_rows, (
+        f"Expected {expected_rows} rows in destination, got {actual_rows} "
+        f"(diff: {actual_rows - expected_rows})"
+    )
+
+    node.query(f"DROP TABLE {mv_table_name} SYNC")
+    node.query(f"DROP TABLE {table_name} SYNC")
+    node.query(f"DROP TABLE {dst_table_name} SYNC")
+
+
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
 @pytest.mark.parametrize("limit", [1, 9999999999])
 def test_mv_settings(started_cluster, mode, limit):

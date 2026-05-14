@@ -1,4 +1,5 @@
 #include "config.h"
+#include <base/sleep.h>
 #include <Common/CurrentThread.h>
 
 #include <Common/Exception.h>
@@ -67,6 +68,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_in_the_middle_of_file[];
     extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_cancel_in_generate[];
+    extern const char object_storage_queue_sleep_in_generate[];
 }
 
 namespace ErrorCodes
@@ -1177,6 +1179,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 throw Exception(
                     ErrorCodes::QUERY_WAS_CANCELLED,
                     "Failpoint-triggered cancellation (having unfinished file: {})", path);
+            });
+
+            /// Park `generateImpl` here long enough for a concurrent server shutdown
+            /// to set `shutdown_called`, so the next loop iteration enters the
+            /// shutdown-handling branch above with the current file in `Processing`
+            /// state. Used by the dedup-off regression test.
+            fiu_do_on(FailPoints::object_storage_queue_sleep_in_generate, {
+                sleepForSeconds(5);
             });
         }
 
