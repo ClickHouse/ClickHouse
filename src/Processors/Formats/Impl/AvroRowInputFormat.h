@@ -4,17 +4,21 @@
 
 #if USE_AVRO
 
-#include <map>
 #include <unordered_map>
+#include <unordered_set>
+#include <map>
 #include <vector>
-#include <Formats/FormatSchemaInfo.h>
+
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+
 #include <DataFile.hh>
 #include <Decoder.hh>
 #include <Schema.hh>
 #include <ValidSchema.hh>
+
 
 namespace DB
 {
@@ -26,7 +30,6 @@ namespace ErrorCodes
 
 class Block;
 
-class ConfluentSchemaRegistry;
 class AvroInputStreamReadBufferAdapter : public avro::InputStream
 {
 public:
@@ -193,6 +196,8 @@ public:
     AvroConfluentRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
+    class SchemaRegistry;
+
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
@@ -200,7 +205,7 @@ private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-    std::shared_ptr<ConfluentSchemaRegistry> schema_registry;
+    std::shared_ptr<SchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
     std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
     const AvroDeserializer & getOrCreateDeserializer(SchemaId schema_id);

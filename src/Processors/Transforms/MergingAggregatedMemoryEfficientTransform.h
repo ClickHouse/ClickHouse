@@ -113,9 +113,7 @@ class MergingAggregatedBucketTransform : public ISimpleTransform
 {
 public:
     explicit MergingAggregatedBucketTransform(
-        AggregatingTransformParamsPtr params,
-        const SortDescription & required_sort_description_ = {},
-        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_ = nullptr);
+        AggregatingTransformParamsPtr params, const SortDescription & required_sort_description_ = {});
     String getName() const override { return "MergingAggregatedBucketTransform"; }
 
 protected:
@@ -124,7 +122,6 @@ protected:
 private:
     AggregatingTransformParamsPtr params;
     const SortDescription required_sort_description;
-    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 };
 
 /// Has several inputs and single output.
