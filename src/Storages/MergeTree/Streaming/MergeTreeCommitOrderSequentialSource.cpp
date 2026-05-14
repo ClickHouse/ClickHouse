@@ -41,6 +41,11 @@ namespace Setting
     extern const SettingsUInt64 max_block_size;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
@@ -85,15 +90,21 @@ std::vector<std::string> getPartitionsCanBeRead(const std::map<String, Int64> & 
     return partitions_to_read;
 }
 
+struct PipeWithResources
+{
+    Pipe pipe;
+    QueryPlanResourceHolder resources;
+};
+
 /// Returns safe snapshot reading plan from the specified partition.
-std::optional<Pipe> buildPartitionReadingPipeline(
+std::optional<PipeWithResources> buildPartitionReadingPipeline(
     const String & partition_id,
     const PartitionCursor & last_emitted_position,
     Int64 safe_block_number,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
-    const ContextPtr & context,
+    const ContextMutablePtr & context,
     const Names & inner_columns,
     size_t requested_num_streams,
     UInt64 max_block_size,
@@ -102,7 +113,7 @@ std::optional<Pipe> buildPartitionReadingPipeline(
     /// Clone query_info; the inner read is bounded, not streaming.
     SelectQueryInfo inner_info = query_info;
     inner_info.table_expression_modifiers = std::nullopt;
-    inner_info.planner_context = std::make_shared<PlannerContext>(Context::createCopy(context), std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}), SelectQueryOptions{});
+    inner_info.planner_context = std::make_shared<PlannerContext>(context, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}), SelectQueryOptions{});
 
     auto sub = MergeTreeDataSelectExecutor(storage).read(
         inner_columns,
@@ -155,13 +166,13 @@ std::optional<Pipe> buildPartitionReadingPipeline(
     /// TODO(michicosun): somehow force projection usage here
     plan.optimize(opt_settings);
 
-    /// Build pipeline
     auto builder = plan.buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context));
-    QueryPlanResourceHolder resources;
-    return QueryPipelineBuilder::getPipe(std::move(*builder), resources);
+    PipeWithResources result;
+    result.pipe = QueryPipelineBuilder::getPipe(std::move(*builder), result.resources);
+    return result;
 }
 
-std::optional<Pipe> buildNextSnapshotReadingPipeline(
+std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     const MergeTreeBoundsSubscription & subscription,
     const MergeTreeCursor & last_emitted_positions,
     const MergeTreeData & storage,
@@ -179,39 +190,52 @@ std::optional<Pipe> buildNextSnapshotReadingPipeline(
     /// Fresh storage snapshot reused by every per-partition subplan in this iteration.
     const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
     const auto storage_snapshot = storage.getStorageSnapshot(metadata, context);
+    const auto mutable_context = Context::createCopy(context);
 
     /// We need all columns user requested + columns needed to recalculate cursors.
     const auto columns_to_read = extendWithAuxiliaryColumns(user_requested_columns);
 
     Pipes per_partition_pipes;
+    QueryPlanResourceHolder accumulated_resources;
+
     for (const auto & partition_id : partitions_to_read)
     {
         PartitionCursor last_emitted_position = last_emitted_positions.contains(partition_id) ? last_emitted_positions.at(partition_id) : PartitionCursor{};
         int64_t safe_block_number = safe_block_numbers.at(partition_id);
 
-        auto pipe = buildPartitionReadingPipeline(
+        auto result = buildPartitionReadingPipeline(
             partition_id,
             last_emitted_position,
             safe_block_number,
             storage,
             storage_snapshot,
             query_info,
-            context,
+            mutable_context,
             columns_to_read,
             requested_num_streams,
             max_block_size,
             output_header);
 
-        if (pipe)
-            per_partition_pipes.emplace_back(std::move(*pipe));
+        if (result)
+        {
+            per_partition_pipes.emplace_back(std::move(result->pipe));
+            accumulated_resources.append(result->resources);
+        }
     }
 
+    /// TODO(michicosun): Do not throw here, promote cursors
     if (per_partition_pipes.empty())
-        return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "All per-partition snapshot subplans returned empty for an eligible bound set; "
+            "subscription/storage state is inconsistent");
 
     Pipe united = Pipe::unitePipes(std::move(per_partition_pipes));
     united.resize(1);
-    return united;
+
+    PipeWithResources snapshot;
+    snapshot.pipe = std::move(united);
+    snapshot.resources = std::move(accumulated_resources);
+    return snapshot;
 }
 
 }
@@ -242,14 +266,6 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
 
 IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
 {
-    auto & input = inputs.front();
-
-    if (!input.hasData())
-    {
-        input.setNeeded();
-        return Status::NeedData;
-    }
-
     auto & output = outputs.front();
 
     if (output.isFinished())
@@ -257,6 +273,14 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
 
     if (!output.canPush())
         return Status::PortFull;
+
+    auto & input = inputs.front();
+
+    if (!input.hasData())
+    {
+        input.setNeeded();
+        return Status::NeedData;
+    }
 
     auto chunk = input.pull(/*set_not_needed=*/true);
 
@@ -317,7 +341,7 @@ void MergeTreeCommitOrderSequentialSource::work()
             subscription->wait();
     }
 
-    pending_snapshot = buildNextSnapshotReadingPipeline(
+    auto result = buildNextSnapshotReadingPipeline(
         *subscription,
         last_emitted_positions,
         storage,
@@ -327,6 +351,12 @@ void MergeTreeCommitOrderSequentialSource::work()
         requested_num_streams,
         max_block_size,
         header);
+
+    if (result)
+    {
+        pending_snapshot = std::move(result->pipe);
+        resources.append(result->resources);
+    }
 }
 
 int MergeTreeCommitOrderSequentialSource::schedule()

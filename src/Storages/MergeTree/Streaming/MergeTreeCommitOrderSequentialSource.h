@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 
 #include <Processors/IProcessor.h>
 
@@ -54,6 +55,7 @@ private:
     MergeTreeCursor last_emitted_positions;
     Processors current_sub_pipeline;
     std::optional<Pipe> pending_snapshot;
+    QueryPlanResourceHolder resources;
 };
 
 }
