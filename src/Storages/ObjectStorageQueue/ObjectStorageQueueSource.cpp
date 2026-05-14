@@ -66,6 +66,7 @@ namespace FailPoints
 {
     extern const char object_storage_queue_fail_in_the_middle_of_file[];
     extern const char object_storage_queue_fail_commit_after_success[];
+    extern const char object_storage_queue_cancel_in_generate[];
 }
 
 namespace ErrorCodes
@@ -1164,6 +1165,20 @@ Chunk ObjectStorageQueueSource::generateImpl()
         const auto & path = file_metadata->getPath();
 
         LOG_TEST(log, "Processing file: {}", path);
+
+        /// Simulates a mid-file cancellation (KILL QUERY, server shutdown
+        /// reaching the executor). Must throw outside the inner try-catch so
+        /// the exception reaches `generate()` rather than being converted to
+        /// `FileState::ErrorOnRead` by the pull-error handler below.
+        if (file_status->processed_rows > 0)
+        {
+            fiu_do_on(FailPoints::object_storage_queue_cancel_in_generate, {
+                processed_files.back().state = FileState::Cancelled;
+                throw Exception(
+                    ErrorCodes::QUERY_WAS_CANCELLED,
+                    "Failpoint-triggered cancellation (having unfinished file: {})", path);
+            });
+        }
 
         Chunk chunk;
         bool result = false;

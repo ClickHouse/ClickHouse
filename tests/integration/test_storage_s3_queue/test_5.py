@@ -979,24 +979,30 @@ def test_shutdown_order(started_cluster):
     node.query(f"DROP TABLE {dst_table_name} SYNC")
 
 
-def test_kill_query_during_commit_on_select(started_cluster):
+def test_cancel_during_commit_on_select(started_cluster):
     """
     With `commit_on_select=1` a SELECT goes through
     `ObjectStorageQueueSource::commit` (the `commit_once_processed` path)
     instead of the streaming `StorageObjectStorageQueue::commit`. A
-    `KILL QUERY` that interrupts an in-progress SELECT must not record the
+    cancellation that interrupts an in-progress SELECT must not record the
     cancelled attempt as Failed in `system.s3queue_log` or burn the file's
     retry budget.
 
-    Triggers the bug by cancelling the SELECT mid-file: the source observes
-    `isCancelled() == true`, throws `QUERY_WAS_CANCELLED`, and the catch in
-    `generate()` calls `commit(false, ..., QUERY_WAS_CANCELLED)`. Without the
-    fix, the error code is dropped between `generate()` and
-    `prepareCommitRequests`, `reduce_retry_count` stays true, and the file
-    ends up logged with `status=Failed`.
+    The bug: the source observes a cancellation, throws
+    `QUERY_WAS_CANCELLED`, the catch in `generate()` calls
+    `commit(false, ..., QUERY_WAS_CANCELLED)`. Without the fix, the error
+    code is dropped between `generate()` and `prepareCommitRequests`,
+    `reduce_retry_count` stays true, and the file ends up logged as Failed.
+
+    Uses the `object_storage_queue_cancel_in_generate` failpoint to trigger
+    the cancellation deterministically — the failpoint fires inside
+    `generateImpl` after at least one row has been read, marks the file as
+    `Cancelled`, and throws `QUERY_WAS_CANCELLED`. Same code path as a real
+    `KILL QUERY` reaching `isCancelled() == true` mid-file, without the
+    timing fragility of having to interrupt a running query.
     """
     node = started_cluster.instances["instance"]
-    table_name = f"test_kill_query_commit_on_select_{generate_random_string()}"
+    table_name = f"test_cancel_commit_on_select_{generate_random_string()}"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
 
@@ -1017,54 +1023,33 @@ def test_kill_query_during_commit_on_select(started_cluster):
         },
     )
 
-    # A few large files so the SELECT is guaranteed to be in the middle of
-    # one when KILL QUERY arrives, even on a fast runner.
-    files_to_generate = 5
-    table_name_suffix = f"{uuid.uuid4()}"
-    for i in range(files_to_generate):
-        file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
-        s3_function = (
-            f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
-            f"{started_cluster.minio_bucket}/{files_path}/{file_name}',"
-            f" 'minio', '{minio_secret_key}')"
-        )
-        node.query(
-            f"INSERT INTO FUNCTION {s3_function} "
-            f"select number, randomString(100) FROM numbers(200000)"
-        )
+    # A single small file is enough — the failpoint fires after the first row.
+    file_name = f"file_{table_name}_{uuid.uuid4()}.csv"
+    s3_function = (
+        f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+        f"{started_cluster.minio_bucket}/{files_path}/{file_name}',"
+        f" 'minio', '{minio_secret_key}')"
+    )
+    node.query(
+        f"INSERT INTO FUNCTION {s3_function} "
+        f"select number, randomString(100) FROM numbers(100)"
+    )
 
-    query_id = f"kill_target_{generate_random_string()}"
-
-    def run_select():
+    node.query(
+        "SYSTEM ENABLE FAILPOINT object_storage_queue_cancel_in_generate"
+    )
+    try:
+        # The SELECT will throw QUERY_WAS_CANCELLED via the failpoint; swallow it.
         try:
-            node.query(
-                f"SELECT count() FROM {table_name}",
-                query_id=query_id,
-            )
+            node.query(f"SELECT count() FROM {table_name}")
         except Exception:
             pass
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT object_storage_queue_cancel_in_generate"
+        )
 
-    pool = Pool(1)
-    select_handle = pool.apply_async(run_select)
-
-    # Wait until the SELECT is actually visible in system.processes.
-    started = False
-    for _ in range(50):
-        if int(node.query(f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'")) > 0:
-            started = True
-            break
-        time.sleep(0.1)
-    assert started, "SELECT did not appear in system.processes"
-
-    # Give it a moment to actually be inside a file read.
-    time.sleep(0.5)
-
-    node.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC")
-
-    select_handle.wait()
-    pool.close()
-
-    node.query(f"SYSTEM FLUSH LOGS system.s3queue_log")
+    node.query("SYSTEM FLUSH LOGS system.s3queue_log")
 
     assert 0 == int(
         node.query(
