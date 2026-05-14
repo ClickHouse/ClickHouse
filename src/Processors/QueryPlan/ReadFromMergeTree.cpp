@@ -2889,6 +2889,12 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (apply_pk_selectivity_check && read_limit == 0 && !query_has_limit && !is_parallel_reading_from_replicas)
     {
         const double max_ratio = context->getSettingsRef()[Setting::read_in_order_max_primary_key_ratio];
+
+        /// Set `input_order_info` before running index analysis, so that row-limit checks
+        /// (`max_rows_to_read` / `max_rows_to_read_leaf`) inside `MergeTreeDataSelectExecutor::getRowLimits`
+        /// are correctly skipped, and `read_type` is computed as `InOrder` / `InReverseOrder`.
+        /// If the PK-selectivity guard below rejects read-in-order, we roll both back.
+        query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
         const auto & analysis_result = getAnalysisResult();
         const size_t effective_streams = output_streams_limit ? output_streams_limit : requested_num_streams;
         /// Only reject when there is actual parallelism to recover. When `effective_streams <= 1`
@@ -2907,11 +2913,21 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
                 analysis_result.selected_marks_pk, analysis_result.total_marks_pk,
                 static_cast<double>(analysis_result.selected_marks_pk) / static_cast<double>(analysis_result.total_marks_pk),
                 max_ratio);
+            /// Roll back: clear the temporary `input_order_info` and invalidate the cached
+            /// analysis result, since it was computed assuming read-in-order (no row limits,
+            /// `read_type = InOrder`). The next `getAnalysisResult` call will recompute it
+            /// with `input_order_info == nullptr`, restoring the row-limit semantics that
+            /// apply when read-in-order is disabled.
+            query_info.input_order_info.reset();
+            analyzed_result_ptr.reset();
             return false;
         }
     }
+    else
+    {
+        query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
+    }
 
-    query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
     query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;
 
