@@ -911,8 +911,21 @@ FieldIntervalPtr IFunction::getPreimage(const IDataType & /*type*/, const Field 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
 }
 
-DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & /*arguments*/) const
+DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & arguments) const
 {
+    /// Several call sites (e.g. EXISTS decorrelation, MergeTree text-index pruning that
+    /// constructs a synthetic `like` call) reach the function through the `DataTypes`
+    /// overload directly, without column-level information. Honor the declarative
+    /// signature here too — the `ColumnsWithTypeAndName` overload already does so —
+    /// so functions that only declare `getSignatureString` keep working on this path.
+    if (auto signature_str = getSignatureString(); !signature_str.empty())
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return applyFunctionSignature(signature_str, getName(), columns);
+    }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
 }
 
