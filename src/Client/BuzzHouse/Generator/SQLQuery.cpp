@@ -321,9 +321,6 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                     case TableEngineValues::DeltaLakeLocal:
                         val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeLocal;
                         break;
-                    case TableEngineValues::Paimon:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimon;
-                        break;
                     case TableEngineValues::PaimonS3:
                         val = rg.nextBool() ? ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimon
                                             : ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonS3;

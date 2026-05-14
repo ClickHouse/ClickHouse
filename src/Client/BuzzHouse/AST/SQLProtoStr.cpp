@@ -2187,41 +2187,47 @@ CONV_FN(MySQLFunc, mfunc)
 {
     bool has_arg = false;
     auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+    const bool kv = mfunc.has_named_collection();
 
     ret += "mysql(";
-    if (mfunc.has_named_collection())
+    if (kv)
     {
-        ret += sep();
         ret += mfunc.named_collection();
+        has_arg = true;
     }
     if (mfunc.has_address())
     {
         ret += sep();
-        ret += "host=";
+        if (kv)
+            ret += "host=";
         appendSQLStringLiteral(ret, mfunc.address());
     }
     if (mfunc.has_rdatabase())
     {
         ret += sep();
-        ret += "database=";
+        if (kv)
+            ret += "database=";
         appendSQLStringLiteral(ret, mfunc.rdatabase());
     }
     if (mfunc.has_rtable())
     {
         ret += sep();
-        ret += "table=";
+        if (kv)
+            ret += "table=";
         appendSQLStringLiteral(ret, mfunc.rtable());
     }
     if (mfunc.has_user())
     {
         ret += sep();
-        ret += "user=";
+        if (kv)
+            ret += "user=";
         appendSQLStringLiteral(ret, mfunc.user());
     }
     if (mfunc.has_password())
     {
         ret += sep();
-        ret += "password=";
+        if (kv)
+            ret += "password=";
         appendSQLStringLiteral(ret, mfunc.password());
     }
     ret += ")";
@@ -2231,47 +2237,54 @@ CONV_FN(PostgreSQLFunc, pfunc)
 {
     bool has_arg = false;
     auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+    const bool kv = pfunc.has_named_collection();
 
     ret += "postgresql(";
-    if (pfunc.has_named_collection())
+    if (kv)
     {
-        ret += sep();
         ret += pfunc.named_collection();
+        has_arg = true;
     }
     if (pfunc.has_address())
     {
         ret += sep();
-        ret += "host=";
+        if (kv)
+            ret += "host=";
         appendSQLStringLiteral(ret, pfunc.address());
     }
     if (pfunc.has_rdatabase())
     {
         ret += sep();
-        ret += "database=";
+        if (kv)
+            ret += "database=";
         appendSQLStringLiteral(ret, pfunc.rdatabase());
     }
     if (pfunc.has_rschema())
     {
         ret += sep();
-        ret += "schema=";
+        if (kv)
+            ret += "schema=";
         appendSQLStringLiteral(ret, pfunc.rschema());
     }
     if (pfunc.has_rtable())
     {
         ret += sep();
-        ret += "table=";
+        if (kv)
+            ret += "table=";
         appendSQLStringLiteral(ret, pfunc.rtable());
     }
     if (pfunc.has_user())
     {
         ret += sep();
-        ret += "user=";
+        if (kv)
+            ret += "user=";
         appendSQLStringLiteral(ret, pfunc.user());
     }
     if (pfunc.has_password())
     {
         ret += sep();
-        ret += "password=";
+        if (kv)
+            ret += "password=";
         appendSQLStringLiteral(ret, pfunc.password());
     }
     ret += ")";
@@ -2319,41 +2332,47 @@ CONV_FN(MongoDBFunc, mfunc)
 {
     bool has_arg = false;
     auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+    const bool kv = mfunc.has_named_collection();
 
     ret += "mongodb(";
-    if (mfunc.has_named_collection())
+    if (kv)
     {
-        ret += sep();
         ret += mfunc.named_collection();
+        has_arg = true;
     }
     if (mfunc.has_address())
     {
         ret += sep();
-        ret += "host=";
+        if (kv)
+            ret += "host=";
         appendSQLStringLiteral(ret, mfunc.address());
     }
     if (mfunc.has_database())
     {
         ret += sep();
-        ret += "database=";
+        if (kv)
+            ret += "database=";
         appendSQLStringLiteral(ret, mfunc.database());
     }
     if (mfunc.has_collection())
     {
         ret += sep();
-        ret += "collection=";
+        if (kv)
+            ret += "collection=";
         appendSQLStringLiteral(ret, mfunc.collection());
     }
     if (mfunc.has_user())
     {
         ret += sep();
-        ret += "user=";
+        if (kv)
+            ret += "user=";
         appendSQLStringLiteral(ret, mfunc.user());
     }
     if (mfunc.has_password())
     {
         ret += sep();
-        ret += "password=";
+        if (kv)
+            ret += "password=";
         appendSQLStringLiteral(ret, mfunc.password());
     }
     if (mfunc.has_structure())

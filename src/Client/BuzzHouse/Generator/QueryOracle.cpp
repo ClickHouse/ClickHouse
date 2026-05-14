@@ -1024,7 +1024,7 @@ void QueryOracle::dumpObjectIntermediateSteps(
     gen.setAllowNotDetermistic(true);
 }
 
-/// View oracle: compare count() since views lack typed column metadata
+/// View oracle: dump all columns with explicit ORDER BY
 void QueryOracle::dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQuery & sq1, SQLQuery & sq2)
 {
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
@@ -1036,8 +1036,27 @@ void QueryOracle::dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQu
     v.setName(jtf->mutable_tof()->mutable_est(), false);
     jtf->set_final(v.supportsFinal());
 
-    ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
-        FUNCcount);
+    bool first = true;
+    OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
+
+    for (const auto & col : v.cols)
+    {
+        ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
+
+        ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(col);
+        eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(col);
+        if (rg.nextBool())
+        {
+            eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
+        }
+        if (rg.nextBool())
+        {
+            eot->set_nulls_order(
+                rg.nextBool() ? ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_FIRST
+                              : ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_LAST);
+        }
+        first = false;
+    }
 
     finishSettings(sel->mutable_setting_values());
     ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));

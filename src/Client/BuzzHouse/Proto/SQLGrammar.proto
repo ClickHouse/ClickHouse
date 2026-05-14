@@ -3452,10 +3452,9 @@ enum TableEngineValues {
     Executable = 54;
     ExecutablePool = 55;
     FileLog = 56;
-    Paimon = 57;
-    PaimonS3 = 58;
-    PaimonAzure = 59;
-    PaimonLocal = 60;
+    PaimonS3 = 57;
+    PaimonAzure = 58;
+    PaimonLocal = 59;
 }
 
 enum TableEngineOption {

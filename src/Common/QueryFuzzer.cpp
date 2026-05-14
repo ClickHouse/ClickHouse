@@ -1452,10 +1452,10 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
         /// quantization (arg 3): string literal
         if (args.size() > 3 && args[3]->as<ASTLiteral>() && fuzz_rand() % 5 == 0)
             args[3] = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, vector_similarity_quantizations));
-        /// hnsw_max_connections_per_layer (arg 4): small-to-medium integer
+        /// hnsw_max_connections_per_layer (arg 4): integer up to 2^22
         if (args.size() > 4 && args[4]->as<ASTLiteral>() && fuzz_rand() % 5 == 0)
             args[4] = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 4194304 + 1));
-        /// hnsw_candidate_list_size_for_construction (arg 5): small-to-medium integer
+        /// hnsw_candidate_list_size_for_construction (arg 5): integer up to 2^22
         if (args.size() > 5 && args[5]->as<ASTLiteral>() && fuzz_rand() % 5 == 0)
             args[5] = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 4194304 + 1));
     }

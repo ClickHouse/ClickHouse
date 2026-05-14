@@ -431,11 +431,6 @@ bool SQLBase::isAnyIcebergEngine() const
     return teng >= TableEngineValues::IcebergS3 && teng <= TableEngineValues::IcebergLocal;
 }
 
-bool SQLBase::isPaimonEngine() const
-{
-    return teng == TableEngineValues::Paimon;
-}
-
 bool SQLBase::isPaimonS3Engine() const
 {
     return teng == TableEngineValues::PaimonS3;
@@ -453,7 +448,7 @@ bool SQLBase::isPaimonLocalEngine() const
 
 bool SQLBase::isAnyPaimonEngine() const
 {
-    return teng >= TableEngineValues::Paimon && teng <= TableEngineValues::PaimonLocal;
+    return teng >= TableEngineValues::PaimonS3 && teng <= TableEngineValues::PaimonLocal;
 }
 
 bool SQLBase::isAnyLakeEngine() const

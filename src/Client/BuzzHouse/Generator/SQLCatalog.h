@@ -320,8 +320,6 @@ public:
 
     bool isAnyIcebergEngine() const;
 
-    bool isPaimonEngine() const;
-
     bool isPaimonS3Engine() const;
 
     bool isPaimonAzureEngine() const;
