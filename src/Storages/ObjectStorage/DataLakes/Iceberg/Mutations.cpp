@@ -720,7 +720,8 @@ void alter(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
     size_t i = 0;
-    while (i++ < MAX_TRANSACTION_RETRIES)
+    bool succeeded = false;
+    while (i < MAX_TRANSACTION_RETRIES)
     {
         auto log = getLogger("IcebergMutations");
         auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
@@ -778,11 +779,20 @@ void alter(
                 object_storage,
                 context,
                 data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+        {
+            succeeded = true;
             break;
+        }
+        ++i;
     }
 
-    if (i == MAX_TRANSACTION_RETRIES)
+    if (!succeeded)
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
+
+    /// Invalidate the metadata files cache so that subsequent operations on this table see the
+    /// schema we just wrote. See `PersistentTableComponents::invalidateMetadataCache` for the
+    /// rationale.
+    persistent_table_components.invalidateMetadataCache();
 }
 
 #endif

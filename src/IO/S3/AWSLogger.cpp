@@ -3,10 +3,13 @@
 #include <IO/Expect404ResponseScope.h>
 #include <Poco/Net/HTTPResponse.h>
 
+#include <string_view>
+
 #if USE_AWS_S3
 
 #include <Core/SettingsEnums.h>
 #include <Common/logger_useful.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <aws/core/utils/logging/LogLevel.h>
 #include <Poco/Logger.h>
 
@@ -58,58 +61,57 @@ Aws::Utils::Logging::LogLevel AWSLogger::GetLogLevel() const
 
 namespace
 {
-/// This function helps to avoid reading the whole str when strlen is called
-bool startsWith(const char * str, const char * prefix)
+
+/// Mute logs from `AWSXMLClient::BuildAWSError` for S3 wrong-signing-region 400
+bool isWrongSigningRegionMuted(const std::string_view message)
 {
-    while (*prefix && *str == *prefix)
-    {
-        ++str;
-        ++prefix;
-    }
-    return *prefix == 0;
+    static constexpr std::string_view  prefix = "HTTP response code: 400";
+    if (!message.starts_with(prefix))
+        return false;
+
+    return boost::icontains(message, "x-amz-bucket-region");
 }
 
-bool is404Muted(const char * message)
-{
     /// This is the way, how to mute scary logs from `AWSXMLClient::BuildAWSError`
     /// about 404 when 404 is the expected response
+bool is404Muted(std::string_view message)
+{
     if (!Expect404ResponseScope::is404Expected())
         return false;
 
-    static const char * prefix_str = "HTTP response code: ";
-    static const size_t prefix_len = strlen(prefix_str);
-
-    if (!startsWith(message, prefix_str))
+    static constexpr std::string_view prefix = "HTTP response code: ";
+    if (!message.starts_with(prefix))
         return false;
 
-    const char * code_str = message + prefix_len;
-    size_t code_len = 3;
-
-    // check that strlen(code_str) >= code_len
-    for (size_t i = 0; i < code_len; ++i)
-        if (!code_str[i])
-            return false;
+    if (message.size() < prefix.size() + 3)
+        return false;
 
     UInt64 code = 0;
-    if (!tryParse<UInt64>(code, code_str, code_len))
+    if (!tryParse<UInt64>(code, message.data() + prefix.size(), 3))
         return false;
 
     return code == Poco::Net::HTTPResponse::HTTP_NOT_FOUND;
+}
+
+bool isExpectedAwsHttpResponseMuted(const std::string_view message)
+{
+    return isWrongSigningRegionMuted(message) || is404Muted(message);
 }
 }
 
 void AWSLogger::Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) // NOLINT
 {
-    if (is404Muted(format_str))
+    if (format_str && isExpectedAwsHttpResponseMuted(format_str))
         return;
     callLogImpl(log_level, tag, format_str); /// FIXME. Variadic arguments?
 }
 
 void AWSLogger::LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream)
 {
-    if (is404Muted(message_stream.str().c_str()))
+    const auto str = message_stream.str();
+    if (isExpectedAwsHttpResponseMuted(str))
         return;
-    callLogImpl(log_level, tag, message_stream.str().c_str());
+    callLogImpl(log_level, tag, str.c_str());
 }
 
 void AWSLogger::callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * message)
@@ -123,7 +125,7 @@ void AWSLogger::callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char 
 
 void AWSLogger::vaLog(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, va_list)
 {
-    if (is404Muted(format_str))
+    if (format_str && isExpectedAwsHttpResponseMuted(format_str))
         return;
     callLogImpl(log_level, tag, format_str); /// FIXME. Variadic arguments?
 }
