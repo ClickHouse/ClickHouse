@@ -2074,9 +2074,14 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             {
                 if (current_granule_num == *it)
                 {
-                    MarkRange data_range(
-                        std::max(ranges[i].begin, index_mark * skip_index_granularity),
-                        std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
+                    const size_t data_range_begin = std::max(ranges[i].begin, index_mark * skip_index_granularity);
+                    const size_t data_range_end = std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity);
+                    if (data_range_begin >= data_range_end)
+                    {
+                        ++current_granule_num;
+                        continue;
+                    }
+                    MarkRange data_range(data_range_begin, data_range_end);
 
                     if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                         res.push_back(data_range);
@@ -2192,12 +2197,11 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     {
                         size_t num_marks = part->index_granularity->countMarksForRows(index_mark * skip_index_granularity, row);
 
-                        MarkRange data_range(
-                            std::max(ranges[i].begin, (index_mark * skip_index_granularity) + num_marks),
-                            std::min(ranges[i].end, (index_mark * skip_index_granularity) + num_marks + 1));
-
-                        if (data_range.begin >= data_range.end)
+                        const size_t data_range_begin = std::max(ranges[i].begin, (index_mark * skip_index_granularity) + num_marks);
+                        const size_t data_range_end = std::min(ranges[i].end, (index_mark * skip_index_granularity) + num_marks + 1);
+                        if (data_range_begin >= data_range_end)
                             continue;
+                        MarkRange data_range(data_range_begin, data_range_end);
 
                         if (!res.empty() && data_range.end == res.back().end)
                             /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
@@ -2217,9 +2221,11 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (!may_be_true)
                         continue;
 
-                    MarkRange data_range(
-                        std::max(ranges[i].begin, index_mark * skip_index_granularity),
-                        std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
+                    const size_t data_range_begin = std::max(ranges[i].begin, index_mark * skip_index_granularity);
+                    const size_t data_range_end = std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity);
+                    if (data_range_begin >= data_range_end)
+                        continue;
+                    MarkRange data_range(data_range_begin, data_range_end);
 
                     if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                         res.push_back(data_range);
