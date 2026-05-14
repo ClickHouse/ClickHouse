@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_AVRO
+
 #include <gtest/gtest.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 
@@ -134,3 +138,5 @@ TEST(IcebergMetadataCache, TablesWithSamePathButDifferentUuidsAreIndependent)
     EXPECT_EQ(load_count, 2); // no new load
     EXPECT_EQ(result_a, "json-a");
 }
+
+#endif
