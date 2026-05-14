@@ -164,7 +164,13 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 
     if (use_default_null_map)
-        col.getNullMapData().resize_fill(col.getNestedColumn().size());
+    {
+        /// Read the nested column size via the const overload — the substream cache may hold a reference
+        /// to the nested column (so its `use_count() >= 2`), which would trip
+        /// `chassert(use_count() == 1)` in the non-const `getNestedColumn`
+        /// (it goes through `WrappedPtr::operator*` -> `assumeMutableRef`).
+        col.getNullMapData().resize_fill(std::as_const(col).getNestedColumn().size());
+    }
 
     auto null_map = col.getNullMapColumnPtr();
     auto nested_column = col.getNestedColumnPtr();
