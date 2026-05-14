@@ -580,7 +580,16 @@ include_directories(${CONFIG_INCLUDE_PATH})
 include (cmake/warnings.cmake)
 include (cmake/print_flags.cmake)
 
-option (ENABLE_H3 "Enable H3 (via Rust h3o)" ${ENABLE_LIBRARIES})
+# H3 is provided by the Rust h3o crate. On platforms where the Rust build is
+# disabled (e.g. FreeBSD — see rust/workspace/CMakeLists.txt), default
+# ENABLE_H3 to OFF so the FATAL_ERROR guard below does not trip on a default
+# configure. An explicit -DENABLE_H3=ON on such a platform still fails loudly.
+if (OS_FREEBSD)
+    set (ENABLE_H3_DEFAULT OFF)
+else ()
+    set (ENABLE_H3_DEFAULT ${ENABLE_LIBRARIES})
+endif ()
+option (ENABLE_H3 "Enable H3 (via Rust h3o)" ${ENABLE_H3_DEFAULT})
 
 if (ENABLE_RUST)
     add_subdirectory (rust)
