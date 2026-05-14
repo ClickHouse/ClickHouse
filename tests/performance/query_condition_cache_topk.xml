@@ -7,31 +7,25 @@
          and subsequent runs of the same query reuse the cached granule
          decisions and skip the granules dropped by the WHERE filter.
 
-         Data layout (chosen so the QCC has full per-granule coverage on the
-         first run, instead of being limited to the handful of granules that
-         survive `__topKFilter`):
+         The benchmark is shaped to make the QCC speedup unambiguous in the
+         comparison harness:
 
-           * 500M rows, `index_granularity = 8192` → ~61 000 granules. The
-             table is intentionally large so the data-scan cost dominates
-             query-planning overhead in the comparison harness; with a
-             smaller table the cache hit only saves a few milliseconds of
-             scan time on top of ~50 ms of unrelated overhead, which is
-             below the harness's noise threshold.
-           * `v1 = number % 1000`, so every granule contains ~8 rows with
-             `v1 = 0`. The TopK threshold settles to `0` almost immediately,
-             and `__topKFilter` keeps those ~8 rows per granule — they
-             reach the WHERE filter and let the QCC record a "no match"
-             entry for every granule on the prewarm run.
-           * `v2` is random per row, so per-part minmax statistics span the
-             full `UInt32` range and cannot prune parts on `v2 = constant`.
-             Exactly one row is injected with `v2 = 12345` (and `v1 = 0`
-             so it also survives `__topKFilter`), so the matching row sits
-             in a single granule and the remaining ~60 999 granules are
-             recorded as skippable in the QCC, leaving only that one granule
-             to scan on every subsequent run. -->
+           * 100M rows, `index_granularity = 8192` → ~12 200 granules.
+           * `v` is `number`, so `ORDER BY v ASC LIMIT 10` would normally
+             return the first ten rows, but the WHERE predicate is chosen
+             to match no rows in the table (`payload = 'no_such_value'`).
+             That means every granule is `0/N` after the WHERE filter, so
+             the prewarm run writes a "skip me" entry for every granule.
+           * `payload` is a small fixed-length string that is never equal
+             to `'no_such_value'`, so the WHERE predicate is determined
+             at the per-row level (no minmax pruning).
+           * On the prewarm run, the QCC is empty and the full table is
+             scanned. On every subsequent measured run, the QCC tells the
+             reader to skip all granules, so the query returns immediately
+             — that's the speedup the QCC-enabled query measures here. -->
 
     <create_query>
-        CREATE TABLE qcc_topk_test (id UInt32, v1 UInt32, v2 UInt32) ENGINE = MergeTree ORDER BY id
+        CREATE TABLE qcc_topk_test (id UInt32, v UInt32, payload FixedString(8)) ENGINE = MergeTree ORDER BY id
         SETTINGS index_granularity = 8192,
                  min_bytes_for_wide_part = 0,
                  min_bytes_for_full_part_storage = 0,
@@ -40,10 +34,8 @@
     </create_query>
 
     <fill_query>
-        INSERT INTO qcc_topk_test SELECT rand(),
-            if(number = 50000000, 0, number % 1000),
-            if(number = 50000000, 12345, rand())
-        FROM numbers(500000000)
+        INSERT INTO qcc_topk_test SELECT rand(), number, toFixedString(toString(rand() % 1000), 8)
+        FROM numbers(100000000)
     </fill_query>
 
     <settings>
@@ -59,11 +51,12 @@
         <enable_parallel_replicas>0</enable_parallel_replicas>
     </settings>
 
-    <!-- QCC enabled: prewarm primes the cache, measured runs reuse it. -->
-    <query>SELECT v1 FROM qcc_topk_test WHERE v2 = 12345 ORDER BY v1 ASC LIMIT 10 SETTINGS use_query_condition_cache = 1 FORMAT Null</query>
+    <!-- QCC enabled: prewarm primes the cache with a "skip all granules" entry
+         for every part, measured runs reuse it and return without reading data. -->
+    <query>SELECT v FROM qcc_topk_test WHERE payload = 'no_match' ORDER BY v ASC LIMIT 10 SETTINGS use_query_condition_cache = 1 FORMAT Null</query>
 
     <!-- QCC disabled: baseline, every run pays the full WHERE-filter cost. -->
-    <query>SELECT v1 FROM qcc_topk_test WHERE v2 = 12345 ORDER BY v1 ASC LIMIT 10 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
+    <query>SELECT v FROM qcc_topk_test WHERE payload = 'no_match' ORDER BY v ASC LIMIT 10 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS qcc_topk_test</drop_query>
 </test>
