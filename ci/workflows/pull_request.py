@@ -142,6 +142,10 @@ workflow = Workflow.Config(
         JobConfigs.sqllogic_test_master_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
+        *[
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.sqlancer_pp_jobs
+        ],
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
         # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
         JobConfigs.keeper_stress_job

@@ -1436,6 +1436,25 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
     )
+    sqlancer_pp_jobs = Job.Config(
+        name=JobNames.SQLANCER_PP,
+        runs_on=[],  # from parametrize()
+        command="./ci/jobs/sqlancer_pp_job.sh",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/sqlancer_pp_job.sh",
+                "./ci/docker/sqlancer-pp-test",
+            ],
+        ),
+        run_in_docker="clickhouse/sqlancer-pp-test",
+        timeout=3600,
+    ).parametrize(
+        Job.ParamSet(
+            parameter="amd_debug",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
+    )
     sqltest_master_job = Job.Config(
         name=JobNames.SQL_TEST,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,

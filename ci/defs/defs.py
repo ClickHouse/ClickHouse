@@ -293,6 +293,12 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/sqlancer-pp-test",
+        path="./ci/docker/sqlancer-pp-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/mysql_dotnet_client",
         path="./ci/docker/integration/mysql_dotnet_client",
         platforms=Docker.Platforms.arm_amd,
@@ -359,6 +365,7 @@ class JobNames:
     SQL_TEST = "SQLTest"
     SQL_LOGIC_TEST = "SQLLogic test"
     SQLANCER = "SQLancer"
+    SQLANCER_PP = "SQLancer++"
     LLVM_COVERAGE = "LLVM Coverage"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
