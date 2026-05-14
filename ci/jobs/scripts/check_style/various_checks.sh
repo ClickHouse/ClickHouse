@@ -151,6 +151,14 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     # Diagnostic helper, the file is disabled via `#if 0` in production builds;
     # `WithContext` is required so `trap('access context')` exercises runtime context access.
     -e /trap.cpp
+    # Defer query-context access to `executeImpl` so the function can be instantiated
+    # without a query context (e.g. by `system.functions` which only needs to read
+    # `getSignatureString`). These are non-deterministic functions and are not used
+    # in default expressions.
+    -e /timeSeriesTagsToGroup.cpp
+    -e /timeSeriesStoreTags.cpp
+    -e /FunctionsTransactionCounters.cpp
+    -e /FunctionNaiveBayesClassifier.cpp
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'WithContext(' | grep -v "${FUNCTIONS_WITH_CONTEXT_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid using WithContext in Functions"
 
