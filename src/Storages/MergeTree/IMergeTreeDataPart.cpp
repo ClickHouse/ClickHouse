@@ -1081,6 +1081,8 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
+
     if (auto * reader = getStatisticsPackedReader())
         return loadStatisticsPacked(*reader, {});
 
