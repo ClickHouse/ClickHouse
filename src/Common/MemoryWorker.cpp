@@ -270,6 +270,7 @@ MemoryWorker::MemoryWorker(
     , purge_total_memory_threshold_ratio(config.purge_total_memory_threshold_ratio)
     , purge_dirty_pages_threshold_ratio(config.purge_dirty_pages_threshold_ratio)
     , decay_adjustment_period_ms(config.decay_adjustment_period_ms)
+    , dynamic_hard_limit_ratio(config.dynamic_hard_limit_ratio)
     , page_cache(page_cache_)
 {
 #if USE_JEMALLOC
@@ -400,6 +401,67 @@ namespace
 
 }
 
+uint64_t MemoryWorker::readSystemFreePlusCachedMemory()
+{
+#if defined(OS_LINUX)
+    static constexpr std::string_view path = "/proc/meminfo";
+
+    try
+    {
+        if (!meminfo_buf)
+            meminfo_buf = std::make_unique<ReadBufferFromFile>(std::string{path});
+        meminfo_buf->rewind();
+
+        uint64_t mem_free_kb = 0;
+        uint64_t cached_kb = 0;
+        bool got_mem_free = false;
+        bool got_cached = false;
+
+        while (!meminfo_buf->eof() && !(got_mem_free && got_cached))
+        {
+            std::string name;
+            readStringUntilWhitespace(name, *meminfo_buf);
+            skipWhitespaceIfAny(*meminfo_buf, true);
+
+            uint64_t kb = 0;
+            readIntText(kb, *meminfo_buf);
+
+            if (name == "MemFree:")
+            {
+                mem_free_kb = kb;
+                got_mem_free = true;
+            }
+            else if (name == "Cached:")
+            {
+                cached_kb = kb;
+                got_cached = true;
+            }
+
+            skipToNextLineOrEOF(*meminfo_buf);
+        }
+
+        if (!got_mem_free || !got_cached)
+        {
+            if (!std::exchange(meminfo_warnings_printed, true))
+                LOG_ERROR(log, "Cannot find 'MemFree' or 'Cached' in '{}'", path);
+            return 0;
+        }
+
+        return (mem_free_kb + cached_kb) * 1024ULL;
+    }
+    catch (...)
+    {
+        if (!std::exchange(meminfo_warnings_printed, true))
+            tryLogCurrentException(log, fmt::format("Cannot read '{}'", path));
+        /// Reopen on next attempt in case the descriptor became unusable.
+        meminfo_buf.reset();
+        return 0;
+    }
+#else
+    return 0;
+#endif
+}
+
 void MemoryWorker::updateResidentMemoryThread()
 {
     DB::setThreadName(ThreadName::MEMORY_WORKER);
@@ -513,6 +575,34 @@ void MemoryWorker::updateResidentMemoryThread()
             if (total_memory_tracker.get() < 0 || correct_tracker) [[unlikely]]
                 MemoryTracker::updateAllocated(resident, /*log_change=*/false);
 #endif
+
+            if (dynamic_hard_limit_ratio > 0.0)
+            {
+                uint64_t free_plus_cached = readSystemFreePlusCachedMemory();
+                if (free_plus_cached > 0)
+                {
+                    Int64 tracked = std::max<Int64>(0, total_memory_tracker.get());
+                    /// `tracked + free_plus_cached` is the upper bound of memory we could potentially own:
+                    /// what we already use plus what the OS has not committed to other processes.
+                    /// Scaling by `ratio < 1` leaves headroom for other processes on the host.
+                    auto new_hard_limit = static_cast<Int64>(
+                        static_cast<double>(static_cast<uint64_t>(tracked) + free_plus_cached) * dynamic_hard_limit_ratio);
+
+                    Int64 current_hard_limit = total_memory_tracker.getHardLimit();
+                    if (new_hard_limit != current_hard_limit)
+                    {
+                        LOG_TRACE(
+                            log,
+                            "Adjusting total memory hard limit from {} to {} (tracked: {}, system free+cached: {}, ratio: {})",
+                            formatReadableSizeWithBinarySuffix(current_hard_limit),
+                            formatReadableSizeWithBinarySuffix(new_hard_limit),
+                            formatReadableSizeWithBinarySuffix(tracked),
+                            formatReadableSizeWithBinarySuffix(free_plus_cached),
+                            dynamic_hard_limit_ratio);
+                        total_memory_tracker.setHardLimit(new_hard_limit);
+                    }
+                }
+            }
 
             ProfileEvents::increment(ProfileEvents::MemoryWorkerRun);
             ProfileEvents::increment(ProfileEvents::MemoryWorkerRunElapsedMicroseconds, total_watch.elapsedMicroseconds());

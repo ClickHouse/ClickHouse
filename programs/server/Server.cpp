@@ -1506,6 +1506,7 @@ try
         .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
         .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
         .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+        .dynamic_hard_limit_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio],
     };
 
     MemoryWorker memory_worker(memory_worker_config, global_context->getPageCache());

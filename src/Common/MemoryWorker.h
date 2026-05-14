@@ -4,8 +4,10 @@
 #include <Common/ThreadPool.h>
 #include <Common/Jemalloc.h>
 #include <Common/PageCache.h>
+#include <IO/ReadBufferFromFile.h>
 
 #include <filesystem>
+#include <memory>
 
 namespace DB
 {
@@ -41,6 +43,7 @@ struct MemoryWorkerConfig
     bool correct_tracker = false;
     uint64_t decay_adjustment_period_ms = 0;
     bool use_cgroup = true;
+    double dynamic_hard_limit_ratio = 0.0;
 };
 
 /// Correct MemoryTracker based on external information (e.g. Cgroups or stats.resident from jemalloc)
@@ -89,6 +92,14 @@ private:
     double purge_dirty_pages_threshold_ratio;
     uint64_t page_size = 0;
     std::chrono::milliseconds decay_adjustment_period_ms{0};
+
+    double dynamic_hard_limit_ratio = 0.0;
+
+    /// Reads `MemFree + Cached` from /proc/meminfo. Returns 0 if the file can't be read.
+    /// The lazily-opened buffer is owned by `updateResidentMemoryThread`, which is the only caller.
+    uint64_t readSystemFreePlusCachedMemory();
+    std::unique_ptr<ReadBufferFromFile> meminfo_buf;
+    bool meminfo_warnings_printed = false;
 
     MemoryUsageSource source{MemoryUsageSource::None};
 
