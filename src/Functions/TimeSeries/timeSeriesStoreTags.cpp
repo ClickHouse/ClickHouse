@@ -41,13 +41,17 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Declarative signature — returns the `id` argument as-is (so the
-    /// result type follows the first argument's type). Tag-pair handling is
-    /// variadic and not expressible in the DSL, so the legacy
-    /// `getReturnTypeImpl(ColumnsWithTypeAndName)` stays authoritative.
+    /// Declarative signature — returns the `id` argument as-is, so the
+    /// result type follows the first argument's type. The trailing
+    /// `..., T1, V1, ...` form uses the paired-variadic ellipsis pattern:
+    /// the walk-back groups `(T1, V1)` as a repeating unit, so callers must
+    /// pass an even total argument count.
     String getSignatureString() const override
     {
-        return "(T : Any, Array(Tuple(String, String)) | Nothing, ...) -> T";
+        return "(I : Any,"
+               " Array(Tuple(String, String)) | Nothing,"
+               " T1 : MaybeNullable(StringOrFixedString | IsNothing),"
+               " V1 : MaybeNullable(StringOrFixedString | IsNothing), ...) -> I";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

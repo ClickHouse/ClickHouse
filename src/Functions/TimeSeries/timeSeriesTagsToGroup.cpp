@@ -43,14 +43,16 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Declarative signature — accepts an array of (tag_name, tag_value)
-    /// pairs followed by zero or more loose (name, value) string pairs;
-    /// returns a `UInt64` group ID drawn from the query-context tags
-    /// collector. Variadic tag-pair handling isn't expressible in the DSL,
-    /// so the legacy `getReturnTypeImpl(ColumnsWithTypeAndName)` stays
-    /// authoritative.
+    /// pairs followed by zero or more loose (name, value) string pairs.
+    /// The trailing `..., T1, V1, ...` form expresses the paired-variadic
+    /// shape: the ellipsis-walk-back groups `(T1, V1)` as a repeating unit
+    /// (consecutive elements with the same non-zero index), so callers
+    /// must pass an odd total argument count.
     String getSignatureString() const override
     {
-        return "(Array(Tuple(String, String)) | Nothing, ...) -> UInt64";
+        return "(Array(Tuple(String, String)) | Nothing,"
+               " T1 : MaybeNullable(StringOrFixedString | IsNothing),"
+               " V1 : MaybeNullable(StringOrFixedString | IsNothing), ...) -> UInt64";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
