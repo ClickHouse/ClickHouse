@@ -53,7 +53,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int SUPPORT_IS_DISABLED;
 }
