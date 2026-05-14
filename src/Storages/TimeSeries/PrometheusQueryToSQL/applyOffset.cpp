@@ -60,10 +60,10 @@ namespace
                 ASTPtr new_timestamp;
                 if (isDateTime64(context.timestamp_data_type))
                 {
-                    /// timestamp + INTERVAL x MILLISECONDS
+                    /// timestamp + INTERVAL x
                     chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
-                    /// Round up the scale to next number divisible by 3.
-                    UInt32 scale = std::max<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
+                    /// Round up the scale to the next number divisible by 3 to pick seconds, milliseconds, microseconds, or nanoseconds.
+                    UInt32 scale = (context.timestamp_scale + 2) / 3 * 3;
                     Decimal64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale);
 
                     static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
@@ -72,7 +72,7 @@ namespace
                     new_timestamp = makeASTFunction(
                         "plus",
                         make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
-                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value)));
+                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value.value)));
                 }
                 else
                 {

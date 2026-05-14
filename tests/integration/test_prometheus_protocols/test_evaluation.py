@@ -1,4 +1,5 @@
 import math
+import struct
 
 import pytest
 
@@ -8,6 +9,8 @@ from .prometheus_test_utils import *
 
 
 cluster = ClickHouseCluster(__file__)
+
+STALE_NAN = struct.unpack(">d", bytes.fromhex("7ff0000000000002"))[0]
 
 node = cluster.add_instance(
     "node",
@@ -210,6 +213,17 @@ def send_test_data():
                     130: math.inf,
                     140: math.inf,
                     150: -math.inf,
+                },
+            ),
+            (
+                {"__name__": "stale_counter_values", "case": "stale-nan"},
+                {
+                    100: 2,
+                    110: STALE_NAN,
+                    120: 1,
+                    130: math.nan,
+                    140: math.nan,
+                    150: 3,
                 },
             ),
         ]
@@ -542,6 +556,7 @@ def test_function_over_time():
         ],
     )
 
+    # Behavior: Prometheus counts adjacent value transitions per evaluation step over a left-open, right-closed range window and emits no metric name.
     do_query_test(
         "changes(test[45s])[120s:15s]",
         210,
@@ -554,25 +569,36 @@ def test_function_over_time():
         ],
     )
 
+    # Behavior: Prometheus counts strict counter decreases per step and returns `0` for windows with one usable sample.
     do_query_test(
-        "resets(counter_values[45s])[120s:15s]",
+        "resets(counter_values[45s])[105s:15s]",
         210,
-        '{"resultType": "matrix", "result": [{"metric": {"job": "counter"}, "values": [[105, "0"], [120, "0"], [135, "1"], [150, "1"], [165, "0"], [180, "0"], [195, "0"], [210, "1"]]}]}',
+        '{"resultType": "matrix", "result": [{"metric": {"job": "counter"}, "values": [[120, "0"], [135, "1"], [150, "1"], [165, "0"], [180, "0"], [195, "0"], [210, "1"]]}]}',
         [
             [
                 "[('job','counter')]",
-                "[('1970-01-01 00:01:45.000',0),('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',0),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1)]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',0),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1)]",
             ]
         ],
     )
 
+    # Behavior: Prometheus returns `0` when reset detection sees exactly one usable sample in the range.
     do_query_test(
-        "changes(test[5s])",
-        180,
+        "resets(counter_values[45s])",
+        105,
+        '{"resultType": "vector", "result": [{"metric": {"job": "counter"}, "value": [105, "0"]}]}',
+        [["[('job','counter')]", "1970-01-01 00:01:45.000", 0]],
+    )
+
+    # Behavior: Prometheus omits output when a fixed-time range window has no usable samples.
+    do_query_test(
+        "changes(test[5s] @ 180)",
+        210,
         '{"resultType": "vector", "result": []}',
         "",
     )
 
+    # Behavior: Prometheus treats consecutive regular `NaN` samples as unchanged but counts transitions into/out of `NaN` and infinities.
     do_query_test(
         "changes(special_counter_values[60s])",
         150,
@@ -580,6 +606,7 @@ def test_function_over_time():
         [["[('case','nan-inf')]", "1970-01-01 00:02:30.000", 3]],
     )
 
+    # Behavior: Prometheus reset detection for floats is strict `current < previous`, so `+Inf -> -Inf` counts and `NaN` comparisons do not.
     do_query_test(
         "resets(special_counter_values[60s])",
         150,
@@ -587,11 +614,52 @@ def test_function_over_time():
         [["[('case','nan-inf')]", "1970-01-01 00:02:30.000", 1]],
     )
 
+    # Behavior: Prometheus matrix selectors skip stale markers while regular `NaN` samples remain visible to `changes`.
     do_query_test(
-        "resets(no_such_metric[45s])",
+        "changes(stale_counter_values[60s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"case": "stale-nan"}, "value": [150, "3"]}]}',
+        [["[('case','stale-nan')]", "1970-01-01 00:02:30.000", 3]],
+    )
+
+    # Behavior: Prometheus skips stale markers before reset detection, so decreases across a stale marker still count.
+    do_query_test(
+        "resets(stale_counter_values[60s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"case": "stale-nan"}, "value": [150, "1"]}]}',
+        [["[('case','stale-nan')]", "1970-01-01 00:02:30.000", 1]],
+    )
+
+    # Behavior: Prometheus returns an empty vector for absent fixed-time input series, not a `{}` series with `0`.
+    do_query_test(
+        "resets(no_such_metric[45s] @ 210)",
         210,
         '{"resultType": "vector", "result": []}',
         "",
+    )
+
+    # Behavior: Prometheus applies positive `offset` to the selector range before counting changes.
+    do_query_test(
+        "changes(test[45s] offset 70s)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "2"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 2]],
+    )
+
+    # Behavior: Prometheus allows negative `offset`, selecting samples after the evaluation timestamp.
+    do_query_test(
+        "changes(test[45s] offset -20s)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "3"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 3]],
+    )
+
+    # Behavior: Prometheus applies offset before reset detection and still uses strict decrease semantics.
+    do_query_test(
+        "resets(counter_values[45s] offset 70s)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"job": "counter"}, "value": [210, "1"]}]}',
+        [["[('job','counter')]", "1970-01-01 00:03:30.000", 1]],
     )
 
     do_range_query_test(
