@@ -7,7 +7,7 @@ constexpr const char * PAIMON_SCHEMA_PREFIX = "schema-";
 constexpr const char * PAIMON_SCHEMA_DIR = "schema";
 /// for snapshot
 constexpr const char * PAIMON_SNAPSHOT_DIR = "snapshot";
-constexpr const char * PAIMON_SNAPSHOT_PRIFIX = "snapshot-";
+constexpr const char * PAIMON_SNAPSHOT_PREFIX = "snapshot-";
 constexpr const char * PAIMON_SNAPSHOT_EARLIEST_HINT = "EARLIEST";
 constexpr const char * PAIMON_SNAPSHOT_LATEST_HINT = "LATEST";
 /// for options
