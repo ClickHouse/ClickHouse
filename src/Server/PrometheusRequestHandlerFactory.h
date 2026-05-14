@@ -67,7 +67,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///     <my_rule_1>
 ///         <url>/metrics</url>
 ///         <handler>
-///             <type>expose_metrics</type>
+///             <type>prometheus</type>
 ///             <metrics>true</metrics>
 ///             <asynchronous_metrics>true</asynchronous_metrics>
 ///             <events>true</events>

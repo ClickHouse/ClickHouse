@@ -345,6 +345,29 @@ def test_main_http_prefixed_query_api():
     assert metric_name in data
 
 
+def test_main_http_prefixed_query_range_api():
+    timestamp = 1_700_001_250.0
+    metric_name = "main_http_prefixed_query_range_target"
+
+    _write_main_http_metric(
+        metric_name,
+        timestamp,
+        13.5,
+        "/prometheus/api/v1/write",
+    )
+
+    data = execute_range_query_via_http_api(
+        node_main_http.ip_address,
+        MAIN_HTTP_PORT,
+        "/prometheus/api/v1/query_range",
+        metric_name,
+        timestamp - 1,
+        timestamp + 1,
+        "1",
+    )
+    assert metric_name in data
+
+
 def test_main_http_bare_remote_write():
     timestamp = 1_700_001_300.0
     metric_name = "main_http_bare_write_target"
