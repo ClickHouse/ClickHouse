@@ -101,6 +101,10 @@ Clears the mark cache.
 
 Clears the iceberg metadata cache.
 
+## SYSTEM CLEAR|DROP AVRO SCHEMA CACHE {#drop-avro-schema-cache}
+
+Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` format. This drops both the schema-fetch cache (id → schema) and the schema-registration cache (subject + schema → id), so subsequent reads and writes fall back to the registry server. Useful when a schema was deleted or rewritten on the registry side, or to verify the registry's idempotency in tests.
+
 ## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
 
 Clears the parquet metadata cache.
@@ -399,6 +403,8 @@ SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]me
 
 ### SYSTEM STOP TTL MERGES {#stop-ttl-merges}
 
+<CloudNotSupportedBadge/>
+
 Provides possibility to stop background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
 Returns `Ok.` even if table does not exist or table has not MergeTree engine. Returns error when database does not exist:
 
@@ -407,6 +413,8 @@ SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_n
 ```
 
 ### SYSTEM START TTL MERGES {#start-ttl-merges}
+
+<CloudNotSupportedBadge/>
 
 Provides possibility to start background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
 Returns `Ok.` even if table does not exist. Returns error when database does not exist:
@@ -712,13 +720,32 @@ SYSTEM STOP VIEWS
 
 Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
 
-If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`.
+If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`. `START VIEW` also undoes the effect of `PAUSE VIEW`.
 
 ```sql
 SYSTEM START VIEW [db.]name
 ```
 ```sql
 SYSTEM START VIEWS
+```
+
+### SYSTEM PAUSE VIEW, PAUSE VIEWS {#pause-view-pause-views}
+
+Disable periodic refreshing of the given view or all refreshable views.
+Unlike `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEW` does not interrupt a refresh that is already in progress: the running refresh is allowed to finish, and only subsequent refreshes are prevented.
+
+Undo with `SYSTEM START VIEW` or `SYSTEM START VIEWS`.
+
+:::note
+The paused state does not persist across server restarts. After a restart, views will resume their configured refresh schedules.
+In Replicated or Shared databases, `SYSTEM PAUSE VIEW` only affects the current replica.
+:::
+
+```sql
+SYSTEM PAUSE VIEW [db.]name
+```
+```sql
+SYSTEM PAUSE VIEWS
 ```
 
 ### SYSTEM REFRESH VIEW {#refresh-view}

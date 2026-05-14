@@ -18,6 +18,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
@@ -107,8 +108,12 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
     format_settings.avro.output_sync_interval = settings[Setting::output_format_avro_sync_interval];
     format_settings.avro.schema_registry_url = settings[Setting::format_avro_schema_registry_url].toString();
+    format_settings.avro.schema_registry_timeouts.connection_timeout = settings[Setting::format_avro_schema_registry_connection_timeout];
+    format_settings.avro.schema_registry_timeouts.send_timeout = settings[Setting::format_avro_schema_registry_send_timeout];
+    format_settings.avro.schema_registry_timeouts.receive_timeout = settings[Setting::format_avro_schema_registry_receive_timeout];
     format_settings.avro.string_column_pattern = settings[Setting::output_format_avro_string_column_pattern].toString();
     format_settings.avro.output_rows_in_file = settings[Setting::output_format_avro_rows_in_file];
+    format_settings.avro.output_confluent_subject = settings[Setting::output_format_avro_confluent_subject].toString();
     format_settings.csv.allow_double_quotes = settings[Setting::format_csv_allow_double_quotes];
     format_settings.csv.allow_single_quotes = settings[Setting::format_csv_allow_single_quotes];
     format_settings.csv.serialize_tuple_into_separate_columns = settings[Setting::output_format_csv_serialize_tuple_into_separate_columns];
@@ -240,6 +245,16 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.local_time_as_utc = settings[Setting::input_format_parquet_local_time_as_utc];
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
+    if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+    {
+        /// Use 90% of the hard limit as the budget for computing caps. This ensures the pipeline's
+        /// natural consumption stays below the hard limit, leaving headroom for spikes and overhead.
+        size_t budget = static_cast<size_t>(static_cast<double>(memory_limit) * 0.9);
+        format_settings.parquet.memory_high_watermark = std::min<size_t>(
+            format_settings.parquet.memory_high_watermark, budget / 8);
+        format_settings.parquet.prefer_block_bytes = std::min<size_t>(
+            format_settings.parquet.prefer_block_bytes, budget / 64);
+    }
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
     format_settings.pretty.glue_chunks = settings[Setting::output_format_pretty_glue_chunks].valueOr(2);
@@ -388,6 +403,23 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
         const Poco::URI & avro_schema_registry_url = settings[Setting::format_avro_schema_registry_url];
         if (!avro_schema_registry_url.empty())
             context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
+    }
+
+    /// Schema Registry timeouts must be greater than 0 and less than 10 minutes (600 seconds).
+    {
+        static constexpr UInt64 max_seconds = 600;
+        auto check_timeout = [](UInt64 value, const char * name)
+        {
+            if (value == 0 || value >= max_seconds)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting '{}' must be greater than 0 and less than {} seconds (10 minutes), got {}",
+                    name, max_seconds, value);
+        };
+        const auto & timeouts = format_settings.avro.schema_registry_timeouts;
+        check_timeout(timeouts.connection_timeout, "format_avro_schema_registry_connection_timeout");
+        check_timeout(timeouts.send_timeout, "format_avro_schema_registry_send_timeout");
+        check_timeout(timeouts.receive_timeout, "format_avro_schema_registry_receive_timeout");
     }
 
     if (context->getClientInfo().interface == ClientInfo::Interface::HTTP

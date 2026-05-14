@@ -51,15 +51,16 @@ private:
 public:
     static constexpr auto name = "generateSerialID";
 
-    explicit FunctionSerial(ContextPtr context_) : context(context_)
+    explicit FunctionSerial(ContextPtr context_)
+        : context(context_)
     {
-        keeper_path = context->getServerSettings()[ServerSetting::series_keeper_path];
-        max_series = context->getSettingsRef()[Setting::max_autoincrement_series];
+        keeper_path = context_->getServerSettings()[ServerSetting::series_keeper_path];
+        max_series = context_->getSettingsRef()[Setting::max_autoincrement_series];
     }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionSerial>(std::move(context));
+        return std::make_shared<FunctionSerial>(std::move(context_));
     }
 
     String getName() const override { return name; }

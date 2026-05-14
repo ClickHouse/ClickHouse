@@ -141,7 +141,7 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
@@ -173,19 +173,13 @@ struct NumComparisonImpl
             vectorVectorImpl_x86_64_v4(a, b, c);
             return;
         }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            vectorVectorImpl_x86_64_v3(a, b, c);
-            return;
-        }
 #endif
 
         vectorVectorImpl(a, b, c);
     }
 
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -208,12 +202,6 @@ struct NumComparisonImpl
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorConstantImpl_x86_64_v4(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            vectorConstantImpl_x86_64_v3(a, b, c);
             return;
         }
 #endif
@@ -1277,6 +1265,22 @@ public:
                 {
                     ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
                                                    {nullptr, right_tuple->getElements()[i], ""}};
+                    element_type = func->build(args)->getResultType();
+                }
+                else
+                {
+                    /// One side is `String`/`FixedString`. At runtime the string is parsed as a tuple
+                    /// value matching the structure of the tuple side and compared element-wise.
+                    /// Recursively compute the element-vs-string comparison type so that nested
+                    /// `Nullable` (or `Nothing`/`Dynamic`/`Variant`) elements transitively propagate
+                    /// `Nullable` to the outer return type. Without this, e.g.
+                    /// `Tuple(Tuple(Nullable(String))) <= String` would be inferred as `UInt8`
+                    /// while the runtime produces `Nullable(UInt8)`, tripping the type-mismatch
+                    /// assertion in the analyzer's constant-folding path (STID 3344-4a3c).
+                    const DataTypePtr & string_side_type = left_tuple ? arguments[1] : arguments[0];
+                    ColumnsWithTypeAndName args = left_tuple
+                        ? ColumnsWithTypeAndName{{nullptr, element_type, ""}, {nullptr, string_side_type, ""}}
+                        : ColumnsWithTypeAndName{{nullptr, string_side_type, ""}, {nullptr, element_type, ""}};
                     element_type = func->build(args)->getResultType();
                 }
                 has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);

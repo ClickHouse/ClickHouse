@@ -7,8 +7,6 @@ title: 'ALTER ROW POLICY'
 doc_type: 'reference'
 ---
 
-# ALTER ROW POLICY
-
 Changes row policy.
 
 Syntax:
