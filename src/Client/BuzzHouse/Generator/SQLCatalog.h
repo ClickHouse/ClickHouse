@@ -330,6 +330,8 @@ public:
 
     bool isAnyPaimonEngine() const;
 
+    bool isAnyLakeEngine() const;
+
     bool isOnS3() const;
 
     bool isOnAzure() const;

@@ -253,9 +253,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             }
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}, size_tp.get()));
         }
-        else if (
-            t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine() || t.isFileEngine()
-            || t.isURLEngine())
+        else if (t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isAnyLakeEngine() || t.isFileEngine() || t.isURLEngine())
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}, string_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}, string_tp.get()));
@@ -1410,7 +1408,7 @@ void StatementGenerator::generateEngineDetails(
             te->add_params()->set_num(static_cast<uint32_t>(keys_limit_dist(rg.generator)));
         }
     }
-    else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
+    else if (te->has_engine() && (b.isAnyLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
     {
         if (b.integration != IntegrationCall::None)
         {

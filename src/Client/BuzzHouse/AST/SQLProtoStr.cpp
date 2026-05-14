@@ -2129,28 +2129,22 @@ static void TableOrFunctionToString(String & ret, const bool tudf, const TableOr
 CONV_FN(RemoteFunc, rfunc)
 {
     const TableOrFunction & tof = rfunc.tof();
-    bool need_comma = false;
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
 
     ret += RemoteFunc_RName_Name(rfunc.rname());
     ret += "(";
     if (rfunc.has_named_collection())
     {
+        ret += sep();
         ret += rfunc.named_collection();
-        need_comma = true;
     }
     if (rfunc.has_address())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         appendSQLStringLiteral(ret, rfunc.address());
-        need_comma = true;
     }
-    if (need_comma)
-    {
-        ret += ", ";
-    }
+    ret += sep();
     if (rfunc.has_named_collection() && tof.has_est())
     {
         const ExprSchemaTable & est = tof.est();
@@ -2167,31 +2161,19 @@ CONV_FN(RemoteFunc, rfunc)
     {
         TableOrFunctionToString(ret, true, tof);
     }
-    need_comma = true;
     if (rfunc.has_user())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         appendSQLStringLiteral(ret, rfunc.user());
-        need_comma = true;
     }
     if (rfunc.has_password())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         appendSQLStringLiteral(ret, rfunc.password());
-        need_comma = true;
     }
     if (rfunc.has_sharding_key())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         if (rfunc.has_named_collection())
         {
             ret += "sharding_key=";
@@ -2203,60 +2185,42 @@ CONV_FN(RemoteFunc, rfunc)
 
 CONV_FN(MySQLFunc, mfunc)
 {
-    bool need_comma = false;
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
 
     ret += "mysql(";
     if (mfunc.has_named_collection())
     {
+        ret += sep();
         ret += mfunc.named_collection();
-        need_comma = true;
     }
     if (mfunc.has_address())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "host=";
         appendSQLStringLiteral(ret, mfunc.address());
-        need_comma = true;
     }
     if (mfunc.has_rdatabase())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "database=";
         appendSQLStringLiteral(ret, mfunc.rdatabase());
-        need_comma = true;
     }
     if (mfunc.has_rtable())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "table=";
         appendSQLStringLiteral(ret, mfunc.rtable());
-        need_comma = true;
     }
     if (mfunc.has_user())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "user=";
         appendSQLStringLiteral(ret, mfunc.user());
-        need_comma = true;
     }
     if (mfunc.has_password())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "password=";
         appendSQLStringLiteral(ret, mfunc.password());
     }
@@ -2265,70 +2229,48 @@ CONV_FN(MySQLFunc, mfunc)
 
 CONV_FN(PostgreSQLFunc, pfunc)
 {
-    bool need_comma = false;
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
 
     ret += "postgresql(";
     if (pfunc.has_named_collection())
     {
+        ret += sep();
         ret += pfunc.named_collection();
-        need_comma = true;
     }
     if (pfunc.has_address())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "host=";
         appendSQLStringLiteral(ret, pfunc.address());
-        need_comma = true;
     }
     if (pfunc.has_rdatabase())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "database=";
         appendSQLStringLiteral(ret, pfunc.rdatabase());
-        need_comma = true;
     }
     if (pfunc.has_rschema())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "schema=";
         appendSQLStringLiteral(ret, pfunc.rschema());
-        need_comma = true;
     }
     if (pfunc.has_rtable())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "table=";
         appendSQLStringLiteral(ret, pfunc.rtable());
-        need_comma = true;
     }
     if (pfunc.has_user())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "user=";
         appendSQLStringLiteral(ret, pfunc.user());
-        need_comma = true;
     }
     if (pfunc.has_password())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "password=";
         appendSQLStringLiteral(ret, pfunc.password());
     }
@@ -2375,70 +2317,48 @@ CONV_FN(RedisFunc, rfunc)
 
 CONV_FN(MongoDBFunc, mfunc)
 {
-    bool need_comma = false;
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
 
     ret += "mongodb(";
     if (mfunc.has_named_collection())
     {
+        ret += sep();
         ret += mfunc.named_collection();
-        need_comma = true;
     }
     if (mfunc.has_address())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "host=";
         appendSQLStringLiteral(ret, mfunc.address());
-        need_comma = true;
     }
     if (mfunc.has_database())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "database=";
         appendSQLStringLiteral(ret, mfunc.database());
-        need_comma = true;
     }
     if (mfunc.has_collection())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "collection=";
         appendSQLStringLiteral(ret, mfunc.collection());
-        need_comma = true;
     }
     if (mfunc.has_user())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "user=";
         appendSQLStringLiteral(ret, mfunc.user());
-        need_comma = true;
     }
     if (mfunc.has_password())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "password=";
         appendSQLStringLiteral(ret, mfunc.password());
-        need_comma = true;
     }
     if (mfunc.has_structure())
     {
-        if (need_comma)
-        {
-            ret += ", ";
-        }
+        ret += sep();
         ret += "structure=";
         ExprToString(ret, mfunc.structure());
     }

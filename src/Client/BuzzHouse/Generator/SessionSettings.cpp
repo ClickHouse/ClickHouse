@@ -1062,6 +1062,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"materialize_ttl_after_modify", trueOrFalseSettingNoOracle},
     {"materialized_views_ignore_errors", trueOrFalseSettingNoOracle},
     {"materialized_views_squash_parallel_inserts", trueOrFalseSettingNoOracle},
+    {"max_consume_snapshots",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); },
+         {"0", "1", "2", "5"},
+         false)},
     {"max_download_threads", threadSetting},
     {"max_dynamic_subcolumns_in_json_type_parsing", CHSetting(columnsRange, {"0", "1", "2", "16", "64"}, false)},
     {"max_final_threads", threadSetting},

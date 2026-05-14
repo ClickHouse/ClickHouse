@@ -767,6 +767,30 @@ static std::unordered_map<String, CHSetting> dataLakeSettings
        {"iceberg_recent_metadata_file_by_last_updated_ms_field", trueOrFalseSetting},
        {"iceberg_use_version_hint", trueOrFalseSetting}};
 
+static std::unordered_map<String, CHSetting> paimonSettings = {
+    {"paimon_incremental_read", trueOrFalseSetting},
+    {"paimon_metadata_refresh_interval_sec",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 120)); }, {"0", "1", "30", "60"}, false)},
+    {"paimon_keeper_path",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'/clickhouse/paimon/{database}/{table}'", "'/clickhouse/paimon/{uuid}'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"paimon_replica_name",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'{replica}'", "'r1'", "'r2'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)}};
+
 static std::unordered_map<String, CHSetting> fileTableSettings
     = {{"engine_file_allow_create_multiple_files", trueOrFalseSettingNoOracle},
        {"engine_file_empty_if_not_exists", trueOrFalseSettingNoOracle},
@@ -1047,6 +1071,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         mergeTreeTableSettings.insert({{"disk", disk_setting}});
         logTableSettings.insert({{"disk", disk_setting}});
         dataLakeSettings.insert({{"disk", disk_setting}});
+        paimonSettings.insert({{"disk", disk_setting}});
         allDatabaseSettings.insert({{"disk", disk_setting}});
     }
     if (fc.enable_fault_injection_settings)
@@ -1138,6 +1163,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         cachedLayoutSettings.erase(entry);
         ssdCachedLayoutSettings.erase(entry);
         dataLakeSettings.erase(entry);
+        paimonSettings.erase(entry);
         fileTableSettings.erase(entry);
         distributedTableSettings.erase(entry);
         memoryTableSettings.erase(entry);
@@ -1186,10 +1212,10 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {IcebergS3, dataLakeSettings},
          {IcebergAzure, dataLakeSettings},
          {IcebergLocal, dataLakeSettings},
-         {Paimon, dataLakeSettings},
-         {PaimonS3, dataLakeSettings},
-         {PaimonAzure, dataLakeSettings},
-         {PaimonLocal, dataLakeSettings},
+         {Paimon, paimonSettings},
+         {PaimonS3, paimonSettings},
+         {PaimonAzure, paimonSettings},
+         {PaimonLocal, paimonSettings},
          {Merge, {}},
          {Distributed, distributedTableSettings},
          {Dictionary, {}},

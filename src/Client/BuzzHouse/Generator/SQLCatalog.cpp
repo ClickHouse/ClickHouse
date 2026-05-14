@@ -456,6 +456,11 @@ bool SQLBase::isAnyPaimonEngine() const
     return teng >= TableEngineValues::Paimon && teng <= TableEngineValues::PaimonLocal;
 }
 
+bool SQLBase::isAnyLakeEngine() const
+{
+    return isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyPaimonEngine();
+}
+
 bool SQLBase::isOnS3() const
 {
     return isIcebergS3Engine() || isDeltaLakeS3Engine() || isPaimonS3Engine() || isAnyS3Engine();
@@ -535,9 +540,9 @@ bool SQLBase::isNotTruncableEngine() const
 
 bool SQLBase::isEngineReplaceable() const
 {
-    return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyIcebergEngine() || isAnyDeltaLakeEngine()
-        || isAnyPaimonEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine()
-        || isMongoDBEngine() || isDictionaryEngine() || isNullEngine() || isGenerateRandomEngine() || isArrowFlightEngine();
+    return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine()
+        || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine() || isNullEngine()
+        || isGenerateRandomEngine() || isArrowFlightEngine();
 }
 
 bool SQLBase::isAnotherRelationalDatabaseEngine() const
@@ -646,7 +651,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                         || isAzureEngine() || isS3Engine())
         && rg.nextSmallNumber() < 3;
     has_order_by = isAnyIcebergEngine() && rg.nextSmallNumber() < 4;
-    if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
+    if (isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set bucket path first if possible
         String next_bucket_path;
@@ -666,7 +671,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             integration = IntegrationCall::Azurite;
         }
 
-        if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
+        if (isAnyLakeEngine())
         {
             const LakeCatalog catalog = getLakeCatalog();
 
@@ -796,18 +801,19 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         /// What Delta Lake supports
         file_format = rg.nextMediumNumber() < 91 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
     }
-    else if (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isKafkaEngine())
+    else if (isAnyPaimonEngine() && rg.nextMediumNumber() < 91)
     {
-        /// Set other parameters
-        if (isFileEngine() || rg.nextMediumNumber() < 91)
-        {
-            /// At the moment give more preference for Parquet
-            file_format = rg.nextMediumNumber() < 26 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
-        }
-        if (!isKafkaEngine() && rg.nextMediumNumber() < 51)
-        {
-            file_comp = rg.pickRandomly(compressionMethods);
-        }
+        static const std::vector<InOutFormat> formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Parquet};
+        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+    }
+    else if (isFileEngine() || ((isAnyS3Engine() || isAnyAzureEngine() || isURLEngine() || isKafkaEngine()) && rg.nextMediumNumber() < 91))
+    {
+        /// At the moment give more preference for Parquet
+        file_format = rg.nextMediumNumber() < 26 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+    }
+    if ((isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine()) && rg.nextMediumNumber() < 41)
+    {
+        file_comp = rg.pickRandomly(compressionMethods);
     }
     if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
     {
@@ -858,8 +864,8 @@ String SQLBase::getTablePath() const
     /// Only engines that own a `bucket_path` should be calling this. Object-storage queues
     /// (S3Queue, AzureQueue) are covered by isAnyS3Engine()/isAnyAzureEngine().
     chassert(
-        isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isKeeperMapEngine()
-        || isArrowFlightEngine() || isFileEngine() || isURLEngine());
+        isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isKeeperMapEngine() || isArrowFlightEngine() || isFileEngine()
+        || isURLEngine());
     return bucket_path.has_value() ? bucket_path.value() : "test";
 }
 
@@ -900,7 +906,7 @@ String SQLBase::getTablePath(RandomGenerator & rg, const bool allow_not_determin
         }
         return res;
     }
-    if ((isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 4)
+    if (isAnyLakeEngine() && allow_not_deterministic && rg.nextSmallNumber() < 4)
     {
         /// Add or remove '/'
         String res = bucket_path.has_value() ? bucket_path.value() : "test";
@@ -996,8 +1002,7 @@ bool SQLTable::hasVersionColumn() const
 bool SQLTable::areInsertsAppends() const
 {
     return teng == TableEngineValues::MergeTree || isLogFamily() || isMemoryEngine() || isMySQLEngine() || isPostgreSQLEngine()
-        || isSQLiteEngine() || isMongoDBEngine() || isRedisEngine() || isHudiEngine() || isAnyDeltaLakeEngine() || isAnyIcebergEngine()
-        || isDictionaryEngine();
+        || isSQLiteEngine() || isMongoDBEngine() || isRedisEngine() || isHudiEngine() || isAnyLakeEngine() || isDictionaryEngine();
 }
 
 bool SQLView::supportsFinal() const
