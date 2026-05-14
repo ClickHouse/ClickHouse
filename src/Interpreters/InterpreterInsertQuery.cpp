@@ -1020,7 +1020,8 @@ BlockIO InterpreterInsertQuery::execute()
     }
 
     if (context->getServerSettings()[ServerSetting::message_queue_disable_insertion]
-        && table->isMessageQueue())
+        && table->isMessageQueue()
+        && no_destination)
     {
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Message queue insertion is disabled");
     }
