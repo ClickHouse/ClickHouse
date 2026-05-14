@@ -1,5 +1,4 @@
 #include <Databases/DatabaseReplicatedWorker.h>
-#include <base/sleep.h>
 
 #include <filesystem>
 #include <Core/ServerUUID.h>
@@ -60,7 +59,6 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
           context_,
           nullptr,
           {},
-          db->zookeeper_name,
           fmt::format("DDLWorker({})", db->getDatabaseName()))
     , database(db)
 {
@@ -142,24 +140,6 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
 void DatabaseReplicatedDDLWorker::shutdown()
 {
     DDLWorker::shutdown();
-
-    /// Explicitly remove the active node before the destructor runs.
-    /// The EphemeralNodeHolder destructor also calls tryRemove, but if it fails
-    /// (e.g. due to a transient ZK connection issue), the exception is silently caught
-    /// and the ephemeral node persists until the shared ZK session expires.
-    /// This can cause SYSTEM DROP DATABASE REPLICA to spuriously fail with "is active".
-    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::shutdown");
-    if (active_node_holder_zookeeper && !active_node_holder_zookeeper->expired())
-    {
-        String active_path = fs::path(database->replica_path) / "active";
-        active_node_holder_zookeeper->tryRemove(active_path);
-    }
-
-    if (active_node_holder)
-        active_node_holder->setAlreadyRemoved();
-    active_node_holder.reset();
-    active_node_holder_zookeeper.reset();
-
     wait_current_task_change.notify_all();
 }
 
@@ -327,14 +307,14 @@ void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &)
 {
-    auto zookeeper = getZooKeeperFromContext();
+    auto zookeeper = context->getZooKeeper();
     return enqueueQueryImpl(zookeeper, entry, database);
 }
 
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries");
-    auto zookeeper = getZooKeeperFromContext();
+    auto zookeeper = context->getZooKeeper();
     const auto our_log_ptr_path = database->replica_path + "/log_ptr";
     const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
     UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(our_log_ptr_path));
@@ -443,7 +423,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     span.addAttribute("clickhouse.cluster", database->getDatabaseName());
     entry.tracing_context = OpenTelemetry::CurrentContext();
 
-    auto zookeeper = getZooKeeperFromContext();
+    auto zookeeper = context->getZooKeeper();
     UInt32 our_log_ptr = getLogPointer();
 
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
@@ -543,7 +523,7 @@ static bool getRMVCoordinationInfo(
         String data;
         if (!zookeeper->tryGet(*coordination_path, data, &stats))
             return false;
-        coordination_znode.parse(data);
+        coordination_znode.parse(data, /*running_znode_exists=*/ false, log);
         return true;
     }
     catch (...)
@@ -570,7 +550,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
         return false;
 
     LOG_TEST(log, "ddl_log_ctime {}, stats.mtime {}", ddl_log_ctime, stats.mtime);
-    // It is possible the temporary table is created and replicated before the coordination info is updated.
+    // It is possible the the temporary table is created and replicated before the coordiation info is updated.
     // So if ddl_log_ctime >= stats.mtime, the table is new and should not be skip.
     return ddl_log_ctime < stats.mtime;
 }

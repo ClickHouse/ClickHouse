@@ -12,6 +12,19 @@ TABLE="test_04039_snapshot_teardown_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 TABLE_PROJ="test_04039_proj_teardown_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ITERATIONS=20
 
+function wait_for_query_to_start()
+{
+    local timeout=30
+    local start=$EPOCHSECONDS
+    while [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.processes WHERE query_id = '$1'" 2>/dev/null || echo "0") == 0 ]]; do
+        if ((EPOCHSECONDS - start > timeout)); then
+            echo "Timeout waiting for query $1 to start" >&2
+            return 1
+        fi
+        sleep 0.1
+    done
+}
+
 function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ${TABLE} SYNC" >/dev/null 2>&1 ||:

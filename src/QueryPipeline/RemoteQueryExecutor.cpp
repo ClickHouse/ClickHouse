@@ -1,13 +1,10 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
-#include <QueryPipeline/UnavailableShardTracker.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
-#include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -47,6 +44,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_scalar_subquery_optimization;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds max_estimated_execution_time;
     extern const SettingsBool skip_unavailable_shards;
@@ -185,10 +183,15 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
     std::shared_ptr<const QueryPlan> query_plan_,
-    std::optional<Extension> extension_)
+    std::optional<Extension> extension_,
+    ConnectionPoolWithFailoverPtr pool)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_)
 {
-    create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable
+    /// Capture `pool` in the lambda to prevent the connection pool from being destroyed
+    /// while entries are still in use. The Entry objects hold raw references (via PoolEntryHelper)
+    /// back to the pool's internal PooledObject and PoolBase structures, so the pool must
+    /// outlive all Entry objects.
+    create_connections = [this, connections_, throttler, extension_, pool](AsyncCallback) mutable
     {
         auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context, throttler);
         if (extension_ && extension_->replica_info)
@@ -436,15 +439,13 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         local_granted_roles.insert(local_granted_roles.end(), granted_roles.begin(), granted_roles.end());
     }
 
-    if (distributed_fanout > 0)
-        connections->setDistributedFanout(distributed_fanout);
-
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true, local_granted_roles);
 
     established = false;
     sent_query = true;
 
-    sendScalars();
+    if (settings[Setting::enable_scalar_subquery_optimization])
+        sendScalars();
 
     if (query_plan)
         connections->sendQueryPlan(*query_plan);
@@ -908,19 +909,8 @@ void RemoteQueryExecutor::sendExternalTables()
             {
                 StoragePtr cur = table.second;
                 /// Send only temporary tables with StorageMemory
-                auto storage_memory = std::dynamic_pointer_cast<StorageMemory>(cur);
-                if (!storage_memory)
+                if (!std::dynamic_pointer_cast<StorageMemory>(cur))
                     continue;
-
-                /// Skip sending Materialized CTEs when they are not built.
-                /// It is required to be able CTE materialization plan with parallel replicas (avoiding
-                /// circular dependency between CTE materialization and parallel replicas external tables.
-                auto materialized_cte = storage_memory->getMaterializedCTE();
-                if (materialized_cte != nullptr && !materialized_cte->is_built)
-                {
-                    LOG_DEBUG(log, "Skipping sending CTE '{}' because it has not been materialized yet", materialized_cte->cte_name);
-                    continue;
-                }
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
@@ -1003,18 +993,9 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
     profile_info_callback = std::move(callback);
 }
 
-bool RemoteQueryExecutor::needToSkipUnavailableShard()
+bool RemoteQueryExecutor::needToSkipUnavailableShard() const
 {
-    if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
-    {
-        if (!shard_skip_reported && unavailable_shard_tracker)
-        {
-            shard_skip_reported = true;
-            unavailable_shard_tracker->onShardSkipped();
-        }
-        return true;
-    }
-    return false;
+    return context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size());
 }
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()

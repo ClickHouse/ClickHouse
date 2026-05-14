@@ -96,13 +96,14 @@ private:
             batch.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
-                    static_cast<uint64_t>(blob.BlobSize),
-                    Poco::Timestamp::fromEpochTime(
+                    .size_bytes = static_cast<uint64_t>(blob.BlobSize),
+                    .last_modified = Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    blob.Details.ETag.ToString(),
-                    {},
-                    {}}));
+                    .etag = blob.Details.ETag.ToString(),
+                    .tags = {},
+                    .attributes = {},
+                }));
         }
 
         if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
@@ -167,13 +168,8 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     }
 }
 
-ObjectStorageIteratorPtr AzureObjectStorage::iterate(
-    const std::string & path_prefix,
-    size_t max_keys,
-    bool,
-    const std::optional<std::string> &) const
+ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_prefix, size_t max_keys, bool) const
 {
-    /// start_after is ignored; the resume-from-key optimization is only used for S3 for now.
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
 
@@ -204,13 +200,14 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
-                    static_cast<uint64_t>(blob.BlobSize),
-                    Poco::Timestamp::fromEpochTime(
+                    .size_bytes = static_cast<uint64_t>(blob.BlobSize),
+                    .last_modified = Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    blob.Details.ETag.ToString(),
-                    {},
-                    {}}));
+                    .etag = blob.Details.ETag.ToString(),
+                    .tags = {},
+                    .attributes = {},
+                }));
         }
 
         if (max_keys && children.size() >= max_keys)

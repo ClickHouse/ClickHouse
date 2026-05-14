@@ -307,7 +307,7 @@ try
         uri = Poco::URI(request.getURI());
         uri.getPathSegments(uri_segments);
     }
-    catch (const std::exception &)
+    catch (...)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Could not parse request path.");
         *response.send() << "Could not parse request path.\n";

@@ -38,6 +38,8 @@ RUN apt-get update -y \
         odbcinst \
         openssl \
         postgresql-client \
+        python3 \
+        python3-pip \
         qemu-user-static \
         sqlite3 \
         tree \
@@ -73,7 +75,7 @@ RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PR
     && rm protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
 COPY requirements.txt /
-RUN python3.13 -m pip install --no-cache-dir -r /requirements.txt
+RUN pip3 install --no-cache-dir -r /requirements.txt
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cd /tmp/clickhouse-odbc-tmp \

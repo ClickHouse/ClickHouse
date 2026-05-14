@@ -806,7 +806,7 @@ Strings ReadFromKeeperMap::getAllKeys() const
 
 void ReadFromKeeperMap::describeActions(FormatSettings & format_settings) const
 {
-    const std::string & prefix = format_settings.detail_prefix;
+    std::string prefix(format_settings.offset, format_settings.indent_char);
     if (!all_scan)
     {
         format_settings.out << prefix << "ReadType: GetKeys\n";

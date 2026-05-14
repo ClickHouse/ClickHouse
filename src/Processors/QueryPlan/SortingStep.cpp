@@ -533,7 +533,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
 void SortingStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
 
     if (!prefix_description.empty())
     {

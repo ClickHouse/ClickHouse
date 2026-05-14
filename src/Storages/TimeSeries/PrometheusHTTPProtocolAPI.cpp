@@ -389,7 +389,8 @@ void PrometheusHTTPProtocolAPI::writeScalar(WriteBuffer & response, Float64 valu
     }
     else if (std::isinf(value))
     {
-        response.write((value > 0) ? '+' : '-');
+        if (value < 0)
+            response.write('-');
         writeString("Inf", response);
     }
     else

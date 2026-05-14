@@ -173,8 +173,8 @@ public:
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
-    /// Returns true if the storage supports columns with dynamic structure (like JSON or Dynamic types).
-    virtual bool supportsColumnsWithDynamicStructure() const { return false; }
+    /// Returns true if the storage supports storing of dynamic subcolumns.
+    virtual bool supportsDynamicSubcolumns() const { return false; }
 
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.
@@ -244,10 +244,7 @@ public:
     NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
     Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
 
-    VirtualsDescriptionPtr getCommonVirtuals(VirtualsDescriptionPtr cur_virtuals) const
-    {
-        return std::make_unique<VirtualColumnsDescription>(createCommonVirtuals(*cur_virtuals));
-    }
+    static const VirtualColumnsDescription & getCommonVirtuals() { return common_virtuals; }
 
     Names getAllRegisteredNames() const override;
 
@@ -274,9 +271,6 @@ public:
     /// the place to kick off that work (and it should be paused when IStorage is created with
     /// is_restore_from_backup = true in StorageFactory::Arguments).
     virtual void finalizeRestoreFromBackup() {}
-
-    /// Return true if there is at least one part containing lightweight deleted mask.
-    virtual bool hasLightweightDeletedMask() const { return false; }
 
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
@@ -313,7 +307,7 @@ public:
     virtual void addInferredEngineArgsToCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}
 
 private:
-    StorageID storage_id;
+    StorageID storage_id TSA_GUARDED_BY(id_mutex);
 
     mutable std::mutex id_mutex;
 
@@ -323,7 +317,10 @@ private:
     /// Description of virtual columns. Optional, may be set in constructor.
     MultiVersionVirtualsDescriptionPtr virtuals;
 
-    static VirtualColumnsDescription createCommonVirtuals(const VirtualColumnsDescription & storage_virtuals);
+    /// Description of common virtual columns.
+    static const VirtualColumnsDescription common_virtuals;
+
+    static VirtualColumnsDescription createCommonVirtuals();
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
@@ -573,8 +570,6 @@ public:
 
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr);
-
-    virtual Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context);
 
     /// Cancel a mutation.
     virtual CancellationCode killMutation(const String & /*mutation_id*/);

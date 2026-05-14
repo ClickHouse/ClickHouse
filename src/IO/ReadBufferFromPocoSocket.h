@@ -3,6 +3,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <Common/AsyncTaskExecutor.h>
+#include <Common/Stopwatch.h>
 #include <Poco/Net/Socket.h>
 
 namespace DB
@@ -36,9 +37,19 @@ public:
 
     void setReceiveTimeout(size_t receive_timeout_microseconds);
 
+    /// Set a wall-clock deadline for the entire handshake phase.
+    /// Every nextImpl() call will check elapsed time and throw SOCKET_TIMEOUT if exceeded.
+    /// Call clearHandshakeTimeout() after the handshake completes.
+    void setHandshakeTimeout(size_t timeout_milliseconds);
+    void clearHandshakeTimeout();
+
 private:
     AsyncCallback async_callback;
     std::string socket_description;
+
+    /// Wall-clock deadline for the handshake phase (optional).
+    size_t handshake_timeout_milliseconds = 0;
+    Stopwatch handshake_stopwatch = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
 };
 
 class ReadBufferFromPocoSocket : public ReadBufferFromPocoSocketBase

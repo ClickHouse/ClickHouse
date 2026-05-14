@@ -85,8 +85,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
-    extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
-    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 namespace FailPoints
@@ -277,12 +275,6 @@ static void splitAndModifyMutationCommands(
                             for (const auto & column : projection.required_columns)
                             {
                                 if (projection.with_parent_part_offset && column == "_part_offset")
-                                    continue;
-
-                                if (projection.with_block_number && column == BlockNumberColumn::name)
-                                    continue;
-
-                                if (projection.with_block_offset && column == BlockOffsetColumn::name)
                                     continue;
 
                                 auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
@@ -482,11 +474,6 @@ static void splitAndModifyMutationCommands(
                 if (command.type == MutationCommand::Type::RENAME_COLUMN)
                     part_columns.rename(command.column_name, command.rename_to);
 
-                /// CLEAR COLUMN must also go to the interpreter, because we might have projections/indexes/materialized
-                /// columns that depend on this column and should be rebuilt.
-                if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear)
-                    for_interpreter.push_back(command);
-
                 for_file_renames.push_back(command);
             }
         }
@@ -572,24 +559,7 @@ getColumnsForNewDataPart(
 
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
-        {
-            /// For RENAME commands, handle chained renames:
-            /// e.g., if column A was already renamed to B, and now B is renamed to C,
-            /// we should track that C originates from A (the actual column in the source part).
-            if (command.type == MutationCommand::RENAME_COLUMN)
-            {
-                auto it = renamed_columns_to_from.find(command.column_name);
-                if (it != renamed_columns_to_from.end())
-                {
-                    auto original_name = it->second;
-                    renamed_columns_to_from.erase(it);
-                    renamed_columns_from_to.erase(original_name);
-                    renamed_columns_to_from.emplace(command.rename_to, original_name);
-                    renamed_columns_from_to.emplace(original_name, command.rename_to);
-                }
-            }
             continue;
-        }
 
         if (command.type == MutationCommand::DROP_COLUMN)
             removed_columns.insert(command.column_name);
@@ -634,8 +604,6 @@ getColumnsForNewDataPart(
             serialization_infos.getSettings().version,
             serialization_infos.getSettings().string_serialization_version,
             serialization_infos.getSettings().nullable_serialization_version,
-            serialization_infos.getSettings().map_serialization_version,
-            serialization_infos.getSettings().propagate_types_serialization_versions_to_nested_types,
         };
     }
     /// Otherwise use fresh settings from storage.
@@ -648,8 +616,6 @@ getColumnsForNewDataPart(
             (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
-            (*source_part->storage.getSettings())[MergeTreeSetting::map_serialization_version],
-            (*source_part->storage.getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
         };
     }
 
@@ -706,16 +672,6 @@ getColumnsForNewDataPart(
     {
         if (updated_header.has(it->name))
         {
-            /// Column may be present in updated_header (e.g. the interpreter provides
-            /// a default value for projection rebuild) yet still be removed from the
-            /// part by CLEAR COLUMN. In that case we must drop it from the column list
-            /// so that the part does not claim to contain data it no longer has.
-            if (removed_columns.contains(it->name))
-            {
-                it = storage_columns.erase(it);
-                continue;
-            }
-
             auto updated_type = updated_header.getByName(it->name).type;
             if (updated_type != it->type)
                 it->type = updated_type;
@@ -1009,18 +965,13 @@ static NameToNameVector collectFilesForRenames(
                 for (const auto & extension : extensions)
                 {
                     const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
-                    const String stream_name = index_filename + substream;
+                    const String filename = index_filename + substream + extension;
+                    const String filename_mrk = index_filename + substream + mrk_extension;
 
-                    /// Check for both original and hashed filenames (hashed if the index name is too long)
-                    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums);
-                    if (actual_stream_name)
+                    if (source_part->checksums.has(filename))
                     {
-                        add_rename(*actual_stream_name + extension, "");
-
-                        /// Also try to remove the mark file (check for both original and hashed)
-                        auto actual_mark_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums);
-                        if (actual_mark_name)
-                            add_rename(*actual_mark_name + mrk_extension, "");
+                        add_rename(filename, "");
+                        add_rename(filename_mrk, "");
                     }
                 }
             }
@@ -1584,8 +1535,9 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
                     continue;
 
                 projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
-                projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
-                squashed_chunk = Squashing::squash(projection_squashes[i].generate(), projection_squashes[i].getHeader());
+                squashed_chunk = Squashing::squash(
+                    projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}),
+                    projection_squashes[i].getHeader());
             }
 
             if (squashed_chunk)
@@ -2228,16 +2180,8 @@ private:
             auto index_substreams = index->getSubstreams();
             for (const auto & index_substream : index_substreams)
             {
-                String stream_name = index->getFileName() + index_substream.suffix;
-
-                /// Check for both original and hashed filenames
-                auto actual_data_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, index_substream.extension, ctx->source_part->checksums);
-                if (actual_data_stream_name)
-                    ctx->new_data_part->checksums.remove(*actual_data_stream_name + index_substream.extension);
-
-                auto actual_mark_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, ctx->mrk_extension, ctx->source_part->checksums);
-                if (actual_mark_stream_name)
-                    ctx->new_data_part->checksums.remove(*actual_mark_stream_name + ctx->mrk_extension);
+                ctx->new_data_part->checksums.remove(index->getFileName() + index_substream.suffix + index_substream.extension);
+                ctx->new_data_part->checksums.remove(index->getFileName() + index_substream.suffix + ctx->mrk_extension);
             }
         }
 
@@ -2273,27 +2217,11 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
-            /// Some columns may be present in the interpreter output only for
-            /// projection/index recalculation (e.g. CLEAR COLUMN provides a default
-            /// value so that dependent projections are rebuilt correctly). Such columns
-            /// must NOT be written to the main part – only the projection needs them.
-            /// Filter the writer's column list to the columns that actually belong to
-            /// the new part.
-            NamesAndTypesList columns_for_writer;
-            {
-                NameSet new_part_columns_set;
-                for (const auto & col : ctx->new_data_part->getColumns())
-                    new_part_columns_set.insert(col.name);
-                for (const auto & col : ctx->updated_header.getNamesAndTypesList())
-                    if (new_part_columns_set.contains(col.name))
-                        columns_for_writer.push_back(col);
-            }
-
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->data->getSettings(),
                 ctx->metadata_snapshot,
-                columns_for_writer,
+                ctx->updated_header.getNamesAndTypesList(),
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,

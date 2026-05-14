@@ -50,7 +50,7 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
 void LimitByStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
 
     settings.out << prefix << "Columns: ";
 
