@@ -384,12 +384,32 @@ namespace
             return false;
         }
 
+        bool validateSelectorDoesNotSetMetricNameTwice(const MatcherList & matchers, bool has_outside_metric_name, size_t error_pos)
+        {
+            if (!has_outside_metric_name)
+                return true;
+
+            /// Prometheus allows multiple `__name__` matchers inside braces, but not an outside
+            /// metric name together with another metric-name matcher inside the selector.
+            for (size_t i = 1; i < matchers.size(); ++i)
+            {
+                if (matchers[i].label_name == "__name__")
+                {
+                    error_listener.setError("metric name must not be set twice", error_pos);
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         /// Makes a node for an instant selector.
         Node * makeInstantSelector(antlr4_grammars::PromQLParser::InstantSelectorContext * ctx)
         {
             auto new_node = std::make_unique<InstantSelector>();
 
             MatcherList matchers;
+            const bool has_outside_metric_name = ctx->metricName() != nullptr;
             if (auto * metric_name_ctx = ctx->metricName())
                 matchers.push_back(getMatcherForMetricName(metric_name_ctx));
 
@@ -409,6 +429,9 @@ namespace
             }
 
             if (!validateSelectorHasNonEmptyMatcher(matchers, getStartPos(ctx)))
+                return nullptr;
+
+            if (!validateSelectorDoesNotSetMetricNameTwice(matchers, has_outside_metric_name, getStartPos(ctx)))
                 return nullptr;
 
             new_node->matchers = std::move(matchers);
