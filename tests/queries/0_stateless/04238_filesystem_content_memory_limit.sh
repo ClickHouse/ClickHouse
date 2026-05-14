@@ -17,12 +17,15 @@ TEST_REL="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 # allocated through `operator new`, which counts allocations but never throws on
 # the limit -- so a single large file could push a small `clickhouse-local`
 # instance past its cgroup limit and into an OOM kill instead of a clean
-# `MEMORY_LIMIT_EXCEEDED`.
+# `MEMORY_LIMIT_EXCEEDED`. Use `grep -q` rather than counting matches: with
+# `--send_logs_level=warning` (the default from `shell_config.sh`), server log
+# lines mirroring the exception code can appear alongside the client's own
+# message, and the exact count is not what we're asserting on.
 $CLICKHOUSE_CLIENT --max_memory_usage=1048576 --query "
     SELECT length(content)
     FROM filesystem('${TEST_REL}')
     WHERE name = 'big.bin'
-" 2>&1 | grep -c -F MEMORY_LIMIT_EXCEEDED
+" 2>&1 | grep -F -q MEMORY_LIMIT_EXCEEDED && echo 1 || echo 0
 
 # Sanity check: with a generous limit, the same query succeeds and reports the
 # correct file size, so the streaming path produces the same bytes as before.
