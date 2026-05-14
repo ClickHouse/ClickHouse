@@ -1,4 +1,5 @@
 #include <IO/Rope.h>
+#include <Core/Defines.h>
 
 #include <algorithm>
 
@@ -6,7 +7,7 @@ namespace DB
 {
 
 OwnedRopeBuffer::OwnedRopeBuffer(size_t size)
-    : buf_data(static_cast<char *>(::operator new(size)))
+    : buf_data(static_cast<char *>(::operator new(size + PADDING_FOR_SIMD)))
     , buf_size(size)
 {
 }
