@@ -4,7 +4,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -23,12 +22,6 @@
 #include <Storages/IPartitionStrategy.h>
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class ReadBufferIterator;
 class SchemaCache;
 struct StorageObjectStorageSettings;
@@ -40,7 +33,7 @@ struct IPartitionStrategy;
  * such as StorageS3, StorageAzure, StorageHDFS.
  * Works with an object of IObjectStorage class.
  */
-class StorageObjectStorage : public IStorage, public IBackgroundOperation
+class StorageObjectStorage : public IStorage
 {
 public:
     StorageObjectStorage(
@@ -92,7 +85,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
@@ -163,36 +156,9 @@ public:
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
 
-    Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
-
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
-
-    ObjectStoragePtr getObjectStorage() const
-    {
-        return object_storage;
-    }
-
-    StorageObjectStorageConfigurationPtr getObjectStorageConfiguration() const
-    {
-        return configuration;
-    }
-
-    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
-
-    bool scheduleDataMovingJob(BackgroundJobsAssignee & /*assignee*/) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "scheduleDataMovingJob is not implemented for object storage");
-    }
-
-    void startup() override;
-    void shutdown(bool is_drop) override;
-
-    Int32 getBiasBackoffSeconds() const override
-    {
-        return configuration->getBiasBackoffSeconds();
-    }
 
 protected:
     /// Get path sample for hive partitioning implementation.
@@ -227,7 +193,6 @@ protected:
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;
-    BackgroundJobsAssignee background_operations_assignee;
 };
 
 }

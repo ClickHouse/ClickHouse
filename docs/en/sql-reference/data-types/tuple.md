@@ -7,11 +7,13 @@ title: 'Tuple(T1, T2, ...)'
 doc_type: 'reference'
 ---
 
+# Tuple(T1, T2, ...)
+
 A tuple of elements, each having an individual [type](/sql-reference/data-types). Tuple must contain at least one element.
 
 Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../../sql-reference/operators/in.md) and [Higher order functions](/sql-reference/functions/overview#higher-order-functions).
 
-Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in `()`. In JSON formats, tuples are output as arrays (in `[]`).
+Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in brackets. In JSON formats, tuples are output as arrays (in square brackets).
 
 ## Creating Tuples {#creating-tuples}
 

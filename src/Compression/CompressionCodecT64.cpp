@@ -368,7 +368,7 @@ void clear(T * buf)
 }
 
 
-MULTITARGET_FUNCTION_X86_V4(
+MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
 void), transposeImpl, MULTITARGET_FUNCTION_BODY((const T * src, char * dst, UInt32 num_bits, UInt32 tail) /// NOLINT
@@ -411,13 +411,18 @@ ALWAYS_INLINE void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 
         transposeImpl_x86_64_v4<T, full>(src, dst, num_bits, tail);
         return;
     }
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        transposeImpl_x86_64_v3<T, full>(src, dst, num_bits, tail);
+        return;
+    }
 #endif
     {
         transposeImpl<T, full>(src, dst, num_bits, tail);
     }
 }
 
-MULTITARGET_FUNCTION_X86_V4(
+MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
 void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * buf, UInt32 num_bits, UInt32 tail) /// NOLINT
@@ -455,6 +460,11 @@ ALWAYS_INLINE void reverseTranspose(const char * src, T * buf, UInt32 num_bits, 
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         reverseTransposeImpl_x86_64_v4<T, full>(src, buf, num_bits, tail);
+        return;
+    }
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        reverseTransposeImpl_x86_64_v3<T, full>(src, buf, num_bits, tail);
         return;
     }
 #endif
@@ -600,9 +610,6 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
 
     const char * const original_dst = dst;
     UInt8 bytes_to_skip = uncompressed_size % sizeof(T);
-    if (bytes_to_skip > bytes_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data: compressed size ({}) is smaller"
-                        " than the trailing unaligned bytes ({})", bytes_size, static_cast<UInt32>(bytes_to_skip));
     memcpy(dst, src, bytes_to_skip);
 
     uncompressed_size -= bytes_to_skip;
@@ -624,9 +631,6 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
 
     /// Read header
     {
-        if (bytes_size < header_size)
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data: compressed size ({}) is too small"
-                            " to contain the min/max header ({} bytes)", bytes_size, header_size);
         memcpy(&min, src, sizeof(MinMaxType));
         memcpy(&max, src + 8, sizeof(MinMaxType));
         src += header_size;

@@ -45,9 +45,6 @@ public:
 
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
-    /// Return map (column to read) -> (list of all streams required to read this column).
-    std::unordered_map<String, std::vector<String>> getAllColumnsSubstreams();
-
 private:
     FileStreams streams;
 

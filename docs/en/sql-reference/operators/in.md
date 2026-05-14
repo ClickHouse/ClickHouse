@@ -6,6 +6,8 @@ title: 'IN Operators'
 doc_type: 'reference'
 ---
 
+# IN Operators
+
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 
 The left side of the operator is either a single column or a tuple.
@@ -138,8 +140,6 @@ Remember that the algorithms described below may work differently depending on t
 When using the regular `IN`, the query is sent to remote servers, and each of them runs the subqueries in the `IN` or `JOIN` clause.
 
 When using `GLOBAL IN` / `GLOBAL JOIN`, first all the subqueries are run for `GLOBAL IN` / `GLOBAL JOIN`, and the results are collected in temporary tables. Then the temporary tables are sent to each remote server, where the queries are run using this temporary data.
-
-For `GLOBAL ... JOIN`, which side of the join is calculated as the subquery depends on the join kind: for `LEFT` and `INNER` joins, the right table is calculated; for `RIGHT` joins, the left table is calculated instead, since the right table is the preserved side and should be read from shards.
 
 For a non-distributed query, use the regular `IN` / `JOIN`.
 

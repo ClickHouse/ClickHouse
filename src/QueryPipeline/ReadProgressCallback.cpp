@@ -1,5 +1,4 @@
 #include <QueryPipeline/ReadProgressCallback.h>
-#include <Common/CurrentThread.h>
 #include <Interpreters/ProcessList.h>
 #include <Access/EnabledQuota.h>
 
