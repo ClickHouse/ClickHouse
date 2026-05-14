@@ -7,16 +7,12 @@
 #include <Server/PrometheusRequestHandler.h>
 #include <Server/PrometheusRequestHandlerConfig.h>
 
-#include <string_view>
-
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 namespace
@@ -129,7 +125,7 @@ namespace
     {
         String type = config.getString(config_prefix + ".type");
 
-        if (type == "expose_metrics")
+        if (type == "prometheus" || type == "expose_metrics")
             return parseExposeMetricsConfig(config, config_prefix);
         if (type == "remote_write")
             return parseRemoteWriteConfig(config, config_prefix);
@@ -139,54 +135,6 @@ namespace
             return parseQueryAPIConfig(config, config_prefix);
         throw Exception(
             ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
-    }
-
-    /// Returns true if the URL path ends with a Prometheus label values endpoint.
-    bool isLabelValuesUrl(const String & url)
-    {
-        static constexpr std::string_view label_marker = "/api/v1/label/";
-        static constexpr std::string_view values_suffix = "/values";
-
-        const auto marker_pos = url.find(label_marker);
-        if (marker_pos == String::npos || !url.ends_with(values_suffix))
-            return false;
-
-        const size_t label_start = marker_pos + label_marker.size();
-        const size_t values_pos = url.size() - values_suffix.size();
-        if (label_start >= values_pos)
-            return false;
-
-        return url.find('/', label_start) == String::npos;
-    }
-
-    /// type=prometheus dispatch picks the protocol from literal <url> path suffixes; regex <url> values are rejected here.
-    PrometheusRequestHandlerConfig parsePrometheusHTTPHandlerConfig(
-        const Poco::Util::AbstractConfiguration & config,
-        const String & handler_config_prefix,
-        const String & url)
-    {
-        if (url.starts_with("regex:"))
-        {
-            throw Exception(
-                ErrorCodes::INVALID_CONFIG_PARAMETER,
-                "Prometheus http_handlers rule uses a regex <url> ('{}'); protocol dispatch requires a literal URL whose path "
-                "ends with a canonical Prometheus endpoint (e.g. '/prometheus/api/v1/write').",
-                url);
-        }
-
-        if (url.ends_with("/api/v1/write"))
-            return parseRemoteWriteConfig(config, handler_config_prefix);
-        if (url.ends_with("/api/v1/read"))
-            return parseRemoteReadConfig(config, handler_config_prefix);
-
-        if (url.ends_with("/api/v1/query_range")
-            || url.ends_with("/api/v1/query")
-            || url.ends_with("/api/v1/series")
-            || url.ends_with("/api/v1/labels")
-            || isLabelValuesUrl(url))
-            return parseQueryAPIConfig(config, handler_config_prefix);
-
-        return parseExposeMetricsConfig(config, handler_config_prefix);
     }
 
     /// Returns true if the protocol represented by a passed config can be handled.
@@ -286,18 +234,8 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, common_headers);
 
     const String handler_config_prefix = config_prefix + ".handler";
-    const String handler_type = config.getString(handler_config_prefix + ".type", "expose_metrics");
-    const String url = config.getString(config_prefix + ".url", "");
 
-    /// handler.type=prometheus used to always call parseExposeMetricsConfig and ignore <url>, so write/read/query
-    /// (and regex: <url> rules that still matched requests) served exposition instead of failing closed at config load.
-    PrometheusRequestHandlerConfig parsed_config = [&]() -> PrometheusRequestHandlerConfig
-    {
-        if (handler_type != "prometheus")
-            return parseExposeMetricsConfig(config, handler_config_prefix);
-
-        return parsePrometheusHTTPHandlerConfig(config, handler_config_prefix, url);
-    }();
+    PrometheusRequestHandlerConfig parsed_config = parseHandlerConfig(config, handler_config_prefix);
 
     auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false, headers);
     chassert(handler);  /// `handler` can't be nullptr here because `for_keeper` is false.

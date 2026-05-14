@@ -67,7 +67,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///     <my_rule_1>
 ///         <url>/metrics</url>
 ///         <handler>
-///             <type>prometheus</type>
+///             <type>expose_metrics</type>
 ///             <metrics>true</metrics>
 ///             <asynchronous_metrics>true</asynchronous_metrics>
 ///             <events>true</events>
@@ -77,17 +77,24 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///     <my_rule2>
 ///         <url>/prometheus/api/v1/write</url>
 ///         <handler>
-///             <type>prometheus</type>
+///             <type>remote_write</type>
 ///             <table>default.prometheus</table>
 ///         </handler>
 ///     </my_rule2>
 ///     <my_rule3>
 ///         <url>/api/v1/read</url>
 ///         <handler>
-///             <type>prometheus</type>
+///             <type>remote_read</type>
 ///             <table>default.prometheus</table>
 ///         </handler>
 ///     </my_rule3>
+///     <my_rule4>
+///         <url>/prometheus/api/v1/query</url>
+///         <handler>
+///             <type>query_api</type>
+///             <table>default.prometheus</table>
+///         </handler>
+///     </my_rule4>
 /// </http_handlers>
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     IServer & server,

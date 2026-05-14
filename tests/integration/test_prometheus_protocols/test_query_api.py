@@ -443,21 +443,3 @@ def test_main_http_unknown_path_returns_404():
     )
     assert response.status_code == requests.codes.not_found
 
-
-def test_main_http_rejects_regex_url_for_prometheus_type():
-    invalid_cluster = ClickHouseCluster(__file__ + "_regex_invalid_url")
-    invalid_node = invalid_cluster.add_instance(
-        "node_regex_url",
-        main_configs=["configs/prometheus_http_handlers_regex_url.xml"],
-        user_configs=["configs/allow_experimental_time_series_table.xml"],
-    )
-    try:
-        try:
-            invalid_cluster.start()
-        except Exception:
-            assert invalid_node.contains_in_log("regex:", from_host=True)
-            assert invalid_node.contains_in_log("canonical Prometheus endpoint", from_host=True)
-        else:
-            pytest.fail("expected startup to fail for regex <url>")
-    finally:
-        invalid_cluster.shutdown()

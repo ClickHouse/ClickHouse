@@ -3,42 +3,42 @@
         <rule>
             <url>/prometheus/api/v1/write</url>
             <handler>
-                <type>prometheus</type>
+                <type>remote_write</type>
                 <table>default.prometheus</table>
             </handler>
         </rule>
         <rule>
             <url>/prometheus/api/v1/read</url>
             <handler>
-                <type>prometheus</type>
+                <type>remote_read</type>
                 <table>default.prometheus</table>
             </handler>
         </rule>
         <rule>
             <url>/prometheus/api/v1/query</url>
             <handler>
-                <type>prometheus</type>
+                <type>query_api</type>
                 <table>default.prometheus</table>
             </handler>
         </rule>
         <rule>
             <url>/api/v1/write</url>
             <handler>
-                <type>prometheus</type>
+                <type>remote_write</type>
                 <table>default.prometheus</table>
             </handler>
         </rule>
         <rule>
             <url>/api/v1/read</url>
             <handler>
-                <type>prometheus</type>
+                <type>remote_read</type>
                 <table>default.prometheus</table>
             </handler>
         </rule>
         <rule>
             <url>/api/v1/query</url>
             <handler>
-                <type>prometheus</type>
+                <type>query_api</type>
                 <table>default.prometheus</table>
             </handler>
         </rule>

@@ -87,7 +87,7 @@
             <methods>GET,HEAD</methods>
             <url>/metrics</url>
             <handler>
-                <type>prometheus</type>
+                <type>expose_metrics</type>
                 <http_response_headers>
                     <X-My-Answer>Iam metrics</X-My-Answer>
                 </http_response_headers>

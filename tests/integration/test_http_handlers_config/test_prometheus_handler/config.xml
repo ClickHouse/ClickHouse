@@ -6,7 +6,7 @@
             <headers><XXX>xxx</XXX></headers>
             <url>/test_prometheus</url>
             <handler>
-                <type>prometheus</type>
+                <type>expose_metrics</type>
                 <events>true</events>
                 <metrics>true</metrics>
                 <asynchronous_metrics>true</asynchronous_metrics>
