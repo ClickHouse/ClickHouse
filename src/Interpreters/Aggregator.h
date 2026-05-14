@@ -712,12 +712,14 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 /// Extends `calculateCacheKey` with `current_database` for partial aggregate cache correctness
 /// when `StorageID::uuid` is nil (e.g. Ordinary) and unqualified table names resolve per database.
 /// `apply_deleted_mask` affects which rows are visible for MergeTree reads; `has_row_level_filter` disables
-/// caching because row policies are not represented in the AST hash.
+/// caching because row policies are not represented in the AST hash. Non-empty `additional_table_filters`
+/// is applied outside that AST and also disables the semantic key.
 UInt64 partialAggregateCacheSemanticKey(
     const DB::ASTPtr & select_query,
     const String & current_database,
     bool apply_deleted_mask,
-    bool has_row_level_filter);
+    bool has_row_level_filter,
+    bool has_additional_table_filters);
 
 /** Get the aggregation variant by its type. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);

@@ -2919,9 +2919,14 @@ static Aggregator::Params getAggregatorParams(
     size_t group_by_two_level_threshold_bytes)
 {
     const bool has_row_level_filter = static_cast<bool>(select_query_info.row_level_filter);
+    const bool has_additional_table_filters = !settings[Setting::additional_table_filters].value.empty();
     const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
     const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
-        query_ptr, context.getCurrentDatabase(), apply_deleted_mask_value, has_row_level_filter);
+        query_ptr,
+        context.getCurrentDatabase(),
+        apply_deleted_mask_value,
+        has_row_level_filter,
+        has_additional_table_filters);
 
     const auto stats_collecting_params = StatsCollectingParams(
         partial_aggregate_semantic_key,

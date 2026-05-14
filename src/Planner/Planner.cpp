@@ -100,6 +100,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -600,9 +601,14 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const Settings & settings = query_context->getSettingsRef();
 
     const bool has_row_level_filter = static_cast<bool>(select_query_info.row_level_filter);
+    const bool has_additional_table_filters = !settings[Setting::additional_table_filters].value.empty();
     const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
     const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
-        select_query_info.query, query_context->getCurrentDatabase(), apply_deleted_mask_value, has_row_level_filter);
+        select_query_info.query,
+        query_context->getCurrentDatabase(),
+        apply_deleted_mask_value,
+        has_row_level_filter,
+        has_additional_table_filters);
 
     const auto stats_collecting_params = StatsCollectingParams(
         partial_aggregate_semantic_key,

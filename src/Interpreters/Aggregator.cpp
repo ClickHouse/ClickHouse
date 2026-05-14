@@ -4033,9 +4033,10 @@ UInt64 partialAggregateCacheSemanticKey(
     const DB::ASTPtr & select_query,
     const String & current_database,
     bool apply_deleted_mask,
-    bool has_row_level_filter)
+    bool has_row_level_filter,
+    bool has_additional_table_filters)
 {
-    if (has_row_level_filter)
+    if (has_row_level_filter || has_additional_table_filters)
         return 0;
 
     const UInt64 base = calculateCacheKey(select_query);
