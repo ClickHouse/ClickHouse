@@ -580,11 +580,12 @@ include_directories(${CONFIG_INCLUDE_PATH})
 include (cmake/warnings.cmake)
 include (cmake/print_flags.cmake)
 
-# H3 is provided by the Rust h3o crate. On platforms where the Rust build is
-# disabled (e.g. FreeBSD — see rust/workspace/CMakeLists.txt), default
-# ENABLE_H3 to OFF so the FATAL_ERROR guard below does not trip on a default
-# configure. An explicit -DENABLE_H3=ON on such a platform still fails loudly.
-if (OS_FREEBSD)
+# H3 is provided by the Rust h3o crate. On platforms or configurations where
+# Rust is unavailable (e.g. FreeBSD — see rust/workspace/CMakeLists.txt — or
+# an explicit `-DENABLE_RUST=OFF`), default ENABLE_H3 to OFF so the
+# FATAL_ERROR guard below does not trip on a default configure. An explicit
+# `-DENABLE_H3=ON` without Rust still fails loudly.
+if (OS_FREEBSD OR NOT ENABLE_RUST)
     set (ENABLE_H3_DEFAULT OFF)
 else ()
     set (ENABLE_H3_DEFAULT ${ENABLE_LIBRARIES})
