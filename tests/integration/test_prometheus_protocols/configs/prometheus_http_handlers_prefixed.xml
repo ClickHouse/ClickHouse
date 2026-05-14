@@ -4,49 +4,56 @@
             <url>/prometheus/api/v1/write</url>
             <handler>
                 <type>remote_write</type>
-                <table>default.prometheus</table>
+                <table>default.prometheus_http</table>
             </handler>
         </rule>
         <rule>
             <url>/prometheus/api/v1/read</url>
             <handler>
                 <type>remote_read</type>
-                <table>default.prometheus</table>
+                <table>default.prometheus_http</table>
             </handler>
         </rule>
         <rule>
             <url>/prometheus/api/v1/query_range</url>
             <handler>
                 <type>query_api</type>
-                <table>default.prometheus</table>
+                <table>default.prometheus_http</table>
             </handler>
         </rule>
         <rule>
             <url>/prometheus/api/v1/query</url>
             <handler>
                 <type>query_api</type>
-                <table>default.prometheus</table>
+                <table>default.prometheus_http</table>
+            </handler>
+        </rule>
+        <rule>
+            <url>/prometheus/api/v1/label/job/values</url>
+            <handler>
+                <type>query_api</type>
+                <table>default.prometheus_http</table>
             </handler>
         </rule>
         <rule>
             <url>/api/v1/write</url>
             <handler>
                 <type>remote_write</type>
-                <table>default.prometheus</table>
+                <table>default.prometheus_http</table>
             </handler>
         </rule>
         <rule>
             <url>/api/v1/read</url>
             <handler>
                 <type>remote_read</type>
-                <table>default.prometheus</table>
+                <table>default.prometheus_http</table>
             </handler>
         </rule>
         <rule>
             <url>/api/v1/query</url>
             <handler>
                 <type>query_api</type>
-                <table>default.prometheus</table>
+                <table>default.prometheus_http</table>
             </handler>
         </rule>
         <defaults/>

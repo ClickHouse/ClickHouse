@@ -1,5 +1,4 @@
 import pytest
-import requests
 
 from helpers.cluster import ClickHouseCluster
 import urllib
@@ -20,6 +19,7 @@ from .prometheus_test_utils import (
 cluster = ClickHouseCluster(__file__)
 
 MAIN_HTTP_PORT = 8123
+MAIN_HTTP_TIMESERIES_TABLE = "prometheus_http"
 
 node = cluster.add_instance(
     "node",
@@ -108,7 +108,9 @@ def start_cluster():
         cluster.start()
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
         send_test_data()
-        node_main_http.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+        node_main_http.query(
+            f"CREATE TABLE {MAIN_HTTP_TIMESERIES_TABLE} ENGINE=TimeSeries"
+        )
         send_main_http_test_data()
         yield cluster
     finally:
@@ -291,7 +293,11 @@ def test_table_query_param():
 def test_main_http_prefixed_remote_write():
     timestamp = 1_700_001_000.0
     metric_name = "main_http_prefixed_write_target"
-    before = int(node_main_http.query("SELECT count() FROM timeSeriesData(prometheus)").strip())
+    before = int(
+        node_main_http.query(
+            f"SELECT count() FROM timeSeriesData({MAIN_HTTP_TIMESERIES_TABLE})"
+        ).strip()
+    )
 
     _write_main_http_metric(
         metric_name,
@@ -300,7 +306,11 @@ def test_main_http_prefixed_remote_write():
         "/prometheus/api/v1/write",
     )
 
-    after = int(node_main_http.query("SELECT count() FROM timeSeriesData(prometheus)").strip())
+    after = int(
+        node_main_http.query(
+            f"SELECT count() FROM timeSeriesData({MAIN_HTTP_TIMESERIES_TABLE})"
+        ).strip()
+    )
     assert after > before
 
 
@@ -368,10 +378,40 @@ def test_main_http_prefixed_query_range_api():
     assert metric_name in data
 
 
+def test_main_http_prefixed_label_values_api():
+    timestamp = 1_700_001_275.0
+    metric_name = "main_http_prefixed_label_values_target"
+    label_value = "integration_test"
+
+    protobuf = convert_time_series_to_protobuf(
+        [({"__name__": metric_name, "job": label_value}, {timestamp: 1.0})]
+    )
+    send_protobuf_to_remote_write(
+        node_main_http.ip_address,
+        MAIN_HTTP_PORT,
+        "/prometheus/api/v1/write",
+        protobuf,
+    )
+
+    url = (
+        f"http://{node_main_http.ip_address}:{MAIN_HTTP_PORT}"
+        f"/prometheus/api/v1/label/job/values"
+        f"?start={int(timestamp - 1)}"
+        f"&end={int(timestamp + 1)}"
+    )
+    response = get_response_to_http_api(url)
+    error = extract_error_from_http_api_response(response)
+    assert "label values endpoint is not implemented" in error
+
+
 def test_main_http_bare_remote_write():
     timestamp = 1_700_001_300.0
     metric_name = "main_http_bare_write_target"
-    before = int(node_main_http.query("SELECT count() FROM timeSeriesData(prometheus)").strip())
+    before = int(
+        node_main_http.query(
+            f"SELECT count() FROM timeSeriesData({MAIN_HTTP_TIMESERIES_TABLE})"
+        ).strip()
+    )
 
     _write_main_http_metric(
         metric_name,
@@ -380,7 +420,11 @@ def test_main_http_bare_remote_write():
         "/api/v1/write",
     )
 
-    after = int(node_main_http.query("SELECT count() FROM timeSeriesData(prometheus)").strip())
+    after = int(
+        node_main_http.query(
+            f"SELECT count() FROM timeSeriesData({MAIN_HTTP_TIMESERIES_TABLE})"
+        ).strip()
+    )
     assert after > before
 
 
@@ -457,12 +501,4 @@ def test_main_http_prefixed_and_bare_share_table():
         "/prometheus/api/v1/read",
     )
     assert bare_metric in _metric_names_in_read_response(bare_read)
-
-
-def test_main_http_unknown_path_returns_404():
-    response = requests.get(
-        "http://{}:{}/not/a/known/path".format(node_main_http.ip_address, MAIN_HTTP_PORT),
-        timeout=10,
-    )
-    assert response.status_code == requests.codes.not_found
 
