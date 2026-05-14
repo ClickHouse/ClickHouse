@@ -1,37 +1,20 @@
-option (ENABLE_LIBRSEQ "Enable librseq" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_LIBRSEQ)
-    message (STATUS "Not using librseq")
+if (NOT OS_LINUX)
+    message (STATUS "Not building librseq because it is Linux-only (uses rseq syscall and <linux/*> headers)")
     return ()
 endif ()
 
-if (NOT OS_LINUX OR NOT (ARCH_AMD64 OR ARCH_AARCH64))
-    message (STATUS "Not using librseq: only Linux x86_64 / aarch64 are supported")
-    return ()
-endif ()
+set (LIBRSEQ_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/librseq")
 
-if (USE_MUSL)
-    # librseq's thread-pointer.h uses glibc-only `__GNUC_PREREQ`; musl doesn't
-    # define it and there's no clean shim. Skip on musl builds.
-    message (STATUS "Not using librseq: musl libc does not provide __GNUC_PREREQ")
-    return ()
-endif ()
-
-set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/librseq")
-
-# Skip rseq-mempool.c (per-CPU memory pool, depends on optional libnuma) —
-# we only need the registration / RMW core. rseq-status.c is a CLI tool.
-set (SRCS
-    "${LIBRARY_DIR}/src/rseq.c"
-    "${LIBRARY_DIR}/src/smp.c"
+add_library (_librseq STATIC
+    "${LIBRSEQ_SOURCE_DIR}/src/rseq.c"
+    "${LIBRSEQ_SOURCE_DIR}/src/smp.c"
 )
 
-add_library (_librseq ${SRCS})
+target_include_directories (_librseq SYSTEM
+    PUBLIC  "${LIBRSEQ_SOURCE_DIR}/include"
+    PRIVATE "${LIBRSEQ_SOURCE_DIR}/src"
+)
 
-target_include_directories (_librseq SYSTEM PUBLIC "${LIBRARY_DIR}/include")
-
-# librseq sources require _GNU_SOURCE for getauxval / sched_getcpu /
-# struct rseq layout; smp.c marks helpers _LGPL_SOURCE-only via the LGPL header.
 target_compile_definitions (_librseq PRIVATE _GNU_SOURCE)
 
 add_library (ch_contrib::librseq ALIAS _librseq)

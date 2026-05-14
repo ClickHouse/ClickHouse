@@ -393,3 +393,6 @@
 [submodule "contrib/librseq"]
 	path = contrib/librseq
 	url = https://github.com/compudj/librseq.git
+[submodule "contrib/silk"]
+	path = contrib/silk
+	url = https://github.com/ClickHouse/silk.git
