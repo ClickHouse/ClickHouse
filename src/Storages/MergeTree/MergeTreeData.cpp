@@ -2602,11 +2602,9 @@ size_t MergeTreeData::loadNewlyAppearedParts()
 
     auto disks = getStoragePolicy()->getDisks();
 
-    /// Reload the metadata cache so a freshly-elected leader sees parts written by the
-    /// previous leader. Pass 0 to bypass the rate-limit guard — leadership transitions
-    /// are infrequent and we want the freshest possible view before resuming writes.
-    for (const auto & disk : disks)
-        disk->refresh(/* not_sooner_than_milliseconds= */ 0);
+    /// The caller is responsible for refreshing the disk metadata cache before this call
+    /// if it needs the freshest view. The periodic refresh path (`refreshDataParts`) does
+    /// this in a rate-limited way; the leader-election takeover path forces a refresh.
 
     PartLoadingTree::PartLoadingInfos parts_to_load;
 
@@ -2702,6 +2700,9 @@ size_t MergeTreeData::loadNewlyAppearedParts()
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
 try
 {
+    /// Rate-limited metadata refresh — at most once per `interval_milliseconds`. The
+    /// subsequent `loadNewlyAppearedParts` call reads the cache without forcing another
+    /// refresh, so each periodic cycle hits object storage at most once.
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
 

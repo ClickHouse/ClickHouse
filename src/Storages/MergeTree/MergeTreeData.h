@@ -645,6 +645,8 @@ public:
     /// Unlike `refreshDataParts`, does not reschedule a periodic task and does not require
     /// all disks to be read-only. Used by `leader_election` to sync a new leader's view
     /// of parts written by the previous leader before resuming writes.
+    /// The caller is responsible for invalidating the disk metadata cache via
+    /// `disk->refresh(...)` before this call when it needs the freshest view.
     /// Returns the number of newly loaded parts.
     size_t loadNewlyAppearedParts();
 
