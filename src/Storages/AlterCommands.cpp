@@ -967,6 +967,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
             metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
             metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
+
+            for (const auto & column : metadata.columns)
+            {
+                metadata.dropImplicitIndicesForColumn(column.name);
+                metadata.addImplicitIndicesForColumn(column, context);
+            }
+            metadata.addImplicitIndicesForVirtualColumns(context);
         }
     }
     else if (type == RESET_SETTING)
