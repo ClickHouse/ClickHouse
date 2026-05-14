@@ -40,45 +40,42 @@ MergeTreeCursor buildMergeTreeCursor(const CursorTreeNodePtr & cursor_tree)
     return cursor;
 }
 
-std::optional<FilterDAGInfo> convertCursorToFilter(const MergeTreeCursor & cursor, SelectQueryInfo & query_info)
+FilterDAGInfo buildPartitionFilter(
+    const String & partition_id,
+    const PartitionCursor & last_emitted_position,
+    Int64 safe_block_number,
+    SelectQueryInfo & query_info)
 {
-    if (cursor.empty())
-        return std::nullopt;
+    /// TODO(michicosun): what to do if query was stopped in the middle of the block.
+    chassert(safe_block_number > last_emitted_position.block_number);
 
     auto & planner_context = query_info.planner_context;
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    std::vector<String> partition_filters;
-    constexpr static auto kPartitionFilterPattern = FMT_STRING(
-        "(_partition_id = '{partition_id}' AND "
-        "(_block_number > {block_number} OR (_block_number = {block_number} AND _block_offset > {block_offset})))");
+    static constexpr auto kPattern = FMT_STRING(
+        "(_partition_id = '{partition_id}' AND _block_number <= {safe_block_number} AND "
+        "(_block_number > {last_bn} OR (_block_number = {last_bn} AND _block_offset > {last_bo})))");
 
-    for (const auto & [partition_id, data] : cursor)
-    {
-        auto partition_filter = fmt::format(
-            kPartitionFilterPattern,
-            fmt::arg("partition_id", escapeString(partition_id)),
-            fmt::arg("block_number", data.block_number),
-            fmt::arg("block_offset", data.block_offset));
-
-        partition_filters.push_back(std::move(partition_filter));
-    }
-
-    const String filter = boost::algorithm::join(partition_filters, " OR ");
+    const String filter = fmt::format(
+        kPattern,
+        fmt::arg("partition_id", escapeString(partition_id)),
+        fmt::arg("safe_block_number", safe_block_number),
+        fmt::arg("last_bn", last_emitted_position.block_number),
+        fmt::arg("last_bo", last_emitted_position.block_offset));
 
     ParserExpression parser;
-    auto cursor_filter_ast = parseQuery(
+    auto filter_ast = parseQuery(
         parser,
         filter.data(),
         filter.data() + filter.size(),
-        "cursor filter",
+        "snapshot partition filter",
         settings[Setting::max_query_size],
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    chassert(cursor_filter_ast);
-    return buildFilterInfo(cursor_filter_ast, query_info.table_expression, planner_context);
+    chassert(filter_ast);
+    return buildFilterInfo(filter_ast, query_info.table_expression, planner_context);
 }
 
 }

@@ -1,7 +1,8 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
+#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
-#include <Storages/MergeTree/Streaming/RangesInDataPartStreamSubscription.h>
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Analyzer/QueryNode.h>
 #include <Functions/IFunction.h>
@@ -3136,40 +3137,32 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
     return spreadMarkRangesAmongStreams(std::move(parts_with_ranges), index_build_context, num_streams, column_names_to_read);
 }
 
-Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult & result)
+Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 {
     const size_t num_streams = std::max<size_t>(1, requested_num_streams);
     SharedHeader header = getOutputHeader();
-
-    auto parts_index = buildRightPartsIndex(std::move(result.parts_with_ranges));
-    auto promoters = data.buildPromoters();
-    auto strategy = std::make_shared<const CommitOrderReadStrategy>(
-        data,
-        std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->storage.getInMemoryMetadataPtr(context, true)),
-        mutations_snapshot,
-        all_column_names,
-        reader_settings,
-        actions_settings,
-        block_size,
-        shared_virtual_fields,
-        index_read_tasks,
-        query_info.prewhere_info,
-        query_info.row_level_filter,
-        context);
+    MergeTreeCursor starting_positions = buildMergeTreeCursor(query_info.table_expression_modifiers->getStreamSettings()->cursor_tree);
 
     Pipes pipes;
     pipes.reserve(num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto subscription = std::make_shared<RangesInDataPartStreamSubscription>(num_streams, i);
-        enrichSubscription(subscription, data, parts_index, promoters);
-
-        auto coordinator = std::make_shared<MergeTreeCommitOrderSequentialSource>(header, strategy, subscription);
-
-        pipes.emplace_back(std::move(coordinator));
+        auto subscription = std::make_shared<MergeTreeBoundsSubscription>(num_streams, i);
+        data.getStreamSubscriptionManager().registerSubscription(subscription);
+        pipes.emplace_back(std::make_shared<MergeTreeCommitOrderSequentialSource>(
+            header,
+            data,
+            query_info,
+            context,
+            all_column_names,
+            num_streams,
+            block_size.max_block_size_rows,
+            std::move(subscription),
+            starting_positions));
     }
 
+    data.triggerStreamingSubscriptionEnrichment();
     return Pipe::unitePipes(std::move(pipes));
 }
 

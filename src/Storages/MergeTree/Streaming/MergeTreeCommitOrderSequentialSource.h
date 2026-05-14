@@ -1,26 +1,34 @@
 #pragma once
 
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
+#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+
+#include <QueryPipeline/Pipe.h>
+
 #include <Processors/IProcessor.h>
-#include <Storages/MergeTree/Streaming/CommitOrderReadStrategy.h>
-#include <Storages/MergeTree/Streaming/RangesInDataPartStreamSubscription.h>
 
 namespace DB
 {
 
-struct RangesInDataPart;
-
-/// Coordinator for one pipeline stream. Owns a subscription whose queue carries
-/// `RangesInDataPart` items (one per part) to read in commit order. For each item
-/// it splices a per-part sub-pipeline via `Status::UpdatePipeline`, forwards its
-/// chunks to the coordinator's output, and tears the sub-pipeline down before
-/// splicing the next one.
+/// Snapshot-loop streaming source.
 class MergeTreeCommitOrderSequentialSource final : public IProcessor
 {
+    Status handleRunningPipeline();
+    Status handleReconfiguration();
+
 public:
     MergeTreeCommitOrderSequentialSource(
         SharedHeader header_,
-        CommitOrderReadStrategyPtr read_strategy_,
-        RangesInDataPartStreamSubscriptionPtr subscription_);
+        const MergeTreeData & storage_,
+        const SelectQueryInfo & query_info_,
+        ContextPtr context_,
+        Names user_requested_columns_,
+        size_t requested_num_streams_,
+        UInt64 max_block_size_,
+        MergeTreeBoundsSubscriptionPtr subscription_,
+        MergeTreeCursor starting_positions_);
 
     String getName() const override { return "MergeTreeCommitOrderSequentialSource"; }
 
@@ -33,12 +41,19 @@ public:
 
 private:
     const SharedHeader header;
-    const CommitOrderReadStrategyPtr read_strategy;
-    const RangesInDataPartStreamSubscriptionPtr subscription;
+    const MergeTreeData & storage;
+    const SelectQueryInfo query_info;
+    const ContextPtr context;
+    const Names user_requested_columns;
+    const size_t requested_num_streams;
+    const UInt64 max_block_size;
+    const MergeTreeBoundsSubscriptionPtr subscription;
     const LoggerPtr log;
 
-    std::list<RangesInDataPart> pending;
+    /// Runtime information
+    MergeTreeCursor last_emitted_positions;
     Processors current_sub_pipeline;
+    std::optional<Pipe> pending_snapshot;
 };
 
 }
