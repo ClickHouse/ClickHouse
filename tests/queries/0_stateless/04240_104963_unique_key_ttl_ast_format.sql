@@ -1,3 +1,9 @@
+-- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- `UNIQUE KEY` is an experimental feature limited to local-disk MergeTree in
+-- an Atomic database (it raises `SUPPORT_IS_DISABLED` on object storage and is
+-- not yet wired up for `ReplicatedMergeTree`/`SharedMergeTree`/Replicated DB).
+-- Mirrors the tag set used by `04046_unique_key_ddl.sql`.
+--
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/104963
 --
 -- A `CREATE TABLE` that combined an inline `PRIMARY KEY`, a `UNIQUE KEY` clause
