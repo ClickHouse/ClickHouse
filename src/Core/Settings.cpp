@@ -5250,6 +5250,15 @@ Possible values:
     DECLARE(Bool, optimize_use_implicit_projections, true, R"(
 Automatically choose implicit projections to perform SELECT query
 )", 0) \
+    DECLARE(Bool, optimize_use_skip_index_aggregation, true, R"(
+Enables using skip indexes or column statistics to satisfy aggregate functions like min, max, uniq without reading raw data.
+When enabled, the query optimizer will attempt to read aggregation results directly from .idx files or from per-column StatisticsMinMax instead of column data.
+
+Possible values:
+
+- 0 — Skip index and column statistics aggregation disabled.
+- 1 — Skip index and column statistics aggregation enabled.
+)", 0) \
     DECLARE(Bool, optimize_use_projection_filtering, true, R"(
 Enables using projections to filter part ranges even when projections are not selected to perform SELECT query.
 )", 0) \

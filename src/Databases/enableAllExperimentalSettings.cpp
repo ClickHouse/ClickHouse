@@ -65,6 +65,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_paimon_storage_engine", 1);
     context->setSetting("allow_dynamic_type_in_join_keys", 1);
     context->setSetting("allow_experimental_alias_table_engine", 1);
+    context->setSetting("optimize_use_skip_index_aggregation", 1);
     context->setSetting("allow_experimental_database_paimon_rest_catalog", 1);
     context->setSetting("allow_experimental_object_storage_queue_hive_partitioning", 1);
     context->setSetting("allow_experimental_json_lazy_type_hints", 1);

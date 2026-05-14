@@ -2,6 +2,7 @@
 
 #include <mutex>
 #include <tuple>
+#include <vector>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
 #include <Common/SimpleIncrement.h>
@@ -58,6 +59,8 @@ class Context;
 struct JobAndPool;
 class MergeTreeTransaction;
 struct ZeroCopyLock;
+struct AggregateDescription;
+using AggregateDescriptions = std::vector<AggregateDescription>;
 
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
@@ -507,6 +510,45 @@ public:
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
+        const ActionsDAG * filter_dag,
+        const RangesInDataParts & parts,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        ContextPtr query_context) const;
+
+    /// Mapping from aggregate column_name to hyperrectangle index in skip index
+    using AggColumnToHyperrectIdx = std::unordered_map<String, size_t>;
+
+    /// Mapping from aggregate result column_name to physical (bare) column name in the table
+    using AggColumnToPhysicalName = std::unordered_map<String, String>;
+
+    /// Mapping from query GROUP BY key name to partition key index
+    using GroupByKeyToPartitionIdx = std::vector<std::pair<String, size_t>>;
+
+    /// Build a block of aggregated values from skip index data.
+    /// This enables aggregate functions (min, max, uniq) to be satisfied
+    /// directly from index files without reading data.
+    Block getSkipIndexAggregationBlock(
+        const StorageMetadataPtr & metadata_snapshot,
+        const IndexDescription & index_desc,
+        const AggregateDescriptions & aggregate_descriptions,
+        const AggColumnToHyperrectIdx & agg_col_to_hyperrect_idx,
+        const GroupByKeyToPartitionIdx & group_by_key_to_partition_idx,
+        const ActionsDAG * filter_dag,
+        const RangesInDataParts & parts,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        ContextPtr query_context) const;
+
+    /// Build a block of min/max aggregated values using per-column statistics.
+    /// This is cheaper than reading skip index files when `StatisticsMinMax`
+    /// statistics have been collected for the relevant columns.
+    /// `agg_col_to_physical_name` must be pre-resolved by the caller: aggregate
+    /// argument names from the analyzer may be qualified (`__table1.col`), but
+    /// this function looks up columns by bare name in the table schema.
+    Block getColumnStatisticsAggregationBlock(
+        const StorageMetadataPtr & metadata_snapshot,
+        const AggregateDescriptions & aggregate_descriptions,
+        const AggColumnToPhysicalName & agg_col_to_physical_name,
+        const GroupByKeyToPartitionIdx & group_by_key_to_partition_idx,
         const ActionsDAG * filter_dag,
         const RangesInDataParts & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
