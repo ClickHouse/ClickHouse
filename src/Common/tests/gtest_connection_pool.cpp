@@ -2,8 +2,10 @@
 #include <Common/CurrentThread.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
+#include <base/scope_guard.h>
 
 #include <Poco/URI.h>
+#include <Poco/Net/IPAddress.h>
 #include <Poco/Net/MessageHeader.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -11,6 +13,10 @@
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include <Poco/Net/ServerSocket.h>
+#include <Poco/Net/SocketAddress.h>
+
+#include <atomic>
 
 #include <gtest/gtest.h>
 
@@ -697,6 +703,86 @@ TEST_F(ConnectionPoolTest, ProxyConnectFailureDoesNotPessimizeTarget)
     /// and pessimizing the target resolver would mis-attribute the failure (and trigger
     /// extra DNS refreshes for a host that was never actually contacted).
     ASSERT_EQ(failed_before, DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load());
+}
+
+TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
+{
+    /// Regression test for the PR's core fallback path: when the first resolved
+    /// address fails to connect with `Poco::Net::NetException` (e.g. ECONNREFUSED
+    /// on a dual-stack host whose first address is unroutable), the *current*
+    /// request must recover by trying the next resolved address instead of
+    /// propagating the network error.
+
+    /// Bind a server only to `127.0.0.1` (not wildcard), so connect attempts to
+    /// other loopback IPs (`127.0.0.99` below) are not silently accepted by the
+    /// existing test fixture server.
+    constexpr UInt16 secondary_port = 9872;
+    constexpr const char * test_host = "dual-stack-test.invalid";
+    constexpr const char * bad_addr = "127.0.0.99";
+    constexpr const char * good_addr = "127.0.0.1";
+
+    auto secondary_options = std::make_shared<SafeHandler<RequestOptions>>();
+    secondary_options->set(RequestOptions());
+    Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new HTTPRequestHandlerFactory(secondary_options);
+    Poco::Net::SocketAddress bind_addr(good_addr, secondary_port);
+    Poco::Net::ServerSocket server_socket(bind_addr);
+    auto secondary_server = std::make_unique<Poco::Net::HTTPServer>(
+        factory, server_socket, new Poco::Net::HTTPServerParams);
+    secondary_server->start();
+    SCOPE_EXIT({ secondary_server->stop(); });
+
+    /// Mock resolver. First call (from the resolver's constructor `update`) returns
+    /// only the bad address, so it is the only candidate `selectBest` can pick on
+    /// the first iteration. The connect attempt fails, the `NetException` catch
+    /// path calls `address.setFail()`, which re-runs `update` and the second call
+    /// returns both addresses - with the bad one pessimized, `selectBest` then
+    /// deterministically picks the working address.
+    std::atomic<size_t> resolve_calls{0};
+    auto resolve_func = [&](const String &)
+    {
+        if (resolve_calls.fetch_add(1) == 0)
+            return std::vector<Poco::Net::IPAddress>{Poco::Net::IPAddress(bad_addr)};
+        return std::vector<Poco::Net::IPAddress>{
+            Poco::Net::IPAddress(bad_addr),
+            Poco::Net::IPAddress(good_addr),
+        };
+    };
+
+    struct ResolveMock : public DB::HostResolver
+    {
+        using ResolveFunction = DB::HostResolver::ResolveFunction;
+        ResolveMock(String h, Poco::Timespan history_, ResolveFunction f)
+            : DB::HostResolver(std::move(f), std::move(h), history_)
+        {}
+    };
+
+    auto mock_resolver = std::make_shared<ResolveMock>(
+        String(test_host),
+        Poco::Timespan(60 * 1000 * 1000),
+        std::move(resolve_func));
+    DB::HostResolversPool::instance().injectResolverForTest(test_host, mock_resolver);
+
+    auto uri = Poco::URI("http://" + std::string(test_host) + ":" + std::to_string(secondary_port));
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
+    auto metrics = pool->getMetrics();
+    auto resolver_metrics = DB::HostResolver::getMetrics();
+
+    UInt64 created_before = DB::CurrentThread::getProfileEvents()[metrics.created].load();
+    UInt64 errors_before = DB::CurrentThread::getProfileEvents()[metrics.errors].load();
+    UInt64 failed_before = DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+    ASSERT_TRUE(connection->connected());
+
+    /// First attempt: connect to `bad_addr` → fails (counted in `errors` and resolver `failed`).
+    /// Retry: connect to `good_addr` → succeeds (counted in `created`).
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created].load() - created_before);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors].load() - errors_before);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load() - failed_before);
+
+    /// The recovered connection is fully usable.
+    echoRequest("Hello", *connection);
 }
 
 TEST_F(ConnectionPoolTest, StoreLimit)

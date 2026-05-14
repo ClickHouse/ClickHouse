@@ -331,4 +331,10 @@ HostResolver::Ptr HostResolversPool::getResolver(const String & host)
     return it->second;
 }
 
+void HostResolversPool::injectResolverForTest(const String & host, HostResolver::Ptr resolver)
+{
+    std::lock_guard lock(mutex);
+    host_pools[host] = std::move(resolver);
+}
+
 }

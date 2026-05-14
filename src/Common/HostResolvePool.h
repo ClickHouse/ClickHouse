@@ -248,6 +248,12 @@ public:
     void dropCache();
 
     HostResolver::Ptr getResolver(const String & host);
+
+    /// Pre-populate the pool with a resolver for `host`, replacing any cached entry.
+    /// For tests: allows simulating multi-address DNS responses without injecting into
+    /// the real `DNSResolver`, so the `prepareNewConnection` retry path can be exercised
+    /// deterministically.
+    void injectResolverForTest(const String & host, HostResolver::Ptr resolver);
 private:
     std::mutex mutex;
     std::unordered_map<String, HostResolver::Ptr> host_pools TSA_GUARDED_BY(mutex);
