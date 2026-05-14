@@ -154,8 +154,6 @@ private:
     }
 
     /// Calculate quantile, using linear interpolation between the bucket's lower and upper bound
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
     Value quantileInterpolated(const Pair * array, size_t size, Float64 position) const
     {
         const auto * upper_bound_it = std::lower_bound(array, array + size, position, [](const Pair & a, Float64 b) { return static_cast<Float64>(a.second) < b; });
@@ -164,7 +162,7 @@ private:
             if (upper_bound_it->first > 0)
             {
                 // If position is in the first bucket and the first bucket's upper bounds is positive, perform interpolation as if the first bucket's lower bounds is 0.
-                return static_cast<Value>(upper_bound_it->first * (position / static_cast<Float64>(upper_bound_it->second)));
+                return static_cast<Value>(static_cast<Float64>(upper_bound_it->first) * (position / static_cast<Float64>(upper_bound_it->second)));
             }
             else
             {
@@ -179,15 +177,14 @@ private:
         }
         const auto * lower_bound_it = upper_bound_it - 1;
 
-        UnderlyingType histogram_bucket_lower_bound = lower_bound_it->first;
-        CumulativeHistogramValue histogram_bucket_lower_value = lower_bound_it->second;
-        UnderlyingType histogram_bucket_upper_bound = upper_bound_it->first;
-        CumulativeHistogramValue histogram_bucket_upper_value = upper_bound_it->second;
+        Float64 histogram_bucket_lower_bound = static_cast<Float64>(lower_bound_it->first);
+        Float64 histogram_bucket_lower_value = static_cast<Float64>(lower_bound_it->second);
+        Float64 histogram_bucket_upper_bound = static_cast<Float64>(upper_bound_it->first);
+        Float64 histogram_bucket_upper_value = static_cast<Float64>(upper_bound_it->second);
 
         // Interpolate between the lower and upper bounds of the bucket that the position is in.
-        return static_cast<Value>(histogram_bucket_lower_bound + (histogram_bucket_upper_bound - histogram_bucket_lower_bound) * (position - static_cast<Float64>(histogram_bucket_lower_value)) / static_cast<Float64>(histogram_bucket_upper_value - histogram_bucket_lower_value));
+        return static_cast<Value>(histogram_bucket_lower_bound + (histogram_bucket_upper_bound - histogram_bucket_lower_bound) * (position - histogram_bucket_lower_value) / (histogram_bucket_upper_value - histogram_bucket_lower_value));
     }
-#pragma clang diagnostic pop
 };
 
 template <typename Value, typename CumulativeHistogramValue>
