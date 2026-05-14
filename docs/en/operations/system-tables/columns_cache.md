@@ -1,6 +1,8 @@
 ---
 description: 'Contains information about entries in the in-memory cache of deserialized columns (`columns cache`).'
 keywords: ['system table', 'columns_cache']
+sidebar_label: 'columns_cache'
+sidebar_position: 65
 slug: /operations/system-tables/columns_cache
 title: 'system.columns_cache'
 doc_type: 'reference'
