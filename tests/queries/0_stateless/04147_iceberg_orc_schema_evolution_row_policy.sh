@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel-replicas
+# Tags: no-fasttest
 #
 # Regression test for the schema-changed branch of the Iceberg ORC `PREWHERE`
 # fallback path. When an Iceberg table has gone through schema evolution

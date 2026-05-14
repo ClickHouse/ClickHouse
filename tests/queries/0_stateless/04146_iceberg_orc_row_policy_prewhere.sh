@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel-replicas
+# Tags: no-fasttest
 #
 # Regression test for transform-ordering correctness in the Iceberg ORC PREWHERE
 # fallback path. When an Iceberg table is configured with format `Parquet`

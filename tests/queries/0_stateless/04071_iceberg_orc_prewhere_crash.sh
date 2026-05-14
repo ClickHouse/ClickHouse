@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel-replicas
+# Tags: no-fasttest
 # Reproduces https://github.com/ClickHouse/ClickHouse/issues/96829
 # When an Iceberg table has ORC data files but is read with format='Parquet'
 # (which enables PREWHERE), the server crashes with:
