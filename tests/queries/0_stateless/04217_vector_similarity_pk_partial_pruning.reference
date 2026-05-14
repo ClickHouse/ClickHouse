@@ -1,5 +1,7 @@
 pk_partial_matches_exact_knn_without_skip_indexes
 1
+vector_index_path_used
+1
 expected_top3_ids_for_reference_vec
 [6,7,8]
 empty_pk_filter

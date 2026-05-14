@@ -5,6 +5,7 @@
 SET allow_experimental_vector_similarity_index = 1;
 SET enable_analyzer = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10000;
+SET log_queries = 1;
 
 DROP TABLE IF EXISTS tab_pk_partial;
 
@@ -40,6 +41,23 @@ SELECT
             SETTINGS use_skip_indexes = 0
         )
     );
+
+SELECT id
+FROM tab_pk_partial
+WHERE id >= 6
+ORDER BY L2Distance(vec, [toFloat32(0.), toFloat32(2.)]) ASC
+LIMIT 3
+SETTINGS use_skip_indexes = 1, log_comment = '04217-vector-index-path'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'vector_index_path_used';
+SELECT ProfileEvents['USearchSearchCount'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND log_comment = '04217-vector-index-path';
 
 SELECT 'expected_top3_ids_for_reference_vec';
 WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
