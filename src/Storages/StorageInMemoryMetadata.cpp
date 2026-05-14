@@ -985,16 +985,9 @@ void StorageInMemoryMetadata::dropImplicitIndicesForVirtualColumns()
 {
     for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
     {
-        if (!index_it->isImplicitlyCreated())
-            continue;
-
-        if (index_it->type != "minmax")
-            continue;
-
-        if (index_it->column_names.size() != 1)
-            continue;
-
-        if (isVirtualColumn(index_it->column_names.front()))
+        if (!index_it->isImplicitlyCreated() || index_it->type != "minmax" || index_it->column_names.size() != 1)
+            ++index_it;
+        else if (isVirtualColumn(index_it->column_names.front()))
             index_it = secondary_indices.erase(index_it);
         else
             ++index_it;
