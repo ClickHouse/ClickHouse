@@ -38,7 +38,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(String, const String) -> String OR (String, const String, Integer) -> String";
+        return "(String, const String, [Integer]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

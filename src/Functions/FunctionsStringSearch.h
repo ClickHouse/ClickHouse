@@ -139,9 +139,7 @@ public:
             ? "StringOrFixedString | Enum, String"
             : "String, StringOrFixedString | Enum";
         if constexpr (Impl::supports_start_pos)
-            return
-                "(" + haystack + ") -> " + ret
-                + " OR (" + haystack + ", NativeUInt) -> " + ret;
+            return "(" + haystack + ", [NativeUInt]) -> " + ret;
         else
             return "(" + haystack + ") -> " + ret;
     }

@@ -950,12 +950,9 @@ public:
         if constexpr (support_integer == SupportInteger::Yes)
             return
                 "(Integer) -> DateTime"
-                " OR (Integer | Date | Date32 | DateTime | DateTime64, String) -> String"
-                " OR (Integer | Date | Date32 | DateTime | DateTime64, String, String) -> String";
+                " OR (Integer | Date | Date32 | DateTime | DateTime64, String, [String]) -> String";
         else
-            return
-                "(Date | Date32 | DateTime | DateTime64, String) -> String"
-                " OR (Date | Date32 | DateTime | DateTime64, String, String) -> String";
+            return "(Date | Date32 | DateTime | DateTime64, String, [String]) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

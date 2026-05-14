@@ -48,10 +48,7 @@ public:
         /// The third argument's presence depends on a setting
         /// (allow_custom_error_code_in_throwif); the signature always allows it and the
         /// executor falls back to the default error code when the setting is off.
-        return
-            "(NativeNumber) -> UInt8"
-            " OR (NativeNumber, const String) -> UInt8"
-            " OR (NativeNumber, const String, const Int8 | Int16 | Int32) -> UInt8";
+        return "(NativeNumber, [const String], [const Int8 | Int16 | Int32]) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

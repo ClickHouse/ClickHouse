@@ -23,10 +23,7 @@ public:
         const String input_matcher = Transform::value_may_be_string
             ? "Date | Date32 | DateTime | DateTime64 | String"
             : "Date | Date32 | DateTime | DateTime64";
-        return
-            "(" + input_matcher + ") -> " + to
-            + " OR (" + input_matcher + ", UInt8) -> " + to
-            + " OR (" + input_matcher + ", UInt8, String) -> " + to;
+        return "(" + input_matcher + ", [UInt8], [String]) -> " + to;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

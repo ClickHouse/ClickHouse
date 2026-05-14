@@ -156,14 +156,11 @@ private:
     String getSignatureString() const override
     {
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
-            return
-                "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String"
-                " OR (const StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String"
-                " OR (const StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String";
+            return "(const StringOrFixedString, StringOrFixedString, StringOrFixedString,"
+                   " [StringOrFixedString], [StringOrFixedString]) -> String";
         else
-            return
-                "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String"
-                " OR (const StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String";
+            return "(const StringOrFixedString, StringOrFixedString, StringOrFixedString,"
+                   " [StringOrFixedString]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -418,14 +415,11 @@ private:
     {
         const String ret = use_null_when_decrypt_fail ? "Nullable(String)" : "String";
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
-            return
-                "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> " + ret
-                + " OR (const StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString) -> " + ret
-                + " OR (const StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString) -> " + ret;
+            return "(const StringOrFixedString, StringOrFixedString, StringOrFixedString,"
+                   " [StringOrFixedString], [StringOrFixedString]) -> " + ret;
         else
-            return
-                "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> " + ret
-                + " OR (const StringOrFixedString, StringOrFixedString, StringOrFixedString, StringOrFixedString) -> " + ret;
+            return "(const StringOrFixedString, StringOrFixedString, StringOrFixedString,"
+                   " [StringOrFixedString]) -> " + ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

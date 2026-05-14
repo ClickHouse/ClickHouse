@@ -1471,9 +1471,7 @@ public:
         const String ret = (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring)
             ? "FixedString(16)"
             : DataTypeNumber<ToType>{}.getName();
-        return
-            "() -> " + ret
-            + " OR (Any, ...) -> " + ret;
+        return "([Any], ...) -> " + ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -1674,9 +1672,7 @@ public:
 
     String getSignatureString() const override
     {
-        return
-            "(String) -> UInt64"
-            " OR (String, Integer) -> UInt64";
+        return "(String, [Integer]) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
