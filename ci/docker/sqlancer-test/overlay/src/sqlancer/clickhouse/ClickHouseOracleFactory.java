@@ -5,6 +5,8 @@ import java.sql.SQLException;
 import sqlancer.OracleFactory;
 import sqlancer.clickhouse.ClickHouseProvider.ClickHouseGlobalState;
 import sqlancer.clickhouse.gen.ClickHouseExpressionGenerator;
+import sqlancer.clickhouse.oracle.cert.ClickHouseCERTOracle;
+import sqlancer.clickhouse.oracle.coddtest.ClickHouseCODDTestOracle;
 import sqlancer.clickhouse.oracle.pqs.ClickHousePivotedQuerySynthesisOracle;
 import sqlancer.clickhouse.oracle.tlp.ClickHouseTLPAggregateOracle;
 import sqlancer.clickhouse.oracle.tlp.ClickHouseTLPDistinctOracle;
@@ -64,6 +66,18 @@ public enum ClickHouseOracleFactory implements OracleFactory<ClickHouseGlobalSta
         @Override
         public TestOracle<ClickHouseGlobalState> create(ClickHouseGlobalState globalState) throws SQLException {
             return new ClickHousePivotedQuerySynthesisOracle(globalState);
+        }
+    },
+    CERT {
+        @Override
+        public TestOracle<ClickHouseGlobalState> create(ClickHouseGlobalState globalState) throws SQLException {
+            return new ClickHouseCERTOracle(globalState);
+        }
+    },
+    CODDTest {
+        @Override
+        public TestOracle<ClickHouseGlobalState> create(ClickHouseGlobalState globalState) throws SQLException {
+            return new ClickHouseCODDTestOracle(globalState);
         }
     }
 }
