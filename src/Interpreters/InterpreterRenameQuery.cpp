@@ -170,10 +170,21 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 rename.dictionary);
 
             DatabaseCatalog::instance().addDependencies(to_table_id, from_ref_dependencies, from_loading_dependencies, from_mv_dependencies);
-            DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, from_dependent_views);
             if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty() || !to_mv_dependencies.empty())
                 DatabaseCatalog::instance().addDependencies(from_table_id, to_ref_dependencies, to_loading_dependencies, to_mv_dependencies);
-            DatabaseCatalog::instance().addSourceViewDependencies(from_table_id, to_dependent_views);
+
+            if (rename.is_create_or_replace)
+            {
+                /// CREATE OR REPLACE / REPLACE TABLE: the displaced table (now at `from_table_id`)
+                /// is about to be dropped by `doCreateOrReplaceTable`. Do not exchange dependencies.
+                DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, to_dependent_views);
+                DatabaseCatalog::instance().addSourceViewDependencies(from_table_id, from_dependent_views);
+            }
+            else
+            {
+                DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, from_dependent_views);
+                DatabaseCatalog::instance().addSourceViewDependencies(from_table_id, to_dependent_views);
+            }
 
             NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);
             if (exchange_tables)

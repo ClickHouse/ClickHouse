@@ -52,6 +52,12 @@ public:
     /// Special flag for CREATE OR REPLACE. Do not throw if the second table does not exist.
     bool rename_if_cannot_exchange{false};
 
+    /// Synthetic flag set by `InterpreterCreateQuery::doCreateOrReplaceTable` when it builds
+    /// a rename/exchange to swap in the new table contents. Tells `InterpreterRenameQuery` that
+    /// source-side view dependencies must follow the name (the displaced table is about to be
+    /// dropped), not the data as in a plain `EXCHANGE TABLES`. Never set from SQL.
+    bool is_create_or_replace{false};
+
     explicit ASTRenameQuery(Elements elements_ = {})
         : elements(std::move(elements_))
     {

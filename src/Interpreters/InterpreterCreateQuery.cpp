@@ -2273,6 +2273,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         auto ast_rename = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
         ast_rename->dictionary = create.is_dictionary;
+        ast_rename->is_create_or_replace = true;
         if (create.create_or_replace || create.replace_view)
         {
             /// CREATE OR REPLACE TABLE/VIEW
