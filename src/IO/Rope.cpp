@@ -1,4 +1,5 @@
 #include <IO/Rope.h>
+#include <Common/Allocator.h>
 #include <Core/Defines.h>
 
 #include <algorithm>
@@ -6,15 +7,20 @@
 namespace DB
 {
 
+namespace
+{
+    Allocator<false, false> rope_allocator;
+}
+
 OwnedRopeBuffer::OwnedRopeBuffer(size_t size)
-    : buf_data(static_cast<char *>(::operator new(size + PADDING_FOR_SIMD)))
+    : buf_data(static_cast<char *>(rope_allocator.alloc(size + PADDING_FOR_SIMD)))
     , buf_size(size)
 {
 }
 
 OwnedRopeBuffer::~OwnedRopeBuffer()
 {
-    ::operator delete(buf_data);
+    rope_allocator.free(buf_data, buf_size + PADDING_FOR_SIMD);
 }
 
 void OwnedRopeBuffer::transferTo(MemoryTracker * /* new_tracker */)
