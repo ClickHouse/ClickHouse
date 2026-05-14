@@ -6,6 +6,7 @@
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -105,13 +106,10 @@ ASTPtr makePresentUpperBoundCondition(ASTPtr upper_bound)
     return makeASTFunction("isNotNull", std::move(upper_bound));
 }
 
-ASTPtr makeGroupWithoutBucketLabels(ASTPtr group)
+ASTPtr makeHistogramIdentityGroup(ASTPtr group)
 {
     auto group_as_uint64 = makeASTFunction("CAST", std::move(group), make_intrusive<ASTLiteral>("UInt64"));
-    return makeASTFunction(
-        "timeSeriesRemoveTags",
-        std::move(group_as_uint64),
-        make_intrusive<ASTLiteral>(Array{std::string_view{kMetricName}, std::string_view{le_label}}));
+    return makeASTFunction("timeSeriesRemoveTag", std::move(group_as_uint64), make_intrusive<ASTLiteral>(le_label));
 }
 
 ASTPtr makeHistogramQuantileArray(TimestampType start_time, TimestampType end_time, DurationType step, const DataTypePtr & scalar_data_type)
@@ -155,7 +153,6 @@ applyFunctionHistogramQuantile(const PQT::Function * function_node, std::vector<
 
     auto res = vector_arg;
     res.node = function_node;
-    res.metric_name_dropped = true;
 
     /// Work point-by-point because classic histogram buckets are separate float series,
     /// while histogram_quantile() groups them by timestamp and labels except `le` and `__name__`.
@@ -208,8 +205,9 @@ applyFunctionHistogramQuantile(const PQT::Function * function_node, std::vector<
         present_bucket_samples_query = builder.getSelectQuery();
     }
 
-    /// Multiple bucket series can collapse to the same output label set after an upstream aggregation;
-    /// sum same-bound buckets before applying Prometheus bucket-quantile semantics.
+    /// Prometheus identifies classic histograms by all labels except `le`. Keep `__name__`
+    /// here so different metric names stay separate until the final name drop, where duplicate
+    /// output label sets are rejected.
     ASTPtr bucket_counts_query;
     {
         SelectQueryBuilder builder;
@@ -218,7 +216,7 @@ applyFunctionHistogramQuantile(const PQT::Function * function_node, std::vector<
             SQLSubquery{context.subqueries.size(), std::move(present_bucket_samples_query), SQLSubqueryType::TABLE});
         builder.from_table = context.subqueries.back().name;
 
-        builder.select_list.push_back(makeGroupWithoutBucketLabels(make_intrusive<ASTIdentifier>(ColumnNames::Group)));
+        builder.select_list.push_back(makeHistogramIdentityGroup(make_intrusive<ASTIdentifier>(ColumnNames::Group)));
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(point_index_column));
@@ -314,7 +312,7 @@ applyFunctionHistogramQuantile(const PQT::Function * function_node, std::vector<
         res.select_query = builder.getSelectQuery();
     }
 
-    return res;
+    return dropMetricName(std::move(res), context);
 }
 
 }

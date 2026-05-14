@@ -308,6 +308,78 @@ def send_test_data():
                 {"__name__": "request_duration_duplicate_bound_bucket", "job": "api", "le": "+Inf"},
                 {160: 40},
             ),
+            (
+                {"__name__": "request_duration_single_bucket", "job": "api", "le": "+Inf"},
+                {160: 4},
+            ),
+            (
+                {"__name__": "request_duration_sparse_bucket", "job": "api", "le": "2"},
+                {160: 4},
+            ),
+            (
+                {"__name__": "request_duration_sparse_bucket", "job": "api", "le": "+Inf"},
+                {160: 4},
+            ),
+            (
+                {"__name__": "request_duration_bad_le_bucket", "job": "api", "le": "1"},
+                {160: 1},
+            ),
+            (
+                {"__name__": "request_duration_bad_le_bucket", "job": "api", "le": "bad"},
+                {160: 100},
+            ),
+            (
+                {"__name__": "request_duration_bad_le_bucket", "job": "api", "le": "+Inf"},
+                {160: 2},
+            ),
+            (
+                {"__name__": "request_duration_nonmonotonic_bucket", "job": "api", "le": "0.1"},
+                {160: 2},
+            ),
+            (
+                {"__name__": "request_duration_nonmonotonic_bucket", "job": "api", "le": "1"},
+                {160: 1},
+            ),
+            (
+                {"__name__": "request_duration_nonmonotonic_bucket", "job": "api", "le": "10"},
+                {160: 5},
+            ),
+            (
+                {"__name__": "request_duration_nonmonotonic_bucket", "job": "api", "le": "100"},
+                {160: 4},
+            ),
+            (
+                {"__name__": "request_duration_nonmonotonic_bucket", "job": "api", "le": "1000"},
+                {160: 9},
+            ),
+            (
+                {"__name__": "request_duration_nonmonotonic_bucket", "job": "api", "le": "+Inf"},
+                {160: 8},
+            ),
+            (
+                {"__name__": "request_duration_tiny_delta_bucket", "job": "api", "le": "1"},
+                {160: 1000000000000},
+            ),
+            (
+                {"__name__": "request_duration_tiny_delta_bucket", "job": "api", "le": "2"},
+                {160: 999999999999.5},
+            ),
+            (
+                {"__name__": "request_duration_tiny_delta_bucket", "job": "api", "le": "+Inf"},
+                {160: 1000000000001},
+            ),
+            (
+                {"__name__": "request_duration_seconds2_bucket", "instance": "a", "job": "api", "le": "1"},
+                {160: 20},
+            ),
+            (
+                {"__name__": "request_duration_seconds2_bucket", "instance": "a", "job": "api", "le": "2"},
+                {160: 40},
+            ),
+            (
+                {"__name__": "request_duration_seconds2_bucket", "instance": "a", "job": "api", "le": "+Inf"},
+                {160: 40},
+            ),
         ]
     )
 
@@ -686,6 +758,16 @@ def test_function_over_time():
 
 
 def test_function_histogram_quantile():
+    # Behavior: Prometheus groups classic buckets by all labels except `le`, then drops `le` and `__name__` from the output.
+    do_unordered_query_test(
+        "histogram_quantile(0.5, request_duration_seconds_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"instance": "a", "job": "api"}, "value": [160, "1"]}, {"metric": {"instance": "b", "job": "api"}, "value": [160, "1"]}]}',
+        [
+            ["[('instance','a'),('job','api')]", "1970-01-01 00:02:40.000", 1],
+            ["[('instance','b'),('job','api')]", "1970-01-01 00:02:40.000", 1],
+        ],
+    )
     do_unordered_query_test(
         "histogram_quantile(0.9, request_duration_seconds_bucket)",
         160,
@@ -695,13 +777,62 @@ def test_function_histogram_quantile():
             ["[('instance','b'),('job','api')]", "1970-01-01 00:02:40.000", 1.8],
         ],
     )
-
-    do_query_test(
-        "histogram_quantile(0.9, sum by (job, le) (rate(request_duration_seconds_bucket[2m])))",
-        170,
-        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [170, "1.8"]}]}',
-        [["[('job','api')]", "1970-01-01 00:02:50.000", 1.8]],
+    do_unordered_query_test(
+        "histogram_quantile(0.99, request_duration_seconds_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"instance": "a", "job": "api"}, "value": [160, "1.98"]}, {"metric": {"instance": "b", "job": "api"}, "value": [160, "1.98"]}]}',
+        [
+            ["[('instance','a'),('job','api')]", "1970-01-01 00:02:40.000", 1.98],
+            ["[('instance','b'),('job','api')]", "1970-01-01 00:02:40.000", 1.98],
+        ],
         eps=1e-9,
+    )
+
+    # Behavior: Prometheus handles `q=NaN`, `q<0`, and `q>1` before bucket validation and returns `NaN`, `-Inf`, or `+Inf`.
+    do_unordered_query_test(
+        "histogram_quantile(0, request_duration_seconds_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"instance": "a", "job": "api"}, "value": [160, "0"]}, {"metric": {"instance": "b", "job": "api"}, "value": [160, "0"]}]}',
+        [
+            ["[('instance','a'),('job','api')]", "1970-01-01 00:02:40.000", 0],
+            ["[('instance','b'),('job','api')]", "1970-01-01 00:02:40.000", 0],
+        ],
+    )
+    do_unordered_query_test(
+        "histogram_quantile(1, request_duration_seconds_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"instance": "a", "job": "api"}, "value": [160, "2"]}, {"metric": {"instance": "b", "job": "api"}, "value": [160, "2"]}]}',
+        [
+            ["[('instance','a'),('job','api')]", "1970-01-01 00:02:40.000", 2],
+            ["[('instance','b'),('job','api')]", "1970-01-01 00:02:40.000", 2],
+        ],
+    )
+    do_unordered_query_test(
+        "histogram_quantile(NaN, request_duration_seconds_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"instance": "a", "job": "api"}, "value": [160, "NaN"]}, {"metric": {"instance": "b", "job": "api"}, "value": [160, "NaN"]}]}',
+        [
+            ["[('instance','a'),('job','api')]", "1970-01-01 00:02:40.000", "nan"],
+            ["[('instance','b'),('job','api')]", "1970-01-01 00:02:40.000", "nan"],
+        ],
+    )
+    do_unordered_query_test(
+        "histogram_quantile(-1, request_duration_seconds_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"instance": "a", "job": "api"}, "value": [160, "-Inf"]}, {"metric": {"instance": "b", "job": "api"}, "value": [160, "-Inf"]}]}',
+        [
+            ["[('instance','a'),('job','api')]", "1970-01-01 00:02:40.000", "-inf"],
+            ["[('instance','b'),('job','api')]", "1970-01-01 00:02:40.000", "-inf"],
+        ],
+    )
+    do_unordered_query_test(
+        "histogram_quantile(2, request_duration_seconds_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"instance": "a", "job": "api"}, "value": [160, "+Inf"]}, {"metric": {"instance": "b", "job": "api"}, "value": [160, "+Inf"]}]}',
+        [
+            ["[('instance','a'),('job','api')]", "1970-01-01 00:02:40.000", "inf"],
+            ["[('instance','b'),('job','api')]", "1970-01-01 00:02:40.000", "inf"],
+        ],
     )
 
     do_query_test(
@@ -711,27 +842,29 @@ def test_function_histogram_quantile():
         "",
     )
 
+    # Behavior: Prometheus returns `NaN` when the highest bucket is not `+Inf` or fewer than two buckets remain.
     do_query_test(
         "histogram_quantile(0.5, request_duration_no_inf_bucket)",
         160,
         '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "NaN"]}]}',
         [["[('job','api')]", "1970-01-01 00:02:40.000", "nan"]],
     )
-
     do_query_test(
-        "histogram_quantile(-0.5, request_duration_no_inf_bucket)",
+        "histogram_quantile(0.5, request_duration_single_bucket)",
         160,
-        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "-Inf"]}]}',
-        [["[('job','api')]", "1970-01-01 00:02:40.000", "-inf"]],
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "NaN"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:40.000", "nan"]],
     )
 
+    # Behavior: Prometheus allows missing finite buckets and interpolates from natural lower bound `0` when the first finite upper bound is positive.
     do_query_test(
-        "histogram_quantile(1.5, request_duration_no_inf_bucket)",
+        "histogram_quantile(0.5, request_duration_sparse_bucket)",
         160,
-        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "+Inf"]}]}',
-        [["[('job','api')]", "1970-01-01 00:02:40.000", "inf"]],
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:40.000", 1]],
     )
 
+    # Behavior: Prometheus keeps parseable `le=NaN` boundaries as buckets, which makes the quantile `NaN`.
     do_query_test(
         "histogram_quantile(0.5, request_duration_mixed_bucket)",
         160,
@@ -739,11 +872,54 @@ def test_function_histogram_quantile():
         [["[('job','api')]", "1970-01-01 00:02:40.000", "nan"]],
     )
 
+    # Behavior: Prometheus coalesces duplicate upper bounds by summing counts before interpolation.
     do_query_test(
         "histogram_quantile(0.5, request_duration_duplicate_bound_bucket)",
         160,
         '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "0.6666666666666666"]}]}',
         [["[('job','api')]", "1970-01-01 00:02:40.000", 0.6666666666666666]],
+    )
+
+    # Behavior: Prometheus ignores buckets with malformed non-parseable `le` labels instead of failing the whole query.
+    do_query_test(
+        "histogram_quantile(0.5, request_duration_bad_le_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:40.000", 1]],
+    )
+
+    # Behavior: Prometheus forces non-monotonic cumulative bucket counts upward before computing the quantile.
+    do_query_test(
+        "histogram_quantile(0.5, request_duration_nonmonotonic_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "8.5"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:40.000", 8.5]],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus ignores tiny relative bucket-count decreases within `1e-12` as floating-point noise.
+    do_query_test(
+        "histogram_quantile(0.5, request_duration_tiny_delta_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "0.5"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:40.000", 0.5]],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus accepts common `histogram_quantile(q, sum by (..., le)(rate(...)))` shapes and computes quantiles from the transformed bucket vector.
+    do_query_test(
+        "histogram_quantile(0.5, sum by (job, le) (rate(request_duration_seconds_bucket[2m])))",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:40.000", 1]],
+        eps=1e-9,
+    )
+    do_query_test(
+        "histogram_quantile(0.9, sum by (job, le) (rate(request_duration_seconds_bucket[2m])))",
+        170,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [170, "1.8"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:50.000", 1.8]],
+        eps=1e-9,
     )
 
     assert http_api_response_close_to(
@@ -783,6 +959,25 @@ def test_function_histogram_quantile():
         ),
         '{"resultType": "matrix", "result": [{"metric": {"job": "api"}, "values": [[160, "1.8"], [170, "1.8"]]}]}',
         eps=1e-9,
+    )
+
+    # Behavior: Prometheus accepts common `histogram_quantile(q, sum by (..., le)(rate(...)))` range-query shapes.
+    do_range_query_test(
+        "histogram_quantile(0.5, sum by (job, le) (rate(request_duration_seconds_bucket[2m])))",
+        100,
+        160,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "api"}, "values": [[160, "1"]]}]}',
+        [["[('job','api')]", "[('1970-01-01 00:02:40.000',1)]"]],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus keeps `__name__` while identifying classic histograms, then drops it and errors if output labelsets collide.
+    do_query_test_expect_error(
+        'histogram_quantile(0.99, {__name__=~"request_duration_seconds2?_bucket"})',
+        160,
+        "vector cannot contain metrics with the same labelset",
+        "Multiple series have the same tags {'instance': 'a', 'job': 'api'}",
     )
 
 
