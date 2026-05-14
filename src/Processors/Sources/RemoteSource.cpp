@@ -237,14 +237,20 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
 void RemoteSource::cancel(CancelReason reason) noexcept
 {
-    /// Make reason selection atomic with the first-canceller gate, so concurrent cancels
-    /// with different reasons cannot make `onCancel` observe a reason from a losing caller.
-    /// Mirrors `ISource::cancel`, but records `reason` between the gate and `onCancel`,
-    /// guaranteeing that the value `onCancel` reads was written by the winning thread.
-    bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
-    if (!already_cancelled)
+    /// Use `cancel_reason` itself as the first-canceller gate via CAS so the reason and
+    /// the cancellation flag become visible to other threads as a single atomic step.
+    /// If `is_cancelled` were the gate (as in `ISource::cancel`), a thread could see
+    /// `is_cancelled == true` while `cancel_reason` is still `NotCancelled` — set by a
+    /// winning thread preempted between the two writes — and incorrectly drop a hard-cancel
+    /// upgrade. With `cancel_reason` as the gate, the upgrade path is guaranteed to see
+    /// the winning reason.
+    CancelReason expected = CancelReason::NotCancelled;
+    if (cancel_reason.compare_exchange_strong(expected, reason, std::memory_order_acq_rel))
     {
-        cancel_reason.store(reason, std::memory_order_release);
+        /// Publish the framework-level cancellation flag. `ISource` and surrounding code
+        /// observe `is_cancelled` to gate work / port handling; setting it after the
+        /// reason CAS is sufficient because the reason CAS already serialized cancellers.
+        is_cancelled.store(true, std::memory_order_release);
         onCancel();
         return;
     }
@@ -258,11 +264,10 @@ void RemoteSource::cancel(CancelReason reason) noexcept
     if (reason == CancelReason::PartialResult)
         return;
 
-    auto prev = cancel_reason.load(std::memory_order_acquire);
-    if (prev != CancelReason::PartialResult)
+    if (expected != CancelReason::PartialResult)
         return;
 
-    if (!cancel_reason.compare_exchange_strong(prev, reason, std::memory_order_acq_rel))
+    if (!cancel_reason.compare_exchange_strong(expected, reason, std::memory_order_acq_rel))
         return;
 
     try
