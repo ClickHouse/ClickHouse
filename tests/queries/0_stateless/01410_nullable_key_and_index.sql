@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS nullable_key;
 DROP TABLE IF EXISTS nullable_key_without_final_mark;
 DROP TABLE IF EXISTS nullable_minmax_index;
 
+SET parallel_replicas_local_plan = 1;
 SET max_threads = 1;
 SET optimize_read_in_order = 0;
 
