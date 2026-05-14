@@ -47,7 +47,7 @@ enum class OverTimeBucketKind : UInt8
 };
 
 /// Mirrors Prometheus `promql/quantile.go` func quantile(q float64, values vectorByValueHeap) float64
-/// https://github.com/prometheus/prometheus/blob/da1f89e7360a19c5de2b0df4b43411ac706a76a9/promql/quantile.go#L716-L745
+/// https://github.com/prometheus/prometheus/blob/da1f89e7360a19c5de2b0df4b43411ac706a76a9/promql/quantile.go
 /// Sorts `values` in place when returning an interpolated quantile (same as Go sort.Sort before indexing).
 inline Float64 quantile(Float64 q, VectorWithMemoryTracking<Float64> & values)
 {
@@ -391,7 +391,7 @@ struct AggregateFunctionTimeseriesQuantileOverTimeOperation
         }
 
         /// Match Prometheus `quantile()` used by quantile_over_time (including phi edge cases):
-        /// https://github.com/prometheus/prometheus/blob/da1f89e7360a19c5de2b0df4b43411ac706a76a9/promql/quantile.go#L716-L745
+        /// https://github.com/prometheus/prometheus/blob/da1f89e7360a19c5de2b0df4b43411ac706a76a9/promql/quantile.go
         VectorWithMemoryTracking<Float64> values;
         values.reserve(samples_in_window.size());
         for (const auto & [ts, val] : samples_in_window)
@@ -875,33 +875,55 @@ public:
         {
             const TimestampType current_timestamp = Base::start_timestamp + i * Base::step;
 
+            /// Prometheus-style half-open lookback `(current_timestamp - window, current_timestamp]`.
+            /// A sample is outside iff `ts + window <= current_timestamp`, equivalently `ts <= current_timestamp - window`
+            /// when the subtraction is defined. We avoid `current_timestamp - window` so unsigned `TimestampType`
+            /// never underflows when `current_timestamp < window`.
+            const auto ts_outside_active_lookback = [&](TimestampType ts)
+            {
+                return ts + Base::window <= current_timestamp;
+            };
+
+            /// Pop before ingesting the current bucket so nothing outside the window is ever observed by `fillResultValue`.
+            while (!samples_in_window.empty() && ts_outside_active_lookback(samples_in_window.front().first))
+                samples_in_window.pop_front();
+
             auto bucket_it = buckets.find(i);
             if (bucket_it != buckets.end())
             {
-                if constexpr (Traits::bucket_kind == OverTimeBucketKind::Map)
+                if constexpr (Traits::bucket_kind == OverTimeBucketKind::SortedUnique)
+                {
+                    const auto & samples = bucket_it->second.samples;
+                    /// `samples` is sorted by timestamp; `ts_outside_active_lookback` is monotone false → true along the axis,
+                    /// so this is the first index with `ts + window > current_timestamp` (same as `upper_bound` for exclusive
+                    /// left edge `current_timestamp - window` without performing that subtraction).
+                    const auto begin_in_window = std::partition_point(
+                        samples.begin(),
+                        samples.end(),
+                        [&](const std::pair<TimestampType, ValueType> & sample) { return ts_outside_active_lookback(sample.first); });
+
+                    for (auto it = begin_in_window; it != samples.end(); ++it)
+                        samples_in_window.push_back(*it);
+                }
+                else if constexpr (Traits::bucket_kind == OverTimeBucketKind::Map)
                 {
                     timestamps_buffer.clear();
                     for (const auto & [timestamp, value] : bucket_it->second.samples)
-                        timestamps_buffer.emplace_back(timestamp, value);
+                    {
+                        if (!ts_outside_active_lookback(timestamp))
+                            timestamps_buffer.emplace_back(timestamp, value);
+                    }
                     std::sort(timestamps_buffer.begin(), timestamps_buffer.end());
 
-                    for (const auto & [timestamp, value] : timestamps_buffer)
-                        samples_in_window.push_back({timestamp, value});
-                }
-                else if constexpr (Traits::bucket_kind == OverTimeBucketKind::SortedUnique)
-                {
-                    for (const auto & sample : bucket_it->second.samples)
+                    for (const auto & sample : timestamps_buffer)
                         samples_in_window.push_back(sample);
                 }
                 else /// SingleSample
                 {
-                    if (bucket_it->second.has_sample)
+                    if (bucket_it->second.has_sample && !ts_outside_active_lookback(bucket_it->second.max_ts))
                         samples_in_window.push_back({bucket_it->second.max_ts, bucket_it->second.value_at_max_ts});
                 }
             }
-
-            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window <= current_timestamp)
-                samples_in_window.pop_front();
 
             fillResultValue(samples_in_window, values[i], nulls[i]);
         }
