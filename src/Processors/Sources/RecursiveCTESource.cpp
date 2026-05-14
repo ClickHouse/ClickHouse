@@ -154,32 +154,53 @@ void extractEquiJoinKeys(
 }
 
 /// Walk the join tree of a single `QueryNode` to collect equi-join keys.
+///
+/// The collected predicate is later injected into the `QueryNode`'s `WHERE`,
+/// which applies after every join. That is semantics-preserving only when the
+/// matched inner join is not nested on the nullable side of an outer join: a
+/// `LEFT`/`RIGHT`/`FULL` join produces null-extended rows for unmatched outer
+/// rows, and `real_column IN (...)` at `WHERE`-level would evaluate to NULL
+/// (i.e. false) for those rows and silently drop them. To stay correct, the
+/// walk tracks whether the current subtree sits on a nullable side and skips
+/// inner joins reached through such a path.
 void collectCTEJoinKeysInQuery(
     QueryNode & query_node,
     const std::vector<TableNode *> & recursive_table_nodes,
     std::vector<CTEJoinKey> & result)
 {
-    std::vector<IQueryTreeNode *> nodes_to_visit;
-    nodes_to_visit.push_back(query_node.getJoinTree().get());
+    struct StackEntry
+    {
+        IQueryTreeNode * node;
+        bool in_nullable_position;
+    };
+
+    std::vector<StackEntry> nodes_to_visit;
+    nodes_to_visit.push_back({query_node.getJoinTree().get(), false});
 
     while (!nodes_to_visit.empty())
     {
-        auto * node = nodes_to_visit.back();
+        auto entry = nodes_to_visit.back();
         nodes_to_visit.pop_back();
 
-        auto * join_node = node->as<JoinNode>();
+        auto * join_node = entry.node->as<JoinNode>();
         if (!join_node)
             continue;
 
-        if (join_node->getKind() == JoinKind::Inner
+        const auto kind = join_node->getKind();
+
+        if (kind == JoinKind::Inner
             && join_node->hasJoinExpression()
-            && join_node->isOnJoinExpression())
+            && join_node->isOnJoinExpression()
+            && !entry.in_nullable_position)
         {
             extractEquiJoinKeys(join_node->getJoinExpression(), recursive_table_nodes, query_node, result);
         }
 
-        nodes_to_visit.push_back(join_node->getLeftTableExpression().get());
-        nodes_to_visit.push_back(join_node->getRightTableExpression().get());
+        const bool left_nullable = entry.in_nullable_position || kind == JoinKind::Right || kind == JoinKind::Full;
+        const bool right_nullable = entry.in_nullable_position || kind == JoinKind::Left || kind == JoinKind::Full;
+
+        nodes_to_visit.push_back({join_node->getLeftTableExpression().get(), left_nullable});
+        nodes_to_visit.push_back({join_node->getRightTableExpression().get(), right_nullable});
     }
 }
 
