@@ -346,8 +346,12 @@ CLICKHOUSE_PROMQL_REGRESSION_CASES = [
     *_with_risk(RISK_VALUE_LABEL_AGGREGATION, [
         ('count_values("value", demo_api_request_duration_seconds_bucket)', [], False),
         ('count_values("value", demo_api_request_duration_seconds_bucket) without (instance)', [], False),
+        ('count_values("value", demo_api_request_duration_seconds_bucket) without (value)', [], False),
         ('count_values("job", demo_api_request_duration_seconds_bucket) by (job)', [], False),
+        ('count_values("~value", demo_api_request_duration_seconds_bucket)', [], False),
         ('count_values("", demo_api_request_duration_seconds_bucket)', [], True),
+        ('count_values("value", nonexistent_metric)', [], False),
+        ('count_values("value", vector(time()))', [], False),
     ]),
 
     *_with_risk(RISK_EMPTY_VECTOR_ABSENCE, [

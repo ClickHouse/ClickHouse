@@ -2500,14 +2500,16 @@ def test_aggregation_operators():
         ],
     )
 
+    # Behavior: without explicit grouping, Prometheus outputs only the generated value label
+    # and counts equal sample values across all input series.
     do_unordered_query_test(
         "count_values(\"value\", foo)",
-        130,
-        '{"resultType": "vector", "result": [{"metric": {"value": "16"}, "value": [130, "1"]}, {"metric": {"value": "40"}, "value": [130, "1"]}, {"metric": {"value": "80"}, "value": [130, "1"]}]}',
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"value": "16"}, "value": [110, "1"]}, {"metric": {"value": "4"}, "value": [110, "1"]}, {"metric": {"value": "8"}, "value": [110, "1"]}]}',
         [
-            ["[('value','16')]", "1970-01-01 00:02:10.000", 1],
-            ["[('value','40')]", "1970-01-01 00:02:10.000", 1],
-            ["[('value','80')]", "1970-01-01 00:02:10.000", 1],
+            ["[('value','16')]", "1970-01-01 00:01:50.000", 1],
+            ["[('value','4')]", "1970-01-01 00:01:50.000", 1],
+            ["[('value','8')]", "1970-01-01 00:01:50.000", 1],
         ],
     )
 
@@ -2525,6 +2527,21 @@ def test_aggregation_operators():
         ],
     )
 
+    # Behavior: Prometheus appends the generated value label to `by` grouping so both
+    # the requested grouping label and generated value label appear.
+    do_unordered_query_test(
+        'count_values("value", foo) by (shape)',
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle", "value": "16"}, "value": [110, "1"]}, {"metric": {"shape": "square", "value": "4"}, "value": [110, "1"]}, {"metric": {"shape": "triangle", "value": "8"}, "value": [110, "1"]}]}',
+        [
+            ["[('shape','circle'),('value','16')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','square'),('value','4')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','triangle'),('value','8')]", "1970-01-01 00:01:50.000", 1],
+        ],
+    )
+
+    # Behavior: Prometheus overwrites the input label with the generated sample-value
+    # label before grouping when the generated label name already exists.
     do_unordered_query_test(
         'count_values("shape", {__name__=~"foo|bar"}) by (shape)',
         110,
@@ -2550,6 +2567,20 @@ def test_aggregation_operators():
         ],
     )
 
+    # Behavior: Prometheus re-evaluates `count_values` at each range/subquery step,
+    # so generated label values can vary per timestamp.
+    do_unordered_query_test(
+        '(count_values("value", vector(time())))[40s:10s]',
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {"value": "150"}, "values": [[150, "1"]]}, {"metric": {"value": "160"}, "values": [[160, "1"]]}, {"metric": {"value": "170"}, "values": [[170, "1"]]}, {"metric": {"value": "180"}, "values": [[180, "1"]]}]}',
+        [
+            ["[('value','150')]", "[('1970-01-01 00:02:30.000',1)]"],
+            ["[('value','160')]", "[('1970-01-01 00:02:40.000',1)]"],
+            ["[('value','170')]", "[('1970-01-01 00:02:50.000',1)]"],
+            ["[('value','180')]", "[('1970-01-01 00:03:00.000',1)]"],
+        ],
+    )
+
     do_unordered_query_test(
         "count_values(\"value\", foo) without (shape)",
         130,
@@ -2558,6 +2589,21 @@ def test_aggregation_operators():
             ["[('size','l'),('value','16')]", "1970-01-01 00:02:10.000", 1],
             ["[('size','m'),('value','80')]", "1970-01-01 00:02:10.000", 1],
             ["[('size','s'),('value','40')]", "1970-01-01 00:02:10.000", 1],
+        ],
+    )
+
+    # Behavior: Prometheus inserts the generated value label before `without`, so
+    # `without(value)` removes it and can collapse different sample values into one group.
+    do_unordered_query_test(
+        'count_values("value", {__name__=~"foo|bar"}) without (value)',
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle", "size": "l"}, "value": [110, "2"]}, {"metric": {"shape": "rectangle", "size": "l"}, "value": [110, "1"]}, {"metric": {"shape": "square", "size": "s"}, "value": [110, "2"]}, {"metric": {"shape": "triangle", "size": "m"}, "value": [110, "1"]}, {"metric": {"shape": "triangle", "size": "xl"}, "value": [110, "1"]}]}',
+        [
+            ["[('shape','circle'),('size','l')]", "1970-01-01 00:01:50.000", 2],
+            ["[('shape','rectangle'),('size','l')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','square'),('size','s')]", "1970-01-01 00:01:50.000", 2],
+            ["[('shape','triangle'),('size','m')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','triangle'),('size','xl')]", "1970-01-01 00:01:50.000", 1],
         ],
     )
 
@@ -2572,11 +2618,20 @@ def test_aggregation_operators():
         ],
     )
 
+    # Behavior: Prometheus formats generated label values with Go
+    # `strconv.FormatFloat(value, 'f', -1, 64)`.
     do_unordered_query_test(
         'count_values("value", vector(1.5))',
         120,
         '{"resultType": "vector", "result": [{"metric": {"value": "1.5"}, "value": [120, "1"]}]}',
         [["[('value','1.5')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(-0))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "-0"}, "value": [120, "1"]}]}',
+        [["[('value','-0')]", "1970-01-01 00:02:00.000", 1]],
     )
 
     do_unordered_query_test(
@@ -2614,6 +2669,7 @@ def test_aggregation_operators():
         [["[('value','1000000000000000000000')]", "1970-01-01 00:02:00.000", 1]],
     )
 
+    # Behavior: Prometheus returns an empty vector for empty input.
     do_unordered_query_test(
         'count_values("value", nonexistent_metric)',
         120,
@@ -2621,10 +2677,21 @@ def test_aggregation_operators():
         [],
     )
 
-    do_clickhouse_only_query_test_expect_error(
-        'count_values("~invalid", vector(1))',
+    # Behavior: current Prometheus validates aggregation value-label names with UTF-8
+    # rules, so legacy-invalid names like `~value` are accepted.
+    do_query_test(
+        'count_values("~value", vector(1))',
         120,
-        "Aggregation operator 'count_values' called with invalid label name",
+        '{"resultType": "vector", "result": [{"metric": {"~value": "1"}, "value": [120, "1"]}]}',
+        [["[('~value','1')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    # Behavior: Prometheus rejects an empty generated label name.
+    do_query_test_expect_error(
+        'count_values("", vector(1))',
+        120,
+        "invalid label name",
+        "invalid label name",
     )
 
     do_query_test(
