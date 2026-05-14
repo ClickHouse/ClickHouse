@@ -50,7 +50,7 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
                 if (info.hasAppliedLimit())
                     rows_before_limit->add(info.getRowsBeforeLimit());
                 else
-                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
+                    manually_add_rows_before_limit_counter.store(true, std::memory_order_release); /// Remote subquery doesn't contain a limit
             }
 
             if (rows_before_aggregation)
@@ -213,7 +213,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
     if (block.empty())
     {
-        if (manually_add_rows_before_limit_counter)
+        if (manually_add_rows_before_limit_counter.load(std::memory_order_acquire))
             rows_before_limit->add(rows);
         query_executor->finish();
         return {};

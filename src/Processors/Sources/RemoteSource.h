@@ -61,7 +61,10 @@ private:
     bool is_async_state = false;
     int fd = -1;
     size_t rows = 0;
-    bool manually_add_rows_before_limit_counter = false;
+    /// Written by the profile-info callback that is invoked from `RemoteQueryExecutor::finish()`
+    /// while draining packets on one pipeline thread, and read by `tryGenerate()` on another
+    /// pipeline thread. `std::atomic` provides the synchronization edge required by TSan.
+    std::atomic_bool manually_add_rows_before_limit_counter = false;
     std::atomic_bool preprocessed_packet = false;
 #if defined(OS_LINUX)
     EventFD startup_event_fd;
