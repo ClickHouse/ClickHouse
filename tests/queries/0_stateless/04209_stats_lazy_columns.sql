@@ -1,6 +1,7 @@
 SET enable_analyzer = 1;
 SET materialize_statistics_on_insert = 1;
 SET use_statistics_cache = 0;
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_lazy;
 DROP TABLE IF EXISTS t_lazy_narrow;
@@ -45,7 +46,6 @@ FORMAT Null;
 SELECT b, c, d, e FROM t_lazy WHERE b = 42 AND b >= 0
 SETTINGS use_statistics_for_part_pruning = 0, use_statistics = 1,
          optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
-         enable_parallel_replicas = 0,
          log_comment = '04209_prewhere_lazy'
 FORMAT Null;
 
