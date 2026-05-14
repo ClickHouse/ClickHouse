@@ -131,7 +131,7 @@ cd /sqlancer/sqlancer-main
 TIMEOUT=300
 NUM_QUERIES=1000
 NUM_THREADS=10
-TESTS=( "TLPGroupBy" "TLPHaving" "TLPWhere" "TLPDistinct" "TLPAggregate" "NoREC" )
+TESTS=( "TLPGroupBy" "TLPHaving" "TLPWhere" "TLPDistinct" "TLPAggregate" "NoREC" "PQS" )
 echo "${TESTS[@]}"
 
 OVERALL_STATUS=OK
