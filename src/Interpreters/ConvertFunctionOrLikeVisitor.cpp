@@ -181,7 +181,10 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                 size_t slot_index = 0;
             };
             std::vector<PerKeyData> per_key_data;
-            std::unordered_map<String, size_t> key_to_index;
+            /// Key: (alias-or-column-name, alias-free-column-name). Using a pair (rather than a
+            /// joined string) avoids any ambiguity from separator characters appearing inside
+            /// identifier names.
+            std::map<std::pair<String, String>, size_t> key_to_index;
 
             for (const auto & child_expr_fn : expr_list_fn->children)
             {
@@ -254,11 +257,14 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                         data.regexp = "(?i)" + data.regexp;
                 }
 
-                /// Key by the alias-free canonical column name so that two structurally distinct
-                /// expressions sharing the same user-provided alias (e.g. `(toString(1) AS z) LIKE 'a'
-                /// OR (toString(2) AS z) LIKE 'b'`) are not merged into one rewritten call — which
-                /// would silently drop one branch.
-                String key = identifier->getColumnNameWithoutAlias();
+                /// Compound key: alias-or-column-name + alias-free column name. Both parts must match
+                /// for two branches to be merged. This rejects two structurally distinct expressions
+                /// sharing the same user-provided alias (e.g. `(toString(1) AS z) LIKE 'a' OR
+                /// (toString(2) AS z) LIKE 'b'` — same alias `z`, different underlying expressions),
+                /// while still treating two references to the same alias (e.g. `s1 LIKE 'a' OR s1
+                /// LIKE 'b'` after old-analyzer alias substitution) as one group. Plain identifiers
+                /// without explicit aliases produce identical first/second parts and merge normally.
+                std::pair<String, String> key{identifier->getAliasOrColumnName(), identifier->getColumnNameWithoutAlias()};
                 auto it = key_to_index.find(key);
                 size_t idx;
                 if (it == key_to_index.end())
