@@ -912,6 +912,26 @@ private:
                     throw;
                 last_net_error = std::current_exception();
             }
+            catch (const Poco::TimeoutException &)
+            {
+                /// `Poco::HTTPClientSession::reconnect` re-throws `Poco::TimeoutException`
+                /// on connect timeout, and `Poco::TimeoutException` derives from
+                /// `Poco::RuntimeException`, not `Poco::Net::NetException`. Without this
+                /// catch, a timed-out first address falls into `catch (...)` and is
+                /// re-thrown immediately, defeating the whole point of this retry loop on
+                /// dual-stack hosts whose first resolved address is blackholed. Treat it
+                /// as a per-address routing failure with the same `setFail`/`setUnused`
+                /// policy as the `NetException` path above.
+                if (retry_resolved_addresses)
+                    address.setFail();
+                else
+                    address.setUnused();
+                ProfileEvents::increment(getMetrics().errors);
+                (*connection).reset();
+                if (!retry_resolved_addresses)
+                    throw;
+                last_net_error = std::current_exception();
+            }
             catch (...)
             {
                 if (retry_resolved_addresses)
