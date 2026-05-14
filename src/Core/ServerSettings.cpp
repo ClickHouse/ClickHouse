@@ -478,6 +478,7 @@ namespace
     )", 0) \
     DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.)", 0) \
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
+    DECLARE(UInt64, database_catalog_shutdown_table_concurrency, 16, R"(The size of the threadpool used for shutting down tables when the server is stopping.)", 0) \
     \
     \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
