@@ -237,6 +237,9 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         if (i >= hyperrectangle.size())
             break;
 
+        if (!column_type->isNullable() && (hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull()))
+            break;
+
         String file_name = "minmax_" + getFileColumnName(column_name, storage_settings, part_storage) + ".idx";
         auto serialization = column_type->getDefaultSerialization();
 
@@ -278,7 +281,11 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
             hyperrectangle.emplace_back(min_value, true, max_value, true);
         else
         {
-            chassert(hyperrectangle.size() == columns_to_update.size());
+            if (hyperrectangle.size() != columns_to_update.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Part-level min-max index size ({}) does not match the number of columns to update ({})",
+                    hyperrectangle.size(), columns_to_update.size());
+
             hyperrectangle[i].left = accurateLess(hyperrectangle[i].left, min_value) ? hyperrectangle[i].left : min_value;
             hyperrectangle[i].right = accurateLess(hyperrectangle[i].right, max_value) ? max_value : hyperrectangle[i].right;
         }

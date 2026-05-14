@@ -384,6 +384,10 @@ void MergeTreeTemporaryPart::finalize()
     for (auto & stream : streams)
         stream.finalizer.finish();
 
+    part->getDataPartStorage().precommitTransaction();
+    for (const auto & [_, projection] : part->getProjectionParts())
+        projection->getDataPartStorage().precommitTransaction();
+
     /// If any minmax column is a virtual, the writer aggregated placeholder values for it. Drop the
     /// in-memory index so `getMinMaxIndex()` reloads from disk and applies the 0-level correction.
     const auto metadata_snapshot = part->getMetadataSnapshot();
@@ -391,10 +395,6 @@ void MergeTreeTemporaryPart::finalize()
     for (const auto & [minmax_column, _] : MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings))
         if (metadata_snapshot->isVirtualColumn(minmax_column))
             part->setMinMaxIndex(nullptr);
-
-    part->getDataPartStorage().precommitTransaction();
-    for (const auto & [_, projection] : part->getProjectionParts())
-        projection->getDataPartStorage().precommitTransaction();
 }
 
 /// This method must be called after rename and commit of part
