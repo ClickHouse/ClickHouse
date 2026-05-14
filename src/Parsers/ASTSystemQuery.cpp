@@ -708,6 +708,7 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
     if (!backup_name.empty())
         w.writeString("backup_name", backup_name);
     w.writeChild("backup_source", backup_source);
+    w.writeChild("scheduled_merge_parts", scheduled_merge_parts);
     if (!schema_cache_storage.empty())
         w.writeString("schema_cache_storage", schema_cache_storage);
     if (!schema_cache_format.empty())
@@ -843,6 +844,9 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     backup_source = r.readChild("backup_source");
     if (backup_source)
         children.push_back(backup_source);
+    scheduled_merge_parts = r.readChild("scheduled_merge_parts");
+    if (scheduled_merge_parts)
+        children.push_back(scheduled_merge_parts);
     schema_cache_storage = r.getString("schema_cache_storage");
     schema_cache_format = r.getString("schema_cache_format");
     queue_path = r.getString("queue_path");
