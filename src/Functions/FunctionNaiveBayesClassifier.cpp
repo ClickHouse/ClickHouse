@@ -222,20 +222,17 @@ void NBModelRegistry::load(ContextPtr context)
     }
 }
 
-class FunctionNaiveBayesClassifier : public IFunction
+class FunctionNaiveBayesClassifier : public IFunction, public WithContext
 {
-private:
-    const NBModelRegistry::Models & models;
-
 public:
     static constexpr auto name = "naiveBayesClassifier";
 
-    explicit FunctionNaiveBayesClassifier(ContextPtr context_)
-        : models(NBModelRegistry::instance(context_))
-    {
-    }
+    /// Defer model-registry construction to `executeImpl` so the function can
+    /// be instantiated without an `<nb_models>` config block (e.g. by
+    /// `system.functions`).
+    explicit FunctionNaiveBayesClassifier(ContextPtr context_) : WithContext(context_) {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionNaiveBayesClassifier>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifier>(context_); }
 
     String getName() const override { return name; }
 
@@ -254,12 +251,14 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        const auto & models = NBModelRegistry::instance(getContext());
+
         const auto * const_model_name_col = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
         const auto * const_input_text_col = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
         if (const_model_name_col and const_input_text_col)
         {
             const String model_name = const_model_name_col->getValue<String>();
-            validateModelName(model_name);
+            validateModelName(models, model_name);
 
             const String input_text = const_input_text_col->getValue<String>();
             validateInputText(input_text, model_name);
@@ -277,7 +276,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const String model_name{model_name_column->getDataAt(i)};
-            validateModelName(model_name);
+            validateModelName(models, model_name);
 
             const String input_text{input_text_column->getDataAt(i)};
             validateInputText(input_text, model_name);
@@ -290,7 +289,7 @@ public:
     }
 
 private:
-    void validateModelName(const String & model_name) const
+    static void validateModelName(const NBModelRegistry::Models & models, const String & model_name)
     {
         if (!models.contains(model_name))
         {

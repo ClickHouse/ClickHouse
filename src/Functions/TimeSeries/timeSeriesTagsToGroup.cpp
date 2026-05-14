@@ -16,13 +16,16 @@ namespace ErrorCodes
 
 /// Function timeSeriesTagsToGroup([('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...)
 /// returns a group assigned to the specified set of tags.
-class FunctionTimeSeriesTagsToGroup : public IFunction
+class FunctionTimeSeriesTagsToGroup : public IFunction, public WithContext
 {
 public:
     static constexpr auto name = "timeSeriesTagsToGroup";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesTagsToGroup>(context); }
-    explicit FunctionTimeSeriesTagsToGroup(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesTagsToGroup>(context_); }
+    /// Defer query-context access to `executeImpl` so the function can be instantiated
+    /// without a query context (e.g. by `system.functions` which only needs to read
+    /// `getSignatureString`).
+    explicit FunctionTimeSeriesTagsToGroup(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
@@ -38,6 +41,17 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// Declarative signature — accepts an array of (tag_name, tag_value)
+    /// pairs followed by zero or more loose (name, value) string pairs;
+    /// returns a `UInt64` group ID drawn from the query-context tags
+    /// collector. Variadic tag-pair handling isn't expressible in the DSL,
+    /// so the legacy `getReturnTypeImpl(ColumnsWithTypeAndName)` stays
+    /// authoritative.
+    String getSignatureString() const override
+    {
+        return "(Array(Tuple(String, String)) | Nothing, ...) -> UInt64";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -60,14 +74,12 @@ public:
     {
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 0);
 
+        auto tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();
         auto groups = tags_collector->getGroupForTags(tags_vector);
         chassert(groups.size() == input_rows_count);
 
         return TimeSeriesTagsFunctionHelpers::makeColumnForGroup(groups);
     }
-
-private:
-    std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
 };
 
 

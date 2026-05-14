@@ -16,13 +16,16 @@ namespace ErrorCodes
 /// Function timeSeriesStoreTags(id, [('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...) returns `id`
 /// and stores the mapping between the identifier of a time series and its tags in the query context so that
 /// they can later be extracted by function timeSeriesIdToTags().
-class FunctionTimeSeriesStoreTags : public IFunction
+class FunctionTimeSeriesStoreTags : public IFunction, public WithContext
 {
 public:
     static constexpr auto name = "timeSeriesStoreTags";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesStoreTags>(context); }
-    explicit FunctionTimeSeriesStoreTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesStoreTags>(context_); }
+    /// Defer query-context access to `executeImpl` so the function can be instantiated
+    /// without a query context (e.g. by `system.functions` which only needs to read
+    /// `getSignatureString`).
+    explicit FunctionTimeSeriesStoreTags(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
@@ -37,6 +40,15 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// Declarative signature — returns the `id` argument as-is (so the
+    /// result type follows the first argument's type). Tag-pair handling is
+    /// variadic and not expressible in the DSL, so the legacy
+    /// `getReturnTypeImpl(ColumnsWithTypeAndName)` stays authoritative.
+    String getSignatureString() const override
+    {
+        return "(T : Any, Array(Tuple(String, String)) | Nothing, ...) -> T";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -75,6 +87,7 @@ public:
     {
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 1);
 
+        auto tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();
         if constexpr (id_is_nullable)
         {
             auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<std::optional<IDType>>(name, arguments, 0);
@@ -100,9 +113,6 @@ public:
 
         return arguments[0].column;
     }
-
-private:
-    std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
 };
 
 
