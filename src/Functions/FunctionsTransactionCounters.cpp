@@ -34,33 +34,42 @@ public:
     explicit FunctionTransactionID(ContextPtr context) : FunctionConstantBase(getValue(context->getCurrentTransaction()), context->isDistributed()) {}
 };
 
-class FunctionTransactionLatestSnapshot : public FunctionConstantBase<FunctionTransactionLatestSnapshot, UInt64, DataTypeUInt64>
+/// Defers `TransactionLog::instance()` lookup to `executeImpl` so the function
+/// can be instantiated without a configured transaction log (e.g. by
+/// `system.functions`, which only reads `getSignatureString`).
+template <bool latest>
+class FunctionTransactionSnapshot : public IFunction, public WithContext
 {
-    static UInt64 getLatestSnapshot(ContextPtr context)
-    {
-        context->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
-        return TransactionLog::instance().getLatestSnapshot();
-    }
 public:
-    static constexpr auto name = "transactionLatestSnapshot";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionLatestSnapshot>(context); }
-    explicit FunctionTransactionLatestSnapshot(ContextPtr context) : FunctionConstantBase(getLatestSnapshot(context), context->isDistributed()) {}
+    static constexpr auto name = latest ? "transactionLatestSnapshot" : "transactionOldestSnapshot";
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTransactionSnapshot>(context_); }
+    explicit FunctionTransactionSnapshot(ContextPtr context_) : WithContext(context_) {}
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
     String getSignatureString() const override { return "() -> UInt64"; }
+
+    bool isDeterministic() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return !getContext()->isDistributed(); }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
+        UInt64 snapshot = latest
+            ? TransactionLog::instance().getLatestSnapshot()
+            : TransactionLog::instance().getOldestSnapshot();
+        return result_type->createColumnConst(input_rows_count, snapshot);
+    }
 };
 
-class FunctionTransactionOldestSnapshot : public FunctionConstantBase<FunctionTransactionOldestSnapshot, UInt64, DataTypeUInt64>
-{
-    static UInt64 getOldestSnapshot(ContextPtr context)
-    {
-        context->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
-        return TransactionLog::instance().getOldestSnapshot();
-    }
-public:
-    static constexpr auto name = "transactionOldestSnapshot";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionOldestSnapshot>(context); }
-    explicit FunctionTransactionOldestSnapshot(ContextPtr context) : FunctionConstantBase(getOldestSnapshot(context), context->isDistributed()) {}
-    String getSignatureString() const override { return "() -> UInt64"; }
-};
+using FunctionTransactionLatestSnapshot = FunctionTransactionSnapshot<true>;
+using FunctionTransactionOldestSnapshot = FunctionTransactionSnapshot<false>;
 
 }
 
