@@ -107,7 +107,7 @@ FROM tab
 WHERE id > 3
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
-SETTINGS vector_search_with_rescoring = 0;
+SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 0;
 
 SELECT 'Test for filter that selects full part, optimization will take effect';
 
