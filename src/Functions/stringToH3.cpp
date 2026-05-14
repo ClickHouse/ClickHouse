@@ -26,11 +26,15 @@ namespace ErrorCodes
 /// `sscanf("%" PRIx64, ...)` to parse the index. That means parsing is permissive:
 /// the longest valid hex prefix is consumed (after optional whitespace, sign, and
 /// "0x"/"0X" prefix), and trailing garbage is ignored, so non-H3 strings like
-/// `"foo"` parse to a valid value (e.g. `0xf`) rather than failing. Only inputs
-/// without any hex digit return 0 (the parse error from the underlying library is
-/// swallowed; the v4 H3 C API reports errors through a return code, v3 returned 0
-/// silently). The returned `H3Index` is not validated to be a real H3 cell — use
-/// `h3IsValid` for that.
+/// `"foo"` parse to a valid value (e.g. `0xf`) rather than failing. The returned
+/// `H3Index` is not validated to be a real H3 cell — use `h3IsValid` for that.
+///
+/// A returned value of `0` is ambiguous: it can come either from a successful
+/// parse of a zero value (e.g. `"0"`, `"000"`, `"0x"`, `"+0x"`) or from the
+/// no-hex-digit path where the parse error from the underlying library is
+/// swallowed and the default-initialized index is returned (the v4 H3 C API
+/// reports errors through a return code, v3 returned `0` silently). Callers
+/// must not treat `0` as a definite invalid-input signal.
 
 namespace
 {
@@ -123,7 +127,7 @@ Parsing follows `sscanf("%" PRIx64, ...)` semantics: the longest valid hex prefi
         {"index_str", "String representation of the H3 index.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the parsed `H3Index`. Returns `0` only when the input contains no hex digit at all; otherwise the longest valid hex prefix is parsed (e.g. `'foo'` parses to `0xf`). The result is not validated as a real H3 cell.",
+        "Returns the parsed `H3Index`. A returned value of `0` is ambiguous: it can come either from a successful parse of a zero value (e.g. `'0'`, `'000'`, `'0x'`, `'+0x'`) or from the no-hex-digit path where the parse error is swallowed. The longest valid hex prefix is parsed (e.g. `'foo'` parses to `0xf`). The result is not validated as a real H3 cell.",
         {"UInt64"}
     };
     FunctionDocumentation::Examples examples = {
