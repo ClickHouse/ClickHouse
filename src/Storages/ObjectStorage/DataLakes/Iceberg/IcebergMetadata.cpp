@@ -967,23 +967,24 @@ IcebergFileRecord buildIcebergFileRecord(
 
 }
 
-IcebergMetadata::IcebergFiles IcebergMetadata::getFiles(ContextPtr local_context) const
+IcebergMetadata::IcebergFiles IcebergMetadata::getFilesForManifest(
+    const Iceberg::IcebergDataSnapshotPtr & data_snapshot,
+    const Iceberg::TableStateSnapshot & table_state,
+    size_t manifest_index,
+    ContextPtr local_context) const
 {
-    auto [data_snapshot, table_state] = getRelevantState(local_context);
-    if (!data_snapshot)
-        return {};
+    chassert(data_snapshot);
+    chassert(manifest_index < data_snapshot->manifest_list_entries.size());
+
+    const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_index];
+    auto handle = getManifestFileEntriesHandle(
+        object_storage, persistent_components, local_context, log, manifest_list_entry, table_state.schema_id);
 
     IcebergFiles result;
-    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+    for (auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
     {
-        auto handle = getManifestFileEntriesHandle(
-            object_storage, persistent_components, local_context, log, manifest_list_entry, table_state.schema_id);
-
-        for (auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
-        {
-            for (const auto & processed : handle.getFilesWithoutDeleted(content_type))
-                result.push_back(buildIcebergFileRecord(processed, manifest_list_entry.added_snapshot_id, persistent_components.path_resolver));
-        }
+        for (const auto & processed : handle.getFilesWithoutDeleted(content_type))
+            result.push_back(buildIcebergFileRecord(processed, manifest_list_entry.added_snapshot_id, persistent_components.path_resolver));
     }
     return result;
 }

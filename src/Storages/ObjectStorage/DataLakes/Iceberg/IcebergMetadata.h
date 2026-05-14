@@ -107,7 +107,15 @@ public:
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
-    IcebergFiles getFiles(ContextPtr local_context) const;
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
+    getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
+
+    /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
+    IcebergFiles getFilesForManifest(
+        const Iceberg::IcebergDataSnapshotPtr & data_snapshot,
+        const Iceberg::TableStateSnapshot & table_state,
+        size_t manifest_index,
+        ContextPtr local_context) const;
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return true; }
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
@@ -185,7 +193,6 @@ private:
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
-    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;

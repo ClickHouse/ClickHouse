@@ -46,14 +46,22 @@ public:
         size_t max_block_size_,
         ExpressionActionsPtr virtual_columns_filter_)
         : ISource(header_)
-        , context(context_)
         , max_block_size(max_block_size_)
         , virtual_columns_filter(std::move(virtual_columns_filter_))
+        , log(getLogger("SystemIcebergFiles"))
     {
+        context_copy = Context::createCopy(context_);
+        Settings settings_copy = context_copy->getSettingsCopy();
+        // Do not use the cache for now. It has previously caused correctness issues in system.iceberg_history (https://github.com/ClickHouse/ClickHouse/pull/89003).
+        settings_copy[Setting::use_iceberg_metadata_files_cache] = false;
+        context_copy->setSettings(settings_copy);
+
+        access = context_copy->getAccess();
+
         databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
         current_database_iterator = databases.begin();
         if (current_database_iterator != databases.end())
-            current_table_iterator = current_database_iterator->second->getTablesIterator(context, {}, true);
+            current_table_iterator = current_database_iterator->second->getTablesIterator(context_copy, {}, true);
     }
 
     String getName() const override { return "SystemIcebergFilesSource"; }
@@ -61,16 +69,7 @@ public:
 protected:
     Chunk generate() override
     {
-        ContextMutablePtr context_copy = Context::createCopy(context);
-        Settings settings_copy = context_copy->getSettingsCopy();
-        // Do not use the cache for now. It has previously caused correctness issues in system.iceberg_history (https://github.com/ClickHouse/ClickHouse/pull/89003).
-        settings_copy[Setting::use_iceberg_metadata_files_cache] = false;
-        context_copy->setSettings(settings_copy);
-
-        const auto access = context_copy->getAccess();
-        const bool show_tables_granted = access->isGranted(AccessType::SHOW_TABLES);
-
-        if (!show_tables_granted)
+        if (!access->isGranted(AccessType::SHOW_TABLES))
             return {};
 
         MutableColumnPtr col_database = ColumnString::create();
@@ -118,87 +117,146 @@ protected:
 
         size_t num_rows = 0;
 
-        auto add_file_records = [&](const DatabaseTablesIteratorPtr & it, StorageObjectStorage * object_storage)
-        {
-            if (!access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
-                return;
-
-            if (!object_storage->isIcebergStorage())
-                return;
-
 #if USE_AVRO
-            /// Checkpoints to revert to pre-row state in case any per-column inserts throw midway.
+        /// Appends rows produced by a single manifest list entry of current cursor's table.
+        auto process_one_manifest = [&](TableCursor & cur)
+        {
             std::vector<ColumnCheckpointPtr> checkpoints(col_ptrs.size());
             for (size_t i = 0; i < col_ptrs.size(); ++i)
                 checkpoints[i] = col_ptrs[i]->getCheckpoint();
 
-            /// Iceberg tables can be broken in arbitrary ways; tolerate any error from a single table
-            /// instead of failing the whole query.
             try
             {
-                if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context_copy)); iceberg_metadata)
+                auto files = cur.iceberg_metadata->getFilesForManifest(
+                    cur.data_snapshot, cur.table_state, cur.next_manifest_index, context_copy);
+
+                for (auto & file : files)
                 {
-                    IcebergMetadata::IcebergFiles files = iceberg_metadata->getFiles(context_copy);
+                    col_database->insert(cur.database_name);
+                    col_table->insert(cur.table_name);
+                    col_snapshot_id->insert(file.snapshot_id);
+                    col_content->insert(static_cast<Int8>(file.content));
+                    col_file_path->insert(file.file_path);
+                    col_file_format->insert(file.file_format);
+                    col_record_count->insert(file.record_count);
+                    col_file_size_in_bytes->insert(file.file_size_in_bytes);
+                    col_partition->insert(file.partition);
+                    col_schema_id->insert(file.schema_id);
+                    col_sequence_number->insert(file.sequence_number);
 
-                    for (auto & file : files)
+                    if (file.sort_order_id.has_value())
+                        col_sort_order_id->insert(*file.sort_order_id);
+                    else
+                        col_sort_order_id->insertDefault();
+
+                    auto insert_id_to_int_map = [&](MutableColumnPtr & col, const std::map<Int32, Int64> & values)
                     {
-                        col_database->insert(it->databaseName());
-                        col_table->insert(it->name());
-                        col_snapshot_id->insert(file.snapshot_id);
-                        col_content->insert(static_cast<Int8>(file.content));
-                        col_file_path->insert(file.file_path);
-                        col_file_format->insert(file.file_format);
-                        col_record_count->insert(file.record_count);
-                        col_file_size_in_bytes->insert(file.file_size_in_bytes);
-                        col_partition->insert(file.partition);
-                        col_schema_id->insert(file.schema_id);
-                        col_sequence_number->insert(file.sequence_number);
+                        Map map_field;
+                        map_field.reserve(values.size());
+                        for (const auto & [key, value] : values)
+                            map_field.push_back(Tuple{key, value});
+                        col->insert(map_field);
+                    };
 
-                        if (file.sort_order_id.has_value())
-                            col_sort_order_id->insert(*file.sort_order_id);
-                        else
-                            col_sort_order_id->insertDefault();
+                    insert_id_to_int_map(col_null_value_counts, file.null_value_counts);
+                    insert_id_to_int_map(col_column_sizes, file.column_sizes);
+                    insert_id_to_int_map(col_value_counts, file.value_counts);
 
-                        auto insert_id_to_int_map = [&](MutableColumnPtr & col, const std::map<Int32, Int64> & values)
-                        {
-                            Map map_field;
-                            map_field.reserve(values.size());
-                            for (const auto & [key, value] : values)
-                                map_field.push_back(Tuple{key, value});
-                            col->insert(map_field);
-                        };
-
-                        insert_id_to_int_map(col_null_value_counts, file.null_value_counts);
-                        insert_id_to_int_map(col_column_sizes, file.column_sizes);
-                        insert_id_to_int_map(col_value_counts, file.value_counts);
-
-                        Array equality_ids_array;
-                        if (file.equality_ids.has_value())
-                        {
-                            equality_ids_array.reserve(file.equality_ids->size());
-                            for (auto id : *file.equality_ids)
-                                equality_ids_array.push_back(id);
-                        }
-                        col_equality_ids->insert(equality_ids_array);
-
-                        ++num_rows;
+                    Array equality_ids_array;
+                    if (file.equality_ids.has_value())
+                    {
+                        equality_ids_array.reserve(file.equality_ids->size());
+                        for (auto id : *file.equality_ids)
+                            equality_ids_array.push_back(id);
                     }
+                    col_equality_ids->insert(equality_ids_array);
+
+                    ++num_rows;
                 }
             }
             catch (...)
             {
                 for (size_t i = 0; i < col_ptrs.size(); ++i)
                     col_ptrs[i]->rollback(*checkpoints[i]);
-                tryLogCurrentException(getLogger("SystemIcebergFiles"), fmt::format("Ignoring broken table {}", object_storage->getStorageID().getFullTableName()));
+                /// A broken manifest drops the remainder of this table; rows already emitted from
+                /// earlier manifests of the same table in previous chunks are kept as-is.
+                tryLogCurrentException(log, fmt::format("Ignoring broken manifest in table {}.{}", cur.database_name, cur.table_name));
+                cur.broken = true;
             }
-#endif
         };
 
+        auto try_open_current_table = [&] -> bool
+        {
+            if (!access->isGranted(AccessType::SHOW_TABLES, current_table_iterator->databaseName(), current_table_iterator->name()))
+                return false;
+
+            StoragePtr storage = current_table_iterator->table();
+            if (!storage)
+                return false;
+
+            TableLockHolder lock = storage->tryLockForShare(
+                context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
+            if (!lock)
+                return false;
+
+            auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get());
+            if (!object_storage_table || !object_storage_table->isIcebergStorage())
+                return false;
+
+            try
+            {
+                auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage_table->getExternalMetadata(context_copy));
+                if (!iceberg_metadata)
+                    return false;
+
+                auto [data_snapshot, table_state] = iceberg_metadata->getRelevantState(context_copy);
+                if (!data_snapshot)
+                    return false;
+
+                TableCursor cur;
+                cur.storage = std::move(storage);
+                cur.lock = std::move(lock);
+                cur.iceberg_metadata = iceberg_metadata;
+                cur.data_snapshot = std::move(data_snapshot);
+                cur.table_state = std::move(table_state);
+                cur.database_name = current_table_iterator->databaseName();
+                cur.table_name = current_table_iterator->name();
+                current_table_cursor = std::move(cur);
+                return true;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Ignoring broken table {}.{}",
+                    current_table_iterator->databaseName(), current_table_iterator->name()));
+                return false;
+            }
+        };
+#endif
 
         while (true)
         {
-            if (num_rows && max_block_size && get_total_size() > max_block_size)
-                break;
+#if USE_AVRO
+            if (current_table_cursor.has_value())
+            {
+                auto & cur = *current_table_cursor;
+                if (cur.broken || cur.next_manifest_index == cur.data_snapshot->manifest_list_entries.size())
+                {
+                    current_table_cursor.reset();
+                    current_table_iterator->next();
+                    continue;
+                }
+
+                process_one_manifest(cur);
+                ++cur.next_manifest_index;
+
+                /// Yield mid-table once we've reached the requested chunk size.
+                if (num_rows && max_block_size && get_total_size() >= max_block_size)
+                    break;
+
+                continue;
+            }
+#endif
 
             if (current_database_iterator == databases.end())
                 break;
@@ -207,7 +265,7 @@ protected:
             {
                 ++current_database_iterator;
                 if (current_database_iterator != databases.end())
-                    current_table_iterator = current_database_iterator->second->getTablesIterator(context, {}, true);
+                    current_table_iterator = current_database_iterator->second->getTablesIterator(context_copy, {}, true);
                 continue;
             }
 
@@ -230,17 +288,14 @@ protected:
                 }
             }
 
-            {
-                StoragePtr storage = current_table_iterator->table();
-
-                TableLockHolder lock = storage->tryLockForShare(context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
-                if (lock)
-                {
-                    if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get()))
-                        add_file_records(current_table_iterator, object_storage_table);
-                }
-            }
+#if USE_AVRO
+            if (!try_open_current_table())
+                current_table_iterator->next();
+            /// If we opened a cursor, the next loop iteration will process its first manifest.
+#else
+            /// Without Avro support there is no Iceberg storage to read from.
             current_table_iterator->next();
+#endif
         }
 
         if (!num_rows)
@@ -256,12 +311,33 @@ protected:
     }
 
 private:
-    ContextPtr context;
-    [[maybe_unused]] const size_t max_block_size;
+    ContextMutablePtr context_copy;
+    std::shared_ptr<const ContextAccessWrapper> access;
+    const size_t max_block_size;
     ExpressionActionsPtr virtual_columns_filter;
+    LoggerPtr log;
     DB::Databases databases;
     DB::Databases::const_iterator current_database_iterator;
     DB::DatabaseTablesIteratorPtr current_table_iterator;
+
+#if USE_AVRO
+    /// Per-table iteration state. Lives across `generate()` calls so we can stream a table's
+    /// manifests in chunks of size <= `max_block_size`, instead of materializing all file
+    /// records of a table in a single `IcebergMetadata::getFiles` call.
+    struct TableCursor
+    {
+        StoragePtr storage;
+        TableLockHolder lock;
+        IcebergMetadata * iceberg_metadata = nullptr;   // non-owning; kept alive via `storage`
+        Iceberg::IcebergDataSnapshotPtr data_snapshot;
+        Iceberg::TableStateSnapshot table_state;
+        String database_name;
+        String table_name;
+        size_t next_manifest_index = 0;
+        bool broken = false;
+    };
+    std::optional<TableCursor> current_table_cursor;
+#endif
 };
 
 class ReadFromSystemIcebergFiles final : public SourceStepWithFilter
