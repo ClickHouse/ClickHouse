@@ -344,8 +344,8 @@ static StatsColumnsResult collectStatsColumnsForRelation(const QueryPlan::Node &
     {
         StatsColumnsResult result{.source_columns = top_level_columns, .reading = reading};
         if (auto prewhere_info = reading->getPrewhereInfo())
-            result.source_columns.insert(prewhere_info->prewhere_actions.getRequiredColumnsNames().begin(),
-                                          prewhere_info->prewhere_actions.getRequiredColumnsNames().end());
+            for (const auto & column_name : prewhere_info->prewhere_actions.getRequiredColumnsNames())
+                result.source_columns.insert(column_name);
         return result;
     }
 
@@ -380,16 +380,14 @@ static StatsColumnsResult collectStatsColumnsForRelation(const QueryPlan::Node &
         for (const auto & key : aggregating_step->getAggregatorParameters().keys)
             mapped.insert(key);
     }
-    else if (typeid_cast<const SortingStep *>(step) || typeid_cast<const LimitStep *>(step))
-    {
-        mapped = top_level_columns;
-    }
+    else if (typeid_cast<const SortingStep *>(step) || typeid_cast<const LimitStep *>(step)
 #if CLICKHOUSE_CLOUD
-    else if (dynamic_cast<const LogicalExchangeStep *>(step))
+        || dynamic_cast<const LogicalExchangeStep *>(step)
+#endif
+    )
     {
         mapped = top_level_columns;
     }
-#endif
     else
     {
         return {};
@@ -529,6 +527,34 @@ RelationStats estimateReadRowsCount(
     return {};
 }
 
+/// Walk the plan tree to find the underlying `ReadFromMergeTree` step, then build a
+/// `ConditionSelectivityEstimator` for columns that drive the legacy estimate
+/// (filters along the path plus `prewhere`). Used by `optimizeJoinLegacy` to
+/// restore statistics-backed row estimation without loading stats for all columns.
+static ConditionSelectivityEstimatorPtr buildEstimatorForRelation(QueryPlan::Node & node)
+{
+    /// Reuse the same machinery the new join-order path uses so both paths agree
+    /// on which columns must be loaded. The legacy path does not consume per-column
+    /// NDV, so the top-level interest set is empty; `collectStatsColumnsForRelation`
+    /// still picks up columns referenced by `FilterStep`s and `prewhere`.
+    StatsColumnsResult stats_columns = collectStatsColumnsForRelation(node, /*top_level_columns=*/ {});
+    if (!stats_columns.reading)
+        return nullptr;
+
+    if (!stats_columns.reading->getContext()->getSettingsRef()[Setting::use_statistics])
+        return nullptr;
+
+    /// If no column on the path can drive estimation, skip stats loading entirely.
+    /// `estimateReadRowsCount` will fall back to `analyzed_result->selected_rows`,
+    /// avoiding a fabricated estimate from `default_factor * total_rows`.
+    if (stats_columns.source_columns.empty())
+        return nullptr;
+
+    Names source_columns(stats_columns.source_columns.begin(), stats_columns.source_columns.end());
+    std::sort(source_columns.begin(), source_columns.end());
+    return stats_columns.reading->getConditionSelectivityEstimator(source_columns);
+}
+
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
@@ -556,8 +582,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        auto lhs_extimation = estimateReadRowsCount(*node.children[0], nullptr, buildEstimatorForRelation(*node.children[0])).estimated_rows;
+        auto rhs_extimation = estimateReadRowsCount(*node.children[1], nullptr, buildEstimatorForRelation(*node.children[1])).estimated_rows;
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
             lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
             rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
