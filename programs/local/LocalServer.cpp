@@ -89,6 +89,7 @@ namespace Setting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsUInt64 additional_memory_tracking_per_thread;
     extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
@@ -890,6 +891,17 @@ void LocalServer::processConfig()
     total_memory_tracker.setHardLimit(max_server_memory_usage);
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+    {
+        /// Mirror `Server.cpp`: the setting is `UInt64` but the atomic is `int64_t`, so clamp
+        /// at `INT64_MAX` so a huge misconfigured value does not wrap negative and disable
+        /// the speculative reservation via the `> 0` check.
+        const UInt64 raw = server_settings[ServerSetting::additional_memory_tracking_per_thread];
+        const auto int64_max = static_cast<UInt64>(std::numeric_limits<int64_t>::max());
+        additional_memory_tracking_per_thread.store(
+            static_cast<int64_t>(std::min(raw, int64_max)),
+            std::memory_order_relaxed);
+    }
 
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
     size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
