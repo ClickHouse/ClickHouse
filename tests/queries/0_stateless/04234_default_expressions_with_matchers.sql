@@ -66,6 +66,24 @@ CREATE TABLE default_expr_matchers_indirect_self
 )
 ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 
+SET asterisk_include_materialized_columns = 1;
+CREATE TABLE default_expr_matchers_materialized_self
+(
+    a UInt8,
+    b String MATERIALIZED toJSONString(namedTuple(*))
+)
+ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
+SET asterisk_include_materialized_columns = 0;
+
+SET asterisk_include_alias_columns = 1;
+CREATE TABLE default_expr_matchers_alias_self
+(
+    a UInt8,
+    b String ALIAS toJSONString(namedTuple(*))
+)
+ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
+SET asterisk_include_alias_columns = 0;
+
 CREATE TABLE default_expr_matchers_default_except
 (
     a UInt8,
