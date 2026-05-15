@@ -6,8 +6,12 @@ include(ExternalProject)
 
 set(USE_DELTA_KERNEL_RS ${ENABLE_LIBRARIES})
 
-# NO_ARMV81_OR_HIGHER: Disabled because ring assumes that Neon is available with ARM (note: outdated with the switch back to `native-tls`)
-if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR NO_ARMV81_OR_HIGHER)
+# MSAN: Disabled because `ring` is still pulled in via `object_store`'s `cloud` feature
+#   (for HMAC), and its hand-written assembly does not generate the symbols required by MSan.
+#   The switch to `default-engine-native-tls` removes `ring` from the TLS stack but not from
+#   `object_store` itself. Tracking upstream: https://github.com/apache/arrow-rs-object-store/pull/585
+# NO_ARMV81_OR_HIGHER: Disabled because ring assumes that Neon is available with ARM
+if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER)
   message(STATUS "Disabling delta kernel because of incompatible platform or Rust is disabled")
   set(USE_DELTA_KERNEL_RS 0)
 endif()
