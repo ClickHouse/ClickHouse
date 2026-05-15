@@ -4979,6 +4979,16 @@ Result
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
 )", 0) \
+    DECLARE(Bool, system_metric_log_show_zero_values_in_histograms, false, R"(
+Controls whether zero-valued histogram data is written to the `histograms` nested column of `system.metric_log`.
+
+By default, histograms whose total observation `count` is zero are skipped, and within each emitted histogram, bucket entries with no observations are also omitted from the `histogram` map. Enable this to write every histogram and every bucket regardless of count — useful for monitoring systems that require every metric to appear at every checkpoint.
+
+Possible values:
+
+- 0 — Disabled. Histograms with `count = 0` are not emitted; emitted histograms include only buckets that received at least one observation.
+- 1 — Enabled. All histograms are written, and every bucket boundary appears in `histogram`.
+)", 0) \
     DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", R"(
 Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`. All modern mappings (`decimal`, `datetime64`, `date2Date32`) are enabled by default.
 - `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
@@ -5937,6 +5947,15 @@ Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enabl
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 :::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_top_k_through_join, true, R"(
+Toggles a query-plan-level optimization which pushes `ORDER BY ... LIMIT n` down through a join when the sort key only references columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows the preserved-side input must produce before joining.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 Possible values:
 
