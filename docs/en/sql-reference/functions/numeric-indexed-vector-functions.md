@@ -6,8 +6,6 @@ title: 'NumericIndexedVector Functions'
 doc_type: 'reference'
 ---
 
-# NumericIndexedVector
-
 NumericIndexedVector is an abstract data structure that encapsulates a vector and implements vector aggregating and pointwise operations. Bit-Sliced Index is its storage method. For theoretical basis and usage scenarios, refer to the paper [Large-Scale Metric Computation in Online Controlled Experiment Platform](https://arxiv.org/pdf/2405.08411).
 
 ## BSI {#bit-sliced-index}
