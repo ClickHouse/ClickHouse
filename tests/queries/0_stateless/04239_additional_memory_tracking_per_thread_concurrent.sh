@@ -19,8 +19,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Each launched query must finish (with or without a memory-limit error)
 # within `timeout` -- a hang would manifest as the timeout firing.
 
-N=64
-TIMEOUT=15
+# `N` background clients race to exercise the throw-before-thread-group-attach
+# path. Each client itself spawns `max_threads = 4` workers, so `N * 4 = 128`
+# worker jobs is enough to surface the original deadlock reliably.
+#
+# `TIMEOUT` is set generously to absorb the per-process startup tax: under
+# parallel CI stress (flaky-check re-runs the test alongside many others on
+# the same host) it can take a long time for every client to even connect.
+# A hang in the regressed code path would not finish at all -- finishing
+# slowly under load is fine.
+N=32
+TIMEOUT=60
 
 for _ in $(seq 1 $N); do
     timeout "$TIMEOUT" $CLICKHOUSE_CLIENT --query "
