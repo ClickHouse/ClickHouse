@@ -178,7 +178,7 @@ StorageTimeSeries::StorageTimeSeries(
 
             for (const auto & column : metadata->columns)
                 if (column.type->lowCardinality())
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External metrics table cannot have LowCardnality columns for now.");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External metrics table cannot have LowCardinality columns for now.");
         }
 
         has_inner_tables |= target.is_inner_table;
